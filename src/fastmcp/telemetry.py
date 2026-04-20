@@ -4,6 +4,15 @@ This module provides native OpenTelemetry integration for FastMCP servers and cl
 It uses only the opentelemetry-api package, so telemetry is a no-op unless the user
 installs an OpenTelemetry SDK and configures exporters.
 
+Span creation can be disabled by setting the environment variable
+``FASTMCP_TELEMETRY_OPT_OUT=YES`` (case-insensitive).  When opted out,
+``client_span`` / ``server_span`` / ``delegate_span`` become no-op context
+managers that yield ``INVALID_SPAN`` **without** modifying the active
+OpenTelemetry context.  Context propagation helpers (``inject_trace_context``
+and ``extract_trace_context``) remain fully operational so that external
+instrumentations (e.g. ``opentelemetry-instrumentation-fastmcp``) can still
+propagate trace context across MCP boundaries.
+
 Example usage with SDK:
     ```python
     from opentelemetry import trace
@@ -21,18 +30,35 @@ Example usage with SDK:
     ```
 """
 
+import os
 from typing import Any
 
 from opentelemetry import context as otel_context
 from opentelemetry import propagate, trace
 from opentelemetry.context import Context
-from opentelemetry.trace import Span, Status, StatusCode, Tracer
+from opentelemetry.trace import INVALID_SPAN, Span, Status, StatusCode, Tracer
 from opentelemetry.trace import get_tracer as otel_get_tracer
 
 INSTRUMENTATION_NAME = "fastmcp"
 
 TRACE_PARENT_KEY = "traceparent"
 TRACE_STATE_KEY = "tracestate"
+
+
+def is_telemetry_opted_out() -> bool:
+    """Check if FastMCP native telemetry span creation is disabled.
+
+    Returns True when ``FASTMCP_TELEMETRY_OPT_OUT`` is set to a truthy
+    value (``yes``, ``true``, ``1`` — case-insensitive).
+
+    When opted out, span-creating helpers become no-ops while context
+    propagation (inject/extract) continues to work normally.
+    """
+    return os.environ.get("FASTMCP_TELEMETRY_OPT_OUT", "").strip().lower() in (
+        "yes",
+        "true",
+        "1",
+    )
 
 
 def get_tracer(version: str | None = None) -> Tracer:
@@ -113,10 +139,12 @@ def extract_trace_context(meta: dict[str, Any] | None) -> Context:
 
 __all__ = [
     "INSTRUMENTATION_NAME",
+    "INVALID_SPAN",
     "TRACE_PARENT_KEY",
     "TRACE_STATE_KEY",
     "extract_trace_context",
     "get_tracer",
     "inject_trace_context",
+    "is_telemetry_opted_out",
     "record_span_error",
 ]
