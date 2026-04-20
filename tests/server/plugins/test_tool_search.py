@@ -119,9 +119,9 @@ class TestSearchPluginConfigValidation:
 
     def test_default_meta_name_and_version(self):
         """ToolSearch relies on Plugin's auto-derived meta: kebab-cased
-        class name, default version `0.1.0`."""
+        class name, no independent version (bundled first-party plugin)."""
         assert ToolSearch.meta.name == "tool-search"
-        assert ToolSearch.meta.version == "0.1.0"
+        assert ToolSearch.meta.version is None
 
 
 class TestDeprecationShim:

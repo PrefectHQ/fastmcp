@@ -68,9 +68,10 @@ class ToolSearch(Plugin[ToolSearchConfig]):
     """
 
     # `meta` is intentionally omitted: the auto-derived default
-    # (`name="tool-search"`, `version="0.1.0"`) is appropriate for a
-    # bundled first-party plugin. Declare `meta` explicitly if/when we
-    # publish this as its own PyPI package.
+    # (`name="tool-search"`, `version=None`) is appropriate for a
+    # bundled first-party plugin with no independent release cadence.
+    # Declare `meta` explicitly (or use `PluginMeta.from_package(...)`)
+    # if/when we publish this as its own PyPI package.
 
     def transforms(self) -> list[Transform]:
         cls = (
