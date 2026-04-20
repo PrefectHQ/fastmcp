@@ -1,0 +1,186 @@
+---
+title: Azure AD B2C OAuth 🤝 FastMCP
+sidebarTitle: Azure AD B2C
+description: Secure your FastMCP server with Azure AD B2C consumer identity
+icon: microsoft
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="3.3.0" />
+
+This guide shows you how to secure your FastMCP server using **Azure AD B2C**
+(Business-to-Consumer), Microsoft's consumer identity service for external
+users such as customers and partners.
+
+Azure AD B2C uses a different set of endpoints, scope URIs, and token issuers
+than standard Microsoft Entra ID. `AzureB2CProvider` handles all of these
+differences automatically; all other OAuth Proxy behaviour (PKCE, consent
+page, token storage, On-Behalf-Of) is inherited from
+[`AzureProvider`](/integrations/azure).
+
+<Note>
+If you are securing an MCP server for **internal employees** using your
+corporate Entra ID directory, use [`AzureProvider`](/integrations/azure)
+instead.
+</Note>
+
+## Configuration
+
+### Prerequisites
+
+Before you begin you will need:
+
+1. An **Azure account** with a B2C tenant
+   ([create one](https://learn.microsoft.com/en-us/azure/active-directory-b2c/tutorial-create-tenant))
+2. A **user flow** or **custom policy** (e.g. `B2C_1_susi`) defined in the tenant
+3. Your FastMCP server's public URL (can be `http://localhost:8000` for development)
+
+### Step 1: Create a B2C App Registration
+
+<Steps>
+<Step title="Navigate to App registrations">
+    Open the [Azure Portal](https://portal.azure.com), select your B2C tenant,
+    and navigate to **Azure AD B2C → App registrations**.
+
+    Click **"New registration"**.
+</Step>
+
+<Step title="Configure the application">
+    Fill in the application details:
+
+    - **Name**: Choose a name (e.g. "My FastMCP Server")
+    - **Supported account types**: *Accounts in any identity provider or organizational directory*
+    - **Redirect URI**: Select "Web" and enter your server URL + `/auth/callback`
+      (e.g. `http://localhost:8000/auth/callback`)
+
+    <Warning>
+    The redirect URI must match exactly what you configure in `AzureB2CProvider`.
+    The default path is `/auth/callback`, but you can override it with `redirect_path`.
+    For local development B2C allows `http://localhost` URLs; production must use HTTPS.
+    </Warning>
+</Step>
+
+<Step title="Expose an API and add a scope">
+    - Under the app's sidebar, click **Expose an API**.
+    - Click **Set** next to "Application ID URI". B2C uses the format
+      `https://{tenant}.onmicrosoft.com/{client_id}` — the portal may pre-fill this.
+    - Click **Add a scope** and create a scope your server will require, e.g.:
+        - Scope name: `mcp-access`
+        - Admin consent display name: *MCP server access*
+        - Who can consent: *Admins and users*
+</Step>
+
+<Step title="Create a client secret">
+    - Click **Certificates & secrets → New client secret**.
+    - Copy the **Value** (shown only once).
+</Step>
+
+<Step title="Collect your credentials">
+    You need:
+
+    - **Application (client) ID** — from the app's Overview page
+    - **Client secret** — created in the previous step
+    - **Tenant name** — the short prefix before `.onmicrosoft.com`
+      (e.g. `mytenant` for `mytenant.onmicrosoft.com`)
+    - **Policy name** — your user flow or custom policy (e.g. `B2C_1_susi`)
+</Step>
+</Steps>
+
+### Step 2: Configure `AzureB2CProvider`
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.azure_b2c import AzureB2CProvider
+
+auth = AzureB2CProvider(
+    tenant_name="mytenant",       # Short tenant name, without .onmicrosoft.com
+    policy_name="B2C_1_susi",    # User flow or custom policy name
+    client_id="00000000-...",
+    client_secret="my-secret",
+    required_scopes=["mcp-access"],
+    base_url="https://myserver.com",
+)
+
+mcp = FastMCP("My App", auth=auth)
+```
+
+`AzureB2CProvider` derives the following values automatically:
+
+| Derived value | Formula |
+|---|---|
+| Authority host | `{tenant_name}.b2clogin.com` |
+| Authorization endpoint | `https://{tenant_name}.b2clogin.com/{tenant_name}.onmicrosoft.com/{policy_name}/oauth2/v2.0/authorize` |
+| Token endpoint | `https://{tenant_name}.b2clogin.com/{tenant_name}.onmicrosoft.com/{policy_name}/oauth2/v2.0/token` |
+| Scope identifier URI | `https://{tenant_name}.onmicrosoft.com/{client_id}` |
+
+### Step 3: Run the server
+
+```bash
+fastmcp run server.py:mcp --transport streamable-http --port 8000
+```
+
+Point your MCP client to `http://localhost:8000/mcp`.
+
+## Token Issuer Validation
+
+B2C access tokens carry the **tenant GUID** (not the `.onmicrosoft.com` name)
+in the `iss` claim, and the exact format varies by policy and custom-domain
+configuration. `AzureB2CProvider` therefore **disables issuer validation by
+default**; **audience validation still enforces that tokens target the correct
+application**.
+
+Once you have confirmed a successful end-to-end login, read the actual `iss`
+value from the decoded claims and enable strict validation:
+
+```python
+auth = AzureB2CProvider(
+    tenant_name="mytenant",
+    policy_name="B2C_1_susi",
+    client_id="00000000-...",
+    client_secret="my-secret",
+    required_scopes=["mcp-access"],
+    base_url="https://myserver.com",
+    # Lock in the exact issuer value from a real B2C token
+    token_issuer="https://mytenant.b2clogin.com/11111111-2222-3333-4444-555555555555/v2.0/",
+)
+```
+
+## Custom Domains
+
+If your B2C tenant uses a [custom domain](https://learn.microsoft.com/en-us/azure/active-directory-b2c/custom-domain)
+(e.g. `auth.mycompany.com` instead of `mytenant.b2clogin.com`), pass it via
+`custom_domain`:
+
+```python
+auth = AzureB2CProvider(
+    tenant_name="mytenant",
+    policy_name="B2C_1_susi",
+    client_id="00000000-...",
+    client_secret="my-secret",
+    required_scopes=["mcp-access"],
+    base_url="https://myserver.com",
+    custom_domain="auth.mycompany.com",
+)
+```
+
+## Multiple Policies
+
+Use a separate `AzureB2CProvider` instance for each user flow that requires
+distinct token validation (e.g. sign-up/sign-in vs. password reset):
+
+```python
+susi_auth = AzureB2CProvider(
+    tenant_name="mytenant",
+    policy_name="B2C_1_susi",
+    ...
+)
+
+# Mount the SUSI flow under /mcp; handle the password-reset flow separately
+mcp = FastMCP("My App", auth=susi_auth)
+```
+
+## Reference
+
+See the [API reference](/python-sdk/fastmcp-server-auth-providers-azure_b2c)
+for the full parameter list.
