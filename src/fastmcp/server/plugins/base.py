@@ -381,11 +381,12 @@ class Plugin(Generic[C]):
     """
 
     meta: ClassVar[PluginMeta]
-    """Class-level metadata. Auto-derived from the class name and a
-    placeholder version if the subclass doesn't declare one — fine for
-    in-code use. Declare `meta = PluginMeta(...)` (or
-    `PluginMeta.from_package(...)`) explicitly when publishing or when
-    Horizon/registry-facing metadata matters.
+    """Class-level metadata. Auto-derived from the class name with no
+    independent version if the subclass doesn't declare one — the
+    honest default for bundled first-party plugins. Declare `meta`
+    explicitly (or use `PluginMeta.from_package(...)`) when publishing
+    as a separate package or when Horizon/registry-facing metadata
+    matters.
     """
 
     _config_cls: ClassVar[type[BaseModel]] = _EmptyConfig
