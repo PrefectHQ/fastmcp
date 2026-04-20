@@ -14,11 +14,11 @@ Run with:
 """
 
 from fastmcp import FastMCP
-from fastmcp.server.plugins.search import Search, SearchConfig
+from fastmcp.server.plugins.tool_search import ToolSearch, ToolSearchConfig
 
 mcp = FastMCP(
     "Regex Search Demo",
-    plugins=[Search(SearchConfig(strategy="regex", max_results=3))],
+    plugins=[ToolSearch(ToolSearchConfig(strategy="regex", max_results=3))],
 )
 
 

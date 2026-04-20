@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from typing import Annotated, Any
 
 from fastmcp.server.context import Context
-from fastmcp.server.plugins.search.base import (
+from fastmcp.server.plugins.tool_search.base import (
     BaseSearchTransform,
     _extract_searchable_text,
 )

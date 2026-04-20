@@ -15,11 +15,13 @@ Run with:
 import os
 
 from fastmcp import FastMCP
-from fastmcp.server.plugins.search import Search, SearchConfig
+from fastmcp.server.plugins.tool_search import ToolSearch, ToolSearchConfig
 
 mcp = FastMCP(
     "BM25 Search Demo",
-    plugins=[Search(SearchConfig(max_results=5, always_visible=["list_files"]))],
+    plugins=[
+        ToolSearch(ToolSearchConfig(max_results=5, always_visible=["list_files"]))
+    ],
 )
 
 

@@ -1,7 +1,7 @@
-"""Deprecated shim. See ``fastmcp.server.plugins.search.base``."""
+"""Deprecated shim. See ``fastmcp.server.plugins.tool_search.base``."""
 
-from fastmcp.server.plugins.search.base import *  # noqa: F403
-from fastmcp.server.plugins.search.base import (  # noqa: F401
+from fastmcp.server.plugins.tool_search.base import *  # noqa: F403
+from fastmcp.server.plugins.tool_search.base import (  # noqa: F401
     BaseSearchTransform,
     SearchResultSerializer,
     _extract_searchable_text,

@@ -1,3 +1,3 @@
-"""Deprecated shim. See ``fastmcp.server.plugins.search.regex``."""
+"""Deprecated shim. See ``fastmcp.server.plugins.tool_search.regex``."""
 
-from fastmcp.server.plugins.search.regex import RegexSearchTransform  # noqa: F401
+from fastmcp.server.plugins.tool_search.regex import RegexSearchTransform  # noqa: F401

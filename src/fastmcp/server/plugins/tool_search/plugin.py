@@ -1,4 +1,4 @@
-"""Search plugin: catalog-search-as-a-plugin.
+"""ToolSearch plugin: catalog-search-as-a-plugin.
 
 Wraps a `BaseSearchTransform` implementation (BM25 or regex) and
 contributes it via the plugin `transforms()` hook. The transform
@@ -12,14 +12,14 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from fastmcp.server.plugins.base import Plugin, PluginMeta
-from fastmcp.server.plugins.search.bm25 import BM25SearchTransform
-from fastmcp.server.plugins.search.regex import RegexSearchTransform
+from fastmcp.server.plugins.base import Plugin
+from fastmcp.server.plugins.tool_search.bm25 import BM25SearchTransform
+from fastmcp.server.plugins.tool_search.regex import RegexSearchTransform
 from fastmcp.server.transforms import Transform
 
 
-class SearchConfig(BaseModel):
-    """Config model for the `Search` plugin."""
+class ToolSearchConfig(BaseModel):
+    """Config model for the `ToolSearch` plugin."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -41,7 +41,7 @@ class SearchConfig(BaseModel):
     """Name of the generated call-tool proxy."""
 
 
-class Search(Plugin[SearchConfig]):
+class ToolSearch(Plugin[ToolSearchConfig]):
     """Collapse the tool catalog behind a search interface.
 
     With the plugin active, `list_tools()` returns only a pinned set
@@ -51,31 +51,32 @@ class Search(Plugin[SearchConfig]):
     Example:
         ```python
         from fastmcp import FastMCP
-        from fastmcp.server.plugins.search import Search, SearchConfig
+        from fastmcp.server.plugins.tool_search import ToolSearch, ToolSearchConfig
 
         # Default config:
-        mcp = FastMCP("Server", plugins=[Search()])
+        mcp = FastMCP("Server", plugins=[ToolSearch()])
 
         # Typed config (IDE completion + static validation):
         mcp = FastMCP(
             "Server",
-            plugins=[Search(SearchConfig(strategy="regex", always_visible=["help"]))],
+            plugins=[ToolSearch(ToolSearchConfig(strategy="regex", always_visible=["help"]))],
         )
 
         # Dict config (useful for loading from JSON/YAML):
-        mcp = FastMCP("Server", plugins=[Search({"strategy": "regex"})])
+        mcp = FastMCP("Server", plugins=[ToolSearch({"strategy": "regex"})])
         ```
     """
 
-    meta = PluginMeta(
-        name="search",
-        version="0.1.0",
-        description="Catalog search: replace list_tools output with a search interface.",
-    )
+    # `meta` is intentionally omitted: the auto-derived default
+    # (`name="tool-search"`, `version="0.1.0"`) is appropriate for a
+    # bundled first-party plugin. Declare `meta` explicitly if/when we
+    # publish this as its own PyPI package.
 
     def transforms(self) -> list[Transform]:
         cls = (
-            BM25SearchTransform if self.config.strategy == "bm25" else RegexSearchTransform
+            BM25SearchTransform
+            if self.config.strategy == "bm25"
+            else RegexSearchTransform
         )
         return [
             cls(

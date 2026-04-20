@@ -13,12 +13,12 @@ from mcp.types import TextContent
 from fastmcp import Client, FastMCP
 from fastmcp.server.context import Context
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.server.plugins.search.bm25 import (
+from fastmcp.server.plugins.tool_search.bm25 import (
     BM25SearchTransform,
     _BM25Index,
     _catalog_hash,
 )
-from fastmcp.server.plugins.search.regex import RegexSearchTransform
+from fastmcp.server.plugins.tool_search.regex import RegexSearchTransform
 from fastmcp.server.transforms import Visibility
 from fastmcp.tools.base import Tool, ToolResult
 
