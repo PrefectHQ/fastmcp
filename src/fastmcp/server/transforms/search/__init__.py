@@ -9,11 +9,15 @@ The preferred API is now the `ToolSearch` plugin:
 
 Transform classes remain importable from their new location
 (`fastmcp.server.plugins.tool_search.{bm25,regex,base}`) for advanced
-composition. This old path issues a `DeprecationWarning` on import.
+composition. This old path issues a `FastMCPDeprecationWarning` on
+import — a `DeprecationWarning` subclass that fastmcp enables by
+default (plain `DeprecationWarning` is suppressed by CPython's default
+filter, so users wouldn't see the notice).
 """
 
 import warnings
 
+from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.plugins.tool_search.base import (
     BaseSearchTransform,
     SearchResultSerializer,
@@ -28,7 +32,7 @@ warnings.warn(
     "fastmcp.server.plugins.tool_search. Prefer the ToolSearch plugin: "
     "`from fastmcp.server.plugins.tool_search import ToolSearch`. The old "
     "import path will be removed in a future release.",
-    DeprecationWarning,
+    FastMCPDeprecationWarning,
     stacklevel=2,
 )
 

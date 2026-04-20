@@ -86,8 +86,16 @@ class TestSearchPluginRegistration:
         async with Client(mcp) as c:
             tools = await c.list_tools()
             names = {t.name for t in tools}
+            by_name = {t.name: t for t in tools}
 
         assert names == {"find", "invoke"}
+        # The call-tool proxy's description must reference the actual
+        # configured search-tool name, not the hardcoded "search_tools"
+        # default — otherwise LLMs see misleading guidance pointing at
+        # a tool that doesn't exist under the user's rename.
+        assert by_name["invoke"].description is not None
+        assert "find" in by_name["invoke"].description
+        assert "search_tools" not in by_name["invoke"].description
 
     async def test_search_binds_searchconfig_via_generic_parameter(self):
         """`Plugin[ToolSearchConfig]` makes ToolSearchConfig the validated config type."""
@@ -132,6 +140,8 @@ class TestDeprecationShim:
         import importlib
         import sys
 
+        from fastmcp.exceptions import FastMCPDeprecationWarning
+
         sys.modules.pop("fastmcp.server.transforms.search", None)
         sys.modules.pop("fastmcp.server.transforms.search.base", None)
         sys.modules.pop("fastmcp.server.transforms.search.bm25", None)
@@ -141,9 +151,17 @@ class TestDeprecationShim:
             warnings.simplefilter("always")
             importlib.import_module("fastmcp.server.transforms.search")
 
-        deprecations = [w for w in caught if issubclass(w.category, DeprecationWarning)]
-        assert any("plugins.tool_search" in str(w.message) for w in deprecations), (
-            f"expected deprecation pointing at plugins.tool_search, got {[str(w.message) for w in deprecations]}"
+        # Must be FastMCPDeprecationWarning specifically — fastmcp installs a
+        # filter that surfaces that subclass even when the base
+        # DeprecationWarning is suppressed by CPython's default filter.
+        fastmcp_deprecations = [
+            w for w in caught if issubclass(w.category, FastMCPDeprecationWarning)
+        ]
+        assert any(
+            "plugins.tool_search" in str(w.message) for w in fastmcp_deprecations
+        ), (
+            f"expected FastMCPDeprecationWarning pointing at plugins.tool_search, "
+            f"got {[(w.category.__name__, str(w.message)) for w in caught]}"
         )
 
     def test_old_submodule_imports_still_resolve(self):

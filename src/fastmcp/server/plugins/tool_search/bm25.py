@@ -78,16 +78,24 @@ class _BM25Index:
 
 
 def _catalog_hash(tools: Sequence[Tool]) -> str:
-    """SHA256 hash of sorted tool searchable text for staleness detection."""
-    key = "|".join(sorted(_extract_searchable_text(t) for t in tools))
-    return hashlib.sha256(key.encode()).hexdigest()
+    """SHA256 hash of sorted tool searchable text for staleness detection.
+
+    Each tool's searchable text is hashed individually before being joined,
+    so the output is collision-resistant even when tool descriptions
+    contain the separator character.
+    """
+    per_tool = sorted(
+        hashlib.sha256(_extract_searchable_text(t).encode()).hexdigest() for t in tools
+    )
+    return hashlib.sha256("|".join(per_tool).encode()).hexdigest()
 
 
 class BM25SearchTransform(BaseSearchTransform):
     """Search transform using BM25 Okapi relevance ranking.
 
     Maintains an in-memory index that is lazily rebuilt when the tool
-    catalog changes (detected via a hash of tool names).
+    catalog changes — detected via a hash of each tool's searchable text
+    (name, description, and parameter names/descriptions combined).
     """
 
     def __init__(

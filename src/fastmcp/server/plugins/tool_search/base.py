@@ -4,7 +4,7 @@ Search transforms replace ``list_tools()`` output with a small set of
 synthetic tools — a search tool and a call-tool proxy — so LLMs can
 discover tools on demand instead of receiving the full catalog.
 
-These classes are the implementation layer of the ``Search`` plugin.
+These classes are the implementation layer of the ``ToolSearch`` plugin.
 Typical usage is via the plugin:
 
     from fastmcp import FastMCP
@@ -213,6 +213,8 @@ class BaseSearchTransform(CatalogTransform):
     def _make_call_tool(self) -> Tool:
         """Create the call_tool proxy that executes discovered tools."""
         transform = self
+        search_name = self._search_tool_name
+        call_name = self._call_tool_name
 
         async def call_tool(
             name: Annotated[str, "The name of the tool to call"],
@@ -221,17 +223,21 @@ class BaseSearchTransform(CatalogTransform):
             ] = None,
             ctx: Context = None,  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
         ) -> ToolResult:
-            """Call a tool by name with the given arguments.
-
-            Use this to execute tools discovered via search_tools.
-            """
             if name in {transform._call_tool_name, transform._search_tool_name}:
                 raise ValueError(
-                    f"'{name}' is a synthetic search tool and cannot be called via the call_tool proxy"
+                    f"{name!r} is a synthetic search tool and cannot be "
+                    f"called via the {call_name!r} proxy"
                 )
             return await ctx.fastmcp.call_tool(name, arguments)
 
-        return Tool.from_function(fn=call_tool, name=self._call_tool_name)
+        return Tool.from_function(
+            fn=call_tool,
+            name=call_name,
+            description=(
+                f"Call a tool by name with the given arguments. "
+                f"Use this to execute tools discovered via {search_name!r}."
+            ),
+        )
 
     # ------------------------------------------------------------------
     # Serialization
