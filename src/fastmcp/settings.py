@@ -20,6 +20,7 @@ logger = get_logger(__name__)
 ENV_FILE = os.getenv("FASTMCP_ENV_FILE", ".env")
 
 LOG_LEVEL = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+TELEMETRY_MODE = Literal["native", "propagation_only"]
 
 MCP_LOG_LEVEL = Literal[
     "debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"
@@ -238,6 +239,23 @@ class Settings(BaseSettings):
             ),
         ),
     ] = True
+
+    telemetry_mode: Annotated[
+        TELEMETRY_MODE,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Controls FastMCP's native OpenTelemetry span creation.
+
+                - ``native`` (default): FastMCP creates MCP spans and propagates
+                  trace context in request ``_meta``.
+                - ``propagation_only``: FastMCP still injects/extracts trace
+                  context, but does not create its own MCP spans. Use this when
+                  another instrumentation layer owns the MCP span hierarchy.
+                """
+            ),
+        ),
+    ] = "native"
 
     client_init_timeout: Annotated[
         float | None,
