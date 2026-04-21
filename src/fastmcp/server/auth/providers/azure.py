@@ -201,6 +201,7 @@ class AzureProvider(OAuthProxy):
         # to avoid redundant OBO exchanges for the same user + scopes.
         self._obo_credentials: OrderedDict[str, OnBehalfOfCredential] = OrderedDict()
         self._obo_max_credentials: int = 128
+        self._obo_supported = True
 
         # Apply defaults
         self.identifier_uri = identifier_uri or f"api://{client_id}"
@@ -351,6 +352,7 @@ class AzureProvider(OAuthProxy):
             **kwargs,
         )
         provider._token_validator.issuer = token_issuer  # type: ignore[union-attr]
+        provider._obo_supported = False
         return provider
 
     async def authorize(
@@ -593,8 +595,14 @@ class AzureProvider(OAuthProxy):
             A configured OnBehalfOfCredential ready for get_token() calls.
 
         Raises:
+            NotImplementedError: If OBO is not supported (e.g. Azure AD B2C).
             ImportError: If azure-identity is not installed (requires fastmcp[azure]).
         """
+        if not self._obo_supported:
+            raise NotImplementedError(
+                "Azure AD B2C does not support the On-Behalf-Of (OBO) flow. "
+                "Use AzureProvider with standard Entra ID for OBO scenarios."
+            )
         _require_azure_identity("OBO token exchange")
         from azure.identity.aio import OnBehalfOfCredential
 

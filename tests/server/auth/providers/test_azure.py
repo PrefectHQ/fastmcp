@@ -1142,6 +1142,22 @@ class TestAzureProviderFromB2C:
         result = await verifier.load_access_token(token)
         assert result is None
 
+    async def test_b2c_obo_raises_not_implemented(self, memory_storage: MemoryStore):
+        """from_b2c() providers must reject OBO calls with NotImplementedError."""
+        provider = AzureProvider.from_b2c(
+            tenant_name="mytenant",
+            policy_name="B2C_1_susi",
+            client_id="client-id",
+            client_secret="secret",
+            required_scopes=["mcp-access"],
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        with pytest.raises(NotImplementedError, match="OBO"):
+            await provider.get_obo_credential(user_assertion="fake-token")
+
 
 class TestAzureProviderFromB2CInputValidation:
     """Input validation for from_b2c() parameters."""
