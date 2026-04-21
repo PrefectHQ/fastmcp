@@ -25,13 +25,10 @@ import httpx
 
 from fastmcp.server.auth.providers.azure import OIDC_SCOPES, AzureProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
     from key_value.aio.protocols import AsyncKeyValue
     from pydantic import AnyHttpUrl
-
-logger = get_logger(__name__)
 
 
 class AzureB2CProvider(AzureProvider):
