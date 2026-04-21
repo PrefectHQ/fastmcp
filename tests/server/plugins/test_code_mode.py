@@ -7,15 +7,15 @@ from mcp.types import ImageContent, TextContent
 
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
-from fastmcp.experimental.transforms.code_mode import (
-    CodeMode,
+from fastmcp.server.context import Context
+from fastmcp.server.plugins.code_mode import (
     GetSchemas,
     GetToolCatalog,
     MontySandboxProvider,
     Search,
-    _ensure_async,
 )
-from fastmcp.server.context import Context
+from fastmcp.server.plugins.code_mode.sandbox import _ensure_async
+from fastmcp.server.plugins.code_mode.transform import CodeModeTransform
 from fastmcp.tools.base import Tool, ToolResult
 
 
@@ -105,7 +105,7 @@ async def test_code_mode_default_tools() -> None:
     def ping() -> str:
         return "pong"
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     listed_tools = await mcp.list_tools(run_middleware=False)
     assert {tool.name for tool in listed_tools} == {"search", "get_schema", "execute"}
@@ -125,7 +125,7 @@ async def test_code_mode_search_returns_lightweight_results() -> None:
         """Say hello to someone."""
         return f"Hello, {name}!"
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(mcp, "search", {"query": "square number"})
     text = _unwrap_string_result(result)
@@ -144,7 +144,7 @@ async def test_code_mode_get_schema_brief() -> None:
         """Compute the square of a number."""
         return x * x
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(
         mcp, "get_schema", {"tools": ["square"], "detail": "brief"}
@@ -165,7 +165,7 @@ async def test_code_mode_get_schema_detailed() -> None:
         """Compute the square of a number."""
         return x * x
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(
         mcp, "get_schema", {"tools": ["square"], "detail": "detailed"}
@@ -186,7 +186,7 @@ async def test_code_mode_get_schema_full() -> None:
         """Compute the square of a number."""
         return x * x
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(mcp, "get_schema", {"tools": ["square"], "detail": "full"})
     text = _unwrap_string_result(result)
@@ -205,7 +205,7 @@ async def test_code_mode_get_schema_default_is_detailed() -> None:
         """Compute the square of a number."""
         return x * x
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(mcp, "get_schema", {"tools": ["square"]})
     text = _unwrap_string_result(result)
@@ -221,7 +221,7 @@ async def test_code_mode_get_schema_not_found() -> None:
     def ping() -> str:
         return "pong"
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(mcp, "get_schema", {"tools": ["nonexistent"]})
     text = _unwrap_string_result(result)
@@ -238,7 +238,7 @@ async def test_code_mode_get_schema_partial_match() -> None:
         """Compute the square."""
         return x * x
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(mcp, "get_schema", {"tools": ["square", "nonexistent"]})
     text = _unwrap_string_result(result)
@@ -254,7 +254,7 @@ async def test_code_mode_execute_works() -> None:
     def add(x: int, y: int) -> int:
         return x + y
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(
         mcp, "execute", {"code": "return await call_tool('add', {'x': 2, 'y': 3})"}
@@ -275,7 +275,7 @@ async def test_code_mode_custom_execute_name() -> None:
         return "pong"
 
     mcp.add_transform(
-        CodeMode(
+        CodeModeTransform(
             sandbox_provider=_UnsafeTestSandboxProvider(),
             execute_tool_name="run_code",
         )
@@ -295,7 +295,7 @@ async def test_code_mode_custom_execute_description() -> None:
         return "pong"
 
     mcp.add_transform(
-        CodeMode(
+        CodeModeTransform(
             sandbox_provider=_UnsafeTestSandboxProvider(),
             execute_description="Custom execute description",
         )
@@ -313,7 +313,7 @@ async def test_code_mode_default_execute_description() -> None:
     def ping() -> str:
         return "pong"
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     listed = await mcp.list_tools(run_middleware=False)
     by_name = {t.name: t for t in listed}
@@ -341,7 +341,7 @@ async def test_code_mode_no_discovery_tools() -> None:
         return "pong"
 
     mcp.add_transform(
-        CodeMode(
+        CodeModeTransform(
             discovery_tools=[],
             sandbox_provider=_UnsafeTestSandboxProvider(),
         )
@@ -371,7 +371,7 @@ async def test_code_mode_custom_discovery_tool_function() -> None:
         return Tool.from_function(fn=list_tools, name="list_all")
 
     mcp.add_transform(
-        CodeMode(
+        CodeModeTransform(
             discovery_tools=[list_all],
             sandbox_provider=_UnsafeTestSandboxProvider(),
         )
@@ -394,7 +394,7 @@ async def test_code_mode_search_detailed() -> None:
         """Compute the square."""
         return x * x
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(mcp, "search", {"query": "square", "detail": "detailed"})
     text = _unwrap_string_result(result)
@@ -414,7 +414,7 @@ async def test_code_mode_search_tool_full_detail() -> None:
         return x * x
 
     mcp.add_transform(
-        CodeMode(
+        CodeModeTransform(
             discovery_tools=[Search(default_detail="full")],
             sandbox_provider=_UnsafeTestSandboxProvider(),
         )
@@ -437,7 +437,7 @@ async def test_code_mode_custom_search_tool_name() -> None:
         return "pong"
 
     mcp.add_transform(
-        CodeMode(
+        CodeModeTransform(
             discovery_tools=[
                 Search(name="find"),
                 GetSchemas(name="describe"),
@@ -452,7 +452,7 @@ async def test_code_mode_custom_search_tool_name() -> None:
 
 def test_code_mode_rejects_discovery_execute_name_collision() -> None:
     """CodeMode raises ValueError when a discovery tool collides with execute."""
-    cm = CodeMode(
+    cm = CodeModeTransform(
         discovery_tools=[Search(name="execute")],
         sandbox_provider=_UnsafeTestSandboxProvider(),
     )
@@ -462,7 +462,7 @@ def test_code_mode_rejects_discovery_execute_name_collision() -> None:
 
 def test_code_mode_rejects_duplicate_discovery_names() -> None:
     """CodeMode raises ValueError when discovery tools have duplicate names."""
-    cm = CodeMode(
+    cm = CodeModeTransform(
         discovery_tools=[Search(name="search"), Search(name="search")],
         sandbox_provider=_UnsafeTestSandboxProvider(),
     )
@@ -483,7 +483,7 @@ async def test_code_mode_execute_respects_disabled_tool_visibility() -> None:
         return "nope"
 
     mcp.disable(names={"secret"}, components={"tool"})
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     with pytest.raises(ToolError, match=r"Unknown tool"):
         await _run_tool(
@@ -500,7 +500,7 @@ async def test_code_mode_search_respects_disabled_tool_visibility() -> None:
         return "nope"
 
     mcp.disable(names={"secret"}, components={"tool"})
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(mcp, "search", {"query": "secret"})
     text = _unwrap_string_result(result)
@@ -521,7 +521,7 @@ async def test_code_mode_execute_sees_mid_run_visibility_changes() -> None:
         return "secret-ok"
 
     mcp.disable(names={"secret"}, components={"tool"})
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     async with Client(mcp) as client:
         result = await client.call_tool(
@@ -540,7 +540,7 @@ async def test_code_mode_execute_respects_tool_auth() -> None:
     def protected() -> str:
         return "nope"
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     with pytest.raises(ToolError, match=r"Unknown tool"):
         await _run_tool(
@@ -556,7 +556,7 @@ async def test_code_mode_search_respects_tool_auth() -> None:
         """A protected tool."""
         return "nope"
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(mcp, "search", {"query": "protected"})
     text = _unwrap_string_result(result)
@@ -575,7 +575,7 @@ async def test_code_mode_shadows_colliding_tool_names() -> None:
     def ping() -> str:
         return "pong"
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     tools = await mcp.list_tools(run_middleware=False)
     tool_names = {t.name for t in tools}
@@ -600,7 +600,7 @@ async def test_code_mode_get_tool_returns_meta_tools_and_passes_through() -> Non
     def ping() -> str:
         return "pong"
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     search_tool = await mcp.get_tool("search")
     assert search_tool is not None
@@ -631,7 +631,7 @@ async def test_code_mode_execute_non_text_content_stringified() -> None:
     def image_tool() -> ImageContent:
         return ImageContent(type="image", data="base64data", mimeType="image/png")
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(
         mcp, "execute", {"code": "return await call_tool('image_tool', {})"}
@@ -653,7 +653,7 @@ async def test_code_mode_execute_multi_tool_chaining() -> None:
     def add_one(x: int) -> int:
         return x + 1
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(
         mcp,
@@ -676,7 +676,7 @@ async def test_code_mode_sandbox_error_surfaces_as_tool_error() -> None:
     def ping() -> str:
         return "pong"
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     with pytest.raises(ToolError):
         await _run_tool(mcp, "execute", {"code": "raise ValueError('boom')"})

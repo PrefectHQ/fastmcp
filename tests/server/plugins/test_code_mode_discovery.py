@@ -4,13 +4,13 @@ from typing import Any
 from mcp.types import TextContent
 
 from fastmcp import FastMCP
-from fastmcp.experimental.transforms.code_mode import (
-    CodeMode,
+from fastmcp.server.plugins.code_mode import (
     GetTags,
     ListTools,
     Search,
-    _ensure_async,
 )
+from fastmcp.server.plugins.code_mode.sandbox import _ensure_async
+from fastmcp.server.plugins.code_mode.transform import CodeModeTransform
 from fastmcp.tools.base import ToolResult
 
 
@@ -104,7 +104,7 @@ async def test_categories_brief_shows_tag_counts() -> None:
         return f"Hello, {name}!"
 
     mcp.add_transform(
-        CodeMode(
+        CodeModeTransform(
             discovery_tools=[GetTags()],
             sandbox_provider=_UnsafeTestSandboxProvider(),
         )
@@ -130,7 +130,7 @@ async def test_categories_full_lists_tools_per_tag() -> None:
         return f"Hello, {name}!"
 
     mcp.add_transform(
-        CodeMode(
+        CodeModeTransform(
             discovery_tools=[GetTags(default_detail="full")],
             sandbox_provider=_UnsafeTestSandboxProvider(),
         )
@@ -156,7 +156,7 @@ async def test_categories_includes_untagged() -> None:
         return "pong"
 
     mcp.add_transform(
-        CodeMode(
+        CodeModeTransform(
             discovery_tools=[GetTags()],
             sandbox_provider=_UnsafeTestSandboxProvider(),
         )
@@ -176,7 +176,7 @@ async def test_categories_tool_in_multiple_tags() -> None:
         return x + y
 
     mcp.add_transform(
-        CodeMode(
+        CodeModeTransform(
             discovery_tools=[GetTags(default_detail="full")],
             sandbox_provider=_UnsafeTestSandboxProvider(),
         )
@@ -200,7 +200,7 @@ async def test_categories_detail_override_per_call() -> None:
         return x + y
 
     mcp.add_transform(
-        CodeMode(
+        CodeModeTransform(
             discovery_tools=[GetTags()],  # default_detail="brief"
             sandbox_provider=_UnsafeTestSandboxProvider(),
         )
@@ -219,7 +219,7 @@ async def test_get_tags_empty_catalog() -> None:
 
     mcp.disable(names={"ping"}, components={"tool"})
     mcp.add_transform(
-        CodeMode(
+        CodeModeTransform(
             discovery_tools=[GetTags()],
             sandbox_provider=_UnsafeTestSandboxProvider(),
         )
@@ -248,7 +248,7 @@ async def test_search_with_tags_filter() -> None:
         """Say hello."""
         return f"Hello, {name}!"
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(mcp, "search", {"query": "add hello", "tags": ["math"]})
     text = _unwrap_string_result(result)
@@ -264,7 +264,7 @@ async def test_search_with_tags_filter_no_matches() -> None:
         """Add two numbers."""
         return x + y
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(mcp, "search", {"query": "add", "tags": ["nonexistent"]})
     text = _unwrap_string_result(result)
@@ -285,7 +285,7 @@ async def test_search_without_tags_returns_all() -> None:
         """Say hello."""
         return f"Hello, {name}!"
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(mcp, "search", {"query": "add hello"})
     text = _unwrap_string_result(result)
@@ -307,7 +307,7 @@ async def test_search_with_untagged_filter() -> None:
         """Ping."""
         return "pong"
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(mcp, "search", {"query": "ping add", "tags": ["untagged"]})
     text = _unwrap_string_result(result)
@@ -325,7 +325,7 @@ async def test_search_default_detail_detailed_skips_get_schema() -> None:
         return x * x
 
     mcp.add_transform(
-        CodeMode(
+        CodeModeTransform(
             discovery_tools=[Search(default_detail="detailed")],
             sandbox_provider=_UnsafeTestSandboxProvider(),
         )
@@ -346,7 +346,7 @@ async def test_search_full_detail_empty_results_returns_json() -> None:
     def add(x: int, y: int) -> int:
         return x + y
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(
         mcp,
@@ -366,7 +366,7 @@ async def test_get_schema_empty_tools_list() -> None:
     def ping() -> str:
         return "pong"
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(mcp, "get_schema", {"tools": []})
     text = _unwrap_string_result(result)
@@ -382,7 +382,7 @@ async def test_get_schema_full_partial_match_returns_valid_json() -> None:
         """Compute the square."""
         return x * x
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(
         mcp, "get_schema", {"tools": ["square", "nonexistent"], "detail": "full"}
@@ -418,7 +418,7 @@ async def test_search_shows_catalog_size_when_results_are_subset() -> None:
         """Say hello."""
         return f"Hello, {name}!"
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(mcp, "search", {"query": "add numbers"})
     text = _unwrap_string_result(result)
@@ -435,7 +435,7 @@ async def test_search_omits_annotation_when_all_tools_returned() -> None:
         """Add two numbers."""
         return x + y
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(mcp, "search", {"query": "add numbers"})
     text = _unwrap_string_result(result)
@@ -466,7 +466,7 @@ async def test_search_limit_caps_results() -> None:
         """Multiply numbers."""
         return x * y
 
-    mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
+    mcp.add_transform(CodeModeTransform(sandbox_provider=_UnsafeTestSandboxProvider()))
 
     result = await _run_tool(mcp, "search", {"query": "numbers", "limit": 1})
     text = _unwrap_string_result(result)
@@ -496,7 +496,7 @@ async def test_search_default_limit_from_constructor() -> None:
         return "c"
 
     mcp.add_transform(
-        CodeMode(
+        CodeModeTransform(
             discovery_tools=[Search(default_limit=2)],
             sandbox_provider=_UnsafeTestSandboxProvider(),
         )
@@ -527,7 +527,7 @@ async def test_list_tools_brief() -> None:
         return x * y
 
     mcp.add_transform(
-        CodeMode(
+        CodeModeTransform(
             discovery_tools=[ListTools()],
             sandbox_provider=_UnsafeTestSandboxProvider(),
         )
@@ -552,7 +552,7 @@ async def test_list_tools_detailed() -> None:
         return x * x
 
     mcp.add_transform(
-        CodeMode(
+        CodeModeTransform(
             discovery_tools=[ListTools(default_detail="detailed")],
             sandbox_provider=_UnsafeTestSandboxProvider(),
         )
@@ -575,7 +575,7 @@ async def test_list_tools_full_returns_json() -> None:
         return "pong"
 
     mcp.add_transform(
-        CodeMode(
+        CodeModeTransform(
             discovery_tools=[ListTools()],
             sandbox_provider=_UnsafeTestSandboxProvider(),
         )
@@ -593,7 +593,7 @@ async def test_list_tools_empty_catalog() -> None:
     mcp = FastMCP("ListTools Empty")
 
     mcp.add_transform(
-        CodeMode(
+        CodeModeTransform(
             discovery_tools=[ListTools()],
             sandbox_provider=_UnsafeTestSandboxProvider(),
         )

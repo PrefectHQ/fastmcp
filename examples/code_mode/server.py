@@ -1,4 +1,4 @@
-"""Example: CodeMode transform — search and execute tools via code.
+"""Example: CodeMode plugin — search and execute tools via code.
 
 CodeMode replaces the entire tool catalog with two meta-tools: `search`
 (keyword-based tool discovery) and `execute` (run Python code that chains
@@ -13,9 +13,9 @@ Run with:
 """
 
 from fastmcp import FastMCP
-from fastmcp.experimental.transforms.code_mode import CodeMode
+from fastmcp.server.plugins.code_mode import CodeMode
 
-mcp = FastMCP("CodeMode Demo")
+mcp = FastMCP("CodeMode Demo", plugins=[CodeMode()])
 
 
 @mcp.tool
@@ -74,10 +74,10 @@ def read_file(path: str) -> str:
         return f.read()
 
 
-# CodeMode collapses all 8 tools into just `search` + `execute`.
-# The LLM discovers tools via keyword search, then writes Python
-# scripts that chain multiple tool calls in a single round-trip.
-mcp.add_transform(CodeMode())
+# CodeMode (registered at construction above) collapses all 8 tools
+# into just `search` + `execute`. The LLM discovers tools via keyword
+# search, then writes Python scripts that chain multiple tool calls in
+# a single round-trip.
 
 
 if __name__ == "__main__":
