@@ -16,8 +16,14 @@ users such as customers and partners.
 Azure AD B2C uses a different set of endpoints, scope URIs, and token issuers
 than standard Microsoft Entra ID. `AzureB2CProvider` handles all of these
 differences automatically; all other OAuth Proxy behaviour (PKCE, consent
-page, token storage, On-Behalf-Of) is inherited from
+page, token storage) is inherited from
 [`AzureProvider`](/integrations/azure).
+
+<Warning>
+Azure AD B2C does **not** support the On-Behalf-Of (OBO) flow. If you need
+OBO for downstream API calls, use [`AzureProvider`](/integrations/azure) with
+standard Entra ID instead.
+</Warning>
 
 <Note>
 If you are securing an MCP server for **internal employees** using your
@@ -96,7 +102,7 @@ from fastmcp.server.auth.providers.azure_b2c import AzureB2CProvider
 auth = AzureB2CProvider(
     tenant_name="mytenant",       # Short tenant name, without .onmicrosoft.com
     policy_name="B2C_1_susi",    # User flow or custom policy name
-    client_id="00000000-...",
+    client_id="00000000-0000-0000-0000-000000000000",
     client_secret="my-secret",
     required_scopes=["mcp-access"],
     base_url="https://myserver.com",
@@ -137,7 +143,7 @@ value from the decoded claims and enable strict validation:
 auth = AzureB2CProvider(
     tenant_name="mytenant",
     policy_name="B2C_1_susi",
-    client_id="00000000-...",
+    client_id="00000000-0000-0000-0000-000000000000",
     client_secret="my-secret",
     required_scopes=["mcp-access"],
     base_url="https://myserver.com",
@@ -156,7 +162,7 @@ If your B2C tenant uses a [custom domain](https://learn.microsoft.com/en-us/azur
 auth = AzureB2CProvider(
     tenant_name="mytenant",
     policy_name="B2C_1_susi",
-    client_id="00000000-...",
+    client_id="00000000-0000-0000-0000-000000000000",
     client_secret="my-secret",
     required_scopes=["mcp-access"],
     base_url="https://myserver.com",
@@ -170,10 +176,16 @@ Use a separate `AzureB2CProvider` instance for each user flow that requires
 distinct token validation (e.g. sign-up/sign-in vs. password reset):
 
 ```python
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.azure_b2c import AzureB2CProvider
+
 susi_auth = AzureB2CProvider(
     tenant_name="mytenant",
     policy_name="B2C_1_susi",
-    ...
+    client_id="00000000-0000-0000-0000-000000000000",
+    client_secret="my-secret",
+    required_scopes=["mcp-access"],
+    base_url="https://myserver.com",
 )
 
 # Mount the SUSI flow under /mcp; handle the password-reset flow separately

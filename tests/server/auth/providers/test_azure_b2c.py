@@ -665,3 +665,154 @@ class TestAzureB2CAuthorizeFlow:
         # The api:// prefix must NOT appear
         assert "api%3A%2F%2F" not in upstream_url
         assert "api://" not in upstream_url
+
+
+class TestAzureB2CInputValidation:
+    """Input validation for tenant_name, policy_name, and custom_domain."""
+
+    @pytest.mark.parametrize(
+        "tenant_name",
+        [
+            "mytenant.onmicrosoft.com",
+            "my.onmicrosoft.com.tenant",
+        ],
+    )
+    def test_tenant_name_with_onmicrosoft_suffix_rejected(
+        self, memory_storage: MemoryStore, tenant_name: str
+    ) -> None:
+        """tenant_name containing .onmicrosoft.com must be rejected."""
+        with pytest.raises(ValueError, match="onmicrosoft.com"):
+            AzureB2CProvider(
+                tenant_name=tenant_name,
+                policy_name="B2C_1_susi",
+                client_id="client-id",
+                client_secret="secret",
+                required_scopes=["mcp-access"],
+                base_url="https://myserver.com",
+                jwt_signing_key="test-secret",
+                client_storage=memory_storage,
+            )
+
+    @pytest.mark.parametrize("tenant_name", ["my/tenant", "https://mytenant"])
+    def test_tenant_name_with_slashes_or_scheme_rejected(
+        self, memory_storage: MemoryStore, tenant_name: str
+    ) -> None:
+        """tenant_name with slashes or scheme must be rejected."""
+        with pytest.raises(ValueError, match="tenant_name"):
+            AzureB2CProvider(
+                tenant_name=tenant_name,
+                policy_name="B2C_1_susi",
+                client_id="client-id",
+                client_secret="secret",
+                required_scopes=["mcp-access"],
+                base_url="https://myserver.com",
+                jwt_signing_key="test-secret",
+                client_storage=memory_storage,
+            )
+
+    @pytest.mark.parametrize("policy_name", ["B2C/1_susi", "https://B2C_1_susi"])
+    def test_policy_name_with_slashes_or_scheme_rejected(
+        self, memory_storage: MemoryStore, policy_name: str
+    ) -> None:
+        """policy_name with slashes or scheme must be rejected."""
+        with pytest.raises(ValueError, match="policy_name"):
+            AzureB2CProvider(
+                tenant_name="mytenant",
+                policy_name=policy_name,
+                client_id="client-id",
+                client_secret="secret",
+                required_scopes=["mcp-access"],
+                base_url="https://myserver.com",
+                jwt_signing_key="test-secret",
+                client_storage=memory_storage,
+            )
+
+    def test_custom_domain_with_scheme_is_normalised(
+        self, memory_storage: MemoryStore
+    ) -> None:
+        """custom_domain with https:// prefix must be stripped and accepted."""
+        provider = AzureB2CProvider(
+            tenant_name="mytenant",
+            policy_name="B2C_1_susi",
+            client_id="client-id",
+            client_secret="secret",
+            required_scopes=["mcp-access"],
+            base_url="https://myserver.com",
+            custom_domain="https://auth.mycompany.com/",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert "auth.mycompany.com" in provider._upstream_authorization_endpoint
+        assert "https://https://" not in provider._upstream_authorization_endpoint
+
+
+class TestAzureB2CCustomIdentifierUri:
+    """Tests for the optional identifier_uri override."""
+
+    def test_custom_identifier_uri_overrides_default(
+        self, memory_storage: MemoryStore
+    ) -> None:
+        """An explicit identifier_uri must replace the derived B2C default."""
+        custom_uri = "https://mycompany.com/api/mcp"
+        provider = AzureB2CProvider(
+            tenant_name="mytenant",
+            policy_name="B2C_1_susi",
+            client_id="client-id",
+            client_secret="secret",
+            required_scopes=["mcp-access"],
+            base_url="https://myserver.com",
+            identifier_uri=custom_uri,
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert provider.identifier_uri == custom_uri
+
+    def test_custom_identifier_uri_used_in_scope_prefix(
+        self, memory_storage: MemoryStore
+    ) -> None:
+        """Scopes must be prefixed with the custom identifier_uri."""
+        custom_uri = "https://mycompany.com/api/mcp"
+        provider = AzureB2CProvider(
+            tenant_name="mytenant",
+            policy_name="B2C_1_susi",
+            client_id="client-id",
+            client_secret="secret",
+            required_scopes=["mcp-access"],
+            base_url="https://myserver.com",
+            identifier_uri=custom_uri,
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        result = provider._prefix_scopes_for_azure(["mcp-access"])
+        assert result == [f"{custom_uri}/mcp-access"]
+
+    def test_default_identifier_uri_when_not_provided(
+        self, memory_storage: MemoryStore
+    ) -> None:
+        """When identifier_uri is omitted the B2C default must be derived."""
+        provider = AzureB2CProvider(
+            tenant_name="mytenant",
+            policy_name="B2C_1_susi",
+            client_id="aabbccdd",
+            client_secret="secret",
+            required_scopes=["mcp-access"],
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert provider.identifier_uri == "https://mytenant.onmicrosoft.com/aabbccdd"
+
+
+class TestAzureB2COBORejection:
+    """On-Behalf-Of flow must be explicitly blocked for B2C."""
+
+    async def test_get_obo_credential_raises_not_implemented(
+        self, provider: AzureB2CProvider
+    ) -> None:
+        """get_obo_credential() must raise NotImplementedError for B2C."""
+        with pytest.raises(NotImplementedError, match="does not support.*OBO"):
+            await provider.get_obo_credential(user_assertion="fake-token")
