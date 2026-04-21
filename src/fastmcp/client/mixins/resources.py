@@ -56,8 +56,16 @@ class ClientResourcesMixin:
         ):
             logger.debug(f"[{self.name}] called list_resources")
 
+            propagated_meta = inject_trace_context()
+            params = None
+            if cursor is not None or propagated_meta is not None:
+                params = mcp.types.PaginatedRequestParams(
+                    cursor=cursor,
+                    _meta=propagated_meta,  # type: ignore[unknown-argument]  # pydantic alias  # ty:ignore[unknown-argument]
+                )
+
             result = await self._await_with_session_monitoring(
-                self.session.list_resources(cursor=cursor)
+                self.session.list_resources(params=params)
             )
             return result
 
@@ -132,8 +140,16 @@ class ClientResourcesMixin:
         ):
             logger.debug(f"[{self.name}] called list_resource_templates")
 
+            propagated_meta = inject_trace_context()
+            params = None
+            if cursor is not None or propagated_meta is not None:
+                params = mcp.types.PaginatedRequestParams(
+                    cursor=cursor,
+                    _meta=propagated_meta,  # type: ignore[unknown-argument]  # pydantic alias  # ty:ignore[unknown-argument]
+                )
+
             result = await self._await_with_session_monitoring(
-                self.session.list_resource_templates(cursor=cursor)
+                self.session.list_resource_templates(params=params)
             )
             return result
 

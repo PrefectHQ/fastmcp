@@ -17,6 +17,12 @@ import httpx
 import mcp.types
 from exceptiongroup import catch
 from mcp import ClientSession, McpError
+from mcp.client.session import (
+    SUPPORTED_PROTOCOL_VERSIONS,
+    _default_elicitation_callback,
+    _default_list_roots_callback,
+    _default_sampling_callback,
+)
 from mcp.types import GetTaskResult, TaskStatusNotification
 from pydantic import AnyUrl
 
@@ -51,8 +57,10 @@ from fastmcp.client.tasks import (
     TaskNotificationHandler,
     ToolTask,
 )
+from fastmcp.client.telemetry import client_span
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.server import FastMCP
+from fastmcp.telemetry import inject_trace_context
 from fastmcp.utilities.exceptions import get_catch_handlers
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.timeout import (
@@ -518,11 +526,82 @@ class Client(
             timeout = normalize_timeout_to_seconds(timeout)
 
         try:
-            with anyio.fail_after(timeout):
-                self._session_state.initialize_result = await self.session.initialize()
-                return self._session_state.initialize_result
+            with client_span(
+                "initialize",
+                "initialize",
+                "",
+                session_id=self.transport.get_session_id(),
+            ):
+                with anyio.fail_after(timeout):
+                    propagated_meta = inject_trace_context()
+                    if propagated_meta is None:
+                        self._session_state.initialize_result = (
+                            await self.session.initialize()
+                        )
+                    else:
+                        self._session_state.initialize_result = (
+                            await self._initialize_session_with_meta(propagated_meta)
+                        )
+                    return self._session_state.initialize_result
         except TimeoutError as e:
             raise RuntimeError("Failed to initialize server session") from e
+
+    async def _initialize_session_with_meta(
+        self,
+        meta: dict[str, Any],
+    ) -> mcp.types.InitializeResult:
+        """Initialize the MCP session while propagating MCP ``_meta`` fields."""
+        session = self.session
+
+        sampling = (
+            (session._sampling_capabilities or mcp.types.SamplingCapability())
+            if session._sampling_callback is not _default_sampling_callback
+            else None
+        )
+        elicitation = (
+            mcp.types.ElicitationCapability(
+                form=mcp.types.FormElicitationCapability(),
+                url=mcp.types.UrlElicitationCapability(),
+            )
+            if session._elicitation_callback is not _default_elicitation_callback
+            else None
+        )
+        roots = (
+            mcp.types.RootsCapability(listChanged=True)
+            if session._list_roots_callback is not _default_list_roots_callback
+            else None
+        )
+
+        result = await session.send_request(
+            mcp.types.ClientRequest(
+                mcp.types.InitializeRequest(
+                    params=mcp.types.InitializeRequestParams(
+                        protocolVersion=mcp.types.LATEST_PROTOCOL_VERSION,
+                        capabilities=mcp.types.ClientCapabilities(
+                            sampling=sampling,
+                            elicitation=elicitation,
+                            experimental=None,
+                            roots=roots,
+                            tasks=session._task_handlers.build_capability(),
+                        ),
+                        clientInfo=session._client_info,
+                        _meta=meta,  # type: ignore[unknown-argument]  # pydantic alias  # ty:ignore[unknown-argument]
+                    )
+                )
+            ),
+            mcp.types.InitializeResult,
+        )
+
+        if result.protocolVersion not in SUPPORTED_PROTOCOL_VERSIONS:
+            raise RuntimeError(
+                f"Unsupported protocol version from the server: {result.protocolVersion}"
+            )
+
+        session._server_capabilities = result.capabilities
+        await session.send_notification(
+            mcp.types.ClientNotification(mcp.types.InitializedNotification())
+        )
+        return result
 
     async def __aenter__(self):
         return await self._connect()
