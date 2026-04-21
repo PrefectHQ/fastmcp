@@ -10,8 +10,10 @@ from platformdirs import user_data_dir
 from pydantic import Field, field_validator
 from pydantic_settings import (
     BaseSettings,
+    PydanticBaseSettingsSource,
     SettingsConfigDict,
 )
+from pydantic_settings.sources.providers.env import EnvSettingsSource
 
 from fastmcp.utilities.logging import get_logger
 
@@ -114,6 +116,36 @@ class DocketSettings(BaseSettings):
     ] = timedelta(seconds=5)
 
 
+def _inject_prefix_aliases(source: PydanticBaseSettingsSource) -> None:
+    """Add ``<PREFIX>_<FIELD>`` aliases for env vars written as ``<PREFIX>__<FIELD>``.
+
+    Many projects separate a namespace prefix from a field name with a
+    double underscore (``DATABASE__PASSWORD``, ``COGNITO__CLIENT_SECRET``).
+    With ``env_prefix="FASTMCP_"`` + ``env_nested_delimiter="__"``,
+    pydantic-settings parses ``FASTMCP__HOME`` as field ``_home`` (which
+    doesn't exist) and silently drops it — only ``FASTMCP_HOME`` is seen.
+
+    For each ``FASTMCP__<FIELD>`` entry in the source's already-loaded
+    ``env_vars``, write the canonical ``FASTMCP_<FIELD>`` key (via
+    ``setdefault``, so an explicit canonical value wins). Nested fields
+    are unaffected because this only translates the namespace boundary:
+    ``FASTMCP__DOCKET__NAME`` becomes ``FASTMCP_DOCKET__NAME`` which
+    pydantic then splits on ``__`` as usual.
+    """
+    if not isinstance(source, EnvSettingsSource):
+        return  # Not an env-backed source — nothing to translate.
+    prefix = source.env_prefix if source.case_sensitive else source.env_prefix.lower()
+    alias = prefix + "_"
+    # Upgrade to a mutable dict — some sources expose a read-only Mapping
+    # and `get_field_value` just reads from this attribute either way.
+    env_vars: dict[str, str | None] = dict(source.env_vars)
+    for key in list(env_vars):
+        if key.startswith(alias):
+            canonical = prefix + key[len(alias) :]
+            env_vars.setdefault(canonical, env_vars[key])
+    source.env_vars = env_vars
+
+
 class Settings(BaseSettings):
     """FastMCP settings."""
 
@@ -125,6 +157,26 @@ class Settings(BaseSettings):
         nested_model_default_partial_update=True,
         validate_assignment=True,
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Accept ``FASTMCP__<FIELD>`` aliases on the env + dotenv sources.
+
+        Mutating the sources in place is cleaner than substituting
+        subclasses — it preserves any init-time overrides (e.g.
+        ``Settings(_env_file=...)``) that pydantic-settings has already
+        baked into the default source instances.
+        """
+        _inject_prefix_aliases(env_settings)
+        _inject_prefix_aliases(dotenv_settings)
+        return init_settings, env_settings, dotenv_settings, file_secret_settings
 
     def get_setting(self, attr: str) -> Any:
         """
