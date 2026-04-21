@@ -278,7 +278,6 @@
                       "integrations/authkit",
                       "integrations/aws-cognito",
                       "integrations/azure",
-                      "integrations/azure-b2c",
                       "integrations/descope",
                       "integrations/discord",
                       "integrations/eunomia-authorization",

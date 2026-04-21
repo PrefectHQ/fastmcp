@@ -822,3 +822,348 @@ class TestAzureProvider:
         # Should have 3 items (read deduplicated, plus offline_access)
         assert len(result) == 3
         assert result.count("api://my-api/read") == 1
+
+
+class TestAzureProviderTokenIssuer:
+    """Tests for the token_issuer parameter on AzureProvider."""
+
+    def test_default_issuer_is_derived(self, memory_storage: MemoryStore):
+        """Without token_issuer, the issuer is derived from base_authority/tenant_id."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="my-tenant",
+            base_url="https://myserver.com",
+            required_scopes=["read"],
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert isinstance(provider._token_validator, JWTVerifier)
+        assert (
+            provider._token_validator.issuer
+            == "https://login.microsoftonline.com/my-tenant/v2.0"
+        )
+
+    def test_explicit_token_issuer_is_used(self, memory_storage: MemoryStore):
+        """An explicit token_issuer string is passed to the verifier."""
+        custom_issuer = "https://custom.issuer.com/v2.0"
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="my-tenant",
+            base_url="https://myserver.com",
+            required_scopes=["read"],
+            token_issuer=custom_issuer,
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert isinstance(provider._token_validator, JWTVerifier)
+        assert provider._token_validator.issuer == custom_issuer
+
+    async def test_explicit_issuer_enforced(self, memory_storage: MemoryStore):
+        """With an explicit token_issuer, wrong issuers are rejected."""
+        key_pair = RSAKeyPair.generate()
+        expected = "https://expected.issuer.com/v2.0"
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="my-tenant",
+            base_url="https://myserver.com",
+            required_scopes=["read"],
+            token_issuer=expected,
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert isinstance(provider._token_validator, JWTVerifier)
+        verifier = provider._token_validator
+        verifier.public_key = key_pair.public_key
+        verifier.jwks_uri = None
+
+        good_token = key_pair.create_token(
+            subject="test-user",
+            issuer=expected,
+            audience="test_client",
+            additional_claims={"scp": "read"},
+        )
+        assert await verifier.load_access_token(good_token) is not None
+
+        bad_token = key_pair.create_token(
+            subject="test-user",
+            issuer="https://wrong.issuer.com/v2.0",
+            audience="test_client",
+            additional_claims={"scp": "read"},
+        )
+        assert await verifier.load_access_token(bad_token) is None
+
+
+class TestAzureProviderFromB2C:
+    """Tests for the AzureProvider.from_b2c() classmethod factory."""
+
+    def test_b2c_endpoints_derived_correctly(self, memory_storage: MemoryStore):
+        """from_b2c() produces correct B2C authority and tenant path."""
+        provider = AzureProvider.from_b2c(
+            tenant_name="mytenant",
+            policy_name="B2C_1_susi",
+            client_id="client-id",
+            client_secret="secret",
+            required_scopes=["mcp-access"],
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert provider._upstream_authorization_endpoint == (
+            "https://mytenant.b2clogin.com"
+            "/mytenant.onmicrosoft.com/B2C_1_susi"
+            "/oauth2/v2.0/authorize"
+        )
+        assert provider._upstream_token_endpoint == (
+            "https://mytenant.b2clogin.com"
+            "/mytenant.onmicrosoft.com/B2C_1_susi"
+            "/oauth2/v2.0/token"
+        )
+
+    def test_b2c_identifier_uri_uses_https(self, memory_storage: MemoryStore):
+        """from_b2c() sets identifier_uri with https:// scheme, not api://."""
+        provider = AzureProvider.from_b2c(
+            tenant_name="mytenant",
+            policy_name="B2C_1_susi",
+            client_id="00000000-0000-0000-0000-000000000001",
+            client_secret="secret",
+            required_scopes=["mcp-access"],
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert provider.identifier_uri == (
+            "https://mytenant.onmicrosoft.com/00000000-0000-0000-0000-000000000001"
+        )
+        assert provider.identifier_uri.startswith("https://")
+        assert not provider.identifier_uri.startswith("api://")
+
+    def test_b2c_issuer_disabled_by_default(self, memory_storage: MemoryStore):
+        """from_b2c() disables issuer validation by default (token_issuer=None)."""
+        provider = AzureProvider.from_b2c(
+            tenant_name="mytenant",
+            policy_name="B2C_1_susi",
+            client_id="client-id",
+            client_secret="secret",
+            required_scopes=["mcp-access"],
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert isinstance(provider._token_validator, JWTVerifier)
+        assert provider._token_validator.issuer is None
+
+    def test_b2c_explicit_token_issuer(self, memory_storage: MemoryStore):
+        """from_b2c() forwards an explicit token_issuer to the verifier."""
+        explicit_issuer = (
+            "https://mytenant.b2clogin.com/11111111-2222-3333-4444-555555555555/v2.0/"
+        )
+        provider = AzureProvider.from_b2c(
+            tenant_name="mytenant",
+            policy_name="B2C_1_susi",
+            client_id="client-id",
+            client_secret="secret",
+            required_scopes=["mcp-access"],
+            base_url="https://myserver.com",
+            token_issuer=explicit_issuer,
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert isinstance(provider._token_validator, JWTVerifier)
+        assert provider._token_validator.issuer == explicit_issuer
+
+    def test_b2c_custom_domain(self, memory_storage: MemoryStore):
+        """from_b2c() uses custom_domain in place of {tenant}.b2clogin.com."""
+        provider = AzureProvider.from_b2c(
+            tenant_name="mytenant",
+            policy_name="B2C_1_susi",
+            client_id="client-id",
+            client_secret="secret",
+            required_scopes=["mcp-access"],
+            base_url="https://myserver.com",
+            custom_domain="auth.mycompany.com",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert "auth.mycompany.com" in provider._upstream_authorization_endpoint
+        assert "auth.mycompany.com" in provider._upstream_token_endpoint
+        assert "mytenant.b2clogin.com" not in provider._upstream_authorization_endpoint
+
+    def test_b2c_custom_domain_with_scheme_normalized(
+        self, memory_storage: MemoryStore
+    ):
+        """from_b2c() strips scheme and trailing slash from custom_domain."""
+        provider = AzureProvider.from_b2c(
+            tenant_name="mytenant",
+            policy_name="B2C_1_susi",
+            client_id="client-id",
+            client_secret="secret",
+            required_scopes=["mcp-access"],
+            base_url="https://myserver.com",
+            custom_domain="https://auth.mycompany.com/",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert "auth.mycompany.com" in provider._upstream_authorization_endpoint
+        assert "https://https://" not in provider._upstream_authorization_endpoint
+
+    def test_b2c_custom_identifier_uri(self, memory_storage: MemoryStore):
+        """from_b2c() respects an explicit identifier_uri override."""
+        custom_uri = "https://mycompany.com/api/mcp"
+        provider = AzureProvider.from_b2c(
+            tenant_name="mytenant",
+            policy_name="B2C_1_susi",
+            client_id="client-id",
+            client_secret="secret",
+            required_scopes=["mcp-access"],
+            base_url="https://myserver.com",
+            identifier_uri=custom_uri,
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert provider.identifier_uri == custom_uri
+
+    def test_b2c_scope_prefix_uses_https(self, memory_storage: MemoryStore):
+        """from_b2c() scopes are prefixed with the https:// identifier URI."""
+        provider = AzureProvider.from_b2c(
+            tenant_name="mytenant",
+            policy_name="B2C_1_susi",
+            client_id="aabbccdd",
+            client_secret="secret",
+            required_scopes=["mcp-access"],
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        result = provider._prefix_scopes_for_azure(["mcp-access"])
+        assert result == ["https://mytenant.onmicrosoft.com/aabbccdd/mcp-access"]
+
+    def test_b2c_returns_azure_provider_instance(self, memory_storage: MemoryStore):
+        """from_b2c() returns an AzureProvider, not a subclass."""
+        provider = AzureProvider.from_b2c(
+            tenant_name="mytenant",
+            policy_name="B2C_1_susi",
+            client_id="client-id",
+            client_secret="secret",
+            required_scopes=["mcp-access"],
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert type(provider) is AzureProvider
+
+    def test_b2c_custom_policy_name(self, memory_storage: MemoryStore):
+        """from_b2c() accepts custom policy names (B2C_1A_*)."""
+        provider = AzureProvider.from_b2c(
+            tenant_name="mytenant",
+            policy_name="B2C_1A_SIGNUP_SIGNIN",
+            client_id="client-id",
+            client_secret="secret",
+            required_scopes=["mcp-access"],
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert "B2C_1A_SIGNUP_SIGNIN" in provider._upstream_authorization_endpoint
+        assert "B2C_1A_SIGNUP_SIGNIN" in provider._upstream_token_endpoint
+
+    async def test_b2c_token_accepted_with_any_issuer(
+        self, memory_storage: MemoryStore
+    ):
+        """B2C provider (issuer=None) accepts tokens from any issuer."""
+        key_pair = RSAKeyPair.generate()
+        provider = AzureProvider.from_b2c(
+            tenant_name="mytenant",
+            policy_name="B2C_1_susi",
+            client_id="my-client-id",
+            client_secret="secret",
+            required_scopes=["mcp-access"],
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert isinstance(provider._token_validator, JWTVerifier)
+        verifier = provider._token_validator
+        verifier.public_key = key_pair.public_key
+        verifier.jwks_uri = None
+
+        token = key_pair.create_token(
+            subject="test-user",
+            issuer="https://mytenant.b2clogin.com/11111111-guid/v2.0/",
+            audience="my-client-id",
+            additional_claims={"scp": "mcp-access"},
+        )
+        result = await verifier.load_access_token(token)
+        assert result is not None
+
+    async def test_b2c_token_rejected_with_wrong_audience(
+        self, memory_storage: MemoryStore
+    ):
+        """B2C provider still rejects tokens with wrong audience."""
+        key_pair = RSAKeyPair.generate()
+        provider = AzureProvider.from_b2c(
+            tenant_name="mytenant",
+            policy_name="B2C_1_susi",
+            client_id="my-client-id",
+            client_secret="secret",
+            required_scopes=["mcp-access"],
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert isinstance(provider._token_validator, JWTVerifier)
+        verifier = provider._token_validator
+        verifier.public_key = key_pair.public_key
+        verifier.jwks_uri = None
+
+        token = key_pair.create_token(
+            subject="test-user",
+            issuer="https://mytenant.b2clogin.com/11111111-guid/v2.0/",
+            audience="wrong-app-id",
+            additional_claims={"scp": "mcp-access"},
+        )
+        result = await verifier.load_access_token(token)
+        assert result is None
+
+
+class TestAzureProviderFromB2CInputValidation:
+    """Input validation for from_b2c() parameters."""
+
+    @pytest.mark.parametrize(
+        "tenant_name",
+        [
+            "mytenant.onmicrosoft.com",
+            "my.onmicrosoft.com.tenant",
+        ],
+    )
+    def test_tenant_name_with_onmicrosoft_suffix_rejected(
+        self, memory_storage: MemoryStore, tenant_name: str
+    ):
+        with pytest.raises(ValueError, match="onmicrosoft.com"):
+            AzureProvider.from_b2c(
+                tenant_name=tenant_name,
+                policy_name="B2C_1_susi",
+                client_id="client-id",
+                client_secret="secret",
+                required_scopes=["mcp-access"],
+                base_url="https://myserver.com",
+                jwt_signing_key="test-secret",
+                client_storage=memory_storage,
+            )

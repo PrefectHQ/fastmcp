@@ -117,6 +117,7 @@ class AzureProvider(OAuthProxy):
         forward_resource: bool = True,
         fallback_refresh_token_expiry_seconds: int | None = None,
         base_authority: str = "login.microsoftonline.com",
+        token_issuer: str | None = None,
         http_client: httpx.AsyncClient | None = None,
         enable_cimd: bool = True,
     ) -> None:
@@ -141,6 +142,9 @@ class AzureProvider(OAuthProxy):
             redirect_path: Redirect path configured in Azure App registration (defaults to "/auth/callback")
             base_authority: Azure authority base URL (defaults to "login.microsoftonline.com").
                 For Azure Government, use "login.microsoftonline.us".
+            token_issuer: Override the expected `iss` claim value for JWT validation.
+                Defaults to the standard Entra ID issuer derived from `base_authority`
+                and `tenant_id`. Pass an explicit string to enforce a specific issuer.
             required_scopes: Custom API scope names WITHOUT prefix (e.g., ["read", "write"]).
                 - Automatically prefixed with identifier_uri during initialization
                 - Validated on all tokens
@@ -203,7 +207,7 @@ class AzureProvider(OAuthProxy):
         self.additional_authorize_scopes: list[str] = parsed_additional_scopes
 
         # Always validate tokens against the app's API client ID using JWT
-        issuer = f"https://{base_authority}/{tenant_id}/v2.0"
+        issuer = token_issuer or f"https://{base_authority}/{tenant_id}/v2.0"
         jwks_uri = f"https://{base_authority}/{tenant_id}/discovery/v2.0/keys"
 
         # Azure access tokens only include custom API scopes in the `scp` claim,
@@ -271,6 +275,83 @@ class AzureProvider(OAuthProxy):
             f" and identifier_uri {self.identifier_uri}" if self.identifier_uri else "",
             authority_info,
         )
+
+    @classmethod
+    def from_b2c(
+        cls,
+        *,
+        tenant_name: str,
+        policy_name: str,
+        client_id: str,
+        client_secret: str | None = None,
+        required_scopes: list[str],
+        base_url: str,
+        custom_domain: str | None = None,
+        identifier_uri: str | None = None,
+        token_issuer: str | None = None,
+        **kwargs: Any,
+    ) -> AzureProvider:
+        """Create an AzureProvider pre-configured for Azure AD B2C.
+
+        Derives authority host, tenant path, and identifier URI from
+        `tenant_name` and `policy_name`, then delegates to the standard
+        constructor. Returns a plain `AzureProvider` instance.
+
+        B2C issuer validation is disabled by default (`token_issuer=None`)
+        because B2C issuers embed the tenant GUID. Pass an explicit
+        `token_issuer` string once you know the real `iss` value.
+
+        Azure AD B2C does **not** support OBO.
+
+        Args:
+            tenant_name: Short B2C tenant name without `.onmicrosoft.com`
+                (e.g. `"mytenant"`).
+            policy_name: User-flow or custom-policy name
+                (e.g. `"B2C_1_susi"`).
+            client_id: Application (client) ID from the B2C app registration.
+            client_secret: Client secret from the B2C app registration.
+            required_scopes: Custom API scope names without prefix
+                (e.g. `["mcp-access"]`).
+            base_url: Public base URL of this server.
+            custom_domain: Custom domain for the B2C authority
+                (e.g. `"auth.mycompany.com"`). Defaults to
+                `{tenant_name}.b2clogin.com`.
+            identifier_uri: Application ID URI. Defaults to
+                `https://{tenant_name}.onmicrosoft.com/{client_id}`.
+            token_issuer: Expected `iss` claim. `None` (default) disables
+                issuer validation.
+            **kwargs: Forwarded to `AzureProvider.__init__`.
+        """
+        if ".onmicrosoft.com" in tenant_name:
+            raise ValueError(
+                f"tenant_name should be the short name without the "
+                f".onmicrosoft.com suffix (e.g. 'mytenant'), got {tenant_name!r}"
+            )
+
+        if custom_domain is not None:
+            custom_domain = (
+                custom_domain.removeprefix("https://")
+                .removeprefix("http://")
+                .rstrip("/")
+            )
+
+        authority = custom_domain or f"{tenant_name}.b2clogin.com"
+        tenant_path = f"{tenant_name}.onmicrosoft.com/{policy_name}"
+        uri = identifier_uri or f"https://{tenant_name}.onmicrosoft.com/{client_id}"
+
+        provider = cls(
+            client_id=client_id,
+            client_secret=client_secret,
+            tenant_id=tenant_path,
+            required_scopes=required_scopes,
+            base_url=base_url,
+            base_authority=authority,
+            identifier_uri=uri,
+            token_issuer=token_issuer,
+            **kwargs,
+        )
+        provider._token_validator.issuer = token_issuer  # type: ignore[union-attr]
+        return provider
 
     async def authorize(
         self,
