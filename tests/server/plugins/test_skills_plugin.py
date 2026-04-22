@@ -15,11 +15,9 @@ from typing import cast
 import pytest
 from pydantic import ValidationError
 
-from fastmcp.server.plugins.skills.plugin import Vendor
-
 from fastmcp.server.plugins.skills import Skills, SkillsConfig
 from fastmcp.server.plugins.skills.directory_provider import SkillsDirectoryProvider
-from fastmcp.server.plugins.skills.plugin import VENDOR_PATHS
+from fastmcp.server.plugins.skills.plugin import VENDOR_PATHS, Vendor
 from fastmcp.server.plugins.skills.skill_provider import SkillProvider
 
 
@@ -111,15 +109,11 @@ class TestDeprecationShim:
 
         from fastmcp.exceptions import FastMCPDeprecationWarning
 
-        sys.modules.pop(
-            "fastmcp.server.providers.skills.vendor_providers", None
-        )
+        sys.modules.pop("fastmcp.server.providers.skills.vendor_providers", None)
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            importlib.import_module(
-                "fastmcp.server.providers.skills.vendor_providers"
-            )
+            importlib.import_module("fastmcp.server.providers.skills.vendor_providers")
 
         fastmcp_warns = [
             w for w in caught if issubclass(w.category, FastMCPDeprecationWarning)
