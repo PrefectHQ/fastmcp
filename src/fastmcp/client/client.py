@@ -659,16 +659,25 @@ class Client(
                 return
             session_task = self._session_state.session_task
             self._session_state.stop_event.set()
-            # wait for session to finish to ensure state has been reset
+            # Wait (bounded) for the runner to unwind gracefully. If it
+            # overruns — e.g. the transport's termination POST is blocked on
+            # a stale HTTP keep-alive connection — cancel the background
+            # task so transport resources (httpx connections, subprocess
+            # pipes) are actually released instead of leaking into the
+            # event loop. Force paths additionally shield the wait so an
+            # outer cancellation can't abandon cleanup half-done.
             try:
-                if force:
+                with anyio.CancelScope(shield=force):
+                    with anyio.move_on_after(self._disconnect_timeout):
+                        with suppress(asyncio.CancelledError):
+                            await session_task
+            finally:
+                if not session_task.done():
+                    session_task.cancel()
                     with anyio.CancelScope(shield=True):
                         with anyio.move_on_after(self._disconnect_timeout):
-                            with suppress(asyncio.CancelledError):
+                            with suppress(Exception):
                                 await session_task
-                else:
-                    await session_task
-            finally:
                 self._session_state.session_task = None
 
     async def _session_runner(self):

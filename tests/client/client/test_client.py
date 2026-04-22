@@ -618,6 +618,49 @@ async def test_force_close_cancelled_wait_starts_fresh_session(fastmcp_server):
     assert original_session_task.done()
 
 
+async def test_disconnect_with_hanging_transport_does_not_leak_session_task(
+    fastmcp_server, monkeypatch
+):
+    """A hung transport teardown must not leak the background session task.
+
+    Simulates the failure mode reported in
+    https://github.com/PrefectHQ/fastmcp/issues/3947: the remote HTTP server
+    has dropped the keep-alive connection, so the termination POST inside
+    the transport never returns. ``__aexit__`` must bound the wait and
+    cancel the runner so a subsequent Client can reuse the same transport
+    resources.
+    """
+    monkeypatch.setattr(fastmcp.settings, "client_disconnect_timeout", 0.2)
+
+    disconnect_started = anyio.Event()
+    never_allow_disconnect = anyio.Event()
+
+    client = Client(
+        transport=_DelayedDisconnectTransport(
+            FastMCPTransport(fastmcp_server),
+            disconnect_started=disconnect_started,
+            allow_disconnect=never_allow_disconnect,
+        )
+    )
+
+    async with client:
+        tools = await client.list_tools()
+        assert len(tools) == 3
+        session_task = client._session_state.session_task
+        assert session_task is not None
+
+    # Transport hung during teardown; the client should have bounded the
+    # wait, cancelled the runner, and cleared its own reference.
+    assert disconnect_started.is_set()
+    assert client._session_state.session_task is None
+    assert session_task.done()
+
+    # And the Client is reusable for a fresh session.
+    async with client:
+        tools = await client.list_tools()
+        assert len(tools) == 3
+
+
 async def test_concurrent_client_context_managers():
     """
     Test that concurrent client usage doesn't cause cross-task cancel scope issues.
