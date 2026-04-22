@@ -48,6 +48,29 @@ logger = get_logger(__name__)
 DEFAULT_TIMEOUT: float = 30.0
 
 
+def resolve_spec_base_url(openapi_spec: dict[str, Any]) -> str:
+    """Resolve the first `servers[0].url` in an OpenAPI spec, substituting
+    any `servers[0].variables[name].default` values into `{name}`
+    placeholders.
+
+    Raised to module level so callers that build their own httpx client
+    (e.g. the `OpenAPI` plugin applying user-configured headers/timeout)
+    can still honor spec server templates without duplicating the
+    substitution logic.
+    """
+    servers = openapi_spec.get("servers", [])
+    if not servers or not servers[0].get("url"):
+        raise ValueError(
+            "No server URL found in OpenAPI spec. Either add a 'servers' "
+            "entry to the spec or provide an httpx.AsyncClient explicitly."
+        )
+    base_url = servers[0]["url"]
+    variables = servers[0].get("variables", {})
+    for name, var in variables.items():
+        base_url = base_url.replace(f"{{{name}}}", var.get("default", ""))
+    return base_url
+
+
 class OpenAPIProvider(Provider):
     """Provider that creates MCP components from an OpenAPI specification.
 
@@ -79,6 +102,7 @@ class OpenAPIProvider(Provider):
         mcp_names: dict[str, str] | None = None,
         tags: set[str] | None = None,
         validate_output: bool = True,
+        _owns_client: bool | None = None,
     ):
         """Initialize provider by parsing OpenAPI spec and creating components.
 
@@ -97,10 +121,16 @@ class OpenAPIProvider(Provider):
                 extracted from the OpenAPI spec for response validation. If
                 False, a permissive schema is used instead, allowing any
                 response structure while still returning structured JSON.
+            _owns_client: Private opt-in for callers (like the OpenAPI plugin)
+                that built `client` themselves and want the provider's lifespan
+                to close it on shutdown. Leave `None` for the default
+                "own it iff we built it here" behavior.
         """
         super().__init__()
 
-        self._owns_client = client is None
+        if _owns_client is None:
+            _owns_client = client is None
+        self._owns_client = _owns_client
         if client is None:
             client = self._create_default_client(openapi_spec)
         self._client = client
@@ -168,17 +198,10 @@ class OpenAPIProvider(Provider):
     @classmethod
     def _create_default_client(cls, openapi_spec: dict[str, Any]) -> httpx.AsyncClient:
         """Create a default httpx client from the OpenAPI spec's server URL."""
-        servers = openapi_spec.get("servers", [])
-        if not servers or not servers[0].get("url"):
-            raise ValueError(
-                "No server URL found in OpenAPI spec. Either add a 'servers' "
-                "entry to the spec or provide an httpx.AsyncClient explicitly."
-            )
-        base_url = servers[0]["url"]
-        variables = servers[0].get("variables", {})
-        for name, var in variables.items():
-            base_url = base_url.replace(f"{{{name}}}", var.get("default", ""))
-        return httpx.AsyncClient(base_url=base_url, timeout=DEFAULT_TIMEOUT)
+        return httpx.AsyncClient(
+            base_url=resolve_spec_base_url(openapi_spec),
+            timeout=DEFAULT_TIMEOUT,
+        )
 
     @asynccontextmanager
     async def lifespan(self) -> AsyncIterator[None]:

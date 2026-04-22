@@ -20,7 +20,10 @@ import httpx
 from pydantic import BaseModel, ConfigDict
 
 from fastmcp.server.plugins.base import Plugin, PluginMeta
-from fastmcp.server.plugins.openapi.provider import OpenAPIProvider
+from fastmcp.server.plugins.openapi.provider import (
+    OpenAPIProvider,
+    resolve_spec_base_url,
+)
 from fastmcp.server.plugins.openapi.routing import (
     ComponentFn,
     MCPType,
@@ -178,7 +181,17 @@ class OpenAPI(Plugin[OpenAPIConfig]):
 
     def providers(self) -> list[Provider]:
         spec = self._load_spec()
-        client = self._client_override or self._build_default_client(spec)
+        if self._client_override is not None:
+            client = self._client_override
+            # User-supplied client: they own the lifecycle.
+            owns_client: bool | None = None
+        else:
+            client = self._build_default_client(spec)
+            # Plugin built the client, so the provider lifespan must
+            # close it on shutdown (default ownership heuristic would
+            # miss this since `client` is not None by the time we pass
+            # it in).
+            owns_client = True
         route_maps = self._resolve_route_maps()
 
         return [
@@ -191,6 +204,7 @@ class OpenAPI(Plugin[OpenAPIConfig]):
                 mcp_names=self.config.mcp_names,
                 tags=set(self.config.tags) if self.config.tags else None,
                 validate_output=self.config.validate_output,
+                _owns_client=owns_client,
             )
         ]
 
@@ -209,21 +223,12 @@ class OpenAPI(Plugin[OpenAPIConfig]):
         )
 
     def _build_default_client(self, spec: dict[str, Any]) -> httpx.AsyncClient:
-        # If the user set base_url, prefer it; otherwise let OpenAPIProvider
-        # derive one from the spec's `servers` entry.
-        kwargs: dict[str, Any] = {"timeout": self.config.timeout_secs}
-        if self.config.base_url is not None:
-            kwargs["base_url"] = self.config.base_url
+        kwargs: dict[str, Any] = {
+            "base_url": self.config.base_url or resolve_spec_base_url(spec),
+            "timeout": self.config.timeout_secs,
+        }
         if self.config.headers:
             kwargs["headers"] = self.config.headers
-
-        # Fast path: user gave base_url → build our own client with their
-        # timeout/headers. Slow path: no base_url → let OpenAPIProvider
-        # derive from spec, but we still need to apply timeout/headers,
-        # so pre-resolve the base URL here.
-        if "base_url" not in kwargs:
-            kwargs["base_url"] = _derive_base_url_from_spec(spec)
-
         return httpx.AsyncClient(**kwargs)
 
     def _resolve_route_maps(self) -> list[RouteMap] | None:
@@ -234,17 +239,6 @@ class OpenAPI(Plugin[OpenAPIConfig]):
         if self.config.route_maps:
             return [rm.to_route_map() for rm in self.config.route_maps]
         return None
-
-
-def _derive_base_url_from_spec(spec: dict[str, Any]) -> str:
-    servers = spec.get("servers") or []
-    if not servers or not isinstance(servers[0], dict) or not servers[0].get("url"):
-        raise ValueError(
-            "OpenAPIConfig.base_url is unset and the OpenAPI spec has no usable "
-            "`servers[0].url`. Set `base_url` on the config or add a server to "
-            "the spec."
-        )
-    return servers[0]["url"]
 
 
 __all__ = ["OpenAPI", "OpenAPIConfig", "RouteMapDict"]

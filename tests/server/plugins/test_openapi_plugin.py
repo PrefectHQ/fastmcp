@@ -162,6 +162,41 @@ class TestRouteMapping:
         assert isinstance(provider, OpenAPIProvider)
 
 
+class TestDefaultClient:
+    async def test_plugin_built_client_is_closed_on_provider_lifespan_exit(self):
+        """When the plugin builds its own httpx client (user didn't pass
+        `client=`), the provider's lifespan must still close it on
+        shutdown. A leaked client was bug noted on PR #4015."""
+        plugin = OpenAPI(OpenAPIConfig(spec=PETSTORE_SPEC))
+        provider = plugin.providers()[0]
+        assert isinstance(provider, OpenAPIProvider)
+        client = provider._client
+
+        assert not client.is_closed
+        async with provider.lifespan():
+            pass
+        assert client.is_closed
+
+    async def test_server_variable_defaults_are_substituted(self):
+        """Spec servers with `{variable}` placeholders must be resolved
+        using `servers[0].variables[name].default` before going to the
+        httpx client — otherwise the literal template leaks into every
+        request URL."""
+        templated_spec = {
+            **PETSTORE_SPEC,
+            "servers": [
+                {
+                    "url": "https://{region}.api.example.com",
+                    "variables": {"region": {"default": "us-east"}},
+                }
+            ],
+        }
+        plugin = OpenAPI(OpenAPIConfig(spec=templated_spec))
+        provider = plugin.providers()[0]
+        assert isinstance(provider, OpenAPIProvider)
+        assert str(provider._client.base_url) == "https://us-east.api.example.com"
+
+
 class TestEscapeHatches:
     async def test_custom_client_is_used(self):
         """Passing `client=` bypasses the auto-derived httpx client."""
