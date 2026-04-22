@@ -9,7 +9,7 @@ callers that composed it directly.
 import warnings
 
 from fastmcp.exceptions import FastMCPDeprecationWarning
-from fastmcp.server.plugins.openapi.provider import DEFAULT_TIMEOUT, OpenAPIProvider
+from fastmcp.server.plugins.openapi.provider import OpenAPIProvider
 
 warnings.warn(
     "fastmcp.server.providers.openapi.provider has moved to "
@@ -20,4 +20,4 @@ warnings.warn(
     stacklevel=2,
 )
 
-__all__ = ["DEFAULT_TIMEOUT", "OpenAPIProvider"]
+__all__ = ["OpenAPIProvider"]

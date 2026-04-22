@@ -10,8 +10,6 @@ from fastmcp.server.plugins.openapi.components import (
     OpenAPIResourceTemplate,
     OpenAPITool,
     _extract_mime_type_from_route,
-    _redact_headers,
-    _slugify,
 )
 
 warnings.warn(
@@ -28,6 +26,4 @@ __all__ = [
     "OpenAPIResourceTemplate",
     "OpenAPITool",
     "_extract_mime_type_from_route",
-    "_redact_headers",
-    "_slugify",
 ]

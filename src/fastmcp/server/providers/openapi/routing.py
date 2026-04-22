@@ -6,12 +6,10 @@ import warnings
 
 from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.plugins.openapi.routing import (
-    DEFAULT_ROUTE_MAPPINGS,
     ComponentFn,
     MCPType,
     RouteMap,
     RouteMapFn,
-    _determine_route_type,
 )
 
 warnings.warn(
@@ -24,10 +22,8 @@ warnings.warn(
 )
 
 __all__ = [
-    "DEFAULT_ROUTE_MAPPINGS",
     "ComponentFn",
     "MCPType",
     "RouteMap",
     "RouteMapFn",
-    "_determine_route_type",
 ]

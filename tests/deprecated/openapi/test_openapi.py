@@ -27,7 +27,7 @@ class TestDeprecatedServerOpenAPIImports:
                 x for x in w if issubclass(x.category, DeprecationWarning)
             ]
             assert len(deprecation_warnings) >= 1
-            assert "providers.openapi" in str(deprecation_warnings[0].message)
+            assert "plugins.openapi" in str(deprecation_warnings[0].message)
 
     def test_import_routing_emits_warning(self):
         """Importing from fastmcp.server.openapi.routing should emit deprecation warning."""
@@ -43,7 +43,7 @@ class TestDeprecatedServerOpenAPIImports:
                 x for x in w if issubclass(x.category, DeprecationWarning)
             ]
             assert len(deprecation_warnings) >= 1
-            assert "providers.openapi" in str(deprecation_warnings[0].message)
+            assert "plugins.openapi" in str(deprecation_warnings[0].message)
 
     def test_fastmcp_openapi_class_emits_warning(self):
         """Using FastMCPOpenAPI should emit deprecation warning."""
@@ -117,7 +117,7 @@ class TestDeprecatedExperimentalOpenAPIImports:
                 x for x in w if issubclass(x.category, DeprecationWarning)
             ]
             assert len(deprecation_warnings) >= 1
-            assert "providers.openapi" in str(deprecation_warnings[0].message)
+            assert "plugins.openapi" in str(deprecation_warnings[0].message)
 
     def test_experimental_imports_still_work(self):
         """All expected symbols should be importable from experimental."""
@@ -152,7 +152,7 @@ class TestDeprecatedComponentsImports:
                 x for x in w if issubclass(x.category, DeprecationWarning)
             ]
             assert len(deprecation_warnings) >= 1
-            assert "providers.openapi" in str(deprecation_warnings[0].message)
+            assert "plugins.openapi" in str(deprecation_warnings[0].message)
 
     def test_components_imports_still_work(self):
         """Component classes should be importable from deprecated location."""

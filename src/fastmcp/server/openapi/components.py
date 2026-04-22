@@ -1,6 +1,6 @@
 """OpenAPI component implementations - backwards compatibility stub.
 
-This module is deprecated. Import from fastmcp.server.providers.openapi instead.
+This module is deprecated. Import from fastmcp.server.plugins.openapi instead.
 """
 
 from __future__ import annotations
@@ -11,12 +11,12 @@ from fastmcp.exceptions import FastMCPDeprecationWarning
 
 warnings.warn(
     "fastmcp.server.openapi.components is deprecated. "
-    "Import from fastmcp.server.providers.openapi instead.",
+    "Import from fastmcp.server.plugins.openapi instead.",
     FastMCPDeprecationWarning,
     stacklevel=2,
 )
 
-from fastmcp.server.providers.openapi import (  # noqa: E402
+from fastmcp.server.plugins.openapi.components import (  # noqa: E402
     OpenAPIResource,
     OpenAPIResourceTemplate,
     OpenAPITool,

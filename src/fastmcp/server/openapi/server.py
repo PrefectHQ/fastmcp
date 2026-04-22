@@ -3,7 +3,7 @@
 This class is deprecated. Use FastMCP with OpenAPIProvider instead:
 
     from fastmcp import FastMCP
-    from fastmcp.server.providers.openapi import OpenAPIProvider
+    from fastmcp.server.plugins.openapi import OpenAPIProvider
     import httpx
 
     client = httpx.AsyncClient(base_url="https://api.example.com")
@@ -19,12 +19,9 @@ from typing import Any
 import httpx
 
 from fastmcp.exceptions import FastMCPDeprecationWarning
-from fastmcp.server.providers.openapi import (
-    ComponentFn,
-    OpenAPIProvider,
-    RouteMap,
-    RouteMapFn,
-)
+from fastmcp.server.plugins.openapi import RouteMap
+from fastmcp.server.plugins.openapi.provider import OpenAPIProvider
+from fastmcp.server.plugins.openapi.routing import ComponentFn, RouteMapFn
 from fastmcp.server.server import FastMCP
 
 
@@ -49,7 +46,7 @@ class FastMCPOpenAPI(FastMCP):
     New approach:
         ```python
         from fastmcp import FastMCP
-        from fastmcp.server.providers.openapi import OpenAPIProvider
+        from fastmcp.server.plugins.openapi import OpenAPIProvider
         import httpx
 
         client = httpx.AsyncClient(base_url="https://api.example.com")
