@@ -548,6 +548,24 @@ def _schema_to_type(
             else:
                 return Union[tuple(types)]  # type: ignore # noqa: UP007
 
+    # Collect sibling constraints BEFORE allOf processing so they can be
+    # combined with the allOf result when appropriate (e.g. type:string + allOf:[{}] → str).
+    sibling_constraints: dict[str, Any] = {}
+    if "allOf" in schema:
+        sibling_constraints = {
+            k: v
+            for k, v in schema.items()
+            if k
+            not in (
+                "allOf",
+                "anyOf",
+                "oneOf",
+                "not",
+                "$ref",
+                "definitions",
+            )
+        }
+
     # Handle allOf (intersection - value must satisfy ALL sub-schemas)
     if "allOf" in schema:
         types: list[type | Any] = [
@@ -566,7 +584,12 @@ def _schema_to_type(
             # allOf with null + other types = impossible intersection
             return _return_Any()
         elif len(non_null_types) == 1:
-            return non_null_types[0]
+            allof_type = non_null_types[0]
+            # If allOf produced Any and parent has sibling constraints (type, format,
+            # minLength, etc.), process them to get the constrained type.
+            if allof_type is Any and sibling_constraints:
+                return _schema_to_type(sibling_constraints, schemas)
+            return allof_type
         else:
             # Try to merge object types for true intersection
             merged = _merge_object_types(non_null_types)
