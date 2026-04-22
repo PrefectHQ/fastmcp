@@ -409,7 +409,12 @@ def _merge_object_types(types: list[type]) -> type | None:
     merged_fields: dict[str, tuple[type, DataclassField]] = {}
     for obj_type in object_types:
         for field_name, field_type in obj_type.__annotations__.items():
-            if field_name not in merged_fields:
+            if field_name in merged_fields:
+                # Check type compatibility - if types differ, can't merge
+                existing_type = merged_fields[field_name][0]
+                if existing_type != field_type:
+                    return None  # Incompatible types in allOf intersection
+            else:
                 # Get default from the field
                 if hasattr(obj_type, "__dataclass_fields__"):
                     dc_field = obj_type.__dataclass_fields__.get(field_name)
@@ -550,26 +555,23 @@ def _schema_to_type(
         ]
 
         # For allOf intersection, every branch must be satisfied.
-        # Only add Optional if ALL subschemas that matter have null.
-        non_null_types = [t for t in types if t is not type(None)]
-        # Only make result optional if ALL non-null types are the same single type
-        # and at least one branch was null (semantic: "T & null" means Optional[T])
+        # null branch alone = UnsatisfiableType; null + non-null = impossible (return Any)
         has_null = type(None) in types
+        non_null_types = [t for t in types if t is not type(None)]
+
         if not non_null_types:
-            return type(None)
+            # allOf with only null branches = unsatisfiable
+            return _UnsatisfiableType  # type: ignore[return-value]
+        elif has_null:
+            # allOf with null + other types = impossible intersection
+            return _return_Any()
         elif len(non_null_types) == 1:
-            if has_null:
-                return Union[non_null_types[0], type(None)]  # type: ignore
-            else:
-                return non_null_types[0]
+            return non_null_types[0]
         else:
             # Try to merge object types for true intersection
             merged = _merge_object_types(non_null_types)
             if merged is not None:
-                if has_null:
-                    return Union[merged, type(None)]  # type: ignore
-                else:
-                    return merged
+                return merged
             else:
                 # Can't merge - intersection of incompatible types = invalid
                 return _return_Any()
