@@ -536,7 +536,9 @@ def get_access_token() -> AccessToken | None:
 
 
 @lru_cache(maxsize=5000)
-def without_injected_parameters(fn: Callable[..., Any]) -> Callable[..., Any]:
+def without_injected_parameters(
+    fn: Callable[..., Any], *, run_in_thread: bool = True
+) -> Callable[..., Any]:
     """Create a wrapper function without injected parameters.
 
     Returns a wrapper that excludes Context and Docket dependency parameters,
@@ -550,6 +552,10 @@ def without_injected_parameters(fn: Callable[..., Any]) -> Callable[..., Any]:
 
     Args:
         fn: Original function with Context and/or dependencies
+        run_in_thread: For sync ``fn``, whether to dispatch the call to a worker
+            thread after resolving dependencies. Defaults to True. Set to False
+            to call ``fn`` inline on the event loop thread — required for
+            thread-affinity libraries (e.g. Windows COM). Ignored for async fns.
 
     Returns:
         Async wrapper function without injected parameters
@@ -583,10 +589,16 @@ def without_injected_parameters(fn: Callable[..., Any]) -> Callable[..., Any]:
         async with resolve_dependencies(fn, user_kwargs) as resolved_kwargs:
             if fn_is_async:
                 return await fn(**resolved_kwargs)
-            else:
+            elif run_in_thread:
                 # Run sync functions in threadpool to avoid blocking the event loop
                 result = await call_sync_fn_in_threadpool(fn, **resolved_kwargs)
                 # Handle sync wrappers that return awaitables (e.g., partial(async_fn))
+                if inspect.isawaitable(result):
+                    result = await result
+                return result
+            else:
+                # Call inline on the event loop thread (thread affinity opt-in).
+                result = fn(**resolved_kwargs)
                 if inspect.isawaitable(result):
                     result = await result
                 return result

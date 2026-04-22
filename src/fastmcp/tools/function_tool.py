@@ -279,7 +279,9 @@ class FunctionTool(Tool):
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
         """Run the tool with arguments."""
-        wrapper_fn = without_injected_parameters(self.fn)
+        wrapper_fn = without_injected_parameters(
+            self.fn, run_in_thread=self.run_in_thread
+        )
         type_adapter = get_cached_typeadapter(wrapper_fn)
 
         # Apply timeout if configured. Combining timeout with

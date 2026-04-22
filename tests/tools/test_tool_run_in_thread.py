@@ -15,7 +15,7 @@ from collections.abc import AsyncIterator
 import pytest
 from mcp.types import TextContent
 
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from fastmcp.tools.base import Tool
 
 
@@ -45,6 +45,29 @@ class TestRunInThread:
 
         @mcp.tool(run_in_thread=False)
         def where_am_i() -> int:
+            return threading.get_ident()
+
+        result = await mcp.call_tool("where_am_i")
+        assert result.structured_content is not None
+        assert result.structured_content["result"] == loop_tid
+
+    async def test_sync_with_context_runs_on_loop_thread(self):
+        """run_in_thread=False must also apply to sync tools with injected
+        Context (or Depends).
+
+        Without this, without_injected_parameters() wraps the sync fn into an
+        async wrapper that unconditionally offloads to the thread pool —
+        silently defeating run_in_thread=False for the primary thread-affinity
+        use case (COM/tkinter tools that also want a Context for logging).
+        """
+        mcp = FastMCP()
+        loop_tid = await _loop_thread_id()
+
+        @mcp.tool(run_in_thread=False)
+        def where_am_i(ctx: Context) -> int:
+            # Context is injected; returning threading.get_ident() verifies
+            # dispatch thread, not schema generation.
+            assert ctx is not None
             return threading.get_ident()
 
         result = await mcp.call_tool("where_am_i")
