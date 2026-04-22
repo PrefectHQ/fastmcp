@@ -38,6 +38,7 @@ from typing_extensions import Self
 
 import fastmcp
 from fastmcp.exceptions import FastMCPError
+from fastmcp.server.auth.auth import AuthProvider
 from fastmcp.server.middleware import Middleware
 from fastmcp.server.providers import Provider
 from fastmcp.server.transforms import Transform
@@ -683,6 +684,28 @@ class Plugin(Generic[C]):
 
     def providers(self) -> list[Provider]:
         """Return component providers."""
+        return []
+
+    def auth(self) -> list[AuthProvider]:
+        """Return auth providers to compose into the server's auth pipeline.
+
+        Any `AuthProvider` subclass is accepted — `TokenVerifier` (machine-
+        to-machine token checks), `OAuthProvider` / `RemoteAuthProvider` /
+        any full-server provider that owns OAuth routes and metadata, or
+        even a pre-composed `MultiAuth`.
+
+        The framework collects contributions across all plugins, combines
+        them with any `auth=` the server was constructed with, and wraps
+        the result in a `MultiAuth` when more than one source is present.
+        `TokenVerifier` contributions become verifiers; anything else is
+        treated as a full server. At most one server contribution is
+        allowed across the user-declared auth and all plugins combined —
+        multiple full servers would be ambiguous (MultiAuth has a single
+        server slot). A `PluginError` is raised if this invariant is
+        violated.
+
+        The default returns an empty list.
+        """
         return []
 
     def capabilities(self) -> dict[str, Any]:

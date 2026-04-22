@@ -390,6 +390,11 @@ class FastMCP(
             lifespan=_lifespan_proxy(fastmcp_server=self),
         )
 
+        # User-declared auth is stored separately so the plugin
+        # contribution pipeline can rebuild `self.auth` from scratch each
+        # time (original auth + all non-ephemeral plugin contributions)
+        # rather than trying to undo its own mutations on teardown.
+        self._user_declared_auth: AuthProvider | None = auth
         self.auth: AuthProvider | None = auth
 
         if tools:
@@ -658,6 +663,12 @@ class FastMCP(
                     records.append((self.providers, stored))
             self._plugins_contributed.add(id(plugin))
 
+        # Auth is rebuilt from scratch (not appended) so ephemeral
+        # plugin teardown can simply re-run this without tracking
+        # per-plugin auth records. Deterministic: same plugins →
+        # same composed auth.
+        self._rebuild_auth()
+
     async def _cleanup_ephemeral_plugins(self) -> None:
         """Remove ephemeral (loader-added) plugins after all contexts have exited.
 
@@ -688,6 +699,72 @@ class FastMCP(
         self.plugins = [
             p for p in self.plugins if not getattr(p, "_fastmcp_ephemeral", False)
         ]
+        # Ephemeral plugins may have contributed auth; rebuild now that
+        # they're gone so the next cycle starts with only the permanent
+        # contributions composed into `self.auth`.
+        self._rebuild_auth()
+
+    def _rebuild_auth(self) -> None:
+        """Recompose `self.auth` from user-declared auth + plugin contributions.
+
+        Partitions `AuthProvider` contributions into a single "server"
+        slot (full auth providers owning OAuth routes/metadata) and a
+        verifiers list (`TokenVerifier` instances tried in order). Raises
+        `PluginError` if more than one full server would result — MultiAuth
+        has a single server slot and resolving precedence automatically
+        would hide real configuration bugs.
+
+        Composition is deterministic and side-effect-free beyond mutating
+        `self.auth`, so the ephemeral-plugin teardown path calls this
+        after removing contributions to return to the permanent-only
+        state.
+        """
+        from fastmcp.server.auth.auth import MultiAuth, TokenVerifier
+        from fastmcp.server.plugins.base import PluginError
+
+        contributions: list[AuthProvider] = []
+        for plugin in self.plugins:
+            contributions.extend(plugin.auth())
+
+        if not contributions:
+            self.auth = self._user_declared_auth
+            return
+
+        servers: list[AuthProvider] = []
+        verifiers: list[TokenVerifier] = []
+
+        def _partition(provider: AuthProvider) -> None:
+            if isinstance(provider, TokenVerifier):
+                verifiers.append(provider)
+            else:
+                servers.append(provider)
+
+        if self._user_declared_auth is not None:
+            _partition(self._user_declared_auth)
+        for contrib in contributions:
+            _partition(contrib)
+
+        if len(servers) > 1:
+            raise PluginError(
+                "Multiple auth providers contributed a full server "
+                f"(got {len(servers)}). MultiAuth supports a single server "
+                "slot; multiple full OAuth providers can't be composed "
+                "automatically. If you need this, construct a MultiAuth "
+                "explicitly and pass it via `auth=` or contribute it from "
+                "one plugin."
+            )
+
+        # Single contribution total (e.g. user declared auth, no plugin
+        # contribs; or one plugin contributed a single TokenVerifier) —
+        # don't wrap in MultiAuth needlessly.
+        if len(servers) + len(verifiers) == 1:
+            self.auth = (servers or verifiers)[0]
+            return
+
+        self.auth = MultiAuth(
+            server=servers[0] if servers else None,
+            verifiers=verifiers or None,
+        )
 
     def _apply_plugin_capabilities(
         self, capabilities: mcp.types.ServerCapabilities
