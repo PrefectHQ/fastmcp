@@ -183,7 +183,7 @@ def import_module_from_file(
         if existing is not None and getattr(existing, "__file__", None) != str(
             file_path
         ):
-            module_name = f"_fastmcp_{stem}_{hashlib.sha1(str(file_path).encode()).hexdigest()[:12]}"
+            module_name = f"_fastmcp_{stem}_{hashlib.sha256(str(file_path).encode()).hexdigest()[:12]}"
         else:
             module_name = stem
 
