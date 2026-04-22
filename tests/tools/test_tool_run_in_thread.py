@@ -49,18 +49,32 @@ class TestRunInThread:
         assert result.structured_content is not None
         assert result.structured_content["result"] == loop_tid
 
-    async def test_sync_run_in_thread_false_with_timeout(self):
-        """The timeout path also honors run_in_thread=False."""
+    def test_sync_run_in_thread_false_rejects_timeout(self):
+        """Combining timeout with run_in_thread=False on a sync fn is rejected.
+
+        Inline execution has no cancellation checkpoints, so anyio.fail_after
+        cannot preempt the call — accepting the combination would silently
+        render the timeout a no-op. We force users to make an explicit choice.
+        """
         mcp = FastMCP()
-        loop_tid = await _loop_thread_id()
+
+        with pytest.raises(ValueError, match="timeout cannot be enforced"):
+
+            @mcp.tool(run_in_thread=False, timeout=5.0)
+            def blocked() -> str:
+                return "unreachable"
+
+    async def test_async_tool_allows_timeout_and_run_in_thread_false(self):
+        """run_in_thread is a no-op for async fns, so pairing with timeout is fine."""
+        mcp = FastMCP()
 
         @mcp.tool(run_in_thread=False, timeout=5.0)
-        def where_am_i() -> int:
-            return threading.get_ident()
+        async def ok() -> str:
+            return "ok"
 
-        result = await mcp.call_tool("where_am_i")
-        assert result.structured_content is not None
-        assert result.structured_content["result"] == loop_tid
+        result = await mcp.call_tool("ok")
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "ok"
 
     async def test_async_tool_unaffected_by_run_in_thread_flag(self):
         """The flag is a no-op for async tools (they already run on the loop)."""

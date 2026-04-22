@@ -199,6 +199,8 @@ def list_windows() -> list[str]:
 
 The tradeoff is that the event loop is blocked for the duration of the call — other in-flight requests wait until the tool returns. Keep `run_in_thread=False` reserved for tools that genuinely need thread affinity, and prefer short-running calls in that path.
 
+Inline sync calls have no cancellation checkpoints, so `timeout` cannot interrupt them. Combining `timeout` with `run_in_thread=False` on a sync function is rejected at registration — drop one or the other.
+
 ## Arguments
 
 By default, FastMCP converts Python functions into MCP tools by inspecting the function's signature and type annotations. This allows you to use standard Python type annotations for your tools. In general, the framework strives to "just work": idiomatic Python behaviors like parameter defaults and type annotations are automatically translated into MCP schemas. However, there are a number of ways to customize the behavior of your tools.

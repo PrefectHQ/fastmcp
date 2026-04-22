@@ -100,7 +100,9 @@ class FunctionTool(Tool):
                 "the event loop. Set to False to run the sync function inline on "
                 "the event loop thread — useful for libraries with thread "
                 "affinity (e.g. Windows COM, tkinter). Ignored for async functions, "
-                "which always run on the event loop."
+                "which always run on the event loop. Cannot be combined with "
+                "`timeout` on a sync function: inline calls have no cancellation "
+                "checkpoints, so the timeout would be a silent no-op."
             )
         ),
     ] = True
@@ -210,6 +212,23 @@ class FunctionTool(Tool):
         if func_name == "<lambda>":
             raise ValueError("You must provide a name for lambda functions")
 
+        # Inline sync execution has no cancellation checkpoints, so
+        # anyio.fail_after cannot preempt the call — the timeout would be
+        # silently ignored. Reject the combination so users make an
+        # explicit choice.
+        if (
+            metadata.timeout is not None
+            and not metadata.run_in_thread
+            and not is_coroutine_function(fn)
+        ):
+            raise ValueError(
+                f"Tool {func_name!r}: timeout cannot be enforced when "
+                "run_in_thread=False on a sync function. Inline execution has "
+                "no cancellation checkpoints, so the timeout would be a no-op. "
+                "Either drop the timeout or remove run_in_thread=False and "
+                "accept worker-thread dispatch."
+            )
+
         # Normalize task to TaskConfig
         task_value = metadata.task
         if task_value is None:
@@ -260,26 +279,22 @@ class FunctionTool(Tool):
         wrapper_fn = without_injected_parameters(self.fn)
         type_adapter = get_cached_typeadapter(wrapper_fn)
 
-        # Apply timeout if configured
+        # Apply timeout if configured. Combining timeout with
+        # run_in_thread=False on a sync function is rejected at
+        # registration (see FunctionTool.from_function), so the timeout
+        # path here only needs to handle async and threadpool-sync.
         if self.timeout is not None:
             try:
                 with anyio.fail_after(self.timeout):
                     # Thread pool execution for sync functions, direct await for async
                     if is_coroutine_function(wrapper_fn):
                         result = await type_adapter.validate_python(arguments)
-                    elif self.run_in_thread:
+                    else:
                         # Sync function: run in threadpool to avoid blocking
                         result = await call_sync_fn_in_threadpool(
                             type_adapter.validate_python, arguments
                         )
                         # Handle sync wrappers that return awaitables
-                        if inspect.isawaitable(result):
-                            result = await result
-                    else:
-                        # Run sync function inline on the event loop thread
-                        # (opt-in via run_in_thread=False). Blocks the loop
-                        # for the duration of the call.
-                        result = type_adapter.validate_python(arguments)
                         if inspect.isawaitable(result):
                             result = await result
                     # Materialize generators inside timeout scope so slow
@@ -439,7 +454,9 @@ def tool(
             block the event loop. Set to False to run the function inline on the
             event loop thread — useful for libraries with thread affinity
             (e.g. Windows COM via `uiautomation`/`comtypes`/`pywin32`, `tkinter`,
-            some GPU/driver bindings). Ignored for async functions.
+            some GPU/driver bindings). Ignored for async functions. Cannot be
+            combined with `timeout` on a sync function: inline calls have no
+            cancellation checkpoints, so the timeout would be a silent no-op.
     """
     if isinstance(annotations, dict):
         annotations = ToolAnnotations(**annotations)
