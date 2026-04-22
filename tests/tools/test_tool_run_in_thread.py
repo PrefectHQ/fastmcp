@@ -76,6 +76,23 @@ class TestRunInThread:
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "ok"
 
+    async def test_async_generator_allows_timeout_and_run_in_thread_false(self):
+        """Async generators are async even though is_coroutine_function is False.
+
+        Their iteration has await points, so timeout can still fire. The
+        registration-time guard must not over-block this shape.
+        """
+        mcp = FastMCP()
+
+        @mcp.tool(run_in_thread=False, timeout=5.0)
+        async def stream() -> list[str]:  # type: ignore[misc]
+            yield "a"
+            yield "b"
+
+        result = await mcp.call_tool("stream")
+        # _materialize_generator consumes the async generator into a list.
+        assert result.structured_content is not None
+
     async def test_async_tool_unaffected_by_run_in_thread_flag(self):
         """The flag is a no-op for async tools (they already run on the loop)."""
         mcp = FastMCP()
@@ -201,3 +218,24 @@ class TestRunInThreadViaFileSystemProvider:
         result = await mcp.call_tool("where_am_i")
         assert result.structured_content is not None
         assert result.structured_content["result"] == loop_tid
+
+    async def test_filesystem_provider_forwards_timeout(self, tmp_path):
+        """Filesystem discovery forwards `timeout` from ToolMeta.
+
+        Previously dropped, which let sync tools discovered via the
+        filesystem bypass both timeout enforcement and the registration-time
+        guard against combining timeout with run_in_thread=False.
+        """
+        from fastmcp.server.providers import FileSystemProvider
+
+        (tmp_path / "t.py").write_text(
+            "from fastmcp.tools import tool\n\n"
+            "@tool(timeout=5.0)\n"
+            "def quick() -> str:\n"
+            "    return 'ok'\n"
+        )
+
+        provider = FileSystemProvider(tmp_path)
+        discovered = [c for c in provider._components.values() if c.name == "quick"]
+        assert len(discovered) == 1
+        assert discovered[0].timeout == 5.0

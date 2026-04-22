@@ -215,11 +215,14 @@ class FunctionTool(Tool):
         # Inline sync execution has no cancellation checkpoints, so
         # anyio.fail_after cannot preempt the call — the timeout would be
         # silently ignored. Reject the combination so users make an
-        # explicit choice.
+        # explicit choice. Async generators are async even though
+        # is_coroutine_function returns False for them; the generator's
+        # iteration has checkpoints, so timeout enforcement still works.
         if (
             metadata.timeout is not None
             and not metadata.run_in_thread
             and not is_coroutine_function(fn)
+            and not inspect.isasyncgenfunction(fn)
         ):
             raise ValueError(
                 f"Tool {func_name!r}: timeout cannot be enforced when "
