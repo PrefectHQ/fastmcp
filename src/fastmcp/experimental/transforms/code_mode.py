@@ -7,10 +7,11 @@ The preferred API is now the `CodeMode` plugin:
 
     mcp = FastMCP("Server", plugins=[CodeMode()])
 
-Note the behavioral change: the old `CodeMode` was a transform added
-via `mcp.add_transform(CodeMode(...))`. The new `CodeMode` is a plugin
-and the original transform has been renamed to `CodeModeTransform` for
-callers that composed it directly.
+For backcompat, this module keeps `CodeMode` bound to the **transform**
+class (so existing `mcp.add_transform(CodeMode())` code keeps working).
+The transform is also exported under its new canonical name,
+`CodeModeTransform`. Sandbox providers, discovery-tool factories, and
+related helpers re-export from the new location unchanged.
 
 This path issues a `FastMCPDeprecationWarning` on import — a
 `DeprecationWarning` subclass that fastmcp enables by default (plain
@@ -29,27 +30,31 @@ from fastmcp.server.plugins.code_mode.discovery import (
     ListTools,
     Search,
 )
-from fastmcp.server.plugins.code_mode.plugin import CodeMode, CodeModeConfig
 from fastmcp.server.plugins.code_mode.sandbox import (
     MontySandboxProvider,
     SandboxProvider,
 )
 from fastmcp.server.plugins.code_mode.transform import CodeModeTransform
 
+# `CodeMode` at this old path stays bound to the transform class, so
+# `mcp.add_transform(CodeMode(...))` keeps working. The new plugin class
+# is at `fastmcp.server.plugins.code_mode.CodeMode`.
+CodeMode = CodeModeTransform
+
 warnings.warn(
     "fastmcp.experimental.transforms.code_mode has moved to "
-    "fastmcp.server.plugins.code_mode. `CodeMode` is now a plugin — pass "
-    "it via `plugins=[CodeMode(...)]` instead of `add_transform(...)`. "
-    "Callers that composed the transform directly should import "
-    "`CodeModeTransform` from the new location. The old import path "
-    "will be removed in a future release.",
+    "fastmcp.server.plugins.code_mode. Prefer the CodeMode plugin: "
+    "`from fastmcp.server.plugins.code_mode import CodeMode` and pass "
+    "it via `plugins=[CodeMode(...)]`. At this old path, `CodeMode` "
+    "remains the transform class (also exported as `CodeModeTransform`) "
+    "for backcompat. The old import path will be removed in a future "
+    "release.",
     FastMCPDeprecationWarning,
     stacklevel=2,
 )
 
 __all__ = [
     "CodeMode",
-    "CodeModeConfig",
     "CodeModeTransform",
     "DiscoveryToolFactory",
     "GetSchemas",

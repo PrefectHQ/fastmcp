@@ -61,7 +61,7 @@ class MontySandboxProvider:
     def __init__(
         self,
         *,
-        limits: "ResourceLimits | None" = None,
+        limits: ResourceLimits | None = None,
     ) -> None:
         self.limits = limits
 

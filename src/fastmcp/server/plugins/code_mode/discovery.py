@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Awaitable, Callable, Sequence
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from fastmcp.server.context import Context
 from fastmcp.server.plugins.tool_search.base import (
