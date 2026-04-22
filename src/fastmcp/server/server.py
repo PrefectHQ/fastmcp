@@ -2495,21 +2495,28 @@ class FastMCP(
             **settings: Additional settings passed to FastMCP
 
         Returns:
-            A FastMCP server with an OpenAPIProvider attached.
+            A FastMCP server with the OpenAPI plugin attached.
         """
-        from .providers.openapi import OpenAPIProvider
+        from fastmcp.server.plugins.openapi import OpenAPI, OpenAPIConfig
 
-        provider: Provider = OpenAPIProvider(
-            openapi_spec=openapi_spec,
+        # `from_openapi` returns an eagerly-populated server (callers
+        # frequently inspect `list_tools()` before running the server).
+        # Build the plugin to reuse its config-validation and provider-
+        # construction logic, then extract the provider eagerly rather
+        # than deferring to plugin-lifespan contribution.
+        plugin = OpenAPI(
+            OpenAPIConfig(
+                spec=openapi_spec,
+                mcp_names=mcp_names,
+                tags=sorted(tags) if tags else [],
+                validate_output=validate_output,
+            ),
             client=client,
             route_maps=route_maps,
             route_map_fn=route_map_fn,
             mcp_component_fn=mcp_component_fn,
-            mcp_names=mcp_names,
-            tags=tags,
-            validate_output=validate_output,
         )
-        return cls(name=name, providers=[provider], **settings)
+        return cls(name=name, providers=list(plugin.providers()), **settings)
 
     @classmethod
     def from_fastapi(
@@ -2540,9 +2547,9 @@ class FastMCP(
             **settings: Additional settings passed to FastMCP
 
         Returns:
-            A FastMCP server with an OpenAPIProvider attached.
+            A FastMCP server with the OpenAPI plugin attached.
         """
-        from .providers.openapi import OpenAPIProvider
+        from fastmcp.server.plugins.openapi import OpenAPI, OpenAPIConfig
 
         if httpx_client_kwargs is None:
             httpx_client_kwargs = {}
@@ -2555,16 +2562,18 @@ class FastMCP(
 
         server_name = name or app.title
 
-        provider: Provider = OpenAPIProvider(
-            openapi_spec=app.openapi(),
+        plugin = OpenAPI(
+            OpenAPIConfig(
+                spec=app.openapi(),
+                mcp_names=mcp_names,
+                tags=sorted(tags) if tags else [],
+            ),
             client=client,
             route_maps=route_maps,
             route_map_fn=route_map_fn,
             mcp_component_fn=mcp_component_fn,
-            mcp_names=mcp_names,
-            tags=tags,
         )
-        return cls(name=server_name, providers=[provider], **settings)
+        return cls(name=server_name, providers=list(plugin.providers()), **settings)
 
     @classmethod
     def as_proxy(
