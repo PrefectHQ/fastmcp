@@ -1,142 +1,38 @@
-"""Vendor-specific skills providers for various AI coding platforms."""
+"""Deprecation shim — vendor skills providers moved to `fastmcp.server.plugins.skills.vendor_providers`.
 
-from __future__ import annotations
+Prefer `Skills(SkillsConfig(vendor="<name>"))` over the individual
+vendor subclasses — one plugin entry replaces the seven hardcoded
+classes.
+"""
 
-from pathlib import Path
-from typing import Literal
+import warnings
 
-from fastmcp.server.providers.skills.directory_provider import SkillsDirectoryProvider
+from fastmcp.exceptions import FastMCPDeprecationWarning
+from fastmcp.server.plugins.skills.vendor_providers import (
+    CodexSkillsProvider,
+    CopilotSkillsProvider,
+    CursorSkillsProvider,
+    GeminiSkillsProvider,
+    GooseSkillsProvider,
+    OpenCodeSkillsProvider,
+    VSCodeSkillsProvider,
+)
 
+warnings.warn(
+    "fastmcp.server.providers.skills.vendor_providers has moved to "
+    "fastmcp.server.plugins.skills.vendor_providers. Prefer the Skills "
+    'plugin: `Skills(SkillsConfig(vendor="<name>"))`. This old '
+    "leaf-submodule import path will be removed in a future release.",
+    FastMCPDeprecationWarning,
+    stacklevel=2,
+)
 
-class CursorSkillsProvider(SkillsDirectoryProvider):
-    """Cursor skills from ~/.cursor/skills/."""
-
-    def __init__(
-        self,
-        reload: bool = False,
-        supporting_files: Literal["template", "resources"] = "template",
-    ) -> None:
-        root = Path.home() / ".cursor" / "skills"
-
-        super().__init__(
-            roots=[root],
-            reload=reload,
-            main_file_name="SKILL.md",
-            supporting_files=supporting_files,
-        )
-
-
-class VSCodeSkillsProvider(SkillsDirectoryProvider):
-    """VS Code skills from ~/.copilot/skills/."""
-
-    def __init__(
-        self,
-        reload: bool = False,
-        supporting_files: Literal["template", "resources"] = "template",
-    ) -> None:
-        root = Path.home() / ".copilot" / "skills"
-
-        super().__init__(
-            roots=[root],
-            reload=reload,
-            main_file_name="SKILL.md",
-            supporting_files=supporting_files,
-        )
-
-
-class CodexSkillsProvider(SkillsDirectoryProvider):
-    """Codex skills from /etc/codex/skills/ and ~/.codex/skills/.
-
-    Scans both system-level and user-level directories. System skills take
-    precedence if duplicates exist.
-    """
-
-    def __init__(
-        self,
-        reload: bool = False,
-        supporting_files: Literal["template", "resources"] = "template",
-    ) -> None:
-        system_root = Path("/etc/codex/skills")
-        user_root = Path.home() / ".codex" / "skills"
-
-        # Include both paths (system first, then user)
-        roots = [system_root, user_root]
-
-        super().__init__(
-            roots=roots,
-            reload=reload,
-            main_file_name="SKILL.md",
-            supporting_files=supporting_files,
-        )
-
-
-class GeminiSkillsProvider(SkillsDirectoryProvider):
-    """Gemini skills from ~/.gemini/skills/."""
-
-    def __init__(
-        self,
-        reload: bool = False,
-        supporting_files: Literal["template", "resources"] = "template",
-    ) -> None:
-        root = Path.home() / ".gemini" / "skills"
-
-        super().__init__(
-            roots=[root],
-            reload=reload,
-            main_file_name="SKILL.md",
-            supporting_files=supporting_files,
-        )
-
-
-class GooseSkillsProvider(SkillsDirectoryProvider):
-    """Goose skills from ~/.config/agents/skills/."""
-
-    def __init__(
-        self,
-        reload: bool = False,
-        supporting_files: Literal["template", "resources"] = "template",
-    ) -> None:
-        root = Path.home() / ".config" / "agents" / "skills"
-
-        super().__init__(
-            roots=[root],
-            reload=reload,
-            main_file_name="SKILL.md",
-            supporting_files=supporting_files,
-        )
-
-
-class CopilotSkillsProvider(SkillsDirectoryProvider):
-    """GitHub Copilot skills from ~/.copilot/skills/."""
-
-    def __init__(
-        self,
-        reload: bool = False,
-        supporting_files: Literal["template", "resources"] = "template",
-    ) -> None:
-        root = Path.home() / ".copilot" / "skills"
-
-        super().__init__(
-            roots=[root],
-            reload=reload,
-            main_file_name="SKILL.md",
-            supporting_files=supporting_files,
-        )
-
-
-class OpenCodeSkillsProvider(SkillsDirectoryProvider):
-    """OpenCode skills from ~/.config/opencode/skills/."""
-
-    def __init__(
-        self,
-        reload: bool = False,
-        supporting_files: Literal["template", "resources"] = "template",
-    ) -> None:
-        root = Path.home() / ".config" / "opencode" / "skills"
-
-        super().__init__(
-            roots=[root],
-            reload=reload,
-            main_file_name="SKILL.md",
-            supporting_files=supporting_files,
-        )
+__all__ = [
+    "CodexSkillsProvider",
+    "CopilotSkillsProvider",
+    "CursorSkillsProvider",
+    "GeminiSkillsProvider",
+    "GooseSkillsProvider",
+    "OpenCodeSkillsProvider",
+    "VSCodeSkillsProvider",
+]

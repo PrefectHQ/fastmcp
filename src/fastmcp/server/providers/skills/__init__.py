@@ -1,35 +1,23 @@
-"""Skills providers for exposing agent skills as MCP resources.
+"""Backwards-compatibility shim — skills providers moved to `fastmcp.server.plugins.skills`.
 
-This module provides a two-layer architecture for skill discovery:
+The preferred entry point is now the `Skills` plugin:
 
-- **SkillProvider**: Handles a single skill folder, exposing its files as resources.
-- **SkillsDirectoryProvider**: Scans a directory, creates a SkillProvider per folder.
-- **Vendor providers**: Platform-specific providers for Claude, Cursor, VS Code, Codex,
-  Gemini, Goose, Copilot, and OpenCode.
-
-Example:
-    ```python
-    from pathlib import Path
     from fastmcp import FastMCP
-    from fastmcp.server.providers.skills import ClaudeSkillsProvider, SkillProvider
+    from fastmcp.server.plugins.skills import Skills, SkillsConfig
 
-    mcp = FastMCP("Skills Server")
+    mcp = FastMCP("skills", plugins=[Skills(SkillsConfig(vendor="claude"))])
 
-    # Load a single skill
-    mcp.add_provider(SkillProvider(Path.home() / ".claude/skills/pdf-processing"))
-
-    # Or load all skills in a directory
-    mcp.add_provider(ClaudeSkillsProvider())  # Uses ~/.claude/skills/
-    ```
+The underlying `SkillProvider`, `SkillsDirectoryProvider`, and the
+vendor subclasses (`ClaudeSkillsProvider`, `CursorSkillsProvider`, etc.)
+remain importable from this package for direct composition. The
+top-level import path is silent; importing from the leaf submodules
+emits a `FastMCPDeprecationWarning`.
 """
 
-from __future__ import annotations
-
-# Import providers
-from fastmcp.server.providers.skills.claude_provider import ClaudeSkillsProvider
-from fastmcp.server.providers.skills.directory_provider import SkillsDirectoryProvider
-from fastmcp.server.providers.skills.skill_provider import SkillProvider
-from fastmcp.server.providers.skills.vendor_providers import (
+from fastmcp.server.plugins.skills.claude_provider import ClaudeSkillsProvider
+from fastmcp.server.plugins.skills.directory_provider import SkillsDirectoryProvider
+from fastmcp.server.plugins.skills.skill_provider import SkillProvider
+from fastmcp.server.plugins.skills.vendor_providers import (
     CodexSkillsProvider,
     CopilotSkillsProvider,
     CursorSkillsProvider,
@@ -39,10 +27,8 @@ from fastmcp.server.providers.skills.vendor_providers import (
     VSCodeSkillsProvider,
 )
 
-
-# Backwards compatibility alias
+# Backwards-compatibility alias preserved from the original module.
 SkillsProvider = SkillsDirectoryProvider
-
 
 __all__ = [
     "ClaudeSkillsProvider",
@@ -54,6 +40,6 @@ __all__ = [
     "OpenCodeSkillsProvider",
     "SkillProvider",
     "SkillsDirectoryProvider",
-    "SkillsProvider",  # Backwards compatibility alias
+    "SkillsProvider",
     "VSCodeSkillsProvider",
 ]

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from fastmcp import Client, FastMCP
-from fastmcp.server.providers.skills import SkillsDirectoryProvider
+from fastmcp.server.plugins.skills.directory_provider import SkillsDirectoryProvider
 from fastmcp.utilities.skills import (
     SkillFile,
     SkillManifest,
