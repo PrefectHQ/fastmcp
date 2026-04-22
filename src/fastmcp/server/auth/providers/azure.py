@@ -351,7 +351,8 @@ class AzureProvider(OAuthProxy):
             token_issuer=token_issuer,
             **kwargs,
         )
-        provider._token_validator.issuer = token_issuer  # type: ignore[union-attr]
+        if isinstance(provider._token_validator, JWTVerifier):
+            provider._token_validator.issuer = token_issuer
         provider._obo_supported = False
         return provider
 
