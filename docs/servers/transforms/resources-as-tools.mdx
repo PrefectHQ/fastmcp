@@ -24,14 +24,14 @@ This means any client that can call tools can now access resources, even if the 
 Pass your FastMCP server to `ResourcesAsTools` when adding the transform. The generated tools route through the server at runtime, which means all server middleware — auth, visibility, rate limiting — applies to resource operations automatically, exactly as it would for direct `resources/read` calls.
 
 <Note>
-`ResourcesAsTools` (and `PromptsAsTools`) should be applied to a FastMCP server instance, not a raw Provider. The generated tools call back into the server's middleware chain at runtime, so they need a server to route through. If you want to expose only a subset of resources, create a dedicated FastMCP server for those resources and apply the transform there.
+`ResourcesAsTools` is a plugin — register it on a FastMCP server (not a raw Provider). The generated tools call back into the server's middleware chain at runtime. If you want to expose only a subset of resources, create a dedicated FastMCP server for those resources and register the plugin there.
 </Note>
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.transforms import ResourcesAsTools
+from fastmcp.server.plugins.resources_as_tools import ResourcesAsTools
 
-mcp = FastMCP("My Server")
+mcp = FastMCP("My Server", plugins=[ResourcesAsTools()])
 
 @mcp.resource("config://app")
 def app_config() -> str:
@@ -42,9 +42,6 @@ def app_config() -> str:
 def user_profile(user_id: str) -> str:
     """Get a user's profile by ID."""
     return f'{{"user_id": "{user_id}", "name": "User {user_id}"}}'
-
-# Add the transform - creates list_resources and read_resource tools
-mcp.add_transform(ResourcesAsTools(mcp))
 ```
 
 Clients now see three tools: whatever tools you defined directly, plus `list_resources` and `read_resource`.

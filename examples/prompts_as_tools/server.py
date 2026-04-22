@@ -1,4 +1,4 @@
-"""Example: Expose prompts as tools using PromptsAsTools transform.
+"""Example: Expose prompts as tools using the PromptsAsTools plugin.
 
 This example shows how to use PromptsAsTools to make prompts accessible
 to clients that only support tools (not the prompts protocol).
@@ -8,9 +8,9 @@ Run with:
 """
 
 from fastmcp import FastMCP
-from fastmcp.server.transforms import PromptsAsTools
+from fastmcp.server.plugins.prompts_as_tools import PromptsAsTools
 
-mcp = FastMCP("Prompt Tools Demo")
+mcp = FastMCP("Prompt Tools Demo", plugins=[PromptsAsTools()])
 
 
 # Simple prompt without arguments
@@ -78,8 +78,8 @@ Please provide:
 """
 
 
-# Add the transform - this creates list_prompts and get_prompt tools
-mcp.add_transform(PromptsAsTools(mcp))
+# PromptsAsTools (registered at construction above) adds list_prompts
+# and get_prompt synthetic tools so tools-only clients can drive prompts.
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Example: Expose resources as tools using ResourcesAsTools transform.
+"""Example: Expose resources as tools using the ResourcesAsTools plugin.
 
 This example shows how to use ResourcesAsTools to make resources accessible
 to clients that only support tools (not the resources protocol).
@@ -8,9 +8,9 @@ Run with:
 """
 
 from fastmcp import FastMCP
-from fastmcp.server.transforms import ResourcesAsTools
+from fastmcp.server.plugins.resources_as_tools import ResourcesAsTools
 
-mcp = FastMCP("Resource Tools Demo")
+mcp = FastMCP("Resource Tools Demo", plugins=[ResourcesAsTools()])
 
 
 # Static resource - has a fixed URI
@@ -57,8 +57,8 @@ def read_file(directory: str, filename: str) -> str:
     return f"Contents of {directory}/{filename}"
 
 
-# Add the transform - this creates list_resources and read_resource tools
-mcp.add_transform(ResourcesAsTools(mcp))
+# ResourcesAsTools (registered at construction above) adds list_resources
+# and read_resource synthetic tools so tools-only clients can drive resources.
 
 
 if __name__ == "__main__":

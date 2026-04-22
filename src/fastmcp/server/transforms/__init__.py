@@ -222,10 +222,30 @@ class Transform:
 # Re-export built-in transforms (must be after Transform class to avoid circular imports)
 from fastmcp.server.transforms.visibility import Visibility, is_enabled  # noqa: E402
 from fastmcp.server.transforms.namespace import Namespace  # noqa: E402
-from fastmcp.server.transforms.prompts_as_tools import PromptsAsTools  # noqa: E402
-from fastmcp.server.transforms.resources_as_tools import ResourcesAsTools  # noqa: E402
 from fastmcp.server.transforms.tool_transform import ToolTransform  # noqa: E402
 from fastmcp.server.transforms.version_filter import VersionFilter  # noqa: E402
+
+
+# PromptsAsTools / ResourcesAsTools moved to `fastmcp.server.plugins.*`.
+# Resolve lazily via `__getattr__` so importing anything else from this
+# package doesn't load the plugin packages (which would cause a circular
+# import through `fastmcp.server.plugins.base` → `fastmcp.server.providers`
+# → back here).
+def __getattr__(name: str):
+    if name == "PromptsAsTools":
+        from fastmcp.server.plugins.prompts_as_tools.transform import (
+            PromptsAsToolsTransform,
+        )
+
+        return PromptsAsToolsTransform
+    if name == "ResourcesAsTools":
+        from fastmcp.server.plugins.resources_as_tools.transform import (
+            ResourcesAsToolsTransform,
+        )
+
+        return ResourcesAsToolsTransform
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "Namespace",
