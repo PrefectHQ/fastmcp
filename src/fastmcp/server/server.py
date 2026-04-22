@@ -98,9 +98,9 @@ if TYPE_CHECKING:
     from fastmcp.client.client import FastMCP1Server
     from fastmcp.client.sampling import SamplingHandler
     from fastmcp.client.transports import ClientTransport, ClientTransportT
-    from fastmcp.server.providers.openapi import ComponentFn as OpenAPIComponentFn
-    from fastmcp.server.providers.openapi import RouteMap
-    from fastmcp.server.providers.openapi import RouteMapFn as OpenAPIRouteMapFn
+    from fastmcp.server.plugins.openapi import ComponentFn as OpenAPIComponentFn
+    from fastmcp.server.plugins.openapi import RouteMap
+    from fastmcp.server.plugins.openapi import RouteMapFn as OpenAPIRouteMapFn
     from fastmcp.server.providers.proxy import FastMCPProxy
 
 logger = get_logger(__name__)

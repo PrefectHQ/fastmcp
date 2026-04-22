@@ -9,7 +9,7 @@ from httpx import Response
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.server.providers.openapi import OpenAPIProvider
+from fastmcp.server.plugins.openapi import OpenAPIProvider
 
 
 def create_openapi_server(
@@ -929,7 +929,7 @@ class TestOpenAPIPostEdgeCases:
 
     async def test_unexpected_error_in_request_building_gives_useful_message(self):
         """Unexpected exceptions during request building should produce useful errors."""
-        from fastmcp.server.providers.openapi.components import OpenAPITool
+        from fastmcp.server.plugins.openapi.components import OpenAPITool
         from fastmcp.utilities.openapi.director import RequestDirector
         from fastmcp.utilities.openapi.models import HTTPRoute
 

@@ -5,7 +5,7 @@ import pytest
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.server.providers.openapi import OpenAPIProvider
+from fastmcp.server.plugins.openapi import OpenAPIProvider
 
 
 def create_openapi_server(

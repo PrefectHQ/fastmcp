@@ -8,12 +8,12 @@ from httpx import Response
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.server.providers.openapi import OpenAPIProvider
-from fastmcp.server.providers.openapi.components import (
+from fastmcp.server.plugins.openapi import OpenAPIProvider
+from fastmcp.server.plugins.openapi.components import (
     _extract_mime_type_from_route,
     _redact_headers,
 )
-from fastmcp.server.providers.openapi.routing import MCPType, RouteMap
+from fastmcp.server.plugins.openapi.routing import MCPType, RouteMap
 from fastmcp.utilities.openapi.models import HTTPRoute, ResponseInfo
 
 

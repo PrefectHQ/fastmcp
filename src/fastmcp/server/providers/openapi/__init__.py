@@ -1,26 +1,32 @@
-"""OpenAPI provider for FastMCP.
+"""Backwards-compatibility shim — OpenAPI moved to `fastmcp.server.plugins.openapi`.
 
-This module provides OpenAPI integration for FastMCP through the Provider pattern.
+The preferred entry point is now the `OpenAPI` plugin:
 
-Example:
-    ```python
     from fastmcp import FastMCP
-    from fastmcp.server.providers.openapi import OpenAPIProvider
-    import httpx
+    from fastmcp.server.plugins.openapi import OpenAPI, OpenAPIConfig
 
-    client = httpx.AsyncClient(base_url="https://api.example.com")
-    provider = OpenAPIProvider(openapi_spec=spec, client=client)
-    mcp = FastMCP("API Server", providers=[provider])
-    ```
+    mcp = FastMCP("Server", plugins=[OpenAPI(OpenAPIConfig(spec=...))])
+
+`OpenAPIProvider` and its helpers (`RouteMap`, `MCPType`, component
+classes) remain importable from this package for direct composition.
+Importing from this top-level path does **not** emit a deprecation
+warning — it stays silent so that unrelated code in fastmcp that
+happens to touch `fastmcp.server.providers.openapi` doesn't spray
+warnings. Users who import from the leaf submodules (`.provider`,
+`.routing`, `.components`) directly will see a `FastMCPDeprecationWarning`
+pointing at the new location.
 """
 
-from fastmcp.server.providers.openapi.components import (
+# Silent passthrough at the package level — re-export from the new
+# location directly so neither this import nor the lazy provider import
+# inside `fastmcp.server.providers.__init__` fires a deprecation warning.
+from fastmcp.server.plugins.openapi.components import (
     OpenAPIResource,
     OpenAPIResourceTemplate,
     OpenAPITool,
 )
-from fastmcp.server.providers.openapi.provider import OpenAPIProvider
-from fastmcp.server.providers.openapi.routing import (
+from fastmcp.server.plugins.openapi.provider import OpenAPIProvider
+from fastmcp.server.plugins.openapi.routing import (
     ComponentFn,
     MCPType,
     RouteMap,
