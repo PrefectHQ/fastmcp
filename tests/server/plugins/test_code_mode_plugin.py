@@ -10,11 +10,24 @@ dict-config coercion, and the deprecation shim at the old import path.
 from __future__ import annotations
 
 import warnings
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
 
+from fastmcp import FastMCP
 from fastmcp.server.plugins.code_mode import CodeMode, CodeModeConfig
+
+
+class _NoopSandbox:
+    async def run(
+        self,
+        code: str,
+        *,
+        inputs: dict[str, Any] | None = None,
+        external_functions: dict[str, Any] | None = None,
+    ) -> Any:
+        return None
 
 
 class TestCodeModeConfig:
@@ -67,23 +80,26 @@ class TestDeprecationShim:
             f"got {[(w.category.__name__, str(w.message)) for w in caught]}"
         )
 
-    def test_old_codemode_is_still_the_transform(self):
-        """`CodeMode` at the old path keeps pointing at the transform so
-        that existing `mcp.add_transform(CodeMode())` code keeps working.
-        The new plugin class lives at the new path only."""
+    async def test_legacy_add_transform_pattern_still_works(self):
+        """End-to-end: old `add_transform(CodeMode(...))` code keeps
+        working. The point of the shim is that this doesn't break — the
+        identity-check test alone wouldn't catch a regression where
+        `CodeMode` at the old path drifted to the plugin class."""
         from fastmcp.exceptions import FastMCPDeprecationWarning
-        from fastmcp.server.plugins.code_mode.transform import CodeModeTransform
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", FastMCPDeprecationWarning)
             from fastmcp.experimental.transforms.code_mode import (
                 CodeMode as OldCodeMode,
             )
-            from fastmcp.experimental.transforms.code_mode import (
-                CodeModeTransform as OldTransform,
-            )
 
-        assert OldCodeMode is CodeModeTransform
-        assert OldTransform is CodeModeTransform
-        # The plugin class is NOT the same as the old-path `CodeMode`:
-        assert OldCodeMode is not CodeMode
+        mcp = FastMCP("legacy")
+
+        @mcp.tool
+        def ping() -> str:
+            return "pong"
+
+        mcp.add_transform(OldCodeMode(sandbox_provider=_NoopSandbox()))
+
+        tools = await mcp.list_tools(run_middleware=False)
+        assert {t.name for t in tools} == {"search", "get_schema", "execute"}
