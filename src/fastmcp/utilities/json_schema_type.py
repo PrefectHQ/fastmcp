@@ -380,6 +380,56 @@ def _return_Any() -> Any:
     return Any
 
 
+def _merge_object_types(types: list[type]) -> type | None:
+    """Try to merge multiple object types into one.
+
+    For allOf schemas where all sub-schemas are objects/dataclasses,
+    we can create a merged dataclass with combined properties.
+    Returns None if types can't be meaningfully merged.
+    """
+    from dataclasses import MISSING as DC_MISSING, Field as DataclassField, make_dataclass
+    from typing import get_args, get_origin, Union
+
+    # Filter to only types that have __annotations__ (dataclass-like)
+    object_types = []
+    for t in types:
+        origin = get_origin(t)
+        if origin is None and hasattr(t, "__annotations__"):
+            object_types.append(t)
+        elif origin is Union:
+            # Unwrap Union types to find object types
+            for arg in get_args(t):
+                if hasattr(arg, "__annotations__"):
+                    object_types.append(arg)
+
+    if len(object_types) < 2:
+        return None
+
+    # Merge all properties from object types
+    merged_fields: dict[str, tuple[type, DataclassField]] = {}
+    for obj_type in object_types:
+        for field_name, field_type in obj_type.__annotations__.items():
+            if field_name not in merged_fields:
+                # Get default from the field
+                if hasattr(obj_type, "__dataclass_fields__"):
+                    dc_field = obj_type.__dataclass_fields__.get(field_name)
+                    if dc_field and dc_field.default is not DC_MISSING:
+                        merged_fields[field_name] = (field_type, field(default=dc_field.default))
+                    elif dc_field and dc_field.default_factory is not DC_MISSING:
+                        merged_fields[field_name] = (field_type, field(default_factory=dc_field.default_factory))
+                    else:
+                        merged_fields[field_name] = (field_type, field())
+                else:
+                    merged_fields[field_name] = (field_type, field())
+
+    if not merged_fields:
+        return None
+
+    # Create merged dataclass
+    field_specs = [(name, ftype, fdef) for name, (ftype, fdef) in merged_fields.items()]
+    return make_dataclass("MergedAllOf", field_specs, kw_only=True)
+
+
 def _object_schema_to_type(
     schema: Mapping[str, Any],
     schemas: Mapping[str, Any],
@@ -469,6 +519,60 @@ def _schema_to_type(
 
     if "enum" in schema:
         return _create_enum(f"Enum_{len(_classes)}", schema["enum"])
+
+    # Handle oneOf unions (exactly-one semantics, similar to anyOf)
+    if "oneOf" in schema:
+        types: list[type | Any] = [
+            _schema_to_type(subschema, schemas) for subschema in schema["oneOf"]
+        ]
+
+        # Check if one of the types is None (null)
+        has_null = type(None) in types
+        types = [t for t in types if t is not type(None)]
+
+        if len(types) == 0:
+            return type(None)
+        elif len(types) == 1:
+            if has_null:
+                return types[0] | None  # type: ignore
+            else:
+                return types[0]
+        else:
+            if has_null:
+                return Union[(*types, type(None))]  # type: ignore
+            else:
+                return Union[tuple(types)]  # type: ignore # noqa: UP007
+
+    # Handle allOf (intersection - value must satisfy ALL sub-schemas)
+    if "allOf" in schema:
+        types: list[type | Any] = [
+            _schema_to_type(subschema, schemas) for subschema in schema["allOf"]
+        ]
+
+        # For allOf intersection, every branch must be satisfied.
+        # Only add Optional if ALL subschemas that matter have null.
+        non_null_types = [t for t in types if t is not type(None)]
+        # Only make result optional if ALL non-null types are the same single type
+        # and at least one branch was null (semantic: "T & null" means Optional[T])
+        has_null = type(None) in types
+        if not non_null_types:
+            return type(None)
+        elif len(non_null_types) == 1:
+            if has_null:
+                return Union[non_null_types[0], type(None)]  # type: ignore
+            else:
+                return non_null_types[0]
+        else:
+            # Try to merge object types for true intersection
+            merged = _merge_object_types(non_null_types)
+            if merged is not None:
+                if has_null:
+                    return Union[merged, type(None)]  # type: ignore
+                else:
+                    return merged
+            else:
+                # Can't merge - intersection of incompatible types = invalid
+                return _return_Any()
 
     # Handle anyOf unions
     if "anyOf" in schema:
