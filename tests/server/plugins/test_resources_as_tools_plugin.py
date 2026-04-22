@@ -64,8 +64,7 @@ class TestDeprecationShim:
             w for w in caught if issubclass(w.category, FastMCPDeprecationWarning)
         ]
         assert any(
-            "plugins.resources_as_tools" in str(w.message)
-            for w in fastmcp_deprecations
+            "plugins.resources_as_tools" in str(w.message) for w in fastmcp_deprecations
         ), (
             f"expected FastMCPDeprecationWarning pointing at plugins.resources_as_tools, "
             f"got {[(w.category.__name__, str(w.message)) for w in caught]}"
