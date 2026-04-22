@@ -16,13 +16,9 @@ import pytest
 from pydantic import ValidationError
 
 from fastmcp import Client, FastMCP
-from fastmcp.server.plugins.openapi import (
-    OpenAPI,
-    OpenAPIConfig,
-    OpenAPIProvider,
-    RouteMapDict,
-)
-from fastmcp.server.plugins.openapi.routing import MCPType, RouteMap
+from fastmcp.server.plugins.openapi import MCPType, OpenAPI, OpenAPIConfig, RouteMap
+from fastmcp.server.plugins.openapi.plugin import RouteMapDict
+from fastmcp.server.plugins.openapi.provider import OpenAPIProvider
 
 PETSTORE_SPEC: dict = {
     "openapi": "3.0.0",
@@ -230,9 +226,7 @@ class TestDeprecationShim:
         fastmcp_warns = [
             w for w in caught if issubclass(w.category, FastMCPDeprecationWarning)
         ]
-        assert any(
-            "plugins.openapi" in str(w.message) for w in fastmcp_warns
-        ), (
+        assert any("plugins.openapi" in str(w.message) for w in fastmcp_warns), (
             f"expected FastMCPDeprecationWarning pointing at plugins.openapi, "
             f"got {[(w.category.__name__, str(w.message)) for w in caught]}"
         )

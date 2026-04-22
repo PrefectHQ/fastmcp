@@ -197,8 +197,7 @@ class OpenAPI(Plugin[OpenAPIConfig]):
     def _load_spec(self) -> dict[str, Any]:
         if self.config.spec is not None and self.config.spec_path is not None:
             raise ValueError(
-                "OpenAPIConfig requires exactly one of `spec` or "
-                "`spec_path`, not both."
+                "OpenAPIConfig requires exactly one of `spec` or `spec_path`, not both."
             )
         if self.config.spec is not None:
             return self.config.spec

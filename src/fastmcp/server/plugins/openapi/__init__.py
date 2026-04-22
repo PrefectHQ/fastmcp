@@ -1,7 +1,5 @@
 """OpenAPI plugin — mount an OpenAPI spec as MCP tools/resources.
 
-The plugin is the canonical entry point:
-
     from fastmcp import FastMCP
     from fastmcp.server.plugins.openapi import OpenAPI, OpenAPIConfig
 
@@ -10,40 +8,14 @@ The plugin is the canonical entry point:
         plugins=[OpenAPI(OpenAPIConfig(spec=petstore_spec))],
     )
 
-The underlying `OpenAPIProvider` and its helper types (`RouteMap`,
-`MCPType`, component classes) are re-exported here for advanced
-composition. The old import path at `fastmcp.server.providers.openapi`
-keeps working via deprecation shims that re-export these same symbols.
+Typed `RouteMap` + `MCPType` are re-exported for the Python-only
+escape hatch on `OpenAPI.__init__(route_maps=...)`. Everything else
+(component classes, provider class, callable type aliases) lives on the
+submodules — import from `.provider`, `.components`, `.routing` directly
+if you need them.
 """
 
-from fastmcp.server.plugins.openapi.components import (
-    OpenAPIResource,
-    OpenAPIResourceTemplate,
-    OpenAPITool,
-)
-from fastmcp.server.plugins.openapi.plugin import (
-    OpenAPI,
-    OpenAPIConfig,
-    RouteMapDict,
-)
-from fastmcp.server.plugins.openapi.provider import OpenAPIProvider
-from fastmcp.server.plugins.openapi.routing import (
-    ComponentFn,
-    MCPType,
-    RouteMap,
-    RouteMapFn,
-)
+from fastmcp.server.plugins.openapi.plugin import OpenAPI, OpenAPIConfig
+from fastmcp.server.plugins.openapi.routing import MCPType, RouteMap
 
-__all__ = [
-    "ComponentFn",
-    "MCPType",
-    "OpenAPI",
-    "OpenAPIConfig",
-    "OpenAPIProvider",
-    "OpenAPIResource",
-    "OpenAPIResourceTemplate",
-    "OpenAPITool",
-    "RouteMap",
-    "RouteMapDict",
-    "RouteMapFn",
-]
+__all__ = ["MCPType", "OpenAPI", "OpenAPIConfig", "RouteMap"]

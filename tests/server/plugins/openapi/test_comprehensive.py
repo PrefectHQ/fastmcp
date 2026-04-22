@@ -9,7 +9,7 @@ from httpx import Response
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.server.plugins.openapi import OpenAPIProvider
+from fastmcp.server.plugins.openapi.provider import OpenAPIProvider
 
 
 def create_openapi_server(

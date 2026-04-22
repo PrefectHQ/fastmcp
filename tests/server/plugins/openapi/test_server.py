@@ -5,8 +5,7 @@ import pytest
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.server.plugins.openapi import OpenAPIProvider
-from fastmcp.server.plugins.openapi.provider import DEFAULT_TIMEOUT
+from fastmcp.server.plugins.openapi.provider import DEFAULT_TIMEOUT, OpenAPIProvider
 
 
 class TestOpenAPIProviderServerVariables:
