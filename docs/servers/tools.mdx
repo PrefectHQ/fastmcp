@@ -132,6 +132,10 @@ def search_products_implementation(query: str, category: str | None = None) -> l
 
   Optional JSON schema for the tool's output. When provided, the tool must return structured output matching this schema. If not provided, FastMCP automatically generates a schema from the function's return type annotation. See [Output Schemas](#output-schemas) for details.
 </ParamField>
+
+<ParamField body="run_in_thread" type="bool" default="True">
+  Whether sync tool functions run in a worker thread. When `True` (default), sync functions are dispatched to a thread pool so they don't block the event loop. Set to `False` to run the function inline on the event loop thread — useful for libraries with thread affinity like Windows COM (`pywin32`, `uiautomation`, `comtypes`), `tkinter`, or certain GPU/driver bindings. Has no effect on async functions. See [Thread affinity](#thread-affinity) for details.
+</ParamField>
 </Card>
 
 ### Using with Methods
@@ -174,6 +178,24 @@ def slow_tool(x: int) -> int:
 ```
 
 For I/O-bound operations like network requests or database queries, async tools are still preferred since they're more efficient than threadpool dispatch. Use sync tools when working with synchronous libraries or for simple operations where the threading overhead doesn't matter.
+
+### Thread affinity
+
+Some libraries bind state to the thread they're first used from and break when called from a different thread. The most common case is Windows COM — libraries like `uiautomation`, `comtypes`, and parts of `pywin32` require `CoInitialize` to have been called on the current thread, and worker-pool threads don't initialize COM by default. Similar constraints apply to `tkinter`, some GPU bindings (CUDA contexts), and certain hardware drivers.
+
+For these cases, pass `run_in_thread=False` so FastMCP invokes the sync function inline on the event loop thread instead of dispatching it to a worker:
+
+```python
+import uiautomation as auto
+
+@mcp.tool(run_in_thread=False)
+def list_windows() -> list[str]:
+    """List desktop windows via Windows UI Automation (COM)."""
+    desktop = auto.GetRootControl()
+    return [w.Name for w in desktop.GetChildren()[:5]]
+```
+
+The tradeoff is that the event loop is blocked for the duration of the call — other in-flight requests wait until the tool returns. Keep `run_in_thread=False` reserved for tools that genuinely need thread affinity, and prefer short-running calls in that path.
 
 ## Arguments
 

@@ -85,11 +85,24 @@ class ToolMeta:
     timeout: float | None = None
     auth: AuthCheck | list[AuthCheck] | None = None
     enabled: bool = True
+    run_in_thread: bool = True
 
 
 class FunctionTool(Tool):
     fn: SkipJsonSchema[Callable[..., Any]]
     return_type: Annotated[SkipJsonSchema[Any], Field(exclude=True)] = None
+    run_in_thread: Annotated[
+        bool,
+        Field(
+            description=(
+                "If True (default), sync tool functions are dispatched to a "
+                "worker thread so they don't block the event loop. Set to False "
+                "to run sync functions inline on the event loop thread — useful "
+                "for libraries with thread affinity (e.g. Windows COM, tkinter). "
+                "Has no effect on async functions."
+            )
+        ),
+    ] = True
 
     @classmethod
     def from_function(
@@ -112,6 +125,7 @@ class FunctionTool(Tool):
         task: bool | TaskConfig | None = None,
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
+        run_in_thread: bool | None = None,
     ) -> FunctionTool:
         """Create a FunctionTool from a function.
 
@@ -139,6 +153,7 @@ class FunctionTool(Tool):
                     serializer,
                     timeout,
                     auth,
+                    run_in_thread,
                 ]
             )
             or output_schema is not NotSet
@@ -168,6 +183,7 @@ class FunctionTool(Tool):
                 serializer=serializer,
                 timeout=timeout,
                 auth=auth,
+                run_in_thread=True if run_in_thread is None else run_in_thread,
             )
 
         if metadata.serializer is not None and fastmcp.settings.deprecation_warnings:
@@ -235,6 +251,7 @@ class FunctionTool(Tool):
             task_config=task_config,
             timeout=metadata.timeout,
             auth=metadata.auth,
+            run_in_thread=metadata.run_in_thread,
         )
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
@@ -249,12 +266,19 @@ class FunctionTool(Tool):
                     # Thread pool execution for sync functions, direct await for async
                     if is_coroutine_function(wrapper_fn):
                         result = await type_adapter.validate_python(arguments)
-                    else:
+                    elif self.run_in_thread:
                         # Sync function: run in threadpool to avoid blocking
                         result = await call_sync_fn_in_threadpool(
                             type_adapter.validate_python, arguments
                         )
                         # Handle sync wrappers that return awaitables
+                        if inspect.isawaitable(result):
+                            result = await result
+                    else:
+                        # Run sync function inline on the event loop thread
+                        # (opt-in via run_in_thread=False). Blocks the loop
+                        # for the duration of the call.
+                        result = type_adapter.validate_python(arguments)
                         if inspect.isawaitable(result):
                             result = await result
                     # Materialize generators inside timeout scope so slow
@@ -276,10 +300,14 @@ class FunctionTool(Tool):
             # No timeout: use existing execution path
             if is_coroutine_function(wrapper_fn):
                 result = await type_adapter.validate_python(arguments)
-            else:
+            elif self.run_in_thread:
                 result = await call_sync_fn_in_threadpool(
                     type_adapter.validate_python, arguments
                 )
+                if inspect.isawaitable(result):
+                    result = await result
+            else:
+                result = type_adapter.validate_python(arguments)
                 if inspect.isawaitable(result):
                     result = await result
             result = await self._materialize_generator(result)
@@ -356,6 +384,7 @@ def tool(
     serializer: Any | None = None,
     timeout: float | None = None,
     auth: AuthCheck | list[AuthCheck] | None = None,
+    run_in_thread: bool = True,
 ) -> Callable[[F], F]: ...
 @overload
 def tool(
@@ -375,6 +404,7 @@ def tool(
     serializer: Any | None = None,
     timeout: float | None = None,
     auth: AuthCheck | list[AuthCheck] | None = None,
+    run_in_thread: bool = True,
 ) -> Callable[[F], F]: ...
 
 
@@ -395,6 +425,7 @@ def tool(
     serializer: Any | None = None,
     timeout: float | None = None,
     auth: AuthCheck | list[AuthCheck] | None = None,
+    run_in_thread: bool = True,
 ) -> Any:
     """Standalone decorator to mark a function as an MCP tool.
 
@@ -427,6 +458,7 @@ def tool(
             serializer=serializer,
             timeout=timeout,
             auth=auth,
+            run_in_thread=run_in_thread,
         )
         return FunctionTool.from_function(fn, metadata=tool_meta)
 
@@ -446,6 +478,7 @@ def tool(
             serializer=serializer,
             timeout=timeout,
             auth=auth,
+            run_in_thread=run_in_thread,
         )
         target = fn.__func__ if hasattr(fn, "__func__") else fn
         target.__fastmcp__ = metadata

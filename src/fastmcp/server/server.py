@@ -1613,6 +1613,7 @@ class FastMCP(
         task: bool | TaskConfig | None = None,
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
+        run_in_thread: bool = True,
     ) -> F: ...
 
     @overload
@@ -1634,6 +1635,7 @@ class FastMCP(
         task: bool | TaskConfig | None = None,
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
+        run_in_thread: bool = True,
     ) -> Callable[[F], F]: ...
 
     def tool(
@@ -1654,6 +1656,7 @@ class FastMCP(
         task: bool | TaskConfig | None = None,
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
+        run_in_thread: bool = True,
     ) -> (
         Callable[[AnyFunction], FunctionTool]
         | FunctionTool
@@ -1731,6 +1734,7 @@ class FastMCP(
             task=task if task is not None else self._support_tasks_by_default,
             timeout=timeout,
             auth=auth,
+            run_in_thread=run_in_thread,
         )
 
         return result

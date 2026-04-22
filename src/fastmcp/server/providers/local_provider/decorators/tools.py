@@ -165,6 +165,7 @@ class ToolDecoratorMixin:
                     serializer=fmeta.serializer,
                     timeout=fmeta.timeout,
                     auth=fmeta.auth,
+                    run_in_thread=fmeta.run_in_thread,
                 )
             else:
                 tool = Tool.from_function(tool)
@@ -194,6 +195,7 @@ class ToolDecoratorMixin:
         serializer: ToolResultSerializerType | None = None,  # Deprecated
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
+        run_in_thread: bool = True,
     ) -> F: ...
 
     @overload
@@ -216,6 +218,7 @@ class ToolDecoratorMixin:
         serializer: ToolResultSerializerType | None = None,  # Deprecated
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
+        run_in_thread: bool = True,
     ) -> Callable[[F], F]: ...
 
     # NOTE: This method mirrors fastmcp.tools.tool() but adds registration,
@@ -241,6 +244,7 @@ class ToolDecoratorMixin:
         serializer: ToolResultSerializerType | None = None,  # Deprecated
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
+        run_in_thread: bool = True,
     ) -> (
         Callable[[AnyFunction], FunctionTool]
         | FunctionTool
@@ -345,6 +349,7 @@ class ToolDecoratorMixin:
                     task=resolved_task,
                     timeout=timeout,
                     auth=auth,
+                    run_in_thread=run_in_thread,
                 )
                 self._add_component(tool_obj)
                 if not enabled:
@@ -370,6 +375,7 @@ class ToolDecoratorMixin:
                     timeout=timeout,
                     auth=auth,
                     enabled=enabled,
+                    run_in_thread=run_in_thread,
                 )
                 target = fn.__func__ if hasattr(fn, "__func__") else fn
                 target.__fastmcp__ = metadata  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
@@ -413,4 +419,5 @@ class ToolDecoratorMixin:
             serializer=serializer,
             timeout=timeout,
             auth=auth,
+            run_in_thread=run_in_thread,
         )
