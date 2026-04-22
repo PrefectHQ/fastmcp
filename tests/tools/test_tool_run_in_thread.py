@@ -160,3 +160,30 @@ class TestRunInThreadViaStandaloneDecorator:
         result = await mcp.call_tool("fn")
         assert result.structured_content is not None
         assert result.structured_content["result"] == loop_tid
+
+
+class TestRunInThreadViaFileSystemProvider:
+    async def test_filesystem_provider_respects_run_in_thread(self, tmp_path):
+        """Tools discovered by FileSystemProvider honor run_in_thread=False.
+
+        FileSystemProvider extends LocalProvider and registers filesystem-
+        discovered tools via add_tool(), which reads ToolMeta.run_in_thread
+        attached by the standalone @tool decorator.
+        """
+        from fastmcp.server.providers import FileSystemProvider
+
+        (tmp_path / "where.py").write_text(
+            "import threading\n"
+            "from fastmcp.tools import tool\n\n"
+            "@tool(run_in_thread=False)\n"
+            "def where_am_i() -> int:\n"
+            "    return threading.get_ident()\n"
+        )
+
+        provider = FileSystemProvider(tmp_path)
+        mcp = FastMCP(providers=[provider])
+
+        loop_tid = await _loop_thread_id()
+        result = await mcp.call_tool("where_am_i")
+        assert result.structured_content is not None
+        assert result.structured_content["result"] == loop_tid

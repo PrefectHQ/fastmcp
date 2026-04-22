@@ -134,7 +134,7 @@ def search_products_implementation(query: str, category: str | None = None) -> l
 </ParamField>
 
 <ParamField body="run_in_thread" type="bool" default="True">
-  Whether sync tool functions run in a worker thread. When `True` (default), sync functions are dispatched to a thread pool so they don't block the event loop. Set to `False` to run the function inline on the event loop thread — useful for libraries with thread affinity like Windows COM (`pywin32`, `uiautomation`, `comtypes`), `tkinter`, or certain GPU/driver bindings. Has no effect on async functions. See [Thread affinity](#thread-affinity) for details.
+  Applies to sync tool functions only. When `True` (default), sync functions are dispatched to a thread pool so they don't block the event loop. Set to `False` to run the function inline on the event loop thread — useful for libraries with thread affinity like Windows COM (`pywin32`, `uiautomation`, `comtypes`), `tkinter`, or certain GPU/driver bindings. Ignored for async functions, which always run on the event loop. See [Thread affinity](#thread-affinity) for details.
 </ParamField>
 </Card>
 
@@ -180,6 +180,8 @@ def slow_tool(x: int) -> int:
 For I/O-bound operations like network requests or database queries, async tools are still preferred since they're more efficient than threadpool dispatch. Use sync tools when working with synchronous libraries or for simple operations where the threading overhead doesn't matter.
 
 ### Thread affinity
+
+This section applies to sync tools only. Async tools already run on the event loop and are not affected.
 
 Some libraries bind state to the thread they're first used from and break when called from a different thread. The most common case is Windows COM — libraries like `uiautomation`, `comtypes`, and parts of `pywin32` require `CoInitialize` to have been called on the current thread, and worker-pool threads don't initialize COM by default. Similar constraints apply to `tkinter`, some GPU bindings (CUDA contexts), and certain hardware drivers.
 

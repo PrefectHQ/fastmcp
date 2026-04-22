@@ -95,11 +95,12 @@ class FunctionTool(Tool):
         bool,
         Field(
             description=(
-                "If True (default), sync tool functions are dispatched to a "
-                "worker thread so they don't block the event loop. Set to False "
-                "to run sync functions inline on the event loop thread — useful "
-                "for libraries with thread affinity (e.g. Windows COM, tkinter). "
-                "Has no effect on async functions."
+                "Applies to sync tool functions only. When True (default), sync "
+                "functions are dispatched to a worker thread so they don't block "
+                "the event loop. Set to False to run the sync function inline on "
+                "the event loop thread — useful for libraries with thread "
+                "affinity (e.g. Windows COM, tkinter). Ignored for async functions, "
+                "which always run on the event loop."
             )
         ),
     ] = True
@@ -431,6 +432,14 @@ def tool(
 
     Returns the original function with metadata attached. Register with a server
     using mcp.add_tool().
+
+    Args:
+        run_in_thread: Applies to sync tool functions only. When True (default),
+            the sync function is dispatched to a worker thread so it does not
+            block the event loop. Set to False to run the function inline on the
+            event loop thread — useful for libraries with thread affinity
+            (e.g. Windows COM via `uiautomation`/`comtypes`/`pywin32`, `tkinter`,
+            some GPU/driver bindings). Ignored for async functions.
     """
     if isinstance(annotations, dict):
         annotations = ToolAnnotations(**annotations)

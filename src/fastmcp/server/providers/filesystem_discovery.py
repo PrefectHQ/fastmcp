@@ -296,6 +296,7 @@ def extract_components(module: ModuleType) -> list[FastMCPComponent]:
                     exclude_args=meta.exclude_args,
                     serializer=meta.serializer,
                     auth=meta.auth,
+                    run_in_thread=meta.run_in_thread,
                 )
                 components.append(tool)
             elif isinstance(meta, ResourceMeta):
