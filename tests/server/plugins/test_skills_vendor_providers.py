@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastmcp.server.providers.skills import (
-    ClaudeSkillsProvider,
+from fastmcp.server.plugins.skills.claude_provider import ClaudeSkillsProvider
+from fastmcp.server.plugins.skills.vendor_providers import (
     CodexSkillsProvider,
     CopilotSkillsProvider,
     CursorSkillsProvider,

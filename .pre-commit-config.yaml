@@ -13,8 +13,11 @@ repos:
         types_or: [yaml, json5]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    # Ruff version.
-    rev: v0.14.10
+    # Ruff version. Keep in sync with the `ruff` pin in uv.lock so
+    # `uv run ruff format` locally and `prek run` / CI use the same
+    # ruleset — otherwise minor-version drift produces line-join and
+    # trailing-comma diffs that only show up in CI.
+    rev: v0.15.8
     hooks:
       # Run the linter.
       - id: ruff-check

@@ -8,13 +8,14 @@ from mcp.types import TextResourceContents
 from pydantic import AnyUrl
 
 from fastmcp import Client, FastMCP
-from fastmcp.server.providers.skills import (
-    ClaudeSkillsProvider,
-    SkillProvider,
-    SkillsDirectoryProvider,
-    SkillsProvider,
-)
-from fastmcp.server.providers.skills._common import parse_frontmatter
+from fastmcp.server.plugins.skills._common import parse_frontmatter
+from fastmcp.server.plugins.skills.claude_provider import ClaudeSkillsProvider
+from fastmcp.server.plugins.skills.directory_provider import SkillsDirectoryProvider
+from fastmcp.server.plugins.skills.skill_provider import SkillProvider
+
+# `SkillsProvider` was a backcompat alias for `SkillsDirectoryProvider`
+# in the old providers/ package — preserve that shape for these tests.
+SkillsProvider = SkillsDirectoryProvider
 
 
 class TestParseFrontmatter:

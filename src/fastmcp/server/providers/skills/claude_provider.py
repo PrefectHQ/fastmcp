@@ -1,44 +1,17 @@
-"""Claude-specific skills provider for Claude Code skills."""
+"""Deprecation shim — `ClaudeSkillsProvider` moved to `fastmcp.server.plugins.skills.claude_provider`."""
 
-from __future__ import annotations
+import warnings
 
-from pathlib import Path
-from typing import Literal
+from fastmcp.exceptions import FastMCPDeprecationWarning
+from fastmcp.server.plugins.skills.claude_provider import ClaudeSkillsProvider
 
-from fastmcp.server.providers.skills.directory_provider import SkillsDirectoryProvider
+warnings.warn(
+    "fastmcp.server.providers.skills.claude_provider has moved to "
+    "fastmcp.server.plugins.skills.claude_provider. Prefer the Skills "
+    'plugin: `Skills(SkillsConfig(vendor="claude"))`. This old '
+    "leaf-submodule import path will be removed in a future release.",
+    FastMCPDeprecationWarning,
+    stacklevel=2,
+)
 
-
-class ClaudeSkillsProvider(SkillsDirectoryProvider):
-    """Provider for Claude Code skills from ~/.claude/skills/.
-
-    A convenience subclass that sets the default root to Claude's skills location.
-
-    Args:
-        reload: If True, re-scan on every request. Defaults to False.
-        supporting_files: How supporting files are exposed:
-            - "template": Accessed via ResourceTemplate, hidden from list_resources().
-            - "resources": Each file exposed as individual Resource in list_resources().
-
-    Example:
-        ```python
-        from fastmcp import FastMCP
-        from fastmcp.server.providers.skills import ClaudeSkillsProvider
-
-        mcp = FastMCP("Claude Skills")
-        mcp.add_provider(ClaudeSkillsProvider())  # Uses default location
-        ```
-    """
-
-    def __init__(
-        self,
-        reload: bool = False,
-        supporting_files: Literal["template", "resources"] = "template",
-    ) -> None:
-        root = Path.home() / ".claude" / "skills"
-
-        super().__init__(
-            roots=[root],
-            reload=reload,
-            main_file_name="SKILL.md",
-            supporting_files=supporting_files,
-        )
+__all__ = ["ClaudeSkillsProvider"]
