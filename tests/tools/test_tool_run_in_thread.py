@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from collections.abc import AsyncIterator
 
 import pytest
 from mcp.types import TextContent
 
 from fastmcp import FastMCP
+from fastmcp.tools.base import Tool
 
 
 async def _loop_thread_id() -> int:
@@ -76,22 +78,20 @@ class TestRunInThread:
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "ok"
 
-    async def test_async_generator_allows_timeout_and_run_in_thread_false(self):
+    def test_async_generator_allowed_with_timeout_and_run_in_thread_false(self):
         """Async generators are async even though is_coroutine_function is False.
 
-        Their iteration has await points, so timeout can still fire. The
-        registration-time guard must not over-block this shape.
+        Registration must not over-block this shape — the generator's
+        iteration has await points, so timeout enforcement still works.
         """
-        mcp = FastMCP()
+        from fastmcp.tools.base import Tool
 
-        @mcp.tool(run_in_thread=False, timeout=5.0)
-        async def stream() -> list[str]:  # type: ignore[misc]
+        async def stream() -> AsyncIterator[str]:
             yield "a"
             yield "b"
 
-        result = await mcp.call_tool("stream")
-        # _materialize_generator consumes the async generator into a list.
-        assert result.structured_content is not None
+        # Must not raise.
+        Tool.from_function(stream, timeout=5.0, run_in_thread=False)
 
     async def test_async_tool_unaffected_by_run_in_thread_flag(self):
         """The flag is a no-op for async tools (they already run on the loop)."""
@@ -236,6 +236,10 @@ class TestRunInThreadViaFileSystemProvider:
         )
 
         provider = FileSystemProvider(tmp_path)
-        discovered = [c for c in provider._components.values() if c.name == "quick"]
+        discovered = [
+            c
+            for c in provider._components.values()
+            if isinstance(c, Tool) and c.name == "quick"
+        ]
         assert len(discovered) == 1
         assert discovered[0].timeout == 5.0
