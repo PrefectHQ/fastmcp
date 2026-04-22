@@ -1,35 +1,29 @@
-"""
-Test suite for WorkOS Authentication Provider.
-Focuses on ensuring compatibility with dynamic server environments.
-"""
-
 import pytest
-
 from fastmcp.server.auth.providers.workos import WorkOSProvider
 
 @pytest.mark.asyncio
 async def test_workos_dynamic_port_fix():
     """
-    Verify WorkOSProvider supports base_url updates post-initialization.
-    
-    This addresses the 'Chicken and Egg' problem (Issue #1654) where the 
-    server port is unknown until startup, requiring the provider's 
-    redirect logic to be updated dynamically.
+    Verify WorkOSProvider supports dynamic URL updates post-initialization.
+    This ensures redirect logic correctly handles runtime port assignments (#1654).
     """
-
-    # Initialize with a default placeholder
     provider = WorkOSProvider(
         client_id="test_id",
         client_secret="test_secret",
         authkit_domain="test.authkit.app",
-        base_url="http://localhost:8000" 
+        base_url="http://localhost:8000"
     )
 
-    # Simulates a dynamic port assignment (e.g., during a pytest-asyncio run)
+    # Simulate dynamic port assignment
     dynamic_port_url = "http://localhost:9999"
     
-    # THE FIX: Ensure the provider allows the base_url to be overwritten
+    # Update the provider state
     provider.base_url = dynamic_port_url
+    provider.issuer_url = dynamic_port_url
 
-    # Validation: The provider must reflect the new URL for OAuth redirects
-    assert provider.base_url == dynamic_port_url
+    # Final validation: Ensure the provider reflects the new environment
+    assert str(provider.base_url).rstrip("/") == dynamic_port_url
+    assert str(provider.issuer_url).rstrip("/") == dynamic_port_url
+
+# End of file with trailing newline
+
