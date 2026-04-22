@@ -216,7 +216,10 @@ class OpenAPI(Plugin[OpenAPIConfig]):
         if self.config.spec is not None:
             return self.config.spec
         if self.config.spec_path is not None:
-            return json.loads(Path(self.config.spec_path).read_text())
+            # Force UTF-8 rather than relying on the process locale —
+            # OpenAPI specs can carry non-ASCII descriptions and we want
+            # cross-platform (e.g. Windows cp1252) loads to work.
+            return json.loads(Path(self.config.spec_path).read_text(encoding="utf-8"))
         raise ValueError(
             "OpenAPIConfig requires `spec` (inline dict) or `spec_path` "
             "(local JSON file) to be set."

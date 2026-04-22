@@ -98,6 +98,25 @@ class TestSpecLoading:
 
         assert {"list_pets", "create_pet", "get_pet"}.issubset(names)
 
+    async def test_spec_path_loads_utf8_regardless_of_locale(self, tmp_path: Path):
+        """Spec files must load as UTF-8, not via the process locale.
+        Otherwise a spec with non-ASCII descriptions (German umlauts,
+        Japanese, fancy quotes, etc.) fails on non-UTF-8 systems like
+        Windows cp1252 — see PR #4015 review thread."""
+        spec_with_unicode = {
+            **PETSTORE_SPEC,
+            "info": {"title": "Pëtstöre — 宠物商店", "version": "1.0"},
+        }
+        spec_file = tmp_path / "petstore-unicode.json"
+        spec_file.write_text(
+            json.dumps(spec_with_unicode, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        plugin = OpenAPI(OpenAPIConfig(spec_path=str(spec_file)))
+        providers = plugin.providers()
+        assert isinstance(providers[0], OpenAPIProvider)
+
     def test_missing_spec_fails_at_build_time(self):
         plugin = OpenAPI(OpenAPIConfig())
         with pytest.raises(ValueError, match="spec.*spec_path"):
