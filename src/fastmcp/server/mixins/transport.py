@@ -333,13 +333,6 @@ class TransportMixin:
         Returns:
             A Starlette application configured with the specified transport
         """
-        # Mark that the HTTP/SSE Starlette app has been built.  From this
-        # point, `auth` is snapshotted inside the app's middleware stack and
-        # cannot be updated by loader-added plugins at lifespan time.
-        # `add_plugin` checks this flag and rejects loader-time auth changes
-        # to prevent silently starting with the wrong auth configuration.
-        self._http_app_built = True
-
         if transport in ("streamable-http", "http"):
             return create_streamable_http_app(
                 server=self,

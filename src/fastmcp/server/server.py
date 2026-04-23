@@ -390,18 +390,15 @@ class FastMCP(
             lifespan=_lifespan_proxy(fastmcp_server=self),
         )
 
-        # `auth` is a managed property. The setter initialises both `_auth`
-        # (the current value) and `_user_declared_auth` (the baseline used
-        # every time `_rebuild_auth` recompose from scratch). Framework-
-        # internal assignments (from `_rebuild_auth` / `add_plugin`) bypass
-        # the setter and write to `_auth` directly, so they never clobber
-        # the user-declared baseline.
-        self.auth = auth
-
-        # True once `http_app()` has been called. Used by `add_plugin()` to
-        # detect loader-time auth changes that would arrive too late for the
-        # Starlette app's auth middleware snapshot (see guard in add_plugin).
-        self._http_app_built: bool = False
+        self.auth: AuthProvider | None = auth
+        # Identifies where `self.auth` came from, for a clear error if a
+        # plugin later contributes a second auth provider. `None` while
+        # `self.auth` is `None`; set to `"user-declared auth="` when the
+        # caller passes `auth=...` and to `"plugin '<name>'"` when a
+        # plugin contributes one.
+        self._auth_source: str | None = (
+            "user-declared auth=" if auth is not None else None
+        )
 
         if tools:
             for tool in tools:
@@ -431,28 +428,10 @@ class FastMCP(
             self.middleware.append(DereferenceRefsMiddleware())
 
         # Plugin registry: an ordered list, populated by `add_plugin()` and
-        # `plugins=[...]`. Each plugin's `run()` async context manager wraps
-        # the server's lifespan (see `_enter_plugin_contexts`).
+        # `plugins=[...]`. Plugins install their contributions synchronously
+        # at `add_plugin()` time; each plugin's `run()` async context manager
+        # wraps the server's lifespan (see `_enter_plugin_contexts`).
         self.plugins: list[Plugin] = []
-        # Plugins whose contributions (middleware/transforms/providers/routes)
-        # have been collected onto the server. Server contributions persist
-        # across lifespan cycles like server-authored middleware, so we
-        # don't re-install them on re-entry.
-        self._plugins_contributed: set[int] = set()
-        # Plugins whose `run()` context has been entered in the current
-        # lifespan cycle. Used to dedupe entry when the same instance is
-        # registered twice; reset after the cycle's ephemeral cleanup.
-        self._plugins_entered: set[int] = set()
-        # Per-plugin record of contributions we installed, stored as
-        # (container, item) tuples so we can reverse them when an
-        # ephemeral plugin is torn down.
-        self._plugin_contributions: dict[int, list[tuple[list[Any], Any]]] = {}
-        # True while the plugin-entry loop is running. `add_plugin()` uses
-        # this to flag ephemeral plugins — plugins added from inside
-        # another plugin's `run()` (the loader pattern). Ephemeral plugins
-        # are removed after all plugin contexts exit so loaders can
-        # freshly re-hydrate children on the next lifespan cycle.
-        self._in_plugin_setup_pass: bool = False
         for p in plugins or []:
             self.add_plugin(p)
 
@@ -495,26 +474,6 @@ class FastMCP(
             return list(self._mcp_server.icons)
 
     @property
-    def auth(self) -> AuthProvider | None:
-        """The active auth provider.
-
-        Managed by the plugin contribution pipeline: framework-internal
-        assignments (from `_rebuild_auth` / `add_plugin`) write directly to
-        `_auth` and do not update `_user_declared_auth`, so recomposition
-        never silently discards a value the user set explicitly.
-
-        Direct post-init assignment (`mcp.auth = X`) is supported; it
-        updates both the live value and the user-declared baseline so the
-        next recomposition honours the change.
-        """
-        return self._auth
-
-    @auth.setter
-    def auth(self, value: AuthProvider | None) -> None:
-        self._auth: AuthProvider | None = value
-        self._user_declared_auth: AuthProvider | None = value
-
-    @property
     def local_provider(self) -> LocalProvider:
         """The server's local provider, which stores directly-registered components.
 
@@ -543,296 +502,126 @@ class FastMCP(
     def add_plugin(self, plugin: Plugin) -> None:
         """Register a plugin with this server.
 
-        Appends the plugin to the server's ordered plugin list and
-        synchronously collects its HTTP routes (see below). Middleware,
-        transforms, and providers are collected later, during the
-        server's startup sequence, because those hooks may reference
-        state the plugin populates while its `run()` context is active.
+        Collects all of the plugin's contributions — providers, middleware,
+        transforms, routes, auth, capabilities — synchronously, once, at
+        registration time. Plugin lifecycle (`run()` / `setup()` /
+        `teardown()`) is strictly for async runtime work; by the time the
+        server's lifespan starts, its component graph is frozen. HTTP/SSE
+        transports snapshot that frozen graph when they build the
+        Starlette app, so plugin-contributed routes and auth are wired in
+        correctly without any lifespan-time choreography.
 
-        HTTP routes are collected eagerly because HTTP transports snapshot
-        the server's route list when they construct the Starlette app —
-        which happens before the lifespan runs. A route returned by
-        `plugin.routes()` after the app is built would sit in
-        `_additional_http_routes` but never be mounted and would always
-        404. Collecting at registration time keeps non-loader plugins
-        working for HTTP transports.
+        The plugin's `install(server)` hook runs first, which enforces the
+        "one plugin instance per server" contract (plugins are single-
+        server by design — construct a fresh instance for each server
+        rather than sharing). After `install()` returns, contribution
+        hooks are called and their results applied atomically: if any
+        step raises, the plugin is fully rolled back and leaves no
+        residue on the server.
 
-        Loader caveat: plugins added from inside another plugin's
-        `run()` (the loader pattern) can still contribute middleware,
-        transforms, and providers, but their routes may not be reachable
-        over HTTP/SSE transports — those transports' route lists are
-        already fixed by the time `run()` enters. Loaders that need to
-        contribute routes should use the stdio transport or expose the
-        routes via a non-loader plugin registered at construction time.
+        Dynamic plugin loading (the "loader" pattern) is supported via
+        `Plugin.on_install(server)`, which may call `server.add_plugin()`
+        recursively. That path runs entirely at registration time, before
+        the lifespan starts, so the resulting plugin tree is still frozen
+        by the time transports build their apps.
 
         Args:
-            plugin: A :class:`Plugin` instance. Plugins are registered in
-                the order they are added; middleware is a stack.
+            plugin: A :class:`Plugin` instance.
 
         Raises:
-            PluginError: If called after the server's plugin-entry pass
-                has completed (except from inside a loader plugin's
-                `run()`), or if the plugin's `fastmcp_version`
-                compatibility check fails.
+            PluginError: If the plugin is already installed on a server,
+                if the server has already started its lifespan, or if the
+                plugin's `fastmcp_version` compatibility check fails, or
+                if another source has already contributed auth.
         """
-        # Reject registration once the lifespan is active and we're past
-        # the plugin-entry pass. The loader-pattern exception is the only
-        # case where add_plugin() runs during a live lifespan, and it's
-        # gated by `_in_plugin_setup_pass`. Checking `_started` alone is
-        # too narrow: `_started` is only set after provider lifespans
-        # enter and is cleared before teardown, leaving windows in which
-        # add_plugin() would silently register a plugin whose `run()`
-        # never enters for the current cycle.
-        if self._lifespan_result_set and not self._in_plugin_setup_pass:
+        if self._lifespan_result_set:
             raise PluginError(
-                f"Cannot add plugin {plugin.meta.name!r}: the server's "
-                "plugin-entry pass has already completed. Register "
-                "plugins before the server starts, or from inside "
-                "another plugin's `run()` (the loader pattern)."
+                f"Cannot add plugin {plugin.meta.name!r}: the server has "
+                "already started its lifespan. Register plugins before "
+                "starting the server. Dynamic plugin loading belongs in "
+                "`Plugin.on_install(server)`, which runs at construction "
+                "time."
             )
         plugin.check_fastmcp_compatibility()
-        # Compute routes up front so a failure inside plugin.routes() does
-        # not leave a half-registered plugin in self.plugins.
-        routes = list(plugin.routes())
-
-        # Compose auth BEFORE mutating server state: a failing auth
-        # composition (e.g. "Multiple auth providers" PluginError) must
-        # leave the plugin fully un-registered so callers can catch and
-        # recover. If we appended first and composed after, a raise from
-        # `_rebuild_auth` would leave the plugin + its routes attached
-        # but callers would see only the exception.
-        next_auth = self._compose_auth([*self.plugins, plugin])
-
-        # Loader-time auth guard: when we're inside a lifespan setup pass
-        # for an HTTP/SSE transport, the Starlette app has already been
-        # built with `auth` snapshotted at `http_app()` call time.
-        # Updating `self.auth` here would not rewire `RequireAuthMiddleware`
-        # — the server could silently start with the wrong auth config.
-        # Raise early rather than permit an invisible misconfiguration.
-        if (
-            self._in_plugin_setup_pass
-            and self._http_app_built
-            and next_auth is not self._auth
-        ):
+        if plugin._installed_on is not None:
             raise PluginError(
-                f"Plugin {plugin.meta.name!r} would change the auth "
-                "configuration during lifespan setup, but the HTTP/SSE "
-                "Starlette app has already snapshotted `auth` at "
-                "`http_app()` time. Register this plugin before calling "
-                "`http_app()` / `run_http_async()`, not from inside a "
-                "loader plugin's `run()`."
+                f"Plugin {plugin.meta.name!r} is already installed on "
+                f"{plugin._installed_on.name!r}. Plugin instances are "
+                "single-server by design — construct a fresh instance "
+                "per server rather than sharing one across servers."
             )
 
+        # Attach and append FIRST so any children registered recursively
+        # by `on_install` land after this plugin in `self.plugins`,
+        # preserving parent-before-child registration order. Everything
+        # from here runs inside a try/except so we can roll back to the
+        # exact pre-call state on any failure.
+        plugin._installed_on = self
         self.plugins.append(plugin)
-        # Flag loader-added plugins as ephemeral so teardown can remove
-        # them along with their contributions. Written unconditionally so
-        # re-registering an instance that was previously marked ephemeral
-        # (added inside a setup pass and then cleaned up) as a permanent
-        # plugin clears the stale marker rather than inheriting it.
-        plugin._fastmcp_ephemeral = self._in_plugin_setup_pass
-        records = self._plugin_contributions.setdefault(id(plugin), [])
-        for route in routes:
-            self._additional_http_routes.append(route)
-            records.append((self._additional_http_routes, route))
+        try:
+            plugin.on_install(self)
 
-        # Auth is composed eagerly at `add_plugin` time — not just during
-        # lifespan entry — because HTTP/SSE transports (`run_http_async`,
-        # `create_streamable_http_app`, `create_sse_app`) snapshot `self.auth`
-        # when they build the Starlette app, and that happens BEFORE
-        # lifespan enters. Without this, a plugin-contributed `AuthProvider`
-        # would never wire into `RequireAuthMiddleware`, leaving HTTP
-        # routes unprotected despite the auth contribution.
-        # Bypass the property setter — this is a framework-managed write,
-        # not a user assignment, so `_user_declared_auth` must stay intact.
-        self._auth = next_auth
+            # Gather everything up front: any hook that raises must not
+            # have mutated server state. Auth is the only hook that can
+            # conflict with prior server state (the singular-auth-slot
+            # rule), so we validate it before committing anything else.
+            contributed_auth = plugin.auth()
+            contributed_mws = list(plugin.middleware())
+            contributed_transforms = list(plugin.transforms())
+            contributed_providers = list(plugin.providers())
+            contributed_routes = list(plugin.routes())
+
+            if contributed_auth is not None and self.auth is not None:
+                prior = self._auth_source or "user-declared auth="
+                raise PluginError(
+                    f"Multiple auth sources declared: {prior}, "
+                    f"plugin {plugin.meta.name!r}. FastMCP accepts a "
+                    "single auth provider. Disable auth on all but one "
+                    "source (typically via the plugin's config), or "
+                    "construct a `MultiAuth` explicitly in Python and "
+                    "pass it as the single `auth=` arg."
+                )
+
+            # Commit. From here we do not raise.
+            for mw in contributed_mws:
+                self.add_middleware(mw)
+            for transform in contributed_transforms:
+                self.add_transform(transform)
+            for provider in contributed_providers:
+                self.add_provider(provider)
+            for route in contributed_routes:
+                self._additional_http_routes.append(route)
+            if contributed_auth is not None:
+                self.auth = contributed_auth
+                self._auth_source = f"plugin {plugin.meta.name!r}"
+        except Exception:
+            # Roll back the plugin itself; any child plugins that were
+            # added by a recursive `on_install` call are also removed so
+            # the server returns to its pre-call state.
+            self.plugins.remove(plugin)
+            plugin._installed_on = None
+            raise
 
     async def _enter_plugin_contexts(self, stack: AsyncExitStack) -> None:
         """Enter each registered plugin's `run()` context on the given stack.
 
-        Called during server startup (from `_lifespan_manager`), before
-        the server binds. Iterates the plugin list in order, entering
-        `async with plugin.run(server):` on the shared exit stack for
-        each plugin. Plugins added during another plugin's `run()` (the
-        loader pattern) are picked up by the same loop because the
-        iteration advances against a live index.
+        Called once per server lifespan. The plugin list is already frozen
+        at this point — contributions were collected when each plugin was
+        registered via `add_plugin()`. All this loop does is wrap each
+        plugin's async runtime lifetime around the server's lifespan.
 
-        Contributions (middleware, transforms, providers) are collected
-        once per plugin across all lifespan cycles — once installed, they
-        persist on the server just like server-authored middleware.
-        Routes were already collected synchronously at `add_plugin()`
-        time so HTTP transports see them before the lifespan runs.
-
-        Ephemeral cleanup is registered as a post-stack callback so it
-        runs after every plugin's `run()` has exited but before the
-        outer server lifespan unwinds further.
+        Order: registration order on entry, reverse order on exit (the
+        exit stack handles the reversal automatically). Exceptions inside
+        a plugin's `run()` body unwind already-entered contexts cleanly.
         """
-        # Register ephemeral cleanup FIRST so it unwinds LAST (after all
-        # plugin.run() contexts have exited).
-        stack.push_async_callback(self._cleanup_ephemeral_plugins)
-
-        # Plugin-entry loop: mutating-list iteration. New plugins appended
-        # by a plugin's run() (loader pattern) are picked up on subsequent
-        # iterations. `_in_plugin_setup_pass` lets add_plugin() mark those
-        # as ephemeral (see add_plugin). `_plugins_entered` dedupes: a
-        # plugin instance registered twice only enters its run() once per
-        # lifespan cycle, keeping setup/teardown counts symmetric.
-        self._in_plugin_setup_pass = True
-        try:
-            i = 0
-            while i < len(self.plugins):
-                plugin = self.plugins[i]
-                i += 1
-                if id(plugin) in self._plugins_entered:
-                    continue
-                self._plugins_entered.add(id(plugin))
-                try:
-                    await stack.enter_async_context(plugin.run(self))
-                except Exception:
-                    logger.exception(
-                        "Plugin %r raised while entering run()", plugin.meta.name
-                    )
-                    raise
-        finally:
-            self._in_plugin_setup_pass = False
-
-        # Contribution collection: run in registration order. Guarded
-        # per-plugin because contributions persist across lifespan cycles;
-        # new plugins (e.g. added by a loader during this cycle's run)
-        # still get their contributions collected. Routes are collected
-        # synchronously at add_plugin() time (see above).
         for plugin in self.plugins:
-            if id(plugin) in self._plugins_contributed:
-                continue
-            # Gather everything first: any hook that raises aborts before
-            # any server state is mutated, so a retry on the next lifespan
-            # cycle starts clean rather than appending duplicate middleware
-            # on top of partial contributions.
-            mws = list(plugin.middleware())
-            transforms_ = list(plugin.transforms())
-            providers_ = list(plugin.providers())
-
-            records = self._plugin_contributions.setdefault(id(plugin), [])
-            for mw in mws:
-                self.add_middleware(mw)
-                records.append((self.middleware, mw))
-            for transform in transforms_:
-                self.add_transform(transform)
-                records.append((self._transforms, transform))
-            for provider in providers_:
-                # add_provider may wrap the value (for example a FastMCP
-                # is wrapped in FastMCPProvider). Record whatever
-                # actually landed in self.providers so teardown can find
-                # it by identity.
-                before = len(self.providers)
-                self.add_provider(provider)
-                for stored in self.providers[before:]:
-                    records.append((self.providers, stored))
-            self._plugins_contributed.add(id(plugin))
-
-        # Auth is rebuilt from scratch (not appended) so ephemeral
-        # plugin teardown can simply re-run this without tracking
-        # per-plugin auth records. Deterministic: same plugins →
-        # same composed auth.
-        self._rebuild_auth()
-
-    async def _cleanup_ephemeral_plugins(self) -> None:
-        """Remove ephemeral (loader-added) plugins after all contexts have exited.
-
-        Runs as an `AsyncExitStack` callback registered in
-        `_enter_plugin_contexts` so it fires after every plugin's `run()`
-        has unwound. Without this, each lifespan cycle would accumulate a
-        fresh generation of loader-added children in `self.plugins`, and
-        their contributions would accumulate in the server's
-        middleware/transform/provider lists.
-        """
-        # Reset the per-cycle entered set for the next cycle.
-        self._plugins_entered = set()
-
-        ephemeral = [p for p in self.plugins if getattr(p, "_fastmcp_ephemeral", False)]
-        for plugin in ephemeral:
-            records = self._plugin_contributions.pop(id(plugin), [])
-            for container, item in reversed(records):
-                # Remove by identity rather than equality so a permanent
-                # contribution that happens to compare equal to `item`
-                # (e.g. a dataclass-style middleware with value-based
-                # `__eq__`) is not accidentally stripped. list.remove()
-                # uses `==`, which is the wrong matcher here.
-                for i, entry in enumerate(container):
-                    if entry is item:
-                        del container[i]
-                        break
-            self._plugins_contributed.discard(id(plugin))
-        self.plugins = [
-            p for p in self.plugins if not getattr(p, "_fastmcp_ephemeral", False)
-        ]
-        # Ephemeral plugins may have contributed auth; rebuild now that
-        # they're gone so the next cycle starts with only the permanent
-        # contributions composed into `self.auth`.
-        self._rebuild_auth()
-
-    def _rebuild_auth(self) -> None:
-        """Recompose and install `self.auth` from the current plugin list.
-
-        Thin wrapper around the pure `_compose_auth` — exists as a
-        single mutation point for code paths (ephemeral-plugin teardown)
-        that have already adjusted `self.plugins` and want
-        `self.auth` to reflect the new state.
-
-        Writes to `_auth` directly to bypass the property setter:
-        recomposition must not update `_user_declared_auth`, which stores
-        the user's explicit declaration as the stable baseline.
-        """
-        self._auth = self._compose_auth(self.plugins)
-
-    def _compose_auth(self, plugins: list[Plugin]) -> AuthProvider | None:
-        """Pick the single auth provider from user-declared auth + plugin contributions.
-
-        FastMCP's auth slot is singular. If zero sources declare auth,
-        `self.auth` stays `None`. If exactly one source declares auth —
-        user-declared `auth=` or one plugin's `auth()` return — it wins.
-        If two or more sources declare auth, this raises `PluginError`
-        naming every source so the operator can resolve the ambiguity
-        explicitly (typically by disabling auth on one of the plugins
-        via its own config). We never auto-compose into `MultiAuth`:
-        silent composition surprises users at auth time, and the cases
-        where someone genuinely wants multi-source auth are better
-        handled by constructing `MultiAuth` explicitly in Python and
-        passing it as the single `auth=`.
-
-        Pure so `add_plugin` can trial-run it BEFORE mutating server
-        state and commit only on success. Also called by
-        `_rebuild_auth` after ephemeral-plugin teardown.
-        """
-        sources: list[tuple[str, AuthProvider]] = []
-        if self._user_declared_auth is not None:
-            sources.append(("user-declared auth=", self._user_declared_auth))
-
-        # Dedupe by plugin instance id so registering the same instance
-        # twice (an explicitly supported pattern) doesn't double-count
-        # its auth contribution. Other contribution paths already use
-        # `_plugins_contributed` / `_plugins_entered` for the same reason.
-        seen: set[int] = set()
-        for plugin in plugins:
-            if id(plugin) in seen:
-                continue
-            seen.add(id(plugin))
-            contrib = plugin.auth()
-            if contrib is not None:
-                sources.append((f"plugin {plugin.meta.name!r}", contrib))
-
-        if not sources:
-            return None
-        if len(sources) == 1:
-            return sources[0][1]
-
-        origins = ", ".join(origin for origin, _ in sources)
-        raise PluginError(
-            f"Multiple auth sources declared: {origins}. FastMCP accepts a "
-            "single auth provider. Resolve the ambiguity by disabling auth "
-            "on all but one source (e.g. via the plugin's own config), or "
-            "for genuine multi-source auth, construct a `MultiAuth` "
-            "explicitly in Python and pass it as the single `auth=` arg."
-        )
+            try:
+                await stack.enter_async_context(plugin.run(self))
+            except Exception:
+                logger.exception(
+                    "Plugin %r raised while entering run()", plugin.meta.name
+                )
+                raise
 
     def _apply_plugin_capabilities(
         self, capabilities: mcp.types.ServerCapabilities

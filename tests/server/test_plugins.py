@@ -919,46 +919,52 @@ class TestLifecycle:
             ("teardown", "a"),
         ]
 
-    async def test_loader_pattern_adds_plugins_during_setup(self):
-        """A plugin's setup() can call server.add_plugin() and the setup pass sees it.
-
-        Mid-cycle the loader-added children are present; after teardown
-        they're removed (ephemeral cleanup), so the loader can freshly
-        re-hydrate them on the next cycle.
-        """
+    async def test_loader_pattern_adds_plugins_from_on_install(self):
+        """A plugin's `on_install(server)` can call `server.add_plugin()`
+        to register child plugins. The loader runs at construction time,
+        so child plugins are part of the server's frozen plugin graph
+        before any lifespan starts."""
         recorder = _Recorder()
 
-        class Child(Plugin):
-            meta = PluginMeta(name="child", version="0.1.0")
+        class ChildA(Plugin):
+            meta = PluginMeta(name="child-a", version="0.1.0")
 
             async def setup(self, server):
-                recorder.events.append(("setup", "child"))
+                recorder.events.append(("setup", "child-a"))
+
+        class ChildB(Plugin):
+            meta = PluginMeta(name="child-b", version="0.1.0")
+
+            async def setup(self, server):
+                recorder.events.append(("setup", "child-b"))
 
         class Loader(Plugin):
             meta = PluginMeta(name="loader", version="0.1.0")
 
-            async def setup(self, server):
-                recorder.events.append(("setup", "loader"))
-                server.add_plugin(Child())
-                server.add_plugin(Child())
+            def on_install(self, server):
+                server.add_plugin(ChildA())
+                server.add_plugin(ChildB())
 
         mcp = FastMCP("t", plugins=[Loader()])
+        # Children are registered at construction; no lifespan needed.
+        assert [p.meta.name for p in mcp.plugins] == [
+            "loader",
+            "child-a",
+            "child-b",
+        ]
+
         async with Client(mcp) as c:
             await c.ping()
-            # Mid-cycle, the loader's children are registered.
-            assert [p.meta.name for p in mcp.plugins] == [
-                "loader",
-                "child",
-                "child",
-            ]
 
-        assert recorder.events == [
-            ("setup", "loader"),
-            ("setup", "child"),
-            ("setup", "child"),
+        # Children stay registered across the lifespan — they're permanent
+        # (registered during construction), not ephemeral.
+        assert [p.meta.name for p in mcp.plugins] == [
+            "loader",
+            "child-a",
+            "child-b",
         ]
-        # After teardown, ephemeral children have been removed.
-        assert [p.meta.name for p in mcp.plugins] == ["loader"]
+        assert ("setup", "child-a") in recorder.events
+        assert ("setup", "child-b") in recorder.events
 
     async def test_add_plugin_after_startup_raises(self):
         class P(Plugin):
@@ -967,19 +973,13 @@ class TestLifecycle:
         mcp = FastMCP("t")
         async with Client(mcp) as c:
             await c.ping()
-            with pytest.raises(PluginError, match="plugin-entry pass"):
+            with pytest.raises(PluginError, match="already started"):
                 mcp.add_plugin(P())
 
     async def test_add_plugin_raises_when_called_from_provider_lifespan(self):
-        """Post-setup-pass registration must be rejected, not silently allowed.
-
-        `_started` is set only after provider lifespans enter, so a
-        provider's `lifespan()` callback runs with `_started` False but
-        the plugin-entry pass already complete. Registering a plugin in
-        that window would skip `run()` and contribution collection for
-        the current cycle and leave the plugin in `self.plugins`; the
-        guard must reject it.
-        """
+        """Post-construction registration must be rejected. Provider
+        lifespans run after the plugin graph is frozen; registering a
+        plugin there would miss the HTTP app's route/auth snapshot."""
         from contextlib import asynccontextmanager
 
         from fastmcp.server.providers import Provider
@@ -1009,35 +1009,33 @@ class TestLifecycle:
             await c.ping()
 
         assert isinstance(provider.raised, PluginError)
-        assert "plugin-entry pass" in str(provider.raised)
+        assert "already started" in str(provider.raised)
 
-    async def test_duplicate_registration_tears_down_once(self):
-        """Registering the same instance twice must only call teardown() once.
-
-        setup() runs per list entry (so the plugin receives both entries),
-        but teardown() is an idempotent cleanup — a second call on a
-        plugin that has closed its resources would likely raise on an
-        already-closed connection.
-        """
-        recorder = _Recorder()
+    def test_same_instance_registered_twice_raises(self):
+        """Plugin instances are single-server: a second registration of
+        the same instance (on any server) raises at `install()`."""
 
         class P(Plugin):
             meta = PluginMeta(name="p", version="0.1.0")
 
-            async def teardown(self):
-                recorder.events.append(("teardown", "p"))
-
         p = P()
         mcp = FastMCP("t")
         mcp.add_plugin(p)
-        mcp.add_plugin(p)
 
-        async with Client(mcp) as c:
-            await c.ping()
+        with pytest.raises(PluginError, match="already installed"):
+            mcp.add_plugin(p)
 
-        assert [e for e in recorder.events if e[0] == "teardown"] == [
-            ("teardown", "p"),
-        ]
+    def test_instance_on_second_server_raises(self):
+        """Sharing a plugin instance across two servers is not supported."""
+
+        class P(Plugin):
+            meta = PluginMeta(name="p", version="0.1.0")
+
+        p = P()
+        FastMCP("a", plugins=[p])
+
+        with pytest.raises(PluginError, match="already installed"):
+            FastMCP("b", plugins=[p])
 
     async def test_teardown_exception_is_logged_not_raised(self):
         class Boom(Plugin):
@@ -1135,45 +1133,33 @@ class TestLifecycle:
         # BadSetup never completed setup(); its teardown must not run.
         assert ("teardown", "bad") not in recorder.events
 
-    async def test_contribution_collection_is_atomic_when_later_hook_raises(self):
-        """A failing hook on one plugin must not leave partial contributions behind.
-
-        If a plugin's ``middleware()`` succeeds but ``transforms()``
-        raises, the middleware must not have been installed — otherwise a
-        retry on the next lifespan attempt would pick up the plugin
-        again (because we never marked it contributed) and append
-        duplicate middleware on top of the partial prior state.
-        """
+    def test_add_plugin_is_atomic_when_later_hook_raises(self):
+        """A failing contribution hook during `add_plugin()` must not
+        leave partial state behind: middleware that was returned by
+        `middleware()` must not be installed if `transforms()` raises,
+        the plugin must not be in `self.plugins`, and `_installed_on`
+        must be cleared so the instance can be reused."""
 
         class Flaky(Plugin):
             meta = PluginMeta(name="flaky", version="0.1.0")
-            _fail: bool = True
 
             def middleware(self):
                 return [_TraceMiddleware("flaky")]
 
             def transforms(self):
-                if Flaky._fail:
-                    raise RuntimeError("transforms exploded")
-                return []
+                raise RuntimeError("transforms exploded")
 
-        mcp = FastMCP("t", plugins=[Flaky()])
+        mcp = FastMCP("t")
         baseline = list(mcp.middleware)
 
+        flaky = Flaky()
         with pytest.raises(RuntimeError, match="transforms exploded"):
-            async with Client(mcp) as c:
-                await c.ping()
+            mcp.add_plugin(flaky)
 
-        # Partial state from the failed cycle must not have landed.
+        # Full rollback — nothing from the failed plugin landed.
+        assert flaky not in mcp.plugins
         assert mcp.middleware == baseline
-
-        # Retry succeeds; middleware is installed exactly once.
-        Flaky._fail = False
-        async with Client(mcp) as c:
-            await c.ping()
-
-        tags = [m.tag for m in mcp.middleware if isinstance(m, _TraceMiddleware)]
-        assert tags == ["flaky"]
+        assert flaky._installed_on is None
 
     async def test_add_plugin_is_atomic_when_routes_raises(self):
         """If plugin.routes() raises, the plugin must not be left in the server's list.
@@ -1197,96 +1183,11 @@ class TestLifecycle:
         # This is a weaker assertion — we just care the plugin isn't linger.
         assert not any(isinstance(p, RoutesBoom) for p in mcp.plugins)
 
-    async def test_ephemeral_fastmcp_provider_is_removed_on_teardown(self):
-        """Loader-added FastMCP providers are auto-wrapped; teardown must still remove them.
-
-        ``add_provider`` wraps a FastMCP in a FastMCPProvider before it
-        lands in ``self.providers``. Recording the pre-wrap object would
-        cause teardown to miss the wrapped provider and leak it across
-        cycles.
-        """
-
-        class ProviderPlugin(Plugin):
-            meta = PluginMeta(name="wrapper", version="0.1.0")
-
-            def __init__(self, config=None):
-                super().__init__(config)
-                self._child = FastMCP("child")
-
-            def providers(self):
-                return [self._child]
-
-        class Loader(Plugin):
-            meta = PluginMeta(name="loader", version="0.1.0")
-
-            async def setup(self, server):
-                server.add_plugin(ProviderPlugin())
-
-        mcp = FastMCP("t", plugins=[Loader()])
-        baseline_providers = list(mcp.providers)
-
-        async with Client(mcp) as c:
-            await c.ping()
-        async with Client(mcp) as c:
-            await c.ping()
-
-        assert [p.meta.name for p in mcp.plugins] == ["loader"]
-        # The wrapped provider that was added on each cycle was removed
-        # on each teardown — the provider list is back to baseline.
-        assert mcp.providers == baseline_providers
-
-    async def test_ephemeral_cleanup_removes_by_identity_not_equality(self):
-        """A permanent contribution that compares equal to an ephemeral one is preserved.
-
-        list.remove() uses `==`, which is the wrong matcher when a
-        middleware defines value-based equality. A loader-added middleware
-        that happens to `==` a user-registered middleware must not cause
-        the user's to be removed during ephemeral cleanup.
-        """
-
-        class EqMiddleware(Middleware):
-            """Middleware that compares equal to any other EqMiddleware."""
-
-            def __eq__(self, other):
-                return isinstance(other, EqMiddleware)
-
-            def __hash__(self):
-                return 0
-
-        permanent = EqMiddleware()
-
-        class Child(Plugin):
-            meta = PluginMeta(name="child", version="0.1.0")
-
-            def middleware(self):
-                # A distinct instance, but equal to `permanent` by __eq__.
-                return [EqMiddleware()]
-
-        class Loader(Plugin):
-            meta = PluginMeta(name="loader", version="0.1.0")
-
-            async def setup(self, server):
-                server.add_plugin(Child())
-
-        mcp = FastMCP("t", middleware=[permanent], plugins=[Loader()])
-        assert permanent in mcp.middleware
-
-        async with Client(mcp) as c:
-            await c.ping()
-
-        # The ephemeral child's middleware was removed; the permanent
-        # user-registered one (which was `==` to it) is still installed.
-        assert any(m is permanent for m in mcp.middleware)
-
-    async def test_reregistering_ephemeral_instance_as_permanent_clears_marker(self):
-        """A previously-ephemeral instance re-registered by the user is permanent.
-
-        Without clearing the marker on normal `add_plugin`, the second
-        registration would inherit `_fastmcp_ephemeral = True` from the
-        first (loader-added) cycle and get deleted during teardown, losing
-        its contributions.
-        """
-        leaked: list[Plugin] = []
+    async def test_on_install_loader_contributions_persist_across_cycles(self):
+        """Plugins registered via a loader's `on_install(server)` are permanent
+        just like plugins passed to `FastMCP(plugins=[...])`. Their
+        contributions are installed once and survive across lifespan
+        cycles without re-registration or cleanup."""
 
         class Child(Plugin):
             meta = PluginMeta(name="child", version="0.1.0")
@@ -1297,72 +1198,22 @@ class TestLifecycle:
         class Loader(Plugin):
             meta = PluginMeta(name="loader", version="0.1.0")
 
-            async def setup(self, server):
-                # The loader is in control of the instance, so we can
-                # hand it back to the test via a closure.
-                child = Child()
-                leaked.append(child)
-                server.add_plugin(child)
+            def on_install(self, server):
+                server.add_plugin(Child())
 
         mcp = FastMCP("t", plugins=[Loader()])
 
+        # `on_install` ran during construction; child is registered.
+        assert [p.meta.name for p in mcp.plugins] == ["loader", "child"]
+
+        # Contributions installed once, persist across multiple cycles.
+        async with Client(mcp) as c:
+            await c.ping()
         async with Client(mcp) as c:
             await c.ping()
 
-        # Ephemeral cleanup ran — child is no longer in the plugin list,
-        # and its middleware is gone.
-        assert [p.meta.name for p in mcp.plugins] == ["loader"]
-        child_instance = leaked[0]
-        assert child_instance._fastmcp_ephemeral is True
-
-        # User re-registers the same instance as a permanent plugin.
-        mcp.add_plugin(child_instance)
-        assert child_instance._fastmcp_ephemeral is False
-
-        async with Client(mcp) as c:
-            await c.ping()
-
-        # After a second cycle, the permanent registration survives and
-        # its middleware is installed exactly once.
-        assert child_instance in mcp.plugins
         tags = [m.tag for m in mcp.middleware if isinstance(m, _TraceMiddleware)]
         assert tags == ["child"]
-
-    async def test_loader_plugins_do_not_accumulate_across_cycles(self):
-        """Loader-added (ephemeral) plugins and their contributions are removed on teardown.
-
-        Without this, a loader that adds children in setup() causes the
-        plugin list — and every contribution those children install — to
-        grow on every lifespan cycle.
-        """
-
-        class Child(Plugin):
-            meta = PluginMeta(name="child", version="0.1.0")
-
-            def middleware(self):
-                return [_TraceMiddleware("child")]
-
-        class Loader(Plugin):
-            meta = PluginMeta(name="loader", version="0.1.0")
-
-            async def setup(self, server):
-                server.add_plugin(Child())
-
-        mcp = FastMCP("t", plugins=[Loader()])
-        baseline_middleware = list(mcp.middleware)
-
-        async with Client(mcp) as c:
-            await c.ping()
-        async with Client(mcp) as c:
-            await c.ping()
-        async with Client(mcp) as c:
-            await c.ping()
-
-        # After three cycles: the loader remains, the ephemeral child has
-        # been removed, and the middleware it installed was reversed out
-        # each time so nothing has accumulated.
-        assert [p.meta.name for p in mcp.plugins] == ["loader"]
-        assert mcp.middleware == baseline_middleware
 
 
 class TestRunHook:
@@ -1862,15 +1713,16 @@ class TestPluginCapabilities:
         # A's cached dict must not have been mutated to contain B's entry.
         assert a._caps == {"experimental": {"alpha": {}}}
 
-    async def test_loader_added_plugin_capabilities_contribute(self):
-        """Plugins added via the loader pattern still contribute capabilities."""
+    async def test_on_install_loader_plugin_capabilities_contribute(self):
+        """Plugins added via the on_install loader pattern contribute
+        capabilities just like plugins passed to `plugins=[...]`."""
 
         class Loaded(_TestPlugin):
             def capabilities(self):
                 return {"experimental": {"loaded": {}}}
 
         class Loader(_TestPlugin):
-            async def setup(self, server):
+            def on_install(self, server):
                 server.add_plugin(Loaded())
 
         mcp = FastMCP("t", plugins=[Loader()])
