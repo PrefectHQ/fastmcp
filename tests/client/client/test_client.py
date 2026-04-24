@@ -284,7 +284,7 @@ async def test_server_deserialization_error():
     client = Client(transport=FastMCPTransport(server))
 
     async with client:
-        with pytest.raises(McpError, match="Error rendering prompt"):
+        with pytest.raises(McpError, match="Could not convert argument"):
             await client.get_prompt(
                 "strict_typed_prompt",
                 {

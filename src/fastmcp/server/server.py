@@ -1259,8 +1259,9 @@ class FastMCP(
                     task_meta = replace(task_meta, fn_key=tool.key)
                 try:
                     return await tool._run(arguments or {}, task_meta=task_meta)
-                except FastMCPError:
-                    logger.exception(f"Error calling tool {name!r}")
+                except FastMCPError as e:
+                    if not e.suppress_log:
+                        logger.exception(f"Error calling tool {name!r}")
                     raise
                 except (ValidationError, PydanticValidationError):
                     logger.exception(f"Error validating tool {name!r}")
@@ -1389,7 +1390,11 @@ class FastMCP(
                         task_meta = replace(task_meta, fn_key=resource.key)
                     try:
                         return await resource._read(task_meta=task_meta)
-                    except (FastMCPError, McpError):
+                    except FastMCPError as e:
+                        if not e.suppress_log:
+                            logger.exception(f"Error reading resource {uri!r}")
+                        raise
+                    except McpError:
                         logger.exception(f"Error reading resource {uri!r}")
                         raise
                     except Exception as e:
@@ -1428,7 +1433,11 @@ class FastMCP(
                     task_meta = replace(task_meta, fn_key=template.key)
                 try:
                     return await template._read(uri, params, task_meta=task_meta)
-                except (FastMCPError, McpError):
+                except FastMCPError as e:
+                    if not e.suppress_log:
+                        logger.exception(f"Error reading resource {uri!r}")
+                    raise
+                except McpError:
                     logger.exception(f"Error reading resource {uri!r}")
                     raise
                 except Exception as e:
@@ -1542,7 +1551,11 @@ class FastMCP(
                     task_meta = replace(task_meta, fn_key=prompt.key)
                 try:
                     return await prompt._render(arguments, task_meta=task_meta)
-                except (FastMCPError, McpError):
+                except FastMCPError as e:
+                    if not e.suppress_log:
+                        logger.exception(f"Error rendering prompt {name!r}")
+                    raise
+                except McpError:
                     logger.exception(f"Error rendering prompt {name!r}")
                     raise
                 except Exception as e:

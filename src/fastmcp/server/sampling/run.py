@@ -304,7 +304,8 @@ async def execute_tools(
             )
         except ToolError as e:
             # ToolError is the escape hatch - always pass message through
-            logger.exception(f"Error calling sampling tool '{tool_use.name}'")
+            if not e.suppress_log:
+                logger.exception(f"Error calling sampling tool '{tool_use.name}'")
             return ToolResultContent(
                 type="tool_result",
                 toolUseId=tool_use.id,

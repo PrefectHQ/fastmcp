@@ -15,6 +15,10 @@ class FastMCPDeprecationWarning(DeprecationWarning):
 class FastMCPError(Exception):
     """Base error for FastMCP."""
 
+    def __init__(self, *args: object, suppress_log: bool = False) -> None:
+        super().__init__(*args)
+        self.suppress_log = suppress_log
+
 
 class ValidationError(FastMCPError):
     """Error in validating parameters or return values."""
