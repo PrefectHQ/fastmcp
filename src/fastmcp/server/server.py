@@ -55,7 +55,6 @@ from fastmcp.exceptions import (
     PromptError,
     ResourceError,
     ToolError,
-    ValidationError,
 )
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.prompts import Prompt
@@ -1265,12 +1264,15 @@ class FastMCP(
                 try:
                     return await tool._run(arguments or {}, task_meta=task_meta)
                 except FastMCPError as e:
-                    logger.log(
-                        e.log_level, f"Error calling tool {name!r}", exc_info=True
-                    )
+                    logger.log(e.log_level, f"Error calling tool {name!r}", exc_info=False)
                     raise
-                except (ValidationError, PydanticValidationError):
-                    logger.exception(f"Error validating tool {name!r}")
+                except PydanticValidationError as e:
+                    # fastmcp's own ValidationError is a FastMCPError, already handled above.
+                    logger.warning(
+                        "Invalid arguments for tool %r: %s",
+                        name,
+                        e.errors(include_url=False),
+                    )
                     raise
                 except Exception as e:
                     logger.exception(f"Error calling tool {name!r}")
