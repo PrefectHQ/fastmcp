@@ -12,7 +12,7 @@
     "decoration": "gradient"
   },
   "banner": {
-    "content": "Meet [Prefect Horizon, the enterprise MCP gateway built by the team behind FastMCP](https://prefect.io/horizon)"
+    "content": "Meet [Prefect Horizon](https://prefect.io/horizon?utm_source=gofastmcp&utm_medium=docs&utm_campaign=docs_banner&utm_content=sitewide_banner), the enterprise MCP gateway built by the team behind FastMCP"
   },
   "colors": {
     "dark": "#f72585",
