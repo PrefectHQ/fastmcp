@@ -102,3 +102,14 @@ mcp = FastMCP("My Skills")
 mcp.add_provider(ClaudeSkillsProvider())  # Uses ~/.claude/skills/
 mcp.run()
 ```
+
+### Codex Skills (system and user locations)
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.providers.skills import CodexSkillsProvider
+
+mcp = FastMCP("My Codex Skills")
+mcp.add_provider(CodexSkillsProvider())  # Uses /etc/codex/skills/ and ~/.codex/skills/
+mcp.run()
+```
