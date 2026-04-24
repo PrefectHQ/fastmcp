@@ -5,11 +5,22 @@ description: Expose MCP tools to isolated agents without giving the sandbox long
 icon: box-open
 ---
 
-Building for sandboxed agents is different from building for a local desktop client. In a sandboxed setup, the container or subprocess running the agent is part of your trust boundary. Treat it like an untrusted worker: it should receive capabilities, not secrets.
+This guide is for deployments where an agent runs inside an isolated container, subprocess, or remote worker and still needs MCP access. In that setup, the sandbox itself becomes part of your trust boundary.
 
-This guide shows how to use FastMCP as that capability boundary. The recommended pattern is to deploy a remote FastMCP server, authenticate the sandbox with a short-lived token, and keep all privileged credentials on the server side.
+The core recommendation is simple: use FastMCP as the capability boundary. Run a remote FastMCP server, authenticate the sandbox with short-lived scoped credentials, and keep privileged credentials on the server side.
 
-## Why Sandboxed Agents Are Different
+## When to Use This Pattern
+
+This pattern is useful when:
+
+- your agent runs in an ephemeral container or subprocess
+- you do not want long-lived credentials inside that sandbox
+- you need per-run, per-tenant, or per-job scoping
+- the sandbox must call internal APIs, databases, or upstream MCP servers indirectly
+
+If you are building a local desktop integration, STDIO and normal local configuration may be enough. This guide is for cases where the sandbox is isolated enough that secret distribution, credential lifetimes, and privilege boundaries become part of the design.
+
+## What Changes in a Sandboxed Deployment
 
 A desktop MCP client usually runs on a developer's machine and launches local servers with configuration the developer controls. A sandboxed agent is different:
 
@@ -43,7 +54,7 @@ The sandbox gets:
 The FastMCP server does the privileged work:
 
 - verifies the sandbox token
-- resolves scope from token claims
+- authorizes the request from token claims, scopes, or other server-side policy
 - exposes only the tools that sandbox should see
 - talks to internal APIs, databases, or upstream MCP servers on the sandbox's behalf
 
@@ -90,9 +101,9 @@ if __name__ == "__main__":
 
 For production transport setup, see [HTTP Deployment](/deployment/http).
 
-## Authenticate the Sandbox, Not the Human
+## Use Short-Lived, Scoped Credentials
 
-For sandboxed agents, it is often cleaner to authenticate the sandbox itself rather than trying to replay a full user login flow inside the container.
+For sandboxed agents, it is usually cleaner to issue credentials for the sandbox session than to place long-lived upstream credentials directly inside the container.
 
 In practice, that usually means issuing a short-lived bearer token for each sandbox, run, or tenant and validating it on your FastMCP server with a token verifier.
 
@@ -109,18 +120,21 @@ auth = JWTVerifier(
 mcp = FastMCP("Sandbox Tools", auth=auth)
 ```
 
-The token should identify the sandbox's scope, for example:
+The token should identify the sandbox's scope. Depending on your system, it may represent a job, a tenant, a run, or a user-authorized session. Useful claims often include:
 
 - sandbox or run id
 - tenant or installation id
+- user or actor id when applicable
 - expiration
 - optional capability scopes
 
 Avoid shared static tokens across many sandboxes. If one sandbox token leaks, you want the blast radius to be small and the lifetime to be short.
 
-For validation patterns, see [Token Verification](/servers/auth/token-verification).
+Token verification is only one half of the boundary. Authorization still belongs on the FastMCP server: use scopes, claims, middleware, or custom auth checks to decide which tools and resources that sandbox can actually access.
 
-## Keep Secrets Out of the Sandbox
+For validation patterns, see [Token Verification](/servers/auth/token-verification). For policy enforcement, see [Authorization](/servers/authorization).
+
+## Expose Capabilities, Not Raw Access
 
 The sandbox should not need:
 
@@ -129,7 +143,7 @@ The sandbox should not need:
 - upstream OAuth client secrets
 - cloud provider credentials
 
-Instead, expose narrow MCP tools that perform privileged work on the server side.
+Instead, expose MCP tools that perform privileged work on the server side.
 
 Good sandbox-facing tools tend to look like this:
 
@@ -140,11 +154,9 @@ Good sandbox-facing tools tend to look like this:
 
 These tools describe the capability the sandbox needs, not the low-level credentialed action required to perform it.
 
-That distinction matters. A tool like `write_summary` lets the server decide where and how to persist the summary. A tool like `run_sql` or `call_internal_api` pushes privilege and policy into the sandbox where it is much harder to control.
+That distinction matters. A tool like `write_summary` lets the server decide where and how to persist the summary. A tool like `run_sql` or `call_internal_api` pushes privilege and policy into the sandbox where they are much harder to control.
 
-## Keep Tools Narrow and Structured
-
-Sandboxed agents behave best when tools are explicit and structured.
+Sandboxed agents behave best when those tools are narrow and structured.
 
 Prefer:
 
@@ -167,7 +179,7 @@ def mutate_state(kind: str, payload: dict) -> dict:
     ...
 ```
 
-Narrow tools are easier to audit, easier to authorize, and easier for agents to use reliably. They also let you express different policies per tool instead of creating one giant privileged escape hatch.
+Narrow tools are easier to audit, easier to authorize, and easier for agents to use reliably. They also let you express different policies per tool instead of creating one large privileged escape hatch.
 
 ## Use a Proxy When Upstream Systems Are More Privileged
 
@@ -185,7 +197,7 @@ If the upstream system is itself an MCP server, FastMCP's proxy support is a nat
 
 ## mcp.json for Sandboxed Clients
 
-If your sandboxed agent is configured through `mcp.json`, keep that configuration minimal. Point it at the remote FastMCP server and pass only the scoped values that sandbox needs.
+If your sandboxed agent is configured through `mcp.json`, keep that configuration minimal. Point it at the remote FastMCP server and pass only the values the sandbox actually needs.
 
 ```json
 {
@@ -198,7 +210,7 @@ If your sandboxed agent is configured through `mcp.json`, keep that configuratio
 }
 ```
 
-If your client needs authentication, inject the short-lived token through the client's supported auth mechanism or environment handling. Avoid baking long-lived credentials directly into generated config files.
+In many systems, authentication is injected by the launcher or environment rather than hardcoded in `mcp.json`. That is usually the right tradeoff for sandboxes. Avoid baking long-lived credentials directly into generated config files, and avoid treating `mcp.json` as the place where secret material should live.
 
 For configuration details, see [MCP.json](/integrations/mcp-json-configuration).
 
@@ -212,7 +224,7 @@ The same few mistakes show up again and again in sandboxed deployments:
 - using one shared token for every sandbox
 - relying on STDIO inheritance for configuration in production
 
-Each of these works at first. Each of them becomes painful once you have multiple tenants, multiple jobs, or an incident that requires revoking access quickly.
+Each of these works at first. Each becomes painful once you have multiple tenants, multiple jobs, or an incident that requires revoking access quickly.
 
 ## Production Checklist
 
