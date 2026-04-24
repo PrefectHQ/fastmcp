@@ -190,6 +190,7 @@
                     "pages": [
                       "deployment/running-server",
                       "deployment/http",
+                      "deployment/sandboxed-agents",
                       "deployment/prefect-horizon",
                       "deployment/server-configuration",
                       "servers/testing",
