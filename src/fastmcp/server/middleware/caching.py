@@ -314,6 +314,10 @@ class ResponseCachingMiddleware(Middleware):
                 annotations=tool.annotations,
                 meta=tool.meta,
                 tags=tool.tags,
+                auth=tool.auth,
+                timeout=tool.timeout,
+                execution=tool.execution,
+                icons=tool.icons,
             )
             for tool in tools
         ]
@@ -353,6 +357,7 @@ class ResponseCachingMiddleware(Middleware):
                 mime_type=resource.mime_type,
                 annotations=resource.annotations,
                 uri=resource.uri,
+                auth=resource.auth,
             )
             for resource in resources
         ]
@@ -390,6 +395,7 @@ class ResponseCachingMiddleware(Middleware):
                 tags=prompt.tags,
                 meta=prompt.meta,
                 arguments=prompt.arguments,
+                auth=prompt.auth,
             )
             for prompt in prompts
         ]
