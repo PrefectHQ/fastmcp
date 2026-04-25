@@ -121,6 +121,16 @@ logging.getLogger("mcp.server.lowlevel.server").addFilter(
 F = TypeVar("F", bound=Callable[..., Any])
 
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
+PluginStateSnapshot = tuple[
+    int,
+    int,
+    int,
+    int,
+    int,
+    int,
+    AuthProvider | None,
+    str | None,
+]
 
 
 _REMOVED_KWARGS: dict[str, str] = {
@@ -373,6 +383,7 @@ class FastMCP(
             self._lifespan = cast(LifespanCallable[LifespanResultT], default_lifespan)
         self._lifespan_result: LifespanResultT | None = None
         self._lifespan_result_set: bool = False
+        self._lifespan_started: bool = False
         self._lifespan_ref_count: int = 0
         self._lifespan_lock: asyncio.Lock = asyncio.Lock()
         self._started: asyncio.Event = asyncio.Event()
@@ -432,6 +443,9 @@ class FastMCP(
         # at `add_plugin()` time; each plugin's `run()` async context manager
         # wraps the server's lifespan (see `_enter_plugin_contexts`).
         self.plugins: list[Plugin] = []
+        self._plugin_capabilities: list[dict[str, Any]] = []
+        self._plugin_installing: bool = False
+        self._plugin_install_queue: list[Plugin] = []
         for p in plugins or []:
             self.add_plugin(p)
 
@@ -511,10 +525,10 @@ class FastMCP(
         Starlette app, so plugin-contributed routes and auth are wired in
         correctly without any lifespan-time choreography.
 
-        The plugin's `install(server)` hook runs first, which enforces the
+        The plugin's `on_install(server)` hook runs first, which enforces the
         "one plugin instance per server" contract (plugins are single-
         server by design — construct a fresh instance for each server
-        rather than sharing). After `install()` returns, contribution
+        rather than sharing). After `on_install()` returns, contribution
         hooks are called and their results applied atomically: if any
         step raises, the plugin is fully rolled back and leaves no
         residue on the server.
@@ -534,7 +548,7 @@ class FastMCP(
                 plugin's `fastmcp_version` compatibility check fails, or
                 if another source has already contributed auth.
         """
-        if self._lifespan_result_set:
+        if self._lifespan_started or self._lifespan_result_set:
             raise PluginError(
                 f"Cannot add plugin {plugin.meta.name!r}: the server has "
                 "already started its lifespan. Register plugins before "
@@ -542,6 +556,26 @@ class FastMCP(
                 "`Plugin.on_install(server)`, which runs at construction "
                 "time."
             )
+
+        if self._plugin_installing:
+            self._plugin_install_queue.append(plugin)
+            return
+
+        snapshot = self._plugin_state_snapshot()
+        self._plugin_installing = True
+        try:
+            self._install_plugin(plugin)
+            while self._plugin_install_queue:
+                self._install_plugin(self._plugin_install_queue.pop(0))
+        except Exception:
+            self._restore_plugin_state(snapshot)
+            self._plugin_install_queue.clear()
+            raise
+        finally:
+            self._plugin_installing = False
+
+    def _install_plugin(self, plugin: Plugin) -> None:
+        """Install one plugin without opening a new transaction."""
         plugin.check_fastmcp_compatibility()
         if plugin._installed_on is not None:
             raise PluginError(
@@ -554,53 +588,86 @@ class FastMCP(
         # Attach and append FIRST so any children registered recursively
         # by `on_install` land after this plugin in `self.plugins`,
         # preserving parent-before-child registration order. Everything
-        # from here runs inside a try/except so we can roll back to the
-        # exact pre-call state on any failure.
+        # runs inside add_plugin's transaction, so any failure rolls back
+        # the whole parent + child install batch.
         plugin._installed_on = self
         self.plugins.append(plugin)
-        try:
-            plugin.on_install(self)
 
-            # Gather everything up front: any hook that raises must not
-            # have mutated server state. Auth is the only hook that can
-            # conflict with prior server state (the singular-auth-slot
-            # rule), so we validate it before committing anything else.
-            contributed_auth = plugin.auth()
-            contributed_mws = list(plugin.middleware())
-            contributed_transforms = list(plugin.transforms())
-            contributed_providers = list(plugin.providers())
-            contributed_routes = list(plugin.routes())
+        plugin.on_install(self)
 
-            if contributed_auth is not None and self.auth is not None:
-                prior = self._auth_source or "user-declared auth="
-                raise PluginError(
-                    f"Multiple auth sources declared: {prior}, "
-                    f"plugin {plugin.meta.name!r}. FastMCP accepts a "
-                    "single auth provider. Disable auth on all but one "
-                    "source (typically via the plugin's config), or "
-                    "construct a `MultiAuth` explicitly in Python and "
-                    "pass it as the single `auth=` arg."
-                )
+        # Gather everything up front: any hook that raises must not have
+        # mutated server state. Auth is the only hook that can conflict
+        # with prior server state (the singular-auth-slot rule), so we
+        # validate it before committing anything else.
+        contributed_auth = plugin.auth()
+        contributed_capabilities = plugin.capabilities()
+        contributed_mws = list(plugin.middleware())
+        contributed_transforms = list(plugin.transforms())
+        contributed_providers = list(plugin.providers())
+        contributed_routes = list(plugin.routes())
 
-            # Commit. From here we do not raise.
-            for mw in contributed_mws:
-                self.add_middleware(mw)
-            for transform in contributed_transforms:
-                self.add_transform(transform)
-            for provider in contributed_providers:
-                self.add_provider(provider)
-            for route in contributed_routes:
-                self._additional_http_routes.append(route)
-            if contributed_auth is not None:
-                self.auth = contributed_auth
-                self._auth_source = f"plugin {plugin.meta.name!r}"
-        except Exception:
-            # Roll back the plugin itself; any child plugins that were
-            # added by a recursive `on_install` call are also removed so
-            # the server returns to its pre-call state.
-            self.plugins.remove(plugin)
+        if contributed_auth is not None and self.auth is not None:
+            prior = self._auth_source or "user-declared auth="
+            raise PluginError(
+                f"Multiple auth sources declared: {prior}, "
+                f"plugin {plugin.meta.name!r}. FastMCP accepts a "
+                "single auth provider. Disable auth on all but one "
+                "source (typically via the plugin's config), or "
+                "construct a `MultiAuth` explicitly in Python and "
+                "pass it as the single `auth=` arg."
+            )
+
+        # Commit. From here we do not raise.
+        self._plugin_capabilities.append(contributed_capabilities)
+        for mw in contributed_mws:
+            self.add_middleware(mw)
+        for transform in contributed_transforms:
+            self.add_transform(transform)
+        for provider in contributed_providers:
+            self.add_provider(provider)
+        for route in contributed_routes:
+            self._additional_http_routes.append(route)
+        if contributed_auth is not None:
+            self.auth = contributed_auth
+            self._auth_source = f"plugin {plugin.meta.name!r}"
+
+    def _plugin_state_snapshot(self) -> PluginStateSnapshot:
+        return (
+            len(self.plugins),
+            len(self.middleware),
+            len(self._transforms),
+            len(self.providers),
+            len(self._additional_http_routes),
+            len(self._plugin_capabilities),
+            self.auth,
+            self._auth_source,
+        )
+
+    def _restore_plugin_state(
+        self,
+        snapshot: PluginStateSnapshot,
+    ) -> None:
+        (
+            plugins_len,
+            middleware_len,
+            transforms_len,
+            providers_len,
+            routes_len,
+            capabilities_len,
+            auth,
+            auth_source,
+        ) = snapshot
+
+        for plugin in self.plugins[plugins_len:]:
             plugin._installed_on = None
-            raise
+        del self.plugins[plugins_len:]
+        del self.middleware[middleware_len:]
+        del self._transforms[transforms_len:]
+        del self.providers[providers_len:]
+        del self._additional_http_routes[routes_len:]
+        del self._plugin_capabilities[capabilities_len:]
+        self.auth = auth
+        self._auth_source = auth_source
 
     async def _enter_plugin_contexts(self, stack: AsyncExitStack) -> None:
         """Enter each registered plugin's `run()` context on the given stack.
@@ -636,7 +703,7 @@ class FastMCP(
         update, applied recursively. Plugins that return an empty dict
         contribute nothing.
         """
-        contributions = [plugin.capabilities() for plugin in self.plugins]
+        contributions = self._plugin_capabilities
         if not any(contributions):
             return capabilities
 

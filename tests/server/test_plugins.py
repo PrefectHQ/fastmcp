@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
 from importlib import metadata as importlib_metadata
 from importlib.metadata import version as dist_version
 from pathlib import Path
@@ -966,6 +966,35 @@ class TestLifecycle:
         assert ("setup", "child-a") in recorder.events
         assert ("setup", "child-b") in recorder.events
 
+    def test_loader_contribution_order_matches_plugin_order(self):
+        """Children registered by on_install are installed after the parent.
+
+        The plugin list is the user-visible order, so contribution order
+        must match it rather than letting recursive child installs commit
+        before the parent finishes installing.
+        """
+
+        class Child(Plugin):
+            meta = PluginMeta(name="child", version="0.1.0")
+
+            def middleware(self):
+                return [_TraceMiddleware("child")]
+
+        class Loader(Plugin):
+            meta = PluginMeta(name="loader", version="0.1.0")
+
+            def on_install(self, server):
+                server.add_plugin(Child())
+
+            def middleware(self):
+                return [_TraceMiddleware("loader")]
+
+        mcp = FastMCP("t", plugins=[Loader()])
+
+        assert [p.meta.name for p in mcp.plugins] == ["loader", "child"]
+        tags = [m.tag for m in mcp.middleware if isinstance(m, _TraceMiddleware)]
+        assert tags == ["loader", "child"]
+
     async def test_add_plugin_after_startup_raises(self):
         class P(Plugin):
             meta = PluginMeta(name="p", version="0.1.0")
@@ -1010,6 +1039,36 @@ class TestLifecycle:
 
         assert isinstance(provider.raised, PluginError)
         assert "already started" in str(provider.raised)
+
+    async def test_add_plugin_raises_when_called_from_user_lifespan(self):
+        """The plugin graph freezes before user lifespan startup code runs.
+
+        HTTP apps snapshot routes/auth before entering the lifespan, so
+        user lifespan code is already too late to register plugins even
+        though `_lifespan_result_set` has not been populated yet.
+        """
+
+        class Late(Plugin):
+            meta = PluginMeta(name="late", version="0.1.0")
+
+        captured: Exception | None = None
+
+        @asynccontextmanager
+        async def lifespan(server):
+            nonlocal captured
+            try:
+                server.add_plugin(Late())
+            except Exception as exc:
+                captured = exc
+            yield
+
+        mcp = FastMCP("t", lifespan=lifespan)
+        async with Client(mcp) as c:
+            await c.ping()
+
+        assert isinstance(captured, PluginError)
+        assert "already started" in str(captured)
+        assert mcp.plugins == []
 
     def test_same_instance_registered_twice_raises(self):
         """Plugin instances are single-server: a second registration of
@@ -1182,6 +1241,66 @@ class TestLifecycle:
         # Contribution book-keeping for the failed plugin was never created.
         # This is a weaker assertion — we just care the plugin isn't linger.
         assert not any(isinstance(p, RoutesBoom) for p in mcp.plugins)
+
+    def test_on_install_child_removed_when_parent_install_raises(self):
+        """A parent install failure rolls back children queued by on_install."""
+
+        class Child(Plugin):
+            meta = PluginMeta(name="child", version="0.1.0")
+
+            def middleware(self):
+                return [_TraceMiddleware("child")]
+
+        child = Child()
+
+        class Loader(Plugin):
+            meta = PluginMeta(name="loader", version="0.1.0")
+
+            def on_install(self, server):
+                server.add_plugin(child)
+                raise RuntimeError("loader exploded")
+
+        mcp = FastMCP("t")
+        baseline_middleware = list(mcp.middleware)
+
+        with pytest.raises(RuntimeError, match="loader exploded"):
+            mcp.add_plugin(Loader())
+
+        assert mcp.plugins == []
+        assert child._installed_on is None
+        assert mcp.middleware == baseline_middleware
+
+    def test_on_install_child_failure_rolls_back_parent_batch(self):
+        """If a queued child fails, parent contributions are rolled back too."""
+
+        class BadChild(Plugin):
+            meta = PluginMeta(name="bad-child", version="0.1.0")
+
+            def transforms(self):
+                raise RuntimeError("child exploded")
+
+        bad_child = BadChild()
+
+        class Loader(Plugin):
+            meta = PluginMeta(name="loader", version="0.1.0")
+
+            def on_install(self, server):
+                server.add_plugin(bad_child)
+
+            def middleware(self):
+                return [_TraceMiddleware("loader")]
+
+        loader = Loader()
+        mcp = FastMCP("t")
+        baseline_middleware = list(mcp.middleware)
+
+        with pytest.raises(RuntimeError, match="child exploded"):
+            mcp.add_plugin(loader)
+
+        assert mcp.plugins == []
+        assert loader._installed_on is None
+        assert bad_child._installed_on is None
+        assert mcp.middleware == baseline_middleware
 
     async def test_on_install_loader_contributions_persist_across_cycles(self):
         """Plugins registered via a loader's `on_install(server)` are permanent
@@ -1582,6 +1701,28 @@ class TestPluginCapabilities:
     def test_default_returns_empty(self):
         """Plugin with no override contributes nothing."""
         assert _TestPlugin().capabilities() == {}
+
+    async def test_capabilities_are_collected_at_registration_time(self):
+        """Capability hooks are sync install-time contributions, not
+        lifespan-time callbacks."""
+        calls = 0
+
+        class P(_TestPlugin):
+            def capabilities(self):
+                nonlocal calls
+                calls += 1
+                return {"experimental": {"registered": {}}}
+
+        mcp = FastMCP("t", plugins=[P()])
+        assert calls == 1
+
+        async with Client(mcp) as c:
+            result = c.initialize_result
+            assert result is not None
+            experimental = result.capabilities.experimental or {}
+            assert experimental.get("registered") == {}
+
+        assert calls == 1
 
     async def test_experimental_contribution_reaches_initialize_response(self):
         """An experimental capability entry flows through to the client."""
