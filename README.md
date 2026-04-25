@@ -77,7 +77,13 @@ FastMCP has three pillars:
 
 **[Servers](https://gofastmcp.com/servers/server)** wrap your Python functions into MCP-compliant tools, resources, and prompts. **[Clients](https://gofastmcp.com/clients/client)** connect to any server with full protocol support. And **[Apps](https://gofastmcp.com/apps/overview)** give your tools interactive UIs rendered directly in the conversation.
 
-Ready to build? Start with the [installation guide](https://gofastmcp.com/getting-started/installation) or jump straight to the [quickstart](https://gofastmcp.com/getting-started/quickstart). When you're ready to deploy, [Prefect Horizon](https://www.prefect.io/horizon) offers free hosting for FastMCP users.
+Ready to build? Start with the [installation guide](https://gofastmcp.com/getting-started/installation) or jump straight to the [quickstart](https://gofastmcp.com/getting-started/quickstart).
+
+## From prototype to production
+
+FastMCP is how teams build MCP servers. **[Prefect Horizon](https://www.prefect.io/horizon)** is how enterprises run them in production. Register any MCP server behind a managed gateway with SSO, tool-level RBAC, audit logs, and observability. Deploy FastMCP servers and go from PR to preview in 60 seconds, then remix tools from across your registry into use-case-specific, permissioned endpoints. Horizon is everything we've learned about MCP at scale from building the world's most popular MCP framework. Free for individuals, built for teams.
+
+[Deploy your first server →](https://www.prefect.io/horizon)
 
 ## Installation
 
