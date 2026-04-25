@@ -499,13 +499,25 @@ def _schema_to_type(
         merged: dict[str, Any] = {}
         merged_properties: dict[str, Any] = {}
         merged_required: list[str] = []
+        has_false = False
 
         def _collect_allof(sub: Any) -> None:
             """Recursively collect properties from a sub-schema."""
+            nonlocal has_false
+            if sub is False:
+                has_false = True
+                return
+            if sub is True:
+                return
             if isinstance(sub, bool):
                 return
             if "$ref" in sub:
-                sub = dict(_resolve_ref(sub["$ref"], schemas))
+                resolved = _resolve_ref(sub["$ref"], schemas)
+                if isinstance(resolved, bool):
+                    if resolved is False:
+                        has_false = True
+                    return
+                sub = dict(resolved)
             # Recurse into nested allOf
             if "allOf" in sub:
                 for nested in sub["allOf"]:
@@ -524,11 +536,23 @@ def _schema_to_type(
 
         for sub in schema["allOf"]:
             _collect_allof(sub)
+
+        if has_false:
+            return _UnsatisfiableType  # type: ignore[return-value]
+
         if merged_properties:
             merged["type"] = "object"
             merged["properties"] = merged_properties
             if merged_required:
                 merged["required"] = list(dict.fromkeys(merged_required))
+            # Preserve additionalProperties from the parent schema, not just
+            # from allOf children, so schemas like
+            # {"additionalProperties": true, "allOf": [...]} allow extra keys.
+            if (
+                "additionalProperties" not in merged
+                and "additionalProperties" in schema
+            ):
+                merged["additionalProperties"] = schema["additionalProperties"]
             return _schema_to_type(merged, schemas)
         # allOf with no mergeable properties — fall through to Any
 

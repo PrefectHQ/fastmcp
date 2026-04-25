@@ -610,3 +610,41 @@ class TestAllOfOneOf:
 
         assert ta.validate_python("hello") == "hello"
         assert ta.validate_python({"x": 1, "y": 2}) == {"x": 1, "y": 2}
+
+    def test_allof_false_sub_schema_is_unsatisfiable(self):
+        """allOf containing `false` should produce an unsatisfiable type."""
+        schema = {
+            "allOf": [
+                {"type": "object", "properties": {"name": {"type": "string"}}},
+                False,
+            ]
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+
+        with pytest.raises(ValidationError):
+            ta.validate_python({"name": "Alice"})
+
+    def test_allof_only_false_is_unsatisfiable(self):
+        """allOf with only `false` should produce an unsatisfiable type."""
+        schema = {"allOf": [False]}
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+
+        with pytest.raises(ValidationError):
+            ta.validate_python({"any": "value"})
+
+    def test_allof_ref_to_boolean_schema(self):
+        """allOf with a $ref resolving to `false` should be unsatisfiable."""
+        schema = {
+            "allOf": [
+                {"$ref": "#/$defs/Never"},
+                {"type": "object", "properties": {"name": {"type": "string"}}},
+            ],
+            "$defs": {"Never": False},
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+
+        with pytest.raises(ValidationError):
+            ta.validate_python({"name": "Alice"})
