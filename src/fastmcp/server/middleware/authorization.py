@@ -101,7 +101,15 @@ class AuthMiddleware(Middleware):
 
         authorized_tools: list[Tool] = []
         for tool in tools:
-            ctx = AuthContext(token=token, component=tool)
+            # Cache layers strip non-serializable fields like `auth`. 
+            # Always evaluate auth against the authoritative server component.
+            real_component = tool
+            fastmcp_ctx = context.fastmcp_context
+            if fastmcp_ctx is not None:
+                if original := await fastmcp_ctx.fastmcp.get_tool(tool.name):
+                    real_component = original
+
+            ctx = AuthContext(token=token, component=real_component)
             try:
                 if await run_auth_checks(self.auth, ctx):
                     authorized_tools.append(tool)
@@ -171,7 +179,17 @@ class AuthMiddleware(Middleware):
 
         authorized_resources: list[Resource] = []
         for resource in resources:
-            ctx = AuthContext(token=token, component=resource)
+            # Always evaluate auth against the authoritative server component
+            real_component = resource
+            fastmcp_ctx = context.fastmcp_context
+            if fastmcp_ctx is not None:
+                original = await fastmcp_ctx.fastmcp.get_resource(str(resource.uri))
+                if original is None:
+                    original = await fastmcp_ctx.fastmcp.get_resource_template(str(resource.uri))
+                if original is not None:
+                    real_component = original
+
+            ctx = AuthContext(token=token, component=real_component)
             try:
                 if await run_auth_checks(self.auth, ctx):
                     authorized_resources.append(resource)
@@ -243,7 +261,13 @@ class AuthMiddleware(Middleware):
 
         authorized_templates: list[ResourceTemplate] = []
         for template in templates:
-            ctx = AuthContext(token=token, component=template)
+            real_component = template
+            fastmcp_ctx = context.fastmcp_context
+            if fastmcp_ctx is not None:
+                if original := await fastmcp_ctx.fastmcp.get_resource_template(str(template.uri_template)):
+                    real_component = original
+
+            ctx = AuthContext(token=token, component=real_component)
             try:
                 if await run_auth_checks(self.auth, ctx):
                     authorized_templates.append(template)
@@ -270,7 +294,13 @@ class AuthMiddleware(Middleware):
 
         authorized_prompts: list[Prompt] = []
         for prompt in prompts:
-            ctx = AuthContext(token=token, component=prompt)
+            real_component = prompt
+            fastmcp_ctx = context.fastmcp_context
+            if fastmcp_ctx is not None:
+                if original := await fastmcp_ctx.fastmcp.get_prompt(prompt.name):
+                    real_component = original
+
+            ctx = AuthContext(token=token, component=real_component)
             try:
                 if await run_auth_checks(self.auth, ctx):
                     authorized_prompts.append(prompt)
