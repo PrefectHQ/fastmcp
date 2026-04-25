@@ -398,6 +398,23 @@ class TestExtensionAdvertisement:
             extensions = extras.get("extensions", {})
             assert UI_EXTENSION_ID in extensions
 
+    async def test_experimental_capabilities_in_initialize_result(self):
+        server = FastMCP(
+            "test",
+            experimental_capabilities={"file_exchange": {"version": "0.3"}},
+        )
+
+        async with Client(server) as client:
+            experimental = client.initialize_result.capabilities.experimental or {}
+            assert experimental.get("file_exchange") == {"version": "0.3"}
+
+    async def test_experimental_capabilities_default_empty(self):
+        server = FastMCP("test")
+
+        async with Client(server) as client:
+            experimental = client.initialize_result.capabilities.experimental
+            assert not experimental
+
 
 # ---------------------------------------------------------------------------
 # Context.client_supports_extension

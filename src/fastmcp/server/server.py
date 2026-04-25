@@ -307,6 +307,7 @@ class FastMCP(
         sampling_handler: SamplingHandler | None = None,
         sampling_handler_behavior: Literal["always", "fallback"] | None = None,
         client_log_level: mcp.types.LoggingLevel | None = None,
+        experimental_capabilities: dict[str, dict[str, Any]] | None = None,
         **kwargs: Any,
     ):
         _check_removed_kwargs(kwargs)
@@ -403,6 +404,10 @@ class FastMCP(
             client_log_level
             if client_log_level is not None
             else fastmcp.settings.client_log_level
+        )
+
+        self.experimental_capabilities: dict[str, dict[str, Any]] = (
+            experimental_capabilities or {}
         )
 
         self.middleware: list[Middleware] = list(middleware or [])

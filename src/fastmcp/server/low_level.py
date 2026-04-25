@@ -182,9 +182,13 @@ class LowLevelServer(_Server[LifespanResultT, RequestT]):
         # ensure we use the FastMCP notification options
         if notification_options is None:
             notification_options = self.notification_options
+        merged = {
+            **self.fastmcp.experimental_capabilities,
+            **(experimental_capabilities or {}),
+        }
         return super().create_initialization_options(
             notification_options=notification_options,
-            experimental_capabilities=experimental_capabilities,
+            experimental_capabilities=merged or None,
             **kwargs,
         )
 
