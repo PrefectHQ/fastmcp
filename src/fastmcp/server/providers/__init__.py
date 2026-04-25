@@ -58,7 +58,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> object:
     """Lazy import for providers to avoid circular imports."""
     if name == "ProxyProvider":
         from fastmcp.server.providers.proxy import ProxyProvider
