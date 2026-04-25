@@ -20,6 +20,7 @@ from typing_extensions import NotRequired, Self, override
 
 from fastmcp.prompts.base import Message, Prompt, PromptResult
 from fastmcp.resources.base import Resource, ResourceContent, ResourceResult
+from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.logging import get_logger
@@ -33,7 +34,7 @@ FIVE_MINUTES_IN_SECONDS = 300
 
 ONE_MB_IN_BYTES = 1024 * 1024
 
-GLOBAL_KEY = "__global__"
+ANONYMOUS_AUTH_KEY = "__anonymous__"
 
 
 class CachableResourceContent(FastMCPBaseModel):
@@ -194,7 +195,11 @@ class ResponseCachingMiddleware(Middleware):
 
     Notes:
     - Caches `tools/call`, `resources/read`, `prompts/get`, `tools/list`, `resources/list`, and `prompts/list` requests.
-    - Cache keys are derived from method name and arguments.
+    - Cache keys are derived from the method name, arguments, and the caller's
+      access token. Entries are partitioned per-token so that responses filtered
+      by per-component authorization (e.g. `auth=require_scopes(...)`) cannot
+      leak across users with different permissions. Unauthenticated callers
+      (including STDIO) share a single anonymous partition.
     """
 
     def __init__(
@@ -298,7 +303,9 @@ class ResponseCachingMiddleware(Middleware):
         if self._list_tools_settings.get("enabled") is False:
             return await call_next(context)
 
-        if cached_value := await self._list_tools_cache.get(key=GLOBAL_KEY):
+        cache_key: str = _get_auth_partition_key()
+
+        if cached_value := await self._list_tools_cache.get(key=cache_key):
             return cached_value
 
         tools: Sequence[Tool] = await call_next(context=context)
@@ -319,7 +326,7 @@ class ResponseCachingMiddleware(Middleware):
         ]
 
         await self._list_tools_cache.put(
-            key=GLOBAL_KEY,
+            key=cache_key,
             value=cachable_tools,
             ttl=self._list_tools_settings.get("ttl", FIVE_MINUTES_IN_SECONDS),
         )
@@ -337,7 +344,9 @@ class ResponseCachingMiddleware(Middleware):
         if self._list_resources_settings.get("enabled") is False:
             return await call_next(context)
 
-        if cached_value := await self._list_resources_cache.get(key=GLOBAL_KEY):
+        cache_key: str = _get_auth_partition_key()
+
+        if cached_value := await self._list_resources_cache.get(key=cache_key):
             return cached_value
 
         resources: Sequence[Resource] = await call_next(context=context)
@@ -358,7 +367,7 @@ class ResponseCachingMiddleware(Middleware):
         ]
 
         await self._list_resources_cache.put(
-            key=GLOBAL_KEY,
+            key=cache_key,
             value=cachable_resources,
             ttl=self._list_resources_settings.get("ttl", FIVE_MINUTES_IN_SECONDS),
         )
@@ -376,7 +385,9 @@ class ResponseCachingMiddleware(Middleware):
         if self._list_prompts_settings.get("enabled") is False:
             return await call_next(context)
 
-        if cached_value := await self._list_prompts_cache.get(key=GLOBAL_KEY):
+        cache_key: str = _get_auth_partition_key()
+
+        if cached_value := await self._list_prompts_cache.get(key=cache_key):
             return cached_value
 
         prompts: Sequence[Prompt] = await call_next(context=context)
@@ -395,7 +406,7 @@ class ResponseCachingMiddleware(Middleware):
         ]
 
         await self._list_prompts_cache.put(
-            key=GLOBAL_KEY,
+            key=cache_key,
             value=cachable_prompts,
             ttl=self._list_prompts_settings.get("ttl", FIVE_MINUTES_IN_SECONDS),
         )
@@ -417,7 +428,9 @@ class ResponseCachingMiddleware(Middleware):
         ) is False or not self._matches_tool_cache_settings(tool_name=tool_name):
             return await call_next(context=context)
 
-        cache_key: str = _make_call_tool_cache_key(msg=context.message)
+        cache_key: str = _make_call_tool_cache_key(
+            msg=context.message, auth_key=_get_auth_partition_key()
+        )
 
         if cached_value := await self._call_tool_cache.get(key=cache_key):
             return cached_value.unwrap()
@@ -446,7 +459,9 @@ class ResponseCachingMiddleware(Middleware):
         if self._read_resource_settings.get("enabled") is False:
             return await call_next(context=context)
 
-        cache_key: str = _make_read_resource_cache_key(msg=context.message)
+        cache_key: str = _make_read_resource_cache_key(
+            msg=context.message, auth_key=_get_auth_partition_key()
+        )
         cached_value: CachableResourceResult | None
 
         if cached_value := await self._read_resource_cache.get(key=cache_key):
@@ -474,7 +489,9 @@ class ResponseCachingMiddleware(Middleware):
         if self._get_prompt_settings.get("enabled") is False:
             return await call_next(context=context)
 
-        cache_key: str = _make_get_prompt_cache_key(msg=context.message)
+        cache_key: str = _make_get_prompt_cache_key(
+            msg=context.message, auth_key=_get_auth_partition_key()
+        )
 
         if cached_value := await self._get_prompt_cache.get(key=cache_key):
             return cached_value.unwrap()
@@ -534,19 +551,40 @@ def _hash_cache_key(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
-def _make_call_tool_cache_key(msg: mcp.types.CallToolRequestParams) -> str:
+def _get_auth_partition_key() -> str:
+    """Return a stable, hashed identifier for the current access token.
+
+    Cache entries are partitioned by access token so that responses filtered
+    by per-component authorization (e.g. `auth=require_scopes(...)`) are not
+    leaked across users with different permissions. Unauthenticated callers
+    (including STDIO) share a single anonymous partition.
+    """
+
+    token = get_access_token()
+    if token is None:
+        return ANONYMOUS_AUTH_KEY
+    return _hash_cache_key(token.token)
+
+
+def _make_call_tool_cache_key(
+    msg: mcp.types.CallToolRequestParams, auth_key: str = ANONYMOUS_AUTH_KEY
+) -> str:
     """Make a cache key for a tool call using a stable hash of name and arguments."""
 
-    return _hash_cache_key(f"{msg.name}:{_get_arguments_str(msg.arguments)}")
+    return _hash_cache_key(f"{auth_key}:{msg.name}:{_get_arguments_str(msg.arguments)}")
 
 
-def _make_read_resource_cache_key(msg: mcp.types.ReadResourceRequestParams) -> str:
+def _make_read_resource_cache_key(
+    msg: mcp.types.ReadResourceRequestParams, auth_key: str = ANONYMOUS_AUTH_KEY
+) -> str:
     """Make a cache key for a resource read using a stable hash of URI."""
 
-    return _hash_cache_key(str(msg.uri))
+    return _hash_cache_key(f"{auth_key}:{msg.uri}")
 
 
-def _make_get_prompt_cache_key(msg: mcp.types.GetPromptRequestParams) -> str:
+def _make_get_prompt_cache_key(
+    msg: mcp.types.GetPromptRequestParams, auth_key: str = ANONYMOUS_AUTH_KEY
+) -> str:
     """Make a cache key for a prompt get using a stable hash of name and arguments."""
 
-    return _hash_cache_key(f"{msg.name}:{_get_arguments_str(msg.arguments)}")
+    return _hash_cache_key(f"{auth_key}:{msg.name}:{_get_arguments_str(msg.arguments)}")
