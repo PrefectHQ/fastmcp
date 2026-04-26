@@ -62,7 +62,7 @@ class VersionSpec:
             return match_none
 
         if self.eq is not None:
-            return version == self.eq
+            return parse_version_key(version) == parse_version_key(self.eq)
 
         key = parse_version_key(version)
 
