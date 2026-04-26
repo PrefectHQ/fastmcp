@@ -19,9 +19,9 @@ from opentelemetry.trace import (
 from fastmcp.exceptions import ToolError as _ToolError
 from fastmcp.server.http import AMBIENT_SPAN_CONTEXT_SCOPE_KEY
 from fastmcp.telemetry import (
+    extract_propagation_keys_from_meta,
     extract_trace_context,
     get_noop_span,
-    get_trace_context_carrier,
     get_tracer,
     native_telemetry_enabled,
 )
@@ -60,13 +60,13 @@ def get_session_span_attributes() -> dict[str, str]:
 
 def _get_parent_trace_context() -> tuple[Context | None, list[Link] | None]:
     """Resolve MCP server parent context plus any ambient transport links."""
-    ambient_span_context = _get_ambient_span_context()
+    ambient_span_context = _get_ambient_or_current_span_context()
 
     try:
         req_ctx = request_ctx.get()
         if req_ctx and hasattr(req_ctx, "meta") and req_ctx.meta:
             meta = dict(req_ctx.meta)
-            if get_trace_context_carrier(meta):
+            if extract_propagation_keys_from_meta(meta):
                 parent_context = extract_trace_context(meta)
                 parent_span_context = trace.get_current_span(
                     parent_context
@@ -86,8 +86,12 @@ def _get_parent_trace_context() -> tuple[Context | None, list[Link] | None]:
     return None, None
 
 
-def _get_ambient_span_context() -> SpanContext:
-    """Resolve the current ambient transport span, if one is available."""
+def _get_ambient_or_current_span_context() -> SpanContext:
+    """Resolve the ambient transport span, falling back to the current span.
+
+    Returns the span context stored in the request scope by an outer transport
+    middleware, if present and valid. Otherwise returns the current active span.
+    """
     try:
         req_ctx = request_ctx.get()
     except LookupError:

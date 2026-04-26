@@ -77,7 +77,7 @@ def suppress_fastmcp_telemetry() -> Generator[None, None, None]:
         otel_context.detach(token)
 
 
-def get_trace_context_carrier(meta: dict[str, Any] | None) -> dict[str, str]:
+def extract_propagation_keys_from_meta(meta: dict[str, Any] | None) -> dict[str, str]:
     """Extract trace-related propagation keys from an MCP ``_meta`` dict."""
     if not meta:
         return {}
@@ -146,10 +146,10 @@ def extract_trace_context(meta: dict[str, Any] | None) -> Context:
 
     Returns:
         An OpenTelemetry Context with propagated trace context and baggage
-        merged onto the current context, or the current context if no
+        propagated onto the current context, or the current context if no
         propagation keys were present.
     """
-    carrier = get_trace_context_carrier(meta)
+    carrier = extract_propagation_keys_from_meta(meta)
     if carrier:
         return propagate.extract(carrier, context=otel_context.get_current())
     return otel_context.get_current()
@@ -165,9 +165,9 @@ __all__ = [
     "INSTRUMENTATION_NAME",
     "TRACE_PARENT_KEY",
     "TRACE_STATE_KEY",
+    "extract_propagation_keys_from_meta",
     "extract_trace_context",
     "get_noop_span",
-    "get_trace_context_carrier",
     "get_tracer",
     "inject_trace_context",
     "native_telemetry_enabled",

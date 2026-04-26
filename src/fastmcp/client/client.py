@@ -550,7 +550,7 @@ class Client(
         self,
         meta: dict[str, Any],
     ) -> mcp.types.InitializeResult:
-        """Initialize the MCP session while propagating MCP ``_meta`` fields.
+        """Send an InitializeRequest that preserves the client's capability config.
 
         This method accesses private session attributes (``_sampling_capabilities``,
         ``_elicitation_callback``, etc.) to reconstruct an InitializeRequest that
