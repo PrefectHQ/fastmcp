@@ -81,13 +81,13 @@ Ready to build? Start with the [installation guide](https://gofastmcp.com/gettin
 
 ## Run FastMCP in production with Horizon
 
-FastMCP is the standard way to build MCP servers. **[Prefect Horizon](https://www.prefect.io/horizon)** is the enterprise MCP gateway for running them safely.
+FastMCP is the standard way to build MCP servers. **[Prefect Horizon](https://www.prefect.io/horizon?utm_source=github&utm_medium=readme&utm_campaign=readme_horizon&utm_content=readme_body)** is the enterprise MCP gateway for running them safely.
 
 Built by the FastMCP team, Horizon packages the best practices we've learned shipping the world's most popular MCP framework.
 
 Deploy FastMCP servers from GitHub with branch previews and instant rollback. Create a private registry of every MCP your company uses. Secure access with SSO and tool-level RBAC. Get audit logs, observability, and governance across your MCP stack. Remix approved tools into purpose-built endpoints for teams and agents.
 
-Start with FastMCP. [Scale with Horizon →](https://www.prefect.io/horizon)
+Start with FastMCP. [Scale with Horizon →](https://www.prefect.io/horizon?utm_source=github&utm_medium=readme&utm_campaign=readme_horizon&utm_content=readme_cta)
 
 ## Installation
 
