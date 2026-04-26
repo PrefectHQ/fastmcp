@@ -446,8 +446,14 @@ class FastMCP(
         self._plugin_capabilities: list[dict[str, Any]] = []
         self._plugin_installing: bool = False
         self._plugin_install_queue: list[Plugin] = []
-        for p in plugins or []:
-            self.add_plugin(p)
+        if plugins:
+            snapshot = self._plugin_state_snapshot()
+            try:
+                for p in plugins:
+                    self.add_plugin(p)
+            except Exception:
+                self._restore_plugin_state(snapshot)
+                raise
 
         # Set up MCP protocol handlers
         self._setup_handlers()
