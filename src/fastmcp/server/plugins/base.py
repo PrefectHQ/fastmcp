@@ -652,8 +652,9 @@ class Plugin(Generic[C]):
         already installed by the time `run()` is entered. Opening database
         connections, starting background tasks, hydrating an
         already-installed provider with live state: all fine. Registering
-        additional plugins, middleware, or providers here is **not**
-        supported — contributions are frozen at `add_plugin()` time.
+        additional plugins, middleware, or providers here is discouraged:
+        use `on_install()` for plugin composition so the server graph is
+        configured before runtime work begins.
 
         The framework enters `async with plugin.run(server):` on the
         server's lifespan stack once per lifespan cycle. Everything before
@@ -696,9 +697,9 @@ class Plugin(Generic[C]):
         involving long-lived resources or background tasks, override
         `run()` directly instead and use `async with`.
 
-        Do not use `setup()` to register additional plugins or
-        contributions — plugin composition is frozen at construction time.
-        Use `on_install()` for that.
+        Prefer `on_install()` for registering additional plugins or
+        contributions so plugin composition happens at install time, before
+        async runtime work begins.
         """
 
     async def teardown(self) -> None:

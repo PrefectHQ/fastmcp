@@ -432,7 +432,7 @@ class FastMCP(
         # at `add_plugin()` time; each plugin's `run()` async context manager
         # wraps the server's lifespan (see `_enter_plugin_contexts`).
         self.plugins: list[Plugin] = []
-        self._plugin_capabilities: list[dict[str, Any]] = []
+        self._plugin_capabilities: dict[int, dict[str, Any]] = {}
         for p in plugins or []:
             self.add_plugin(p)
 
@@ -519,9 +519,8 @@ class FastMCP(
 
         Dynamic plugin loading (the "loader" pattern) is supported via
         `Plugin.on_install(server)`, which may call `server.add_plugin()`
-        recursively. That path runs entirely at registration time, before
-        the lifespan starts, so the resulting plugin tree is still frozen
-        by the time transports build their apps.
+        recursively. That path runs entirely at registration time, so
+        the resulting plugin tree is installed before runtime work starts.
 
         Args:
             plugin: A :class:`Plugin` instance.
@@ -573,7 +572,7 @@ class FastMCP(
             )
 
         # Commit. From here we do not raise.
-        self._plugin_capabilities.append(contributed_capabilities)
+        self._plugin_capabilities[id(plugin)] = contributed_capabilities
         for mw in contributed_mws:
             self.add_middleware(mw)
         for transform in contributed_transforms:
@@ -589,10 +588,10 @@ class FastMCP(
     async def _enter_plugin_contexts(self, stack: AsyncExitStack) -> None:
         """Enter each registered plugin's `run()` context on the given stack.
 
-        Called once per server lifespan. The plugin list is already frozen
-        at this point — contributions were collected when each plugin was
-        registered via `add_plugin()`. All this loop does is wrap each
-        plugin's async runtime lifetime around the server's lifespan.
+        Called once per server lifespan. Contributions were collected when
+        each plugin was registered via `add_plugin()`. All this loop does
+        is wrap each plugin's async runtime lifetime around the server's
+        lifespan.
 
         Order: registration order on entry, reverse order on exit (the
         exit stack handles the reversal automatically). Exceptions inside
@@ -620,7 +619,9 @@ class FastMCP(
         update, applied recursively. Plugins that return an empty dict
         contribute nothing.
         """
-        contributions = self._plugin_capabilities
+        contributions = [
+            self._plugin_capabilities.get(id(plugin), {}) for plugin in self.plugins
+        ]
         if not any(contributions):
             return capabilities
 

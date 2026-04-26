@@ -921,9 +921,8 @@ class TestLifecycle:
 
     async def test_loader_pattern_adds_plugins_from_on_install(self):
         """A plugin's `on_install(server)` can call `server.add_plugin()`
-        to register child plugins. The loader runs at construction time,
-        so child plugins are part of the server's frozen plugin graph
-        before any lifespan starts."""
+        to register child plugins. The loader runs at registration time,
+        so child plugins are installed before any lifespan starts."""
         recorder = _Recorder()
 
         class ChildA(Plugin):
@@ -1728,3 +1727,30 @@ class TestPluginCapabilities:
             assert result is not None
             experimental = result.capabilities.experimental or {}
             assert experimental.get("loaded") == {}
+
+    async def test_on_install_loader_capabilities_follow_plugin_order(self):
+        """Capabilities merge in plugin-list order even though child
+        plugins install while the parent's `on_install()` hook is running."""
+
+        class Loaded(_TestPlugin):
+            def capabilities(self):
+                return {"experimental": {"shared": {"owner": "child"}}}
+
+        class Loader(_TestPlugin):
+            def on_install(self, server):
+                server.add_plugin(Loaded())
+
+            def capabilities(self):
+                return {"experimental": {"shared": {"owner": "loader"}}}
+
+        mcp = FastMCP("t", plugins=[Loader()])
+        assert [type(plugin).__name__ for plugin in mcp.plugins] == [
+            "Loader",
+            "Loaded",
+        ]
+
+        async with Client(mcp) as c:
+            result = c.initialize_result
+            assert result is not None
+            experimental = result.capabilities.experimental or {}
+            assert experimental.get("shared") == {"owner": "child"}
