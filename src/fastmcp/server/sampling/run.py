@@ -532,7 +532,7 @@ async def sample_step_impl(
             model_preferences=_parse_model_preferences(model_preferences),
             tools=sdk_tools,
             tool_choice=effective_tool_choice,
-            related_request_id=context.request_id,
+            related_request_id=context.origin_request_id,
         )
 
     # Check if this is a tool use response
