@@ -1005,6 +1005,24 @@ class TestLifecycle:
             with pytest.raises(PluginError, match="already started"):
                 mcp.add_plugin(P())
 
+    def test_add_plugin_after_http_app_raises(self):
+        """HTTP/SSE apps snapshot plugin-contributed auth and routes when
+        the Starlette app is built, so plugin registration after `http_app()`
+        must fail before mutating server state."""
+
+        class P(Plugin):
+            meta = PluginMeta(name="p", version="0.1.0")
+
+        mcp = FastMCP("t")
+        mcp.http_app()
+
+        plugin = P()
+        with pytest.raises(PluginError, match="HTTP app has already been built"):
+            mcp.add_plugin(plugin)
+
+        assert mcp.plugins == []
+        assert plugin._installed_on is None
+
     async def test_add_plugin_raises_when_called_from_provider_lifespan(self):
         """Post-construction registration must be rejected. Provider
         lifespans run after the plugin graph is frozen; registering a

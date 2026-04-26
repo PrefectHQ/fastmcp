@@ -374,6 +374,7 @@ class FastMCP(
         self._lifespan_result: LifespanResultT | None = None
         self._lifespan_result_set: bool = False
         self._lifespan_started: bool = False
+        self._http_app_built: bool = False
         self._lifespan_ref_count: int = 0
         self._lifespan_lock: asyncio.Lock = asyncio.Lock()
         self._started: asyncio.Event = asyncio.Event()
@@ -533,7 +534,8 @@ class FastMCP(
 
         Raises:
             PluginError: If the plugin is already installed on a server,
-                if the server has already started its lifespan, or if the
+                if the server has already started its lifespan, if an
+                HTTP/SSE app has already been built, or if the
                 plugin's `fastmcp_version` compatibility check fails, or
                 if another source has already contributed auth.
         """
@@ -544,6 +546,13 @@ class FastMCP(
                 "starting the server. Dynamic plugin loading belongs in "
                 "`Plugin.on_install(server)`, which runs at construction "
                 "time."
+            )
+        if self._http_app_built:
+            raise PluginError(
+                f"Cannot add plugin {plugin.meta.name!r}: an HTTP app has "
+                "already been built. HTTP/SSE transports snapshot auth and "
+                "routes when the Starlette app is created. Register plugins "
+                "before calling `http_app()` or `run_http_async()`."
             )
 
         plugin.check_fastmcp_compatibility()
