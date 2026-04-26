@@ -64,6 +64,14 @@ The rest of the env vars can be left as defaults.
 
 ## How To Test
 
+First activate the `venv` by running:
+
+```
+$ source .venv/bin/activate
+```
+
+Then run the following scripts in different terminals.
+
 ### Step 1: Start MCP Server 
 
 ```
