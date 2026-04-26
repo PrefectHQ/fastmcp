@@ -6,6 +6,7 @@ import os
 import webbrowser
 
 from dotenv import load_dotenv
+
 from fastmcp import Client
 
 load_dotenv()

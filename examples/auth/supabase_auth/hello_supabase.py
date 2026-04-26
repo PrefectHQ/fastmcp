@@ -5,6 +5,7 @@ import os
 
 import httpx
 from dotenv import load_dotenv
+
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.supabase import SupabaseProvider
 from fastmcp.server.middleware import Middleware, MiddlewareContext
@@ -72,10 +73,12 @@ class InstrumentedJWTVerifier:
 
         try:
             payload_part = token.split(".")[1]
-            payload = json.loads(base64.urlsafe_b64decode(
-                payload_part + "=" * (-len(payload_part) % 4)
-            ))
-            logger.info(f"📦 JWT PAYLOAD (truncated): {dict(list(payload.items())[:5])}")
+            payload = json.loads(
+                base64.urlsafe_b64decode(payload_part + "=" * (-len(payload_part) % 4))
+            )
+            logger.info(
+                f"📦 JWT PAYLOAD (truncated): {dict(list(payload.items())[:5])}"
+            )
         except Exception as e:
             logger.debug(f"Could not decode payload: {e}")
 
@@ -144,5 +147,7 @@ if __name__ == "__main__":
     logger.info(f"📍 Server will be available at: {BASE_URL}")
     logger.info("🔐 Authentication endpoints:")
     logger.info(f"   - JWKS: {SUPABASE_URL}/auth/v1/.well-known/jwks.json")
-    logger.info(f"   - OAuth Metadata: {BASE_URL}/.well-known/oauth-authorization-server")
+    logger.info(
+        f"   - OAuth Metadata: {BASE_URL}/.well-known/oauth-authorization-server"
+    )
     mcp.run(transport="http", port=3000)
