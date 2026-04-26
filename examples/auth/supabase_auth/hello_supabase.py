@@ -150,4 +150,4 @@ if __name__ == "__main__":
     logger.info(
         f"   - OAuth Metadata: {BASE_URL}/.well-known/oauth-authorization-server"
     )
-    mcp.run(transport="http", port=3000)
+    mcp.run(transport="http", port=8000)
