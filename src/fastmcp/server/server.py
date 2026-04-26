@@ -373,8 +373,6 @@ class FastMCP(
             self._lifespan = cast(LifespanCallable[LifespanResultT], default_lifespan)
         self._lifespan_result: LifespanResultT | None = None
         self._lifespan_result_set: bool = False
-        self._lifespan_started: bool = False
-        self._http_app_built: bool = False
         self._lifespan_ref_count: int = 0
         self._lifespan_lock: asyncio.Lock = asyncio.Lock()
         self._started: asyncio.Event = asyncio.Event()
@@ -508,11 +506,7 @@ class FastMCP(
         Collects all of the plugin's contributions — providers, middleware,
         transforms, routes, auth, capabilities — synchronously, once, at
         registration time. Plugin lifecycle (`run()` / `setup()` /
-        `teardown()`) is strictly for async runtime work; by the time the
-        server's lifespan starts, its component graph is frozen. HTTP/SSE
-        transports snapshot that frozen graph when they build the
-        Starlette app, so plugin-contributed routes and auth are wired in
-        correctly without any lifespan-time choreography.
+        `teardown()`) is strictly for async runtime work.
 
         The plugin's `on_install(server)` hook runs first, which enforces the
         "one plugin instance per server" contract (plugins are single-
@@ -534,27 +528,9 @@ class FastMCP(
 
         Raises:
             PluginError: If the plugin is already installed on a server,
-                if the server has already started its lifespan, if an
-                HTTP/SSE app has already been built, or if the
-                plugin's `fastmcp_version` compatibility check fails, or
-                if another source has already contributed auth.
+                if the plugin's `fastmcp_version` compatibility check
+                fails, or if another source has already contributed auth.
         """
-        if self._lifespan_started or self._lifespan_result_set:
-            raise PluginError(
-                f"Cannot add plugin {plugin.meta.name!r}: the server has "
-                "already started its lifespan. Register plugins before "
-                "starting the server. Dynamic plugin loading belongs in "
-                "`Plugin.on_install(server)`, which runs at construction "
-                "time."
-            )
-        if self._http_app_built:
-            raise PluginError(
-                f"Cannot add plugin {plugin.meta.name!r}: an HTTP app has "
-                "already been built. HTTP/SSE transports snapshot auth and "
-                "routes when the Starlette app is created. Register plugins "
-                "before calling `http_app()` or `run_http_async()`."
-            )
-
         plugin.check_fastmcp_compatibility()
         if plugin._installed_on is not None:
             raise PluginError(

@@ -333,11 +333,6 @@ class TransportMixin:
         Returns:
             A Starlette application configured with the specified transport
         """
-        if transport not in ("streamable-http", "http", "sse"):
-            raise ValueError(f"Unknown transport: {transport}")
-
-        self._http_app_built = True
-
         if transport in ("streamable-http", "http"):
             return create_streamable_http_app(
                 server=self,
@@ -369,3 +364,5 @@ class TransportMixin:
                 debug=fastmcp.settings.debug,
                 middleware=middleware,
             )
+        else:
+            raise ValueError(f"Unknown transport: {transport}")

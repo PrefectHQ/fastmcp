@@ -995,99 +995,6 @@ class TestLifecycle:
         tags = [m.tag for m in mcp.middleware if isinstance(m, _TraceMiddleware)]
         assert tags == ["child", "loader"]
 
-    async def test_add_plugin_after_startup_raises(self):
-        class P(Plugin):
-            meta = PluginMeta(name="p", version="0.1.0")
-
-        mcp = FastMCP("t")
-        async with Client(mcp) as c:
-            await c.ping()
-            with pytest.raises(PluginError, match="already started"):
-                mcp.add_plugin(P())
-
-    def test_add_plugin_after_http_app_raises(self):
-        """HTTP/SSE apps snapshot plugin-contributed auth and routes when
-        the Starlette app is built, so plugin registration after `http_app()`
-        must fail before mutating server state."""
-
-        class P(Plugin):
-            meta = PluginMeta(name="p", version="0.1.0")
-
-        mcp = FastMCP("t")
-        mcp.http_app()
-
-        plugin = P()
-        with pytest.raises(PluginError, match="HTTP app has already been built"):
-            mcp.add_plugin(plugin)
-
-        assert mcp.plugins == []
-        assert plugin._installed_on is None
-
-    async def test_add_plugin_raises_when_called_from_provider_lifespan(self):
-        """Post-construction registration must be rejected. Provider
-        lifespans run after the plugin graph is frozen; registering a
-        plugin there would miss the HTTP app's route/auth snapshot."""
-        from contextlib import asynccontextmanager
-
-        from fastmcp.server.providers import Provider
-
-        class PluginInProviderLifespan(Provider):
-            def __init__(self, server):
-                super().__init__()
-                self.server = server
-                self.raised: Exception | None = None
-
-            @asynccontextmanager
-            async def lifespan(self):
-                class Late(Plugin):
-                    meta = PluginMeta(name="late", version="0.1.0")
-
-                try:
-                    self.server.add_plugin(Late())
-                except Exception as exc:
-                    self.raised = exc
-                yield
-
-        mcp = FastMCP("t")
-        provider = PluginInProviderLifespan(mcp)
-        mcp.add_provider(provider)
-
-        async with Client(mcp) as c:
-            await c.ping()
-
-        assert isinstance(provider.raised, PluginError)
-        assert "already started" in str(provider.raised)
-
-    async def test_add_plugin_raises_when_called_from_user_lifespan(self):
-        """The plugin graph freezes before user lifespan startup code runs.
-
-        HTTP apps snapshot routes/auth before entering the lifespan, so
-        user lifespan code is already too late to register plugins even
-        though `_lifespan_result_set` has not been populated yet.
-        """
-
-        class Late(Plugin):
-            meta = PluginMeta(name="late", version="0.1.0")
-
-        captured: Exception | None = None
-
-        @asynccontextmanager
-        async def lifespan(server):
-            nonlocal captured
-            try:
-                server.add_plugin(Late())
-            except Exception as exc:
-                captured = exc
-            yield
-
-        mcp = FastMCP("t", lifespan=lifespan)
-        async with Client(mcp) as c:
-            await c.ping()
-
-        assert isinstance(captured, PluginError)
-        assert "already started" in str(captured)
-        assert mcp.plugins == []
-
     def test_same_instance_registered_twice_raises(self):
         """Plugin instances are single-server: a second registration of
         the same instance (on any server) raises at `install()`."""
@@ -1293,7 +1200,6 @@ class TestRunHook:
 
     async def test_run_override_wraps_server_lifetime(self):
         """A plugin overriding run() sees the server live between setup and teardown."""
-        from contextlib import asynccontextmanager
 
         recorder = _Recorder()
 
@@ -1320,7 +1226,6 @@ class TestRunHook:
 
     async def test_run_override_can_use_async_with(self):
         """A plugin's run() can acquire an async-context resource and release it on exit."""
-        from contextlib import asynccontextmanager
 
         recorder = _Recorder()
 
@@ -1355,7 +1260,6 @@ class TestRunHook:
 
     async def test_run_override_cancellation_propagates_into_background_task(self):
         """A long-running background task inside run() is cancelled on shutdown."""
-        from contextlib import asynccontextmanager
 
         recorder = _Recorder()
 
@@ -1387,7 +1291,6 @@ class TestRunHook:
 
     async def test_run_override_raising_before_yield_aborts_startup(self):
         """If a plugin's run() raises before yielding, startup fails cleanly."""
-        from contextlib import asynccontextmanager
 
         class BadStart(Plugin):
             meta = PluginMeta(name="bad-start", version="0.1.0")
@@ -1404,7 +1307,6 @@ class TestRunHook:
 
     async def test_run_override_composes_with_simple_setup_teardown_plugins(self):
         """A server can mix run-override plugins with setup/teardown plugins."""
-        from contextlib import asynccontextmanager
 
         recorder = _Recorder()
 

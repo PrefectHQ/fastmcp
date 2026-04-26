@@ -164,7 +164,6 @@ class LifespanMixin:
         # propagate into lifespan finally blocks, preventing any async
         # cleanup (e.g. closing DB connections, flushing buffers).
         stack = AsyncExitStack()
-        self._lifespan_started = True
         try:
             user_lifespan_result = await stack.enter_async_context(self._lifespan(self))
             await stack.enter_async_context(self._docket_lifespan())
@@ -199,7 +198,6 @@ class LifespanMixin:
                 async with self._lifespan_lock:
                     self._lifespan_ref_count -= 1
                     if self._lifespan_ref_count == 0:
-                        self._lifespan_started = False
                         self._lifespan_result_set = False
                         self._lifespan_result = None
 
