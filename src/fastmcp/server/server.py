@@ -121,16 +121,6 @@ logging.getLogger("mcp.server.lowlevel.server").addFilter(
 F = TypeVar("F", bound=Callable[..., Any])
 
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
-PluginStateSnapshot = tuple[
-    int,
-    int,
-    int,
-    int,
-    int,
-    int,
-    AuthProvider | None,
-    str | None,
-]
 
 
 _REMOVED_KWARGS: dict[str, str] = {
@@ -444,16 +434,8 @@ class FastMCP(
         # wraps the server's lifespan (see `_enter_plugin_contexts`).
         self.plugins: list[Plugin] = []
         self._plugin_capabilities: list[dict[str, Any]] = []
-        self._plugin_installing: bool = False
-        self._plugin_install_queue: list[Plugin] = []
-        if plugins:
-            snapshot = self._plugin_state_snapshot()
-            try:
-                for p in plugins:
-                    self.add_plugin(p)
-            except Exception:
-                self._restore_plugin_state(snapshot)
-                raise
+        for p in plugins or []:
+            self.add_plugin(p)
 
         # Set up MCP protocol handlers
         self._setup_handlers()
@@ -535,9 +517,10 @@ class FastMCP(
         "one plugin instance per server" contract (plugins are single-
         server by design — construct a fresh instance for each server
         rather than sharing). After `on_install()` returns, contribution
-        hooks are called and their results applied atomically: if any
-        step raises, the plugin is fully rolled back and leaves no
-        residue on the server.
+        hooks are called and their results are applied. If any step
+        raises, registration fails loudly; the caller should discard the
+        partially configured server rather than expect best-effort
+        recovery.
 
         Dynamic plugin loading (the "loader" pattern) is supported via
         `Plugin.on_install(server)`, which may call `server.add_plugin()`
@@ -563,25 +546,6 @@ class FastMCP(
                 "time."
             )
 
-        if self._plugin_installing:
-            self._plugin_install_queue.append(plugin)
-            return
-
-        snapshot = self._plugin_state_snapshot()
-        self._plugin_installing = True
-        try:
-            self._install_plugin(plugin)
-            while self._plugin_install_queue:
-                self._install_plugin(self._plugin_install_queue.pop(0))
-        except Exception:
-            self._restore_plugin_state(snapshot)
-            self._plugin_install_queue.clear()
-            raise
-        finally:
-            self._plugin_installing = False
-
-    def _install_plugin(self, plugin: Plugin) -> None:
-        """Install one plugin without opening a new transaction."""
         plugin.check_fastmcp_compatibility()
         if plugin._installed_on is not None:
             raise PluginError(
@@ -593,9 +557,9 @@ class FastMCP(
 
         # Attach and append FIRST so any children registered recursively
         # by `on_install` land after this plugin in `self.plugins`,
-        # preserving parent-before-child registration order. Everything
-        # runs inside add_plugin's transaction, so any failure rolls back
-        # the whole parent + child install batch.
+        # preserving parent-before-child registration order in the plugin
+        # list. Child contribution side effects still occur when the
+        # child is added from on_install.
         plugin._installed_on = self
         self.plugins.append(plugin)
 
@@ -636,44 +600,6 @@ class FastMCP(
         if contributed_auth is not None:
             self.auth = contributed_auth
             self._auth_source = f"plugin {plugin.meta.name!r}"
-
-    def _plugin_state_snapshot(self) -> PluginStateSnapshot:
-        return (
-            len(self.plugins),
-            len(self.middleware),
-            len(self._transforms),
-            len(self.providers),
-            len(self._additional_http_routes),
-            len(self._plugin_capabilities),
-            self.auth,
-            self._auth_source,
-        )
-
-    def _restore_plugin_state(
-        self,
-        snapshot: PluginStateSnapshot,
-    ) -> None:
-        (
-            plugins_len,
-            middleware_len,
-            transforms_len,
-            providers_len,
-            routes_len,
-            capabilities_len,
-            auth,
-            auth_source,
-        ) = snapshot
-
-        for plugin in self.plugins[plugins_len:]:
-            plugin._installed_on = None
-        del self.plugins[plugins_len:]
-        del self.middleware[middleware_len:]
-        del self._transforms[transforms_len:]
-        del self.providers[providers_len:]
-        del self._additional_http_routes[routes_len:]
-        del self._plugin_capabilities[capabilities_len:]
-        self.auth = auth
-        self._auth_source = auth_source
 
     async def _enter_plugin_contexts(self, stack: AsyncExitStack) -> None:
         """Enter each registered plugin's `run()` context on the given stack.

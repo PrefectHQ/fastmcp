@@ -966,12 +966,12 @@ class TestLifecycle:
         assert ("setup", "child-a") in recorder.events
         assert ("setup", "child-b") in recorder.events
 
-    def test_loader_contribution_order_matches_plugin_order(self):
-        """Children registered by on_install are installed after the parent.
+    def test_loader_child_contributions_install_during_on_install(self):
+        """Children registered by on_install install immediately.
 
-        The plugin list is the user-visible order, so contribution order
-        must match it rather than letting recursive child installs commit
-        before the parent finishes installing.
+        The plugin list preserves parent-before-child order. Contribution
+        side effects happen when each plugin is added; FastMCP does not
+        defer or transact loader installs.
         """
 
         class Child(Plugin):
@@ -993,7 +993,7 @@ class TestLifecycle:
 
         assert [p.meta.name for p in mcp.plugins] == ["loader", "child"]
         tags = [m.tag for m in mcp.middleware if isinstance(m, _TraceMiddleware)]
-        assert tags == ["loader", "child"]
+        assert tags == ["child", "loader"]
 
     async def test_add_plugin_after_startup_raises(self):
         class P(Plugin):
@@ -1192,12 +1192,14 @@ class TestLifecycle:
         # BadSetup never completed setup(); its teardown must not run.
         assert ("teardown", "bad") not in recorder.events
 
-    def test_add_plugin_is_atomic_when_later_hook_raises(self):
-        """A failing contribution hook during `add_plugin()` must not
-        leave partial state behind: middleware that was returned by
-        `middleware()` must not be installed if `transforms()` raises,
-        the plugin must not be in `self.plugins`, and `_installed_on`
-        must be cleared so the instance can be reused."""
+    def test_add_plugin_raises_when_later_hook_raises(self):
+        """Contribution hook errors fail loudly.
+
+        Plugin installation is not transactional: plugin hooks can mutate
+        arbitrary server state, so FastMCP does not pretend to recover a
+        partially configured server. Callers should discard the server
+        after a failed plugin install.
+        """
 
         class Flaky(Plugin):
             meta = PluginMeta(name="flaky", version="0.1.0")
@@ -1209,23 +1211,16 @@ class TestLifecycle:
                 raise RuntimeError("transforms exploded")
 
         mcp = FastMCP("t")
-        baseline = list(mcp.middleware)
 
         flaky = Flaky()
         with pytest.raises(RuntimeError, match="transforms exploded"):
             mcp.add_plugin(flaky)
 
-        # Full rollback — nothing from the failed plugin landed.
-        assert flaky not in mcp.plugins
-        assert mcp.middleware == baseline
-        assert flaky._installed_on is None
+        assert flaky in mcp.plugins
+        assert flaky._installed_on is mcp
 
-    async def test_add_plugin_is_atomic_when_routes_raises(self):
-        """If plugin.routes() raises, the plugin must not be left in the server's list.
-
-        Otherwise a later startup would run the half-registered plugin's
-        lifecycle even though registration reported an error.
-        """
+    async def test_add_plugin_raises_when_routes_raises(self):
+        """Route hook errors fail loudly without best-effort recovery."""
 
         class RoutesBoom(Plugin):
             meta = PluginMeta(name="routes-boom", version="0.1.0")
@@ -1234,73 +1229,13 @@ class TestLifecycle:
                 raise RuntimeError("routes exploded")
 
         mcp = FastMCP("t")
+        plugin = RoutesBoom()
+
         with pytest.raises(RuntimeError, match="routes exploded"):
-            mcp.add_plugin(RoutesBoom())
+            mcp.add_plugin(plugin)
 
-        assert mcp.plugins == []
-        # Contribution book-keeping for the failed plugin was never created.
-        # This is a weaker assertion — we just care the plugin isn't linger.
-        assert not any(isinstance(p, RoutesBoom) for p in mcp.plugins)
-
-    def test_on_install_child_removed_when_parent_install_raises(self):
-        """A parent install failure rolls back children queued by on_install."""
-
-        class Child(Plugin):
-            meta = PluginMeta(name="child", version="0.1.0")
-
-            def middleware(self):
-                return [_TraceMiddleware("child")]
-
-        child = Child()
-
-        class Loader(Plugin):
-            meta = PluginMeta(name="loader", version="0.1.0")
-
-            def on_install(self, server):
-                server.add_plugin(child)
-                raise RuntimeError("loader exploded")
-
-        mcp = FastMCP("t")
-        baseline_middleware = list(mcp.middleware)
-
-        with pytest.raises(RuntimeError, match="loader exploded"):
-            mcp.add_plugin(Loader())
-
-        assert mcp.plugins == []
-        assert child._installed_on is None
-        assert mcp.middleware == baseline_middleware
-
-    def test_on_install_child_failure_rolls_back_parent_batch(self):
-        """If a queued child fails, parent contributions are rolled back too."""
-
-        class BadChild(Plugin):
-            meta = PluginMeta(name="bad-child", version="0.1.0")
-
-            def transforms(self):
-                raise RuntimeError("child exploded")
-
-        bad_child = BadChild()
-
-        class Loader(Plugin):
-            meta = PluginMeta(name="loader", version="0.1.0")
-
-            def on_install(self, server):
-                server.add_plugin(bad_child)
-
-            def middleware(self):
-                return [_TraceMiddleware("loader")]
-
-        loader = Loader()
-        mcp = FastMCP("t")
-        baseline_middleware = list(mcp.middleware)
-
-        with pytest.raises(RuntimeError, match="child exploded"):
-            mcp.add_plugin(loader)
-
-        assert mcp.plugins == []
-        assert loader._installed_on is None
-        assert bad_child._installed_on is None
-        assert mcp.middleware == baseline_middleware
+        assert plugin in mcp.plugins
+        assert plugin._installed_on is mcp
 
     async def test_on_install_loader_contributions_persist_across_cycles(self):
         """Plugins registered via a loader's `on_install(server)` are permanent

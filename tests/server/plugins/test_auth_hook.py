@@ -167,47 +167,14 @@ class TestMultipleSourcesRejected:
         assert "'beta'" in msg
 
 
-class TestAddPluginAtomicity:
-    def test_constructor_plugin_batch_rolls_back_on_auth_conflict(self):
-        """A constructor-time plugin failure must release earlier plugin instances.
+class TestAddPluginFailures:
+    def test_rejected_auth_conflict_raises_loudly(self):
+        """A plugin whose auth contribution conflicts raises immediately.
 
-        Callers own plugin instances. If `FastMCP(plugins=[...])` raises
-        partway through the batch, the successful earlier instances must
-        not stay bound to the half-constructed server.
+        Plugin installation is not transactional: after a failed install,
+        callers should discard the partially configured server rather than
+        expect FastMCP to recover arbitrary plugin mutations.
         """
-        v1 = _verifier("one")
-        v2 = _verifier("two")
-
-        class P1(Plugin):
-            meta = PluginMeta(name="p1")
-
-            def auth(self) -> AuthProvider | None:
-                return v1
-
-        class P2(Plugin):
-            meta = PluginMeta(name="p2")
-
-            def auth(self) -> AuthProvider | None:
-                return v2
-
-        p1 = P1()
-        p2 = P2()
-
-        with pytest.raises(PluginError, match="Multiple auth sources"):
-            FastMCP("t", plugins=[p1, p2])
-
-        assert p1._installed_on is None
-        assert p2._installed_on is None
-
-        # Recovery path: caller can reuse the formerly-successful plugin
-        # instance in a corrected server config.
-        mcp = FastMCP("t2", plugins=[p1])
-        assert mcp.auth is v1
-
-    def test_rejected_auth_conflict_leaves_no_residue(self):
-        """A plugin whose auth contribution would trip the 'Multiple auth
-        sources' guard must be fully rolled back: not attached (`_installed_on`
-        cleared), not appended to `self.plugins`, no contributions installed."""
         v1 = _verifier("one")
 
         class P1(Plugin):
@@ -235,10 +202,9 @@ class TestAddPluginAtomicity:
         with pytest.raises(PluginError, match="Multiple auth sources"):
             mcp.add_plugin(p2)
 
-        # Full rollback: p2 is not in plugins, not attached, auth unchanged.
-        assert mcp.plugins == [p1]
+        assert mcp.plugins == [p1, p2]
         assert mcp.auth is v1
-        assert p2._installed_on is None
+        assert p2._installed_on is mcp
 
 
 class TestSingleServerPerInstance:
