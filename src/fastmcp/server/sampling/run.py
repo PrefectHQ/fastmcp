@@ -562,8 +562,6 @@ async def sample_step_impl(
         except Exception as e:
             if span.is_recording():
                 span.set_attribute("error.type", type(e).__qualname__)
-                span.record_exception(e)
-                span.set_status(Status(StatusCode.ERROR, str(e)))
             raise
 
     # Check if this is a tool use response
