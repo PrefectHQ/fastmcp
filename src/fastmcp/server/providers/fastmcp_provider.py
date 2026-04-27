@@ -11,7 +11,7 @@ executed.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from typing import TYPE_CHECKING, Any, overload
 
 import mcp.types
@@ -703,6 +703,32 @@ class FastMCPProvider(Provider):
         This starts only the wrapped server's user-defined lifespan, NOT its
         full _lifespan_manager() (which includes Docket). The parent server's
         Docket handles all background tasks.
+
+        Captures the lifespan result so that ``ctx.lifespan_context`` on the
+        mounted server returns the **child's** lifespan context, not the
+        parent's. Also starts lifespans for the child server's own providers
+        (e.g. additional providers registered on the mounted server).
         """
-        async with self.server._lifespan(self.server):
+        stack = AsyncExitStack()
+        try:
+            user_lifespan_result = await stack.enter_async_context(
+                self.server._lifespan(self.server)
+            )
+            self.server._lifespan_result = user_lifespan_result
+            self.server._lifespan_result_set = True
+
+            # Start lifespans for the child server's own providers.
+            # We skip self to avoid infinite recursion — the child's provider
+            # list includes the LocalProvider and any other providers added
+            # directly to the child server.
+            for provider in list(self.server.providers):
+                if provider is not self:
+                    await stack.enter_async_context(provider.lifespan())
+
             yield
+        finally:
+            try:
+                await stack.aclose()
+            finally:
+                self.server._lifespan_result_set = False
+                self.server._lifespan_result = None
