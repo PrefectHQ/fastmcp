@@ -517,6 +517,7 @@ class FastMCPProvider(Provider):
         """
         super().__init__()
         self.server = server
+        self._lifespan_ref_count = 0
 
     # -------------------------------------------------------------------------
     # Tool methods
@@ -708,7 +709,32 @@ class FastMCPProvider(Provider):
         mounted server returns the **child's** lifespan context, not the
         parent's. Also starts lifespans for the child server's own providers
         (e.g. additional providers registered on the mounted server).
+
+        Uses ref-counting so that if the same child server's lifespan is
+        entered from multiple parent contexts (e.g. mounted on multiple
+        parents or run directly), only the last context to exit clears
+        the lifespan data.
         """
+        async with self.server._lifespan_lock:
+            if self.server._lifespan_result_set:
+                self._lifespan_ref_count += 1
+                should_enter_lifespan = False
+            else:
+                self._lifespan_ref_count = 1
+                should_enter_lifespan = True
+
+        if not should_enter_lifespan:
+            try:
+                yield
+            finally:
+                async with self.server._lifespan_lock:
+                    self._lifespan_ref_count -= 1
+                    if self._lifespan_ref_count == 0:
+                        self.server._lifespan_result_set = False
+                        self.server._lifespan_result = None
+            return
+
+        # First context: enter the child server's lifespan normally.
         stack = AsyncExitStack()
         try:
             user_lifespan_result = await stack.enter_async_context(
@@ -730,5 +756,8 @@ class FastMCPProvider(Provider):
             try:
                 await stack.aclose()
             finally:
-                self.server._lifespan_result_set = False
-                self.server._lifespan_result = None
+                async with self.server._lifespan_lock:
+                    self._lifespan_ref_count -= 1
+                    if self._lifespan_ref_count == 0:
+                        self.server._lifespan_result_set = False
+                        self.server._lifespan_result = None
