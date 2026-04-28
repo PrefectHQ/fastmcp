@@ -1,5 +1,7 @@
 """Custom exceptions for FastMCP."""
 
+import logging
+
 from mcp import McpError  # noqa: F401
 
 
@@ -15,9 +17,9 @@ class FastMCPDeprecationWarning(DeprecationWarning):
 class FastMCPError(Exception):
     """Base error for FastMCP."""
 
-    def __init__(self, *args: object, suppress_log: bool = False) -> None:
+    def __init__(self, *args: object, log_level: int = logging.ERROR) -> None:
         super().__init__(*args)
-        self.suppress_log = suppress_log
+        self.log_level = log_level
 
 
 class ValidationError(FastMCPError):

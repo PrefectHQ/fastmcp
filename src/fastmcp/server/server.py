@@ -1260,8 +1260,9 @@ class FastMCP(
                 try:
                     return await tool._run(arguments or {}, task_meta=task_meta)
                 except FastMCPError as e:
-                    if not e.suppress_log:
-                        logger.exception(f"Error calling tool {name!r}")
+                    logger.log(
+                        e.log_level, f"Error calling tool {name!r}", exc_info=True
+                    )
                     raise
                 except (ValidationError, PydanticValidationError):
                     logger.exception(f"Error validating tool {name!r}")
@@ -1391,8 +1392,11 @@ class FastMCP(
                     try:
                         return await resource._read(task_meta=task_meta)
                     except FastMCPError as e:
-                        if not e.suppress_log:
-                            logger.exception(f"Error reading resource {uri!r}")
+                        logger.log(
+                            e.log_level,
+                            f"Error reading resource {uri!r}",
+                            exc_info=True,
+                        )
                         raise
                     except McpError:
                         logger.exception(f"Error reading resource {uri!r}")
@@ -1434,8 +1438,9 @@ class FastMCP(
                 try:
                     return await template._read(uri, params, task_meta=task_meta)
                 except FastMCPError as e:
-                    if not e.suppress_log:
-                        logger.exception(f"Error reading resource {uri!r}")
+                    logger.log(
+                        e.log_level, f"Error reading resource {uri!r}", exc_info=True
+                    )
                     raise
                 except McpError:
                     logger.exception(f"Error reading resource {uri!r}")
@@ -1552,8 +1557,9 @@ class FastMCP(
                 try:
                     return await prompt._render(arguments, task_meta=task_meta)
                 except FastMCPError as e:
-                    if not e.suppress_log:
-                        logger.exception(f"Error rendering prompt {name!r}")
+                    logger.log(
+                        e.log_level, f"Error rendering prompt {name!r}", exc_info=True
+                    )
                     raise
                 except McpError:
                     logger.exception(f"Error rendering prompt {name!r}")
