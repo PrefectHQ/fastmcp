@@ -1,0 +1,7 @@
+{
+  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
+  "entrypoint": "server.py",
+  "environment": {
+    "dependencies": ["httpx"]
+  }
+}
