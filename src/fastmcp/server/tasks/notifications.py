@@ -23,7 +23,7 @@ import logging
 import weakref
 from contextlib import suppress
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import mcp.types
 
@@ -69,7 +69,7 @@ async def push_notification(
         }
     )
     async with docket.redis() as redis:
-        await redis.lpush(key, message)  # type: ignore[invalid-await]
+        await redis.lpush(key, message)
         await redis.expire(key, NOTIFICATION_TTL_SECONDS)
 
 
@@ -108,8 +108,8 @@ async def notification_subscriber_loop(
 
                 # Blocking wait for notification (timeout refreshes heartbeat)
                 # Using BRPOP (right pop) for FIFO order with LPUSH (left push)
-                result = await cast(
-                    Any, redis.brpop([queue_key], timeout=SUBSCRIBER_TIMEOUT_SECONDS)
+                result = await redis.brpop(
+                    [queue_key], timeout=SUBSCRIBER_TIMEOUT_SECONDS
                 )
                 if not result:
                     continue  # Timeout - refresh heartbeat and retry
@@ -135,7 +135,7 @@ async def notification_subscriber_loop(
                         # Re-queue with incremented attempt (back of queue)
                         message["attempt"] = attempt + 1
                         message["last_error"] = str(send_error)
-                        await redis.lpush(queue_key, json.dumps(message))  # type: ignore[invalid-await]
+                        await redis.lpush(queue_key, json.dumps(message))
                         logger.debug(
                             "Requeued notification for session %s (attempt %d): %s",
                             session_id,

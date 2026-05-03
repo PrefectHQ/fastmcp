@@ -19,7 +19,7 @@ import json
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import mcp.types
 from mcp import ServerSession
@@ -186,12 +186,9 @@ async def elicit_for_task(
         async with docket.redis() as redis:
             # BLPOP blocks until an item is pushed to the list or timeout
             # Returns tuple of (key, value) or None on timeout
-            result = await cast(
-                Any,
-                redis.blpop(
-                    [docket.key(response_key)],
-                    timeout=max_wait_seconds,
-                ),
+            result = await redis.blpop(
+                [docket.key(response_key)],
+                timeout=max_wait_seconds,
             )
 
             if result:
@@ -333,7 +330,7 @@ async def handle_task_input(
 
         # Push response to list - this wakes up the BLPOP in elicit_for_task
         # Using LPUSH instead of SET enables the efficient blocking wait pattern
-        await redis.lpush(  # type: ignore[invalid-await]
+        await redis.lpush(
             docket.key(response_key),
             json.dumps(response),
         )
