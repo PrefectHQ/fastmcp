@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -213,18 +213,18 @@ wheels = [
 
 [[package]]
 name = "burner-redis"
-version = "0.1.5"
+version = "0.1.6"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/00/fc/802f0fb691a3ff6467240cf89d2a596307f0c37fc5c79fbdfbe800cf5011/burner_redis-0.1.5.tar.gz", hash = "sha256:19280d9f6a531ad57e75f0e9b877372547229d9d3014181def56718cbc66f88d", size = 599264, upload-time = "2026-04-20T15:14:00.232Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c8/6f/ec3eeb9e3e9d7fedc51fcb56dd09da0f164495ab6fdf4caaa3754ceed659/burner_redis-0.1.6.tar.gz", hash = "sha256:362091d98c09953ef99be8bd026d75fad42599a0f153211e1a22d3e3029c7cfb", size = 843118, upload-time = "2026-04-27T17:11:41.879Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/91/7d/3e0ac91f8b0f4a81d6b4a533b0332c287e63884e29573cf4c1f71f245c61/burner_redis-0.1.5-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:ff722be5d64a705f8268a85a418fce35173172db157da046228a38960d237a94", size = 1196173, upload-time = "2026-04-20T15:13:45.396Z" },
-    { url = "https://files.pythonhosted.org/packages/58/a3/a2145a5cbe980e2d90da074f688f7399d51bc252dcbdb0d316ee3cd0a374/burner_redis-0.1.5-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:34ad2e08dad7617cde3411be6b6ed02e8fe5dab6b169e448cb46007bde712449", size = 1143384, upload-time = "2026-04-20T15:13:46.941Z" },
-    { url = "https://files.pythonhosted.org/packages/64/84/78ddb6611e7bd58a5630a314ac55536c50a17d4fd945712216ac8c2229aa/burner_redis-0.1.5-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:f52d42dfa86746b41395bea7379341821c5dab2f453302f5726c806b89cba8d8", size = 1227036, upload-time = "2026-04-20T15:13:48.692Z" },
-    { url = "https://files.pythonhosted.org/packages/fd/9b/4f9c6664dd2d94e1c383c87ebe9fa5e17cc9a63cb245b1fdbb399be178f8/burner_redis-0.1.5-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:50c1ce29ac13e77e86ba5de2615411946d62caafef59f4fcf3e015009182aa91", size = 1263446, upload-time = "2026-04-20T15:13:50.468Z" },
-    { url = "https://files.pythonhosted.org/packages/c4/84/95689b17f45d38086ff9ab3cf3ac884b473bb59c13f4b2275e7486c38506/burner_redis-0.1.5-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:f774e969282e798e21944dd7eb5d0c29d5d7aec1f709472355ab21adb4dc797b", size = 1427483, upload-time = "2026-04-20T15:13:52.12Z" },
-    { url = "https://files.pythonhosted.org/packages/a3/a1/f361e4f0948c4251b7af95fca7a01665766054516b1da80de6a033a3aafe/burner_redis-0.1.5-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:b7fd2228d428cf489c7ac8bccf97e977ac200b2cdf8ceb3b5d2c2682d749dec7", size = 1480968, upload-time = "2026-04-20T15:13:54.576Z" },
-    { url = "https://files.pythonhosted.org/packages/eb/5c/1c6b7012b60c7827652fb3b2b748409e0a84c3a47d4b597e44bb91b46551/burner_redis-0.1.5-cp310-abi3-win_amd64.whl", hash = "sha256:8cca59d84e5b1a26e13e8a0501dda6448d5aefa49d3566bba83591e7e2b16ee6", size = 1017330, upload-time = "2026-04-20T15:13:56.784Z" },
-    { url = "https://files.pythonhosted.org/packages/de/e1/427a728f409cd857de4a9f2ca0ab65ce7676b4e93eab44306c50c0caee3f/burner_redis-0.1.5-cp310-abi3-win_arm64.whl", hash = "sha256:bc8355294c251f1523b0375f864ccaad4b88a813d97ade6a5a01d433a1665d64", size = 954835, upload-time = "2026-04-20T15:13:58.404Z" },
+    { url = "https://files.pythonhosted.org/packages/d6/cc/061897380b88c637e4bea1f6715ffba851d10b16d6610f2832ab61fa15b5/burner_redis-0.1.6-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:5dc9c170b9994b8d57958041857f240d1b0b9ac1559d0d35473f03fb62386dea", size = 1275400, upload-time = "2026-04-27T17:11:27.07Z" },
+    { url = "https://files.pythonhosted.org/packages/db/24/e4c6fb37d059b268c2a26b173d3f84b49547e837340983d3d018c08191c6/burner_redis-0.1.6-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:f29caae7f80fea2e47350df24264a049aeaa934454210cddcadc2336ee8b423a", size = 1223570, upload-time = "2026-04-27T17:11:28.782Z" },
+    { url = "https://files.pythonhosted.org/packages/2e/be/718af7f42bbebbfbfd771ba43697526c922dff54d1b0d62654e21418b25e/burner_redis-0.1.6-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:d0ce82edea4ed1ec34448a8610c62665517b3d2030254f31af32828b070a92a8", size = 1325624, upload-time = "2026-04-27T17:11:30.648Z" },
+    { url = "https://files.pythonhosted.org/packages/06/8a/4f72de7f967532d3739caa461625dc9122f0ca0d46faa883c153a10d0117/burner_redis-0.1.6-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:1e3dff7d691ab0035468c17f51632e452b075065a30e026278ed1b297441ce93", size = 1356531, upload-time = "2026-04-27T17:11:32.201Z" },
+    { url = "https://files.pythonhosted.org/packages/bd/22/369338d6372abd12dee51965566428c06f3badd95f668ff1c11680b99b30/burner_redis-0.1.6-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:3b43f983b6e8fbc208734f04b0bae8cf95323fc43105f977d20f0993fc28c1b3", size = 1526049, upload-time = "2026-04-27T17:11:33.93Z" },
+    { url = "https://files.pythonhosted.org/packages/b3/23/0651cf86bc5ed390fef09e30ff4a4664cc3c5b88ddf4c6b8d905acc0d60e/burner_redis-0.1.6-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:5b6ba097d910effff00a4610160a4a759503ad590e2c47a580bdcdac9a325823", size = 1579068, upload-time = "2026-04-27T17:11:35.964Z" },
+    { url = "https://files.pythonhosted.org/packages/a0/8c/302638fdad4476d4760d477b0f3c6b96c0f88d3f278e5f14d06eb048f788/burner_redis-0.1.6-cp310-abi3-win_amd64.whl", hash = "sha256:98c6b6fc397617cd5a6778ac020e4ed9985c393ad204f9f5cf524b68ae16070b", size = 1103735, upload-time = "2026-04-27T17:11:38.38Z" },
+    { url = "https://files.pythonhosted.org/packages/c0/ba/18668d92e18210150f7f93e2930264ad77a82e4d3e5f74ca1aecc002f78f/burner_redis-0.1.6-cp310-abi3-win_arm64.whl", hash = "sha256:c2583e98f9a3836ac2c6243ea0c8d56b40e7017b46617991e329bc807c544bad", size = 1029386, upload-time = "2026-04-27T17:11:40.266Z" },
 ]
 
 [[package]]
@@ -2212,8 +2212,8 @@ wheels = [
 
 [[package]]
 name = "pydocket"
-version = "0.19.3.dev2+g24ad94713"
-source = { git = "https://github.com/chrisguidry/docket.git?rev=main#24ad947139cebd3956f6e8c37fc5cc2e3dca80c2" }
+version = "0.19.3.dev3+g96612f1a8"
+source = { git = "https://github.com/chrisguidry/docket.git?rev=main#96612f1a80f97f95ae9a19255be53fa193682649" }
 dependencies = [
     { name = "burner-redis" },
     { name = "cloudpickle" },
