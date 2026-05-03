@@ -69,7 +69,7 @@ async def push_notification(
         }
     )
     async with docket.redis() as redis:
-        await redis.lpush(key, message)  # type: ignore[invalid-await]  # redis-py union type (sync/async)  # ty:ignore[invalid-await]
+        await redis.lpush(key, message)  # type: ignore[invalid-await]
         await redis.expire(key, NOTIFICATION_TTL_SECONDS)
 
 
@@ -135,7 +135,7 @@ async def notification_subscriber_loop(
                         # Re-queue with incremented attempt (back of queue)
                         message["attempt"] = attempt + 1
                         message["last_error"] = str(send_error)
-                        await redis.lpush(queue_key, json.dumps(message))  # type: ignore[invalid-await]  # ty:ignore[invalid-await]
+                        await redis.lpush(queue_key, json.dumps(message))  # type: ignore[invalid-await]
                         logger.debug(
                             "Requeued notification for session %s (attempt %d): %s",
                             session_id,

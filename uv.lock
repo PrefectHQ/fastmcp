@@ -2212,8 +2212,8 @@ wheels = [
 
 [[package]]
 name = "pydocket"
-version = "0.19.3.dev3+g96612f1a8"
-source = { git = "https://github.com/chrisguidry/docket.git?rev=main#96612f1a80f97f95ae9a19255be53fa193682649" }
+version = "0.19.3.dev4+gba7b1dfd1"
+source = { git = "https://github.com/chrisguidry/docket.git?rev=main#ba7b1dfd14c97febd04c8a976134cf961946f140" }
 dependencies = [
     { name = "burner-redis" },
     { name = "cloudpickle" },
