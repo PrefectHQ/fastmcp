@@ -237,8 +237,18 @@ class SkillProvider(Provider):
                 f"Main skill file not found: {main_file}. "
                 f"Expected {self._main_file_name} in {self._skill_path}"
             )
+        
+        possible_encodings = ["utf-8", "cp1252", "latin-1", "utf-16"]
+        content = None
+        for encoding in possible_encodings:
+            try:
+                content = main_file.read_text(encoding=encoding)
+                break 
+            except UnicodeDecodeError:
+                continue
+        if content is None:
+            raise UnicodeError(f"Skill file encoding not supported for {main_file}")
 
-        content = main_file.read_text()
         frontmatter, body = parse_frontmatter(content)
 
         # Get description from frontmatter or first non-empty line
