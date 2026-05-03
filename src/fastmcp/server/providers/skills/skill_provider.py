@@ -238,7 +238,7 @@ class SkillProvider(Provider):
                 f"Expected {self._main_file_name} in {self._skill_path}"
             )
         
-        possible_encodings = ["utf-8", "cp1252", "latin-1", "utf-16"]
+        possible_encodings = ["utf-8", "utf-16", "cp1252", "latin-1"]
         content = None
         for encoding in possible_encodings:
             try:
