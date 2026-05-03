@@ -96,6 +96,87 @@ class TestOAuthProxyInitialization:
         )
         assert proxy._default_scope_str == "openid"
 
+    def test_update_default_scopes_updates_scope_str(self, jwt_verifier):
+        """update_default_scopes should update the internal default scope string."""
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://auth.example.com/authorize",
+            upstream_token_endpoint="https://auth.example.com/token",
+            upstream_client_id="client-123",
+            upstream_client_secret="secret-456",
+            token_verifier=jwt_verifier,
+            base_url="https://api.example.com",
+            valid_scopes=["openid"],
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+        )
+        assert proxy._default_scope_str == "openid"
+
+        proxy.update_default_scopes(["openid", "email", "calendar"])
+        assert proxy._default_scope_str == "openid email calendar"
+
+    def test_update_default_scopes_updates_cimd_manager(self, jwt_verifier):
+        """update_default_scopes should update CIMD manager's default_scope."""
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://auth.example.com/authorize",
+            upstream_token_endpoint="https://auth.example.com/token",
+            upstream_client_id="client-123",
+            upstream_client_secret="secret-456",
+            token_verifier=jwt_verifier,
+            base_url="https://api.example.com",
+            valid_scopes=["openid"],
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+            enable_cimd=True,
+        )
+        assert proxy._cimd_manager is not None
+        assert proxy._cimd_manager.default_scope == "openid"
+
+        proxy.update_default_scopes(["openid", "email", "drive"])
+        assert proxy._cimd_manager.default_scope == "openid email drive"
+
+    def test_update_default_scopes_updates_registration_options(self, jwt_verifier):
+        """update_default_scopes should update client_registration_options.valid_scopes."""
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://auth.example.com/authorize",
+            upstream_token_endpoint="https://auth.example.com/token",
+            upstream_client_id="client-123",
+            upstream_client_secret="secret-456",
+            token_verifier=jwt_verifier,
+            base_url="https://api.example.com",
+            valid_scopes=["openid"],
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+        )
+        assert proxy.client_registration_options is not None
+        assert proxy.client_registration_options.valid_scopes == ["openid"]
+
+        proxy.update_default_scopes(["openid", "email", "calendar"])
+        assert proxy.client_registration_options.valid_scopes == [
+            "openid",
+            "email",
+            "calendar",
+        ]
+
+    def test_update_default_scopes_no_cimd_manager(self, jwt_verifier):
+        """update_default_scopes should work when CIMD is disabled (no manager)."""
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://auth.example.com/authorize",
+            upstream_token_endpoint="https://auth.example.com/token",
+            upstream_client_id="client-123",
+            upstream_client_secret="secret-456",
+            token_verifier=jwt_verifier,
+            base_url="https://api.example.com",
+            valid_scopes=["openid"],
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+            enable_cimd=False,
+        )
+        assert proxy._cimd_manager is None
+
+        # Should not raise
+        proxy.update_default_scopes(["openid", "email"])
+        assert proxy._default_scope_str == "openid email"
+
     def test_redirect_path_normalization(self, jwt_verifier):
         """Test that redirect_path is normalized with leading slash."""
         proxy = OAuthProxy(

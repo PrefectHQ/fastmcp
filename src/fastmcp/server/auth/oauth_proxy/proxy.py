@@ -600,6 +600,30 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         )
 
     # -------------------------------------------------------------------------
+    # Scope Management
+    # -------------------------------------------------------------------------
+
+    def update_default_scopes(self, scopes: list[str]) -> None:
+        """Update the default scopes advertised to clients and used for DCR/CIMD fallback.
+
+        Use this method when the available scope set is determined after provider
+        initialization (e.g., after tool registration widens the required scopes).
+
+        This updates all internal state derived from scopes:
+        - The default scope string used for DCR client registration fallback
+        - The CIMD manager's default scope (if CIMD is enabled)
+        - The client registration options valid_scopes (if registration options exist)
+
+        Args:
+            scopes: The new list of valid scopes to advertise and use as defaults.
+        """
+        self._default_scope_str = " ".join(scopes)
+        if self._cimd_manager is not None:
+            self._cimd_manager.default_scope = self._default_scope_str
+        if self.client_registration_options is not None:
+            self.client_registration_options.valid_scopes = scopes
+
+    # -------------------------------------------------------------------------
     # MCP Path Configuration
     # -------------------------------------------------------------------------
 

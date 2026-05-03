@@ -427,11 +427,7 @@ class OIDCProxy(OAuthProxy):
         # from the (empty) verifier scopes.
         if verify_id_token and required_scopes:
             self.required_scopes = required_scopes
-            self._default_scope_str = " ".join(required_scopes)
-            if self.client_registration_options:
-                self.client_registration_options.valid_scopes = required_scopes
-            if self._cimd_manager is not None:
-                self._cimd_manager.default_scope = self._default_scope_str
+            self.update_default_scopes(required_scopes)
 
     def _get_verification_token(
         self, upstream_token_set: UpstreamTokenSet
