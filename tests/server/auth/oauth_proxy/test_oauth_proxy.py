@@ -62,6 +62,7 @@ class TestOAuthProxyInitialization:
         assert proxy._token_endpoint_auth_method == "client_secret_post"
         assert proxy.client_registration_options is not None
         assert proxy.client_registration_options.valid_scopes == ["custom", "scopes"]
+        assert proxy.client_registration_options.default_scopes == ["custom", "scopes"]
 
     def test_default_scope_str_prefers_valid_scopes(self, jwt_verifier):
         """When valid_scopes is provided, _default_scope_str should use it
@@ -135,7 +136,7 @@ class TestOAuthProxyInitialization:
         assert proxy._cimd_manager.default_scope == "openid email drive"
 
     def test_update_default_scopes_updates_registration_options(self, jwt_verifier):
-        """update_default_scopes should update client_registration_options.valid_scopes."""
+        """update_default_scopes should update client registration scope options."""
         proxy = OAuthProxy(
             upstream_authorization_endpoint="https://auth.example.com/authorize",
             upstream_token_endpoint="https://auth.example.com/token",
@@ -149,9 +150,18 @@ class TestOAuthProxyInitialization:
         )
         assert proxy.client_registration_options is not None
         assert proxy.client_registration_options.valid_scopes == ["openid"]
+        assert proxy.client_registration_options.default_scopes == ["openid"]
 
-        proxy.update_default_scopes(["openid", "email", "calendar"])
+        scopes = ["openid", "email", "calendar"]
+        proxy.update_default_scopes(scopes)
+        scopes.append("drive")
+
         assert proxy.client_registration_options.valid_scopes == [
+            "openid",
+            "email",
+            "calendar",
+        ]
+        assert proxy.client_registration_options.default_scopes == [
             "openid",
             "email",
             "calendar",

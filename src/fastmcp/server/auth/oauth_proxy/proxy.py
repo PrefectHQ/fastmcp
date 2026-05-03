@@ -351,10 +351,13 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 IDs, with metadata fetched from the URL. Supports private_key_jwt auth.
         """
 
+        default_scopes = valid_scopes or token_verifier.required_scopes
+
         # Always enable DCR since we implement it locally for MCP clients
         client_registration_options = ClientRegistrationOptions(
             enabled=True,
-            valid_scopes=valid_scopes or token_verifier.required_scopes,
+            valid_scopes=list(default_scopes) if default_scopes is not None else None,
+            default_scopes=list(default_scopes) if default_scopes is not None else None,
         )
 
         # Enable revocation only if upstream endpoint provided
@@ -382,9 +385,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             else None
         )
         self._upstream_revocation_endpoint: str | None = upstream_revocation_endpoint
-        self._default_scope_str: str = " ".join(
-            valid_scopes or self.required_scopes or []
-        )
+        self._default_scope_str: str = " ".join(default_scopes or [])
 
         # Store redirect configuration
         if not redirect_path:
@@ -612,16 +613,18 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         This updates all internal state derived from scopes:
         - The default scope string used for DCR client registration fallback
         - The CIMD manager's default scope (if CIMD is enabled)
-        - The client registration options valid_scopes (if registration options exist)
+        - The client registration options default_scopes and valid_scopes (if registration options exist)
 
         Args:
             scopes: The new list of valid scopes to advertise and use as defaults.
         """
+        scopes = list(scopes)
         self._default_scope_str = " ".join(scopes)
         if self._cimd_manager is not None:
             self._cimd_manager.default_scope = self._default_scope_str
         if self.client_registration_options is not None:
-            self.client_registration_options.valid_scopes = scopes
+            self.client_registration_options.default_scopes = list(scopes)
+            self.client_registration_options.valid_scopes = list(scopes)
 
     # -------------------------------------------------------------------------
     # MCP Path Configuration
