@@ -523,6 +523,33 @@ class TestMountedServerLifespanContext:
             ref = _current_server.get()
             assert ref is not None and ref() is server_b
 
+    async def test_unrelated_server_after_parent_with_mount(self):
+        """A parent with a mounted child must not contaminate later entries.
+
+        ``FastMCPProvider`` sets ``_lifespan_root_active`` while entering the
+        wrapped child. The flag must be cleared by the time the parent's
+        ``_lifespan_manager`` yields, otherwise an unrelated server entered
+        later in the same task would see the flag and skip its own root setup.
+        """
+        from contextlib import AsyncExitStack
+
+        from fastmcp.server.dependencies import _current_server
+
+        parent = FastMCP("Parent")
+        child = FastMCP("Child")
+        parent.mount(child, "child")
+
+        unrelated = FastMCP("Unrelated")
+
+        async with AsyncExitStack() as stack:
+            await stack.enter_async_context(parent._lifespan_manager())
+            # Parent's mount has run FastMCPProvider.lifespan; the flag set
+            # during child entry must have been reset by now.
+            await stack.enter_async_context(unrelated._lifespan_manager())
+            # Unrelated established its own lifecycle.
+            ref = _current_server.get()
+            assert ref is not None and ref() is unrelated
+
     async def test_nested_grandchild_lifespan_runs(self):
         """A grandchild's lifespan is entered exactly once and visible to its tools."""
         from collections.abc import AsyncIterator

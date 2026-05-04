@@ -707,12 +707,25 @@ class FastMCPProvider(Provider):
         ContextVars (``_current_docket`` etc.); the mounted server's user
         lifespan, ``_lifespan_result`` cache, and its own sub-providers
         (nested mounts) all run normally.
+
+        The flag is reset as soon as ``_lifespan_manager`` finishes entering,
+        so it doesn't leak into the caller's async scope. Unrelated servers
+        entered later in the same task (e.g. siblings via ``AsyncExitStack``)
+        correctly see no active root and start their own infrastructure.
         """
         from fastmcp.server.mixins.lifespan import _lifespan_root_active
 
         token = _lifespan_root_active.set(True)
+        flag_active = True
         try:
             async with self.server._lifespan_manager():
+                # Inner entry is complete; the flag's job (telling _docket_lifespan
+                # to no-op during _lifespan_manager's setup) is done. Reset now so
+                # unrelated lifespans entered later in this task aren't misclassified
+                # as nested.
+                _lifespan_root_active.reset(token)
+                flag_active = False
                 yield
         finally:
-            _lifespan_root_active.reset(token)
+            if flag_active:
+                _lifespan_root_active.reset(token)
