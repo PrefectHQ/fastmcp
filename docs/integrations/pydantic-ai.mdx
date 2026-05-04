@@ -46,6 +46,7 @@ If your FastMCP server lives in the same process as your agent, pass the `FastMC
 
 ```python
 import asyncio
+import random
 from fastmcp import FastMCP
 from pydantic_ai import Agent
 from pydantic_ai.toolsets.fastmcp import FastMCPToolset
@@ -54,7 +55,6 @@ mcp = FastMCP(name="Dice Roller")
 
 @mcp.tool
 def roll_dice(n_dice: int) -> list[int]:
-    import random
     return [random.randint(1, 6) for _ in range(n_dice)]
 
 toolset = FastMCPToolset(mcp)
@@ -70,7 +70,7 @@ if __name__ == "__main__":
 
 ## Streamable HTTP
 
-For a remote FastMCP server reachable over HTTP, pass the URL as a string. The toolset infers the [Streamable HTTP transport](/clients/transports#streamable-http-transport) from the URL.
+For a remote FastMCP server reachable over HTTP, pass the URL as a string. The toolset infers the [Streamable HTTP transport](/clients/transports#http-transport) from the URL.
 
 ```python
 from pydantic_ai import Agent
@@ -117,7 +117,7 @@ agent = Agent("openai:gpt-4.1", toolsets=[toolset])
 
 ## Authentication
 
-Because `FastMCPToolset` wraps a [FastMCP `Client`](/clients/client), it inherits the client's full [authentication](/clients/auth) story. To pass credentials such as a bearer token to a remote server, build a `Client` (or `StreamableHttpTransport`) yourself and hand it to the toolset.
+Because `FastMCPToolset` wraps a [FastMCP `Client`](/clients/client), it inherits the client's full [authentication](/clients/auth/bearer) story. To pass credentials such as a bearer token to a remote server, build a `Client` (or `StreamableHttpTransport`) yourself and hand it to the toolset.
 
 ```python
 from fastmcp import Client
