@@ -700,13 +700,19 @@ class FastMCPProvider(Provider):
     async def lifespan(self) -> AsyncIterator[None]:
         """Start the mounted server's lifespan.
 
-        Delegates to the wrapped server's full ``_lifespan_manager``. That
-        path is reentrant: ``_docket_lifespan`` detects via the
-        ``_lifespan_root_active`` ContextVar that a parent in the same
-        runtime tree already started Docket and SharedContext, and becomes
-        a no-op for those concerns. The mounted server's user lifespan,
-        ``_lifespan_result`` cache, and its own sub-providers (nested mounts)
-        all run normally.
+        Sets ``_lifespan_root_active=True`` to signal to the wrapped server's
+        ``_docket_lifespan`` that it is running below an existing root in the
+        same runtime tree, then delegates to its full ``_lifespan_manager``.
+        The root's Docket / Worker / SharedContext are reused through
+        ContextVars (``_current_docket`` etc.); the mounted server's user
+        lifespan, ``_lifespan_result`` cache, and its own sub-providers
+        (nested mounts) all run normally.
         """
-        async with self.server._lifespan_manager():
-            yield
+        from fastmcp.server.mixins.lifespan import _lifespan_root_active
+
+        token = _lifespan_root_active.set(True)
+        try:
+            async with self.server._lifespan_manager():
+                yield
+        finally:
+            _lifespan_root_active.reset(token)

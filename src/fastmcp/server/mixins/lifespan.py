@@ -23,13 +23,16 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-# Set True while a server's _docket_lifespan is the active "root" of a runtime
-# tree (it has started Docket / Worker / SharedContext for the process scope).
-# Mounted children inherit this through async-task ContextVar propagation and
-# detect that they should not re-initialize Docket — they share the root's
-# Docket via _current_docket. There is one Docket per runtime tree, owned by
-# whichever FastMCP enters its lifespan first; nested servers are participants,
-# not owners.
+# Set True by `FastMCPProvider.lifespan` immediately before it enters the
+# wrapped (mounted) server's `_lifespan_manager`, and reset on exit. The
+# mounted server's `_docket_lifespan` reads this and becomes a no-op so that
+# Docket / Worker / SharedContext are not re-initialized — there's one set
+# per runtime tree, owned by the root.
+#
+# Independent servers entered as siblings (e.g. via `AsyncExitStack` in the
+# same async context) are NOT in a parent/child relationship; the flag is not
+# set in that case, so each independently establishes its own Docket and
+# server context.
 _lifespan_root_active: ContextVar[bool] = ContextVar(
     "fastmcp_lifespan_root_active", default=False
 )
@@ -57,10 +60,15 @@ class LifespanMixin:
         """Manage Docket instance and Worker for background task execution.
 
         Docket is process-level, not server-level: only the first server in a
-        runtime tree to enter its lifespan starts Docket and the Worker. Mounted
-        children (entered via FastMCPProvider.lifespan -> _lifespan_manager ->
-        _docket_lifespan) detect the root via _lifespan_root_active and become
-        no-ops, sharing the root's Docket through _current_docket.
+        runtime tree starts Docket and the Worker. Mounted children entered
+        via ``FastMCPProvider.lifespan`` see ``_lifespan_root_active=True``
+        (set by the provider before delegating to ``_lifespan_manager``) and
+        become no-ops, sharing the root's Docket via ``_current_docket``.
+
+        Independent servers entered as siblings — for example two unrelated
+        ``FastMCP`` instances each entered through ``AsyncExitStack`` in the
+        same async context — are not in a parent/child relationship; no
+        provider has set the flag for them, so each runs the full root setup.
 
         Docket infrastructure is only initialized at the root if:
         1. pydocket is installed (fastmcp[tasks] extra)
@@ -69,18 +77,15 @@ class LifespanMixin:
         Users with pydocket installed but no task-enabled components won't spin
         up Docket / Worker infrastructure even at the root.
         """
-        # Nested entry: a parent in the same runtime tree already owns Docket
-        # and SharedContext. Stay out of their way and inherit via ContextVars.
+        # Nested entry: a parent in this runtime tree already owns Docket and
+        # SharedContext (the FastMCPProvider that mounted us set the flag).
+        # Stay out of their way and inherit via ContextVars.
         if _lifespan_root_active.get():
             yield
             return
 
-        root_token = _lifespan_root_active.set(True)
-        try:
-            async with self._docket_lifespan_root():
-                yield
-        finally:
-            _lifespan_root_active.reset(root_token)
+        async with self._docket_lifespan_root():
+            yield
 
     @asynccontextmanager
     async def _docket_lifespan_root(self: FastMCP) -> AsyncIterator[None]:

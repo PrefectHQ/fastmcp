@@ -498,6 +498,31 @@ class TestMountedServerLifespanContext:
 
         assert result.data == {"who": "child", "child_only": "C"}
 
+    async def test_independent_sibling_servers_each_get_own_lifecycle(self):
+        """Two unrelated servers entered in the same async context are not nested.
+
+        Each must run its own ``_docket_lifespan_root`` and establish its own
+        Docket / server-context — they are not in a parent/child relationship,
+        only the same async stack.
+        """
+        from contextlib import AsyncExitStack
+
+        from fastmcp.server.dependencies import _current_server
+
+        server_a = FastMCP("A")
+        server_b = FastMCP("B")
+
+        async with AsyncExitStack() as stack:
+            await stack.enter_async_context(server_a._lifespan_manager())
+            # While only A is active, _current_server resolves to A.
+            ref = _current_server.get()
+            assert ref is not None and ref() is server_a
+
+            await stack.enter_async_context(server_b._lifespan_manager())
+            # B established its own lifecycle; _current_server now resolves to B.
+            ref = _current_server.get()
+            assert ref is not None and ref() is server_b
+
     async def test_nested_grandchild_lifespan_runs(self):
         """A grandchild's lifespan is entered exactly once and visible to its tools."""
         from collections.abc import AsyncIterator
