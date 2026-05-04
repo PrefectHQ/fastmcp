@@ -381,6 +381,11 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
             name=self.name,
             description=self.description,
             mime_type=self.mime_type,
+            tags=self.tags,
+            annotations=self.annotations,
+            meta=self.meta,
+            title=self.title,
+            icons=self.icons,
         )
 
     @overload
