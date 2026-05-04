@@ -284,7 +284,6 @@ class TestBackgroundTaskIntegration:
             result = await task.result()
             assert result.data == "ok"
 
-
     async def test_sample_uses_origin_request_id_in_background_task(self):
         """E2E: ctx.sample() works in a task without an active request context."""
         mcp = FastMCP("sample-background-test")
