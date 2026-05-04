@@ -76,12 +76,20 @@ class ToolResult(BaseModel):
     meta: dict[str, Any] | None = Field(
         default=None, description="Runtime metadata about the tool execution"
     )
+    is_error: bool = Field(
+        default=False,
+        description=(
+            "Whether the tool call ended in an error. Maps to "
+            "CallToolResult.isError on the wire."
+        ),
+    )
 
     def __init__(
         self,
         content: list[ContentBlock] | Any | None = None,
         structured_content: dict[str, Any] | Any | None = None,
         meta: dict[str, Any] | None = None,
+        is_error: bool = False,
     ):
         if content is None and structured_content is None:
             raise ValueError("Either content or structured_content must be provided")
@@ -118,7 +126,10 @@ class ToolResult(BaseModel):
                 )
 
         super().__init__(
-            content=converted_content, structured_content=structured_content, meta=meta
+            content=converted_content,
+            structured_content=structured_content,
+            meta=meta,
+            is_error=is_error,
         )
 
     def to_mcp_result(
@@ -126,10 +137,15 @@ class ToolResult(BaseModel):
     ) -> (
         list[ContentBlock] | tuple[list[ContentBlock], dict[str, Any]] | CallToolResult
     ):
-        if self.meta is not None:
+        # When meta is present we must always return a CallToolResult so
+        # _meta survives the trip. When is_error is set we also need a
+        # CallToolResult so the isError flag is preserved on the wire —
+        # otherwise the tuple/list shortcut drops it.
+        if self.meta is not None or self.is_error:
             return CallToolResult(
                 structuredContent=self.structured_content,
                 content=self.content,
+                isError=self.is_error,
                 _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field  # ty:ignore[unknown-argument]
             )
         if self.structured_content is None:

@@ -318,6 +318,11 @@ def dedupe_with_versions(
                 reverse=True,
             )
             meta = highest.meta or {}
+            # deep=True so nested mutables in `meta` (dicts, lists) are
+            # not shared between the deduplicated copy and the original
+            # component. Without this a caller mutating a dict inside
+            # `meta` on the deduped result would leak into the original
+            # (and vice versa) because model_copy does a shallow copy.
             highest = highest.model_copy(
                 update={
                     "meta": {
@@ -327,7 +332,8 @@ def dedupe_with_versions(
                             "versions": all_versions,
                         },
                     }
-                }
+                },
+                deep=True,
             )
         result.append(highest)
     return result

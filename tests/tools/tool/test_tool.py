@@ -612,3 +612,47 @@ class TestToolExecutionField:
         mcp_tool = tool.to_mcp_tool()
         assert mcp_tool.execution is not None
         assert mcp_tool.execution.taskSupport == "forbidden"
+
+
+class TestToolResultIsError:
+    """Regression tests for is_error preservation through to_mcp_result.
+
+    Refs https://github.com/PrefectHQ/fastmcp/issues/4055 (bug 1).
+    """
+
+    def test_is_error_true_is_preserved(self):
+        from mcp.types import CallToolResult, TextContent
+
+        result = ToolResult(
+            content=[TextContent(type="text", text="boom")],
+            is_error=True,
+        )
+        mcp_result = result.to_mcp_result()
+        assert isinstance(mcp_result, CallToolResult)
+        assert mcp_result.isError is True
+
+    def test_is_error_false_default_is_preserved(self):
+        from mcp.types import CallToolResult, TextContent
+
+        # Forcing meta makes to_mcp_result return CallToolResult so we
+        # can assert isError is explicitly False (not None).
+        result = ToolResult(
+            content=[TextContent(type="text", text="ok")],
+            meta={"k": "v"},
+        )
+        mcp_result = result.to_mcp_result()
+        assert isinstance(mcp_result, CallToolResult)
+        assert mcp_result.isError is False
+
+    def test_is_error_with_structured_content(self):
+        from mcp.types import CallToolResult, TextContent
+
+        result = ToolResult(
+            content=[TextContent(type="text", text="boom")],
+            structured_content={"error": "details"},
+            is_error=True,
+        )
+        mcp_result = result.to_mcp_result()
+        assert isinstance(mcp_result, CallToolResult)
+        assert mcp_result.isError is True
+        assert mcp_result.structuredContent == {"error": "details"}
