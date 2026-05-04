@@ -658,3 +658,31 @@ class TestPathTraversalPrevention:
                 await client.read_resource(
                     AnyUrl("skill://test-skill/../../../secret.txt")
                 )
+
+def test_skills_directory_provider_loads_utf8_skill_md(tmp_path: Path) -> None:
+    """SkillsDirectoryProvider must load a SKILL.md containing UTF-8 emoji.
+
+    Regression test for #4084. Before the fix this raised on Windows:
+        UnicodeDecodeError: 'charmap' codec can't decode byte 0x9d ...
+
+    Translated directly from the MRE in the issue report.
+    """
+    skill_dir = tmp_path / "test-skill"
+    skill_dir.mkdir()
+
+    skill_file = skill_dir / "SKILL.md"
+    skill_file.write_text(
+        "---\n"
+        "name: test-skill\n"
+        "description: Test skill with UTF-8 characters\n"
+        "---\n"
+        "# Test Skill\n"
+        "- ✅ Success indicator\n"
+        "- ❌ Failure indicator\n"
+        "- → Arrow symbol\n",
+        encoding="utf-8",
+    )
+
+    provider = SkillsDirectoryProvider(roots=skill_dir.parent)
+
+    assert provider is not None

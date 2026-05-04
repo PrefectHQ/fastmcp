@@ -238,7 +238,8 @@ class SkillProvider(Provider):
                 f"Expected {self._main_file_name} in {self._skill_path}"
             )
 
-        content = main_file.read_text()
+        content = main_file.read_text(encoding="utf-8")
+
         frontmatter, body = parse_frontmatter(content)
 
         # Get description from frontmatter or first non-empty line
