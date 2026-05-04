@@ -1064,19 +1064,22 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         refresh_expires_in = None
         refresh_token_expires_at = None
         if idp_tokens.get("refresh_token"):
-            if "refresh_expires_in" in idp_tokens and int(
-                idp_tokens["refresh_expires_in"]
-            ):
-                refresh_expires_in = int(idp_tokens["refresh_expires_in"])
-                refresh_token_expires_at = time.time() + refresh_expires_in
-                logger.debug(
-                    "Upstream refresh token expires in %d seconds", refresh_expires_in
-                )
-            else:
-                # Upstream didn't specify; use configured fallback (default 1 year).
-                # The FastMCP refresh JWT is just a signed pointer — if the real
-                # upstream refresh has expired or been revoked, the next refresh
-                # call to upstream will fail and the client re-auths.
+            if "refresh_expires_in" in idp_tokens:
+                val = int(idp_tokens["refresh_expires_in"])
+                if val > 0:
+                    refresh_expires_in = val
+                    refresh_token_expires_at = time.time() + refresh_expires_in
+                    logger.debug(
+                        "Upstream refresh token expires in %d seconds",
+                        refresh_expires_in,
+                    )
+                elif val == 0:
+                    # Keycloak "never expires" sentinel - keep None
+                    pass
+                else:
+                    pass
+            if refresh_expires_in is None:
+                # Upstream didn't specify or had invalid/zero value; use fallback.
                 refresh_expires_in = self._fallback_refresh_token_expiry_seconds
                 refresh_token_expires_at = time.time() + refresh_expires_in
                 logger.debug(
@@ -1381,28 +1384,34 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 logger.debug("Upstream refresh token rotated")
 
             # Update refresh token expiry if provided
-            if "refresh_expires_in" in token_response and int(
-                token_response["refresh_expires_in"]
-            ):
-                new_refresh_expires_in = int(token_response["refresh_expires_in"])
-                upstream_token_set.refresh_token_expires_at = (
-                    time.time() + new_refresh_expires_in
-                )
-                logger.debug(
-                    "Upstream refresh token expires in %d seconds",
-                    new_refresh_expires_in,
-                )
-            elif upstream_token_set.refresh_token_expires_at:
-                # Keep existing expiry if upstream doesn't provide new one
-                new_refresh_expires_in = int(
-                    upstream_token_set.refresh_token_expires_at - time.time()
-                )
-            else:
-                # Upstream rotated the refresh token but gave no expiry; use fallback
-                new_refresh_expires_in = self._fallback_refresh_token_expiry_seconds
-                upstream_token_set.refresh_token_expires_at = (
-                    time.time() + new_refresh_expires_in
-                )
+            keycloak_never_expires = False
+            if "refresh_expires_in" in token_response:
+                val = int(token_response["refresh_expires_in"])
+                if val > 0:
+                    new_refresh_expires_in = val
+                    upstream_token_set.refresh_token_expires_at = (
+                        time.time() + new_refresh_expires_in
+                    )
+                    logger.debug(
+                        "Upstream refresh token expires in %d seconds",
+                        new_refresh_expires_in,
+                    )
+                elif val == 0:
+                    # Keycloak "never expires" sentinel
+                    keycloak_never_expires = True
+                # else: negative/invalid - fall through to elif
+            if not keycloak_never_expires and new_refresh_expires_in is None:
+                if upstream_token_set.refresh_token_expires_at:
+                    # Keep existing expiry if upstream doesn't provide new one
+                    new_refresh_expires_in = int(
+                        upstream_token_set.refresh_token_expires_at - time.time()
+                    )
+                else:
+                    # Upstream rotated the refresh token but gave no expiry; use fallback
+                    new_refresh_expires_in = self._fallback_refresh_token_expiry_seconds
+                    upstream_token_set.refresh_token_expires_at = (
+                        time.time() + new_refresh_expires_in
+                    )
 
         upstream_token_set.raw_token_data = {
             **upstream_token_set.raw_token_data,
@@ -1596,22 +1605,28 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         if new_upstream_refresh := token_response.get("refresh_token"):
             if new_upstream_refresh != upstream_token_set.refresh_token:
                 upstream_token_set.refresh_token = new_upstream_refresh
-            if "refresh_expires_in" in token_response and int(
-                token_response["refresh_expires_in"]
-            ):
-                new_refresh_expires_in = int(token_response["refresh_expires_in"])
-                upstream_token_set.refresh_token_expires_at = (
-                    time.time() + new_refresh_expires_in
-                )
-            elif upstream_token_set.refresh_token_expires_at:
-                new_refresh_expires_in = int(
-                    upstream_token_set.refresh_token_expires_at - time.time()
-                )
-            else:
-                new_refresh_expires_in = self._fallback_refresh_token_expiry_seconds
-                upstream_token_set.refresh_token_expires_at = (
-                    time.time() + new_refresh_expires_in
-                )
+            keycloak_never_expires = False
+            if "refresh_expires_in" in token_response:
+                val = int(token_response["refresh_expires_in"])
+                if val > 0:
+                    new_refresh_expires_in = val
+                    upstream_token_set.refresh_token_expires_at = (
+                        time.time() + new_refresh_expires_in
+                    )
+                elif val == 0:
+                    # Keycloak "never expires" sentinel
+                    keycloak_never_expires = True
+                # else: negative/invalid - fall through
+            if not keycloak_never_expires and new_refresh_expires_in is None:
+                if upstream_token_set.refresh_token_expires_at:
+                    new_refresh_expires_in = int(
+                        upstream_token_set.refresh_token_expires_at - time.time()
+                    )
+                else:
+                    new_refresh_expires_in = self._fallback_refresh_token_expiry_seconds
+                    upstream_token_set.refresh_token_expires_at = (
+                        time.time() + new_refresh_expires_in
+                    )
 
         upstream_token_set.raw_token_data = {
             **upstream_token_set.raw_token_data,
