@@ -26,12 +26,14 @@ from mcp.types import (
 )
 from mcp.types import CreateMessageRequestParams as SamplingParams
 from mcp.types import Tool as SDKTool
+from opentelemetry.trace import SpanKind, Status, StatusCode
 from pydantic import ValidationError
 from typing_extensions import TypeVar
 
 from fastmcp import settings
 from fastmcp.exceptions import ToolError
 from fastmcp.server.sampling.sampling_tool import SamplingTool
+from fastmcp.telemetry import get_tracer
 from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.tools.tool_transform import TransformedTool
 from fastmcp.utilities.async_utils import gather
@@ -295,35 +297,49 @@ async def execute_tools(
                 isError=True,
             )
 
-        try:
-            result_value = await tool.run(tool_use.input)
-            return ToolResultContent(
-                type="tool_result",
-                toolUseId=tool_use.id,
-                content=[TextContent(type="text", text=str(result_value))],
-            )
-        except ToolError as e:
-            # ToolError is the escape hatch - always pass message through
-            logger.exception(f"Error calling sampling tool '{tool_use.name}'")
-            return ToolResultContent(
-                type="tool_result",
-                toolUseId=tool_use.id,
-                content=[TextContent(type="text", text=str(e))],
-                isError=True,
-            )
-        except Exception as e:
-            # Generic exceptions - mask based on setting
-            logger.exception(f"Error calling sampling tool '{tool_use.name}'")
-            if mask_error_details:
-                error_text = f"Error executing tool '{tool_use.name}'"
-            else:
-                error_text = f"Error executing tool '{tool_use.name}': {e}"
-            return ToolResultContent(
-                type="tool_result",
-                toolUseId=tool_use.id,
-                content=[TextContent(type="text", text=error_text)],
-                isError=True,
-            )
+        tracer = get_tracer()
+        with tracer.start_as_current_span(
+            f"sampling/tool {tool_use.name}",
+            kind=SpanKind.INTERNAL,
+        ) as span:
+            if span.is_recording():
+                span.set_attribute("gen_ai.tool.name", tool_use.name)
+                span.set_attribute("mcp.tool.use_id", tool_use.id)
+            try:
+                result_value = await tool.run(tool_use.input)
+                return ToolResultContent(
+                    type="tool_result",
+                    toolUseId=tool_use.id,
+                    content=[TextContent(type="text", text=str(result_value))],
+                )
+            except ToolError as e:
+                if span.is_recording():
+                    span.set_attribute("error.type", "ToolError")
+                    span.record_exception(e)
+                    span.set_status(Status(StatusCode.ERROR, str(e)))
+                logger.exception(f"Error calling sampling tool '{tool_use.name}'")
+                return ToolResultContent(
+                    type="tool_result",
+                    toolUseId=tool_use.id,
+                    content=[TextContent(type="text", text=str(e))],
+                    isError=True,
+                )
+            except Exception as e:
+                if span.is_recording():
+                    span.set_attribute("error.type", type(e).__qualname__)
+                    span.record_exception(e)
+                    span.set_status(Status(StatusCode.ERROR, str(e)))
+                logger.exception(f"Error calling sampling tool '{tool_use.name}'")
+                if mask_error_details:
+                    error_text = f"Error executing tool '{tool_use.name}'"
+                else:
+                    error_text = f"Error executing tool '{tool_use.name}': {e}"
+                return ToolResultContent(
+                    type="tool_result",
+                    toolUseId=tool_use.id,
+                    content=[TextContent(type="text", text=error_text)],
+                    isError=True,
+                )
 
     # Check if any tool requires sequential execution
     requires_sequential = any(
@@ -512,28 +528,41 @@ async def sample_step_impl(
     effective_max_tokens = max_tokens if max_tokens is not None else 512
 
     # Make the LLM call
-    if use_fallback:
-        response = await call_sampling_handler(
-            context,
-            current_messages,
-            system_prompt=system_prompt,
-            temperature=temperature,
-            max_tokens=effective_max_tokens,
-            model_preferences=model_preferences,
-            sdk_tools=sdk_tools,
-            tool_choice=effective_tool_choice,
-        )
-    else:
-        response = await context.session.create_message(
-            messages=current_messages,
-            system_prompt=system_prompt,
-            temperature=temperature,
-            max_tokens=effective_max_tokens,
-            model_preferences=_parse_model_preferences(model_preferences),
-            tools=sdk_tools,
-            tool_choice=effective_tool_choice,
-            related_request_id=context.request_id,
-        )
+    tracer = get_tracer()
+    with tracer.start_as_current_span(
+        "sampling/createMessage",
+        kind=SpanKind.CLIENT,
+    ) as span:
+        if span.is_recording():
+            span.set_attribute("mcp.method.name", "sampling/createMessage")
+            span.set_attribute("mcp.server.name", context.fastmcp.name)
+        try:
+            if use_fallback:
+                response = await call_sampling_handler(
+                    context,
+                    current_messages,
+                    system_prompt=system_prompt,
+                    temperature=temperature,
+                    max_tokens=effective_max_tokens,
+                    model_preferences=model_preferences,
+                    sdk_tools=sdk_tools,
+                    tool_choice=effective_tool_choice,
+                )
+            else:
+                response = await context.session.create_message(
+                    messages=current_messages,
+                    system_prompt=system_prompt,
+                    temperature=temperature,
+                    max_tokens=effective_max_tokens,
+                    model_preferences=_parse_model_preferences(model_preferences),
+                    tools=sdk_tools,
+                    tool_choice=effective_tool_choice,
+                    related_request_id=context.request_id,
+                )
+        except Exception as e:
+            if span.is_recording():
+                span.set_attribute("error.type", type(e).__qualname__)
+            raise
 
     # Check if this is a tool use response
     is_tool_use_response = (
