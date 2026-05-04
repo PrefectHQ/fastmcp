@@ -1189,6 +1189,12 @@ class FastMCP(
         # For mounted servers, the parent's provider sets fn_key to the
         # namespaced key before delegating, ensuring correct Docket routing.
 
+        if isinstance(version, str):
+            raise TypeError(
+                f"version must be a VersionSpec (e.g., VersionSpec(eq={version!r})), "
+                f"not a string. Received: {version!r}"
+            )
+
         from fastmcp.server.providers.addressing import (
             parse_hashed_backend_name,
         )
