@@ -304,7 +304,11 @@ async def execute_tools(
             )
         except ToolError as e:
             # ToolError is the escape hatch - always pass message through
-            logger.exception(f"Error calling sampling tool '{tool_use.name}'")
+            logger.log(
+                e.log_level,
+                f"Error calling sampling tool '{tool_use.name}'",
+                exc_info=True,
+            )
             return ToolResultContent(
                 type="tool_result",
                 toolUseId=tool_use.id,
@@ -532,7 +536,7 @@ async def sample_step_impl(
             model_preferences=_parse_model_preferences(model_preferences),
             tools=sdk_tools,
             tool_choice=effective_tool_choice,
-            related_request_id=context.request_id,
+            related_request_id=context.origin_request_id,
         )
 
     # Check if this is a tool use response

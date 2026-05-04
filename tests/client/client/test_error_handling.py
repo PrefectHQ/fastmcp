@@ -1,14 +1,17 @@
 """Client error handling tests."""
 
+import logging
+
 import mcp.types
 import pytest
-from mcp.types import TextContent
+from mcp.types import TextContent, ToolUseContent
 from pydantic import AnyUrl
 
 from fastmcp.client import Client
 from fastmcp.client.mixins.tools import _parse_call_tool_result
 from fastmcp.client.transports import FastMCPTransport
-from fastmcp.exceptions import ResourceError, ToolError
+from fastmcp.exceptions import PromptError, ResourceError, ToolError
+from fastmcp.server.sampling.run import SamplingTool, execute_tools
 from fastmcp.server.server import FastMCP
 
 
@@ -265,3 +268,175 @@ class TestParseToolResultEdgeCases:
         assert parsed.is_error is True
         assert parsed.data is None
         assert parsed.structured_content == {"key": "value"}
+
+
+class TestLogLevel:
+    async def test_tool_error_with_custom_log_level(self, caplog):
+        """ToolError with custom log_level should log at specified level."""
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def custom_level_tool():
+            raise ToolError("Missing required parameter", log_level=logging.WARNING)
+
+        async with Client(transport=FastMCPTransport(mcp)) as client:
+            with caplog.at_level(logging.WARNING):
+                result = await client.call_tool_mcp("custom_level_tool", {})
+
+        assert result.isError
+        assert isinstance(result.content[0], TextContent)
+        assert "Missing required parameter" in result.content[0].text
+        assert any(
+            "Error calling tool" in record.message and record.levelname == "WARNING"
+            for record in caplog.records
+        )
+        assert not any(
+            "Error calling tool" in record.message and record.levelname == "ERROR"
+            for record in caplog.records
+        )
+
+    async def test_regular_tool_error_logs_at_error(self, caplog):
+        """ToolError with default log_level logs at ERROR."""
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def regular_error_tool():
+            raise ToolError("Something went wrong")
+
+        async with Client(transport=FastMCPTransport(mcp)) as client:
+            with caplog.at_level(logging.ERROR):
+                result = await client.call_tool_mcp("regular_error_tool", {})
+
+        assert result.isError
+        assert isinstance(result.content[0], TextContent)
+        assert "Something went wrong" in result.content[0].text
+        assert any(
+            "Error calling tool 'regular_error_tool'" in record.message
+            and record.levelname == "ERROR"
+            for record in caplog.records
+        )
+
+    async def test_resource_error_with_custom_log_level(self, caplog):
+        """ResourceError with custom log_level should log at specified level."""
+        mcp = FastMCP("TestServer")
+
+        @mcp.resource("test://custom")
+        def custom_level_resource():
+            raise ResourceError(
+                "Resource unavailable, try again later", log_level=logging.WARNING
+            )
+
+        async with Client(transport=FastMCPTransport(mcp)) as client:
+            with caplog.at_level(logging.WARNING):
+                with pytest.raises(Exception) as exc_info:
+                    await client.read_resource_mcp("test://custom")
+
+        assert "Resource unavailable, try again later" in str(exc_info.value)
+        assert any(
+            "Error reading resource" in record.message and record.levelname == "WARNING"
+            for record in caplog.records
+        )
+        assert not any(
+            "Error reading resource" in record.message and record.levelname == "ERROR"
+            for record in caplog.records
+        )
+
+    async def test_regular_resource_error_logs_at_error(self, caplog):
+        """ResourceError with default log_level logs at ERROR."""
+        mcp = FastMCP("TestServer")
+
+        @mcp.resource("test://regular")
+        def regular_resource():
+            raise ResourceError("Something went wrong")
+
+        async with Client(transport=FastMCPTransport(mcp)) as client:
+            with caplog.at_level(logging.ERROR):
+                with pytest.raises(Exception) as exc_info:
+                    await client.read_resource_mcp("test://regular")
+
+        assert "Something went wrong" in str(exc_info.value)
+        assert any(
+            "Error reading resource 'test://regular'" in record.message
+            and record.levelname == "ERROR"
+            for record in caplog.records
+        )
+
+    async def test_prompt_error_with_custom_log_level(self, caplog):
+        """PromptError with custom log_level should log at specified level."""
+        mcp = FastMCP("TestServer")
+
+        @mcp.prompt
+        def custom_level_prompt():
+            raise PromptError(
+                "Insufficient context, provide more details", log_level=logging.WARNING
+            )
+
+        async with Client(transport=FastMCPTransport(mcp)) as client:
+            with caplog.at_level(logging.WARNING):
+                with pytest.raises(Exception) as exc_info:
+                    await client.get_prompt("custom_level_prompt")
+
+        assert "Insufficient context" in str(exc_info.value)
+        assert any(
+            "Error rendering prompt" in record.message and record.levelname == "WARNING"
+            for record in caplog.records
+        )
+        assert not any(
+            "Error rendering prompt" in record.message and record.levelname == "ERROR"
+            for record in caplog.records
+        )
+
+    async def test_regular_prompt_error_logs_at_error(self, caplog):
+        """PromptError with default log_level logs at ERROR."""
+        mcp = FastMCP("TestServer")
+
+        @mcp.prompt
+        def regular_prompt():
+            raise PromptError("Something went wrong")
+
+        async with Client(transport=FastMCPTransport(mcp)) as client:
+            with caplog.at_level(logging.ERROR):
+                with pytest.raises(Exception) as exc_info:
+                    await client.get_prompt("regular_prompt")
+
+        assert "Something went wrong" in str(exc_info.value)
+        assert any(
+            "Error rendering prompt 'regular_prompt'" in record.message
+            and record.levelname == "ERROR"
+            for record in caplog.records
+        )
+
+    async def test_sampling_tool_error_with_custom_log_level(self, caplog):
+        """ToolError with custom log_level in sampling should log at specified level."""
+
+        async def custom_level_sampling_tool(x: int) -> int:
+            raise ToolError("Expected sampling error", log_level=logging.WARNING)
+
+        tool = SamplingTool.from_function(custom_level_sampling_tool)
+        tool_use = ToolUseContent(
+            type="tool_use",
+            id="test-id",
+            name="custom_level_sampling_tool",
+            input={"x": 42},
+        )
+
+        with caplog.at_level(logging.WARNING):
+            results = await execute_tools(
+                tool_calls=[tool_use],
+                tool_map={"custom_level_sampling_tool": tool},
+                mask_error_details=False,
+            )
+
+        assert len(results) == 1
+        assert results[0].isError
+        assert "Expected sampling error" in results[0].content[0].text  # type: ignore
+        assert any(
+            "Error calling sampling tool" in record.message
+            and record.levelname == "WARNING"
+            for record in caplog.records
+        )
+        assert not any(
+            "Error calling sampling tool" in record.message
+            and record.levelname == "ERROR"
+            for record in caplog.records
+        )

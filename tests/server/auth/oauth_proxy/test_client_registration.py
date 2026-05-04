@@ -1,8 +1,10 @@
 """Tests for OAuth proxy client registration (DCR)."""
 
+import httpx
 import pytest
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
+from starlette.applications import Starlette
 
 from fastmcp.server.auth.oauth_proxy.models import InvalidRedirectUriError
 
@@ -70,6 +72,33 @@ class TestOAuthProxyClientRegistration:
         assert retrieved.allowed_redirect_uri_patterns == [
             "http://localhost:12345/updated_callback"
         ]
+
+    async def test_update_default_scopes_applies_to_dcr_registration(self, oauth_proxy):
+        """DCR clients without scope should receive the updated default scopes."""
+        oauth_proxy.update_default_scopes(["read", "write", "calendar"])
+
+        app = Starlette(routes=oauth_proxy.get_routes())
+        transport = httpx.ASGITransport(app=app)
+
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="https://myserver.com",
+        ) as client:
+            response = await client.post(
+                "/register",
+                json={
+                    "redirect_uris": ["https://client.example.com/callback"],
+                    "client_name": "Test Client",
+                },
+            )
+
+        assert response.status_code == 201
+        client_info = response.json()
+        assert client_info["scope"] == "read write calendar"
+
+        registered_client = await oauth_proxy.get_client(client_info["client_id"])
+        assert registered_client is not None
+        assert registered_client.scope == "read write calendar"
 
 
 class TestUpstreamClientIdFallback:
