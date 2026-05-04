@@ -1,7 +1,7 @@
 """Rate limiting middleware for protecting FastMCP servers from abuse."""
 
 import time
-from collections import defaultdict, deque
+from collections import OrderedDict, deque
 from collections.abc import Callable
 from typing import Any
 
@@ -116,6 +116,7 @@ class RateLimitingMiddleware(Middleware):
         burst_capacity: int | None = None,
         get_client_id: Callable[[MiddlewareContext], str] | None = None,
         global_limit: bool = False,
+        max_clients: int = 10000,
     ):
         """Initialize rate limiting middleware.
 
@@ -124,24 +125,38 @@ class RateLimitingMiddleware(Middleware):
             burst_capacity: Maximum burst capacity. If None, defaults to 2x max_requests_per_second
             get_client_id: Function to extract client ID from context. If None, uses global limiting
             global_limit: If True, apply limit globally; if False, per-client
+            max_clients: Maximum number of per-client limiters to track. When reached,
+                the least recently used client is evicted to make room for a new client.
         """
         self.max_requests_per_second = max_requests_per_second
         self.burst_capacity = burst_capacity or int(max_requests_per_second * 2)
         self.get_client_id = get_client_id
         self.global_limit = global_limit
+        self._max_clients = max_clients
 
-        # Storage for rate limiters per client
-        self.limiters: dict[str, TokenBucketRateLimiter] = defaultdict(
-            lambda: TokenBucketRateLimiter(
-                self.burst_capacity, self.max_requests_per_second
-            )
-        )
+        # Per-client limiters stored in LRU order (oldest at front, newest at back)
+
+        self._client_limiters: OrderedDict[str, TokenBucketRateLimiter] = OrderedDict()
 
         # Global rate limiter
         if self.global_limit:
             self.global_limiter = TokenBucketRateLimiter(
                 self.burst_capacity, self.max_requests_per_second
             )
+
+    def _get_limiter(self, client_id: str) -> TokenBucketRateLimiter:
+        """Get or create a rate limiter for a client, with LRU eviction."""
+        if client_id in self._client_limiters:
+            self._client_limiters.move_to_end(client_id)
+            return self._client_limiters[client_id]
+
+        limiter = TokenBucketRateLimiter(
+            self.burst_capacity, self.max_requests_per_second
+        )
+        self._client_limiters[client_id] = limiter
+        if len(self._client_limiters) > self._max_clients:
+            self._client_limiters.popitem(last=False)
+        return limiter
 
     def _get_client_identifier(self, context: MiddlewareContext) -> str:
         """Get client identifier for rate limiting."""
@@ -159,7 +174,7 @@ class RateLimitingMiddleware(Middleware):
         else:
             # Per-client rate limiting
             client_id = self._get_client_identifier(context)
-            limiter = self.limiters[client_id]
+            limiter = self._get_limiter(client_id)
             allowed = await limiter.consume()
             if not allowed:
                 raise RateLimitError(f"Rate limit exceeded for client: {client_id}")
@@ -193,6 +208,7 @@ class SlidingWindowRateLimitingMiddleware(Middleware):
         max_requests: int,
         window_minutes: int = 1,
         get_client_id: Callable[[MiddlewareContext], str] | None = None,
+        max_clients: int = 10000,
     ):
         """Initialize sliding window rate limiting middleware.
 
@@ -200,15 +216,29 @@ class SlidingWindowRateLimitingMiddleware(Middleware):
             max_requests: Maximum requests allowed in the time window
             window_minutes: Time window in minutes
             get_client_id: Function to extract client ID from context
+            max_clients: Maximum number of per-client limiters to track. When reached,
+                the least recently used client is evicted to make room for a new client.
         """
         self.max_requests = max_requests
         self.window_seconds = window_minutes * 60
         self.get_client_id = get_client_id
+        self._max_clients = max_clients
 
-        # Storage for rate limiters per client
-        self.limiters: dict[str, SlidingWindowRateLimiter] = defaultdict(
-            lambda: SlidingWindowRateLimiter(self.max_requests, self.window_seconds)
+        self._client_limiters: OrderedDict[str, SlidingWindowRateLimiter] = (
+            OrderedDict()
         )
+
+    def _get_limiter(self, client_id: str) -> SlidingWindowRateLimiter:
+        """Get or create a rate limiter for a client, with LRU eviction."""
+        if client_id in self._client_limiters:
+            self._client_limiters.move_to_end(client_id)
+            return self._client_limiters[client_id]
+
+        limiter = SlidingWindowRateLimiter(self.max_requests, self.window_seconds)
+        self._client_limiters[client_id] = limiter
+        if len(self._client_limiters) > self._max_clients:
+            self._client_limiters.popitem(last=False)
+        return limiter
 
     def _get_client_identifier(self, context: MiddlewareContext) -> str:
         """Get client identifier for rate limiting."""
@@ -219,7 +249,7 @@ class SlidingWindowRateLimitingMiddleware(Middleware):
     async def on_request(self, context: MiddlewareContext, call_next: CallNext) -> Any:
         """Apply sliding window rate limiting to requests."""
         client_id = self._get_client_identifier(context)
-        limiter = self.limiters[client_id]
+        limiter = self._get_limiter(client_id)
 
         allowed = await limiter.is_allowed()
         if not allowed:
