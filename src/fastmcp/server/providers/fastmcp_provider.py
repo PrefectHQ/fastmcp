@@ -698,11 +698,15 @@ class FastMCPProvider(Provider):
 
     @asynccontextmanager
     async def lifespan(self) -> AsyncIterator[None]:
-        """Start the mounted server's user lifespan.
+        """Start the mounted server's lifespan.
 
-        This starts only the wrapped server's user-defined lifespan, NOT its
-        full _lifespan_manager() (which includes Docket). The parent server's
-        Docket handles all background tasks.
+        Delegates to the wrapped server's full ``_lifespan_manager``. That
+        path is reentrant: ``_docket_lifespan`` detects via the
+        ``_lifespan_root_active`` ContextVar that a parent in the same
+        runtime tree already started Docket and SharedContext, and becomes
+        a no-op for those concerns. The mounted server's user lifespan,
+        ``_lifespan_result`` cache, and its own sub-providers (nested mounts)
+        all run normally — which is what closes #4049.
         """
-        async with self.server._lifespan(self.server):
+        async with self.server._lifespan_manager():
             yield

@@ -460,6 +460,83 @@ class TestToolNameOverrides:
             )
 
 
+class TestMountedServerLifespanContext:
+    """Regression tests for mounted server lifespan_context resolution (#4049).
+
+    A mounted server's tools should see *their own* lifespan context via
+    ``ctx.lifespan_context``, not the parent's. Previously the result yielded
+    by a mounted server's lifespan was discarded and ``ctx.lifespan_context``
+    fell through to the parent's MCP-session lifespan context.
+    """
+
+    async def test_mounted_child_sees_own_lifespan_context(self):
+        """A tool on a mounted child reads its own lifespan result."""
+        from collections.abc import AsyncIterator
+        from contextlib import asynccontextmanager
+
+        from fastmcp.server.context import Context
+
+        @asynccontextmanager
+        async def parent_lifespan(_mcp: FastMCP) -> AsyncIterator[dict]:
+            yield {"who": "parent", "parent_only": "P"}
+
+        @asynccontextmanager
+        async def child_lifespan(_mcp: FastMCP) -> AsyncIterator[dict]:
+            yield {"who": "child", "child_only": "C"}
+
+        parent = FastMCP("Parent", lifespan=parent_lifespan)
+        child = FastMCP("Child", lifespan=child_lifespan)
+
+        @child.tool
+        def whoami(ctx: Context) -> dict:
+            return ctx.lifespan_context
+
+        parent.mount(child, "child")
+
+        async with Client(parent) as client:
+            result = await client.call_tool("child_whoami", {})
+
+        assert result.data == {"who": "child", "child_only": "C"}
+
+    async def test_nested_grandchild_lifespan_runs(self):
+        """A grandchild's lifespan is entered exactly once and visible to its tools."""
+        from collections.abc import AsyncIterator
+        from contextlib import asynccontextmanager
+
+        from fastmcp.server.context import Context
+
+        events: list[str] = []
+
+        @asynccontextmanager
+        async def grandchild_lifespan(_mcp: FastMCP) -> AsyncIterator[dict]:
+            events.append("enter")
+            try:
+                yield {"who": "grandchild"}
+            finally:
+                events.append("exit")
+
+        parent = FastMCP("Parent")
+        child = FastMCP("Child")
+        grandchild = FastMCP("Grandchild", lifespan=grandchild_lifespan)
+
+        @grandchild.tool
+        def whoami(ctx: Context) -> dict:
+            return ctx.lifespan_context
+
+        child.mount(grandchild, "g")
+        parent.mount(child, "c")
+
+        async with Client(parent) as client:
+            result1 = await client.call_tool("c_g_whoami", {})
+            result2 = await client.call_tool("c_g_whoami", {})
+
+        assert result1.data == {"who": "grandchild"}
+        assert result2.data == {"who": "grandchild"}
+        # Lifespan is entered once at startup and exited once at teardown,
+        # not per-call and not per-mount level.
+        assert events == ["enter", "exit"]
+
+
 class TestMountedServerDocketBehavior:
     """Regression tests for mounted server lifecycle behavior.
 

@@ -6,6 +6,7 @@ import asyncio
 import weakref
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
+from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 
 import anyio
@@ -22,14 +23,32 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+# Set True while a server's _docket_lifespan is the active "root" of a runtime
+# tree (it has started Docket / Worker / SharedContext for the process scope).
+# Mounted children inherit this through async-task ContextVar propagation and
+# detect that they should not re-initialize Docket — they share the root's
+# Docket via _current_docket. There is one Docket per runtime tree, owned by
+# whichever FastMCP enters its lifespan first; nested servers are participants,
+# not owners.
+_lifespan_root_active: ContextVar[bool] = ContextVar(
+    "fastmcp_lifespan_root_active", default=False
+)
+
+
 class LifespanMixin:
     """Mixin providing lifespan and Docket task infrastructure for FastMCP."""
 
     @property
     def docket(self: FastMCP) -> Docket | None:
-        """Get the Docket instance if Docket support is enabled.
+        """The Docket instance owned by this server.
 
-        Returns None if Docket is not enabled or server hasn't been started yet.
+        Returns the Docket that this server initialized as the root of a
+        runtime tree. Mounted children do not own their own Docket — they
+        share the root's via ``_current_docket`` ContextVar inheritance —
+        so accessing ``.docket`` on a mounted child returns None even while
+        its tasks run on the root's Docket. For "the Docket in scope right
+        now," prefer reading ``_current_docket`` directly or use the
+        ``CurrentDocket`` dependency injection.
         """
         return self._docket
 
@@ -37,13 +56,35 @@ class LifespanMixin:
     async def _docket_lifespan(self: FastMCP) -> AsyncIterator[None]:
         """Manage Docket instance and Worker for background task execution.
 
-        Docket infrastructure is only initialized if:
+        Docket is process-level, not server-level: only the first server in a
+        runtime tree to enter its lifespan starts Docket and the Worker. Mounted
+        children (entered via FastMCPProvider.lifespan -> _lifespan_manager ->
+        _docket_lifespan) detect the root via _lifespan_root_active and become
+        no-ops, sharing the root's Docket through _current_docket.
+
+        Docket infrastructure is only initialized at the root if:
         1. pydocket is installed (fastmcp[tasks] extra)
         2. There are task-enabled components (task_config.mode != 'forbidden')
 
-        This means users with pydocket installed but no task-enabled components
-        won't spin up Docket/Worker infrastructure.
+        Users with pydocket installed but no task-enabled components won't spin
+        up Docket / Worker infrastructure even at the root.
         """
+        # Nested entry: a parent in the same runtime tree already owns Docket
+        # and SharedContext. Stay out of their way and inherit via ContextVars.
+        if _lifespan_root_active.get():
+            yield
+            return
+
+        root_token = _lifespan_root_active.set(True)
+        try:
+            async with self._docket_lifespan_root():
+                yield
+        finally:
+            _lifespan_root_active.reset(root_token)
+
+    @asynccontextmanager
+    async def _docket_lifespan_root(self: FastMCP) -> AsyncIterator[None]:
+        """Root-only Docket lifecycle. See _docket_lifespan for the dispatch."""
         from fastmcp.server.dependencies import _current_server, is_docket_available
 
         # Set FastMCP server in ContextVar so CurrentFastMCP can access it

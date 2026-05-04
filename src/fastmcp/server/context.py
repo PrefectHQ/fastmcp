@@ -354,13 +354,15 @@ class Context:
     def lifespan_context(self) -> dict[str, Any]:
         """Access the server's lifespan context.
 
-        Returns the context dict yielded by the server's lifespan function.
-        Returns an empty dict if no lifespan was configured or if the MCP
-        session is not yet established.
+        Returns the context dict yielded by *this* server's lifespan function.
+        For a mounted child this is the child's own lifespan, not the parent's
+        — the MCP session always belongs to the parent, so reading from the
+        request context would return the parent's. We read directly from the
+        server's cached lifespan result instead, which is set by the
+        per-server ``_lifespan_manager`` regardless of mount position
+        (closes #4049).
 
-        In background tasks (Docket workers), where request_context is not
-        available, falls back to reading from the FastMCP server's lifespan
-        result directly.
+        Returns an empty dict if no lifespan was configured.
 
         Example:
         ```python
@@ -372,13 +374,16 @@ class Context:
             return "No database connection"
         ```
         """
+        result = self.fastmcp._lifespan_result
+        if result is not None:
+            return result
+        # Server's lifespan was never entered for this Context's server (or
+        # yielded None). Fall back to the request context's lifespan, which
+        # for a mounted child will be the parent's — preserved for parity
+        # with prior behavior, but in the post-#4049 world a child's own
+        # lifespan should populate `_lifespan_result` and short-circuit above.
         rc = self.request_context
         if rc is None:
-            # In background tasks, request_context is not available.
-            # Fall back to the server's lifespan result directly (#3095).
-            result = self.fastmcp._lifespan_result
-            if result is not None:
-                return result
             return {}
         return rc.lifespan_context
 
