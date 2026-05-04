@@ -322,7 +322,8 @@
                     "pages": [
                       "integrations/anthropic",
                       "integrations/gemini",
-                      "integrations/openai"
+                      "integrations/openai",
+                      "integrations/pydantic-ai"
                     ]
                   },
                   "integrations/mcp-json-configuration"
