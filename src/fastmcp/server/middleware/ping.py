@@ -65,6 +65,9 @@ class PingMiddleware(Middleware):
         try:
             while True:
                 await anyio.sleep(self.interval_ms / 1000)
-                await session.send_ping()
+                try:
+                    await session.send_ping()
+                except anyio.ClosedResourceError:
+                    return
         finally:
             self._active_sessions.discard(session_id)

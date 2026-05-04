@@ -24,7 +24,7 @@ from pydantic import Field
 from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
-from fastmcp.decorators import resolve_task_config
+from fastmcp.decorators import get_fastmcp_meta, resolve_task_config
 from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.dependencies import without_injected_parameters
@@ -168,6 +168,11 @@ class FunctionTool(Tool):
                 "Cannot pass both 'metadata' and individual parameters to from_function(). "
                 "Use metadata alone or individual parameters alone."
             )
+
+        if metadata is None and not individual_params_provided:
+            fmeta = get_fastmcp_meta(fn)
+            if isinstance(fmeta, ToolMeta):
+                metadata = fmeta
 
         # Build metadata from kwargs if not provided
         if metadata is None:

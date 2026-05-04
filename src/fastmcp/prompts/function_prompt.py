@@ -24,7 +24,7 @@ from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
 from fastmcp.decorators import resolve_task_config
-from fastmcp.exceptions import FastMCPDeprecationWarning, PromptError
+from fastmcp.exceptions import FastMCPDeprecationWarning, FastMCPError, PromptError
 from fastmcp.prompts.base import Prompt, PromptArgument, PromptResult
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.dependencies import (
@@ -361,6 +361,8 @@ class FunctionPrompt(Prompt):
                     result = await result
 
             return self.convert_result(result)
+        except FastMCPError:
+            raise
         except Exception as e:
             logger.exception(f"Error rendering prompt {self.name}")
             raise PromptError(f"Error rendering prompt {self.name!r}: {e}") from e

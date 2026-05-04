@@ -254,7 +254,11 @@ class HeadlessOAuth(OAuth):
         if response.status_code == 302:
             redirect_url = response.headers["location"]
             parsed = urlparse(redirect_url)
-            query_params = parse_qs(parsed.query)
+            # keep_blank_values=True so explicitly-empty params (e.g. ?state=)
+            # survive parsing instead of being silently dropped. Real OAuth
+            # callbacks can include empty `state` or `error_description`,
+            # and downstream code distinguishes "" from missing.
+            query_params = parse_qs(parsed.query, keep_blank_values=True)
 
             if "error" in query_params:
                 error = query_params["error"][0]
