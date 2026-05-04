@@ -50,7 +50,7 @@ in a Docket worker context where there's no active MCP request.
 - `McpError`: If the elicitation request fails
 
 
-### `relay_elicitation` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L239" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `relay_elicitation` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L236" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 relay_elicitation(session: ServerSession, task_scope: str | None, task_id: str, elicitation: dict[str, Any], fastmcp: FastMCP) -> None
@@ -72,7 +72,7 @@ response to Redis so the blocked worker can resume.
 - `fastmcp`: FastMCP server instance
 
 
-### `handle_task_input` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L295" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `handle_task_input` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L292" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 handle_task_input(task_id: str, task_scope: str | None, action: str, content: dict[str, Any] | None, fastmcp: FastMCP) -> bool
