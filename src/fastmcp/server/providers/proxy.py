@@ -932,9 +932,9 @@ async def default_proxy_progress_handler(
     await ctx.report_progress(progress, total, message)
 
 
-def _restore_request_context(
+async def _restore_request_context(
     rc_ref: list[Any],
-) -> None:
+) -> Context | None:
     """Set the ``request_ctx`` and ``_current_context`` ContextVars from stashed values.
 
     Called at the start of proxy handler invocations in
@@ -948,12 +948,15 @@ def _restore_request_context(
     ContextVar-dependent and would resolve stale values in the receive
     loop.  Instead we construct a fresh ``Context`` here after restoring
     ``request_ctx``, so its property accesses read the correct values.
-    """
-    from fastmcp.server.context import Context, _current_context
 
+    The returned ``Context`` (when one is entered) must have ``__aexit__``
+    called on it by the caller to release the ``_current_context`` /
+    ``_current_server`` tokens it pushed; ``_make_restoring_handler``
+    handles that via ``try/finally``.
+    """
     stashed = rc_ref[0]
     if stashed is None:
-        return
+        return None
 
     rc, fastmcp_ref = stashed
     try:
@@ -962,13 +965,18 @@ def _restore_request_context(
         request_ctx.set(rc)
         fastmcp = fastmcp_ref()
         if fastmcp is not None:
-            _current_context.set(Context(fastmcp))
-        return
+            # Use ``__aenter__`` (not a raw ``_current_context.set``) so
+            # ``Context._tokens``, ``_current_server`` and ``SharedContext``
+            # are all populated; otherwise the matching ``__aexit__`` would
+            # be a no-op and tokens would leak.
+            return await Context(fastmcp).__aenter__()
+        return None
     if current_rc.session is rc.session and current_rc.request_id != rc.request_id:
         request_ctx.set(rc)
         fastmcp = fastmcp_ref()
         if fastmcp is not None:
-            _current_context.set(Context(fastmcp))
+            return await Context(fastmcp).__aenter__()
+    return None
 
 
 def _make_restoring_handler(handler: Callable, rc_ref: list[Any]) -> Callable:
@@ -980,8 +988,12 @@ def _make_restoring_handler(handler: Callable, rc_ref: list[Any]) -> Callable:
     """
 
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
-        _restore_request_context(rc_ref)
-        return await handler(*args, **kwargs)
+        ctx = await _restore_request_context(rc_ref)
+        try:
+            return await handler(*args, **kwargs)
+        finally:
+            if ctx is not None:
+                await ctx.__aexit__(None, None, None)
 
     return wrapper
 

@@ -199,3 +199,114 @@ class TestStatefulProxyClient:
                 # one that would hang without the fix.
                 result2 = await client.call_tool("ask_name", {})
                 assert result2.data == "Hello, Alice!"
+
+
+class TestRestoreRequestContext:
+    """Regression tests for the Context lifecycle in `_restore_request_context`.
+
+    Previously `_restore_request_context` called `_current_context.set(Context(fastmcp))`
+    directly, bypassing `Context.__aenter__`.  That left `Context._tokens` empty,
+    `_current_server` unset, and the matching `__aexit__` a no-op (refs #4054).
+    """
+
+    async def test_restore_enters_context_and_sets_current_server(self):
+        """The fresh Context must be entered so `_current_context` and
+        `_current_server` are both populated, and `_tokens` is non-empty so
+        the eventual `__aexit__` actually releases the ContextVar."""
+        import weakref
+        from unittest.mock import MagicMock
+
+        from mcp.server.lowlevel.server import request_ctx
+
+        from fastmcp import FastMCP
+        from fastmcp.server.context import _current_context
+        from fastmcp.server.dependencies import _current_server
+        from fastmcp.server.providers.proxy import _restore_request_context
+
+        fastmcp = FastMCP("test")
+
+        # Stand-in RequestContext — only identity / attribute access is exercised.
+        rc = MagicMock()
+        rc.session = MagicMock()
+        rc.request_id = "req-1"
+
+        rc_ref: list = [(rc, weakref.ref(fastmcp))]
+
+        # No prior request_ctx in this task; _restore_request_context should
+        # take the LookupError branch, set request_ctx and enter the Context.
+        ctx = await _restore_request_context(rc_ref)
+        try:
+            assert ctx is not None, (
+                "Context should be entered when fastmcp weakref is alive"
+            )
+            # __aenter__ must have populated _tokens (so __aexit__ does work)
+            assert ctx._tokens, (
+                "Context.__aenter__ was not called: _tokens is empty"
+            )
+            # _current_context must point at the freshly entered Context
+            assert _current_context.get() is ctx
+            # _current_server must be set (only happens via __aenter__)
+            srv_ref = _current_server.get()
+            assert srv_ref is not None and srv_ref() is fastmcp
+            # And request_ctx must have been restored from the stash.
+            assert request_ctx.get() is rc
+        finally:
+            await ctx.__aexit__(None, None, None) if ctx else None
+
+        # __aexit__ must release the ContextVars cleanly.
+        assert _current_context.get(None) is not ctx
+
+    async def test_make_restoring_handler_awaits_aenter_and_aexit(self):
+        """The wrapper produced by `_make_restoring_handler` must await
+        `Context.__aenter__` before the handler runs and `__aexit__` after,
+        so handlers see a fully-initialised Context and tokens don't leak.
+        """
+        import weakref
+        from unittest.mock import MagicMock
+
+        from mcp.server.lowlevel.server import request_ctx
+
+        from fastmcp import FastMCP
+        from fastmcp.server.context import Context, _current_context
+        from fastmcp.server.providers.proxy import _make_restoring_handler
+
+        fastmcp = FastMCP("test")
+
+        rc = MagicMock()
+        rc.session = MagicMock()
+        rc.request_id = "req-2"
+
+        rc_ref: list = [(rc, weakref.ref(fastmcp))]
+
+        seen: dict = {}
+
+        async def handler(*args, **kwargs):
+            # Inside the handler the fresh Context must already be active.
+            cur = _current_context.get(None)
+            seen["context_active"] = isinstance(cur, Context)
+            seen["tokens_populated"] = bool(cur and cur._tokens)
+            return "ok"
+
+        wrapped = _make_restoring_handler(handler, rc_ref)
+
+        result = await wrapped()
+
+        assert result == "ok"
+        assert seen.get("context_active"), (
+            "handler did not see an active Context (aenter was not awaited)"
+        )
+        assert seen.get("tokens_populated"), (
+            "Context._tokens was empty inside handler (aenter bypassed)"
+        )
+        # After the wrapper returns, __aexit__ should have released the token,
+        # so _current_context no longer points at our restored Context.
+        assert _current_context.get(None) is None
+
+    async def test_restore_returns_none_when_rc_ref_empty(self):
+        """If nothing is stashed in `rc_ref`, no Context should be entered
+        (and therefore nothing for the caller to clean up)."""
+        from fastmcp.server.providers.proxy import _restore_request_context
+
+        rc_ref: list = [None]
+        ctx = await _restore_request_context(rc_ref)
+        assert ctx is None
