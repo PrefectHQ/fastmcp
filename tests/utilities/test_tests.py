@@ -72,9 +72,7 @@ class TestHeadlessOAuthCallbackHandler:
 
     async def test_callback_returns_none_when_state_missing(self):
         """A truly missing state still returns None (default)."""
-        oauth = self._make_oauth_with_redirect(
-            "https://example.com/callback?code=abc"
-        )
+        oauth = self._make_oauth_with_redirect("https://example.com/callback?code=abc")
         auth_code, state = await oauth.callback_handler()
         assert auth_code == "abc"
         assert state is None
