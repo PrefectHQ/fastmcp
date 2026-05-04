@@ -1,7 +1,7 @@
 """Rate limiting middleware for protecting FastMCP servers from abuse."""
 
 import time
-from collections import defaultdict, deque
+from collections import deque
 from collections.abc import Callable
 from typing import Any
 
@@ -50,10 +50,10 @@ class TokenBucketRateLimiter:
 
             # Add tokens based on elapsed time
             self.tokens = min(self.capacity, self.tokens + elapsed * self.refill_rate)
-            self.last_refill = now
 
             if self.tokens >= tokens:
                 self.tokens -= tokens
+                self.last_refill = now
                 return True
             return False
 
@@ -131,11 +131,40 @@ class RateLimitingMiddleware(Middleware):
         self.global_limit = global_limit
 
         # Storage for rate limiters per client
-        self.limiters: dict[str, TokenBucketRateLimiter] = defaultdict(
-            lambda: TokenBucketRateLimiter(
+        self._limiter_access_times: dict[str, float] = {}
+        self._last_cleanup_time: float = 0.0
+        self._cleanup_interval = 60.0  # seconds between cleanups
+        self._limiter_ttl = 300.0  # remove limiters after 5 minutes of inactivity
+        self.limiters: dict[str, TokenBucketRateLimiter] = {}
+
+        # Global rate limiter
+        if self.global_limit:
+            self.global_limiter = TokenBucketRateLimiter(
                 self.burst_capacity, self.max_requests_per_second
             )
-        )
+
+    def _get_limiter(self, client_id: str) -> TokenBucketRateLimiter:
+        """Get or create a rate limiter for a client, with TTL-based eviction."""
+        now = time.time()
+        if client_id not in self.limiters:
+            self.limiters[client_id] = TokenBucketRateLimiter(
+                self.burst_capacity, self.max_requests_per_second
+            )
+        self._limiter_access_times[client_id] = now
+        if now - self._last_cleanup_time > self._cleanup_interval:
+            self._cleanup_stale_limiters(now)
+            self._last_cleanup_time = now
+        return self.limiters[client_id]
+
+    def _cleanup_stale_limiters(self, now: float) -> None:
+        """Remove rate limiters that have been inactive for more than _limiter_ttl seconds."""
+        stale_ids = [
+            cid for cid, last_access in self._limiter_access_times.items()
+            if now - last_access > self._limiter_ttl
+        ]
+        for cid in stale_ids:
+            self.limiters.pop(cid, None)
+            self._limiter_access_times.pop(cid, None)
 
         # Global rate limiter
         if self.global_limit:
@@ -159,7 +188,7 @@ class RateLimitingMiddleware(Middleware):
         else:
             # Per-client rate limiting
             client_id = self._get_client_identifier(context)
-            limiter = self.limiters[client_id]
+            limiter = self._get_limiter(client_id)
             allowed = await limiter.consume()
             if not allowed:
                 raise RateLimitError(f"Rate limit exceeded for client: {client_id}")
@@ -206,9 +235,34 @@ class SlidingWindowRateLimitingMiddleware(Middleware):
         self.get_client_id = get_client_id
 
         # Storage for rate limiters per client
-        self.limiters: dict[str, SlidingWindowRateLimiter] = defaultdict(
-            lambda: SlidingWindowRateLimiter(self.max_requests, self.window_seconds)
-        )
+        self._limiter_access_times: dict[str, float] = {}
+        self._last_cleanup_time: float = 0.0
+        self._cleanup_interval = 60.0
+        self._limiter_ttl = 300.0
+        self.limiters: dict[str, SlidingWindowRateLimiter] = {}
+
+    def _get_limiter(self, client_id: str) -> SlidingWindowRateLimiter:
+        """Get or create a rate limiter for a client, with TTL-based eviction."""
+        now = time.time()
+        if client_id not in self.limiters:
+            self.limiters[client_id] = SlidingWindowRateLimiter(
+                self.max_requests, self.window_seconds
+            )
+        self._limiter_access_times[client_id] = now
+        if now - self._last_cleanup_time > self._cleanup_interval:
+            self._cleanup_stale_limiters(now)
+            self._last_cleanup_time = now
+        return self.limiters[client_id]
+
+    def _cleanup_stale_limiters(self, now: float) -> None:
+        """Remove rate limiters that have been inactive for more than _limiter_ttl seconds."""
+        stale_ids = [
+            cid for cid, last_access in self._limiter_access_times.items()
+            if now - last_access > self._limiter_ttl
+        ]
+        for cid in stale_ids:
+            self.limiters.pop(cid, None)
+            self._limiter_access_times.pop(cid, None)
 
     def _get_client_identifier(self, context: MiddlewareContext) -> str:
         """Get client identifier for rate limiting."""
@@ -219,7 +273,7 @@ class SlidingWindowRateLimitingMiddleware(Middleware):
     async def on_request(self, context: MiddlewareContext, call_next: CallNext) -> Any:
         """Apply sliding window rate limiting to requests."""
         client_id = self._get_client_identifier(context)
-        limiter = self.limiters[client_id]
+        limiter = self._get_limiter(client_id)
 
         allowed = await limiter.is_allowed()
         if not allowed:

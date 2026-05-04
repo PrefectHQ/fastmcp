@@ -1064,14 +1064,29 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         refresh_expires_in = None
         refresh_token_expires_at = None
         if idp_tokens.get("refresh_token"):
-            if "refresh_expires_in" in idp_tokens and int(
-                idp_tokens["refresh_expires_in"]
-            ):
-                refresh_expires_in = int(idp_tokens["refresh_expires_in"])
-                refresh_token_expires_at = time.time() + refresh_expires_in
-                logger.debug(
-                    "Upstream refresh token expires in %d seconds", refresh_expires_in
-                )
+            if "refresh_expires_in" in idp_tokens:
+                raw_value = int(idp_tokens["refresh_expires_in"])
+                if raw_value == 0:
+                    # Upstream says "never expire" (e.g., Keycloak offline tokens)
+                    refresh_expires_in = None
+                    refresh_token_expires_at = None
+                    logger.debug(
+                        "Upstream refresh token never expires (refresh_expires_in=0)"
+                    )
+                elif raw_value > 0:
+                    refresh_expires_in = raw_value
+                    refresh_token_expires_at = time.time() + refresh_expires_in
+                    logger.debug(
+                        "Upstream refresh token expires in %d seconds", refresh_expires_in
+                    )
+                else:
+                    # Negative value: treat as missing, use fallback
+                    refresh_expires_in = self._fallback_refresh_token_expiry_seconds
+                    refresh_token_expires_at = time.time() + refresh_expires_in
+                    logger.debug(
+                        "Upstream refresh token expiry unknown (negative value), using fallback %d seconds",
+                        refresh_expires_in,
+                    )
             else:
                 # Upstream didn't specify; use configured fallback (default 1 year).
                 # The FastMCP refresh JWT is just a signed pointer — if the real

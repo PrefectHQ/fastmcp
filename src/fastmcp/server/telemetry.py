@@ -4,11 +4,27 @@ from collections.abc import Generator
 from contextlib import contextmanager
 
 from mcp.server.lowlevel.server import request_ctx
+from opentelemetry import context as otel_context
+from opentelemetry import trace
 from opentelemetry.context import Context
-from opentelemetry.trace import Span, SpanKind, Status, StatusCode
+from opentelemetry.trace import (
+    Link,
+    Span,
+    SpanContext,
+    SpanKind,
+    Status,
+    StatusCode,
+)
 
 from fastmcp.exceptions import ToolError as _ToolError
-from fastmcp.telemetry import extract_trace_context, get_tracer
+from fastmcp.server.http import AMBIENT_SPAN_CONTEXT_SCOPE_KEY
+from fastmcp.telemetry import (
+    extract_propagation_keys_from_meta,
+    extract_trace_context,
+    get_noop_span,
+    get_tracer,
+    native_telemetry_enabled,
+)
 
 
 def get_auth_span_attributes() -> dict[str, str]:
@@ -42,15 +58,56 @@ def get_session_span_attributes() -> dict[str, str]:
     return attrs
 
 
-def _get_parent_trace_context() -> Context | None:
-    """Get parent trace context from request meta for distributed tracing."""
+def _get_parent_trace_context() -> tuple[Context | None, list[Link] | None]:
+    """Resolve MCP server parent context plus any ambient transport links."""
+    ambient_span_context = _get_ambient_or_current_span_context()
+
     try:
         req_ctx = request_ctx.get()
         if req_ctx and hasattr(req_ctx, "meta") and req_ctx.meta:
-            return extract_trace_context(dict(req_ctx.meta))
+            meta = dict(req_ctx.meta)
+            if extract_propagation_keys_from_meta(meta):
+                parent_context = extract_trace_context(meta)
+                parent_span_context = trace.get_current_span(
+                    parent_context
+                ).get_span_context()
+                if (
+                    ambient_span_context.is_valid
+                    and parent_span_context != ambient_span_context
+                ):
+                    return parent_context, [Link(ambient_span_context)]
+                return parent_context, None
     except LookupError:
         pass
-    return None
+
+    if ambient_span_context.is_valid:
+        return otel_context.get_current(), None
+
+    return None, None
+
+
+def _get_ambient_or_current_span_context() -> SpanContext:
+    """Resolve the ambient transport span, falling back to the current span.
+
+    Returns the span context stored in the request scope by an outer transport
+    middleware, if present and valid. Otherwise returns the current active span.
+    """
+    try:
+        req_ctx = request_ctx.get()
+    except LookupError:
+        req_ctx = None
+
+    if req_ctx is not None:
+        request = getattr(req_ctx, "request", None)
+        if request is not None:
+            ambient_span_context = request.scope.get(AMBIENT_SPAN_CONTEXT_SCOPE_KEY)
+            if (
+                isinstance(ambient_span_context, SpanContext)
+                and ambient_span_context.is_valid
+            ):
+                return ambient_span_context
+
+    return trace.get_current_span().get_span_context()
 
 
 @contextmanager
@@ -68,12 +125,24 @@ def server_span(
 
     Automatically records any exception on the span and sets error status.
     """
+    if not native_telemetry_enabled():
+        yield get_noop_span()
+        return
+
+    parent_context, links = _get_parent_trace_context()
     tracer = get_tracer()
-    with tracer.start_as_current_span(
+    span = tracer.start_span(
         name,
-        context=_get_parent_trace_context(),
+        context=parent_context,
         kind=SpanKind.SERVER,
-    ) as span:
+        links=links,
+    )
+    current_context = trace.set_span_in_context(
+        span,
+        parent_context if parent_context is not None else otel_context.get_current(),
+    )
+    token = otel_context.attach(current_context)
+    try:
         if span.is_recording():
             attrs: dict[str, str] = {
                 # MCP semantic conventions
@@ -103,6 +172,9 @@ def server_span(
                 span.record_exception(e)
                 span.set_status(Status(StatusCode.ERROR, str(e)))
             raise
+    finally:
+        otel_context.detach(token)
+        span.end()
 
 
 @contextmanager
@@ -117,6 +189,10 @@ def delegate_span(
     Used by FastMCPProvider when delegating to mounted servers.
     Automatically records any exception on the span and sets error status.
     """
+    if not native_telemetry_enabled():
+        yield get_noop_span()
+        return
+
     tracer = get_tracer()
     with tracer.start_as_current_span(f"delegate {name}") as span:
         if span.is_recording():

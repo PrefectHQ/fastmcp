@@ -104,7 +104,7 @@ def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
     # Extract query parameters if present in URI and template
     if query_string:
         query_param_names = extract_query_params(uri_template)
-        parsed_query = parse_qs(query_string)
+        parsed_query = parse_qs(query_string, keep_blank_values=True)
 
         for name in query_param_names:
             if name in parsed_query:
@@ -444,6 +444,10 @@ class FunctionResourceTemplate(ResourceTemplate):
             description=self.description,
             mime_type=self.mime_type,
             tags=self.tags,
+            title=self.title,
+            icons=self.icons,
+            annotations=self.annotations,
+            meta=self.meta,
             task=self.task_config,
             auth=self.auth,
         )

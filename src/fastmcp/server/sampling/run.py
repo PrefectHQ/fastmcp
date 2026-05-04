@@ -26,12 +26,14 @@ from mcp.types import (
 )
 from mcp.types import CreateMessageRequestParams as SamplingParams
 from mcp.types import Tool as SDKTool
+from opentelemetry.trace import Status, StatusCode
 from pydantic import ValidationError
 from typing_extensions import TypeVar
 
 from fastmcp import settings
 from fastmcp.exceptions import ToolError
 from fastmcp.server.sampling.sampling_tool import SamplingTool
+from fastmcp.server.telemetry import get_tracer, native_telemetry_enabled
 from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.tools.tool_transform import TransformedTool
 from fastmcp.utilities.async_utils import gather
@@ -295,35 +297,72 @@ async def execute_tools(
                 isError=True,
             )
 
-        try:
-            result_value = await tool.run(tool_use.input)
-            return ToolResultContent(
-                type="tool_result",
-                toolUseId=tool_use.id,
-                content=[TextContent(type="text", text=str(result_value))],
-            )
-        except ToolError as e:
-            # ToolError is the escape hatch - always pass message through
-            logger.exception(f"Error calling sampling tool '{tool_use.name}'")
-            return ToolResultContent(
-                type="tool_result",
-                toolUseId=tool_use.id,
-                content=[TextContent(type="text", text=str(e))],
-                isError=True,
-            )
-        except Exception as e:
-            # Generic exceptions - mask based on setting
-            logger.exception(f"Error calling sampling tool '{tool_use.name}'")
-            if mask_error_details:
-                error_text = f"Error executing tool '{tool_use.name}'"
-            else:
-                error_text = f"Error executing tool '{tool_use.name}': {e}"
-            return ToolResultContent(
-                type="tool_result",
-                toolUseId=tool_use.id,
-                content=[TextContent(type="text", text=error_text)],
-                isError=True,
-            )
+        if native_telemetry_enabled():
+            tracer = get_tracer()
+            with tracer.start_as_current_span(f"tools/call {tool_use.name}") as span:
+                if span.is_recording():
+                    span.set_attribute("mcp.method.name", "tools/call")
+                    span.set_attribute("gen_ai.tool.name", tool_use.name)
+                    span.set_attribute("gen_ai.tool.type", "function")
+                try:
+                    result_value = await tool.run(tool_use.input)
+                    return ToolResultContent(
+                        type="tool_result",
+                        toolUseId=tool_use.id,
+                        content=[TextContent(type="text", text=str(result_value))],
+                    )
+                except ToolError as e:
+                    span.set_status(Status(StatusCode.ERROR, str(e)))
+                    span.record_exception(e)
+                    logger.exception(f"Error calling sampling tool '{tool_use.name}'")
+                    return ToolResultContent(
+                        type="tool_result",
+                        toolUseId=tool_use.id,
+                        content=[TextContent(type="text", text=str(e))],
+                        isError=True,
+                    )
+                except Exception as e:
+                    span.set_status(Status(StatusCode.ERROR, str(e)))
+                    span.record_exception(e)
+                    logger.exception(f"Error calling sampling tool '{tool_use.name}'")
+                    if mask_error_details:
+                        error_text = f"Error executing tool '{tool_use.name}'"
+                    else:
+                        error_text = f"Error executing tool '{tool_use.name}': {e}"
+                    return ToolResultContent(
+                        type="tool_result",
+                        toolUseId=tool_use.id,
+                        content=[TextContent(type="text", text=error_text)],
+                        isError=True,
+                    )
+        else:
+            try:
+                result_value = await tool.run(tool_use.input)
+                return ToolResultContent(
+                    type="tool_result",
+                    toolUseId=tool_use.id,
+                    content=[TextContent(type="text", text=str(result_value))],
+                )
+            except ToolError as e:
+                logger.exception(f"Error calling sampling tool '{tool_use.name}'")
+                return ToolResultContent(
+                    type="tool_result",
+                    toolUseId=tool_use.id,
+                    content=[TextContent(type="text", text=str(e))],
+                    isError=True,
+                )
+            except Exception as e:
+                logger.exception(f"Error calling sampling tool '{tool_use.name}'")
+                if mask_error_details:
+                    error_text = f"Error executing tool '{tool_use.name}'"
+                else:
+                    error_text = f"Error executing tool '{tool_use.name}': {e}"
+                return ToolResultContent(
+                    type="tool_result",
+                    toolUseId=tool_use.id,
+                    content=[TextContent(type="text", text=error_text)],
+                    isError=True,
+                )
 
     # Check if any tool requires sequential execution
     requires_sequential = any(
@@ -481,10 +520,71 @@ async def sample_step_impl(
     Make a single LLM sampling call. This is a stateless function that makes
     exactly one LLM call and optionally executes any requested tools.
     """
-    # Convert messages to SamplingMessage objects
+    if not native_telemetry_enabled():
+        # Fast path: no telemetry - execute without spans
+        return await _sample_step_impl_no_telemetry(
+            context,
+            messages,
+            system_prompt=system_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            model_preferences=model_preferences,
+            tools=tools,
+            tool_choice=tool_choice,
+            auto_execute_tools=auto_execute_tools,
+            mask_error_details=mask_error_details,
+            tool_concurrency=tool_concurrency,
+        )
+
+    server_name = context.fastmcp.name
+    tracer = get_tracer()
+    with tracer.start_as_current_span("sampling/step") as span:
+        if span.is_recording():
+            span.set_attribute("mcp.method.name", "sampling/step")
+            span.set_attribute("fastmcp.server.name", server_name)
+            span.set_attribute("fastmcp.component.type", "sampling")
+            span.set_attribute("fastmcp.component.key", f"sampling:{server_name}")
+        try:
+            result = await _sample_step_impl_no_telemetry(
+                context,
+                messages,
+                system_prompt=system_prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                model_preferences=model_preferences,
+                tools=tools,
+                tool_choice=tool_choice,
+                auto_execute_tools=auto_execute_tools,
+                mask_error_details=mask_error_details,
+                tool_concurrency=tool_concurrency,
+            )
+            if result.response is not None and hasattr(result.response, 'model'):
+                span.set_attribute("gen_ai.system", result.response.model)
+            return result
+        except Exception as e:
+            span.set_status(Status(StatusCode.ERROR, str(e)))
+            span.record_exception(e)
+            raise
+
+
+async def _sample_step_impl_no_telemetry(
+    context: Context,
+    messages: str | Sequence[str | SamplingMessage],
+    *,
+    system_prompt: str | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    model_preferences: ModelPreferences | str | list[str] | None = None,
+    tools: Sequence[SamplingTool | FunctionTool | TransformedTool | Callable[..., Any]]
+    | None = None,
+    tool_choice: ToolChoiceOption | str | None = None,
+    auto_execute_tools: bool = True,
+    mask_error_details: bool | None = None,
+    tool_concurrency: int | None = None,
+) -> SampleStep:
+    """Same as sample_step_impl but without telemetry wrapping."""
     current_messages = prepare_messages(messages)
 
-    # Convert tools to SamplingTools
     sampling_tools = prepare_tools(tools)
     sdk_tools: list[SDKTool] | None = (
         [t._to_sdk_tool() for t in sampling_tools] if sampling_tools else None
@@ -493,10 +593,8 @@ async def sample_step_impl(
         {t.name: t for t in sampling_tools} if sampling_tools else {}
     )
 
-    # Determine whether to use fallback handler or client
     use_fallback = determine_handler_mode(context, bool(sampling_tools))
 
-    # Build tool choice
     effective_tool_choice: ToolChoice | None = None
     if tool_choice is not None:
         if tool_choice not in ("auto", "required", "none"):
@@ -508,10 +606,8 @@ async def sample_step_impl(
             mode=cast(Literal["auto", "required", "none"], tool_choice)
         )
 
-    # Effective max_tokens
     effective_max_tokens = max_tokens if max_tokens is not None else 512
 
-    # Make the LLM call
     if use_fallback:
         response = await call_sampling_handler(
             context,
@@ -535,24 +631,19 @@ async def sample_step_impl(
             related_request_id=context.request_id,
         )
 
-    # Check if this is a tool use response
     is_tool_use_response = (
         isinstance(response, CreateMessageResultWithTools)
         and response.stopReason == "toolUse"
     )
 
-    # Always include the assistant response in history
     current_messages.append(SamplingMessage(role="assistant", content=response.content))
 
-    # If not a tool use, return immediately
     if not is_tool_use_response:
         return SampleStep(response=response, history=current_messages)
 
-    # If not executing tools, return with assistant message but no tool results
     if not auto_execute_tools:
         return SampleStep(response=response, history=current_messages)
 
-    # Execute tools and add results to history
     step_tool_calls = extract_tool_calls(response)
     if step_tool_calls:
         effective_mask = (

@@ -1185,6 +1185,13 @@ class FastMCP(
             ToolError: If tool execution fails
             ValidationError: If arguments fail validation
         """
+        if version is not None and not isinstance(version, VersionSpec):
+            raise TypeError(
+                f"version must be a VersionSpec (e.g. VersionSpec(eq='1.0')), "
+                f"got {type(version).__name__}. To specify a version string, use "
+                f"VersionSpec(eq='{version}') if you want an exact match."
+            )
+
         # Note: fn_key enrichment happens here after finding the tool.
         # For mounted servers, the parent's provider sets fn_key to the
         # namespaced key before delegating, ensuring correct Docket routing.

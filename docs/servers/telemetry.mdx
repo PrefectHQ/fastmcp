@@ -12,10 +12,12 @@ FastMCP includes native OpenTelemetry instrumentation for observability. Traces 
 
 FastMCP uses the OpenTelemetry API for instrumentation. This means:
 
-- **Zero configuration required** - Instrumentation is always active
+- **Zero configuration required** - Native FastMCP instrumentation is available by default
 - **No overhead when unused** - Without an SDK, all operations are no-ops
 - **Bring your own SDK** - You control collection, export, and sampling
 - **Works with any OTEL backend** - Jaeger, Zipkin, Datadog, New Relic, etc.
+
+FastMCP also propagates OpenTelemetry context through MCP `params._meta`, including `traceparent`, `tracestate`, and `baggage` when present.
 
 ## Enabling Telemetry
 
@@ -52,11 +54,11 @@ This works with any OTLP-compatible backend (Jaeger, Zipkin, Grafana Tempo, Data
 
 ## Tracing
 
-FastMCP creates spans for all MCP operations, providing end-to-end visibility into request handling.
+FastMCP creates spans for the MCP operations it currently instruments, providing end-to-end visibility into request handling.
 
 ### Server Spans
 
-The server creates spans for each operation using [MCP semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp/):
+The server creates spans for each supported operation using [MCP semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/mcp/):
 
 | Span Name | Description |
 |-----------|-------------|
@@ -118,6 +120,27 @@ def greet(name: str) -> str:
 <Tip>
 The SDK must be configured **before** importing FastMCP to ensure the tracer provider is set when FastMCP initializes.
 </Tip>
+
+## Interoperability Mode
+
+If another MCP-aware instrumentation layer should own the MCP spans, switch FastMCP to propagation-only mode:
+
+```bash
+export FASTMCP_TELEMETRY_MODE=propagation_only
+```
+
+In this mode, FastMCP still injects and extracts trace context through MCP `_meta`, but it stops creating its own MCP request spans and `delegate` spans.
+
+Library authors can suppress only FastMCP's native spans programmatically without disabling unrelated nested instrumentation:
+
+```python
+from fastmcp.telemetry import suppress_fastmcp_telemetry
+
+with suppress_fastmcp_telemetry():
+    result = await client.call_tool("search", {"query": "otel"})
+```
+
+FastMCP server spans follow the MCP semantic conventions for mixed transport environments: when propagated MCP trace context is present in `_meta`, FastMCP uses that extracted context as the server-span parent and records any ambient transport span (for example an HTTP request span) as a span link instead.
 
 ### Local Development
 

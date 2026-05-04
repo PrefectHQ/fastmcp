@@ -12,6 +12,7 @@ from mcp.server.streamable_http import (
     EventStore,
 )
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from opentelemetry import trace
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.requests import Request
@@ -28,6 +29,8 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+AMBIENT_SPAN_CONTEXT_SCOPE_KEY = "fastmcp.ambient_span_context"
+
 
 class StreamableHTTPASGIApp:
     """ASGI application wrapper for Streamable HTTP server transport."""
@@ -41,6 +44,11 @@ class StreamableHTTPASGIApp:
                 raise RuntimeError(
                     "Task group is not initialized. Make sure to use run()."
                 )
+            ambient_span_context = trace.get_current_span().get_span_context()
+            if ambient_span_context.is_valid:
+                scope[AMBIENT_SPAN_CONTEXT_SCOPE_KEY] = ambient_span_context
+            else:
+                scope.pop(AMBIENT_SPAN_CONTEXT_SCOPE_KEY, None)
             await self.session_manager.handle_request(scope, receive, send)
         except RuntimeError as e:
             if str(e) == "Task group is not initialized. Make sure to use run().":

@@ -61,8 +61,16 @@ class ClientToolsMixin:
         ):
             logger.debug(f"[{self.name}] called list_tools")
 
+            propagated_meta = inject_trace_context()
+            params = None
+            if cursor is not None or propagated_meta is not None:
+                params = mcp.types.PaginatedRequestParams(
+                    cursor=cursor,
+                    _meta=propagated_meta,  # type: ignore[unknown-argument]  # pydantic alias  # ty:ignore[unknown-argument]
+                )
+
             result = await self._await_with_session_monitoring(
-                self.session.list_tools(cursor=cursor)
+                self.session.list_tools(params=params)
             )
             return result
 
