@@ -8,7 +8,12 @@ from opentelemetry.context import Context
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
 from fastmcp.exceptions import ToolError as _ToolError
-from fastmcp.telemetry import extract_trace_context, get_tracer
+from fastmcp.telemetry import (
+    _NOOP_SPAN,
+    extract_trace_context,
+    get_tracer,
+    is_telemetry_opted_out,
+)
 
 
 def get_auth_span_attributes() -> dict[str, str]:
@@ -67,7 +72,15 @@ def server_span(
     """Create a SERVER span with standard MCP attributes and auth context.
 
     Automatically records any exception on the span and sets error status.
+
+    When ``FASTMCP_TELEMETRY_OPT_OUT`` is enabled, yields a
+    non-recording no-op span without creating a real span or
+    modifying the active OpenTelemetry context.
     """
+    if is_telemetry_opted_out():
+        yield _NOOP_SPAN
+        return
+
     tracer = get_tracer()
     with tracer.start_as_current_span(
         name,
@@ -116,7 +129,15 @@ def delegate_span(
 
     Used by FastMCPProvider when delegating to mounted servers.
     Automatically records any exception on the span and sets error status.
+
+    When ``FASTMCP_TELEMETRY_OPT_OUT`` is enabled, yields a
+    non-recording no-op span without creating a real span or
+    modifying the active OpenTelemetry context.
     """
+    if is_telemetry_opted_out():
+        yield _NOOP_SPAN
+        return
+
     tracer = get_tracer()
     with tracer.start_as_current_span(f"delegate {name}") as span:
         if span.is_recording():
