@@ -461,7 +461,7 @@ class TestToolNameOverrides:
 
 
 class TestMountedServerLifespanContext:
-    """Regression tests for mounted server lifespan_context resolution (#4049).
+    """Regression tests for mounted server lifespan_context resolution.
 
     A mounted server's tools should see *their own* lifespan context via
     ``ctx.lifespan_context``, not the parent's. Previously the result yielded

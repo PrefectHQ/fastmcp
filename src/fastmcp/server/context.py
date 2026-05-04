@@ -359,8 +359,7 @@ class Context:
         — the MCP session always belongs to the parent, so reading from the
         request context would return the parent's. We read directly from the
         server's cached lifespan result instead, which is set by the
-        per-server ``_lifespan_manager`` regardless of mount position
-        (closes #4049).
+        per-server ``_lifespan_manager`` regardless of mount position.
 
         Returns an empty dict if no lifespan was configured.
 
@@ -380,8 +379,8 @@ class Context:
         # Server's lifespan was never entered for this Context's server (or
         # yielded None). Fall back to the request context's lifespan, which
         # for a mounted child will be the parent's — preserved for parity
-        # with prior behavior, but in the post-#4049 world a child's own
-        # lifespan should populate `_lifespan_result` and short-circuit above.
+        # with prior behavior, but in normal operation a child's own
+        # lifespan populates `_lifespan_result` and short-circuits above.
         rc = self.request_context
         if rc is None:
             return {}

@@ -706,7 +706,7 @@ class FastMCPProvider(Provider):
         runtime tree already started Docket and SharedContext, and becomes
         a no-op for those concerns. The mounted server's user lifespan,
         ``_lifespan_result`` cache, and its own sub-providers (nested mounts)
-        all run normally — which is what closes #4049.
+        all run normally.
         """
         async with self.server._lifespan_manager():
             yield
