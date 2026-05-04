@@ -10,7 +10,7 @@ Standalone @tool decorator for FastMCP.
 
 ## Functions
 
-### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L381" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L437" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tool(name_or_fn: str | Callable[..., Any] | None = None) -> Any
@@ -21,6 +21,16 @@ Standalone decorator to mark a function as an MCP tool.
 
 Returns the original function with metadata attached. Register with a server
 using mcp.add_tool().
+
+**Args:**
+- `run_in_thread`: Applies to sync tool functions only. When True (default),
+the sync function is dispatched to a worker thread so it does not
+block the event loop. Set to False to run the function inline on the
+event loop thread — useful for libraries with thread affinity
+(e.g. Windows COM via `uiautomation`/`comtypes`/`pywin32`, `tkinter`,
+some GPU/driver bindings). Ignored for async functions. Cannot be
+combined with `timeout` on a sync function\: inline calls have no
+cancellation checkpoints, so the timeout would be a silent no-op.
 
 
 ## Classes
@@ -37,11 +47,11 @@ Protocol for functions decorated with @tool.
 Metadata attached to functions by the @tool decorator.
 
 
-### `FunctionTool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L90" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `FunctionTool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L91" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 **Methods:**
 
-#### `from_function` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L95" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_function` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L111" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_function(cls, fn: Callable[..., Any]) -> FunctionTool
@@ -57,7 +67,7 @@ individual parameters must not be passed.
 Cannot be used together with metadata parameter.
 
 
-#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L240" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L285" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run(self, arguments: dict[str, Any]) -> ToolResult
@@ -66,7 +76,7 @@ run(self, arguments: dict[str, Any]) -> ToolResult
 Run the tool with arguments.
 
 
-#### `register_with_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L303" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `register_with_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L357" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 register_with_docket(self, docket: Docket) -> None
@@ -79,7 +89,7 @@ dependencies — both FastMCP's (CurrentContext, Progress) and
 Docket-native ones (Retry, Timeout, ConcurrencyLimit).
 
 
-#### `add_to_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L314" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_to_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/tools/function_tool.py#L368" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_to_docket(self, docket: Docket, arguments: dict[str, Any], **kwargs: Any) -> Execution

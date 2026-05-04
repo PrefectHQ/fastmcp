@@ -14,7 +14,7 @@ using the OAuth Proxy pattern for non-DCR OAuth flows.
 
 ## Functions
 
-### `EntraOBOToken` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L726" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `EntraOBOToken` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L818" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 EntraOBOToken(scopes: list[str]) -> str
@@ -78,7 +78,45 @@ Setup:
 
 **Methods:**
 
-#### `authorize` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L273" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_b2c` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L281" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+from_b2c(cls, **kwargs: Any) -> AzureProvider
+```
+
+Create an AzureProvider pre-configured for Azure AD B2C.
+
+Derives authority host, tenant path, and identifier URI from
+`tenant_name` and `policy_name`, then delegates to the standard
+constructor. Returns a plain `AzureProvider` instance.
+
+B2C issuer validation is disabled by default (`token_issuer=None`)
+because B2C issuers embed the tenant GUID. Pass an explicit
+`token_issuer` string once you know the real `iss` value.
+
+Azure AD B2C does **not** support OBO.
+
+**Args:**
+- `tenant_name`: Short B2C tenant name without `.onmicrosoft.com`
+(e.g. `"mytenant"`).
+- `policy_name`: User-flow or custom-policy name
+(e.g. `"B2C_1_susi"`).
+- `client_id`: Application (client) ID from the B2C app registration.
+- `client_secret`: Client secret from the B2C app registration.
+- `required_scopes`: Custom API scope names without prefix
+(e.g. `["mcp-access"]`).
+- `base_url`: Public base URL of this server.
+- `custom_domain`: Custom domain for the B2C authority
+(e.g. `"auth.mycompany.com"`). Defaults to
+`{tenant_name}.b2clogin.com`.
+- `identifier_uri`: Application ID URI. Defaults to
+`https\://{tenant_name}.onmicrosoft.com/{client_id}`.
+- `token_issuer`: Expected `iss` claim. `None` (default) disables
+issuer validation.
+- `**kwargs`: Forwarded to `AzureProvider.__init__`.
+
+
+#### `authorize` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L359" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str
@@ -98,7 +136,7 @@ scopes to determine the resource/audience instead of a separate parameter.
 - Authorization URL to redirect the user to Azure AD
 
 
-#### `get_obo_credential` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L499" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_obo_credential` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L585" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_obo_credential(self, user_assertion: str) -> OnBehalfOfCredential
@@ -117,10 +155,11 @@ calls multiple tools with the same scopes.
 - A configured OnBehalfOfCredential ready for get_token() calls.
 
 **Raises:**
+- `NotImplementedError`: If OBO is not supported (e.g. Azure AD B2C).
 - `ImportError`: If azure-identity is not installed (requires fastmcp[azure]).
 
 
-#### `close_obo_credentials` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L550" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `close_obo_credentials` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L642" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 close_obo_credentials(self) -> None
@@ -129,7 +168,7 @@ close_obo_credentials(self) -> None
 Close all cached OBO credentials.
 
 
-### `AzureJWTVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L561" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AzureJWTVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L653" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 JWT verifier pre-configured for Azure AD / Microsoft Entra ID.
@@ -166,7 +205,7 @@ Example::
 
 **Methods:**
 
-#### `scopes_supported` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L641" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `scopes_supported` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/auth/providers/azure.py#L733" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 scopes_supported(self) -> list[str]
