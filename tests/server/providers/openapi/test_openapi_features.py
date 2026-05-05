@@ -4,7 +4,9 @@ from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
+from fastapi import FastAPI
 from httpx import Response
+from mcp.types import Icon
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -1027,3 +1029,37 @@ class TestRedactHeaders:
         headers = httpx.Headers({"Content-Type": "application/json"})
         redacted = _redact_headers(headers)
         assert redacted == {"content-type": "application/json"}
+
+
+class TestFromOpenAPIIcons:
+    """Test that icons can be passed to from_openapi() and from_fastapi()."""
+
+    @pytest.fixture
+    def minimal_spec(self):
+        return {
+            "openapi": "3.0.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "servers": [{"url": "https://api.example.com"}],
+            "paths": {},
+        }
+
+    def test_from_openapi_sets_icons(self, minimal_spec):
+        mock_client = Mock(spec=httpx.AsyncClient)
+        mock_client.base_url = "https://api.example.com"
+        mock_client.headers = None
+
+        icons = [Icon(src="https://example.com/icon.svg", mimeType="image/svg+xml")]
+        server = FastMCP.from_openapi(
+            openapi_spec=minimal_spec,
+            client=mock_client,
+            icons=icons,
+        )
+
+        assert server.icons == icons
+
+    def test_from_fastapi_sets_icons(self):
+        app = FastAPI()
+        icons = [Icon(src="https://example.com/icon.svg", mimeType="image/svg+xml")]
+        server = FastMCP.from_fastapi(app, icons=icons)
+
+        assert server.icons == icons
