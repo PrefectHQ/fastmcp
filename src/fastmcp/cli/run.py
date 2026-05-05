@@ -387,7 +387,6 @@ async def run_with_reload(
     """
     watch_paths = reload_dirs or [Path.cwd()]
     process: asyncio.subprocess.Process | None = None
-    first_run = True
 
     if is_stdio:
         logger.info("Reload mode enabled (using stateless sessions)")
@@ -413,15 +412,8 @@ async def run_with_reload(
 
     try:
         while not shutdown_event.is_set():
-            # Build command - add --no-banner on restarts to reduce noise
-            if first_run or "--no-banner" in cmd:
-                run_cmd = cmd
-            else:
-                run_cmd = [*cmd, "--no-banner"]
-            first_run = False
-
             process = await asyncio.create_subprocess_exec(
-                *run_cmd,
+                *cmd,
                 stdin=None,
                 stdout=None,
                 stderr=None,
