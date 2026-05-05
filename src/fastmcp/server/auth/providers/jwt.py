@@ -5,12 +5,20 @@ from __future__ import annotations
 import contextlib
 import json
 import time
+import warnings
 from dataclasses import dataclass
 from typing import Any, cast
 
 import httpx
-from authlib.jose import JsonWebKey, JsonWebToken
-from authlib.jose.errors import JoseError
+from authlib.deprecate import AuthlibDeprecationWarning
+
+with warnings.catch_warnings():
+    # authlib.jose emits AuthlibDeprecationWarning on import; suppress it so
+    # importing this module does not trigger the warning under
+    # `warnings.simplefilter("error")`. See jlowin/fastmcp#4098.
+    warnings.simplefilter("ignore", AuthlibDeprecationWarning)
+    from authlib.jose import JsonWebKey, JsonWebToken
+    from authlib.jose.errors import JoseError
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from pydantic import AnyHttpUrl, SecretStr
