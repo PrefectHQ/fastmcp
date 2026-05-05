@@ -318,6 +318,33 @@ async def test_arg_transform_type_merges_with_parent_defs():
     assert "$defs" not in schema["properties"]["y"]
 
 
+async def test_arg_transform_type_raises_on_defs_name_collision():
+    """ArgTransform must not silently overwrite a parent's $defs entry when
+    the colliding name maps to a different schema; refs already copied from
+    the parent would then resolve to the wrong type."""
+
+    class Foo(BaseModel):
+        a: int
+
+    @Tool.from_function
+    def tool_fn(foo: Foo, other: dict | None = None) -> int:
+        return foo.a
+
+    # Parent already defines `Foo`; introduce a transform whose new type is
+    # also exposed under the `Foo` key in $defs but with a different schema.
+    # We do this by mutating the parent tool's parameters in place to plant a
+    # colliding definition, then applying a transform that re-introduces it.
+    tool_fn.parameters["$defs"]["Foo"] = {
+        "type": "object",
+        "properties": {"different": {"type": "string"}},
+        "required": ["different"],
+        "title": "Foo",
+    }
+
+    with pytest.raises(ValueError, match=r"\$defs collision for 'Foo'"):
+        Tool.from_tool(tool_fn, transform_args={"other": ArgTransform(type=list[Foo])})
+
+
 async def test_forward_with_argument_mapping(add_tool):
     async def custom_fn(new_x: int, **kwargs) -> str:
         result = await forward(new_x=new_x, **kwargs)

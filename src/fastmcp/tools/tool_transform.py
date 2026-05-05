@@ -687,8 +687,20 @@ class TransformedTool(Tool):
                     new_required.add(new_name)
                 # Hoist any $defs introduced by an ArgTransform(type=...) so that
                 # $ref values like "#/$defs/..." resolve at the schema root.
-                if extracted_defs:
-                    parent_defs.update(extracted_defs)
+                # Fail loudly on key collisions whose schemas differ, since
+                # silently overwriting would point earlier $ref values at the
+                # wrong type. Identical re-introductions are a no-op.
+                for def_name, def_schema in extracted_defs.items():
+                    existing = parent_defs.get(def_name)
+                    if existing is not None and existing != def_schema:
+                        raise ValueError(
+                            f"$defs collision for '{def_name}': an ArgTransform "
+                            f"introduces a definition with the same name as an "
+                            f"existing $defs entry but a different schema. "
+                            f"Rename one of the colliding types to avoid the "
+                            f"conflict."
+                        )
+                    parent_defs[def_name] = def_schema
 
         schema = {
             "type": "object",
