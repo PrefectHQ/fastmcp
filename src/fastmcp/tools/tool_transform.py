@@ -680,11 +680,15 @@ class TransformedTool(Tool):
             )
 
             if transform_result:
-                new_name, new_schema, is_required = transform_result
+                new_name, new_schema, is_required, extracted_defs = transform_result
                 new_props[new_name] = new_schema
                 new_to_old[new_name] = old_name
                 if is_required:
                     new_required.add(new_name)
+                # Hoist any $defs introduced by an ArgTransform(type=...) so that
+                # $ref values like "#/$defs/..." resolve at the schema root.
+                if extracted_defs:
+                    parent_defs.update(extracted_defs)
 
         schema = {
             "type": "object",
@@ -741,7 +745,7 @@ class TransformedTool(Tool):
         old_schema: dict[str, Any],
         transform: ArgTransform,
         is_required: bool,
-    ) -> tuple[str, dict[str, Any], bool] | None:
+    ) -> tuple[str, dict[str, Any], bool, dict[str, Any]] | None:
         """Apply transformation to a single parameter.
 
         This method handles the transformation of a single argument according to
@@ -754,8 +758,10 @@ class TransformedTool(Tool):
             is_required: Whether the original parameter was required.
 
         Returns:
-            Tuple of (new_name, new_schema, new_is_required) if parameter should be kept,
-            None if parameter should be dropped.
+            Tuple of (new_name, new_schema, new_is_required, extracted_defs) if
+            parameter should be kept, None if parameter should be dropped.
+            extracted_defs contains any $defs pulled off a type transform so the
+            caller can hoist them to the schema root.
         """
         if transform.hide:
             return None
@@ -792,9 +798,15 @@ class TransformedTool(Tool):
             is_required = False
 
         # Handle type transformation
+        extracted_defs: dict[str, Any] = {}
         if transform.type is not NotSet:
             # Use TypeAdapter to get proper JSON schema for the type
             type_schema = get_cached_typeadapter(transform.type).json_schema()
+            # Strip $defs from the type schema so they can be hoisted to the
+            # root of the parent schema by the caller. Otherwise they would be
+            # nested inside this property while $ref values still point to
+            # "#/$defs/..." at the root, leaving the references dangling.
+            extracted_defs = type_schema.pop("$defs", {})
             # Update the schema with the type information from TypeAdapter
             new_schema.update(type_schema)
 
@@ -802,7 +814,7 @@ class TransformedTool(Tool):
         if transform.examples is not NotSet:
             new_schema["examples"] = transform.examples
 
-        return new_name, new_schema, is_required
+        return new_name, new_schema, is_required, extracted_defs
 
     @staticmethod
     def _merge_schema_with_precedence(
