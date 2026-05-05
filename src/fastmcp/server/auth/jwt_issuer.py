@@ -9,10 +9,23 @@ from __future__ import annotations
 
 import base64
 import time
+import warnings
 from typing import Any, overload
 
-from authlib.jose import JsonWebToken
-from authlib.jose.errors import JoseError
+with warnings.catch_warnings():
+    # authlib.jose emits AuthlibDeprecationWarning on import; suppress it so
+    # importing this module does not trigger the warning under
+    # `warnings.simplefilter("error")`. The `authlib.deprecate` import lives
+    # inside this block too: importing it for the first time runs
+    # `warnings.simplefilter("always", AuthlibDeprecationWarning)` at module
+    # scope, which would otherwise leak past `catch_warnings()` and clobber
+    # the caller's filter for subsequent Authlib deprecations. See
+    # jlowin/fastmcp#4098.
+    from authlib.deprecate import AuthlibDeprecationWarning
+
+    warnings.simplefilter("ignore", AuthlibDeprecationWarning)
+    from authlib.jose import JsonWebToken
+    from authlib.jose.errors import JoseError
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
