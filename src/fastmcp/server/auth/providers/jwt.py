@@ -10,12 +10,17 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import httpx
-from authlib.deprecate import AuthlibDeprecationWarning
-
 with warnings.catch_warnings():
     # authlib.jose emits AuthlibDeprecationWarning on import; suppress it so
-    # importing this module does not trigger the warning under
-    # `warnings.simplefilter("error")`. See jlowin/fastmcp#4098.
+    # importing this provider does not trigger the warning under
+    # `warnings.simplefilter("error")`. The `authlib.deprecate` import lives
+    # inside this block too: importing it for the first time runs
+    # `warnings.simplefilter("always", AuthlibDeprecationWarning)` at module
+    # scope, which would otherwise leak past `catch_warnings()` and clobber
+    # the caller's filter for subsequent Authlib deprecations. See
+    # jlowin/fastmcp#4098.
+    from authlib.deprecate import AuthlibDeprecationWarning
+
     warnings.simplefilter("ignore", AuthlibDeprecationWarning)
     from authlib.jose import JsonWebKey, JsonWebToken
     from authlib.jose.errors import JoseError
