@@ -2266,6 +2266,7 @@ class FastMCP(
         mcp_names: dict[str, str] | None = None,
         tags: set[str] | None = None,
         validate_output: bool = True,
+        icons: list[mcp.types.Icon] | None = None,
         **settings: Any,
     ) -> Self:
         """
@@ -2303,7 +2304,7 @@ class FastMCP(
             tags=tags,
             validate_output=validate_output,
         )
-        return cls(name=name, providers=[provider], **settings)
+        return cls(name=name, providers=[provider], icons=icons, **settings)
 
     @classmethod
     def from_fastapi(
@@ -2316,6 +2317,7 @@ class FastMCP(
         mcp_names: dict[str, str] | None = None,
         httpx_client_kwargs: dict[str, Any] | None = None,
         tags: set[str] | None = None,
+        icons: list[mcp.types.Icon] | None = None,
         **settings: Any,
     ) -> Self:
         """
@@ -2358,7 +2360,7 @@ class FastMCP(
             mcp_names=mcp_names,
             tags=tags,
         )
-        return cls(name=server_name, providers=[provider], **settings)
+        return cls(name=server_name, providers=[provider], icons=icons, **settings)
 
     @classmethod
     def as_proxy(
