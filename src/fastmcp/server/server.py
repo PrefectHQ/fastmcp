@@ -292,6 +292,7 @@ class FastMCP(
         website_url: str | None = None,
         icons: list[mcp.types.Icon] | None = None,
         auth: AuthProvider | None = None,
+        auth_header_name: str = "authorization",
         middleware: Sequence[Middleware] | None = None,
         providers: Sequence[Provider] | None = None,
         transforms: Sequence[Transform] | None = None,
@@ -387,6 +388,8 @@ class FastMCP(
         )
 
         self.auth: AuthProvider | None = auth
+        if self.auth is not None and auth_header_name != "authorization":
+            self.auth.auth_header_name = auth_header_name.lower()
 
         if tools:
             for tool in tools:
@@ -2266,6 +2269,7 @@ class FastMCP(
         mcp_names: dict[str, str] | None = None,
         tags: set[str] | None = None,
         validate_output: bool = True,
+        auth_header_name: str = "authorization",
         **settings: Any,
     ) -> Self:
         """
@@ -2286,6 +2290,10 @@ class FastMCP(
                 extracted from the OpenAPI spec for response validation. If
                 False, a permissive schema is used instead, allowing any
                 response structure while still returning structured JSON.
+            auth_header_name: HTTP header to read the auth token from.
+                Defaults to ``"authorization"`` (standard Bearer header).
+                Set to a custom header name (e.g. ``"x-auth-id"``) when the
+                upstream API uses a non-standard credential header.
             **settings: Additional settings passed to FastMCP
 
         Returns:
@@ -2303,7 +2311,12 @@ class FastMCP(
             tags=tags,
             validate_output=validate_output,
         )
-        return cls(name=name, providers=[provider], **settings)
+        return cls(
+            name=name,
+            providers=[provider],
+            auth_header_name=auth_header_name,
+            **settings,
+        )
 
     @classmethod
     def from_fastapi(

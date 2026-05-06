@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
@@ -8,7 +9,10 @@ from mcp.server.auth.handlers.token import TokenErrorResponse
 from mcp.server.auth.handlers.token import TokenHandler as _SDKTokenHandler
 from mcp.server.auth.json_response import PydanticJSONResponse
 from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
-from mcp.server.auth.middleware.bearer_auth import BearerAuthBackend
+from mcp.server.auth.middleware.bearer_auth import (
+    AuthenticatedUser,
+    BearerAuthBackend,
+)
 from mcp.server.auth.middleware.client_auth import (
     AuthenticationError,
     ClientAuthenticator,
@@ -38,9 +42,13 @@ from mcp.server.auth.settings import (
 )
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyHttpUrl, Field
+from starlette.authentication import AuthCredentials
 from starlette.middleware import Middleware
-from starlette.middleware.authentication import AuthenticationMiddleware
-from starlette.requests import Request
+from starlette.middleware.authentication import (
+    AuthenticationBackend,
+    AuthenticationMiddleware,
+)
+from starlette.requests import HTTPConnection, Request
 from starlette.routing import Route
 
 from fastmcp.utilities.logging import get_logger
@@ -49,6 +57,44 @@ if TYPE_CHECKING:
     from fastmcp.server.auth.cimd import CIMDClientManager
 
 logger = get_logger(__name__)
+
+
+class CustomHeaderAuthBackend(AuthenticationBackend):
+    """Authentication backend that reads tokens from a configurable HTTP header.
+
+    Use this when the upstream API expects credentials in a custom header
+    (e.g. ``X-AUTH-ID``, ``X-API-Key``) instead of the standard
+    ``Authorization`` header.  The token value is extracted and passed
+    to the verifier — no ``Bearer `` prefix stripping is performed.
+    """
+
+    def __init__(self, token_verifier: TokenVerifierProtocol, header_name: str):
+        self.token_verifier = token_verifier
+        self.header_name = header_name.lower()
+
+    async def authenticate(self, conn: HTTPConnection):
+        auth_header = next(
+            (
+                conn.headers.get(key)
+                for key in conn.headers
+                if key.lower() == self.header_name
+            ),
+            None,
+        )
+        if not auth_header:
+            return None
+
+        token = auth_header.strip()
+
+        auth_info = await self.token_verifier.verify_token(token)
+
+        if not auth_info:
+            return None
+
+        if auth_info.expires_at and auth_info.expires_at < int(time.time()):
+            return None
+
+        return AuthCredentials(auth_info.scopes), AuthenticatedUser(auth_info)
 
 
 class AccessToken(_SDKAccessToken):
@@ -218,6 +264,7 @@ class AuthProvider(TokenVerifierProtocol):
         base_url: AnyHttpUrl | str | None = None,
         required_scopes: list[str] | None = None,
         resource_base_url: AnyHttpUrl | str | None = None,
+        auth_header_name: str = "authorization",
     ):
         """
         Initialize the auth provider.
@@ -233,6 +280,10 @@ class AuthProvider(TokenVerifierProtocol):
                 also use this as the minted token audience. Upstream token audience
                 validation is configured separately on the token verifier.
             required_scopes: List of OAuth scopes required for all requests.
+            auth_header_name: HTTP header to read the token from.
+                Defaults to ``"authorization"`` (standard Bearer header).
+                Set to a custom header name (e.g. ``"x-auth-id"``) when the
+                upstream API uses a non-standard credential header.
         """
         if isinstance(base_url, str):
             base_url = AnyHttpUrl(base_url)
@@ -241,6 +292,7 @@ class AuthProvider(TokenVerifierProtocol):
         self.base_url = base_url
         self.resource_base_url = resource_base_url
         self.required_scopes = required_scopes or []
+        self.auth_header_name = auth_header_name.lower()
         self._mcp_path: str | None = None
         self._resource_url: AnyHttpUrl | None = None
 
@@ -332,10 +384,16 @@ class AuthProvider(TokenVerifierProtocol):
         Returns:
             List of Starlette Middleware instances to apply to the HTTP app
         """
+        backend: AuthenticationBackend
+        if self.auth_header_name == "authorization":
+            backend = BearerAuthBackend(self)
+        else:
+            backend = CustomHeaderAuthBackend(self, self.auth_header_name)
+
         return [
             Middleware(
                 AuthenticationMiddleware,  # type: ignore[arg-type]
-                backend=BearerAuthBackend(self),
+                backend=backend,
             ),
             Middleware(AuthContextMiddleware),  # type: ignore[arg-type]
         ]
@@ -375,6 +433,7 @@ class TokenVerifier(AuthProvider):
         base_url: AnyHttpUrl | str | None = None,
         required_scopes: list[str] | None = None,
         resource_base_url: AnyHttpUrl | str | None = None,
+        auth_header_name: str = "authorization",
     ):
         """
         Initialize the token verifier.
@@ -387,11 +446,14 @@ class TokenVerifier(AuthProvider):
                 configure upstream token audience validation — set ``audience`` on
                 your verifier to match.
             required_scopes: Scopes that are required for all requests
+            auth_header_name: HTTP header to read the token from.
+                Defaults to ``"authorization"`` (standard Bearer header).
         """
         super().__init__(
             base_url=base_url,
             resource_base_url=resource_base_url,
             required_scopes=required_scopes,
+            auth_header_name=auth_header_name,
         )
 
     @property
@@ -434,6 +496,7 @@ class RemoteAuthProvider(AuthProvider):
         resource_base_url: AnyHttpUrl | str | None = None,
         resource_name: str | None = None,
         resource_documentation: AnyHttpUrl | None = None,
+        auth_header_name: str = "authorization",
     ):
         """Initialize the remote auth provider.
 
@@ -453,11 +516,14 @@ class RemoteAuthProvider(AuthProvider):
                 appear in tokens (e.g., Azure AD full URI scopes vs short-form).
             resource_name: Optional name for the protected resource
             resource_documentation: Optional documentation URL for the protected resource
+            auth_header_name: HTTP header to read the token from.
+                Defaults to ``"authorization"`` (standard Bearer header).
         """
         super().__init__(
             base_url=base_url,
             resource_base_url=resource_base_url,
             required_scopes=token_verifier.required_scopes,
+            auth_header_name=auth_header_name,
         )
         self.token_verifier = token_verifier
         self.authorization_servers = authorization_servers
