@@ -349,3 +349,71 @@ class TestEdgeCases:
             result = await client.call_tool("sum_numbers", {"numbers": ["1", "2", "3"]})
             assert isinstance(result.content[0], TextContent)
             assert result.content[0].text == "6"
+
+
+class TestExpectedToolFailureLogging:
+    async def test_validation_error_logs_warning_without_traceback(self, caplog):
+        mcp = FastMCP("TestServer", strict_input_validation=False)
+
+        @mcp.tool
+        def create_user(profile: UserProfile) -> str:
+            return profile.name
+
+        with caplog.at_level("DEBUG", logger="fastmcp.server.server"):
+            async with Client(mcp) as client:
+                with pytest.raises(ToolError):
+                    await client.call_tool(
+                        "create_user",
+                        {"profile": {"name": "x", "age": "nope", "email": "e"}},
+                    )
+
+        records = [
+            r for r in caplog.records if "Invalid arguments for tool" in r.getMessage()
+        ]
+        assert records, "expected a single 'Invalid arguments' warning"
+        assert records[0].levelname == "WARNING"
+        assert records[0].exc_info is None
+        assert "int_parsing" in records[0].getMessage()
+        assert "errors.pydantic.dev" not in records[0].getMessage()
+
+    async def test_tool_raised_tool_error_logs_without_traceback(self, caplog):
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def do_thing() -> str:
+            raise ToolError("structured failure payload")
+
+        with caplog.at_level("DEBUG", logger="fastmcp.server.server"):
+            async with Client(mcp) as client:
+                with pytest.raises(ToolError):
+                    await client.call_tool("do_thing", {})
+
+        records = [
+            r
+            for r in caplog.records
+            if r.getMessage() == "Error calling tool 'do_thing'"
+        ]
+        assert records, "expected an 'Error calling tool' log without traceback"
+        assert records[0].levelname == "ERROR"
+        assert records[0].exc_info is None
+
+    async def test_unexpected_exception_still_logs_with_traceback(self, caplog):
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def do_thing() -> str:
+            raise RuntimeError("actual bug")
+
+        with caplog.at_level("DEBUG", logger="fastmcp.server.server"):
+            async with Client(mcp) as client:
+                with pytest.raises(ToolError):
+                    await client.call_tool("do_thing", {})
+
+        records = [
+            r
+            for r in caplog.records
+            if r.getMessage() == "Error calling tool 'do_thing'"
+        ]
+        assert records, "expected an 'Error calling tool' exception log"
+        assert records[0].levelname == "ERROR"
+        assert records[0].exc_info is not None
