@@ -864,6 +864,76 @@ class TestRunModuleMode:
         assert "my_module" in cmd
 
 
+class TestRunWithReloadWithServerArgs:
+    """Test the run command with reload(run_with_reload) with server args."""
+
+    async def test_run_with_reload_for_no_banner_with_module(self):
+        """Test that run with reload x server_args x no-banner."""
+        with patch(
+            "fastmcp.cli.run.run_with_reload", new_callable=AsyncMock
+        ) as mock_reload:
+            await run(
+                "my_module", ("--debug"), reload=True, no_banner=True, module=True
+            )
+
+        mock_reload.assert_called_once()
+        cmd = mock_reload.call_args[0][0]
+        assert "fastmcp" in cmd
+        assert "--module" in cmd
+        assert "--" in cmd
+        assert "--no-banner" in cmd
+        assert cmd.index("--no-banner") < cmd.index("--")
+
+    async def test_run_with_reload_for_no_banner_without_module(self):
+        """Test that run with reload x server_args x no-banner."""
+        with patch(
+            "fastmcp.cli.run.run_with_reload", new_callable=AsyncMock
+        ) as mock_reload:
+            await run(
+                "my_module", ("--debug"), reload=True, no_banner=True, module=False
+            )
+
+        mock_reload.assert_called_once()
+        cmd = mock_reload.call_args[0][0]
+        assert "fastmcp" in cmd
+        assert "--module" not in cmd
+        assert "--" in cmd
+        assert "--no-banner" in cmd
+        assert cmd.index("--no-banner") < cmd.index("--")
+
+    async def test_run_with_reload_for_banner_with_module(self):
+        """Test that run with reload x server_args x banner."""
+        with patch(
+            "fastmcp.cli.run.run_with_reload", new_callable=AsyncMock
+        ) as mock_reload:
+            await run(
+                "my_module", ("--debug"), reload=True, no_banner=False, module=True
+            )
+
+        mock_reload.assert_called_once()
+        cmd = mock_reload.call_args[0][0]
+        assert "fastmcp" in cmd
+        assert "--module" in cmd
+        assert "--" in cmd
+        assert "--no-banner" not in cmd
+
+    async def test_run_with_reload_for_banner_without_module(self):
+        """Test that run with reload x server_args x banner."""
+        with patch(
+            "fastmcp.cli.run.run_with_reload", new_callable=AsyncMock
+        ) as mock_reload:
+            await run(
+                "my_module", ("--debug"), reload=True, no_banner=False, module=False
+            )
+
+        mock_reload.assert_called_once()
+        cmd = mock_reload.call_args[0][0]
+        assert "fastmcp" in cmd
+        assert "--module" not in cmd
+        assert "--" in cmd
+        assert "--no-banner" not in cmd
+
+
 class TestInspectorModuleMode:
     """Test the inspector command's module-mode handling."""
 
