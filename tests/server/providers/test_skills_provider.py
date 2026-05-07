@@ -660,17 +660,18 @@ class TestPathTraversalPrevention:
                 )
 
 
-def test_skills_directory_provider_loads_utf8_skill_md(
+async def test_skill_provider_loads_and_serves_utf8_skill_md(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """SKILL.md must be loaded with an explicit utf-8 encoding.
+    """SKILL.md and its supporting text files must be read as utf-8.
 
     Regression test for #4084. On Windows the default encoding is cp1252,
-    so a bare ``read_text()`` call fails to decode UTF-8 emoji in SKILL.md
-    with ``UnicodeDecodeError: 'charmap' codec can't decode byte ...``. The
-    fix passes ``encoding="utf-8"`` explicitly. This test simulates the
-    Windows behavior on any platform by failing the read whenever the
-    encoding kwarg is not utf-8.
+    so a bare ``read_text()`` call fails to decode UTF-8 content with
+    ``UnicodeDecodeError: 'charmap' codec can't decode byte ...``. The fix
+    passes ``encoding="utf-8"`` explicitly at every read site: skill load,
+    main-file resource read, and supporting-file template/resource reads.
+    This test simulates the Windows behavior on any platform by failing
+    every text read that doesn't pass ``encoding="utf-8"``.
     """
     skill_dir = tmp_path / "test-skill"
     skill_dir.mkdir()
@@ -683,11 +684,14 @@ def test_skills_directory_provider_loads_utf8_skill_md(
         "- ✅ Success indicator\n",
         encoding="utf-8",
     )
+    (skill_dir / "reference.md").write_text(
+        "# Reference\n- ✨ utf-8 supporting file\n", encoding="utf-8"
+    )
 
     original_read_text = Path.read_text
 
     def strict_read_text(self: Path, *args, **kwargs):
-        if self.name == "SKILL.md" and kwargs.get("encoding") != "utf-8":
+        if kwargs.get("encoding") != "utf-8":
             raise UnicodeDecodeError(
                 "charmap", b"\x9d", 0, 1, "simulated cp1252 default"
             )
@@ -695,4 +699,14 @@ def test_skills_directory_provider_loads_utf8_skill_md(
 
     monkeypatch.setattr(Path, "read_text", strict_read_text)
 
-    SkillsDirectoryProvider(roots=skill_dir.parent)
+    mcp = FastMCP("Test")
+    mcp.add_provider(SkillProvider(skill_path=skill_dir))
+
+    async with Client(mcp) as client:
+        main = await client.read_resource(AnyUrl("skill://test-skill/SKILL.md"))
+        assert isinstance(main[0], TextResourceContents)
+        assert "🎯" in main[0].text
+
+        ref = await client.read_resource(AnyUrl("skill://test-skill/reference.md"))
+        assert isinstance(ref[0], TextResourceContents)
+        assert "✨" in ref[0].text

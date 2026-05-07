@@ -53,7 +53,7 @@ class SkillResource(Resource):
             return self._generate_manifest()
         else:
             main_file_path = self.skill_info.path / self.skill_info.main_file
-            return main_file_path.read_text()
+            return main_file_path.read_text(encoding="utf-8")
 
     def _generate_manifest(self) -> str:
         """Generate JSON manifest for the skill."""
@@ -94,7 +94,7 @@ class SkillFileTemplate(ResourceTemplate):
         # Determine if binary or text based on mime type
         mime_type, _ = mimetypes.guess_type(str(full_path))
         if mime_type and mime_type.startswith("text/"):
-            return full_path.read_text()
+            return full_path.read_text(encoding="utf-8")
         else:
             return full_path.read_bytes()
 
@@ -166,7 +166,7 @@ class SkillFileResource(Resource):
 
         mime_type, _ = mimetypes.guess_type(str(full_path))
         if mime_type and mime_type.startswith("text/"):
-            return full_path.read_text()
+            return full_path.read_text(encoding="utf-8")
         else:
             return full_path.read_bytes()
 
@@ -239,7 +239,6 @@ class SkillProvider(Provider):
             )
 
         content = main_file.read_text(encoding="utf-8")
-
         frontmatter, body = parse_frontmatter(content)
 
         # Get description from frontmatter or first non-empty line
