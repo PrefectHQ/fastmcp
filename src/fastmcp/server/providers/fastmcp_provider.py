@@ -698,11 +698,34 @@ class FastMCPProvider(Provider):
 
     @asynccontextmanager
     async def lifespan(self) -> AsyncIterator[None]:
-        """Start the mounted server's user lifespan.
+        """Start the mounted server's lifespan.
 
-        This starts only the wrapped server's user-defined lifespan, NOT its
-        full _lifespan_manager() (which includes Docket). The parent server's
-        Docket handles all background tasks.
+        Sets ``_lifespan_root_active=True`` to signal to the wrapped server's
+        ``_docket_lifespan`` that it is running below an existing root in the
+        same runtime tree, then delegates to its full ``_lifespan_manager``.
+        The root's Docket / Worker / SharedContext are reused through
+        ContextVars (``_current_docket`` etc.); the mounted server's user
+        lifespan, ``_lifespan_result`` cache, and its own sub-providers
+        (nested mounts) all run normally.
+
+        The flag is reset as soon as ``_lifespan_manager`` finishes entering,
+        so it doesn't leak into the caller's async scope. Unrelated servers
+        entered later in the same task (e.g. siblings via ``AsyncExitStack``)
+        correctly see no active root and start their own infrastructure.
         """
-        async with self.server._lifespan(self.server):
-            yield
+        from fastmcp.server.mixins.lifespan import _lifespan_root_active
+
+        token = _lifespan_root_active.set(True)
+        flag_active = True
+        try:
+            async with self.server._lifespan_manager():
+                # Inner entry is complete; the flag's job (telling _docket_lifespan
+                # to no-op during _lifespan_manager's setup) is done. Reset now so
+                # unrelated lifespans entered later in this task aren't misclassified
+                # as nested.
+                _lifespan_root_active.reset(token)
+                flag_active = False
+                yield
+        finally:
+            if flag_active:
+                _lifespan_root_active.reset(token)
