@@ -1264,7 +1264,9 @@ class FastMCP(
                 try:
                     return await tool._run(arguments or {}, task_meta=task_meta)
                 except FastMCPError as e:
-                    logger.log(e.log_level, f"Error calling tool {name!r}", exc_info=False)
+                    logger.log(
+                        e.log_level, f"Error calling tool {name!r}", exc_info=False
+                    )
                     raise
                 except PydanticValidationError as e:
                     # fastmcp's own ValidationError is a FastMCPError, already handled above.

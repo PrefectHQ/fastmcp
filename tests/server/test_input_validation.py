@@ -395,7 +395,7 @@ class TestExpectedToolFailureLogging:
         ]
         assert records, "expected an 'Error calling tool' log without traceback"
         assert records[0].levelname == "ERROR"
-        assert records[0].exc_info is None
+        assert not records[0].exc_info
 
     async def test_unexpected_exception_still_logs_with_traceback(self, caplog):
         mcp = FastMCP("TestServer")
