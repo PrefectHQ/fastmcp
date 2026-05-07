@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import httpx
+
 with warnings.catch_warnings():
     # authlib.jose emits AuthlibDeprecationWarning on import; suppress it so
     # importing this provider does not trigger the warning under
