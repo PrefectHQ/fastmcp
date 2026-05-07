@@ -660,30 +660,39 @@ class TestPathTraversalPrevention:
                 )
 
 
-def test_skills_directory_provider_loads_utf8_skill_md(tmp_path: Path) -> None:
-    """SkillsDirectoryProvider must load a SKILL.md containing UTF-8 emoji.
+def test_skills_directory_provider_loads_utf8_skill_md(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SKILL.md must be loaded with an explicit utf-8 encoding.
 
-    Regression test for #4084. Before the fix this raised on Windows:
-        UnicodeDecodeError: 'charmap' codec can't decode byte 0x9d ...
-
-    Translated directly from the MRE in the issue report.
+    Regression test for #4084. On Windows the default encoding is cp1252,
+    so a bare ``read_text()`` call fails to decode UTF-8 emoji in SKILL.md
+    with ``UnicodeDecodeError: 'charmap' codec can't decode byte ...``. The
+    fix passes ``encoding="utf-8"`` explicitly. This test simulates the
+    Windows behavior on any platform by failing the read whenever the
+    encoding kwarg is not utf-8.
     """
     skill_dir = tmp_path / "test-skill"
     skill_dir.mkdir()
-
-    skill_file = skill_dir / "SKILL.md"
-    skill_file.write_text(
+    (skill_dir / "SKILL.md").write_text(
         "---\n"
         "name: test-skill\n"
         "description: Test skill with UTF-8 characters\n"
         "---\n"
-        "# Test Skill\n"
-        "- ✅ Success indicator\n"
-        "- ❌ Failure indicator\n"
-        "- → Arrow symbol\n",
+        "# Test Skill 🎯\n"
+        "- ✅ Success indicator\n",
         encoding="utf-8",
     )
 
-    provider = SkillsDirectoryProvider(roots=skill_dir.parent)
+    original_read_text = Path.read_text
 
-    assert provider is not None
+    def strict_read_text(self: Path, *args, **kwargs):
+        if self.name == "SKILL.md" and kwargs.get("encoding") != "utf-8":
+            raise UnicodeDecodeError(
+                "charmap", b"\x9d", 0, 1, "simulated cp1252 default"
+            )
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", strict_read_text)
+
+    SkillsDirectoryProvider(roots=skill_dir.parent)
