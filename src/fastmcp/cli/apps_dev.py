@@ -1265,41 +1265,28 @@ def _fetch_app_bridge_bundle_sync(
     ext-apps app-bridge.js imports the SDK via bare specifiers
     (``@modelcontextprotocol/sdk/types.js`` etc.) that the browser cannot
     resolve.  We rewrite them to concrete esm.sh URLs before serving.
+
+    Caching
+    -------
+    ``app_bridge_js`` is cached on disk because it is static for a given
+    ext-apps + SDK version pair (downloaded from npm).
+
+    The import map is NOT cached.  It contains the concrete zod version that
+    esm.sh resolves ``zod@^x`` to at fetch time, and that version can change
+    when esm.sh publishes a new zod release.  A stale cached import map would
+    redirect the old version URL while the browser loads the new version URL,
+    so the redirect would not apply and ``t.custom`` would be undefined.
     """
-    cache_path = (
-        Path(tempfile.gettempdir())
-        / f"fastmcp-ext-apps-{version}-sdk-{sdk_version}-bundle.json"
-    )
-    if cache_path.exists():
-        cached = json.loads(cache_path.read_text())
-        return cached["app_bridge_js"], cached["import_map_json"]
-
-    # -- Download and patch app-bridge.js -----------------------------------
-    npm_url = f"https://registry.npmjs.org/@modelcontextprotocol/ext-apps/-/ext-apps-{version}.tgz"
-    with httpx.Client(timeout=30.0) as client:
-        resp = client.get(npm_url, follow_redirects=True)
-        resp.raise_for_status()
-        data = resp.content
-
-    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
-        member = tar.extractfile("package/dist/src/app-bridge.js")
-        if member is None:
-            raise RuntimeError("app-bridge.js not found in ext-apps tarball")
-        app_bridge_js = member.read().decode()
-
-    # Rewrite bare SDK module specifiers to concrete esm.sh URLs
     sdk_base = f"https://esm.sh/@modelcontextprotocol/sdk@{sdk_version}"
-    for sdk_path in ("types.js", "shared/protocol.js"):
-        app_bridge_js = app_bridge_js.replace(
-            f'from"@modelcontextprotocol/sdk/{sdk_path}"',
-            f'from"{sdk_base}/{sdk_path}"',
-        )
 
-    # -- Detect the broken Zod v4.mjs URL -----------------------------------
+    # -- Detect the broken Zod v4.mjs URL (always fresh, never cached) ------
     # The SDK's types module imports zod/v4 via a version-range URL like
     # /zod@^4.3.5/v4?target=es2022.  That wrapper re-exports from the
     # version-specific v4.mjs (e.g. /zod@4.3.6/es2022/v4.mjs) which is
     # broken.  We fetch the wrapper to discover the exact version.
+    #
+    # We do this before the (potentially cached) app-bridge download so that
+    # any network error is surfaced early and clearly.
     types_url = f"{sdk_base}/types.js"
     with httpx.Client(timeout=30.0) as client:
         resp = client.get(types_url, follow_redirects=True)
@@ -1336,10 +1323,34 @@ def _fetch_app_bridge_bundle_sync(
 
     import_map_json = json.dumps({"imports": {broken_url: fixed_url}})
 
-    # -- Cache and return ----------------------------------------------------
-    cache_path.write_text(
-        json.dumps({"app_bridge_js": app_bridge_js, "import_map_json": import_map_json})
+    # -- Download and patch app-bridge.js (cached per ext-apps + SDK version) -
+    app_bridge_cache = (
+        Path(tempfile.gettempdir()) / f"fastmcp-ext-apps-{version}-sdk-{sdk_version}.js"
     )
+    if app_bridge_cache.exists():
+        app_bridge_js = app_bridge_cache.read_text(encoding="utf-8")
+        return app_bridge_js, import_map_json
+
+    npm_url = f"https://registry.npmjs.org/@modelcontextprotocol/ext-apps/-/ext-apps-{version}.tgz"
+    with httpx.Client(timeout=30.0) as client:
+        resp = client.get(npm_url, follow_redirects=True)
+        resp.raise_for_status()
+        data = resp.content
+
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
+        member = tar.extractfile("package/dist/src/app-bridge.js")
+        if member is None:
+            raise RuntimeError("app-bridge.js not found in ext-apps tarball")
+        app_bridge_js = member.read().decode()
+
+    # Rewrite bare SDK module specifiers to concrete esm.sh URLs
+    for sdk_path in ("types.js", "shared/protocol.js"):
+        app_bridge_js = app_bridge_js.replace(
+            f'from"@modelcontextprotocol/sdk/{sdk_path}"',
+            f'from"{sdk_base}/{sdk_path}"',
+        )
+
+    app_bridge_cache.write_text(app_bridge_js, encoding="utf-8")
     return app_bridge_js, import_map_json
 
 
