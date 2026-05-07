@@ -659,6 +659,7 @@ class TestPathTraversalPrevention:
                     AnyUrl("skill://test-skill/../../../secret.txt")
                 )
 
+
 def test_skills_directory_provider_loads_utf8_skill_md(tmp_path: Path) -> None:
     """SkillsDirectoryProvider must load a SKILL.md containing UTF-8 emoji.
 
