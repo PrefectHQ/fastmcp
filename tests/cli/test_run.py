@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 import json
 import subprocess
@@ -13,6 +14,7 @@ from fastmcp.cli.run import (
     create_mcp_config_server,
     is_url,
     run_module_command,
+    run_with_reload,
 )
 from fastmcp.client.client import Client
 from fastmcp.client.transports import FastMCPTransport
@@ -862,6 +864,99 @@ class TestRunModuleMode:
         assert "--module" in cmd
         assert "--no-reload" in cmd
         assert "my_module" in cmd
+
+
+class TestRunWithReloadWithServerArgs:
+    """Test the run command with reload(run_with_reload) with server args."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "reload_cmd",
+        [
+            [
+                "fastmcp",
+                "run",
+                "my_module",
+                "--module",
+                "--no-reload",
+                "--no-banner",
+                "--",
+                "--debug",
+            ],
+            [
+                "fastmcp",
+                "run",
+                "my_module",
+                "--no-banner",
+                "--no-reload",
+                "--stateless",
+                "--",
+                "--debug",
+            ],
+            ["fastmcp", "run", "my_module", "--module", "--no-reload", "--", "--debug"],
+            [
+                "fastmcp",
+                "run",
+                "my_module",
+                "--no-reload",
+                "--stateless",
+                "--",
+                "--debug",
+            ],
+        ],
+    )
+    async def test_run_with_reload_does_not_mutate_command(self, reload_cmd, caplog):
+        """
+        Test for issue 4081:
+        Verify that run_with_reload does NOT mutate the command arguments.
+        The command used for restart must be identical to the original command
+        to ensure nothing is incorrectly appended or reordered.
+        """
+        reload_dirs = [Path(".")]
+        shutdown_event = asyncio.Event()
+        call_count = 0
+
+        async def mock_create_subprocess(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+
+            proc = AsyncMock()
+            proc.kill = MagicMock()
+            proc.terminate = MagicMock()
+            proc.wait.return_value = 0
+            proc.pid = 99999
+            proc.returncode = None
+
+            if call_count >= 2:
+                actual_args = list(args)
+                try:
+                    # VALIDATION: reload_cmd remains UNCHANGED
+                    assert actual_args == reload_cmd, (
+                        f"Regression: Command was mutated during reload.\n"
+                        f"Expected: {reload_cmd}\n"
+                        f"Actual:   {actual_args}"
+                    )
+                finally:
+                    shutdown_event.set()
+
+            return proc
+
+        mock_watch = MagicMock()
+        mock_watch.__aiter__.return_value = iter([[("Change.modified", "server.py")]])
+
+        with (
+            patch(
+                "fastmcp.cli.run.asyncio.create_subprocess_exec",
+                side_effect=mock_create_subprocess,
+            ),
+            patch("fastmcp.cli.run.awatch", return_value=mock_watch),
+            patch("fastmcp.cli.run.asyncio.Event", return_value=shutdown_event),
+            caplog.at_level("INFO"),
+        ):
+            await run_with_reload(reload_cmd, reload_dirs=reload_dirs)
+
+        assert any("Detected changes" in record.message for record in caplog.records)
+        assert call_count == 2, f"Restart logic was not triggered for {reload_cmd}"
 
 
 class TestInspectorModuleMode:
