@@ -264,6 +264,7 @@ class AzureProvider(OAuthProxy):
             fallback_refresh_token_expiry_seconds=fallback_refresh_token_expiry_seconds,
             valid_scopes=parsed_required_scopes,
             enable_cimd=enable_cimd,
+            token_endpoint_auth_method="client_secret_post"
         )
 
         authority_info = ""
