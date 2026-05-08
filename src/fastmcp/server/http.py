@@ -5,7 +5,8 @@ from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
-from mcp.server.auth.routes import build_resource_metadata_url, cors_middleware
+from mcp.server.auth.routes import build_resource_metadata_url
+from starlette.middleware.cors import CORSMiddleware
 from mcp.server.lowlevel.server import LifespanResultT
 from mcp.server.sse import SseServerTransport
 from mcp.server.streamable_http import (
@@ -328,12 +329,15 @@ def create_streamable_http_app(
         server_routes.append(
             Route(
                 streamable_http_path,
-                endpoint=cors_middleware(
-                    RequireAuthMiddleware(
+                endpoint=CORSMiddleware(
+                    app=RequireAuthMiddleware(
                         streamable_http_app,
                         auth.required_scopes,
                         resource_metadata_url,
-                    )
+                    ),
+                    allow_origins=["*"],
+                    allow_methods=http_methods,
+                    allow_headers=["*"],
                 ),
                 methods=http_methods,
             )
@@ -344,7 +348,12 @@ def create_streamable_http_app(
         server_routes.append(
             Route(
                 streamable_http_path,
-                endpoint=cors_middleware(streamable_http_app),
+                endpoint=CORSMiddleware(
+                    app=streamable_http_app,
+                    allow_origins=["*"],
+                    allow_methods=http_methods,
+                    allow_headers=["*"],
+                ),
                 methods=http_methods,
             )
         )
