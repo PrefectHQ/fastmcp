@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
-from mcp.server.auth.routes import build_resource_metadata_url
+from mcp.server.auth.routes import build_resource_metadata_url, cors_middleware
 from mcp.server.lowlevel.server import LifespanResultT
 from mcp.server.sse import SseServerTransport
 from mcp.server.streamable_http import (
@@ -323,26 +323,28 @@ def create_streamable_http_app(
         # Stateless servers have no session tracking, so GET SSE streams
         # (for server-initiated notifications) serve no purpose.
         http_methods = (
-            ["POST", "DELETE"] if stateless_http else ["GET", "POST", "DELETE"]
+            ["POST", "DELETE", "OPTIONS"] if stateless_http else ["GET", "POST", "DELETE", "OPTIONS"]
         )
         server_routes.append(
             Route(
                 streamable_http_path,
-                endpoint=RequireAuthMiddleware(
-                    streamable_http_app,
-                    auth.required_scopes,
-                    resource_metadata_url,
+                endpoint=cors_middleware(
+                    RequireAuthMiddleware(
+                        streamable_http_app,
+                        auth.required_scopes,
+                        resource_metadata_url,
+                    )
                 ),
                 methods=http_methods,
             )
         )
     else:
         # No auth required
-        http_methods = ["POST", "DELETE"] if stateless_http else None
+        http_methods = ["POST", "DELETE", "OPTIONS"] if stateless_http else ["GET", "POST", "DELETE", "OPTIONS"]
         server_routes.append(
             Route(
                 streamable_http_path,
-                endpoint=streamable_http_app,
+                endpoint=cors_middleware(streamable_http_app),
                 methods=http_methods,
             )
         )
