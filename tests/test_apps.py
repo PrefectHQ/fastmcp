@@ -225,11 +225,11 @@ class TestToolRegistrationWithApp:
         def my_tool() -> str:
             return "hello"
 
-        # App-only tools (visibility=["app"]) are hidden from list_tools
+        # app-only tools declared directly on the server are looked up normally.
+        # Filtering them out is the responsibility of the host.
         tools = list(await server.list_tools())
-        assert len(tools) == 0
+        assert len(tools) == 1
 
-        # But the tool exists on the provider
         tool = await server._get_tool("my_tool")
         assert tool is not None
         assert tool.meta is not None
@@ -256,10 +256,10 @@ class TestToolRegistrationWithApp:
         def my_tool() -> str:
             return "hello"
 
-        # App-only tools are hidden from list_tools, verify via provider
-        tool = await server._get_tool("my_tool")
-        assert tool is not None
-        mcp_tool = tool.to_mcp_tool()
+        tools = list(await server.list_tools())
+        assert len(tools) == 1
+
+        mcp_tool = tools[0].to_mcp_tool()
         assert mcp_tool.meta is not None
         assert mcp_tool.meta["ui"]["resourceUri"] == "ui://app"
         assert mcp_tool.meta["ui"]["visibility"] == ["app"]
@@ -490,6 +490,18 @@ class TestIntegration:
 
         async with Client(server) as client:
             result = await client.call_tool("greet", {"name": "Alice"})
+            assert any("Hello, Alice!" in str(c) for c in result.content)
+
+    async def test_app_backend_tool_callable(self):
+        """A tool registered with AppConfig(visibility=["app"]) is callable."""
+        server = FastMCP("test")
+
+        @server.tool(app=AppConfig(visibility=["app"]))
+        async def backend_greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        async with Client(server) as client:
+            result = await client.call_tool("backend_greet", {"name": "Alice"})
             assert any("Hello, Alice!" in str(c) for c in result.content)
 
     async def test_extension_and_tool_together(self):

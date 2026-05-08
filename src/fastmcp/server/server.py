@@ -182,30 +182,39 @@ def _get_auth_context() -> tuple[bool, Any]:
     return (False, get_access_token())
 
 
-def _is_model_visible(tool: Tool) -> bool:
-    """Check whether a tool should be visible to the model.
+def _is_backend_tool(tool: Tool) -> bool:
+    """Check whether a tool is handled specially as backend tool
 
     Tools registered via ``@app.tool()`` (without ``model=True``) have
     ``meta["ui"]["visibility"] == ["app"]`` — they are callable by app UIs
-    but should not appear in the model's tool list.
+    but should not appear in tool list the client passes to the model.
 
-    Returns True (visible) when:
-    - The tool has no ``meta.ui.visibility`` (normal tools).
-    - ``"model"`` is in the visibility list (e.g. ``["model"]`` or ``["app", "model"]``).
+    They are handled specially for in various ways - e.g. they are looked
+    up via get_app_tool(), and don't appear in the tools/list output.
+    (FIXME: the latter isn't correct behavior according to the mcp-apps spec.)
 
-    Returns False when the visibility list exists and does not contain ``"model"``
-    (e.g. ``["app"]``).
+    Returns True (a backend tool) when:
+    - The tool has ``meta.fastmcp.app``.
+    - The tool has ``meta.ui.visibility``.
+    - The visibility is precisely ``["app"]``.
+
+    Returns False otherwise.
     """
     meta = tool.meta
     if not meta:
-        return True
+        return False
+    fastmcp = meta.get("fastmcp")
+    if not isinstance(fastmcp, dict):
+        return False
+    if fastmcp.get("app") is None:
+        return False
     ui = meta.get("ui")
     if not isinstance(ui, dict):
-        return True
+        return False
     visibility = ui.get("visibility")
     if not isinstance(visibility, list):
-        return True
-    return "model" in visibility
+        return False
+    return len(visibility) == 1 and visibility[0] == "app"
 
 
 def _is_app_visible(tool: Tool) -> bool:
@@ -631,7 +640,7 @@ class FastMCP(
                 # and model-visible (app-only tools are hidden from the model).
                 tools = list(await super().list_tools())
                 tools = await apply_session_transforms(tools)
-                tools = [t for t in tools if is_enabled(t) and _is_model_visible(t)]
+                tools = [t for t in tools if is_enabled(t) and not _is_backend_tool(t)]
 
                 # Rewrite per-tool Prefab renderer URIs based on the tool's
                 # mount-point address. The walk pairs each tool with the
@@ -709,7 +718,7 @@ class FastMCP(
 
         # Apply session transforms to single item
         tools = await apply_session_transforms([tool])
-        if tools and is_enabled(tools[0]) and _is_model_visible(tools[0]):
+        if tools and is_enabled(tools[0]) and not _is_backend_tool(tools[0]):
             return tools[0]
 
         # The highest version is disabled (or app-only). If an explicit version
@@ -720,7 +729,7 @@ class FastMCP(
 
         all_tools = [t for t in await super().list_tools() if t.name == name]
         all_tools = list(await apply_session_transforms(all_tools))
-        enabled = [t for t in all_tools if is_enabled(t) and _is_model_visible(t)]
+        enabled = [t for t in all_tools if is_enabled(t) and not _is_backend_tool(t)]
 
         skip_auth, token = _get_auth_context()
         authorized: list[Tool] = []
