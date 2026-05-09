@@ -180,3 +180,10 @@ class OCIProvider(OIDCProxy):
             client_id,
             oci_required_scopes,
         )
+
+    def _prepare_scopes_for_token_exchange(self, scopes: list[str]) -> list[str]:
+        """Omit scope from the upstream auth-code token exchange."""
+        logger.debug(
+            "Omitting scope from upstream token exchange. Original scopes: %s", scopes
+        )
+        return []
