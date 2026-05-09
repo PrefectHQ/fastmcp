@@ -370,7 +370,26 @@ def create_streamable_http_app(
             server._lifespan_manager(),
             streamable_http_app.session_manager.run(),
         ):
-            yield
+            try:
+                yield
+            finally:
+                # Gracefully terminate active streamable-HTTP transports before
+                # the session manager's task group is cancelled. Without this,
+                # active SSE/streaming responses are aborted mid-flight and
+                # Uvicorn logs "ASGI callable returned without completing
+                # response." See PrefectHQ/fastmcp#3025.
+                sm = streamable_http_app.session_manager
+                # `_server_instances` is a private attribute of the upstream
+                # `StreamableHTTPSessionManager` (mcp SDK); termination is
+                # idempotent and tolerates new instances being added concurrently.
+                for transport in list(sm._server_instances.values()):
+                    try:
+                        await transport.terminate()
+                    except Exception:
+                        logger.debug(
+                            "Error terminating streamable-HTTP transport on shutdown",
+                            exc_info=True,
+                        )
 
     # Create and return the app with lifespan
     app = create_base_app(
