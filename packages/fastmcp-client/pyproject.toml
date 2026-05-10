@@ -9,6 +9,7 @@ dependencies = [
     "mcp>=1.24.0,<2.0",
     "opentelemetry-api>=1.20.0",
     "platformdirs>=4.0.0",
+    "py-key-value-aio[filetree,keyring,memory]>=0.4.4,<0.5.0",
     "rich>=13.9.4",
     "authlib>=1.6.11",
     "pydantic[email]>=2.11.7",
@@ -64,3 +65,28 @@ vcs = "git"
 style = "pep440"
 bump = true
 fallback-version = "0.0.0"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    "ignore:Using in-memory token storage:UserWarning",
+    "error:coroutine .* was never awaited:RuntimeWarning",
+    "error:Exception ignored in.*coroutine:pytest.PytestUnraisableExceptionWarning",
+]
+timeout = 5
+env = [
+    "FASTMCP_TEST_MODE=1",
+    'D:FASTMCP_LOG_LEVEL=DEBUG',
+    'D:FASTMCP_ENABLE_RICH_TRACEBACKS=0',
+]
+markers = [
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+    "client_process: marks tests that spawn client processes via stdio transport. These can create issues when run in the same CI environment as other subprocess-based tests.",
+    "conformance: marks MCP conformance tests (require Node.js/npx)",
+]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = ["--inline-snapshot=disable"]

@@ -8,6 +8,9 @@ on:
     branches: ["main"]
     paths:
       - "packages/fastmcp/src/**"
+      - "packages/fastmcp/pyproject.toml"
+      - "packages/fastmcp-client/src/**"
+      - "packages/fastmcp-client/pyproject.toml"
       - "pyproject.toml"
   workflow_dispatch:
 

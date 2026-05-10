@@ -9,8 +9,11 @@ on:
     paths:
       - "packages/fastmcp/src/**"
       - "packages/fastmcp/tests/**"
+      - "packages/fastmcp/pyproject.toml"
+      - "packages/fastmcp/hatch_build.py"
       - "packages/fastmcp-client/src/**"
       - "packages/fastmcp-client/tests/**"
+      - "packages/fastmcp-client/pyproject.toml"
       - "uv.lock"
       - "pyproject.toml"
       - ".github/workflows/**"

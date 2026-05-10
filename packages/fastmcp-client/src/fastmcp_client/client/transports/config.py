@@ -15,6 +15,7 @@ from fastmcp_client.mcp_config import (
     StdioMCPServer,
     TransformingRemoteMCPServer,
     TransformingStdioMCPServer,
+    _coerce_tool_transform_configs,
 )
 from fastmcp_client.utilities.logging import get_logger
 
@@ -205,7 +206,9 @@ class MCPConfigTransport(ClientTransport):
         if tool_transforms:
             from fastmcp.server.transforms import ToolTransform
 
-            proxy.add_transform(ToolTransform(tool_transforms))
+            proxy.add_transform(
+                ToolTransform(_coerce_tool_transform_configs(tool_transforms))
+            )
         # Then add enabled filters - they filter based on tags
         if include_tags:
             proxy.enable(tags=set(include_tags), only=True)

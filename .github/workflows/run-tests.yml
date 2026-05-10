@@ -9,8 +9,11 @@ on:
     paths:
       - "packages/fastmcp/src/**"
       - "packages/fastmcp/tests/**"
+      - "packages/fastmcp/pyproject.toml"
+      - "packages/fastmcp/hatch_build.py"
       - "packages/fastmcp-client/src/**"
       - "packages/fastmcp-client/tests/**"
+      - "packages/fastmcp-client/pyproject.toml"
       - "uv.lock"
       - "pyproject.toml"
       - ".github/workflows/**"
@@ -119,3 +122,60 @@ jobs:
           FASTMCP_GITHUB_TOKEN: ${{ secrets.FASTMCP_GITHUB_TOKEN }}
           FASTMCP_TEST_AUTH_GITHUB_CLIENT_ID: ${{ secrets.FASTMCP_TEST_AUTH_GITHUB_CLIENT_ID }}
           FASTMCP_TEST_AUTH_GITHUB_CLIENT_SECRET: ${{ secrets.FASTMCP_TEST_AUTH_GITHUB_CLIENT_SECRET }}
+
+  package_install_smoke:
+    name: "Package install smoke"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup uv
+        uses: ./.github/actions/setup-uv
+        with:
+          resolution: locked
+
+      - name: Build package wheels
+        run: uv build --all-packages --wheel --out-dir /tmp/fastmcp-dist
+
+      - name: Install client wheel without full FastMCP
+        run: |
+          uv venv /tmp/fastmcp-client-smoke
+          uv pip install --python /tmp/fastmcp-client-smoke/bin/python /tmp/fastmcp-dist/fastmcp_client-*.whl
+          uv pip install --python /tmp/fastmcp-client-smoke/bin/python pytest pytest-asyncio pytest-env pytest-timeout inline-snapshot
+          /tmp/fastmcp-client-smoke/bin/python - <<'PY'
+          import importlib.util
+
+          assert importlib.util.find_spec("fastmcp") is None
+
+          from fastmcp_client import Client
+          from fastmcp_client.client.transports import StdioTransport, StreamableHttpTransport
+          from fastmcp_client.mcp_config import MCPConfig
+
+          assert Client("https://example.com/mcp")
+          assert StreamableHttpTransport("https://example.com/mcp")
+          assert StdioTransport(command="uvx", args=["demo"])
+          assert MCPConfig.from_dict({"mcpServers": {"demo": {"url": "https://example.com/mcp"}}})
+          PY
+          (
+            cd packages/fastmcp-client
+            /tmp/fastmcp-client-smoke/bin/python -m pytest --import-mode=importlib tests
+          )
+
+      - name: Install full package from matching local wheels
+        run: |
+          uv venv /tmp/fastmcp-full-smoke
+          uv pip install --python /tmp/fastmcp-full-smoke/bin/python --find-links /tmp/fastmcp-dist /tmp/fastmcp-dist/fastmcp-*.whl
+          /tmp/fastmcp-full-smoke/bin/python - <<'PY'
+          from fastmcp import Client as FullClient
+          from fastmcp.client.client import CallToolResult
+          from fastmcp.exceptions import ToolError
+          from fastmcp_client import Client as SplitClient
+          from fastmcp_client.client.client import CallToolResult as SplitCallToolResult
+          from fastmcp_client.exceptions import ToolError as SplitToolError
+
+          assert FullClient is SplitClient
+          assert CallToolResult is SplitCallToolResult
+          assert ToolError is SplitToolError
+          PY

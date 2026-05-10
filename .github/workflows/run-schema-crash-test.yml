@@ -8,7 +8,7 @@ on:
       - "packages/fastmcp/src/fastmcp/utilities/json_schema.py"
       - "packages/fastmcp/src/fastmcp/utilities/openapi/**"
       - "packages/fastmcp/src/fastmcp/server/providers/openapi/**"
-      - "packages/fastmcp/src/fastmcp/client/mixins/tools.py"
+      - "packages/fastmcp-client/src/fastmcp_client/client/mixins/tools.py"
       - "packages/fastmcp/tests/utilities/json_schema_type/test_real_world_schemas.py"
       - ".github/workflows/run-schema-crash-test.yml"
 
@@ -18,7 +18,7 @@ on:
       - "packages/fastmcp/src/fastmcp/utilities/json_schema.py"
       - "packages/fastmcp/src/fastmcp/utilities/openapi/**"
       - "packages/fastmcp/src/fastmcp/server/providers/openapi/**"
-      - "packages/fastmcp/src/fastmcp/client/mixins/tools.py"
+      - "packages/fastmcp-client/src/fastmcp_client/client/mixins/tools.py"
       - "packages/fastmcp/tests/utilities/json_schema_type/test_real_world_schemas.py"
       - ".github/workflows/run-schema-crash-test.yml"
 

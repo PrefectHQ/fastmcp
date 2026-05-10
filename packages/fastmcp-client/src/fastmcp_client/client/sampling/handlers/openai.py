@@ -44,7 +44,7 @@ try:
 except ImportError as e:
     raise ImportError(
         "The `openai` package is not installed. "
-        "Please install `fastmcp[openai]` or add `openai` to your dependencies manually."
+        "Please install `fastmcp-client[openai]` or add `openai` to your dependencies manually."
     ) from e
 
 # OpenAI only supports wav and mp3 for input audio

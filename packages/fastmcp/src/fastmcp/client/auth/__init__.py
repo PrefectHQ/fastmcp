@@ -1,4 +1,1 @@
-from .bearer import BearerAuth
-from .oauth import OAuth
-
-__all__ = ["BearerAuth", "OAuth"]
+from fastmcp_client.client.auth import *  # noqa: F403

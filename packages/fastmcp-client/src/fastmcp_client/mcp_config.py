@@ -27,7 +27,7 @@ from __future__ import annotations
 import datetime
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 from urllib.parse import urlparse
 
 import httpx
@@ -69,6 +69,17 @@ def infer_transport_type_from_url(
         return "http"
 
 
+def _coerce_tool_transform_configs(tools: dict[str, Any]) -> dict[str, Any]:
+    from fastmcp.tools.tool_transform import ToolTransformConfig
+
+    return {
+        name: config
+        if isinstance(config, ToolTransformConfig)
+        else ToolTransformConfig.model_validate(config)
+        for name, config in tools.items()
+    }
+
+
 class _TransformingMCPServerMixin(BaseModel):
     """A mixin that enables wrapping an MCP Server with tool transforms."""
 
@@ -106,12 +117,48 @@ class _TransformingMCPServerMixin(BaseModel):
                 )
         return values
 
+    def _to_server_and_underlying_transport(
+        self,
+        server_name: str | None = None,
+        client_name: str | None = None,
+    ) -> tuple[Any, ClientTransport]:
+        """Turn the transforming server into a FastMCP proxy and return its transport."""
+        try:
+            from fastmcp import Client
+            from fastmcp.server import create_proxy
+            from fastmcp.server.transforms import ToolTransform
+        except ImportError as exc:
+            raise ImportError(
+                "MCP configs that use FastMCP-specific tool transforms or tag filters "
+                "require the full `fastmcp` package. Install it with `pip install fastmcp`."
+            ) from exc
+
+        transport = cast("ClientTransport", super().to_transport())  # ty: ignore[unresolved-attribute]
+        client = Client(transport=transport, name=client_name)
+        wrapped_mcp_server = create_proxy(client, name=server_name)
+
+        if self.include_tags is not None:
+            wrapped_mcp_server.enable(tags=self.include_tags, only=True)
+        if self.exclude_tags is not None:
+            wrapped_mcp_server.disable(tags=self.exclude_tags)
+        if self.tools:
+            wrapped_mcp_server.add_transform(
+                ToolTransform(_coerce_tool_transform_configs(self.tools))
+            )
+
+        return wrapped_mcp_server, transport
+
     def to_transport(self) -> ClientTransport:
         """Get the transport for the transforming MCP server."""
-        raise ImportError(
-            "MCP configs that use FastMCP-specific tool transforms or tag filters "
-            "require the full `fastmcp` package. Install it with `pip install fastmcp`."
-        )
+        try:
+            from fastmcp.client.transports import FastMCPTransport
+        except ImportError as exc:
+            raise ImportError(
+                "MCP configs that use FastMCP-specific tool transforms or tag filters "
+                "require the full `fastmcp` package. Install it with `pip install fastmcp`."
+            ) from exc
+
+        return FastMCPTransport(mcp=self._to_server_and_underlying_transport()[0])
 
 
 class StdioMCPServer(BaseModel):

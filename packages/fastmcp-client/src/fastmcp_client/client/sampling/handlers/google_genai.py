@@ -27,7 +27,7 @@ try:
 except ImportError as e:
     raise ImportError(
         "The `google-genai` package is not installed. "
-        "Install it with `pip install fastmcp[gemini]` or add `google-genai` "
+        "Install it with `pip install fastmcp-client[gemini]` or add `google-genai` "
         "to your dependencies."
     ) from e
 
