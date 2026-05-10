@@ -7,8 +7,10 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "src/**"
-      - "tests/**"
+      - "packages/fastmcp/src/**"
+      - "packages/fastmcp/tests/**"
+      - "packages/fastmcp-client/src/**"
+      - "packages/fastmcp-client/tests/**"
       - "uv.lock"
       - "pyproject.toml"
       - ".github/workflows/**"

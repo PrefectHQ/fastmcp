@@ -47,4 +47,6 @@ runs:
           -m "$MARKER" \
           $PARALLEL_FLAGS \
           $EXTRA_FLAGS \
+          packages/fastmcp/tests \
+          packages/fastmcp-client/tests \
           tests

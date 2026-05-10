@@ -20,7 +20,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
 
       - name: Build
-        run: uv build
+        run: uv build --all-packages
 
       - name: Publish to PyPi
         run: uv publish -v dist/*

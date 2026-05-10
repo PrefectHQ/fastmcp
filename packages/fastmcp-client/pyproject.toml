@@ -1,0 +1,66 @@
+[project]
+name = "fastmcp-client"
+dynamic = ["version"]
+description = "Client-only package for FastMCP."
+authors = [{ name = "Jeremiah Lowin" }]
+dependencies = [
+    "exceptiongroup>=1.2.2",
+    "httpx>=0.28.1,<1.0",
+    "mcp>=1.24.0,<2.0",
+    "opentelemetry-api>=1.20.0",
+    "platformdirs>=4.0.0",
+    "rich>=13.9.4",
+    "authlib>=1.6.11",
+    "pydantic[email]>=2.11.7",
+    "pydantic-settings>=2.0.0",
+]
+requires-python = ">=3.10"
+readme = "README.md"
+license = "Apache-2.0"
+keywords = [
+    "mcp",
+    "mcp client",
+    "model context protocol",
+    "fastmcp",
+    "llm",
+    "agent",
+]
+classifiers = [
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.48.0"]
+gemini = ["google-genai>=1.18.0"]
+openai = ["openai>=1.102.0"]
+
+[project.urls]
+Homepage = "https://gofastmcp.com"
+Repository = "https://github.com/PrefectHQ/fastmcp"
+Documentation = "https://gofastmcp.com"
+
+[build-system]
+requires = ["hatchling", "uv-dynamic-versioning>=0.7.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fastmcp_client"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.uv-dynamic-versioning]
+vcs = "git"
+style = "pep440"
+bump = true
+fallback-version = "0.0.0"

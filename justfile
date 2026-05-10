@@ -4,7 +4,7 @@ build:
 
 # Run tests
 test: build
-    uv run --frozen pytest -xvs tests
+    uv run --frozen pytest -xvs packages/fastmcp/tests packages/fastmcp-client/tests tests
 
 # Run ty type checker on all files
 typecheck:
@@ -20,14 +20,14 @@ docs-broken-links:
 
 # Generate API reference documentation for all modules
 api-ref-all:
-    uvx --with-editable . --refresh-package mdxify mdxify@latest --all --root-module fastmcp --nav-output docs/python-sdk-pages.json --exclude fastmcp.contrib
+    uvx --with-editable packages/fastmcp --refresh-package mdxify mdxify@latest --all --root-module fastmcp --nav-output docs/python-sdk-pages.json --exclude fastmcp.contrib
 # Generate API reference for specific modules (e.g., just api-ref prefect.flows prefect.tasks)
 api-ref *MODULES:
-    uvx --with-editable . --refresh-package mdxify mdxify@latest {{MODULES}} --root-module fastmcp --nav-output docs/python-sdk-pages.json
+    uvx --with-editable packages/fastmcp --refresh-package mdxify mdxify@latest {{MODULES}} --root-module fastmcp --nav-output docs/python-sdk-pages.json
 
 # Clean up API reference documentation
 api-ref-clean:
     rm -rf docs/python-sdk
 
 copy-context:
-    uvx --with-editable . --refresh-package copychat copychat@latest src/ docs/ -x changelog.mdx -x python-sdk/ -v
+    uvx --with-editable packages/fastmcp --refresh-package copychat copychat@latest packages/fastmcp/src/ docs/ -x changelog.mdx -x python-sdk/ -v

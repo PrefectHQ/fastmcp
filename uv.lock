@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -7,6 +7,43 @@ resolution-markers = [
     "python_full_version == '3.12.*'",
     "python_full_version == '3.11.*'",
     "python_full_version < '3.11'",
+]
+
+[manifest]
+members = [
+    "fastmcp",
+    "fastmcp-client",
+]
+
+[manifest.dependency-groups]
+dev = [
+    { name = "dirty-equals", specifier = ">=0.9.0" },
+    { name = "fastapi", specifier = ">=0.115.12" },
+    { name = "fastmcp", extras = ["anthropic", "apps", "azure", "code-mode", "gemini", "openai", "tasks"], editable = "packages/fastmcp" },
+    { name = "fastmcp-client", extras = ["anthropic", "gemini", "openai"], editable = "packages/fastmcp-client" },
+    { name = "inline-snapshot", extras = ["dirty-equals"], specifier = ">=0.27.2" },
+    { name = "ipython", specifier = ">=8.12.3" },
+    { name = "loq", specifier = ">=0.1.0a3" },
+    { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.39.0" },
+    { name = "opentelemetry-sdk", specifier = ">=1.20.0" },
+    { name = "pdbpp", specifier = ">=0.11.7" },
+    { name = "prek", specifier = ">=0.2.12" },
+    { name = "psutil", specifier = ">=7.0.0" },
+    { name = "pyinstrument", specifier = ">=5.0.2" },
+    { name = "pyperclip", specifier = ">=1.9.0" },
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-asyncio", specifier = ">=1.2.0" },
+    { name = "pytest-cov", specifier = ">=6.1.1" },
+    { name = "pytest-env", specifier = ">=1.1.5" },
+    { name = "pytest-examples", specifier = ">=0.0.18" },
+    { name = "pytest-flakefinder", specifier = ">=1.1.0" },
+    { name = "pytest-httpx", specifier = ">=0.35.0" },
+    { name = "pytest-report", specifier = ">=0.2.1" },
+    { name = "pytest-retry", specifier = ">=1.7.0" },
+    { name = "pytest-timeout", specifier = ">=2.4.0" },
+    { name = "pytest-xdist", specifier = ">=3.6.1" },
+    { name = "ruff", specifier = ">=0.12.8" },
+    { name = "ty", specifier = ">=0.0.29" },
 ]
 
 [[package]]
@@ -822,11 +859,12 @@ wheels = [
 
 [[package]]
 name = "fastmcp"
-source = { editable = "." }
+source = { editable = "packages/fastmcp" }
 dependencies = [
     { name = "authlib" },
     { name = "cyclopts" },
     { name = "exceptiongroup" },
+    { name = "fastmcp-client" },
     { name = "griffelib" },
     { name = "httpx" },
     { name = "jsonref" },
@@ -838,6 +876,7 @@ dependencies = [
     { name = "platformdirs" },
     { name = "py-key-value-aio", extra = ["filetree", "keyring", "memory"] },
     { name = "pydantic", extra = ["email"] },
+    { name = "pydantic-settings" },
     { name = "pyperclip" },
     { name = "python-dotenv" },
     { name = "python-multipart" },
@@ -912,6 +951,7 @@ requires-dist = [
     { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.16.0" },
     { name = "cyclopts", specifier = ">=4.0.0" },
     { name = "exceptiongroup", specifier = ">=1.2.2" },
+    { name = "fastmcp-client", editable = "packages/fastmcp-client" },
     { name = "google-genai", marker = "extra == 'gemini'", specifier = ">=1.18.0" },
     { name = "griffelib", specifier = ">=2.0.0" },
     { name = "httpx", specifier = ">=0.28.1,<1.0" },
@@ -927,6 +967,7 @@ requires-dist = [
     { name = "py-key-value-aio", extras = ["filetree", "keyring", "memory"], specifier = ">=0.4.4,<0.5.0" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.11.7" },
     { name = "pydantic-monty", marker = "extra == 'code-mode'", specifier = "==0.0.16" },
+    { name = "pydantic-settings", specifier = ">=2.0.0" },
     { name = "pydocket", marker = "extra == 'tasks'", specifier = ">=0.20.0" },
     { name = "pyjwt", marker = "extra == 'azure'", specifier = ">=2.12.0" },
     { name = "pyperclip", specifier = ">=1.9.0" },
@@ -945,7 +986,7 @@ provides-extras = ["anthropic", "apps", "azure", "code-mode", "gemini", "openai"
 dev = [
     { name = "dirty-equals", specifier = ">=0.9.0" },
     { name = "fastapi", specifier = ">=0.115.12" },
-    { name = "fastmcp", extras = ["anthropic", "apps", "azure", "code-mode", "gemini", "openai", "tasks"] },
+    { name = "fastmcp", extras = ["anthropic", "apps", "azure", "code-mode", "gemini", "openai", "tasks"], editable = "packages/fastmcp" },
     { name = "inline-snapshot", extras = ["dirty-equals"], specifier = ">=0.27.2" },
     { name = "ipython", specifier = ">=8.12.3" },
     { name = "loq", specifier = ">=0.1.0a3" },
@@ -970,6 +1011,49 @@ dev = [
     { name = "ruff", specifier = ">=0.12.8" },
     { name = "ty", specifier = ">=0.0.29" },
 ]
+
+[[package]]
+name = "fastmcp-client"
+source = { editable = "packages/fastmcp-client" }
+dependencies = [
+    { name = "authlib" },
+    { name = "exceptiongroup" },
+    { name = "httpx" },
+    { name = "mcp" },
+    { name = "opentelemetry-api" },
+    { name = "platformdirs" },
+    { name = "pydantic", extra = ["email"] },
+    { name = "pydantic-settings" },
+    { name = "rich" },
+]
+
+[package.optional-dependencies]
+anthropic = [
+    { name = "anthropic" },
+]
+gemini = [
+    { name = "google-genai" },
+]
+openai = [
+    { name = "openai" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.48.0" },
+    { name = "authlib", specifier = ">=1.6.11" },
+    { name = "exceptiongroup", specifier = ">=1.2.2" },
+    { name = "google-genai", marker = "extra == 'gemini'", specifier = ">=1.18.0" },
+    { name = "httpx", specifier = ">=0.28.1,<1.0" },
+    { name = "mcp", specifier = ">=1.24.0,<2.0" },
+    { name = "openai", marker = "extra == 'openai'", specifier = ">=1.102.0" },
+    { name = "opentelemetry-api", specifier = ">=1.20.0" },
+    { name = "platformdirs", specifier = ">=4.0.0" },
+    { name = "pydantic", extras = ["email"], specifier = ">=2.11.7" },
+    { name = "pydantic-settings", specifier = ">=2.0.0" },
+    { name = "rich", specifier = ">=13.9.4" },
+]
+provides-extras = ["anthropic", "gemini", "openai"]
 
 [[package]]
 name = "google-auth"

@@ -7,57 +7,57 @@ respect_gitignore = true
 exclude = ["**/uv.lock", ".git/**", ".claude/**", "docs/**"]
 
 [[rules]]
-path = "tests/**"
+path = "packages/fastmcp/tests/**"
 max_lines = 1000
 
 [[rules]]
-path = "src/fastmcp/server/context.py"
+path = "packages/fastmcp/src/fastmcp/server/context.py"
 max_lines = 1404
 
 [[rules]]
-path = "src/fastmcp/server/server.py"
+path = "packages/fastmcp/src/fastmcp/server/server.py"
 max_lines = 2410
 
 [[rules]]
-path = "src/fastmcp/server/auth/oauth_proxy/proxy.py"
+path = "packages/fastmcp/src/fastmcp/server/auth/oauth_proxy/proxy.py"
 max_lines = 2098
 
 [[rules]]
-path = "src/fastmcp/cli/apps_dev.py"
+path = "packages/fastmcp/src/fastmcp/cli/apps_dev.py"
 max_lines = 1814
 
 [[rules]]
-path = "src/fastmcp/cli/cli.py"
+path = "packages/fastmcp/src/fastmcp/cli/cli.py"
 max_lines = 1116
 
 [[rules]]
-path = "src/fastmcp/server/dependencies.py"
+path = "packages/fastmcp/src/fastmcp/server/dependencies.py"
 max_lines = 1686
 
 [[rules]]
-path = "src/fastmcp/server/providers/proxy.py"
+path = "packages/fastmcp/src/fastmcp/server/providers/proxy.py"
 max_lines = 1096
 
 [[rules]]
-path = "src/fastmcp/tools/tool_transform.py"
+path = "packages/fastmcp/src/fastmcp/tools/tool_transform.py"
 max_lines = 1004
 
 [[rules]]
-path = "tests/server/providers/openapi/test_openapi_features.py"
+path = "packages/fastmcp/tests/server/providers/openapi/test_openapi_features.py"
 max_lines = 1029
 
 [[rules]]
-path = "tests/server/tasks/test_task_mount.py"
+path = "packages/fastmcp/tests/server/tasks/test_task_mount.py"
 max_lines = 1088
 
 [[rules]]
-path = "tests/server/test_dependencies.py"
+path = "packages/fastmcp/tests/server/test_dependencies.py"
 max_lines = 1194
 
 [[rules]]
-path = "tests/test_mcp_config.py"
+path = "packages/fastmcp/tests/test_mcp_config.py"
 max_lines = 1185
 
 [[rules]]
-path = "tests/utilities/openapi/test_director.py"
+path = "packages/fastmcp/tests/utilities/openapi/test_director.py"
 max_lines = 1154
