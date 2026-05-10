@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import builtins
+import types
+from collections.abc import Mapping, Sequence
 
 import pytest
 
@@ -33,10 +35,16 @@ async def test_multiserver_config_requires_full_fastmcp_for_now(
 
     original_import = builtins.__import__
 
-    def block_fastmcp_server(name: str, *args: object, **kwargs: object) -> object:
+    def block_fastmcp_server(
+        name: str,
+        globals: Mapping[str, object] | None = None,
+        locals: Mapping[str, object] | None = None,
+        fromlist: Sequence[str] | None = (),
+        level: int = 0,
+    ) -> types.ModuleType:
         if name == "fastmcp.server.server":
             raise ImportError("blocked full fastmcp import")
-        return original_import(name, *args, **kwargs)
+        return original_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", block_fastmcp_server)
 
@@ -49,6 +57,8 @@ async def test_multiserver_config_requires_full_fastmcp_for_now(
         }
     )
 
-    with pytest.raises(ImportError, match="multiple servers require the full `fastmcp`"):
+    with pytest.raises(
+        ImportError, match="multiple servers require the full `fastmcp`"
+    ):
         async with transport.connect_session():
             pass
