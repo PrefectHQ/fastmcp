@@ -359,6 +359,13 @@ async def apps(
             help="Auto-reload the MCP server on file changes",
         ),
     ] = True,
+    host: Annotated[
+        str,
+        cyclopts.Parameter(
+            "--host",
+            help="Host to bind to",
+        ),
+    ] = "127.0.0.1",
 ) -> None:
     """Preview a FastMCPApp UI in the browser.
 
@@ -378,7 +385,13 @@ async def apps(
 
     from fastmcp.cli.apps_dev import run_dev_apps
 
-    await run_dev_apps(server_spec, mcp_port=mcp_port, dev_port=dev_port, reload=reload)
+    await run_dev_apps(
+        server_spec,
+        mcp_port=mcp_port,
+        dev_port=dev_port,
+        reload=reload,
+        host=host,
+    )
 
 
 @app.command

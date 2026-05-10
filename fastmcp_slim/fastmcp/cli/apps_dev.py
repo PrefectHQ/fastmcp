@@ -1653,6 +1653,7 @@ async def _start_user_server(
     mcp_port: int,
     *,
     reload: bool = True,
+    host: str = "127.0.0.1",
 ) -> asyncio.subprocess.Process:
     """Start the user's MCP server as a subprocess on mcp_port."""
     cmd = [
@@ -1663,6 +1664,8 @@ async def _start_user_server(
         server_spec,
         "--transport",
         "http",
+        "--host",
+        host,
         "--port",
         str(mcp_port),
         "--no-banner",
@@ -1704,6 +1707,7 @@ async def run_dev_apps(
     mcp_port: int = 8000,
     dev_port: int = 8080,
     reload: bool = True,
+    host: str = "127.0.0.1",
 ) -> None:
     """Start the full dev environment for a FastMCPApp server.
 
@@ -1711,8 +1715,16 @@ async def run_dev_apps(
     on *dev_port* (with an /mcp proxy to the user's server), then opens
     the browser.
     """
-    mcp_url = f"http://localhost:{mcp_port}/mcp"
-    dev_url = f"http://localhost:{dev_port}"
+    mcp_url = (
+        f"http://{host}:{mcp_port}/mcp"
+        if ":" not in host
+        else f"http://[{host}]:{mcp_port}/mcp"
+    )
+    dev_url = (
+        f"http://{host}:{dev_port}"
+        if ":" not in host
+        else f"http://[{host}]:{dev_port}"
+    )
 
     user_proc: asyncio.subprocess.Process | None = None
 
@@ -1727,10 +1739,20 @@ async def run_dev_apps(
             (dev_port, "dev UI", "--dev-port"),
         ]:
             in_use = False
-            for family, addr in (
-                (socket.AF_INET, ("127.0.0.1", port)),
-                (socket.AF_INET6, ("::1", port, 0, 0)),
-            ):
+            _targets = (
+                (
+                    (socket.AF_INET, ("127.0.0.1", port)),
+                    (socket.AF_INET6, ("::1", port, 0, 0)),
+                )
+                if host == "127.0.0.1"
+                else (
+                    ((socket.AF_INET6, (host, port, 0, 0)),)
+                    if ":" in host
+                    else ((socket.AF_INET, (host, port)),)
+                )
+            )
+
+            for family, addr in _targets:
                 try:
                     with socket.socket(family, socket.SOCK_STREAM) as s:
                         if s.connect_ex(addr) == 0:
@@ -1751,7 +1773,9 @@ async def run_dev_apps(
         # Start the server first so user_proc is assigned before anything
         # that might fail (e.g. npm fetch).  This ensures the finally
         # cleanup can kill the subprocess even if the bundle fetch raises.
-        user_proc = await _start_user_server(server_spec, mcp_port, reload=reload)
+        user_proc = await _start_user_server(
+            server_spec, mcp_port, reload=reload, host=host
+        )
         app_bridge_js, import_map_json = await _fetch_app_bridge_bundle(
             _EXT_APPS_VERSION, _MCP_SDK_VERSION
         )
@@ -1769,7 +1793,7 @@ async def run_dev_apps(
         dev_app = _make_dev_app(mcp_url, app_bridge_js, import_map_tag, _MessageLog())
         config = uvicorn.Config(
             dev_app,
-            host="localhost",
+            host=host,
             port=dev_port,
             log_level="warning",
             ws="websockets-sansio",
