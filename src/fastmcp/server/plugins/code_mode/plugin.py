@@ -10,7 +10,7 @@ for servers with many tools.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -73,7 +73,6 @@ class CodeMode(Plugin[CodeModeConfig]):
         ```python
         from fastmcp.server.plugins.code_mode import (
             CodeMode,
-            CodeModeConfig,
             GetSchemas,
             ListTools,
         )
@@ -82,7 +81,7 @@ class CodeMode(Plugin[CodeModeConfig]):
             "Server",
             plugins=[
                 CodeMode(
-                    CodeModeConfig(execute_tool_name="run"),
+                    CodeMode.Config(execute_tool_name="run"),
                     sandbox_provider=my_custom_sandbox,
                     discovery_tools=[ListTools(), GetSchemas()],
                 )
@@ -90,6 +89,8 @@ class CodeMode(Plugin[CodeModeConfig]):
         )
         ```
     """
+
+    Config: ClassVar[type[CodeModeConfig]] = CodeModeConfig
 
     # `meta` is auto-derived (name="code-mode", version=None) — the right
     # answer for a bundled first-party plugin. Declare `meta` explicitly

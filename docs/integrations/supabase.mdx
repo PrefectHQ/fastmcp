@@ -19,7 +19,7 @@ Supabase Auth does not currently support [RFC 8707](https://www.rfc-editor.org/r
 
 Supabase's OAuth Server delegates the user consent screen to your application. When an MCP client initiates authorization, Supabase authenticates the user and then redirects to your application at a configured callback URL (e.g., `https://your-app.com/oauth/callback?authorization_id=...`). Your application must host a page that calls Supabase's `approveAuthorization()` or `denyAuthorization()` APIs to complete the flow.
 
-`SupabaseProvider` handles the resource server side (token verification and metadata), but you are responsible for building and hosting the consent UI separately. See [Supabase's OAuth Server documentation](https://supabase.com/docs/guides/auth/oauth-server/getting-started) for details on implementing the authorization page.
+The Supabase auth plugin handles the resource server side (token verification and metadata), but you are responsible for building and hosting the consent UI separately. See [Supabase's OAuth Server documentation](https://supabase.com/docs/guides/auth/oauth-server/getting-started) for details on implementing the authorization page.
 
 ## Configuration
 
@@ -49,18 +49,20 @@ In your Supabase Dashboard:
 
 ### Step 3: FastMCP Configuration
 
-Create your FastMCP server using the `SupabaseProvider`:
+Create your FastMCP server using the `SupabaseAuth` plugin:
 
 ```python server.py
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.supabase import SupabaseProvider
+from fastmcp.server.plugins.auth.supabase import SupabaseAuth
 
-auth = SupabaseProvider(
-    project_url="https://abc123.supabase.co",
-    base_url="http://localhost:8000",
+auth_plugin = SupabaseAuth(
+    SupabaseAuth.Config(
+        project_url="https://abc123.supabase.co",
+        base_url="http://localhost:8000",
+    )
 )
 
-mcp = FastMCP("Supabase Protected Server", auth=auth)
+mcp = FastMCP("Supabase Protected Server", plugins=[auth_plugin])
 
 @mcp.tool
 def protected_tool(message: str) -> str:
@@ -112,12 +114,14 @@ For production deployments, load configuration from environment variables:
 ```python server.py
 import os
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.supabase import SupabaseProvider
+from fastmcp.server.plugins.auth.supabase import SupabaseAuth
 
-auth = SupabaseProvider(
-    project_url=os.environ["SUPABASE_PROJECT_URL"],
-    base_url=os.environ.get("BASE_URL", "https://your-server.com"),
+auth_plugin = SupabaseAuth(
+    SupabaseAuth.Config(
+        project_url=os.environ["SUPABASE_PROJECT_URL"],
+        base_url=os.environ.get("BASE_URL", "https://your-server.com"),
+    )
 )
 
-mcp = FastMCP(name="Supabase Secured App", auth=auth)
+mcp = FastMCP(name="Supabase Secured App", plugins=[auth_plugin])
 ```

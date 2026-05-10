@@ -56,19 +56,21 @@ Create an application in the Discord Developer Portal to get the credentials nee
 
 ### Step 2: FastMCP Configuration
 
-Create your FastMCP server using the `DiscordProvider`, which handles Discord's OAuth flow automatically:
+Create your FastMCP server using the `DiscordAuth` plugin, which handles Discord's OAuth flow automatically:
 
 ```python server.py
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.discord import DiscordProvider
+from fastmcp.server.plugins.auth.discord import DiscordAuth
 
-auth_provider = DiscordProvider(
-    client_id="12345",      # Your Discord Application Client ID
-    client_secret="your-client-secret",    # Your Discord OAuth Client Secret
-    base_url="http://localhost:8000",      # Must match your OAuth configuration
+auth_plugin = DiscordAuth(
+    DiscordAuth.Config(
+        client_id="12345",                  # Your Discord Application Client ID
+        client_secret="your-client-secret", # Your Discord OAuth Client Secret
+        base_url="http://localhost:8000",   # Must match your OAuth configuration
+    )
 )
 
-mcp = FastMCP(name="Discord Secured App", auth=auth_provider)
+mcp = FastMCP(name="Discord Secured App", plugins=[auth_plugin])
 
 @mcp.tool
 async def get_user_info() -> dict:
@@ -138,11 +140,13 @@ Discord OAuth supports several scopes for accessing different types of user data
 To request additional scopes:
 
 ```python
-auth_provider = DiscordProvider(
-    client_id="...",
-    client_secret="...",
-    base_url="http://localhost:8000",
-    required_scopes=["identify", "email"],
+auth_plugin = DiscordAuth(
+    DiscordAuth.Config(
+        client_id="...",
+        client_secret="...",
+        base_url="http://localhost:8000",
+        required_scopes=["identify", "email"],
+    )
 )
 ```
 
@@ -153,17 +157,18 @@ For production deployments with persistent token management across server restar
 ```python server.py
 import os
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.discord import DiscordProvider
+from fastmcp.server.plugins.auth.discord import DiscordAuth
 from key_value.aio.stores.redis import RedisStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from cryptography.fernet import Fernet
 
-auth_provider = DiscordProvider(
-    client_id="12345",
-    client_secret=os.environ["DISCORD_CLIENT_SECRET"],
-    base_url="https://your-production-domain.com",
-
-    jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+auth_plugin = DiscordAuth(
+    DiscordAuth.Config(
+        client_id="12345",
+        client_secret=os.environ["DISCORD_CLIENT_SECRET"],
+        base_url="https://your-production-domain.com",
+        jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+    ),
     client_storage=FernetEncryptionWrapper(
         key_value=RedisStore(
             host=os.environ["REDIS_HOST"],
@@ -173,7 +178,7 @@ auth_provider = DiscordProvider(
     )
 )
 
-mcp = FastMCP(name="Production Discord App", auth=auth_provider)
+mcp = FastMCP(name="Production Discord App", plugins=[auth_plugin])
 ```
 
 <Note>

@@ -4,13 +4,13 @@ import pytest
 from key_value.aio.stores.memory import MemoryStore
 
 from fastmcp.server.auth.auth import MultiAuth
-from fastmcp.server.auth.providers.azure import (
+from fastmcp.server.auth.providers.jwt import RSAKeyPair, StaticTokenVerifier
+from fastmcp.server.plugins.auth.azure.provider import (
     OIDC_SCOPES,
     AzureJWTVerifier,
     AzureProvider,
     _find_azure_provider,
 )
-from fastmcp.server.auth.providers.jwt import RSAKeyPair, StaticTokenVerifier
 
 
 @pytest.fixture
@@ -771,13 +771,16 @@ class TestAzureOBOIntegration:
 
     def test_entra_obo_token_is_importable(self):
         """Test that EntraOBOToken can be imported."""
-        from fastmcp.server.auth.providers.azure import EntraOBOToken
+        from fastmcp.server.plugins.auth.azure.provider import EntraOBOToken
 
         assert EntraOBOToken is not None
 
     def test_entra_obo_token_creates_dependency(self):
         """Test that EntraOBOToken creates a dependency with scopes."""
-        from fastmcp.server.auth.providers.azure import EntraOBOToken, _EntraOBOToken
+        from fastmcp.server.plugins.auth.azure.provider import (
+            EntraOBOToken,
+            _EntraOBOToken,
+        )
 
         dep = EntraOBOToken(["https://graph.microsoft.com/User.Read"])
         assert isinstance(dep, _EntraOBOToken)
@@ -786,7 +789,7 @@ class TestAzureOBOIntegration:
     def test_entra_obo_token_is_dependency_instance(self):
         """Test that EntraOBOToken is a Dependency instance."""
         from fastmcp.dependencies import Dependency
-        from fastmcp.server.auth.providers.azure import _EntraOBOToken
+        from fastmcp.server.plugins.auth.azure.provider import _EntraOBOToken
 
         dep = _EntraOBOToken(["scope"])
         assert isinstance(dep, Dependency)

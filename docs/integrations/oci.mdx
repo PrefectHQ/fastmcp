@@ -87,7 +87,7 @@ Follow the Steps as mentioned below to create an OAuth client.
     Click on "Submit" button to update OAuth configuration for the client application. 
     **Note: You don't need to do any special configuration to support PKCE for the OAuth client.**
     Make sure to Activate the client application.
-    Note down client ID and client secret for the application. You'll use these values when configuring the OCIProvider in your code.
+    Note down client ID and client secret for the application. You'll use these values when configuring the OCI plugin in your code.
 </Step>
 </Steps>
 
@@ -209,7 +209,7 @@ For production deployments with persistent token management across server restar
 
 import os
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.oci import OCIProvider
+from fastmcp.server.plugins.auth.oci import OCIAuth
 
 from key_value.aio.stores.redis import RedisStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
@@ -217,14 +217,14 @@ from cryptography.fernet import Fernet
 
 # Load configuration from environment
 # Production setup with encrypted persistent token storage
-auth_provider = OCIProvider(
-    config_url=os.environ.get("OCI_CONFIG_URL"),
-    client_id=os.environ.get("OCI_CLIENT_ID"),
-    client_secret=os.environ.get("OCI_CLIENT_SECRET"),
-    base_url=os.environ.get("BASE_URL", "https://your-production-domain.com"),
-
-    # Production token management
-    jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+auth_plugin = OCIAuth(
+    OCIAuth.Config(
+        config_url=os.environ.get("OCI_CONFIG_URL"),
+        client_id=os.environ.get("OCI_CLIENT_ID"),
+        client_secret=os.environ.get("OCI_CLIENT_SECRET"),
+        base_url=os.environ.get("BASE_URL", "https://your-production-domain.com"),
+        jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+    ),
     client_storage=FernetEncryptionWrapper(
         key_value=RedisStore(
             host=os.environ["REDIS_HOST"],
@@ -234,7 +234,7 @@ auth_provider = OCIProvider(
     )
 )
 
-mcp = FastMCP(name="Production OCI App", auth=auth_provider)
+mcp = FastMCP(name="Production OCI App", plugins=[auth_plugin])
 ```
 
 <Note>

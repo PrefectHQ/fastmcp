@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.keycloak import KeycloakAuthProvider
+from fastmcp.server.plugins.auth.keycloak.provider import KeycloakAuthProvider
 
 TEST_REALM_URL = "https://keycloak.example.com/realms/test"
 TEST_BASE_URL = "https://fastmcp.example.com"

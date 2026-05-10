@@ -7,7 +7,7 @@ import pytest
 from key_value.aio.stores.memory import MemoryStore
 from pytest_httpx import HTTPXMock
 
-from fastmcp.server.auth.providers.clerk import ClerkProvider, ClerkTokenVerifier
+from fastmcp.server.plugins.auth.clerk.provider import ClerkProvider, ClerkTokenVerifier
 
 CLERK_DOMAIN = "test-instance.clerk.accounts.dev"
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from pydantic import BaseModel, ConfigDict
 
 from fastmcp.server.plugins.base import Plugin
@@ -38,6 +40,8 @@ class ResourcesAsTools(Plugin[ResourcesAsToolsConfig]):
         mcp = FastMCP("Server", plugins=[ResourcesAsTools()])
         ```
     """
+
+    Config: ClassVar[type[ResourcesAsToolsConfig]] = ResourcesAsToolsConfig
 
     def transforms(self) -> list[Transform]:
         return [ResourcesAsToolsTransform()]

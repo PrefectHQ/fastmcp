@@ -27,22 +27,24 @@ Before you begin, you will need:
 
 ### FastMCP Configuration
 
-Create your FastMCP server and use `KeycloakAuthProvider` to handle OAuth:
+Create your FastMCP server and use the `KeycloakAuth` plugin to handle OAuth:
 
 ```python server.py
 import os
 
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.keycloak import KeycloakAuthProvider
+from fastmcp.server.plugins.auth.keycloak import KeycloakAuth
 from fastmcp.server.dependencies import get_access_token
 
-auth = KeycloakAuthProvider(
-    realm_url=os.getenv("KEYCLOAK_REALM_URL") or "http://localhost:8080/realms/myrealm",
-    base_url="http://localhost:8000",
-    # audience="http://localhost:8000",  # Recommended for production
+auth_plugin = KeycloakAuth(
+    KeycloakAuth.Config(
+        realm_url=os.getenv("KEYCLOAK_REALM_URL") or "http://localhost:8080/realms/myrealm",
+        base_url="http://localhost:8000",
+        # audience="http://localhost:8000",  # Recommended for production
+    )
 )
 
-mcp = FastMCP("Keycloak Example Server", auth=auth)
+mcp = FastMCP("Keycloak Example Server", plugins=[auth_plugin])
 
 
 @mcp.tool
@@ -124,7 +126,7 @@ async def admin_only_tool() -> str:
 
 ```python
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from fastmcp.server.auth.providers.keycloak import KeycloakAuthProvider
+from fastmcp.server.plugins.auth.keycloak import KeycloakAuth
 
 custom_verifier = JWTVerifier(
     jwks_uri="http://localhost:8080/realms/myrealm/protocol/openid-connect/certs",
@@ -133,9 +135,11 @@ custom_verifier = JWTVerifier(
     required_scopes=["api:read", "api:write"],
 )
 
-auth = KeycloakAuthProvider(
-    realm_url="http://localhost:8080/realms/myrealm",
-    base_url="http://localhost:8000",
+auth_plugin = KeycloakAuth(
+    KeycloakAuth.Config(
+        realm_url="http://localhost:8080/realms/myrealm",
+        base_url="http://localhost:8000",
+    ),
     token_verifier=custom_verifier,
 )
 ```

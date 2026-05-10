@@ -46,7 +46,7 @@ Create an App registration in Azure Portal to get the credentials needed for aut
     </Warning>
     
     <Tip>
-    If you want to use a custom callback path (e.g., `/auth/azure/callback`), make sure to set the same path in both your Azure App registration and the `redirect_path` parameter when configuring the AzureProvider.
+    If you want to use a custom callback path (e.g., `/auth/azure/callback`), make sure to set the same path in both your Azure App registration and the `redirect_path` parameter when configuring the Azure plugin.
     </Tip>
 
     - **Expose an API**: Configure your Application ID URI and define scopes
@@ -74,7 +74,7 @@ Create an App registration in Azure Portal to get the credentials needed for aut
     </Warning>
 
     <Note>
-    In FastMCP's `AzureProvider`, set `identifier_uri` to your Application ID URI (optional; defaults to `api://{client_id}`) and set `required_scopes` to the unprefixed scope names (e.g., `read`, `write`). During authorization, FastMCP automatically prefixes scopes with your `identifier_uri`.
+    In FastMCP's Azure plugin, set `identifier_uri` to your Application ID URI (optional; defaults to `api://{client_id}`) and set `required_scopes` to the unprefixed scope names (e.g., `read`, `write`). During authorization, FastMCP automatically prefixes scopes with your `identifier_uri`.
     </Note>
 
 
@@ -109,28 +109,30 @@ Create an App registration in Azure Portal to get the credentials needed for aut
 
 ### Step 2: FastMCP Configuration
 
-Create your FastMCP server using the `AzureProvider`, which handles Azure's OAuth flow automatically:
+Create your FastMCP server using the `AzureAuth` plugin, which handles Azure's OAuth flow automatically:
 
 ```python server.py
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.azure import AzureProvider
+from fastmcp.server.plugins.auth.azure import AzureAuth
 
-# The AzureProvider handles Azure's token format and validation
-auth_provider = AzureProvider(
-    client_id="835f09b6-0f0f-40cc-85cb-f32c5829a149",  # Your Azure App Client ID
-    client_secret="your-client-secret",                 # Your Azure App Client Secret
-    tenant_id="08541b6e-646d-43de-a0eb-834e6713d6d5", # Your Azure Tenant ID (REQUIRED)
-    base_url="http://localhost:8000",                   # Must match your App registration
-    required_scopes=["your-scope"],                 # At least one scope REQUIRED - name of scope from your App
-    # identifier_uri defaults to api://{client_id}
-    # identifier_uri="api://your-api-id",
-    # Optional: request additional upstream scopes in the authorize request
-    # additional_authorize_scopes=["User.Read", "openid", "email"],
-    # redirect_path="/auth/callback"                  # Default value, customize if needed
-    # base_authority="login.microsoftonline.us"      # For Azure Government (default: login.microsoftonline.com)
+# The AzureAuth plugin handles Azure's token format and validation
+auth_plugin = AzureAuth(
+    AzureAuth.Config(
+        client_id="835f09b6-0f0f-40cc-85cb-f32c5829a149",  # Your Azure App Client ID
+        client_secret="your-client-secret",                 # Your Azure App Client Secret
+        tenant_id="08541b6e-646d-43de-a0eb-834e6713d6d5",   # Your Azure Tenant ID (REQUIRED)
+        base_url="http://localhost:8000",                   # Must match your App registration
+        required_scopes=["your-scope"],                     # At least one scope REQUIRED - name of scope from your App
+        # identifier_uri defaults to api://{client_id}
+        # identifier_uri="api://your-api-id",
+        # Optional: request additional upstream scopes in the authorize request
+        # additional_authorize_scopes=["User.Read", "openid", "email"],
+        # redirect_path="/auth/callback"                    # Default value, customize if needed
+        # base_authority="login.microsoftonline.us"         # For Azure Government (default: login.microsoftonline.com)
+    )
 )
 
-mcp = FastMCP(name="Azure Secured App", auth=auth_provider)
+mcp = FastMCP(name="Azure Secured App", plugins=[auth_plugin])
 
 # Add a protected tool to test authentication
 @mcp.tool
@@ -139,7 +141,7 @@ async def get_user_info() -> dict:
     from fastmcp.server.dependencies import get_access_token
     
     token = get_access_token()
-    # The AzureProvider stores user data in token claims
+    # The Azure plugin stores user data in token claims
     return {
         "azure_id": token.claims.get("sub"),
         "email": token.claims.get("email"),
@@ -250,21 +252,21 @@ For production deployments with persistent token management across server restar
 ```python server.py
 import os
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.azure import AzureProvider
+from fastmcp.server.plugins.auth.azure import AzureAuth
 from key_value.aio.stores.redis import RedisStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from cryptography.fernet import Fernet
 
 # Production setup with encrypted persistent token storage
-auth_provider = AzureProvider(
-    client_id="835f09b6-0f0f-40cc-85cb-f32c5829a149",
-    client_secret="your-client-secret",
-    tenant_id="08541b6e-646d-43de-a0eb-834e6713d6d5",
-    base_url="https://your-production-domain.com",
-    required_scopes=["your-scope"],
-
-    # Production token management
-    jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+auth_plugin = AzureAuth(
+    AzureAuth.Config(
+        client_id="835f09b6-0f0f-40cc-85cb-f32c5829a149",
+        client_secret="your-client-secret",
+        tenant_id="08541b6e-646d-43de-a0eb-834e6713d6d5",
+        base_url="https://your-production-domain.com",
+        required_scopes=["your-scope"],
+        jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+    ),
     client_storage=FernetEncryptionWrapper(
         key_value=RedisStore(
             host=os.environ["REDIS_HOST"],
@@ -274,7 +276,7 @@ auth_provider = AzureProvider(
     )
 )
 
-mcp = FastMCP(name="Production Azure App", auth=auth_provider)
+mcp = FastMCP(name="Production Azure App", plugins=[auth_plugin])
 ```
 
 <Note>
@@ -287,7 +289,7 @@ For complete details on these parameters, see the [OAuth Proxy documentation](/s
 
 <VersionBadge version="2.15.0" />
 
-For deployments where your server only needs to **validate incoming tokens** — such as Azure Container Apps with Managed Identity — use `AzureJWTVerifier` with `RemoteAuthProvider` instead of the full `AzureProvider`.
+For deployments where your server only needs to **validate incoming tokens** — such as Azure Container Apps with Managed Identity — use `AzureJWTVerifier` with `RemoteAuthProvider` instead of the full Azure auth plugin.
 
 This pattern is ideal when:
 - Your infrastructure handles authentication (e.g., Managed Identity)
@@ -297,7 +299,7 @@ This pattern is ideal when:
 ```python server.py
 from fastmcp import FastMCP
 from fastmcp.server.auth import RemoteAuthProvider
-from fastmcp.server.auth.providers.azure import AzureJWTVerifier
+from fastmcp.server.plugins.auth.azure.provider import AzureJWTVerifier
 from pydantic import AnyHttpUrl
 
 tenant_id = "your-tenant-id"
@@ -371,29 +373,31 @@ OBO requires additional configuration in your Azure App registration beyond basi
 </Step>
 </Steps>
 
-### Configure AzureProvider for OBO
+### Configure AzureAuth for OBO
 
 The `additional_authorize_scopes` parameter tells Azure which downstream API permissions to include during the initial authorization. These scopes establish what your server can request through OBO later.
 
 ```python server.py
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.azure import AzureProvider
+from fastmcp.server.plugins.auth.azure import AzureAuth
 
-auth_provider = AzureProvider(
-    client_id="your-client-id",
-    client_secret="your-client-secret",
-    tenant_id="your-tenant-id",
-    base_url="http://localhost:8000",
-    required_scopes=["mcp-access"],  # Your API scope
-    # Include Graph scopes for OBO
-    additional_authorize_scopes=[
-        "https://graph.microsoft.com/Mail.Read",
-        "https://graph.microsoft.com/User.Read",
-        "offline_access",  # Enables refresh tokens
-    ],
+auth_plugin = AzureAuth(
+    AzureAuth.Config(
+        client_id="your-client-id",
+        client_secret="your-client-secret",
+        tenant_id="your-tenant-id",
+        base_url="http://localhost:8000",
+        required_scopes=["mcp-access"],  # Your API scope
+        # Include Graph scopes for OBO
+        additional_authorize_scopes=[
+            "https://graph.microsoft.com/Mail.Read",
+            "https://graph.microsoft.com/User.Read",
+            "offline_access",  # Enables refresh tokens
+        ],
+    )
 )
 
-mcp = FastMCP(name="Graph-Enabled Server", auth=auth_provider)
+mcp = FastMCP(name="Graph-Enabled Server", plugins=[auth_plugin])
 ```
 
 Scopes listed in `additional_authorize_scopes` are requested during the initial OAuth flow but aren't validated on incoming tokens. They establish permission for your server to later exchange the user's token for downstream API access.
@@ -408,22 +412,25 @@ The `EntraOBOToken` dependency handles the complete OBO flow automatically. Decl
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.azure import AzureProvider, EntraOBOToken
+from fastmcp.server.plugins.auth.azure import AzureAuth
+from fastmcp.server.plugins.auth.azure.provider import EntraOBOToken
 import httpx
 
-auth_provider = AzureProvider(
-    client_id="your-client-id",
-    client_secret="your-client-secret",
-    tenant_id="your-tenant-id",
-    base_url="http://localhost:8000",
-    required_scopes=["mcp-access"],
-    additional_authorize_scopes=[
-        "https://graph.microsoft.com/Mail.Read",
-        "https://graph.microsoft.com/User.Read",
-    ],
+auth_plugin = AzureAuth(
+    AzureAuth.Config(
+        client_id="your-client-id",
+        client_secret="your-client-secret",
+        tenant_id="your-tenant-id",
+        base_url="http://localhost:8000",
+        required_scopes=["mcp-access"],
+        additional_authorize_scopes=[
+            "https://graph.microsoft.com/Mail.Read",
+            "https://graph.microsoft.com/User.Read",
+        ],
+    )
 )
 
-mcp = FastMCP(name="Email Reader", auth=auth_provider)
+mcp = FastMCP(name="Email Reader", plugins=[auth_plugin])
 
 @mcp.tool
 async def get_recent_emails(

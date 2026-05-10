@@ -50,7 +50,7 @@ Create your FastMCP server file and use the ScalekitProvider to handle all the O
 
 ```python server.py
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.scalekit import ScalekitProvider
+from fastmcp.server.plugins.auth.scalekit.provider import ScalekitProvider
 
 # Discovers Scalekit endpoints and set up JWT token validation
 auth_provider = ScalekitProvider(
@@ -95,7 +95,7 @@ Setting this environment variable allows the Scalekit provider to be used automa
 
 <Card>
 <ParamField path="FASTMCP_SERVER_AUTH" default="Not set">
-Set to `fastmcp.server.auth.providers.scalekit.ScalekitProvider` to use Scalekit authentication.
+Set to `fastmcp.server.plugins.auth.scalekit.provider.ScalekitProvider` to use Scalekit authentication.
 </ParamField>
 </Card>
 
@@ -127,7 +127,7 @@ Example `.env`:
 
 ```bash
 # Use the Scalekit provider
-FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.scalekit.ScalekitProvider
+FASTMCP_SERVER_AUTH=fastmcp.server.plugins.auth.scalekit.provider.ScalekitProvider
 
 # Scalekit configuration
 FASTMCP_SERVER_AUTH_SCALEKITPROVIDER_ENVIRONMENT_URL=https://your-env.scalekit.com

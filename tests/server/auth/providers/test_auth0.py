@@ -5,8 +5,8 @@ from unittest.mock import patch
 import pytest
 
 from fastmcp.server.auth.oidc_proxy import OIDCConfiguration
-from fastmcp.server.auth.providers.auth0 import Auth0Provider
 from fastmcp.server.auth.providers.jwt import JWTVerifier
+from fastmcp.server.plugins.auth.auth0.provider import Auth0Provider
 
 TEST_CONFIG_URL = "https://example.com/.well-known/openid-configuration"
 TEST_CLIENT_ID = "test-client-id"

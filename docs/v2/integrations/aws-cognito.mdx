@@ -121,7 +121,7 @@ Create your FastMCP server using the `AWSCognitoProvider`, which handles AWS Cog
 
 ```python server.py
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.aws import AWSCognitoProvider
+from fastmcp.server.plugins.auth.aws.provider import AWSCognitoProvider
 from fastmcp.server.dependencies import get_access_token
 
 # The AWSCognitoProvider handles JWT validation and user claims
@@ -205,7 +205,7 @@ For production deployments with persistent token management across server restar
 ```python server.py
 import os
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.aws import AWSCognitoProvider
+from fastmcp.server.plugins.auth.aws.provider import AWSCognitoProvider
 from key_value.aio.stores.redis import RedisStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from cryptography.fernet import Fernet
@@ -248,7 +248,7 @@ Setting this environment variable allows the AWS Cognito provider to be used aut
 
 <Card>
 <ParamField path="FASTMCP_SERVER_AUTH" default="Not set">
-Set to `fastmcp.server.auth.providers.aws.AWSCognitoProvider` to use AWS Cognito authentication.
+Set to `fastmcp.server.plugins.auth.aws.provider.AWSCognitoProvider` to use AWS Cognito authentication.
 </ParamField>
 </Card>
 
@@ -293,7 +293,7 @@ Comma-, space-, or JSON-separated list of required OAuth scopes (e.g., `openid e
 Example `.env` file:
 ```bash
 # Use the AWS Cognito provider
-FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.aws.AWSCognitoProvider
+FASTMCP_SERVER_AUTH=fastmcp.server.plugins.auth.aws.provider.AWSCognitoProvider
 
 # AWS Cognito credentials
 FASTMCP_SERVER_AUTH_AWS_COGNITO_USER_POOL_ID=eu-central-1_XXXXXXXXX

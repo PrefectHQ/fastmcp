@@ -32,7 +32,7 @@ Create your FastMCP server using the `SupabaseProvider`:
 
 ```python server.py
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.supabase import SupabaseProvider
+from fastmcp.server.plugins.auth.supabase.provider import SupabaseProvider
 
 # Configure Supabase Auth
 auth = SupabaseProvider(
@@ -101,7 +101,7 @@ Setting this environment variable allows the Supabase provider to be used automa
 
 <Card>
 <ParamField path="FASTMCP_SERVER_AUTH" default="Not set">
-Set to `fastmcp.server.auth.providers.supabase.SupabaseProvider` to use Supabase authentication.
+Set to `fastmcp.server.plugins.auth.supabase.provider.SupabaseProvider` to use Supabase authentication.
 </ParamField>
 </Card>
 
@@ -130,7 +130,7 @@ Comma-, space-, or JSON-separated list of required OAuth scopes (e.g., `openid e
 Example `.env` file:
 ```bash
 # Use the Supabase provider
-FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.supabase.SupabaseProvider
+FASTMCP_SERVER_AUTH=fastmcp.server.plugins.auth.supabase.provider.SupabaseProvider
 
 # Supabase configuration
 FASTMCP_SERVER_AUTH_SUPABASE_PROJECT_URL=https://abc123.supabase.co

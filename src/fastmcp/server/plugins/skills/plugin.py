@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -14,7 +14,7 @@ from fastmcp.server.providers import Provider
 
 # Vendor-name → list of skill-root paths. Captures the same preset
 # paths the vendor subclasses (`ClaudeSkillsProvider`, `CursorSkillsProvider`,
-# etc.) used to hardcode. The dict lets `Skills(SkillsConfig(vendor="claude"))`
+# etc.) used to hardcode. The dict lets `Skills(Skills.Config(vendor="claude"))`
 # replace seven separate subclass names with one plugin + an enum value.
 VENDOR_PATHS: dict[str, list[Path]] = {
     "claude": [Path.home() / ".claude" / "skills"],
@@ -93,27 +93,29 @@ class Skills(Plugin[SkillsConfig]):
     Example:
         ```python
         from fastmcp import FastMCP
-        from fastmcp.server.plugins.skills import Skills, SkillsConfig
+        from fastmcp.server.plugins.skills import Skills
 
         # Vendor preset — the common case:
         mcp = FastMCP(
             "skills",
-            plugins=[Skills(SkillsConfig(vendor="claude"))],
+            plugins=[Skills(Skills.Config(vendor="claude"))],
         )
 
         # Custom directory:
         mcp = FastMCP(
             "skills",
-            plugins=[Skills(SkillsConfig(directory="./skills"))],
+            plugins=[Skills(Skills.Config(directory="./skills"))],
         )
 
         # Single skill folder:
         mcp = FastMCP(
             "skills",
-            plugins=[Skills(SkillsConfig(path="./skills/pdf-processing"))],
+            plugins=[Skills(Skills.Config(path="./skills/pdf-processing"))],
         )
         ```
     """
+
+    Config: ClassVar[type[SkillsConfig]] = SkillsConfig
 
     def providers(self) -> list[Provider]:
         return [self._build_provider()]

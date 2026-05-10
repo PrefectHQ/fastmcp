@@ -10,7 +10,7 @@ from pydantic import SecretStr
 from fastmcp import Client, FastMCP
 from fastmcp.server.auth import AccessToken
 from fastmcp.server.auth.providers.introspection import IntrospectionTokenVerifier
-from fastmcp.server.auth.providers.propelauth import (
+from fastmcp.server.plugins.auth.propelauth.provider import (
     PropelAuthProvider,
     PropelAuthTokenIntrospectionOverrides,
 )
@@ -318,7 +318,7 @@ class TestPropelAuthProviderIntegration:
         real_httpx_client = httpx.AsyncClient
 
         monkeypatch.setattr(
-            "fastmcp.server.auth.providers.propelauth.httpx.AsyncClient",
+            "fastmcp.server.plugins.auth.propelauth.provider.httpx.AsyncClient",
             DummyAsyncClient,
         )
 

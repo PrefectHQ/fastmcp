@@ -97,7 +97,7 @@ async def my_tool(
 For Azure/Entra, the new `fastmcp[azure]` extra adds `EntraOBOToken`, which handles the On-Behalf-Of token exchange declaratively:
 
 ```python
-from fastmcp.server.auth.providers.azure import EntraOBOToken
+from fastmcp.server.plugins.auth.azure.provider import EntraOBOToken
 
 @mcp.tool()
 async def get_emails(

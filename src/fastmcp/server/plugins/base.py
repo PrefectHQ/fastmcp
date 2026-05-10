@@ -378,6 +378,9 @@ class Plugin(Generic[C]):
             def middleware(self):
                 # self.config is typed as PIIRedactorConfig
                 return [PIIMiddleware(self.config.patterns)]
+
+
+        plugin = PIIRedactor(PIIRedactor.Config(patterns=["email"]))
         ```
     """
 
@@ -394,6 +397,17 @@ class Plugin(Generic[C]):
     """Config model class resolved from the `Plugin[C]` generic parameter.
     Auto-populated by `__init_subclass__`; falls back to `_EmptyConfig`
     for plugins that don't parameterize `Plugin`.
+    """
+
+    Config: ClassVar[type[BaseModel]] = _EmptyConfig
+    """Public alias for the plugin's config model.
+
+    This lets users instantiate a plugin's config without importing the
+    implementation-specific config class separately:
+
+    ```python
+    SomePlugin(SomePlugin.Config(...))
+    ```
     """
 
     config: C
@@ -419,6 +433,7 @@ class Plugin(Generic[C]):
         config_cls = _resolve_plugin_config_cls(cls)
         if config_cls is not None:
             cls._config_cls = config_cls
+        cls.Config = cls._config_cls
         # Enforce the JSON-serializable contract on the resolved config.
         # Every plugin config must round-trip through JSON so plugins
         # can be loaded from config files, rendered by registry/Horizon

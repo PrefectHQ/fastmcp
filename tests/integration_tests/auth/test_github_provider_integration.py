@@ -24,7 +24,7 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.oauth_proxy.models import ClientCode
-from fastmcp.server.auth.providers.github import GitHubProvider
+from fastmcp.server.plugins.auth.github.provider import GitHubProvider
 from fastmcp.utilities.tests import HeadlessOAuth, run_server_async
 
 FASTMCP_TEST_AUTH_GITHUB_CLIENT_ID = os.getenv("FASTMCP_TEST_AUTH_GITHUB_CLIENT_ID")

@@ -3,7 +3,7 @@
 import pytest
 
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from fastmcp.server.auth.providers.keycloak import KeycloakAuthProvider
+from fastmcp.server.plugins.auth.keycloak.provider import KeycloakAuthProvider
 
 TEST_REALM_URL = "https://keycloak.example.com/realms/test"
 TEST_BASE_URL = "https://example.com:8000"

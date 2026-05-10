@@ -8,8 +8,8 @@ import pytest
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
-from fastmcp.server.auth.providers.descope import DescopeProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier
+from fastmcp.server.plugins.auth.descope.provider import DescopeProvider
 from fastmcp.utilities.tests import HeadlessOAuth, run_server_async
 
 

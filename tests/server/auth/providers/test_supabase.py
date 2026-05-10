@@ -8,7 +8,7 @@ import pytest
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from fastmcp.server.auth.providers.supabase import SupabaseProvider
+from fastmcp.server.plugins.auth.supabase.provider import SupabaseProvider
 from fastmcp.utilities.tests import HeadlessOAuth, run_server_in_process
 
 

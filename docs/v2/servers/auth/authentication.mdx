@@ -106,7 +106,7 @@ For example, the built-in `AuthKitProvider` uses WorkOS AuthKit, which fully sup
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.workos import AuthKitProvider
+from fastmcp.server.plugins.auth.authkit.provider import AuthKitProvider
 
 auth = AuthKitProvider(
     authkit_domain="https://your-project.authkit.app",
@@ -136,7 +136,7 @@ For example, the built-in `GitHubProvider` extends `OAuthProxy` to work with Git
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.github import GitHubProvider
+from fastmcp.server.plugins.auth.github.provider import GitHubProvider
 
 auth = GitHubProvider(
     client_id="Ov23li...",  # Your GitHub OAuth App ID
@@ -202,11 +202,11 @@ Authentication providers are configured by specifying the full module path to th
 
 <ParamField path="FASTMCP_SERVER_AUTH" type="string">
 The full module path to the authentication provider class. Examples:
-- `fastmcp.server.auth.providers.github.GitHubProvider` - GitHub OAuth
-- `fastmcp.server.auth.providers.google.GoogleProvider` - Google OAuth
+- `fastmcp.server.plugins.auth.github.provider.GitHubProvider` - GitHub OAuth
+- `fastmcp.server.plugins.auth.google.provider.GoogleProvider` - Google OAuth
 - `fastmcp.server.auth.providers.jwt.JWTVerifier` - JWT token verification
-- `fastmcp.server.auth.providers.workos.WorkOSProvider` - WorkOS OAuth
-- `fastmcp.server.auth.providers.workos.AuthKitProvider` - WorkOS AuthKit
+- `fastmcp.server.plugins.auth.workos.provider.WorkOSProvider` - WorkOS OAuth
+- `fastmcp.server.plugins.auth.authkit.provider.AuthKitProvider` - WorkOS AuthKit
 - `mycompany.auth.CustomProvider` - Your custom provider class
 </ParamField>
 
@@ -214,12 +214,12 @@ When using providers like GitHub or Google, you'll need to set provider-specific
 
 ```bash
 # GitHub OAuth
-export FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.github.GitHubProvider
+export FASTMCP_SERVER_AUTH=fastmcp.server.plugins.auth.github.provider.GitHubProvider
 export FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID="Ov23li..."
 export FASTMCP_SERVER_AUTH_GITHUB_CLIENT_SECRET="github_pat_..."
 
 # Google OAuth
-export FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.google.GoogleProvider
+export FASTMCP_SERVER_AUTH=fastmcp.server.plugins.auth.google.provider.GoogleProvider
 export FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_ID="123456.apps.googleusercontent.com"
 export FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_SECRET="GOCSPX-..."
 ```

@@ -43,24 +43,26 @@ BASE_URL=http://localhost:8000/
 
 ### Step 2: Add auth to FastMCP server
 
-Create your FastMCP server file and use the ScalekitProvider to handle all the OAuth integration automatically:
+Create your FastMCP server file and use the `ScalekitAuth` plugin to handle the OAuth integration automatically:
 
 > **Warning:** The legacy `mcp_url` and `client_id` parameters are deprecated and will be removed in a future release. Use `base_url` instead of `mcp_url` and remove `client_id` from your configuration.
 
 ```python server.py
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.scalekit import ScalekitProvider
+from fastmcp.server.plugins.auth.scalekit import ScalekitAuth
 
 # Discovers Scalekit endpoints and set up JWT token validation
-auth_provider = ScalekitProvider(
-    environment_url=SCALEKIT_ENVIRONMENT_URL,    # Scalekit environment URL
-    resource_id=SCALEKIT_RESOURCE_ID,            # Resource server ID
-    base_url=SERVER_URL,                         # Public MCP endpoint
-    required_scopes=["read"],                    # Optional scope enforcement
+auth_plugin = ScalekitAuth(
+    ScalekitAuth.Config(
+        environment_url=SCALEKIT_ENVIRONMENT_URL,  # Scalekit environment URL
+        resource_id=SCALEKIT_RESOURCE_ID,          # Resource server ID
+        base_url=SERVER_URL,                       # Public MCP endpoint
+        required_scopes=["read"],                  # Optional scope enforcement
+    )
 )
 
-# Create FastMCP server with auth
-mcp = FastMCP(name="My Scalekit Protected Server", auth=auth_provider)
+# Create FastMCP server with auth plugin
+mcp = FastMCP(name="My Scalekit Protected Server", plugins=[auth_plugin])
 
 @mcp.tool
 def auth_status() -> dict:
@@ -95,16 +97,18 @@ For production deployments, load configuration from environment variables:
 ```python server.py
 import os
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.scalekit import ScalekitProvider
+from fastmcp.server.plugins.auth.scalekit import ScalekitAuth
 
 # Load configuration from environment variables
-auth = ScalekitProvider(
-    environment_url=os.environ.get("SCALEKIT_ENVIRONMENT_URL"),
-    resource_id=os.environ.get("SCALEKIT_RESOURCE_ID"),
-    base_url=os.environ.get("BASE_URL", "https://your-server.com")
+auth_plugin = ScalekitAuth(
+    ScalekitAuth.Config(
+        environment_url=os.environ.get("SCALEKIT_ENVIRONMENT_URL"),
+        resource_id=os.environ.get("SCALEKIT_RESOURCE_ID"),
+        base_url=os.environ.get("BASE_URL", "https://your-server.com"),
+    )
 )
 
-mcp = FastMCP(name="My Scalekit Protected Server", auth=auth)
+mcp = FastMCP(name="My Scalekit Protected Server", plugins=[auth_plugin])
 
 @mcp.tool
 def protected_action() -> str:

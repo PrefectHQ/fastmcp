@@ -1,9 +1,9 @@
 """Skills plugin — expose agent skill folders as MCP resources.
 
     from fastmcp import FastMCP
-    from fastmcp.server.plugins.skills import Skills, SkillsConfig
+    from fastmcp.server.plugins.skills import Skills
 
-    mcp = FastMCP("skills", plugins=[Skills(SkillsConfig(vendor="claude"))])
+    mcp = FastMCP("skills", plugins=[Skills(Skills.Config(vendor="claude"))])
 
 The underlying `SkillProvider` and `SkillsDirectoryProvider` classes
 live on `.skill_provider` and `.directory_provider` submodules for

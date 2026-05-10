@@ -183,7 +183,7 @@ WorkOS AuthKit provides an excellent example of remote OAuth integration. The `A
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.workos import AuthKitProvider
+from fastmcp.server.plugins.auth.authkit.provider import AuthKitProvider
 
 auth = AuthKitProvider(
     authkit_domain="https://your-project.authkit.app",

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from pydantic import BaseModel, ConfigDict
 
 from fastmcp.server.plugins.base import Plugin
@@ -36,6 +38,8 @@ class PromptsAsTools(Plugin[PromptsAsToolsConfig]):
         mcp = FastMCP("Server", plugins=[PromptsAsTools()])
         ```
     """
+
+    Config: ClassVar[type[PromptsAsToolsConfig]] = PromptsAsToolsConfig
 
     def transforms(self) -> list[Transform]:
         return [PromptsAsToolsTransform()]

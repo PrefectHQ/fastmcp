@@ -218,7 +218,7 @@ auth = OIDCProxy(
 FastMCP includes pre-configured OIDC providers for common services:
 
 ```python
-from fastmcp.server.auth.providers.auth0 import Auth0Provider
+from fastmcp.server.plugins.auth.auth0.provider import Auth0Provider
 
 auth = Auth0Provider(
     config_url="https://.../.well-known/openid-configuration",
@@ -262,7 +262,7 @@ For production deployments, load sensitive credentials from environment variable
 ```python
 import os
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.auth0 import Auth0Provider
+from fastmcp.server.plugins.auth.auth0.provider import Auth0Provider
 
 # Load secrets from environment variables
 auth = Auth0Provider(

@@ -81,7 +81,7 @@ Create your FastMCP server using the `Auth0Provider`.
 
 ```python server.py
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.auth0 import Auth0Provider
+from fastmcp.server.plugins.auth.auth0.provider import Auth0Provider
 
 # The Auth0Provider utilizes Auth0 OIDC configuration
 auth_provider = Auth0Provider(
@@ -158,7 +158,7 @@ For production deployments with persistent token management across server restar
 ```python server.py
 import os
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.auth0 import Auth0Provider
+from fastmcp.server.plugins.auth.auth0.provider import Auth0Provider
 from key_value.aio.stores.redis import RedisStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from cryptography.fernet import Fernet
@@ -205,7 +205,7 @@ Setting this environment variable allows the Auth0 provider to be used automatic
 
 <Card>
 <ParamField path="FASTMCP_SERVER_AUTH" default="Not set">
-Set to `fastmcp.server.auth.providers.auth0.Auth0Provider` to use Auth0 authentication.
+Set to `fastmcp.server.plugins.auth.auth0.provider.Auth0Provider` to use Auth0 authentication.
 </ParamField>
 </Card>
 
@@ -250,7 +250,7 @@ Comma-, space-, or JSON-separated list of required AUth0 scopes (e.g., `openid e
 Example `.env` file:
 ```bash
 # Use the Auth0 provider
-FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.auth0.Auth0Provider
+FASTMCP_SERVER_AUTH=fastmcp.server.plugins.auth.auth0.provider.Auth0Provider
 
 # Auth0 configuration and credentials
 FASTMCP_SERVER_AUTH_AUTH0_CONFIG_URL=https://.../.well-known/openid-configuration

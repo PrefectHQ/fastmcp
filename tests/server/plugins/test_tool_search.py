@@ -52,20 +52,20 @@ class TestSearchPluginRegistration:
         assert names == {"search_tools", "call_tool"}
 
     async def test_regex_strategy_dispatches_regex_transform(self):
-        plugin = ToolSearch(ToolSearchConfig(strategy="regex"))
+        plugin = ToolSearch(ToolSearch.Config(strategy="regex"))
         transforms = plugin.transforms()
         assert len(transforms) == 1
         assert isinstance(transforms[0], RegexSearchTransform)
 
     async def test_bm25_strategy_dispatches_bm25_transform(self):
-        plugin = ToolSearch(ToolSearchConfig(strategy="bm25"))
+        plugin = ToolSearch(ToolSearch.Config(strategy="bm25"))
         transforms = plugin.transforms()
         assert len(transforms) == 1
         assert isinstance(transforms[0], BM25SearchTransform)
 
     async def test_always_visible_pins_tools_alongside_search_call(self):
         mcp = _make_server_with_tools(
-            [ToolSearch(ToolSearchConfig(always_visible=["add"]))]
+            [ToolSearch(ToolSearch.Config(always_visible=["add"]))]
         )
 
         async with Client(mcp) as c:
@@ -78,7 +78,7 @@ class TestSearchPluginRegistration:
         mcp = _make_server_with_tools(
             [
                 ToolSearch(
-                    ToolSearchConfig(search_tool_name="find", call_tool_name="invoke")
+                    ToolSearch.Config(search_tool_name="find", call_tool_name="invoke")
                 )
             ]
         )
@@ -100,6 +100,7 @@ class TestSearchPluginRegistration:
     async def test_search_binds_searchconfig_via_generic_parameter(self):
         """`Plugin[ToolSearchConfig]` makes ToolSearchConfig the validated config type."""
         assert ToolSearch._config_cls is ToolSearchConfig
+        assert ToolSearch.Config is ToolSearchConfig
 
     async def test_dict_config_still_accepted(self):
         """Dict config path (inherited from Plugin base) constructs cleanly —
@@ -119,11 +120,11 @@ class TestSearchPluginRegistration:
 class TestSearchPluginConfigValidation:
     def test_unknown_strategy_rejected(self):
         with pytest.raises((ValidationError, Exception), match="strategy"):
-            ToolSearchConfig(strategy="fuzzy")  # ty: ignore[invalid-argument-type]
+            ToolSearch.Config(strategy="fuzzy")  # ty: ignore[invalid-argument-type]
 
     def test_unknown_config_key_rejected(self):
         with pytest.raises((ValidationError, Exception), match="forbid|extra"):
-            ToolSearchConfig(not_a_real_option=True)  # ty: ignore[unknown-argument]
+            ToolSearch.Config(not_a_real_option=True)  # ty: ignore[unknown-argument]
 
     def test_default_meta_name_and_version(self):
         """ToolSearch relies on Plugin's auto-derived meta: kebab-cased

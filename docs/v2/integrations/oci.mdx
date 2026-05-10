@@ -213,7 +213,7 @@ For production deployments with persistent token management across server restar
 
 import os
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.oci import OCIProvider
+from fastmcp.server.plugins.auth.oci.provider import OCIProvider
 
 from key_value.aio.stores.redis import RedisStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
@@ -265,7 +265,7 @@ Setting this environment variable allows the OCI provider to be used automatical
 
 <Card>
 <ParamField path="FASTMCP_SERVER_AUTH" default="Not set">
-Set to `fastmcp.server.auth.providers.oci.OCIProvider` to use OCI IAM authentication.
+Set to `fastmcp.server.plugins.auth.oci.provider.OCIProvider` to use OCI IAM authentication.
 </ParamField>
 </Card>
 
@@ -303,7 +303,7 @@ Redirect path configured in your OCI IAM Integrated Application
 Example `.env` file:
 ```bash
 # Use the OCI IAM provider
-FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.oci.OCIProvider
+FASTMCP_SERVER_AUTH=fastmcp.server.plugins.auth.oci.provider.OCIProvider
 
 # OCI IAM configuration and credentials
 FASTMCP_SERVER_AUTH_OCI_IAM_GUID=idcs-asaacasd1111.....

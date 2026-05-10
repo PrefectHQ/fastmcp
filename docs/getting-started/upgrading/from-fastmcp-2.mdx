@@ -252,7 +252,7 @@ auth = GitHubProvider()
 
 # After (v3) — pass values explicitly
 import os
-from fastmcp.server.auth.providers.github import GitHubProvider
+from fastmcp.server.plugins.auth.github.provider import GitHubProvider
 
 auth = GitHubProvider(
     client_id=os.environ["GITHUB_CLIENT_ID"],

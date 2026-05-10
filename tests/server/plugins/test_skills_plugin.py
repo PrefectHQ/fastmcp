@@ -24,15 +24,16 @@ from fastmcp.server.plugins.skills.skill_provider import SkillProvider
 class TestSkillsConfig:
     def test_config_generic_binding(self):
         assert Skills._config_cls is SkillsConfig
+        assert Skills.Config is SkillsConfig
 
     def test_default_config_instantiable(self):
         """Defaults must pass the plugin framework's instantiate-with-no-args
         contract; the source check fires at providers() time."""
-        assert SkillsConfig()  # must not raise
+        assert Skills.Config()  # must not raise
 
     def test_unknown_config_key_rejected(self):
         with pytest.raises((ValidationError, Exception), match="forbid|extra"):
-            SkillsConfig(not_a_real_option=True)  # ty: ignore[unknown-argument]
+            Skills.Config(not_a_real_option=True)  # ty: ignore[unknown-argument]
 
     def test_default_meta(self):
         assert Skills.meta.name == "skills"
@@ -45,12 +46,12 @@ class TestSourceResolution:
         skill.mkdir()
         (skill / "SKILL.md").write_text("# My Skill")
 
-        plugin = Skills(SkillsConfig(path=str(skill)))
+        plugin = Skills(Skills.Config(path=str(skill)))
         providers = plugin.providers()
         assert isinstance(providers[0], SkillProvider)
 
     def test_directory_source_builds_directory_provider(self, tmp_path: Path):
-        plugin = Skills(SkillsConfig(directory=str(tmp_path)))
+        plugin = Skills(Skills.Config(directory=str(tmp_path)))
         providers = plugin.providers()
         assert isinstance(providers[0], SkillsDirectoryProvider)
 
@@ -58,7 +59,7 @@ class TestSourceResolution:
         a, b = tmp_path / "a", tmp_path / "b"
         a.mkdir()
         b.mkdir()
-        plugin = Skills(SkillsConfig(directory=[str(a), str(b)]))
+        plugin = Skills(Skills.Config(directory=[str(a), str(b)]))
         providers = plugin.providers()
         assert isinstance(providers[0], SkillsDirectoryProvider)
 
@@ -66,17 +67,17 @@ class TestSourceResolution:
     def test_vendor_presets_resolve_to_known_paths(self, vendor: str):
         """Every vendor string must produce a directory provider rooted
         at the paths the old vendor subclass used to hardcode."""
-        plugin = Skills(SkillsConfig(vendor=cast(Vendor, vendor)))
+        plugin = Skills(Skills.Config(vendor=cast(Vendor, vendor)))
         providers = plugin.providers()
         assert isinstance(providers[0], SkillsDirectoryProvider)
 
     def test_no_source_fails_at_build_time(self):
-        plugin = Skills(SkillsConfig())
+        plugin = Skills(Skills.Config())
         with pytest.raises(ValueError, match="path.*directory.*vendor"):
             plugin.providers()
 
     def test_multiple_sources_rejected(self, tmp_path: Path):
-        plugin = Skills(SkillsConfig(directory=str(tmp_path), vendor="claude"))
+        plugin = Skills(Skills.Config(directory=str(tmp_path), vendor="claude"))
         with pytest.raises(ValueError, match="exactly one"):
             plugin.providers()
 

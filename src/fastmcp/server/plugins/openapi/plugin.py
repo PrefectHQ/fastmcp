@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 import httpx
 from pydantic import BaseModel, ConfigDict
@@ -123,21 +123,21 @@ class OpenAPI(Plugin[OpenAPIConfig]):
     """Mount an OpenAPI spec as an MCP server via a plugin.
 
     Everything declarative (spec, base URL, headers, route mappings)
-    goes in `OpenAPIConfig`. Python-only knobs — custom `httpx.AsyncClient`,
+    goes in `OpenAPI.Config`. Python-only knobs — custom `httpx.AsyncClient`,
     route-mapping callables, component customization — go in `__init__`
     kwargs.
 
     Example:
         ```python
         from fastmcp import FastMCP
-        from fastmcp.server.plugins.openapi import OpenAPI, OpenAPIConfig
+        from fastmcp.server.plugins.openapi import OpenAPI
 
         # Declarative (JSON-friendly):
         mcp = FastMCP(
             "Petstore",
             plugins=[
                 OpenAPI(
-                    OpenAPIConfig(
+                    OpenAPI.Config(
                         spec=petstore_spec,
                         base_url="https://api.example.com",
                         headers={"Authorization": "Bearer ..."},
@@ -152,13 +152,15 @@ class OpenAPI(Plugin[OpenAPIConfig]):
             "Petstore",
             plugins=[
                 OpenAPI(
-                    OpenAPIConfig(spec=petstore_spec),
+                    OpenAPI.Config(spec=petstore_spec),
                     client=custom_client,
                 )
             ],
         )
         ```
     """
+
+    Config: ClassVar[type[OpenAPIConfig]] = OpenAPIConfig
 
     # "OpenAPI" is a single technical term; the auto-kebab would split
     # it into "open-api", which is uglier than the established spelling.

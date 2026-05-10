@@ -106,7 +106,7 @@ For example, the built-in `AuthKitProvider` uses WorkOS AuthKit, which fully sup
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.workos import AuthKitProvider
+from fastmcp.server.plugins.auth.authkit.provider import AuthKitProvider
 
 auth = AuthKitProvider(
     authkit_domain="https://your-project.authkit.app",
@@ -136,7 +136,7 @@ For example, the built-in `GitHubProvider` extends `OAuthProxy` to work with Git
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.github import GitHubProvider
+from fastmcp.server.plugins.auth.github.provider import GitHubProvider
 
 auth = GitHubProvider(
     client_id="Ov23li...",  # Your GitHub OAuth App ID
@@ -221,7 +221,7 @@ For production deployments, load sensitive values like client secrets from envir
 ```python
 import os
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.github import GitHubProvider
+from fastmcp.server.plugins.auth.github.provider import GitHubProvider
 
 # Load secrets from environment variables
 auth = GitHubProvider(

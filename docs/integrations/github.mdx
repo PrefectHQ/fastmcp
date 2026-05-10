@@ -42,7 +42,7 @@ Create an OAuth App in your GitHub settings to get the credentials needed for au
     </Warning>
     
     <Tip>
-    If you want to use a custom callback path (e.g., `/auth/github/callback`), make sure to set the same path in both your GitHub OAuth App settings and the `redirect_path` parameter when configuring the GitHubProvider.
+    If you want to use a custom callback path (e.g., `/auth/github/callback`), make sure to set the same path in both your GitHub OAuth App settings and the `redirect_path` parameter when configuring the GitHub plugin.
     </Tip>
 </Step>
 
@@ -60,21 +60,23 @@ Create an OAuth App in your GitHub settings to get the credentials needed for au
 
 ### Step 2: FastMCP Configuration
 
-Create your FastMCP server using the `GitHubProvider`, which handles GitHub's OAuth quirks automatically:
+Create your FastMCP server using the `GitHubAuth` plugin, which handles GitHub's OAuth quirks automatically:
 
 ```python server.py
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.github import GitHubProvider
+from fastmcp.server.plugins.auth.github import GitHubAuth
 
-# The GitHubProvider handles GitHub's token format and validation
-auth_provider = GitHubProvider(
-    client_id="Ov23liAbcDefGhiJkLmN",  # Your GitHub OAuth App Client ID
-    client_secret="github_pat_...",     # Your GitHub OAuth App Client Secret
-    base_url="http://localhost:8000",   # Must match your OAuth App configuration
-    # redirect_path="/auth/callback"   # Default value, customize if needed
+# The GitHubAuth plugin handles GitHub's token format and validation
+auth_plugin = GitHubAuth(
+    GitHubAuth.Config(
+        client_id="Ov23liAbcDefGhiJkLmN",  # Your GitHub OAuth App Client ID
+        client_secret="github_pat_...",     # Your GitHub OAuth App Client Secret
+        base_url="http://localhost:8000",   # Must match your OAuth App configuration
+        # redirect_path="/auth/callback"    # Default value, customize if needed
+    )
 )
 
-mcp = FastMCP(name="GitHub Secured App", auth=auth_provider)
+mcp = FastMCP(name="GitHub Secured App", plugins=[auth_plugin])
 
 # Add a protected tool to test authentication
 @mcp.tool
@@ -83,7 +85,7 @@ async def get_user_info() -> dict:
     from fastmcp.server.dependencies import get_access_token
     
     token = get_access_token()
-    # The GitHubProvider stores user data in token claims
+    # The GitHub auth plugin stores user data in token claims
     return {
         "github_user": token.claims.get("login"),
         "name": token.claims.get("name"),
@@ -143,19 +145,19 @@ For production deployments with persistent token management across server restar
 ```python server.py
 import os
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.github import GitHubProvider
+from fastmcp.server.plugins.auth.github import GitHubAuth
 from key_value.aio.stores.redis import RedisStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from cryptography.fernet import Fernet
 
 # Production setup with encrypted persistent token storage
-auth_provider = GitHubProvider(
-    client_id="Ov23liAbcDefGhiJkLmN",
-    client_secret="github_pat_...",
-    base_url="https://your-production-domain.com",
-
-    # Production token management
-    jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+auth_plugin = GitHubAuth(
+    GitHubAuth.Config(
+        client_id="Ov23liAbcDefGhiJkLmN",
+        client_secret="github_pat_...",
+        base_url="https://your-production-domain.com",
+        jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+    ),
     client_storage=FernetEncryptionWrapper(
         key_value=RedisStore(
             host=os.environ["REDIS_HOST"],
@@ -165,7 +167,7 @@ auth_provider = GitHubProvider(
     )
 )
 
-mcp = FastMCP(name="Production GitHub App", auth=auth_provider)
+mcp = FastMCP(name="Production GitHub App", plugins=[auth_plugin])
 ```
 
 <Note>

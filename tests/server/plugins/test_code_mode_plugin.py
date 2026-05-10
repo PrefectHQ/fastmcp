@@ -34,6 +34,7 @@ class TestCodeModeConfig:
     def test_config_generic_binding(self):
         """`Plugin[CodeModeConfig]` binds CodeModeConfig as the validated config type."""
         assert CodeMode._config_cls is CodeModeConfig
+        assert CodeMode.Config is CodeModeConfig
 
     def test_dict_config_accepted(self):
         """Dict config works for loading from JSON/YAML."""
@@ -42,11 +43,11 @@ class TestCodeModeConfig:
 
     def test_unknown_sandbox_rejected(self):
         with pytest.raises((ValidationError, Exception), match="sandbox"):
-            CodeModeConfig(sandbox="docker")  # ty: ignore[invalid-argument-type]
+            CodeMode.Config(sandbox="docker")  # ty: ignore[invalid-argument-type]
 
     def test_unknown_config_key_rejected(self):
         with pytest.raises((ValidationError, Exception), match="forbid|extra"):
-            CodeModeConfig(not_a_real_option=True)  # ty: ignore[unknown-argument]
+            CodeMode.Config(not_a_real_option=True)  # ty: ignore[unknown-argument]
 
     def test_default_meta(self):
         """CodeMode uses Plugin's auto-derived meta: kebab-cased class

@@ -114,7 +114,7 @@ Create your FastMCP server using the `AzureProvider`, which handles Azure's OAut
 
 ```python server.py
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.azure import AzureProvider
+from fastmcp.server.plugins.auth.azure.provider import AzureProvider
 
 # The AzureProvider handles Azure's token format and validation
 auth_provider = AzureProvider(
@@ -247,7 +247,7 @@ For production deployments with persistent token management across server restar
 ```python server.py
 import os
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.azure import AzureProvider
+from fastmcp.server.plugins.auth.azure.provider import AzureProvider
 from key_value.aio.stores.redis import RedisStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from cryptography.fernet import Fernet
@@ -292,7 +292,7 @@ Setting this environment variable allows the Azure provider to be used automatic
 
 <Card>
 <ParamField path="FASTMCP_SERVER_AUTH" default="Not set">
-Set to `fastmcp.server.auth.providers.azure.AzureProvider` to use Azure authentication.
+Set to `fastmcp.server.plugins.auth.azure.provider.AzureProvider` to use Azure authentication.
 </ParamField>
 </Card>
 
@@ -360,7 +360,7 @@ This setting affects all Azure OAuth endpoints (authorization, token, issuer, JW
 Example `.env` file:
 ```bash
 # Use the Azure provider
-FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.azure.AzureProvider
+FASTMCP_SERVER_AUTH=fastmcp.server.plugins.auth.azure.provider.AzureProvider
 
 # Azure OAuth credentials
 FASTMCP_SERVER_AUTH_AZURE_CLIENT_ID=835f09b6-0f0f-40cc-85cb-f32c5829a149

@@ -61,7 +61,7 @@ Create your FastMCP server using the `WorkOSProvider`:
 
 ```python server.py
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.workos import WorkOSProvider
+from fastmcp.server.plugins.auth.workos.provider import WorkOSProvider
 
 # Configure WorkOS OAuth
 auth = WorkOSProvider(
@@ -135,7 +135,7 @@ For production deployments with persistent token management across server restar
 ```python server.py
 import os
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.workos import WorkOSProvider
+from fastmcp.server.plugins.auth.workos.provider import WorkOSProvider
 from key_value.aio.stores.redis import RedisStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from cryptography.fernet import Fernet
@@ -180,7 +180,7 @@ Setting this environment variable allows the WorkOS provider to be used automati
 
 <Card>
 <ParamField path="FASTMCP_SERVER_AUTH" default="Not set">
-Set to `fastmcp.server.auth.providers.workos.WorkOSProvider` to use WorkOS authentication.
+Set to `fastmcp.server.plugins.auth.workos.provider.WorkOSProvider` to use WorkOS authentication.
 </ParamField>
 </Card>
 
@@ -232,7 +232,7 @@ FASTMCP_SERVER_AUTH_WORKOS_BASE_URL=https://your-server.com
 FASTMCP_SERVER_AUTH_WORKOS_REQUIRED_SCOPES=["openid","profile","email"]
 
 # Optional: Automatically provision WorkOS auth for all servers
-FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.workos.WorkOSProvider
+FASTMCP_SERVER_AUTH=fastmcp.server.plugins.auth.workos.provider.WorkOSProvider
 ```
 
 With environment variables set, you can either:
@@ -240,14 +240,14 @@ With environment variables set, you can either:
 **Option 1: Manual instantiation (env vars provide defaults)**
 ```python server.py
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.workos import WorkOSProvider
+from fastmcp.server.plugins.auth.workos.provider import WorkOSProvider
 
 # Env vars provide default values for WorkOSProvider()
 auth = WorkOSProvider()  # Uses env var defaults
 mcp = FastMCP(name="WorkOS Protected Server", auth=auth)
 ```
 
-**Option 2: Automatic provisioning (requires FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.workos.WorkOSProvider)**
+**Option 2: Automatic provisioning (requires FASTMCP_SERVER_AUTH=fastmcp.server.plugins.auth.workos.provider.WorkOSProvider)**
 ```python server.py
 from fastmcp import FastMCP
 

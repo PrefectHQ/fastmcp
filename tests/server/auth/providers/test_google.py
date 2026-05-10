@@ -7,7 +7,7 @@ import pytest
 from key_value.aio.stores.memory import MemoryStore
 from pytest_httpx import HTTPXMock
 
-from fastmcp.server.auth.providers.google import (
+from fastmcp.server.plugins.auth.google.provider import (
     GOOGLE_SCOPE_ALIASES,
     GoogleProvider,
     GoogleTokenVerifier,

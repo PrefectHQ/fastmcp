@@ -56,22 +56,24 @@ The callback URL must match exactly. The default path is `/auth/callback`, but y
 
 ### Step 2: FastMCP Configuration
 
-Create your FastMCP server using the `WorkOSProvider`:
+Create your FastMCP server using the `WorkOSAuth` plugin:
 
 ```python server.py
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.workos import WorkOSProvider
+from fastmcp.server.plugins.auth.workos import WorkOSAuth
 
 # Configure WorkOS OAuth
-auth = WorkOSProvider(
-    client_id="client_YOUR_CLIENT_ID",
-    client_secret="YOUR_CLIENT_SECRET",
-    authkit_domain="https://your-app.authkit.app",
-    base_url="http://localhost:8000",
-    required_scopes=["openid", "profile", "email"]
+auth_plugin = WorkOSAuth(
+    WorkOSAuth.Config(
+        client_id="client_YOUR_CLIENT_ID",
+        client_secret="YOUR_CLIENT_SECRET",
+        authkit_domain="https://your-app.authkit.app",
+        base_url="http://localhost:8000",
+        required_scopes=["openid", "profile", "email"],
+    )
 )
 
-mcp = FastMCP("WorkOS Protected Server", auth=auth)
+mcp = FastMCP("WorkOS Protected Server", plugins=[auth_plugin])
 
 @mcp.tool
 def protected_tool(message: str) -> str:
@@ -134,21 +136,21 @@ For production deployments with persistent token management across server restar
 ```python server.py
 import os
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.workos import WorkOSProvider
+from fastmcp.server.plugins.auth.workos import WorkOSAuth
 from key_value.aio.stores.redis import RedisStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from cryptography.fernet import Fernet
 
 # Production setup with encrypted persistent token storage
-auth = WorkOSProvider(
-    client_id="client_YOUR_CLIENT_ID",
-    client_secret="YOUR_CLIENT_SECRET",
-    authkit_domain="https://your-app.authkit.app",
-    base_url="https://your-production-domain.com",
-    required_scopes=["openid", "profile", "email"],
-
-    # Production token management
-    jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+auth_plugin = WorkOSAuth(
+    WorkOSAuth.Config(
+        client_id="client_YOUR_CLIENT_ID",
+        client_secret="YOUR_CLIENT_SECRET",
+        authkit_domain="https://your-app.authkit.app",
+        base_url="https://your-production-domain.com",
+        required_scopes=["openid", "profile", "email"],
+        jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+    ),
     client_storage=FernetEncryptionWrapper(
         key_value=RedisStore(
             host=os.environ["REDIS_HOST"],
@@ -158,7 +160,7 @@ auth = WorkOSProvider(
     )
 )
 
-mcp = FastMCP(name="Production WorkOS App", auth=auth)
+mcp = FastMCP(name="Production WorkOS App", plugins=[auth_plugin])
 ```
 
 <Note>

@@ -6,7 +6,7 @@ import pytest
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from fastmcp.server.auth.providers.scalekit import ScalekitProvider
+from fastmcp.server.plugins.auth.scalekit.provider import ScalekitProvider
 from fastmcp.utilities.tests import HeadlessOAuth, run_server_async
 
 
@@ -202,7 +202,7 @@ class TestScalekitProviderIntegration:
         real_httpx_client = httpx.AsyncClient
 
         monkeypatch.setattr(
-            "fastmcp.server.auth.providers.scalekit.httpx.AsyncClient",
+            "fastmcp.server.plugins.auth.scalekit.provider.httpx.AsyncClient",
             DummyAsyncClient,
         )
 

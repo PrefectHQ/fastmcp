@@ -56,16 +56,17 @@ PETSTORE_SPEC: dict = {
 class TestOpenAPIConfig:
     def test_config_generic_binding(self):
         assert OpenAPI._config_cls is OpenAPIConfig
+        assert OpenAPI.Config is OpenAPIConfig
 
     def test_default_config_instantiable(self):
         """Defaults must pass the plugin framework's instantiate-with-no-args
         contract. The spec/spec_path check fires at providers() time, not
         at Config construction."""
-        assert OpenAPIConfig()  # must not raise
+        assert OpenAPI.Config()  # must not raise
 
     def test_unknown_config_key_rejected(self):
         with pytest.raises((ValidationError, Exception), match="forbid|extra"):
-            OpenAPIConfig(not_a_real_option=True)  # ty: ignore[unknown-argument]
+            OpenAPI.Config(not_a_real_option=True)  # ty: ignore[unknown-argument]
 
     def test_meta_name_is_single_word(self):
         """'openapi' is one technical term — explicit meta override
@@ -76,7 +77,7 @@ class TestOpenAPIConfig:
 
 class TestSpecLoading:
     async def test_inline_spec_builds_provider(self):
-        plugin = OpenAPI(OpenAPIConfig(spec=PETSTORE_SPEC))
+        plugin = OpenAPI(OpenAPI.Config(spec=PETSTORE_SPEC))
         mcp = FastMCP("petstore", plugins=[plugin])
 
         async with Client(mcp) as c:
@@ -89,7 +90,7 @@ class TestSpecLoading:
         spec_file = tmp_path / "petstore.json"
         spec_file.write_text(json.dumps(PETSTORE_SPEC))
 
-        plugin = OpenAPI(OpenAPIConfig(spec_path=str(spec_file)))
+        plugin = OpenAPI(OpenAPI.Config(spec_path=str(spec_file)))
         mcp = FastMCP("petstore", plugins=[plugin])
 
         async with Client(mcp) as c:
@@ -113,12 +114,12 @@ class TestSpecLoading:
             encoding="utf-8",
         )
 
-        plugin = OpenAPI(OpenAPIConfig(spec_path=str(spec_file)))
+        plugin = OpenAPI(OpenAPI.Config(spec_path=str(spec_file)))
         providers = plugin.providers()
         assert isinstance(providers[0], OpenAPIProvider)
 
     def test_missing_spec_fails_at_build_time(self):
-        plugin = OpenAPI(OpenAPIConfig())
+        plugin = OpenAPI(OpenAPI.Config())
         with pytest.raises(ValueError, match="spec.*spec_path"):
             plugin.providers()
 
@@ -126,7 +127,7 @@ class TestSpecLoading:
         spec_file = tmp_path / "spec.json"
         spec_file.write_text(json.dumps(PETSTORE_SPEC))
 
-        plugin = OpenAPI(OpenAPIConfig(spec=PETSTORE_SPEC, spec_path=str(spec_file)))
+        plugin = OpenAPI(OpenAPI.Config(spec=PETSTORE_SPEC, spec_path=str(spec_file)))
         with pytest.raises(ValueError, match="exactly one"):
             plugin.providers()
 
@@ -134,7 +135,7 @@ class TestSpecLoading:
 class TestRouteMapping:
     def test_route_maps_dict_form_converts_to_typed(self):
         plugin = OpenAPI(
-            OpenAPIConfig(
+            OpenAPI.Config(
                 spec=PETSTORE_SPEC,
                 route_maps=[
                     RouteMapDict(
@@ -149,7 +150,7 @@ class TestRouteMapping:
 
     async def test_list_pets_maps_to_resource_via_config(self):
         plugin = OpenAPI(
-            OpenAPIConfig(
+            OpenAPI.Config(
                 spec=PETSTORE_SPEC,
                 route_maps=[
                     RouteMapDict(
@@ -172,7 +173,7 @@ class TestRouteMapping:
         the dict form in Config — advanced users shouldn't be shadowed
         by an empty default."""
         plugin = OpenAPI(
-            OpenAPIConfig(spec=PETSTORE_SPEC),
+            OpenAPI.Config(spec=PETSTORE_SPEC),
             route_maps=[RouteMap(mcp_type=MCPType.EXCLUDE, pattern=r".*")],
         )
         providers = plugin.providers()
@@ -186,7 +187,7 @@ class TestDefaultClient:
         """When the plugin builds its own httpx client (user didn't pass
         `client=`), the provider's lifespan must still close it on
         shutdown. A leaked client was bug noted on PR #4015."""
-        plugin = OpenAPI(OpenAPIConfig(spec=PETSTORE_SPEC))
+        plugin = OpenAPI(OpenAPI.Config(spec=PETSTORE_SPEC))
         provider = plugin.providers()[0]
         assert isinstance(provider, OpenAPIProvider)
         client = provider._client
@@ -210,7 +211,7 @@ class TestDefaultClient:
                 }
             ],
         }
-        plugin = OpenAPI(OpenAPIConfig(spec=templated_spec))
+        plugin = OpenAPI(OpenAPI.Config(spec=templated_spec))
         provider = plugin.providers()[0]
         assert isinstance(provider, OpenAPIProvider)
         assert str(provider._client.base_url) == "https://us-east.api.example.com"
@@ -220,7 +221,7 @@ class TestEscapeHatches:
     async def test_custom_client_is_used(self):
         """Passing `client=` bypasses the auto-derived httpx client."""
         client = httpx.AsyncClient(base_url="https://override.example.com")
-        plugin = OpenAPI(OpenAPIConfig(spec=PETSTORE_SPEC), client=client)
+        plugin = OpenAPI(OpenAPI.Config(spec=PETSTORE_SPEC), client=client)
         providers = plugin.providers()
         assert isinstance(providers[0], OpenAPIProvider)
         # Access the provider's client through the known private attr.

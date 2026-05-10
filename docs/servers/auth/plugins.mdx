@@ -10,68 +10,53 @@ Use an auth plugin when you want authentication to be configured alongside other
 
 ```python server.py
 from fastmcp import FastMCP
-from fastmcp.server.plugins.auth import GitHubAuth
+from fastmcp.server.plugins.auth.github import GitHubAuth
 
 mcp = FastMCP(
     "GitHub Protected Server",
     plugins=[
         GitHubAuth(
-            {
-                "client_id": "your-github-client-id",
-                "client_secret": "your-github-client-secret",
-                "base_url": "https://your-server.com",
-            }
+            GitHubAuth.Config(
+                client_id="your-github-client-id",
+                client_secret="your-github-client-secret",
+                base_url="https://your-server.com",
+            )
         )
     ],
 )
 ```
 
-The provider APIs remain available and are still the most direct option in Python code:
-
-```python
-from fastmcp import FastMCP
-from fastmcp.server.auth.providers.github import GitHubProvider
-
-auth = GitHubProvider(
-    client_id="your-github-client-id",
-    client_secret="your-github-client-secret",
-    base_url="https://your-server.com",
-)
-
-mcp = FastMCP("GitHub Protected Server", auth=auth)
-```
+Provider APIs remain available in each plugin's explicit `.provider` module for advanced direct auth wiring, but integrations should prefer the plugin form.
 
 ## Included Plugins
 
-Import first-party auth plugins from `fastmcp.server.plugins.auth`:
+Each first-party auth plugin lives in its own module under `fastmcp.server.plugins.auth`, mirroring the provider package:
 
 ```python
-from fastmcp.server.plugins.auth import (
-    Auth0Auth,
-    AuthKitAuth,
-    AWSCognitoAuth,
-    AzureAuth,
-    ClerkAuth,
-    DescopeAuth,
-    DiscordAuth,
-    GitHubAuth,
-    GoogleAuth,
-    KeycloakAuth,
-    OCIAuth,
-    PropelAuth,
-    ScalekitAuth,
-    SupabaseAuth,
-    WorkOSAuth,
-)
+from fastmcp.server.plugins.auth.auth0 import Auth0Auth
+from fastmcp.server.plugins.auth.authkit import AuthKitAuth
+from fastmcp.server.plugins.auth.aws import AWSCognitoAuth
+from fastmcp.server.plugins.auth.azure import AzureAuth
+from fastmcp.server.plugins.auth.clerk import ClerkAuth
+from fastmcp.server.plugins.auth.descope import DescopeAuth
+from fastmcp.server.plugins.auth.discord import DiscordAuth
+from fastmcp.server.plugins.auth.github import GitHubAuth
+from fastmcp.server.plugins.auth.google import GoogleAuth
+from fastmcp.server.plugins.auth.keycloak import KeycloakAuth
+from fastmcp.server.plugins.auth.oci import OCIAuth
+from fastmcp.server.plugins.auth.propelauth import PropelAuth
+from fastmcp.server.plugins.auth.scalekit import ScalekitAuth
+from fastmcp.server.plugins.auth.supabase import SupabaseAuth
+from fastmcp.server.plugins.auth.workos import WorkOSAuth
 ```
 
-Each plugin accepts a matching `*AuthConfig` model or a plain dictionary. Config fields mirror the wrapped provider's constructor wherever the value can be represented as JSON. Python-only objects such as custom token verifiers, HTTP clients, and client storage are passed as constructor keyword arguments:
+Each plugin exposes its serializable configuration model as `Plugin.Config`. Config fields mirror the wrapped provider's constructor wherever the value can be represented as JSON. Python-only objects such as custom token verifiers, HTTP clients, and client storage are passed as constructor keyword arguments:
 
 ```python
-from fastmcp.server.plugins.auth import SupabaseAuth, SupabaseAuthConfig
+from fastmcp.server.plugins.auth.supabase import SupabaseAuth
 
 auth_plugin = SupabaseAuth(
-    SupabaseAuthConfig(
+    SupabaseAuth.Config(
         project_url="https://abc123.supabase.co",
         base_url="https://your-server.com",
         required_scopes=["read"],

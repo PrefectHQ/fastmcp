@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from key_value.aio.stores.memory import MemoryStore
 
-from fastmcp.server.auth.providers.github import (
+from fastmcp.server.plugins.auth.github.provider import (
     GitHubProvider,
     GitHubTokenVerifier,
 )
@@ -142,7 +142,7 @@ class TestGitHubTokenVerifier:
 
         # Patch the AsyncClient context manager
         with patch(
-            "fastmcp.server.auth.providers.github.httpx.AsyncClient"
+            "fastmcp.server.plugins.auth.github.provider.httpx.AsyncClient"
         ) as mock_client_class:
             mock_client_class.return_value.__aenter__.return_value = mock_client
 
@@ -203,7 +203,7 @@ class TestGitHubTokenVerifierCaching:
         mock_client = AsyncMock()
 
         with patch(
-            "fastmcp.server.auth.providers.github.httpx.AsyncClient"
+            "fastmcp.server.plugins.auth.github.provider.httpx.AsyncClient"
         ) as mock_cls:
             mock_cls.return_value.__aenter__.return_value = mock_client
 
@@ -226,7 +226,7 @@ class TestGitHubTokenVerifierCaching:
         mock_client = AsyncMock()
 
         with patch(
-            "fastmcp.server.auth.providers.github.httpx.AsyncClient"
+            "fastmcp.server.plugins.auth.github.provider.httpx.AsyncClient"
         ) as mock_cls:
             mock_cls.return_value.__aenter__.return_value = mock_client
 
@@ -244,7 +244,7 @@ class TestGitHubTokenVerifierCaching:
         mock_client = AsyncMock()
 
         with patch(
-            "fastmcp.server.auth.providers.github.httpx.AsyncClient"
+            "fastmcp.server.plugins.auth.github.provider.httpx.AsyncClient"
         ) as mock_cls:
             mock_cls.return_value.__aenter__.return_value = mock_client
 
@@ -265,7 +265,7 @@ class TestGitHubTokenVerifierCaching:
         mock_client = AsyncMock()
 
         with patch(
-            "fastmcp.server.auth.providers.github.httpx.AsyncClient"
+            "fastmcp.server.plugins.auth.github.provider.httpx.AsyncClient"
         ) as mock_cls:
             mock_cls.return_value.__aenter__.return_value = mock_client
 
@@ -299,7 +299,7 @@ class TestGitHubTokenVerifierCaching:
         scopes_response.headers = {}
 
         with patch(
-            "fastmcp.server.auth.providers.github.httpx.AsyncClient"
+            "fastmcp.server.plugins.auth.github.provider.httpx.AsyncClient"
         ) as mock_cls:
             mock_cls.return_value.__aenter__.return_value = mock_client
 

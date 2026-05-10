@@ -468,7 +468,7 @@ When mounting an OAuth-protected server under a path prefix, declare your URLs u
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.github import GitHubProvider
+from fastmcp.server.plugins.auth.github.provider import GitHubProvider
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
@@ -530,7 +530,7 @@ Here's a complete working example showing all the pieces together:
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.github import GitHubProvider
+from fastmcp.server.plugins.auth.github.provider import GitHubProvider
 from starlette.applications import Starlette
 from starlette.routing import Mount
 import uvicorn

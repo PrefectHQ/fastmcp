@@ -65,7 +65,7 @@ Create your FastMCP server using the `GitHubProvider`, which handles GitHub's OA
 
 ```python server.py
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.github import GitHubProvider
+from fastmcp.server.plugins.auth.github.provider import GitHubProvider
 
 # The GitHubProvider handles GitHub's token format and validation
 auth_provider = GitHubProvider(
@@ -144,7 +144,7 @@ For production deployments with persistent token management across server restar
 ```python server.py
 import os
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.github import GitHubProvider
+from fastmcp.server.plugins.auth.github.provider import GitHubProvider
 from key_value.aio.stores.redis import RedisStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from cryptography.fernet import Fernet
@@ -187,7 +187,7 @@ Setting this environment variable allows the GitHub provider to be used automati
 
 <Card>
 <ParamField path="FASTMCP_SERVER_AUTH" default="Not set">
-Set to `fastmcp.server.auth.providers.github.GitHubProvider` to use GitHub authentication.
+Set to `fastmcp.server.plugins.auth.github.provider.GitHubProvider` to use GitHub authentication.
 </ParamField>
 </Card>
 
@@ -228,7 +228,7 @@ HTTP request timeout for GitHub API calls
 Example `.env` file:
 ```bash
 # Use the GitHub provider
-FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.github.GitHubProvider
+FASTMCP_SERVER_AUTH=fastmcp.server.plugins.auth.github.provider.GitHubProvider
 
 # GitHub OAuth credentials
 FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID=Ov23liAbcDefGhiJkLmN

@@ -44,20 +44,22 @@ In the WorkOS Dashboard, go to **Connect → Configuration** and configure:
 
 ### Step 2: FastMCP Configuration
 
-Create your FastMCP server file and use the `AuthKitProvider` to handle all the OAuth integration automatically:
+Create your FastMCP server file and use the `AuthKitAuth` plugin to handle the OAuth integration automatically:
 
 ```python server.py
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.workos import AuthKitProvider
+from fastmcp.server.plugins.auth.authkit import AuthKitAuth
 
-# AuthKitProvider automatically discovers WorkOS endpoints, configures JWT
+# AuthKitAuth automatically discovers WorkOS endpoints, configures JWT
 # validation, and binds the token audience to this server's resource URL.
-auth_provider = AuthKitProvider(
-    authkit_domain="https://your-project-12345.authkit.app",
-    base_url="http://127.0.0.1:8000",  # Use your actual server URL
+auth_plugin = AuthKitAuth(
+    AuthKitAuth.Config(
+        authkit_domain="https://your-project-12345.authkit.app",
+        base_url="http://127.0.0.1:8000",  # Use your actual server URL
+    )
 )
 
-mcp = FastMCP(name="AuthKit Secured App", auth=auth_provider)
+mcp = FastMCP(name="AuthKit Secured App", plugins=[auth_plugin])
 ```
 
 When the server starts, it logs the resource URL it is validating against. Paste that URL into your Dashboard's **MCP resource indicators** list.
@@ -94,13 +96,15 @@ For production deployments, load sensitive configuration from environment variab
 ```python server.py
 import os
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.workos import AuthKitProvider
+from fastmcp.server.plugins.auth.authkit import AuthKitAuth
 
 # Load configuration from environment variables
-auth = AuthKitProvider(
-    authkit_domain=os.environ.get("AUTHKIT_DOMAIN"),
-    base_url=os.environ.get("BASE_URL", "https://your-server.com"),
+auth_plugin = AuthKitAuth(
+    AuthKitAuth.Config(
+        authkit_domain=os.environ.get("AUTHKIT_DOMAIN"),
+        base_url=os.environ.get("BASE_URL", "https://your-server.com"),
+    )
 )
 
-mcp = FastMCP(name="AuthKit Secured App", auth=auth)
+mcp = FastMCP(name="AuthKit Secured App", plugins=[auth_plugin])
 ```

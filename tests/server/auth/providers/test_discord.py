@@ -5,7 +5,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from key_value.aio.stores.memory import MemoryStore
 
-from fastmcp.server.auth.providers.discord import DiscordProvider, DiscordTokenVerifier
+from fastmcp.server.plugins.auth.discord.provider import (
+    DiscordProvider,
+    DiscordTokenVerifier,
+)
 
 
 @pytest.fixture
@@ -120,7 +123,7 @@ class TestDiscordTokenVerifier:
         mock_client.get.return_value = token_info_response
 
         with patch(
-            "fastmcp.server.auth.providers.discord.httpx.AsyncClient"
+            "fastmcp.server.plugins.auth.discord.provider.httpx.AsyncClient"
         ) as mock_client_class:
             mock_client_class.return_value.__aenter__.return_value = mock_client
             result = await verifier.verify_token("token")

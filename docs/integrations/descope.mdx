@@ -54,21 +54,23 @@ SERVER_URL=http://localhost:3000     # Your server's base URL
 
 ### Step 3: FastMCP Configuration
 
-Create your FastMCP server file and use the DescopeProvider to handle all the OAuth integration automatically:
+Create your FastMCP server file and use the `DescopeAuth` plugin to handle the OAuth integration automatically:
 
 ```python server.py
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.descope import DescopeProvider
+from fastmcp.server.plugins.auth.descope import DescopeAuth
 
-# The DescopeProvider automatically discovers Descope endpoints
+# The DescopeAuth plugin automatically discovers Descope endpoints
 # and configures JWT token validation
-auth_provider = DescopeProvider(
-    config_url="https://.../.well-known/openid-configuration",  # Your MCP Server .well-known URL
-    base_url=SERVER_URL,                                        # Your server's public URL
+auth_plugin = DescopeAuth(
+    DescopeAuth.Config(
+        config_url="https://.../.well-known/openid-configuration",  # Your MCP Server .well-known URL
+        base_url=SERVER_URL,                                        # Your server's public URL
+    )
 )
 
-# Create FastMCP server with auth
-mcp = FastMCP(name="My Descope Protected Server", auth=auth_provider)
+# Create FastMCP server with auth plugin
+mcp = FastMCP(name="My Descope Protected Server", plugins=[auth_plugin])
 
 ```
 
@@ -101,13 +103,15 @@ For production deployments, load configuration from environment variables:
 ```python server.py
 import os
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.descope import DescopeProvider
+from fastmcp.server.plugins.auth.descope import DescopeAuth
 
 # Load configuration from environment variables
-auth = DescopeProvider(
-    config_url=os.environ.get("DESCOPE_CONFIG_URL"),
-    base_url=os.environ.get("BASE_URL", "https://your-server.com")
+auth_plugin = DescopeAuth(
+    DescopeAuth.Config(
+        config_url=os.environ.get("DESCOPE_CONFIG_URL"),
+        base_url=os.environ.get("BASE_URL", "https://your-server.com"),
+    )
 )
 
-mcp = FastMCP(name="My Descope Protected Server", auth=auth)
+mcp = FastMCP(name="My Descope Protected Server", plugins=[auth_plugin])
 ```

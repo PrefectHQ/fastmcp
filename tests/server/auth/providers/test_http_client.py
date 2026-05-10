@@ -212,14 +212,14 @@ class TestGitHubHttpClient:
     """Test http_client parameter on GitHubTokenVerifier."""
 
     def test_stores_http_client(self):
-        from fastmcp.server.auth.providers.github import GitHubTokenVerifier
+        from fastmcp.server.plugins.auth.github.provider import GitHubTokenVerifier
 
         client = httpx.AsyncClient()
         verifier = GitHubTokenVerifier(http_client=client)
         assert verifier._http_client is client
 
     async def test_uses_provided_client(self, httpx_mock: HTTPXMock):
-        from fastmcp.server.auth.providers.github import GitHubTokenVerifier
+        from fastmcp.server.plugins.auth.github.provider import GitHubTokenVerifier
 
         client = httpx.AsyncClient()
         httpx_mock.add_response(
@@ -242,7 +242,7 @@ class TestDiscordHttpClient:
     """Test http_client parameter on DiscordTokenVerifier."""
 
     def test_stores_http_client(self):
-        from fastmcp.server.auth.providers.discord import DiscordTokenVerifier
+        from fastmcp.server.plugins.auth.discord.provider import DiscordTokenVerifier
 
         client = httpx.AsyncClient()
         verifier = DiscordTokenVerifier(
@@ -256,7 +256,7 @@ class TestGoogleHttpClient:
     """Test http_client parameter on GoogleTokenVerifier."""
 
     def test_stores_http_client(self):
-        from fastmcp.server.auth.providers.google import GoogleTokenVerifier
+        from fastmcp.server.plugins.auth.google.provider import GoogleTokenVerifier
 
         client = httpx.AsyncClient()
         verifier = GoogleTokenVerifier(http_client=client)
@@ -267,7 +267,7 @@ class TestWorkOSHttpClient:
     """Test http_client parameter on WorkOSTokenVerifier."""
 
     def test_stores_http_client(self):
-        from fastmcp.server.auth.providers.workos import WorkOSTokenVerifier
+        from fastmcp.server.plugins.auth.workos.provider import WorkOSTokenVerifier
 
         client = httpx.AsyncClient()
         verifier = WorkOSTokenVerifier(
@@ -281,7 +281,7 @@ class TestProviderHttpClientPassthrough:
     """Test that convenience providers pass http_client to their verifiers."""
 
     def test_github_provider_threads_http_client(self):
-        from fastmcp.server.auth.providers.github import (
+        from fastmcp.server.plugins.auth.github.provider import (
             GitHubProvider,
             GitHubTokenVerifier,
         )
@@ -299,7 +299,7 @@ class TestProviderHttpClientPassthrough:
         assert verifier._http_client is client
 
     def test_discord_provider_threads_http_client(self):
-        from fastmcp.server.auth.providers.discord import (
+        from fastmcp.server.plugins.auth.discord.provider import (
             DiscordProvider,
             DiscordTokenVerifier,
         )
@@ -316,7 +316,7 @@ class TestProviderHttpClientPassthrough:
         assert verifier._http_client is client
 
     def test_google_provider_threads_http_client(self):
-        from fastmcp.server.auth.providers.google import (
+        from fastmcp.server.plugins.auth.google.provider import (
             GoogleProvider,
             GoogleTokenVerifier,
         )
@@ -333,7 +333,7 @@ class TestProviderHttpClientPassthrough:
         assert verifier._http_client is client
 
     def test_workos_provider_threads_http_client(self):
-        from fastmcp.server.auth.providers.workos import (
+        from fastmcp.server.plugins.auth.workos.provider import (
             WorkOSProvider,
             WorkOSTokenVerifier,
         )
@@ -351,8 +351,8 @@ class TestProviderHttpClientPassthrough:
         assert verifier._http_client is client
 
     def test_azure_provider_threads_http_client(self):
-        from fastmcp.server.auth.providers.azure import AzureProvider
         from fastmcp.server.auth.providers.jwt import JWTVerifier
+        from fastmcp.server.plugins.auth.azure.provider import AzureProvider
 
         client = httpx.AsyncClient()
         provider = AzureProvider(

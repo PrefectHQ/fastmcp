@@ -67,22 +67,24 @@ SERVER_URL=http://localhost:8000                          # Your server's base U
 
 ### Step 3: FastMCP Configuration
 
-Create your FastMCP server file and use the PropelAuthProvider to handle all the OAuth integration automatically:
+Create your FastMCP server file and use the `PropelAuth` plugin to handle the OAuth integration automatically:
 
 ```python server.py
 import os
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.propelauth import PropelAuthProvider
+from fastmcp.server.plugins.auth.propelauth import PropelAuth
 
-auth_provider = PropelAuthProvider(
-    auth_url=os.environ["PROPELAUTH_AUTH_URL"],
-    introspection_client_id=os.environ["PROPELAUTH_INTROSPECTION_CLIENT_ID"],
-    introspection_client_secret=os.environ["PROPELAUTH_INTROSPECTION_CLIENT_SECRET"],
-    base_url=os.environ["SERVER_URL"],
-    required_scopes=["read:user_data"],                          # Optional scope enforcement
+auth_plugin = PropelAuth(
+    PropelAuth.Config(
+        auth_url=os.environ["PROPELAUTH_AUTH_URL"],
+        introspection_client_id=os.environ["PROPELAUTH_INTROSPECTION_CLIENT_ID"],
+        introspection_client_secret=os.environ["PROPELAUTH_INTROSPECTION_CLIENT_SECRET"],
+        base_url=os.environ["SERVER_URL"],
+        required_scopes=["read:user_data"],                          # Optional scope enforcement
+    )
 )
 
-mcp = FastMCP(name="My PropelAuth Protected Server", auth=auth_provider)
+mcp = FastMCP(name="My PropelAuth Protected Server", plugins=[auth_plugin])
 ```
 
 ## Testing
@@ -114,18 +116,20 @@ You can use `get_access_token()` inside your tools to identify the authenticated
 ```python server.py
 import os
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.propelauth import PropelAuthProvider
+from fastmcp.server.plugins.auth.propelauth import PropelAuth
 from fastmcp.server.dependencies import get_access_token
 
-auth = PropelAuthProvider(
-    auth_url=os.environ["PROPELAUTH_AUTH_URL"],
-    introspection_client_id=os.environ["PROPELAUTH_INTROSPECTION_CLIENT_ID"],
-    introspection_client_secret=os.environ["PROPELAUTH_INTROSPECTION_CLIENT_SECRET"],
-    base_url=os.environ["SERVER_URL"],
-    required_scopes=["read:user_data"],
+auth_plugin = PropelAuth(
+    PropelAuth.Config(
+        auth_url=os.environ["PROPELAUTH_AUTH_URL"],
+        introspection_client_id=os.environ["PROPELAUTH_INTROSPECTION_CLIENT_ID"],
+        introspection_client_secret=os.environ["PROPELAUTH_INTROSPECTION_CLIENT_SECRET"],
+        base_url=os.environ["SERVER_URL"],
+        required_scopes=["read:user_data"],
+    )
 )
 
-mcp = FastMCP(name="My PropelAuth Protected Server", auth=auth)
+mcp = FastMCP(name="My PropelAuth Protected Server", plugins=[auth_plugin])
 
 @mcp.tool
 def whoami() -> dict:
@@ -139,26 +143,26 @@ def whoami() -> dict:
 
 ## Advanced Configuration
 
-The `PropelAuthProvider` supports optional overrides for token introspection behavior, including caching and request timeouts:
+The `PropelAuth` plugin supports optional overrides for token introspection behavior, including caching and request timeouts:
 
 ```python server.py
 import os
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.propelauth import PropelAuthProvider
+from fastmcp.server.plugins.auth.propelauth import PropelAuth
 
-auth = PropelAuthProvider(
-    auth_url=os.environ["PROPELAUTH_AUTH_URL"],
-    introspection_client_id=os.environ["PROPELAUTH_INTROSPECTION_CLIENT_ID"],
-    introspection_client_secret=os.environ["PROPELAUTH_INTROSPECTION_CLIENT_SECRET"],
-    base_url=os.environ.get("BASE_URL", "https://your-server.com"),
-    required_scopes=["read:user_data"],
-    resource="https://your-server.com/mcp",              # Restrict to tokens intended for this server (RFC 8707)
-    token_introspection_overrides={
-        "cache_ttl_seconds": 300,       # Cache introspection results for 5 minutes
-        "max_cache_size": 1000,         # Maximum cached tokens
-        "timeout_seconds": 15,          # HTTP request timeout
-    },
+auth_plugin = PropelAuth(
+    PropelAuth.Config(
+        auth_url=os.environ["PROPELAUTH_AUTH_URL"],
+        introspection_client_id=os.environ["PROPELAUTH_INTROSPECTION_CLIENT_ID"],
+        introspection_client_secret=os.environ["PROPELAUTH_INTROSPECTION_CLIENT_SECRET"],
+        base_url=os.environ.get("BASE_URL", "https://your-server.com"),
+        required_scopes=["read:user_data"],
+        resource="https://your-server.com/mcp",              # Restrict to tokens intended for this server (RFC 8707)
+        introspection_cache_ttl_seconds=300,                 # Cache introspection results for 5 minutes
+        introspection_max_cache_size=1000,                   # Maximum cached tokens
+        introspection_timeout_seconds=15,                    # HTTP request timeout
+    )
 )
 
-mcp = FastMCP(name="My PropelAuth Protected Server", auth=auth)
+mcp = FastMCP(name="My PropelAuth Protected Server", plugins=[auth_plugin])
 ```

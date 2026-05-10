@@ -57,7 +57,7 @@ middleware = ResponseCachingMiddleware(
 Or with OAuth token storage:
 
 ```python
-from fastmcp.server.auth.providers.github import GitHubProvider
+from fastmcp.server.plugins.auth.github.provider import GitHubProvider
 from key_value.aio.stores.disk import DiskStore
 
 auth = GitHubProvider(
@@ -110,7 +110,7 @@ For OAuth token storage:
 
 ```python
 import os
-from fastmcp.server.auth.providers.github import GitHubProvider
+from fastmcp.server.plugins.auth.github.provider import GitHubProvider
 from key_value.aio.stores.redis import RedisStore
 
 auth = GitHubProvider(
@@ -162,7 +162,7 @@ By default, FastMCP automatically manages keys and storage based on your platfor
 No configuration needed:
 
 ```python
-from fastmcp.server.auth.providers.github import GitHubProvider
+from fastmcp.server.plugins.auth.github.provider import GitHubProvider
 
 auth = GitHubProvider(
     client_id="your-id",
@@ -177,7 +177,7 @@ For production deployments, configure explicit keys and persistent network-acces
 
 ```python
 import os
-from fastmcp.server.auth.providers.github import GitHubProvider
+from fastmcp.server.plugins.auth.github.provider import GitHubProvider
 from key_value.aio.stores.redis import RedisStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from cryptography.fernet import Fernet

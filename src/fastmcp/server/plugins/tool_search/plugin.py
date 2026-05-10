@@ -8,7 +8,7 @@ user code should configure behavior through the plugin.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -51,7 +51,7 @@ class ToolSearch(Plugin[ToolSearchConfig]):
     Example:
         ```python
         from fastmcp import FastMCP
-        from fastmcp.server.plugins.tool_search import ToolSearch, ToolSearchConfig
+        from fastmcp.server.plugins.tool_search import ToolSearch
 
         # Default config:
         mcp = FastMCP("Server", plugins=[ToolSearch()])
@@ -59,13 +59,15 @@ class ToolSearch(Plugin[ToolSearchConfig]):
         # Typed config (IDE completion + static validation):
         mcp = FastMCP(
             "Server",
-            plugins=[ToolSearch(ToolSearchConfig(strategy="regex", always_visible=["help"]))],
+            plugins=[ToolSearch(ToolSearch.Config(strategy="regex", always_visible=["help"]))],
         )
 
         # Dict config (useful for loading from JSON/YAML):
         mcp = FastMCP("Server", plugins=[ToolSearch({"strategy": "regex"})])
         ```
     """
+
+    Config: ClassVar[type[ToolSearchConfig]] = ToolSearchConfig
 
     # `meta` is intentionally omitted: the auto-derived default
     # (`name="tool-search"`, `version=None`) is appropriate for a

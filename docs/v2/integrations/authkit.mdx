@@ -43,7 +43,7 @@ Create your FastMCP server file and use the `AuthKitProvider` to handle all the 
 
 ```python server.py
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.workos import AuthKitProvider
+from fastmcp.server.plugins.auth.authkit.provider import AuthKitProvider
 
 # The AuthKitProvider automatically discovers WorkOS endpoints
 # and configures JWT token validation
@@ -90,7 +90,7 @@ Setting this environment variable allows the AuthKit provider to be used automat
 
 <Card>
 <ParamField path="FASTMCP_SERVER_AUTH" default="Not set">
-Set to `fastmcp.server.auth.providers.workos.AuthKitProvider` to use AuthKit authentication.
+Set to `fastmcp.server.plugins.auth.authkit.provider.AuthKitProvider` to use AuthKit authentication.
 </ParamField>
 </Card>
 
@@ -115,7 +115,7 @@ Comma-, space-, or JSON-separated list of required OAuth scopes (e.g., `openid p
 Example `.env` file:
 ```bash
 # Use the AuthKit provider
-FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.workos.AuthKitProvider
+FASTMCP_SERVER_AUTH=fastmcp.server.plugins.auth.authkit.provider.AuthKitProvider
 
 # AuthKit configuration
 FASTMCP_SERVER_AUTH_AUTHKITPROVIDER_AUTHKIT_DOMAIN=https://your-project-12345.authkit.app

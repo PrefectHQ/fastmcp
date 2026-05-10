@@ -59,7 +59,7 @@ Create your FastMCP server file and use the DescopeProvider to handle all the OA
 
 ```python server.py
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.descope import DescopeProvider
+from fastmcp.server.plugins.auth.descope.provider import DescopeProvider
 
 # The DescopeProvider automatically discovers Descope endpoints
 # and configures JWT token validation
@@ -105,7 +105,7 @@ Setting this environment variable allows the Descope provider to be used automat
 
 <Card>
   <ParamField path="FASTMCP_SERVER_AUTH" default="Not set">
-    Set to `fastmcp.server.auth.providers.descope.DescopeProvider` to use
+    Set to `fastmcp.server.plugins.auth.descope.provider.DescopeProvider` to use
     Descope authentication.
   </ParamField>
 </Card>
@@ -129,7 +129,7 @@ Example `.env` file:
 
 ```bash
 # Use the Descope provider
-FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.descope.DescopeProvider
+FASTMCP_SERVER_AUTH=fastmcp.server.plugins.auth.descope.provider.DescopeProvider
 
 # Descope configuration
 FASTMCP_SERVER_AUTH_DESCOPEPROVIDER_CONFIG_URL=https://.../v1/apps/agentic/P.../M.../.well-known/openid-configuration

@@ -3,7 +3,7 @@
 from contextlib import contextmanager
 from unittest.mock import patch
 
-from fastmcp.server.auth.providers.aws import (
+from fastmcp.server.plugins.auth.aws.provider import (
     AWSCognitoProvider,
 )
 

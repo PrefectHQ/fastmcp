@@ -1,11 +1,11 @@
 """OpenAPI plugin — mount an OpenAPI spec as MCP tools/resources.
 
     from fastmcp import FastMCP
-    from fastmcp.server.plugins.openapi import OpenAPI, OpenAPIConfig
+    from fastmcp.server.plugins.openapi import OpenAPI
 
     mcp = FastMCP(
         "Petstore",
-        plugins=[OpenAPI(OpenAPIConfig(spec=petstore_spec))],
+        plugins=[OpenAPI(OpenAPI.Config(spec=petstore_spec))],
     )
 
 Typed `RouteMap` + `MCPType` are re-exported for the Python-only

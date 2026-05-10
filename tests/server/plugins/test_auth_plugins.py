@@ -10,53 +10,37 @@ from pydantic import ValidationError
 
 from fastmcp import FastMCP
 from fastmcp.server.auth.oidc_proxy import OIDCConfiguration
-from fastmcp.server.auth.providers.auth0 import Auth0Provider
-from fastmcp.server.auth.providers.aws import AWSCognitoProvider
-from fastmcp.server.auth.providers.azure import AzureProvider
-from fastmcp.server.auth.providers.clerk import ClerkProvider
-from fastmcp.server.auth.providers.descope import DescopeProvider
-from fastmcp.server.auth.providers.discord import DiscordProvider
-from fastmcp.server.auth.providers.github import GitHubProvider
-from fastmcp.server.auth.providers.google import GoogleProvider
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
-from fastmcp.server.auth.providers.keycloak import KeycloakAuthProvider
-from fastmcp.server.auth.providers.oci import OCIProvider
-from fastmcp.server.auth.providers.propelauth import PropelAuthProvider
-from fastmcp.server.auth.providers.scalekit import ScalekitProvider
-from fastmcp.server.auth.providers.supabase import SupabaseProvider
-from fastmcp.server.auth.providers.workos import AuthKitProvider, WorkOSProvider
-from fastmcp.server.plugins.auth import (
-    Auth0Auth,
-    Auth0AuthConfig,
-    AuthKitAuth,
-    AuthKitAuthConfig,
-    AWSCognitoAuth,
-    AWSCognitoAuthConfig,
-    AzureAuth,
-    AzureAuthConfig,
-    ClerkAuth,
-    ClerkAuthConfig,
-    DescopeAuth,
-    DescopeAuthConfig,
-    DiscordAuth,
-    DiscordAuthConfig,
-    GitHubAuth,
-    GitHubAuthConfig,
-    GoogleAuth,
-    GoogleAuthConfig,
-    KeycloakAuth,
-    KeycloakAuthConfig,
-    OCIAuth,
-    OCIAuthConfig,
-    PropelAuth,
-    PropelAuthConfig,
-    ScalekitAuth,
-    ScalekitAuthConfig,
-    SupabaseAuth,
-    SupabaseAuthConfig,
-    WorkOSAuth,
-    WorkOSAuthConfig,
-)
+from fastmcp.server.plugins.auth.auth0 import Auth0Auth
+from fastmcp.server.plugins.auth.auth0.provider import Auth0Provider
+from fastmcp.server.plugins.auth.authkit import AuthKitAuth
+from fastmcp.server.plugins.auth.authkit.provider import AuthKitProvider
+from fastmcp.server.plugins.auth.aws import AWSCognitoAuth
+from fastmcp.server.plugins.auth.aws.provider import AWSCognitoProvider
+from fastmcp.server.plugins.auth.azure import AzureAuth
+from fastmcp.server.plugins.auth.azure.provider import AzureProvider
+from fastmcp.server.plugins.auth.clerk import ClerkAuth
+from fastmcp.server.plugins.auth.clerk.provider import ClerkProvider
+from fastmcp.server.plugins.auth.descope import DescopeAuth
+from fastmcp.server.plugins.auth.descope.provider import DescopeProvider
+from fastmcp.server.plugins.auth.discord import DiscordAuth
+from fastmcp.server.plugins.auth.discord.provider import DiscordProvider
+from fastmcp.server.plugins.auth.github import GitHubAuth
+from fastmcp.server.plugins.auth.github.provider import GitHubProvider
+from fastmcp.server.plugins.auth.google import GoogleAuth
+from fastmcp.server.plugins.auth.google.provider import GoogleProvider
+from fastmcp.server.plugins.auth.keycloak import KeycloakAuth
+from fastmcp.server.plugins.auth.keycloak.provider import KeycloakAuthProvider
+from fastmcp.server.plugins.auth.oci import OCIAuth
+from fastmcp.server.plugins.auth.oci.provider import OCIProvider
+from fastmcp.server.plugins.auth.propelauth import PropelAuth
+from fastmcp.server.plugins.auth.propelauth.provider import PropelAuthProvider
+from fastmcp.server.plugins.auth.scalekit import ScalekitAuth
+from fastmcp.server.plugins.auth.scalekit.provider import ScalekitProvider
+from fastmcp.server.plugins.auth.supabase import SupabaseAuth
+from fastmcp.server.plugins.auth.supabase.provider import SupabaseProvider
+from fastmcp.server.plugins.auth.workos import WorkOSAuth
+from fastmcp.server.plugins.auth.workos.provider import WorkOSProvider
 
 
 def _verifier() -> StaticTokenVerifier:
@@ -89,7 +73,7 @@ def _mock_oidc_discovery():
 PROVIDER_CASES: list[tuple[type, type, dict[str, Any], type]] = [
     (
         Auth0Auth,
-        Auth0AuthConfig,
+        Auth0Auth.Config,
         {
             "config_url": "https://idp.example.com/.well-known/openid-configuration",
             "client_id": "client",
@@ -101,7 +85,7 @@ PROVIDER_CASES: list[tuple[type, type, dict[str, Any], type]] = [
     ),
     (
         AuthKitAuth,
-        AuthKitAuthConfig,
+        AuthKitAuth.Config,
         {
             "authkit_domain": "https://example.authkit.app",
             "base_url": "https://mcp.example.com",
@@ -110,7 +94,7 @@ PROVIDER_CASES: list[tuple[type, type, dict[str, Any], type]] = [
     ),
     (
         AWSCognitoAuth,
-        AWSCognitoAuthConfig,
+        AWSCognitoAuth.Config,
         {
             "user_pool_id": "us-east-1_abc",
             "client_id": "client",
@@ -122,7 +106,7 @@ PROVIDER_CASES: list[tuple[type, type, dict[str, Any], type]] = [
     ),
     (
         AzureAuth,
-        AzureAuthConfig,
+        AzureAuth.Config,
         {
             "client_id": "client",
             "client_secret": "secret",
@@ -134,7 +118,7 @@ PROVIDER_CASES: list[tuple[type, type, dict[str, Any], type]] = [
     ),
     (
         ClerkAuth,
-        ClerkAuthConfig,
+        ClerkAuth.Config,
         {
             "domain": "example.clerk.accounts.dev",
             "client_id": "client",
@@ -145,7 +129,7 @@ PROVIDER_CASES: list[tuple[type, type, dict[str, Any], type]] = [
     ),
     (
         DescopeAuth,
-        DescopeAuthConfig,
+        DescopeAuth.Config,
         {
             "config_url": "https://api.descope.com/v1/apps/agentic/P123/M456/.well-known/openid-configuration",
             "base_url": "https://mcp.example.com",
@@ -154,7 +138,7 @@ PROVIDER_CASES: list[tuple[type, type, dict[str, Any], type]] = [
     ),
     (
         DiscordAuth,
-        DiscordAuthConfig,
+        DiscordAuth.Config,
         {
             "client_id": "client",
             "client_secret": "secret",
@@ -164,7 +148,7 @@ PROVIDER_CASES: list[tuple[type, type, dict[str, Any], type]] = [
     ),
     (
         GitHubAuth,
-        GitHubAuthConfig,
+        GitHubAuth.Config,
         {
             "client_id": "client",
             "client_secret": "secret",
@@ -174,7 +158,7 @@ PROVIDER_CASES: list[tuple[type, type, dict[str, Any], type]] = [
     ),
     (
         GoogleAuth,
-        GoogleAuthConfig,
+        GoogleAuth.Config,
         {
             "client_id": "client",
             "client_secret": "secret",
@@ -184,7 +168,7 @@ PROVIDER_CASES: list[tuple[type, type, dict[str, Any], type]] = [
     ),
     (
         KeycloakAuth,
-        KeycloakAuthConfig,
+        KeycloakAuth.Config,
         {
             "realm_url": "https://keycloak.example.com/realms/main",
             "base_url": "https://mcp.example.com",
@@ -193,7 +177,7 @@ PROVIDER_CASES: list[tuple[type, type, dict[str, Any], type]] = [
     ),
     (
         OCIAuth,
-        OCIAuthConfig,
+        OCIAuth.Config,
         {
             "config_url": "https://idp.example.com/.well-known/openid-configuration",
             "client_id": "client",
@@ -204,7 +188,7 @@ PROVIDER_CASES: list[tuple[type, type, dict[str, Any], type]] = [
     ),
     (
         PropelAuth,
-        PropelAuthConfig,
+        PropelAuth.Config,
         {
             "auth_url": "https://auth.example.com",
             "introspection_client_id": "client",
@@ -215,7 +199,7 @@ PROVIDER_CASES: list[tuple[type, type, dict[str, Any], type]] = [
     ),
     (
         ScalekitAuth,
-        ScalekitAuthConfig,
+        ScalekitAuth.Config,
         {
             "environment_url": "https://env.scalekit.com",
             "resource_id": "res_123",
@@ -225,7 +209,7 @@ PROVIDER_CASES: list[tuple[type, type, dict[str, Any], type]] = [
     ),
     (
         SupabaseAuth,
-        SupabaseAuthConfig,
+        SupabaseAuth.Config,
         {
             "project_url": "https://abc123.supabase.co",
             "base_url": "https://mcp.example.com",
@@ -234,7 +218,7 @@ PROVIDER_CASES: list[tuple[type, type, dict[str, Any], type]] = [
     ),
     (
         WorkOSAuth,
-        WorkOSAuthConfig,
+        WorkOSAuth.Config,
         {
             "client_id": "client",
             "client_secret": "secret",
@@ -264,6 +248,7 @@ class TestAuthProviderPlugins:
     )
     def test_config_generic_binding(self, plugin_cls, config_cls, config, provider_cls):
         assert plugin_cls._config_cls is config_cls
+        assert plugin_cls.Config is config_cls
 
     @pytest.mark.parametrize(
         ("plugin_cls", "config_cls", "config", "provider_cls"), PROVIDER_CASES
@@ -318,7 +303,7 @@ class TestAuthProviderPlugins:
     def test_supabase_passthroughs_config_and_python_verifier(self):
         verifier = _verifier()
         plugin = SupabaseAuth(
-            SupabaseAuthConfig(
+            SupabaseAuth.Config(
                 project_url="https://abc123.supabase.co",
                 base_url="https://mcp.example.com",
                 required_scopes=["read"],

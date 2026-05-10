@@ -344,6 +344,7 @@ class TestPluginConstruction:
             meta = PluginMeta(name="p", version="0.1.0")
 
         assert P._config_cls is PConfig
+        assert P.Config is PConfig
 
     def test_unparameterized_plugin_uses_empty_default_config(self):
         """A Plugin without a generic parameter gets an empty default that

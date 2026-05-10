@@ -61,7 +61,7 @@ Create your FastMCP server using the `DiscordProvider`, which handles Discord's 
 
 ```python server.py
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.discord import DiscordProvider
+from fastmcp.server.plugins.auth.discord.provider import DiscordProvider
 
 auth_provider = DiscordProvider(
     client_id="12345",      # Your Discord Application Client ID
@@ -154,7 +154,7 @@ For production deployments with persistent token management across server restar
 ```python server.py
 import os
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.discord import DiscordProvider
+from fastmcp.server.plugins.auth.discord.provider import DiscordProvider
 from key_value.aio.stores.redis import RedisStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from cryptography.fernet import Fernet
@@ -193,7 +193,7 @@ Setting this environment variable allows the Discord provider to be used automat
 
 <Card>
 <ParamField path="FASTMCP_SERVER_AUTH" default="Not set">
-Set to `fastmcp.server.auth.providers.discord.DiscordProvider` to use Discord authentication.
+Set to `fastmcp.server.plugins.auth.discord.provider.DiscordProvider` to use Discord authentication.
 </ParamField>
 </Card>
 
@@ -233,7 +233,7 @@ HTTP request timeout for Discord API calls
 
 Example `.env` file:
 ```bash
-FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.discord.DiscordProvider
+FASTMCP_SERVER_AUTH=fastmcp.server.plugins.auth.discord.provider.DiscordProvider
 
 FASTMCP_SERVER_AUTH_DISCORD_CLIENT_ID=12345
 FASTMCP_SERVER_AUTH_DISCORD_CLIENT_SECRET=your-client-secret

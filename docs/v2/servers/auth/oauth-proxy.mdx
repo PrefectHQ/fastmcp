@@ -345,7 +345,7 @@ auth = OAuthProxy(..., client_storage=MemoryStore())
 FastMCP includes pre-configured providers for common services:
 
 ```python
-from fastmcp.server.auth.providers.github import GitHubProvider
+from fastmcp.server.plugins.auth.github.provider import GitHubProvider
 
 auth = GitHubProvider(
     client_id="your-github-app-id",
@@ -590,7 +590,7 @@ For production deployments, configure the OAuth proxy through environment variab
 
 ```bash
 # Specify the provider implementation
-export FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.github.GitHubProvider
+export FASTMCP_SERVER_AUTH=fastmcp.server.plugins.auth.github.provider.GitHubProvider
 
 # Provider-specific credentials
 export FASTMCP_SERVER_AUTH_GITHUB_CLIENT_ID="Ov23li..."

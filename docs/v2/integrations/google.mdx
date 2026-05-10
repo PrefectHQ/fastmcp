@@ -70,7 +70,7 @@ Create your FastMCP server using the `GoogleProvider`, which handles Google's OA
 
 ```python server.py
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.google import GoogleProvider
+from fastmcp.server.plugins.auth.google.provider import GoogleProvider
 
 # The GoogleProvider handles Google's token format and validation
 auth_provider = GoogleProvider(
@@ -157,7 +157,7 @@ For production deployments with persistent token management across server restar
 ```python server.py
 import os
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.google import GoogleProvider
+from fastmcp.server.plugins.auth.google.provider import GoogleProvider
 from key_value.aio.stores.redis import RedisStore
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from cryptography.fernet import Fernet
@@ -201,7 +201,7 @@ Setting this environment variable allows the Google provider to be used automati
 
 <Card>
 <ParamField path="FASTMCP_SERVER_AUTH" default="Not set">
-Set to `fastmcp.server.auth.providers.google.GoogleProvider` to use Google authentication.
+Set to `fastmcp.server.plugins.auth.google.provider.GoogleProvider` to use Google authentication.
 </ParamField>
 </Card>
 
@@ -242,7 +242,7 @@ HTTP request timeout for Google API calls
 Example `.env` file:
 ```bash
 # Use the Google provider
-FASTMCP_SERVER_AUTH=fastmcp.server.auth.providers.google.GoogleProvider
+FASTMCP_SERVER_AUTH=fastmcp.server.plugins.auth.google.provider.GoogleProvider
 
 # Google OAuth credentials
 FASTMCP_SERVER_AUTH_GOOGLE_CLIENT_ID=123456789.apps.googleusercontent.com

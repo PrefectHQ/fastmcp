@@ -10,8 +10,8 @@ from pytest_httpx import HTTPXMock
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from fastmcp.server.auth.providers.workos import (
-    AuthKitProvider,
+from fastmcp.server.plugins.auth.authkit.provider import AuthKitProvider
+from fastmcp.server.plugins.auth.workos.provider import (
     WorkOSProvider,
     WorkOSTokenVerifier,
 )
