@@ -235,6 +235,7 @@
                 "group": "Clients",
                 "pages": [
                   "clients/client",
+                  "clients/client-only-package",
                   "clients/transports",
                   {
                     "collapsed": true,
