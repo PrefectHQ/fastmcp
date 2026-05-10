@@ -366,6 +366,14 @@ async def apps(
             help="Host to bind to",
         ),
     ] = "127.0.0.1",
+    log_panel: Annotated[
+        bool,
+        cyclopts.Parameter(
+            "--log-panel",
+            negative="--no-log-panel",
+            help="Log panel feature in FastMCP dev UI",
+        ),
+    ] = True,
 ) -> None:
     """Preview a FastMCPApp UI in the browser.
 
@@ -391,6 +399,7 @@ async def apps(
         dev_port=dev_port,
         reload=reload,
         host=host,
+        log_panel=log_panel,
     )
 
 

@@ -1375,6 +1375,7 @@ def _make_dev_app(
     app_bridge_js: str,
     import_map_tag: str,
     message_log: _MessageLog,
+    log_panel: bool,
 ) -> Starlette:
     """Build the Starlette dev server application."""
 
@@ -1391,7 +1392,11 @@ def _make_dev_app(
             on_open_link="bridge.onopenlink = async ({ url }) => { window.location.href = url; return {}; };",
             on_initialized="bridge.oninitialized = async () => {};",
         )
-        return HTMLResponse(_inject_log_panel(host_html))
+        return (
+            HTMLResponse(_inject_log_panel(host_html))
+            if log_panel
+            else HTMLResponse(host_html)
+        )
 
     async def picker_app(request: Request) -> HTMLResponse:
         """Prefab picker UI — tool list with one tab per UI tool."""
@@ -1416,7 +1421,11 @@ def _make_dev_app(
             tool_args_json=json.dumps(tool_args),
             mcp_sdk_version=_MCP_SDK_VERSION,
         )
-        return HTMLResponse(_inject_log_panel(host_html))
+        return (
+            HTMLResponse(_inject_log_panel(host_html))
+            if log_panel
+            else HTMLResponse(host_html)
+        )
 
     async def api_launch(request: Request) -> Response:
         """Picker form submits here; returns a /launch URL string for OpenLink."""
@@ -1708,6 +1717,7 @@ async def run_dev_apps(
     dev_port: int = 8080,
     reload: bool = True,
     host: str = "127.0.0.1",
+    log_panel: bool = True,
 ) -> None:
     """Start the full dev environment for a FastMCPApp server.
 
@@ -1790,7 +1800,9 @@ async def run_dev_apps(
 
         logger.info(f"FastMCP dev UI at {dev_url}")
 
-        dev_app = _make_dev_app(mcp_url, app_bridge_js, import_map_tag, _MessageLog())
+        dev_app = _make_dev_app(
+            mcp_url, app_bridge_js, import_map_tag, _MessageLog(), log_panel
+        )
         config = uvicorn.Config(
             dev_app,
             host=host,
