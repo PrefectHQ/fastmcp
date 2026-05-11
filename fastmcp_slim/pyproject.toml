@@ -1,6 +1,6 @@
 [project]
 name = "fastmcp-slim"
-dynamic = ["version"]
+dynamic = ["version", "optional-dependencies"]
 description = "The dependency-slim FastMCP package."
 authors = [{ name = "Jeremiah Lowin" }]
 dependencies = [
@@ -36,32 +36,60 @@ classifiers = [
     "Typing :: Typed",
 ]
 
-[project.optional-dependencies]
+[project.urls]
+Homepage = "https://gofastmcp.com"
+Repository = "https://github.com/PrefectHQ/fastmcp"
+Documentation = "https://gofastmcp.com"
+
+[project.scripts]
+fastmcp = "fastmcp.cli:app"
+
+[build-system]
+requires = ["hatchling", "uv-dynamic-versioning>=0.7.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["fastmcp"]
+
+[tool.uv-dynamic-versioning]
+vcs = "git"
+style = "pep440"
+bump = true
+fallback-version = "0.0.0"
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning.optional-dependencies]
 anthropic = ["anthropic>=0.48.0"]
 apps = ["prefab-ui>=0.18.0"]
 # PyJWT floor: transitive via msal; CVE-2026-32597 affects <= 2.11.0
 azure = ["azure-identity>=1.16.0", "PyJWT>=2.12.0"]
 client = [
+    "fastmcp-slim[mcp]=={{ version }}",
     "authlib>=1.6.11",
-    "exceptiongroup>=1.2.2",
-    "httpx>=0.28.1,<1.0",
-    "mcp>=1.24.0,<2.0",
-    "opentelemetry-api>=1.20.0",
     "py-key-value-aio[filetree,keyring,memory]>=0.4.4,<0.5.0",
 ]
 code-mode = ["pydantic-monty==0.0.16"]
 gemini = ["google-genai>=1.18.0", "jsonref>=1.1.0"]
-full = [
+mcp = [
+    "exceptiongroup>=1.2.2",
+    "httpx>=0.28.1,<1.0",
+    "mcp>=1.24.0,<2.0",
+    "opentelemetry-api>=1.20.0",
+]
+openai = ["openai>=1.102.0"]
+server = [
+    "fastmcp-slim[mcp]=={{ version }}",
     "authlib>=1.6.11",
     "cyclopts>=4.0.0",
-    "exceptiongroup>=1.2.2",
     "griffelib>=2.0.0",
-    "httpx>=0.28.1,<1.0",
     "jsonref>=1.1.0",
     "jsonschema-path>=0.3.4",
-    "mcp>=1.24.0,<2.0",
     "openapi-pydantic>=0.5.1",
-    "opentelemetry-api>=1.20.0",
     "packaging>=24.0",
     "py-key-value-aio[filetree,keyring,memory]>=0.4.4,<0.5.0",
     "pyperclip>=1.9.0",
@@ -72,46 +100,4 @@ full = [
     "watchfiles>=1.0.0",
     "websockets>=15.0.1",
 ]
-openai = ["openai>=1.102.0"]
-server = [
-    "authlib>=1.6.11",
-    "exceptiongroup>=1.2.2",
-    "griffelib>=2.0.0",
-    "httpx>=0.28.1,<1.0",
-    "jsonref>=1.1.0",
-    "jsonschema-path>=0.3.4",
-    "mcp>=1.24.0,<2.0",
-    "openapi-pydantic>=0.5.1",
-    "opentelemetry-api>=1.20.0",
-    "packaging>=24.0",
-    "py-key-value-aio[filetree,keyring,memory]>=0.4.4,<0.5.0",
-    "python-multipart>=0.0.26",
-    "pyyaml>=6.0,<7.0",
-    "uncalled-for>=0.2.0",
-    "uvicorn>=0.35",
-    "watchfiles>=1.0.0",
-    "websockets>=15.0.1",
-]
 tasks = ["pydocket>=0.20.0"]
-
-[project.urls]
-Homepage = "https://gofastmcp.com"
-Repository = "https://github.com/PrefectHQ/fastmcp"
-Documentation = "https://gofastmcp.com"
-
-[build-system]
-requires = ["hatchling", "uv-dynamic-versioning>=0.7.0"]
-build-backend = "hatchling.build"
-
-[tool.hatch.version]
-source = "uv-dynamic-versioning"
-
-[tool.hatch.build.targets.wheel]
-packages = ["fastmcp"]
-
-
-[tool.uv-dynamic-versioning]
-vcs = "git"
-style = "pep440"
-bump = true
-fallback-version = "0.0.0"

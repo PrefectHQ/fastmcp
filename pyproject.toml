@@ -31,9 +31,6 @@ Homepage = "https://gofastmcp.com"
 Repository = "https://github.com/PrefectHQ/fastmcp"
 Documentation = "https://gofastmcp.com"
 
-[project.scripts]
-fastmcp = "fastmcp.cli:app"
-
 [build-system]
 requires = ["hatchling", "uv-dynamic-versioning>=0.7.0"]
 build-backend = "hatchling.build"
@@ -43,21 +40,25 @@ source = "uv-dynamic-versioning"
 
 [tool.hatch.build.targets.wheel]
 bypass-selection = true
+only-include = []
+exclude = ["/*"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
 
 [tool.hatch.metadata.hooks.uv-dynamic-versioning]
-dependencies = ["fastmcp-slim[full]=={{ version }}"]
+dependencies = [
+    "fastmcp-slim[client,server]=={{ version }}",
+]
 
 [tool.hatch.metadata.hooks.uv-dynamic-versioning.optional-dependencies]
-anthropic = ["fastmcp-slim[full,anthropic]=={{ version }}"]
-apps = ["fastmcp-slim[full,apps]=={{ version }}"]
-azure = ["fastmcp-slim[full,azure]=={{ version }}"]
-code-mode = ["fastmcp-slim[full,code-mode]=={{ version }}"]
-gemini = ["fastmcp-slim[full,gemini]=={{ version }}"]
-openai = ["fastmcp-slim[full,openai]=={{ version }}"]
-tasks = ["fastmcp-slim[full,tasks]=={{ version }}"]
+anthropic = ["fastmcp-slim[anthropic]=={{ version }}"]
+apps = ["fastmcp-slim[apps]=={{ version }}"]
+azure = ["fastmcp-slim[azure]=={{ version }}"]
+code-mode = ["fastmcp-slim[code-mode]=={{ version }}"]
+gemini = ["fastmcp-slim[gemini]=={{ version }}"]
+openai = ["fastmcp-slim[openai]=={{ version }}"]
+tasks = ["fastmcp-slim[tasks]=={{ version }}"]
 
 [tool.uv-dynamic-versioning]
 vcs = "git"

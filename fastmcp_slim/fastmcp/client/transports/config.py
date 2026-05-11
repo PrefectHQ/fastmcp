@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 from mcp import ClientSession
 from typing_extensions import Unpack
 
+from fastmcp import _install_hints
 from fastmcp.client.transports.base import ClientTransport, SessionKwargs
 from fastmcp.client.transports.memory import FastMCPTransport
 from fastmcp.mcp_config import (
@@ -105,8 +106,7 @@ class MCPConfigTransport(ClientTransport):
             from fastmcp.server.server import FastMCP
         except ImportError as exc:
             raise ImportError(
-                "MCP configs with multiple servers require the full `fastmcp` "
-                "package for now. Install it with `pip install fastmcp`."
+                _install_hints.full_package("MCP configs with multiple servers")
             ) from exc
 
         timeout = session_kwargs.get("read_timeout_seconds")

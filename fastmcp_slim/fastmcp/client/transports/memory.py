@@ -9,6 +9,7 @@ from mcp.server.fastmcp import FastMCP as FastMCP1Server
 from mcp.shared.memory import create_client_server_memory_streams
 from typing_extensions import Unpack
 
+from fastmcp import _install_hints
 from fastmcp.client.transports.base import ClientTransport, SessionKwargs
 
 if TYPE_CHECKING:
@@ -103,10 +104,7 @@ async def _enter_server_lifespan(
         FastMCP2 = None
 
     if FastMCP2 is None and not isinstance(server, FastMCP1Server):
-        raise ImportError(
-            "In-memory FastMCP transports require the full `fastmcp` package. "
-            "Install it with `pip install fastmcp`."
-        )
+        raise ImportError(_install_hints.full_package("In-memory FastMCP transports"))
 
     if FastMCP2 is not None and isinstance(server, FastMCP2):
         async with server._lifespan_manager():

@@ -830,30 +830,30 @@ wheels = [
 name = "fastmcp"
 source = { editable = "." }
 dependencies = [
-    { name = "fastmcp-slim", extra = ["full"] },
+    { name = "fastmcp-slim", extra = ["client", "server"] },
 ]
 
 [package.optional-dependencies]
 anthropic = [
-    { name = "fastmcp-slim", extra = ["anthropic", "full"] },
+    { name = "fastmcp-slim", extra = ["anthropic"] },
 ]
 apps = [
-    { name = "fastmcp-slim", extra = ["apps", "full"] },
+    { name = "fastmcp-slim", extra = ["apps"] },
 ]
 azure = [
-    { name = "fastmcp-slim", extra = ["azure", "full"] },
+    { name = "fastmcp-slim", extra = ["azure"] },
 ]
 code-mode = [
-    { name = "fastmcp-slim", extra = ["code-mode", "full"] },
+    { name = "fastmcp-slim", extra = ["code-mode"] },
 ]
 gemini = [
-    { name = "fastmcp-slim", extra = ["full", "gemini"] },
+    { name = "fastmcp-slim", extra = ["gemini"] },
 ]
 openai = [
-    { name = "fastmcp-slim", extra = ["full", "openai"] },
+    { name = "fastmcp-slim", extra = ["openai"] },
 ]
 tasks = [
-    { name = "fastmcp-slim", extra = ["full", "tasks"] },
+    { name = "fastmcp-slim", extra = ["tasks"] },
 ]
 
 [package.dev-dependencies]
@@ -890,14 +890,14 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastmcp-slim", extras = ["anthropic", "full"], marker = "extra == 'anthropic'", editable = "fastmcp_slim" },
-    { name = "fastmcp-slim", extras = ["apps", "full"], marker = "extra == 'apps'", editable = "fastmcp_slim" },
-    { name = "fastmcp-slim", extras = ["azure", "full"], marker = "extra == 'azure'", editable = "fastmcp_slim" },
-    { name = "fastmcp-slim", extras = ["code-mode", "full"], marker = "extra == 'code-mode'", editable = "fastmcp_slim" },
-    { name = "fastmcp-slim", extras = ["full"], editable = "fastmcp_slim" },
-    { name = "fastmcp-slim", extras = ["full", "gemini"], marker = "extra == 'gemini'", editable = "fastmcp_slim" },
-    { name = "fastmcp-slim", extras = ["full", "openai"], marker = "extra == 'openai'", editable = "fastmcp_slim" },
-    { name = "fastmcp-slim", extras = ["full", "tasks"], marker = "extra == 'tasks'", editable = "fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["anthropic"], marker = "extra == 'anthropic'", editable = "fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["apps"], marker = "extra == 'apps'", editable = "fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["azure"], marker = "extra == 'azure'", editable = "fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["client", "server"], editable = "fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["code-mode"], marker = "extra == 'code-mode'", editable = "fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["gemini"], marker = "extra == 'gemini'", editable = "fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["openai"], marker = "extra == 'openai'", editable = "fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["tasks"], marker = "extra == 'tasks'", editable = "fastmcp_slim" },
 ]
 provides-extras = ["anthropic", "apps", "azure", "code-mode", "gemini", "openai", "tasks"]
 
@@ -965,7 +965,20 @@ client = [
 code-mode = [
     { name = "pydantic-monty" },
 ]
-full = [
+gemini = [
+    { name = "google-genai" },
+    { name = "jsonref" },
+]
+mcp = [
+    { name = "exceptiongroup" },
+    { name = "httpx" },
+    { name = "mcp" },
+    { name = "opentelemetry-api" },
+]
+openai = [
+    { name = "openai" },
+]
+server = [
     { name = "authlib" },
     { name = "cyclopts" },
     { name = "exceptiongroup" },
@@ -986,32 +999,6 @@ full = [
     { name = "watchfiles" },
     { name = "websockets" },
 ]
-gemini = [
-    { name = "google-genai" },
-    { name = "jsonref" },
-]
-openai = [
-    { name = "openai" },
-]
-server = [
-    { name = "authlib" },
-    { name = "exceptiongroup" },
-    { name = "griffelib" },
-    { name = "httpx" },
-    { name = "jsonref" },
-    { name = "jsonschema-path" },
-    { name = "mcp" },
-    { name = "openapi-pydantic" },
-    { name = "opentelemetry-api" },
-    { name = "packaging" },
-    { name = "py-key-value-aio", extra = ["filetree", "keyring", "memory"] },
-    { name = "python-multipart" },
-    { name = "pyyaml" },
-    { name = "uncalled-for" },
-    { name = "uvicorn" },
-    { name = "watchfiles" },
-    { name = "websockets" },
-]
 tasks = [
     { name = "pydocket" },
 ]
@@ -1020,63 +1007,50 @@ tasks = [
 requires-dist = [
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.48.0" },
     { name = "authlib", marker = "extra == 'client'", specifier = ">=1.6.11" },
-    { name = "authlib", marker = "extra == 'full'", specifier = ">=1.6.11" },
     { name = "authlib", marker = "extra == 'server'", specifier = ">=1.6.11" },
     { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.16.0" },
-    { name = "cyclopts", marker = "extra == 'full'", specifier = ">=4.0.0" },
+    { name = "cyclopts", marker = "extra == 'server'", specifier = ">=4.0.0" },
     { name = "exceptiongroup", marker = "extra == 'client'", specifier = ">=1.2.2" },
-    { name = "exceptiongroup", marker = "extra == 'full'", specifier = ">=1.2.2" },
+    { name = "exceptiongroup", marker = "extra == 'mcp'", specifier = ">=1.2.2" },
     { name = "exceptiongroup", marker = "extra == 'server'", specifier = ">=1.2.2" },
     { name = "google-genai", marker = "extra == 'gemini'", specifier = ">=1.18.0" },
-    { name = "griffelib", marker = "extra == 'full'", specifier = ">=2.0.0" },
     { name = "griffelib", marker = "extra == 'server'", specifier = ">=2.0.0" },
     { name = "httpx", marker = "extra == 'client'", specifier = ">=0.28.1,<1.0" },
-    { name = "httpx", marker = "extra == 'full'", specifier = ">=0.28.1,<1.0" },
+    { name = "httpx", marker = "extra == 'mcp'", specifier = ">=0.28.1,<1.0" },
     { name = "httpx", marker = "extra == 'server'", specifier = ">=0.28.1,<1.0" },
-    { name = "jsonref", marker = "extra == 'full'", specifier = ">=1.1.0" },
     { name = "jsonref", marker = "extra == 'gemini'", specifier = ">=1.1.0" },
     { name = "jsonref", marker = "extra == 'server'", specifier = ">=1.1.0" },
-    { name = "jsonschema-path", marker = "extra == 'full'", specifier = ">=0.3.4" },
     { name = "jsonschema-path", marker = "extra == 'server'", specifier = ">=0.3.4" },
     { name = "mcp", marker = "extra == 'client'", specifier = ">=1.24.0,<2.0" },
-    { name = "mcp", marker = "extra == 'full'", specifier = ">=1.24.0,<2.0" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.24.0,<2.0" },
     { name = "mcp", marker = "extra == 'server'", specifier = ">=1.24.0,<2.0" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.102.0" },
-    { name = "openapi-pydantic", marker = "extra == 'full'", specifier = ">=0.5.1" },
     { name = "openapi-pydantic", marker = "extra == 'server'", specifier = ">=0.5.1" },
     { name = "opentelemetry-api", marker = "extra == 'client'", specifier = ">=1.20.0" },
-    { name = "opentelemetry-api", marker = "extra == 'full'", specifier = ">=1.20.0" },
+    { name = "opentelemetry-api", marker = "extra == 'mcp'", specifier = ">=1.20.0" },
     { name = "opentelemetry-api", marker = "extra == 'server'", specifier = ">=1.20.0" },
-    { name = "packaging", marker = "extra == 'full'", specifier = ">=24.0" },
     { name = "packaging", marker = "extra == 'server'", specifier = ">=24.0" },
     { name = "platformdirs", specifier = ">=4.0.0" },
     { name = "prefab-ui", marker = "extra == 'apps'", specifier = ">=0.18.0" },
     { name = "py-key-value-aio", extras = ["filetree", "keyring", "memory"], marker = "extra == 'client'", specifier = ">=0.4.4,<0.5.0" },
-    { name = "py-key-value-aio", extras = ["filetree", "keyring", "memory"], marker = "extra == 'full'", specifier = ">=0.4.4,<0.5.0" },
     { name = "py-key-value-aio", extras = ["filetree", "keyring", "memory"], marker = "extra == 'server'", specifier = ">=0.4.4,<0.5.0" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.11.7" },
     { name = "pydantic-monty", marker = "extra == 'code-mode'", specifier = "==0.0.16" },
     { name = "pydantic-settings", specifier = ">=2.0.0" },
     { name = "pydocket", marker = "extra == 'tasks'", specifier = ">=0.20.0" },
     { name = "pyjwt", marker = "extra == 'azure'", specifier = ">=2.12.0" },
-    { name = "pyperclip", marker = "extra == 'full'", specifier = ">=1.9.0" },
+    { name = "pyperclip", marker = "extra == 'server'", specifier = ">=1.9.0" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
-    { name = "python-multipart", marker = "extra == 'full'", specifier = ">=0.0.26" },
     { name = "python-multipart", marker = "extra == 'server'", specifier = ">=0.0.26" },
-    { name = "pyyaml", marker = "extra == 'full'", specifier = ">=6.0,<7.0" },
     { name = "pyyaml", marker = "extra == 'server'", specifier = ">=6.0,<7.0" },
     { name = "rich", specifier = ">=13.9.4" },
     { name = "typing-extensions", specifier = ">=4.0.0" },
-    { name = "uncalled-for", marker = "extra == 'full'", specifier = ">=0.2.0" },
     { name = "uncalled-for", marker = "extra == 'server'", specifier = ">=0.2.0" },
-    { name = "uvicorn", marker = "extra == 'full'", specifier = ">=0.35" },
     { name = "uvicorn", marker = "extra == 'server'", specifier = ">=0.35" },
-    { name = "watchfiles", marker = "extra == 'full'", specifier = ">=1.0.0" },
     { name = "watchfiles", marker = "extra == 'server'", specifier = ">=1.0.0" },
-    { name = "websockets", marker = "extra == 'full'", specifier = ">=15.0.1" },
     { name = "websockets", marker = "extra == 'server'", specifier = ">=15.0.1" },
 ]
-provides-extras = ["anthropic", "apps", "azure", "client", "code-mode", "full", "gemini", "openai", "server", "tasks"]
+provides-extras = ["anthropic", "apps", "azure", "client", "code-mode", "gemini", "mcp", "openai", "server", "tasks"]
 
 [[package]]
 name = "google-auth"

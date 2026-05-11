@@ -40,6 +40,8 @@ from pydantic import (
 )
 from typing_extensions import Self, override
 
+from fastmcp import _install_hints
+
 if TYPE_CHECKING:
     from fastmcp.client.transports import (
         ClientTransport,
@@ -129,8 +131,9 @@ class _TransformingMCPServerMixin(BaseModel):
             from fastmcp.server.transforms import ToolTransform
         except ImportError as exc:
             raise ImportError(
-                "MCP configs that use FastMCP-specific tool transforms or tag filters "
-                "require the full `fastmcp` package. Install it with `pip install fastmcp`."
+                _install_hints.full_package(
+                    "MCP configs that use FastMCP-specific tool transforms or tag filters"
+                )
             ) from exc
 
         transport = cast("ClientTransport", super().to_transport())  # ty: ignore[unresolved-attribute]
@@ -154,8 +157,9 @@ class _TransformingMCPServerMixin(BaseModel):
             from fastmcp.client.transports import FastMCPTransport
         except ImportError as exc:
             raise ImportError(
-                "MCP configs that use FastMCP-specific tool transforms or tag filters "
-                "require the full `fastmcp` package. Install it with `pip install fastmcp`."
+                _install_hints.full_package(
+                    "MCP configs that use FastMCP-specific tool transforms or tag filters"
+                )
             ) from exc
 
         return FastMCPTransport(mcp=self._to_server_and_underlying_transport()[0])

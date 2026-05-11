@@ -1,5 +1,5 @@
 """FastMCP CLI as a runnable package"""
 
-from .cli import app
+from . import app
 
 app()

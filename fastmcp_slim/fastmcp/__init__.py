@@ -5,6 +5,7 @@ import warnings
 from importlib.metadata import PackageNotFoundError, version as _version
 from typing import TYPE_CHECKING
 
+from fastmcp import _install_hints
 from fastmcp.settings import Settings
 from fastmcp.utilities.logging import configure_logging as _configure_logging
 
@@ -48,40 +49,28 @@ def __getattr__(name: str) -> object:
         try:
             from fastmcp.client import Client
         except ImportError as exc:
-            raise ImportError(
-                "FastMCP client support is not installed. Install "
-                "`fastmcp-slim[client]` or `fastmcp`."
-            ) from exc
+            raise ImportError(_install_hints.CLIENT_SUPPORT) from exc
 
         return Client
     if name == "Context":
         try:
             from fastmcp.server.context import Context
         except ImportError as exc:
-            raise ImportError(
-                "FastMCP server support is not installed. Install "
-                "`fastmcp-slim[server]` or `fastmcp`."
-            ) from exc
+            raise ImportError(_install_hints.SERVER_SUPPORT) from exc
 
         return Context
     if name == "FastMCP":
         try:
             from fastmcp.server.server import FastMCP
         except ImportError as exc:
-            raise ImportError(
-                "FastMCP server support is not installed. Install "
-                "`fastmcp-slim[server]` or `fastmcp`."
-            ) from exc
+            raise ImportError(_install_hints.SERVER_SUPPORT) from exc
 
         return FastMCP
     if name == "FastMCPApp":
         try:
             from fastmcp.apps.app import FastMCPApp
         except ImportError as exc:
-            raise ImportError(
-                "FastMCP app support is not installed. Install "
-                "`fastmcp-slim[server,apps]` or `fastmcp[apps]`."
-            ) from exc
+            raise ImportError(_install_hints.APP_SUPPORT) from exc
 
         return FastMCPApp
     if name == "FastMCPDeprecationWarning":
@@ -92,18 +81,12 @@ def __getattr__(name: str) -> object:
         try:
             return importlib.import_module("fastmcp.client")
         except ImportError as exc:
-            raise ImportError(
-                "FastMCP client support is not installed. Install "
-                "`fastmcp-slim[client]` or `fastmcp`."
-            ) from exc
+            raise ImportError(_install_hints.CLIENT_SUPPORT) from exc
     if name == "server":
         try:
             return importlib.import_module("fastmcp.server")
         except ImportError as exc:
-            raise ImportError(
-                "FastMCP server support is not installed. Install "
-                "`fastmcp-slim[server]` or `fastmcp`."
-            ) from exc
+            raise ImportError(_install_hints.SERVER_SUPPORT) from exc
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

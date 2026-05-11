@@ -1,3 +1,5 @@
+from fastmcp import _install_hints
+
 try:
     from .auth import OAuth, BearerAuth
     from .client import Client
@@ -14,10 +16,7 @@ try:
         UvxStdioTransport,
     )
 except ImportError as exc:
-    raise ImportError(
-        "FastMCP client support is not installed. Install "
-        "`fastmcp-slim[client]` or `fastmcp`."
-    ) from exc
+    raise ImportError(_install_hints.CLIENT_SUPPORT) from exc
 
 __all__ = [
     "BearerAuth",
