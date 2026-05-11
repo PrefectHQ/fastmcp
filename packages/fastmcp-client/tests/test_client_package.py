@@ -34,6 +34,7 @@ def block_full_fastmcp_imports():
 def test_fastmcp_client_imports_without_full_fastmcp() -> None:
     with block_full_fastmcp_imports():
         from fastmcp_client import Client
+        from fastmcp_client.client.dependencies import get_http_headers
         from fastmcp_client.client.transports import (
             ClientTransport,
             StdioTransport,
@@ -47,6 +48,7 @@ def test_fastmcp_client_imports_without_full_fastmcp() -> None:
         assert StdioTransport(command="uvx", args=["mcp-run-python", "stdio"])
         assert StreamableHttpTransport is not None
         assert ToolError is not None
+        assert get_http_headers(include_all=True) == {}
         assert MCPConfig.from_dict(
             {"mcpServers": {"demo": {"command": "uvx", "args": ["demo"]}}}
         )
