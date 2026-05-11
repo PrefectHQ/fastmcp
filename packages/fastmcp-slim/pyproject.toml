@@ -51,10 +51,6 @@ client = [
 ]
 code-mode = ["pydantic-monty==0.0.16"]
 gemini = ["google-genai>=1.18.0"]
-cli = [
-    "cyclopts>=4.0.0",
-    "pyperclip>=1.9.0",
-]
 full = [
     "authlib>=1.6.11",
     "cyclopts>=4.0.0",
@@ -128,9 +124,6 @@ dev = [
     "opentelemetry-exporter-otlp-proto-grpc>=1.39.0",
     "pytest-examples>=0.0.18",
 ]
-
-[project.scripts]
-fastmcp = "fastmcp.cli:app"
 
 [project.urls]
 Homepage = "https://gofastmcp.com"

@@ -11,7 +11,9 @@ from fastmcp.utilities.logging import configure_logging as _configure_logging
 if TYPE_CHECKING:
     from fastmcp.client import Client as Client
     from fastmcp.apps.app import FastMCPApp as FastMCPApp
-    from fastmcp.exceptions import FastMCPDeprecationWarning as FastMCPDeprecationWarning
+    from fastmcp.exceptions import (
+        FastMCPDeprecationWarning as FastMCPDeprecationWarning,
+    )
     from fastmcp.server.context import Context as Context
     from fastmcp.server.server import FastMCP as FastMCP
 

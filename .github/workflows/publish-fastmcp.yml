@@ -33,7 +33,7 @@ jobs:
         run: |
           SLIM_VERSION=$(python - <<'PY'
           import email.parser
-          from packaging.requirements import Requirement
+          import re
           import zipfile
           from pathlib import Path
 
@@ -45,13 +45,19 @@ jobs:
           metadata = email.parser.Parser().parsestr(
               zipfile.ZipFile(wheel).read(metadata_name).decode()
           )
-          requirement = next(
-              Requirement(value)
-              for value in metadata.get_all("Requires-Dist", [])
-              if Requirement(value).name == "fastmcp-slim"
-          )
-          version = str(requirement.specifier).removeprefix("==")
-          print(version)
+          for value in metadata.get_all("Requires-Dist", []):
+              requirement, _, marker = value.partition(";")
+              if marker.strip():
+                  continue
+              match = re.fullmatch(
+                  r"fastmcp-slim(?:\[[^\]]+\])?==([^;\s]+)",
+                  requirement.strip(),
+              )
+              if match:
+                  print(match.group(1))
+                  break
+          else:
+              raise RuntimeError("Could not find the base fastmcp-slim dependency")
           PY
           )
 

@@ -922,10 +922,6 @@ azure = [
     { name = "azure-identity" },
     { name = "pyjwt" },
 ]
-cli = [
-    { name = "cyclopts" },
-    { name = "pyperclip" },
-]
 client = [
     { name = "authlib" },
     { name = "exceptiongroup" },
@@ -1026,7 +1022,6 @@ requires-dist = [
     { name = "authlib", marker = "extra == 'full'", specifier = ">=1.6.11" },
     { name = "authlib", marker = "extra == 'server'", specifier = ">=1.6.11" },
     { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.16.0" },
-    { name = "cyclopts", marker = "extra == 'cli'", specifier = ">=4.0.0" },
     { name = "cyclopts", marker = "extra == 'full'", specifier = ">=4.0.0" },
     { name = "exceptiongroup", marker = "extra == 'client'", specifier = ">=1.2.2" },
     { name = "exceptiongroup", marker = "extra == 'full'", specifier = ">=1.2.2" },
@@ -1062,7 +1057,6 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.0.0" },
     { name = "pydocket", marker = "extra == 'tasks'", specifier = ">=0.20.0" },
     { name = "pyjwt", marker = "extra == 'azure'", specifier = ">=2.12.0" },
-    { name = "pyperclip", marker = "extra == 'cli'", specifier = ">=1.9.0" },
     { name = "pyperclip", marker = "extra == 'full'", specifier = ">=1.9.0" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
     { name = "python-multipart", marker = "extra == 'full'", specifier = ">=0.0.26" },
@@ -1080,7 +1074,7 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'full'", specifier = ">=15.0.1" },
     { name = "websockets", marker = "extra == 'server'", specifier = ">=15.0.1" },
 ]
-provides-extras = ["anthropic", "apps", "azure", "cli", "client", "code-mode", "full", "gemini", "openai", "server", "tasks"]
+provides-extras = ["anthropic", "apps", "azure", "client", "code-mode", "full", "gemini", "openai", "server", "tasks"]
 
 [package.metadata.requires-dev]
 dev = [
