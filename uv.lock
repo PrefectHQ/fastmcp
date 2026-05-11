@@ -988,6 +988,7 @@ full = [
 ]
 gemini = [
     { name = "google-genai" },
+    { name = "jsonref" },
 ]
 openai = [
     { name = "openai" },
@@ -1033,6 +1034,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'full'", specifier = ">=0.28.1,<1.0" },
     { name = "httpx", marker = "extra == 'server'", specifier = ">=0.28.1,<1.0" },
     { name = "jsonref", marker = "extra == 'full'", specifier = ">=1.1.0" },
+    { name = "jsonref", marker = "extra == 'gemini'", specifier = ">=1.1.0" },
     { name = "jsonref", marker = "extra == 'server'", specifier = ">=1.1.0" },
     { name = "jsonschema-path", marker = "extra == 'full'", specifier = ">=0.3.4" },
     { name = "jsonschema-path", marker = "extra == 'server'", specifier = ">=0.3.4" },

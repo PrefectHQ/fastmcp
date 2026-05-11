@@ -27,7 +27,7 @@ uv run prek run --all-files          # Ruff + Prettier + ty
 
 | Path              | Purpose                                |
 | ----------------- | -------------------------------------- |
-| `src/fastmcp/`    | Library source code                    |
+| `fastmcp_slim/fastmcp/` | Library source code                    |
 | `├─server/`       | Server implementation                  |
 | `│ ├─auth/`       | Authentication providers               |
 | `│ └─middleware/` | Error handling, logging, rate limiting |
@@ -50,7 +50,7 @@ When modifying MCP functionality, changes typically need to be applied across al
 - **Resource Templates** (`src/resources/`)
 - **Prompts** (`src/prompts/`)
 
-**Before writing cross-component logic (dedupe, grouping, lookups, identity checks), read `FastMCPComponent` in `src/fastmcp/utilities/components.py`.** The base class defines the shared surface — `name`, `version`, `tags`, `meta`, and critically the `key` property which is the canonical MCP identity (encodes type, identifier, and version). Prefer `item.key` over ad-hoc `name or uri or uri_template` fallbacks; overrides in `Resource` and `ResourceTemplate` already handle URI-based identity, and `.key` includes the version suffix so variants of the same component don't falsely collide.
+**Before writing cross-component logic (dedupe, grouping, lookups, identity checks), read `FastMCPComponent` in `fastmcp_slim/fastmcp/utilities/components.py`.** The base class defines the shared surface — `name`, `version`, `tags`, `meta`, and critically the `key` property which is the canonical MCP identity (encodes type, identifier, and version). Prefer `item.key` over ad-hoc `name or uri or uri_template` fallbacks; overrides in `Resource` and `ResourceTemplate` already handle URI-based identity, and `.key` includes the version suffix so variants of the same component don't falsely collide.
 
 ## Development Rules
 
@@ -147,9 +147,9 @@ gh api -X POST repos/PrefectHQ/fastmcp/releases/generate-notes \
 - Uses Mintlify framework
 - Files must be in docs.json to be included
 - Do not manually modify `docs/python-sdk/**` — these files are auto-generated from source code by a bot and maintained via a long-lived PR. Do not include changes to these files in contributor PRs.
-- Do not manually modify `docs/public/schemas/**` or `src/fastmcp/utilities/mcp_server_config/v1/schema.json` — these are auto-generated and maintained via a long-lived PR.
+- Do not manually modify `docs/public/schemas/**` or `fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/schema.json` — these are auto-generated and maintained via a long-lived PR.
 - **Core Principle:** A feature doesn't exist unless it is documented!
-- When adding or modifying settings in `src/fastmcp/settings.py`, update `docs/more/settings.mdx` to match.
+- When adding or modifying settings in `fastmcp_slim/fastmcp/settings.py`, update `docs/more/settings.mdx` to match.
 
 ### Documentation Guidelines
 

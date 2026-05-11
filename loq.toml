@@ -7,57 +7,57 @@ respect_gitignore = true
 exclude = ["**/uv.lock", ".git/**", ".claude/**", "docs/**"]
 
 [[rules]]
-path = "packages/fastmcp-slim/tests/**"
+path = "tests/**"
 max_lines = 1000
 
 [[rules]]
-path = "packages/fastmcp-slim/src/fastmcp/server/context.py"
+path = "fastmcp_slim/fastmcp/server/context.py"
 max_lines = 1404
 
 [[rules]]
-path = "packages/fastmcp-slim/src/fastmcp/server/server.py"
+path = "fastmcp_slim/fastmcp/server/server.py"
 max_lines = 2410
 
 [[rules]]
-path = "packages/fastmcp-slim/src/fastmcp/server/auth/oauth_proxy/proxy.py"
+path = "fastmcp_slim/fastmcp/server/auth/oauth_proxy/proxy.py"
 max_lines = 2098
 
 [[rules]]
-path = "packages/fastmcp-slim/src/fastmcp/cli/apps_dev.py"
+path = "fastmcp_slim/fastmcp/cli/apps_dev.py"
 max_lines = 1814
 
 [[rules]]
-path = "packages/fastmcp-slim/src/fastmcp/cli/cli.py"
+path = "fastmcp_slim/fastmcp/cli/cli.py"
 max_lines = 1116
 
 [[rules]]
-path = "packages/fastmcp-slim/src/fastmcp/server/dependencies.py"
+path = "fastmcp_slim/fastmcp/server/dependencies.py"
 max_lines = 1686
 
 [[rules]]
-path = "packages/fastmcp-slim/src/fastmcp/server/providers/proxy.py"
+path = "fastmcp_slim/fastmcp/server/providers/proxy.py"
 max_lines = 1096
 
 [[rules]]
-path = "packages/fastmcp-slim/src/fastmcp/tools/tool_transform.py"
+path = "fastmcp_slim/fastmcp/tools/tool_transform.py"
 max_lines = 1004
 
 [[rules]]
-path = "packages/fastmcp-slim/tests/server/providers/openapi/test_openapi_features.py"
+path = "tests/server/providers/openapi/test_openapi_features.py"
 max_lines = 1029
 
 [[rules]]
-path = "packages/fastmcp-slim/tests/server/tasks/test_task_mount.py"
+path = "tests/server/tasks/test_task_mount.py"
 max_lines = 1088
 
 [[rules]]
-path = "packages/fastmcp-slim/tests/server/test_dependencies.py"
+path = "tests/server/test_dependencies.py"
 max_lines = 1194
 
 [[rules]]
-path = "packages/fastmcp-slim/tests/test_mcp_config.py"
+path = "tests/test_mcp_config.py"
 max_lines = 1185
 
 [[rules]]
-path = "packages/fastmcp-slim/tests/utilities/openapi/test_director.py"
+path = "tests/utilities/openapi/test_director.py"
 max_lines = 1154

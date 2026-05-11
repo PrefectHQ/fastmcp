@@ -159,7 +159,7 @@ jobs:
         run: |
           uv venv /tmp/fastmcp-slim-client-smoke
           SLIM_WHEEL=$(ls /tmp/fastmcp-dist/fastmcp_slim-*.whl)
-          uv pip install --python /tmp/fastmcp-slim-client-smoke/bin/python "$SLIM_WHEEL[client]"
+          uv pip install --python /tmp/fastmcp-slim-client-smoke/bin/python "${SLIM_WHEEL}[client]"
           /tmp/fastmcp-slim-client-smoke/bin/python - <<'PY'
           from importlib.metadata import entry_points
 
@@ -186,7 +186,7 @@ jobs:
         run: |
           uv venv /tmp/fastmcp-slim-server-smoke
           SLIM_WHEEL=$(ls /tmp/fastmcp-dist/fastmcp_slim-*.whl)
-          uv pip install --python /tmp/fastmcp-slim-server-smoke/bin/python "$SLIM_WHEEL[server]"
+          uv pip install --python /tmp/fastmcp-slim-server-smoke/bin/python "${SLIM_WHEEL}[server]"
           /tmp/fastmcp-slim-server-smoke/bin/python - <<'PY'
           from fastmcp import FastMCP
 

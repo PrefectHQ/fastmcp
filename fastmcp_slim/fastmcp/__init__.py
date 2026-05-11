@@ -80,8 +80,7 @@ def __getattr__(name: str) -> object:
         except ImportError as exc:
             raise ImportError(
                 "FastMCP app support is not installed. Install "
-                "`fastmcp-slim[apps]` with the required server dependencies "
-                "or `fastmcp[apps]`."
+                "`fastmcp-slim[server,apps]` or `fastmcp[apps]`."
             ) from exc
 
         return FastMCPApp

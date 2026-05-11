@@ -50,7 +50,7 @@ client = [
     "py-key-value-aio[filetree,keyring,memory]>=0.4.4,<0.5.0",
 ]
 code-mode = ["pydantic-monty==0.0.16"]
-gemini = ["google-genai>=1.18.0"]
+gemini = ["google-genai>=1.18.0", "jsonref>=1.1.0"]
 full = [
     "authlib>=1.6.11",
     "cyclopts>=4.0.0",
