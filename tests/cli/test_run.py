@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from pydantic import ValidationError
 
-from fastmcp.cli.cli import inspector, run
+from fastmcp.cli.cli import apps, inspector, run
 from fastmcp.cli.run import (
     create_mcp_config_server,
     is_url,
@@ -991,3 +991,62 @@ class TestInspectorModuleMode:
         # --module should be in the subprocess command
         cmd = mock_subprocess.call_args[0][0]
         assert "--module" in cmd
+
+
+class TestRunDevApps:
+    """Test running dev apps with the run command."""
+
+    @pytest.mark.parametrize(
+        "host, expected_host",
+        [
+            ("0.0.0.0", "0.0.0.0"),
+            ("127.0.0.1", "127.0.0.1"),
+        ],
+    )
+    async def test_run_dev_apps_with_host(self, host, expected_host):
+        """Test run command can run a dev app with below new options for issue 4121.
+        - host option to support binding specific address other than localhost.
+        """
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+
+        mock_server = AsyncMock()
+        mock_server.install_signal_handlers = MagicMock()
+        mock_server.serve = AsyncMock()
+
+        mock_uvicorn = MagicMock()
+        mock_uvicorn.Config = MagicMock()
+        mock_uvicorn.Server.return_value = mock_server
+
+        mock_make_dev_app = MagicMock(return_value=MagicMock())
+        mock_webbrowser_open = MagicMock()
+
+        with (
+            patch(
+                "fastmcp.cli.apps_dev._start_user_server",
+                new_callable=AsyncMock,
+                return_value=mock_proc,
+            ),
+            patch(
+                "fastmcp.cli.apps_dev._fetch_app_bridge_bundle",
+                new_callable=AsyncMock,
+                return_value=("js_content", "{}"),
+            ),
+            patch(
+                "fastmcp.cli.apps_dev._wait_for_server",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch("fastmcp.cli.apps_dev._make_dev_app", mock_make_dev_app),
+            patch("fastmcp.cli.apps_dev.uvicorn", mock_uvicorn),
+            patch("fastmcp.cli.apps_dev.webbrowser.open", mock_webbrowser_open),
+            patch("fastmcp.cli.apps_dev.asyncio.sleep", new_callable=AsyncMock),
+            patch("socket.socket"),
+        ):
+            await apps("server.py", host=host)
+
+        make_dev_app_first_arg = mock_make_dev_app.call_args[0][0]
+        assert expected_host in make_dev_app_first_arg
+
+        webbrowser_open_first_arg = mock_webbrowser_open.call_args[0][0]
+        assert expected_host in webbrowser_open_first_arg
