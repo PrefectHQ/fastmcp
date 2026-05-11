@@ -34,7 +34,7 @@ Workflow for fixing a cluster
 2. Grab the example schema from the cluster output.
 3. Reproduce in a unit test: add a test to test_json_schema_type.py that calls
    json_schema_to_type() with that schema and asserts the correct type is returned.
-4. Fix the root cause in src/fastmcp/utilities/json_schema_type.py.
+4. Fix the root cause in fastmcp_slim/fastmcp/utilities/json_schema_type.py.
 5. Re-run the crash test — confirm the cluster count drops.
 6. Ratchet the baseline in tests/utilities/json_schema_type/conftest.py:
    - Lower MAX_TYPE_ERRORS / MAX_SCHEMA_ERRORS to the new actual count.

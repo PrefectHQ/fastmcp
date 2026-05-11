@@ -15,36 +15,6 @@ members = [
     "fastmcp-slim",
 ]
 
-[manifest.dependency-groups]
-dev = [
-    { name = "dirty-equals", specifier = ">=0.9.0" },
-    { name = "fastapi", specifier = ">=0.115.12" },
-    { name = "fastmcp", extras = ["anthropic", "apps", "azure", "code-mode", "gemini", "openai", "tasks"], editable = "packages/fastmcp" },
-    { name = "inline-snapshot", extras = ["dirty-equals"], specifier = ">=0.27.2" },
-    { name = "ipython", specifier = ">=8.12.3" },
-    { name = "loq", specifier = ">=0.1.0a3" },
-    { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.39.0" },
-    { name = "opentelemetry-sdk", specifier = ">=1.20.0" },
-    { name = "pdbpp", specifier = ">=0.11.7" },
-    { name = "prek", specifier = ">=0.2.12" },
-    { name = "psutil", specifier = ">=7.0.0" },
-    { name = "pyinstrument", specifier = ">=5.0.2" },
-    { name = "pyperclip", specifier = ">=1.9.0" },
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-asyncio", specifier = ">=1.2.0" },
-    { name = "pytest-cov", specifier = ">=6.1.1" },
-    { name = "pytest-env", specifier = ">=1.1.5" },
-    { name = "pytest-examples", specifier = ">=0.0.18" },
-    { name = "pytest-flakefinder", specifier = ">=1.1.0" },
-    { name = "pytest-httpx", specifier = ">=0.35.0" },
-    { name = "pytest-report", specifier = ">=0.2.1" },
-    { name = "pytest-retry", specifier = ">=1.7.0" },
-    { name = "pytest-timeout", specifier = ">=2.4.0" },
-    { name = "pytest-xdist", specifier = ">=3.6.1" },
-    { name = "ruff", specifier = ">=0.12.8" },
-    { name = "ty", specifier = ">=0.0.29" },
-]
-
 [[package]]
 name = "aiofile"
 version = "3.9.0"
@@ -858,7 +828,7 @@ wheels = [
 
 [[package]]
 name = "fastmcp"
-source = { editable = "packages/fastmcp" }
+source = { editable = "." }
 dependencies = [
     { name = "fastmcp-slim", extra = ["full"] },
 ]
@@ -886,22 +856,84 @@ tasks = [
     { name = "fastmcp-slim", extra = ["full", "tasks"] },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "dirty-equals" },
+    { name = "fastapi" },
+    { name = "fastmcp", extra = ["anthropic", "apps", "azure", "code-mode", "gemini", "openai", "tasks"] },
+    { name = "inline-snapshot", extra = ["dirty-equals"] },
+    { name = "ipython", version = "8.39.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "ipython", version = "9.10.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
+    { name = "ipython", version = "9.12.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "loq" },
+    { name = "opentelemetry-exporter-otlp-proto-grpc" },
+    { name = "opentelemetry-sdk" },
+    { name = "pdbpp" },
+    { name = "prek" },
+    { name = "psutil" },
+    { name = "pyinstrument" },
+    { name = "pyperclip" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "pytest-env" },
+    { name = "pytest-examples" },
+    { name = "pytest-flakefinder" },
+    { name = "pytest-httpx" },
+    { name = "pytest-report" },
+    { name = "pytest-retry" },
+    { name = "pytest-timeout" },
+    { name = "pytest-xdist" },
+    { name = "ruff" },
+    { name = "ty" },
+]
+
 [package.metadata]
 requires-dist = [
-    { name = "fastmcp-slim", extras = ["anthropic", "full"], marker = "extra == 'anthropic'", editable = "packages/fastmcp-slim" },
-    { name = "fastmcp-slim", extras = ["apps", "full"], marker = "extra == 'apps'", editable = "packages/fastmcp-slim" },
-    { name = "fastmcp-slim", extras = ["azure", "full"], marker = "extra == 'azure'", editable = "packages/fastmcp-slim" },
-    { name = "fastmcp-slim", extras = ["code-mode", "full"], marker = "extra == 'code-mode'", editable = "packages/fastmcp-slim" },
-    { name = "fastmcp-slim", extras = ["full"], editable = "packages/fastmcp-slim" },
-    { name = "fastmcp-slim", extras = ["full", "gemini"], marker = "extra == 'gemini'", editable = "packages/fastmcp-slim" },
-    { name = "fastmcp-slim", extras = ["full", "openai"], marker = "extra == 'openai'", editable = "packages/fastmcp-slim" },
-    { name = "fastmcp-slim", extras = ["full", "tasks"], marker = "extra == 'tasks'", editable = "packages/fastmcp-slim" },
+    { name = "fastmcp-slim", extras = ["anthropic", "full"], marker = "extra == 'anthropic'", editable = "fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["apps", "full"], marker = "extra == 'apps'", editable = "fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["azure", "full"], marker = "extra == 'azure'", editable = "fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["code-mode", "full"], marker = "extra == 'code-mode'", editable = "fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["full"], editable = "fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["full", "gemini"], marker = "extra == 'gemini'", editable = "fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["full", "openai"], marker = "extra == 'openai'", editable = "fastmcp_slim" },
+    { name = "fastmcp-slim", extras = ["full", "tasks"], marker = "extra == 'tasks'", editable = "fastmcp_slim" },
 ]
 provides-extras = ["anthropic", "apps", "azure", "code-mode", "gemini", "openai", "tasks"]
 
+[package.metadata.requires-dev]
+dev = [
+    { name = "dirty-equals", specifier = ">=0.9.0" },
+    { name = "fastapi", specifier = ">=0.115.12" },
+    { name = "fastmcp", extras = ["anthropic", "apps", "azure", "code-mode", "gemini", "openai", "tasks"], editable = "." },
+    { name = "inline-snapshot", extras = ["dirty-equals"], specifier = ">=0.27.2" },
+    { name = "ipython", specifier = ">=8.12.3" },
+    { name = "loq", specifier = ">=0.1.0a3" },
+    { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.39.0" },
+    { name = "opentelemetry-sdk", specifier = ">=1.20.0" },
+    { name = "pdbpp", specifier = ">=0.11.7" },
+    { name = "prek", specifier = ">=0.2.12" },
+    { name = "psutil", specifier = ">=7.0.0" },
+    { name = "pyinstrument", specifier = ">=5.0.2" },
+    { name = "pyperclip", specifier = ">=1.9.0" },
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-asyncio", specifier = ">=1.2.0" },
+    { name = "pytest-cov", specifier = ">=6.1.1" },
+    { name = "pytest-env", specifier = ">=1.1.5" },
+    { name = "pytest-examples", specifier = ">=0.0.18" },
+    { name = "pytest-flakefinder", specifier = ">=1.1.0" },
+    { name = "pytest-httpx", specifier = ">=0.35.0" },
+    { name = "pytest-report", specifier = ">=0.2.1" },
+    { name = "pytest-retry", specifier = ">=1.7.0" },
+    { name = "pytest-timeout", specifier = ">=2.4.0" },
+    { name = "pytest-xdist", specifier = ">=3.6.1" },
+    { name = "ruff", specifier = ">=0.12.8" },
+    { name = "ty", specifier = ">=0.0.29" },
+]
+
 [[package]]
 name = "fastmcp-slim"
-source = { editable = "packages/fastmcp-slim" }
+source = { editable = "fastmcp_slim" }
 dependencies = [
     { name = "platformdirs" },
     { name = "pydantic", extra = ["email"] },
@@ -983,38 +1015,6 @@ tasks = [
     { name = "pydocket" },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "dirty-equals" },
-    { name = "fastapi" },
-    { name = "fastmcp-slim", extra = ["anthropic", "apps", "azure", "code-mode", "full", "gemini", "openai", "tasks"] },
-    { name = "inline-snapshot", extra = ["dirty-equals"] },
-    { name = "ipython", version = "8.39.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "ipython", version = "9.10.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
-    { name = "ipython", version = "9.12.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "loq" },
-    { name = "opentelemetry-exporter-otlp-proto-grpc" },
-    { name = "opentelemetry-sdk" },
-    { name = "pdbpp" },
-    { name = "prek" },
-    { name = "psutil" },
-    { name = "pyinstrument" },
-    { name = "pyperclip" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "pytest-env" },
-    { name = "pytest-examples" },
-    { name = "pytest-flakefinder" },
-    { name = "pytest-httpx" },
-    { name = "pytest-report" },
-    { name = "pytest-retry" },
-    { name = "pytest-timeout" },
-    { name = "pytest-xdist" },
-    { name = "ruff" },
-    { name = "ty" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=0.48.0" },
@@ -1075,36 +1075,6 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'server'", specifier = ">=15.0.1" },
 ]
 provides-extras = ["anthropic", "apps", "azure", "client", "code-mode", "full", "gemini", "openai", "server", "tasks"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "dirty-equals", specifier = ">=0.9.0" },
-    { name = "fastapi", specifier = ">=0.115.12" },
-    { name = "fastmcp-slim", extras = ["anthropic", "apps", "azure", "code-mode", "full", "gemini", "openai", "tasks"], editable = "packages/fastmcp-slim" },
-    { name = "inline-snapshot", extras = ["dirty-equals"], specifier = ">=0.27.2" },
-    { name = "ipython", specifier = ">=8.12.3" },
-    { name = "loq", specifier = ">=0.1.0a3" },
-    { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.39.0" },
-    { name = "opentelemetry-sdk", specifier = ">=1.20.0" },
-    { name = "pdbpp", specifier = ">=0.11.7" },
-    { name = "prek", specifier = ">=0.2.12" },
-    { name = "psutil", specifier = ">=7.0.0" },
-    { name = "pyinstrument", specifier = ">=5.0.2" },
-    { name = "pyperclip", specifier = ">=1.9.0" },
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-asyncio", specifier = ">=1.2.0" },
-    { name = "pytest-cov", specifier = ">=6.1.1" },
-    { name = "pytest-env", specifier = ">=1.1.5" },
-    { name = "pytest-examples", specifier = ">=0.0.18" },
-    { name = "pytest-flakefinder", specifier = ">=1.1.0" },
-    { name = "pytest-httpx", specifier = ">=0.35.0" },
-    { name = "pytest-report", specifier = ">=0.2.1" },
-    { name = "pytest-retry", specifier = ">=1.7.0" },
-    { name = "pytest-timeout", specifier = ">=2.4.0" },
-    { name = "pytest-xdist", specifier = ">=3.6.1" },
-    { name = "ruff", specifier = ">=0.12.8" },
-    { name = "ty", specifier = ">=0.0.29" },
-]
 
 [[package]]
 name = "google-auth"

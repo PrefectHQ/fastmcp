@@ -1,8 +1,75 @@
-[tool.uv]
-package = false
+[project]
+name = "fastmcp"
+dynamic = ["version", "dependencies", "optional-dependencies"]
+description = "The fast, Pythonic way to build MCP servers and clients."
+authors = [{ name = "Jeremiah Lowin" }]
+requires-python = ">=3.10"
+readme = "README.md"
+license = "Apache-2.0"
+keywords = [
+    "mcp",
+    "mcp server",
+    "mcp client",
+    "model context protocol",
+    "fastmcp",
+    "llm",
+    "agent",
+]
+classifiers = [
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://gofastmcp.com"
+Repository = "https://github.com/PrefectHQ/fastmcp"
+Documentation = "https://gofastmcp.com"
+
+[project.scripts]
+fastmcp = "fastmcp.cli:app"
+
+[build-system]
+requires = ["hatchling", "uv-dynamic-versioning>=0.7.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.hatch.build.targets.wheel]
+bypass-selection = true
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning]
+dependencies = ["fastmcp-slim[full]=={{ version }}"]
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning.optional-dependencies]
+anthropic = ["fastmcp-slim[full,anthropic]=={{ version }}"]
+apps = ["fastmcp-slim[full,apps]=={{ version }}"]
+azure = ["fastmcp-slim[full,azure]=={{ version }}"]
+code-mode = ["fastmcp-slim[full,code-mode]=={{ version }}"]
+gemini = ["fastmcp-slim[full,gemini]=={{ version }}"]
+openai = ["fastmcp-slim[full,openai]=={{ version }}"]
+tasks = ["fastmcp-slim[full,tasks]=={{ version }}"]
+
+[tool.uv-dynamic-versioning]
+vcs = "git"
+style = "pep440"
+bump = true
+fallback-version = "0.0.0"
 
 [tool.uv.workspace]
-members = ["packages/fastmcp", "packages/fastmcp-slim"]
+members = ["fastmcp_slim"]
+
+[tool.uv]
+default-groups = ["dev"]
 
 [dependency-groups]
 dev = [
@@ -57,15 +124,15 @@ markers = [
     "client_process: marks tests that spawn client processes via stdio transport. These can create issues when run in the same CI environment as other subprocess-based tests.",
     "conformance: marks MCP conformance tests (require Node.js/npx)",
 ]
-pythonpath = ["packages/fastmcp-slim/src"]
-testpaths = ["packages/fastmcp-slim/tests", "tests"]
+pythonpath = ["fastmcp_slim"]
+testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = ["--inline-snapshot=disable"]
 
 [tool.ty.src]
-include = ["packages/fastmcp-slim/src", "packages/fastmcp-slim/tests", "tests"]
+include = ["fastmcp_slim", "tests"]
 exclude = ["**/node_modules", "**/__pycache__", ".venv", ".git", "dist"]
 
 [tool.ty.environment]
@@ -119,11 +186,11 @@ known-first-party = ["fastmcp"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401", "I001", "RUF013"]
-"packages/fastmcp-slim/src/fastmcp/__init__.py" = ["E402"]
-"packages/fastmcp-slim/src/fastmcp/cli/**.py" = ["T20"]
-"packages/fastmcp-slim/src/fastmcp/client/oauth_callback.py" = ["T20"]
-"packages/fastmcp-slim/src/fastmcp/contrib/**/example.py" = ["T20"]
-"!packages/**/src/**.py" = [
+"fastmcp_slim/fastmcp/__init__.py" = ["E402"]
+"fastmcp_slim/fastmcp/cli/**.py" = ["T20"]
+"fastmcp_slim/fastmcp/client/oauth_callback.py" = ["T20"]
+"fastmcp_slim/fastmcp/contrib/**/example.py" = ["T20"]
+"!fastmcp_slim/fastmcp/**.py" = [
     "B",
     "C4",
     "DTZ",

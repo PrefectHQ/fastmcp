@@ -1,4 +1,4 @@
-api_ref_package := "fastmcp-slim[anthropic,apps,azure,code-mode,full,gemini,openai,tasks] @ file://" + justfile_directory() + "/packages/fastmcp-slim"
+api_ref_package := "fastmcp-slim[anthropic,apps,azure,code-mode,full,gemini,openai,tasks] @ file://" + justfile_directory() + "/fastmcp_slim"
 
 # Build the project
 build:
@@ -6,7 +6,7 @@ build:
 
 # Run tests
 test: build
-    uv run --frozen pytest -xvs packages/fastmcp-slim/tests tests
+    uv run --frozen pytest -xvs tests
 
 # Run ty type checker on all files
 typecheck:
@@ -32,4 +32,4 @@ api-ref-clean:
     rm -rf docs/python-sdk
 
 copy-context:
-    uvx --with-editable packages/fastmcp-slim --refresh-package copychat copychat@latest packages/fastmcp-slim/src/ docs/ -x changelog.mdx -x python-sdk/ -v
+    uvx --with-editable fastmcp_slim --refresh-package copychat copychat@latest fastmcp_slim/fastmcp docs/ -x changelog.mdx -x python-sdk/ -v

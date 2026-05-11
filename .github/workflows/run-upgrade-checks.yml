@@ -7,13 +7,10 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "packages/fastmcp-slim/src/**"
-      - "packages/fastmcp-slim/tests/**"
-      - "packages/fastmcp/pyproject.toml"
-      - "packages/fastmcp/hatch_build.py"
-      - "packages/fastmcp-slim/pyproject.toml"
-      - "uv.lock"
+      - "fastmcp_slim/**"
+      - "tests/**"
       - "pyproject.toml"
+      - "uv.lock"
       - ".github/workflows/**"
 
   schedule:

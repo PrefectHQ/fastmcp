@@ -444,7 +444,7 @@ async def dashboard(ctx: Context) -> dict:
 
 **Future phases** will add a component DSL for building UIs declaratively, an in-repo renderer, and a `FastMCPApp` class.
 
-Implementation: `src/fastmcp/server/apps.py` (models and constants), with integration points in `server.py` (decorator parameters), `low_level.py` (extension advertisement), and `context.py` (`client_supports_extension` method).
+Implementation: `fastmcp_slim/fastmcp/server/apps.py` (models and constants), with integration points in `server.py` (decorator parameters), `low_level.py` (extension advertisement), and `context.py` (`client_supports_extension` method).
 
 ---
 
@@ -454,7 +454,7 @@ Implementation: `src/fastmcp/server/apps.py` (models and constants), with integr
 
 v3.0 introduces a provider-based component system that replaces v2's static-only registration ([#2622](https://github.com/PrefectHQ/fastmcp/pull/2622)). Providers dynamically source tools, resources, templates, and prompts at runtime.
 
-**Core abstraction** (`src/fastmcp/server/providers/base.py`):
+**Core abstraction** (`fastmcp_slim/fastmcp/server/providers/base.py`):
 ```python
 class Provider:
     async def list_tools(self) -> Sequence[Tool]: ...
@@ -474,7 +474,7 @@ Providers support:
 
 ### LocalProvider
 
-`LocalProvider` (`src/fastmcp/server/providers/local_provider.py`) manages components registered via decorators. Can be used standalone and attached to multiple servers:
+`LocalProvider` (`fastmcp_slim/fastmcp/server/providers/local_provider.py`) manages components registered via decorators. Can be used standalone and attached to multiple servers:
 
 ```python
 from fastmcp.server.providers import LocalProvider
@@ -492,7 +492,7 @@ server2 = FastMCP("Server2", providers=[provider])
 
 ### ProxyProvider
 
-`ProxyProvider` (`src/fastmcp/server/providers/proxy.py`) proxies components from remote MCP servers via a client factory. Used by `create_proxy()` and `FastMCP.mount()` for remote server integration.
+`ProxyProvider` (`fastmcp_slim/fastmcp/server/providers/proxy.py`) proxies components from remote MCP servers via a client factory. Used by `create_proxy()` and `FastMCP.mount()` for remote server integration.
 
 ```python
 from fastmcp.server import create_proxy
@@ -503,7 +503,7 @@ server = create_proxy("http://remote-server/mcp")
 
 ### OpenAPIProvider
 
-`OpenAPIProvider` (`src/fastmcp/server/providers/openapi/provider.py`) creates MCP components from OpenAPI specifications. Routes map HTTP operations to tools, resources, or templates based on configurable rules.
+`OpenAPIProvider` (`fastmcp_slim/fastmcp/server/providers/openapi/provider.py`) creates MCP components from OpenAPI specifications. Routes map HTTP operations to tools, resources, or templates based on configurable rules.
 
 ```python
 from fastmcp.server.providers.openapi import OpenAPIProvider
@@ -523,7 +523,7 @@ Features:
 
 ### FastMCPProvider
 
-`FastMCPProvider` (`src/fastmcp/server/providers/fastmcp_provider.py`) wraps a FastMCP server to enable mounting one server onto another. Components delegate execution through the wrapped server's middleware chain.
+`FastMCPProvider` (`fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py`) wraps a FastMCP server to enable mounting one server onto another. Components delegate execution through the wrapped server's middleware chain.
 
 ```python
 from fastmcp import FastMCP
@@ -548,7 +548,7 @@ main.add_provider(provider)
 
 Transforms modify components (tools, resources, prompts) as they flow from providers to clients ([#2836](https://github.com/PrefectHQ/fastmcp/pull/2836)). They use a middleware pattern where each transform receives a `call_next` callable to continue the chain.
 
-**Built-in transforms** (`src/fastmcp/server/transforms/`):
+**Built-in transforms** (`fastmcp_slim/fastmcp/server/transforms/`):
 
 - `Namespace` - adds prefixes to names (`tool` → `api_tool`) and path segments to URIs (`data://x` → `data://api/x`)
 - `ToolTransform` - modifies tool schemas (rename, description, tags, argument transforms)
@@ -873,7 +873,7 @@ v3.0 introduces type-safe result classes that provide explicit control over comp
 
 #### ToolResult
 
-`ToolResult` (`src/fastmcp/tools/tool.py:79`) provides structured tool responses:
+`ToolResult` (`fastmcp_slim/fastmcp/tools/tool.py:79`) provides structured tool responses:
 
 ```python
 from fastmcp.tools import ToolResult
@@ -894,7 +894,7 @@ Fields:
 
 #### ResourceResult
 
-`ResourceResult` (`src/fastmcp/resources/resource.py:117`) provides structured resource responses:
+`ResourceResult` (`fastmcp_slim/fastmcp/resources/resource.py:117`) provides structured resource responses:
 
 ```python
 from fastmcp.resources import ResourceResult, ResourceContent
@@ -914,7 +914,7 @@ Accepts strings, bytes, or `list[ResourceContent]` for flexible content handling
 
 #### PromptResult
 
-`PromptResult` (`src/fastmcp/prompts/prompt.py:109`) provides structured prompt responses:
+`PromptResult` (`fastmcp_slim/fastmcp/prompts/prompt.py:109`) provides structured prompt responses:
 
 ```python
 from fastmcp.prompts import PromptResult, Message
@@ -936,7 +936,7 @@ def conversation() -> PromptResult:
 
 v3.0 implements MCP SEP-1686 for background task execution via Docket integration.
 
-**Configuration** (`src/fastmcp/server/tasks/config.py`):
+**Configuration** (`fastmcp_slim/fastmcp/server/tasks/config.py`):
 
 ```python
 from fastmcp.server.tasks import TaskConfig
@@ -1012,7 +1012,7 @@ fastmcp run server.py --reload --reload-dir ./src --reload-dir ./lib
 fastmcp run server.py --reload --transport http --port 8080
 ```
 
-Implementation (`src/fastmcp/cli/run.py`):
+Implementation (`fastmcp_slim/fastmcp/cli/run.py`):
 - Uses `watchfiles` for efficient file monitoring
 - Runs server as subprocess for clean restarts
 - Stateless mode for seamless reconnection after restart

@@ -40,24 +40,11 @@ runs:
           PARALLEL_FLAGS="--numprocesses auto --maxprocesses $MAX_PROCS --dist worksteal"
         fi
 
-        run_package_tests() {
-          local package_dir="$1"
-
-          (
-            cd "$package_dir"
-            uv run --no-sync pytest \
-              --inline-snapshot=disable \
-              --timeout=$TIMEOUT \
-              --durations=50 \
-              -m "$MARKER" \
-              $PARALLEL_FLAGS \
-              $EXTRA_FLAGS \
-              tests
-          )
-        }
-
-        if [ "${{ inputs.test-type }}" == "unit" ]; then
-          run_package_tests packages/fastmcp-slim
-        else
-          run_package_tests packages/fastmcp-slim
-        fi
+        uv run --no-sync pytest \
+          --inline-snapshot=disable \
+          --timeout=$TIMEOUT \
+          --durations=50 \
+          -m "$MARKER" \
+          $PARALLEL_FLAGS \
+          $EXTRA_FLAGS \
+          tests
