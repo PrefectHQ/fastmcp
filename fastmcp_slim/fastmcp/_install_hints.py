@@ -14,8 +14,7 @@ APP_SUPPORT = (
 )
 
 CLI_SUPPORT = (
-    "FastMCP CLI support is not installed. Install `fastmcp` or "
-    "`fastmcp-slim[server]`."
+    "FastMCP CLI support is not installed. Install `fastmcp` or `fastmcp-slim[server]`."
 )
 
 
