@@ -10,12 +10,3 @@ class CustomMetadataHook(MetadataHookInterface):
             dependency.replace("{{ version }}", version)
             for dependency in self.config["dependencies"]
         ]
-        metadata["optional-dependencies"] = {
-            extra: [
-                dependency.replace("{{ version }}", version)
-                for dependency in dependencies
-            ]
-            for extra, dependencies in self.config.get(
-                "optional-dependencies", {}
-            ).items()
-        }

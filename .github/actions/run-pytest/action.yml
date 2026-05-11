@@ -57,8 +57,7 @@ runs:
         }
 
         if [ "${{ inputs.test-type }}" == "unit" ]; then
-          run_package_tests packages/fastmcp
-          run_package_tests packages/fastmcp-client
+          run_package_tests packages/fastmcp-slim
         else
-          run_package_tests packages/fastmcp
+          run_package_tests packages/fastmcp-slim
         fi

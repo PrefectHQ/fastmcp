@@ -7,10 +7,9 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "packages/fastmcp/src/**"
+      - "packages/fastmcp-slim/src/**"
       - "packages/fastmcp/pyproject.toml"
-      - "packages/fastmcp-client/src/**"
-      - "packages/fastmcp-client/pyproject.toml"
+      - "packages/fastmcp-slim/pyproject.toml"
       - "pyproject.toml"
   workflow_dispatch:
 

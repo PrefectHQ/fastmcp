@@ -29,7 +29,7 @@ repos:
         entry: uv run --isolated ty check
         language: system
         types: [python]
-        files: ^packages/fastmcp/src/|^packages/fastmcp-client/src/|^packages/fastmcp/tests/|^packages/fastmcp-client/tests/|^tests/
+        files: ^packages/fastmcp-slim/src/|^packages/fastmcp-slim/tests/|^tests/
         pass_filenames: false
         require_serial: true
 

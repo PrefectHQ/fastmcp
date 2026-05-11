@@ -2,7 +2,7 @@ name: Publish fastmcp to PyPI
 
 on:
   workflow_run:
-    workflows: ["Publish fastmcp-client to PyPI"]
+    workflows: ["Publish fastmcp-slim to PyPI"]
     types: [completed]
   workflow_dispatch:
 
@@ -29,10 +29,11 @@ jobs:
       - name: Build fastmcp
         run: uv build --package fastmcp
 
-      - name: Verify matching fastmcp-client is published
+      - name: Verify matching fastmcp-slim is published
         run: |
-          CLIENT_VERSION=$(python - <<'PY'
+          SLIM_VERSION=$(python - <<'PY'
           import email.parser
+          from packaging.requirements import Requirement
           import zipfile
           from pathlib import Path
 
@@ -44,23 +45,24 @@ jobs:
           metadata = email.parser.Parser().parsestr(
               zipfile.ZipFile(wheel).read(metadata_name).decode()
           )
-          dependency = next(
-              value for value in metadata.get_all("Requires-Dist", [])
-              if value.startswith("fastmcp-client==")
+          requirement = next(
+              Requirement(value)
+              for value in metadata.get_all("Requires-Dist", [])
+              if Requirement(value).name == "fastmcp-slim"
           )
-          version = dependency.removeprefix("fastmcp-client==")
+          version = str(requirement.specifier).removeprefix("==")
           print(version)
           PY
           )
 
           for attempt in {1..12}; do
-            if python - "$CLIENT_VERSION" <<'PY'
+            if python - "$SLIM_VERSION" <<'PY'
           import json
           import sys
           import urllib.request
 
           version = sys.argv[1]
-          url = f"https://pypi.org/pypi/fastmcp-client/{version}/json"
+          url = f"https://pypi.org/pypi/fastmcp-slim/{version}/json"
           with urllib.request.urlopen(url, timeout=30) as response:
               json.load(response)
           PY
@@ -68,11 +70,11 @@ jobs:
               exit 0
             fi
 
-            echo "fastmcp-client ${CLIENT_VERSION} is not available on PyPI yet; retrying (${attempt}/12)."
+            echo "fastmcp-slim ${SLIM_VERSION} is not available on PyPI yet; retrying (${attempt}/12)."
             sleep 10
           done
 
-          echo "fastmcp-client ${CLIENT_VERSION} is not available on PyPI; refusing to publish fastmcp." >&2
+          echo "fastmcp-slim ${SLIM_VERSION} is not available on PyPI; refusing to publish fastmcp." >&2
           exit 1
 
       - name: Publish fastmcp to PyPI

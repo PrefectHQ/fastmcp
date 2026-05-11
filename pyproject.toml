@@ -2,13 +2,12 @@
 package = false
 
 [tool.uv.workspace]
-members = ["packages/fastmcp", "packages/fastmcp-client"]
+members = ["packages/fastmcp", "packages/fastmcp-slim"]
 
 [dependency-groups]
 dev = [
     "dirty-equals>=0.9.0",
     "fastmcp[anthropic,apps,azure,code-mode,gemini,openai,tasks]",
-    "fastmcp-client[anthropic,gemini,openai]",
     "fastapi>=0.115.12",
     "opentelemetry-sdk>=1.20.0",
     "inline-snapshot[dirty-equals]>=0.27.2",
@@ -37,7 +36,7 @@ dev = [
 
 [tool.uv.sources]
 fastmcp = { workspace = true }
-fastmcp-client = { workspace = true }
+fastmcp-slim = { workspace = true }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -58,15 +57,15 @@ markers = [
     "client_process: marks tests that spawn client processes via stdio transport. These can create issues when run in the same CI environment as other subprocess-based tests.",
     "conformance: marks MCP conformance tests (require Node.js/npx)",
 ]
-pythonpath = ["packages/fastmcp/src", "packages/fastmcp-client/src"]
-testpaths = ["packages/fastmcp/tests", "packages/fastmcp-client/tests", "tests"]
+pythonpath = ["packages/fastmcp-slim/src"]
+testpaths = ["packages/fastmcp-slim/tests", "tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = ["--inline-snapshot=disable"]
 
 [tool.ty.src]
-include = ["packages/fastmcp/src", "packages/fastmcp-client/src", "packages/fastmcp/tests", "packages/fastmcp-client/tests", "tests"]
+include = ["packages/fastmcp-slim/src", "packages/fastmcp-slim/tests", "tests"]
 exclude = ["**/node_modules", "**/__pycache__", ".venv", ".git", "dist"]
 
 [tool.ty.environment]
@@ -116,15 +115,14 @@ extend-select = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["fastmcp", "fastmcp_client"]
+known-first-party = ["fastmcp"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401", "I001", "RUF013"]
-"packages/fastmcp/src/fastmcp/__init__.py" = ["E402"]
-"packages/fastmcp/src/fastmcp/cli/**.py" = ["T20"]
-"packages/fastmcp/src/fastmcp/client/oauth_callback.py" = ["T20"]
-"packages/fastmcp-client/src/fastmcp_client/client/oauth_callback.py" = ["T20"]
-"packages/fastmcp/src/fastmcp/contrib/**/example.py" = ["T20"]
+"packages/fastmcp-slim/src/fastmcp/__init__.py" = ["E402"]
+"packages/fastmcp-slim/src/fastmcp/cli/**.py" = ["T20"]
+"packages/fastmcp-slim/src/fastmcp/client/oauth_callback.py" = ["T20"]
+"packages/fastmcp-slim/src/fastmcp/contrib/**/example.py" = ["T20"]
 "!packages/**/src/**.py" = [
     "B",
     "C4",
