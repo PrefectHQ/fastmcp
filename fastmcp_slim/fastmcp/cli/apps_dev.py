@@ -1534,7 +1534,9 @@ def _make_dev_app(
 
         # Use a reasonable default timeout to prevent the proxy from hanging
         # if the backend server is unresponsive.
-        client = httpx.AsyncClient(timeout=httpx.Timeout(60.0, read=None))
+        client = httpx.AsyncClient(
+            timeout=httpx.Timeout(60.0, read=None), trust_env=False
+        )
 
         async def _stream_and_cleanup(resp: httpx.Response) -> Any:
             is_sse = "text/event-stream" in resp.headers.get("content-type", "")
@@ -1696,7 +1698,7 @@ async def _wait_for_server(url: str, timeout: float = 15.0) -> bool:
     """Poll until the server is accepting connections."""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(trust_env=False) as client:
         while loop.time() < deadline:
             try:
                 await client.get(url, timeout=1.0)
