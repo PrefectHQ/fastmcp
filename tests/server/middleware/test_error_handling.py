@@ -566,6 +566,32 @@ class TestErrorHandlingMiddlewareIntegration:
         # Error should still exist (may be wrapped by FastMCP)
         assert exc_info.value is not None
 
+    async def test_transform_errors_surfaces_mcp_error_as_protocol_error(self):
+        """McpError raised by the middleware must surface as a JSON-RPC
+        protocol error on the client, not a tool-execution error.
+
+        Regression for https://github.com/PrefectHQ/fastmcp/issues/4126:
+        ``ErrorHandlingMiddleware(transform_errors=True)`` transforms an
+        unhandled exception into ``McpError(code=-32603, "Internal
+        error: ...")``. The MCP SDK's call_tool wrapper otherwise catches
+        every exception and converts it into ``CallToolResult(isError=True)``,
+        which is then surfaced to the client as a ``ToolError``.
+        """
+        mcp = FastMCP("test-exception-handling")
+        mcp.add_middleware(ErrorHandlingMiddleware(transform_errors=True))
+
+        @mcp.tool
+        def tool_that_raises_runtime_error() -> str:
+            raise RuntimeError("This is an unhandled exception")
+
+        async with Client(mcp) as client:
+            with pytest.raises(McpError) as exc_info:
+                await client.call_tool("tool_that_raises_runtime_error", {})
+
+        error = exc_info.value.error
+        assert error.code == -32603
+        assert "Internal error" in error.message
+
 
 class TestRetryMiddlewareIntegration:
     """Integration tests for retry middleware with real FastMCP server."""

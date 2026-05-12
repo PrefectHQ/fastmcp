@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Sequence
+from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import mcp.types
@@ -22,6 +23,17 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 PaginateT = TypeVar("PaginateT")
+
+# Side channel used to surface McpError raised during tools/call as a
+# JSON-RPC protocol error. The MCP SDK's call_tool wrapper catches every
+# exception (except UrlElicitationRequiredError) and converts it into a
+# CallToolResult with isError=True. That swallows McpError raised by
+# middleware that intentionally wants the JSON-RPC error path (e.g.
+# ErrorHandlingMiddleware(transform_errors=True)). We stash the McpError
+# here so the outer wrapper can re-raise it after the SDK returns.
+_pending_call_tool_mcp_error: ContextVar[McpError | None] = ContextVar(
+    "_pending_call_tool_mcp_error", default=None
+)
 
 
 def _apply_pagination(
@@ -76,6 +88,30 @@ class MCPOperationsMixin:
 
         self._mcp_server.call_tool(validate_input=self.strict_input_validation)(
             self._call_tool_mcp
+        )
+        # Wrap the SDK-registered call_tool handler so McpError raised by
+        # _call_tool_mcp (e.g. by ErrorHandlingMiddleware) propagates as a
+        # JSON-RPC protocol error rather than being swallowed by the SDK
+        # wrapper and converted to a CallToolResult with isError=True.
+        sdk_call_tool_handler = self._mcp_server.request_handlers[
+            mcp.types.CallToolRequest
+        ]
+
+        async def _call_tool_handler_with_mcp_error_propagation(
+            req: mcp.types.CallToolRequest,
+        ) -> mcp.types.ServerResult:
+            token = _pending_call_tool_mcp_error.set(None)
+            try:
+                result = await sdk_call_tool_handler(req)
+                pending = _pending_call_tool_mcp_error.get()
+                if pending is not None:
+                    raise pending
+                return result
+            finally:
+                _pending_call_tool_mcp_error.reset(token)
+
+        self._mcp_server.request_handlers[mcp.types.CallToolRequest] = (
+            _call_tool_handler_with_mcp_error_propagation
         )
         self._mcp_server.read_resource()(self._read_resource_mcp)
         self._mcp_server.get_prompt()(self._get_prompt_mcp)
@@ -244,6 +280,13 @@ class MCPOperationsMixin:
             raise NotFoundError(f"Unknown tool: {key!r}") from e
         except NotFoundError as e:
             raise NotFoundError(f"Unknown tool: {key!r}") from e
+        except McpError as e:
+            # Stash so the outer handler wrapper can re-raise this as a
+            # JSON-RPC protocol error. The SDK's call_tool wrapper would
+            # otherwise catch it via `except Exception` and turn it into a
+            # CallToolResult with isError=True.
+            _pending_call_tool_mcp_error.set(e)
+            raise
 
     async def _read_resource_mcp(
         self, uri: AnyUrl | str

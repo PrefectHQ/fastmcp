@@ -4,10 +4,10 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from mcp import McpError
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware.middleware import MiddlewareContext
 from fastmcp.server.middleware.rate_limiting import (
     RateLimitError,
@@ -349,7 +349,7 @@ class TestRateLimitingMiddlewareIntegration:
             for i in range(30):
                 try:
                     await client.call_tool("quick_action", {"message": str(i)})
-                except ToolError as exc:
+                except McpError as exc:
                     assert "Rate limit exceeded" in str(exc)
                     hit_limit = True
                     break
@@ -402,7 +402,7 @@ class TestRateLimitingMiddlewareIntegration:
             await client.call_tool("quick_action", {"message": "3"})
 
             # Fourth should be blocked
-            with pytest.raises(ToolError, match="Rate limit exceeded"):
+            with pytest.raises(McpError, match="Rate limit exceeded"):
                 await client.call_tool("quick_action", {"message": "4"})
 
     async def test_rate_limiting_with_different_operations(self, rate_limit_server):
@@ -417,7 +417,7 @@ class TestRateLimitingMiddlewareIntegration:
             await client.call_tool("heavy_computation")
 
             # Should be rate limited regardless of operation type
-            with pytest.raises(ToolError, match="Rate limit exceeded"):
+            with pytest.raises(McpError, match="Rate limit exceeded"):
                 await client.call_tool("batch_process", {"items": ["a", "b", "c"]})
 
     async def test_custom_client_identification(self, rate_limit_server):
@@ -440,7 +440,7 @@ class TestRateLimitingMiddlewareIntegration:
             await client.call_tool("quick_action", {"message": "first"})
 
             # Second should be rate limited for this specific client
-            with pytest.raises(ToolError) as exc_info:
+            with pytest.raises(McpError) as exc_info:
                 await client.call_tool("quick_action", {"message": "second"})
             assert "Rate limit exceeded for client: test_client_123" in str(
                 exc_info.value
@@ -460,7 +460,7 @@ class TestRateLimitingMiddlewareIntegration:
 
             middleware.global_limiter.tokens = 0
 
-            with pytest.raises(ToolError, match="Global rate limit exceeded"):
+            with pytest.raises(McpError, match="Global rate limit exceeded"):
                 await client.call_tool("quick_action", {"message": "blocked"})
 
     async def test_rate_limiting_recovery_over_time(self, rate_limit_server):
@@ -477,7 +477,7 @@ class TestRateLimitingMiddlewareIntegration:
             await client.call_tool("quick_action", {"message": "first"})
 
             # Should be rate limited immediately
-            with pytest.raises(ToolError):
+            with pytest.raises(McpError):
                 await client.call_tool("quick_action", {"message": "second"})
 
             # Wait for token bucket to refill (150ms should be enough for ~1.5 tokens)
