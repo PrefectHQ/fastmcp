@@ -1091,6 +1091,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         refresh_expires_in = None
         refresh_token_expires_at = None
         if idp_tokens.get("refresh_token"):
+            keycloak_never_expires = False
             if "refresh_expires_in" in idp_tokens:
                 val = int(idp_tokens["refresh_expires_in"])
                 if val > 0:
@@ -1101,12 +1102,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         refresh_expires_in,
                     )
                 elif val == 0:
-                    # Keycloak "never expires" sentinel - keep None
-                    pass
-                else:
-                    pass
-            if refresh_expires_in is None:
-                # Upstream didn't specify or had invalid/zero value; use fallback.
+                    # Keycloak "never expires" sentinel — skip fallback
+                    keycloak_never_expires = True
+                # else: negative/invalid — fall through to fallback
+            if not keycloak_never_expires and refresh_expires_in is None:
+                # Upstream didn't specify; use configured fallback (default 1 year).
                 refresh_expires_in = self._fallback_refresh_token_expiry_seconds
                 refresh_token_expires_at = time.time() + refresh_expires_in
                 logger.debug(
