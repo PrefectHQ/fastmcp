@@ -114,7 +114,8 @@ class KeycloakOAuthProxy(OAuthProxy):
     """
 
     # Keycloak uses refresh_expires_in=0 for offline_access tokens ("never expires").
-    _zero_refresh_expiry_means_never_expires: bool = True
+    def _upstream_refresh_token_never_expires(self, refresh_expires_in: int) -> bool:
+        return refresh_expires_in == 0
 
     def __init__(
         self,

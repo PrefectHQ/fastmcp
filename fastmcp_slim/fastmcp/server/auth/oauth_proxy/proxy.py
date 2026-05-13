@@ -231,11 +231,17 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
     - Generic: Works with any spec-compliant provider
     """
 
-    # Subclasses can set this to True to treat refresh_expires_in=0 from the
-    # upstream as "this refresh token never expires" rather than an unknown expiry.
-    # RFC 6749 does not define refresh_expires_in; 0 is a Keycloak-specific
-    # convention for offline_access tokens.  Do not enable for other providers.
-    _zero_refresh_expiry_means_never_expires: bool = False
+    def _upstream_refresh_token_never_expires(self, refresh_expires_in: int) -> bool:
+        """Return True if the upstream's refresh_expires_in value signals the token never expires.
+
+        Override in subclasses to handle provider-specific conventions. The base
+        implementation always returns False — an unknown value is treated as a
+        normal (finite) expiry and falls through to the configured fallback TTL.
+
+        Args:
+            refresh_expires_in: The raw integer value from the upstream token response.
+        """
+        return False
 
     def __init__(
         self,
@@ -1107,7 +1113,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         "Upstream refresh token expires in %d seconds",
                         refresh_expires_in,
                     )
-                elif val == 0 and self._zero_refresh_expiry_means_never_expires:
+                elif val == 0 and self._upstream_refresh_token_never_expires(val):
                     # Provider explicitly signals "no expiry" (e.g. Keycloak offline_access).
                     # refresh_token_expires_at stays None (no upstream expiry to track).
                     # We still need a finite FastMCP RT TTL; use the configured fallback.
@@ -1439,7 +1445,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         "Upstream refresh token expires in %d seconds",
                         new_refresh_expires_in,
                     )
-                elif val == 0 and self._zero_refresh_expiry_means_never_expires:
+                elif val == 0 and self._upstream_refresh_token_never_expires(val):
                     # Provider signals "no expiry" — mark and clear stale wall-clock time
                     # so the fallback below always issues a fresh full-length FastMCP RT.
                     upstream_token_set.refresh_token_never_expires = True
@@ -1657,7 +1663,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     upstream_token_set.refresh_token_expires_at = (
                         time.time() + new_refresh_expires_in
                     )
-                elif val == 0 and self._zero_refresh_expiry_means_never_expires:
+                elif val == 0 and self._upstream_refresh_token_never_expires(val):
                     # Provider signals "no expiry" — mark and clear stale wall-clock time.
                     upstream_token_set.refresh_token_never_expires = True
                     upstream_token_set.refresh_token_expires_at = None
