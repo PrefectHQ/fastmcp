@@ -7,6 +7,7 @@ extraction logic, and callable unwrapping across the codebase.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import inspect
 from collections.abc import Callable
@@ -77,10 +78,8 @@ def prepare_callable(fn: Callable[..., Any]) -> Callable[..., Any]:
             except AttributeError:
                 pass
             else:
-                try:
+                with contextlib.suppress(AttributeError):
                     setattr(fn, attr, val)
-                except AttributeError:
-                    pass
 
     # Callable classes (not routines, not partials) → unwrap to __call__
     if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
