@@ -453,7 +453,12 @@ def _schema_to_type(
     if not schema:
         return object
 
-    if "type" not in schema and "properties" in schema and "allOf" not in schema and "oneOf" not in schema:
+    if (
+        "type" not in schema
+        and "properties" in schema
+        and "allOf" not in schema
+        and "oneOf" not in schema
+    ):
         return _create_dataclass(schema, schema.get("title", "<unknown>"), schemas)
 
     # Handle references first
@@ -529,8 +534,8 @@ def _schema_to_type(
                     merged[key] = sub[key]
 
         # Include sibling properties/required from the schema itself,
-        # not just from allOf children.  This handles schemas like
-        # {"properties": {"local": ...}, "allOf": [{"properties": {"inherited": ...}}]}
+        # not just from allOf children — covers schemas where top-level
+        # properties coexist with an allOf list of inherited properties.
         merged_properties.update(schema.get("properties", {}))
         merged_required.extend(schema.get("required", []))
 
