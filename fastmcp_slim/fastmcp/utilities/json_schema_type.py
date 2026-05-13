@@ -453,7 +453,7 @@ def _schema_to_type(
     if not schema:
         return object
 
-    if "type" not in schema and "properties" in schema and "allOf" not in schema:
+    if "type" not in schema and "properties" in schema and "allOf" not in schema and "oneOf" not in schema:
         return _create_dataclass(schema, schema.get("title", "<unknown>"), schemas)
 
     # Handle references first
@@ -569,10 +569,10 @@ def _schema_to_type(
                 isinstance(subschema, dict)
                 and subschema.get("type") == "object"
                 and not subschema.get("properties")
-                and subschema.get("additionalProperties")
+                and "additionalProperties" in subschema
             ):
                 additional_props = subschema["additionalProperties"]
-                if additional_props is True:
+                if additional_props is True or additional_props == {}:
                     types.append(dict[str, Any])
                 else:
                     value_type = _schema_to_type(additional_props, schemas)
