@@ -674,7 +674,7 @@ class TestAllOfOneOf:
         assert issubclass(T, BaseModel)
         ta = TypeAdapter(T)
         result = ta.validate_python({"name": "Alice", "extra_key": 42})
-        assert result.name == "Alice"
+        assert result.name == "Alice"  # ty: ignore[unresolved-attribute]
 
     def test_sibling_properties_override_allof(self):
         """Sibling properties should take precedence over allOf children."""
@@ -688,7 +688,7 @@ class TestAllOfOneOf:
         ta = TypeAdapter(T)
         # Sibling says name is int, allOf child says str — sibling wins
         result = ta.validate_python({"name": 42})
-        assert result.name == 42
+        assert result.name == 42  # ty: ignore[unresolved-attribute]
 
     def test_allof_additional_properties_false_wins(self):
         """When allOf children conflict on additionalProperties, false should win."""
@@ -709,8 +709,8 @@ class TestAllOfOneOf:
         T = json_schema_to_type(schema)
         ta = TypeAdapter(T)
         result = ta.validate_python({"a": "hello", "b": 1})
-        assert result.a == "hello"
-        assert result.b == 1
+        assert result.a == "hello"  # ty: ignore[unresolved-attribute]
+        assert result.b == 1  # ty: ignore[unresolved-attribute]
 
     def test_oneof_with_null_branch(self):
         """oneOf with null branch should produce Optional type."""
@@ -756,7 +756,7 @@ class TestAllOfOneOf:
         T = json_schema_to_type(schema)
         ta = TypeAdapter(T)
         result = ta.validate_python({"name": "Alice"})
-        assert result.name == "Alice"
+        assert result.name == "Alice"  # ty: ignore[unresolved-attribute]
         with pytest.raises(ValidationError):
             ta.validate_python({"age": 30})
 
@@ -790,4 +790,4 @@ class TestAllOfOneOf:
         assert issubclass(T, BaseModel)
         ta = TypeAdapter(T)
         result = ta.validate_python({"name": "Alice", "extra": "kept"})
-        assert result.name == "Alice"
+        assert result.name == "Alice"  # ty: ignore[unresolved-attribute]
