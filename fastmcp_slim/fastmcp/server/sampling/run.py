@@ -299,12 +299,12 @@ async def execute_tools(
 
         tracer = get_tracer()
         with tracer.start_as_current_span(
-            f"sampling/tool {tool_use.name}",
+            f"sampling tool {tool_use.name}",
             kind=SpanKind.INTERNAL,
         ) as span:
             if span.is_recording():
                 span.set_attribute("gen_ai.tool.name", tool_use.name)
-                span.set_attribute("mcp.tool.use_id", tool_use.id)
+                span.set_attribute("fastmcp.tool.use_id", tool_use.id)
             try:
                 result_value = await tool.run(tool_use.input)
                 return ToolResultContent(
@@ -314,7 +314,7 @@ async def execute_tools(
                 )
             except ToolError as e:
                 if span.is_recording():
-                    span.set_attribute("error.type", "ToolError")
+                    span.set_attribute("error.type", "tool_error")
                     span.record_exception(e)
                     span.set_status(Status(StatusCode.ERROR, str(e)))
                 logger.log(
@@ -534,12 +534,12 @@ async def sample_step_impl(
     # Make the LLM call
     tracer = get_tracer()
     with tracer.start_as_current_span(
-        "sampling/createMessage",
+        "sampling create_message",
         kind=SpanKind.CLIENT,
     ) as span:
         if span.is_recording():
             span.set_attribute("mcp.method.name", "sampling/createMessage")
-            span.set_attribute("mcp.server.name", context.fastmcp.name)
+            span.set_attribute("fastmcp.server.name", context.fastmcp.name)
         try:
             if use_fallback:
                 response = await call_sampling_handler(
@@ -566,6 +566,8 @@ async def sample_step_impl(
         except Exception as e:
             if span.is_recording():
                 span.set_attribute("error.type", type(e).__qualname__)
+                span.record_exception(e)
+                span.set_status(Status(StatusCode.ERROR, str(e)))
             raise
 
     # Check if this is a tool use response
