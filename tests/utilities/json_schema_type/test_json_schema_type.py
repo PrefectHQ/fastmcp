@@ -405,6 +405,7 @@ class TestUnsupportedPatternFallback:
             T = json_schema_to_type(schema)  # must not warn
         TypeAdapter(T).validate_python("hello")
 
+
 class TestAllOfOneOf:
     """allOf and oneOf composition, previously returning Any."""
 
