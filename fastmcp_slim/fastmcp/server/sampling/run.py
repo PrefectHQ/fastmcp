@@ -536,6 +536,8 @@ async def sample_step_impl(
     with tracer.start_as_current_span(
         "sampling create_message",
         kind=SpanKind.CLIENT,
+        record_exception=False,
+        set_status_on_exception=False,
     ) as span:
         if span.is_recording():
             span.set_attribute("mcp.method.name", "sampling/createMessage")
