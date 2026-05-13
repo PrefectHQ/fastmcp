@@ -403,6 +403,10 @@ def _object_schema_to_type(
     """
     has_properties = bool(schema.get("properties"))
     additional_props = schema.get("additionalProperties")
+    # Per JSON Schema, an empty schema {} means "accept anything" —
+    # equivalent to additionalProperties: true.
+    if isinstance(additional_props, dict) and not additional_props:
+        additional_props = True
     class_name = name if name is not None else schema.get("title")
 
     if not has_properties and additional_props:
@@ -458,6 +462,7 @@ def _schema_to_type(
         and "properties" in schema
         and "allOf" not in schema
         and "oneOf" not in schema
+        and "anyOf" not in schema
     ):
         return _create_dataclass(schema, schema.get("title", "<unknown>"), schemas)
 
@@ -529,18 +534,24 @@ def _schema_to_type(
                     _collect_allof(nested)
             merged_properties.update(sub.get("properties", {}))
             merged_required.extend(sub.get("required", []))
-            for key in ("title", "description", "additionalProperties"):
+            for key in ("title", "description"):
                 if key in sub and key not in merged:
                     merged[key] = sub[key]
+            # Intersect additionalProperties: false is most restrictive and wins.
+            if "additionalProperties" in sub:
+                existing = merged.get("additionalProperties")
+                if existing is None:
+                    merged["additionalProperties"] = sub["additionalProperties"]
+                elif sub["additionalProperties"] is False:
+                    merged["additionalProperties"] = False
 
-        # Include sibling properties/required from the schema itself,
-        # not just from allOf children — covers schemas where top-level
-        # properties coexist with an allOf list of inherited properties.
-        merged_properties.update(schema.get("properties", {}))
-        merged_required.extend(schema.get("required", []))
-
+        # Collect from allOf children first, then overlay sibling
+        # properties so local definitions take precedence over inherited.
         for sub in schema["allOf"]:
             _collect_allof(sub)
+
+        merged_properties.update(schema.get("properties", {}))
+        merged_required.extend(schema.get("required", []))
 
         if has_false:
             return _UnsatisfiableType  # type: ignore[return-value]

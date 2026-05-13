@@ -649,3 +649,145 @@ class TestAllOfOneOf:
 
         with pytest.raises(ValidationError):
             ta.validate_python({"name": "Alice"})
+
+    def test_additional_properties_empty_schema_is_allow_any(self):
+        """additionalProperties: {} is equivalent to additionalProperties: true per spec."""
+        schema = {
+            "type": "object",
+            "additionalProperties": {},
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        # Should accept any values (empty schema = true = allow everything)
+        assert ta.validate_python({"x": 1, "y": "two"}) == {"x": 1, "y": "two"}
+
+    def test_additional_properties_empty_schema_with_properties(self):
+        """properties + additionalProperties: {} should produce Pydantic model (extra=allow)."""
+        from pydantic import BaseModel
+
+        schema = {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "additionalProperties": {},
+        }
+        T = json_schema_to_type(schema)
+        assert issubclass(T, BaseModel)
+        ta = TypeAdapter(T)
+        result = ta.validate_python({"name": "Alice", "extra_key": 42})
+        assert result.name == "Alice"
+
+    def test_sibling_properties_override_allof(self):
+        """Sibling properties should take precedence over allOf children."""
+        schema = {
+            "properties": {"name": {"type": "integer"}},
+            "allOf": [
+                {"type": "object", "properties": {"name": {"type": "string"}}},
+            ],
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        # Sibling says name is int, allOf child says str — sibling wins
+        result = ta.validate_python({"name": 42})
+        assert result.name == 42
+
+    def test_allof_additional_properties_false_wins(self):
+        """When allOf children conflict on additionalProperties, false should win."""
+        schema = {
+            "allOf": [
+                {
+                    "type": "object",
+                    "properties": {"a": {"type": "string"}},
+                    "additionalProperties": True,
+                },
+                {
+                    "type": "object",
+                    "properties": {"b": {"type": "integer"}},
+                    "additionalProperties": False,
+                },
+            ],
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        result = ta.validate_python({"a": "hello", "b": 1})
+        assert result.a == "hello"
+        assert result.b == 1
+
+    def test_oneof_with_null_branch(self):
+        """oneOf with null branch should produce Optional type."""
+        schema = {
+            "oneOf": [
+                {"type": "string"},
+                {"type": "null"},
+            ]
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        assert ta.validate_python("hello") == "hello"
+        assert ta.validate_python(None) is None
+
+    def test_properties_with_anyof_not_shortcircuited(self):
+        """Schema with properties + anyOf should NOT shortcircuit to dataclass."""
+        schema = {
+            "properties": {"base": {"type": "string"}},
+            "anyOf": [
+                {"properties": {"variant_a": {"type": "integer"}}},
+                {"properties": {"variant_b": {"type": "boolean"}}},
+            ],
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        result = ta.validate_python({"base": "val"})
+        assert result is not None
+
+    def test_allof_with_only_required_no_properties(self):
+        """allOf child with only required (no properties) merges correctly."""
+        schema = {
+            "allOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "age": {"type": "integer"},
+                    },
+                },
+                {"required": ["name"]},
+            ]
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        result = ta.validate_python({"name": "Alice"})
+        assert result.name == "Alice"
+        with pytest.raises(ValidationError):
+            ta.validate_python({"age": 30})
+
+    def test_oneof_with_empty_additional_properties_dict(self):
+        """oneOf branch with additionalProperties: {} should produce dict[str, Any]."""
+        schema = {
+            "oneOf": [
+                {"type": "string"},
+                {"type": "object", "additionalProperties": {}},
+            ]
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        assert ta.validate_python("hello") == "hello"
+        assert ta.validate_python({"x": 1}) == {"x": 1}
+
+    def test_allof_with_sibling_additional_properties_true(self):
+        """properties + additionalProperties: true + allOf should preserve extra keys."""
+        from pydantic import BaseModel
+
+        schema = {
+            "additionalProperties": True,
+            "allOf": [
+                {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                },
+            ],
+        }
+        T = json_schema_to_type(schema)
+        assert issubclass(T, BaseModel)
+        ta = TypeAdapter(T)
+        result = ta.validate_python({"name": "Alice", "extra": "kept"})
+        assert result.name == "Alice"
