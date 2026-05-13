@@ -879,8 +879,114 @@ class TestUpstreamTokenStorageTTL:
         )
         assert refresh_meta is not None
 
+    async def test_refresh_expires_in_zero_subsequent_refresh_does_not_shrink(
+        self, proxy
+    ):
+        """Repeated refresh cycles with refresh_expires_in=0 must not shrink the RT TTL.
 
-class TestTransparentUpstreamRefresh:
+        Keycloak offline tokens return refresh_expires_in=0 on every token response.
+        The first exchange correctly stores a 1-year FastMCP RT.  Subsequent
+        exchange_refresh_token calls (triggered by the MCP client refreshing its tokens)
+        must each issue a new FastMCP RT with the same full fallback TTL — not a
+        gradually decaying value computed from the original wall-clock timestamp.
+        """
+        import jwt as pyjwt
+
+        client = OAuthClientInformationFull(
+            client_id="kc-shrink-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+        await proxy.register_client(client)
+
+        # ── step 1: initial authorization code exchange ──────────────────────
+        client_code = ClientCode(
+            code="kc-offline-code",
+            client_id="kc-shrink-client",
+            redirect_uri="http://localhost:12345/callback",
+            code_challenge="test-challenge",
+            code_challenge_method="S256",
+            scopes=["read"],
+            idp_tokens={
+                "access_token": "upstream-at-v1",
+                "refresh_token": "upstream-rt-v1",
+                "expires_in": 3600,
+                "refresh_expires_in": 0,  # Keycloak offline sentinel
+                "token_type": "Bearer",
+            },
+            expires_at=time.time() + 300,
+            created_at=time.time(),
+        )
+        await proxy._code_store.put(key=client_code.code, value=client_code)
+
+        auth_code = AuthorizationCode(
+            code="kc-offline-code",
+            scopes=["read"],
+            expires_at=time.time() + 300,
+            client_id="kc-shrink-client",
+            code_challenge="test-challenge",
+            redirect_uri=AnyUrl("http://localhost:12345/callback"),
+            redirect_uri_provided_explicitly=True,
+        )
+        result1 = await proxy.exchange_authorization_code(
+            client=client,
+            authorization_code=auth_code,
+        )
+        assert result1.refresh_token is not None
+        first_rt = result1.refresh_token
+        first_payload = pyjwt.decode(
+            first_rt, options={"verify_signature": False, "verify_exp": False}
+        )
+        first_ttl = first_payload["exp"] - first_payload["iat"]
+        # First RT should be the full fallback TTL (1 year ± some seconds)
+        assert first_ttl > 60 * 60 * 24 * 300, (
+            f"First RT TTL {first_ttl}s should be close to 1 year"
+        )
+
+        # ── step 2: simulate a later refresh cycle (Keycloak returns 0 again) ─
+        async def fake_refresh(url, refresh_token, scope=None, **_kwargs):
+            return {
+                "access_token": "upstream-at-v2",
+                "refresh_token": "upstream-rt-v2",
+                "expires_in": 3600,
+                "refresh_expires_in": 0,  # same Keycloak sentinel
+                "token_type": "Bearer",
+            }
+
+        mock_client = Mock()
+        mock_client.refresh_token = AsyncMock(side_effect=fake_refresh)
+        with patch.object(
+            proxy, "_create_upstream_oauth_client", return_value=mock_client
+        ):
+            first_rt_meta = await proxy._refresh_token_store.get(
+                key=_hash_token(first_rt)
+            )
+            assert first_rt_meta is not None
+            result2 = await proxy.exchange_refresh_token(
+                client=client,
+                refresh_token=RefreshToken(
+                    token=first_rt,
+                    client_id="kc-shrink-client",
+                    scopes=["read"],
+                    expires_at=first_rt_meta.expires_at,
+                ),
+                scopes=["read"],
+            )
+
+        assert result2.refresh_token is not None
+        second_payload = pyjwt.decode(
+            result2.refresh_token,
+            options={"verify_signature": False, "verify_exp": False},
+        )
+        second_ttl = second_payload["exp"] - second_payload["iat"]
+        # After a refresh cycle the new RT must still have a full fallback TTL,
+        # not a value that has shrunk from the original timestamp.
+        assert second_ttl > 60 * 60 * 24 * 300, (
+            f"Refreshed RT TTL {second_ttl}s shrank — expected close to 1 year"
+        )
+
+
+
     """Tests for transparent upstream token refresh in load_access_token.
 
     When the upstream token expires but a refresh token is available, the proxy

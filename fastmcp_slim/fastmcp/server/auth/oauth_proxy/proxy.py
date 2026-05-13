@@ -1100,8 +1100,19 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         "Upstream refresh token expires in %d seconds",
                         refresh_expires_in,
                     )
+                elif val == 0:
+                    # Keycloak offline_access tokens use 0 to mean "never expires".
+                    # refresh_token_expires_at stays None (no upstream expiry to track).
+                    # We still need a finite FastMCP RT TTL; use the configured fallback.
+                    # The FastMCP RT is renewed on every transparent refresh, so active
+                    # sessions roll forward automatically.
+                    logger.debug(
+                        "Upstream refresh_expires_in=0 (never expires); "
+                        "FastMCP RT will use fallback TTL of %d seconds",
+                        self._fallback_refresh_token_expiry_seconds,
+                    )
             if refresh_expires_in is None:
-                # Upstream didn't specify; use configured fallback (default 1 year).
+                # Upstream didn't specify expiry (or signalled never-expires with 0).
                 refresh_expires_in = self._fallback_refresh_token_expiry_seconds
                 refresh_token_expires_at = time.time() + refresh_expires_in
                 logger.debug(
@@ -1417,6 +1428,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         "Upstream refresh token expires in %d seconds",
                         new_refresh_expires_in,
                     )
+                elif val == 0:
+                    # Keycloak offline token — never expires upstream.
+                    # Clear any stale expires_at so the fallback below issues
+                    # a fresh full-length FastMCP RT instead of a decaying one.
+                    upstream_token_set.refresh_token_expires_at = None
             if new_refresh_expires_in is None:
                 if upstream_token_set.refresh_token_expires_at:
                     # Keep existing expiry if upstream doesn't provide new one
@@ -1629,6 +1645,10 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     upstream_token_set.refresh_token_expires_at = (
                         time.time() + new_refresh_expires_in
                     )
+                elif val == 0:
+                    # Keycloak offline token — never expires upstream.
+                    # Clear stale expires_at so fallback issues a fresh full-length RT.
+                    upstream_token_set.refresh_token_expires_at = None
             if new_refresh_expires_in is None:
                 if upstream_token_set.refresh_token_expires_at:
                     new_refresh_expires_in = int(
