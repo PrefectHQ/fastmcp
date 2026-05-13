@@ -24,6 +24,19 @@ from mcp.types import Annotations, ContentBlock, ModelPreferences, SamplingMessa
 from pydantic import AnyUrl, BaseModel, ConfigDict, Field, TypeAdapter, UrlConstraints
 from typing_extensions import TypeVar
 
+
+@lru_cache(maxsize=2048)
+def cached_get_type_hints(fn: Callable[..., Any]) -> dict[str, Any]:
+    """Cached wrapper for get_type_hints(fn, include_extras=True).
+
+    Safe to cache because tool/resource functions are registered once and
+    their annotations don't change at runtime.
+    """
+    try:
+        return get_type_hints(fn, include_extras=True)
+    except Exception:
+        return getattr(fn, "__annotations__", {})
+
 T = TypeVar("T", default=Any)
 
 # sentinel values for optional arguments
@@ -161,13 +174,8 @@ def find_kwarg_by_type(fn: Callable, kwarg_type: type) -> str | None:
     if inspect.ismethod(fn) and hasattr(fn, "__func__"):
         fn = fn.__func__
 
-    # Try to get resolved type hints
-    try:
-        # Use include_extras=True to preserve Annotated metadata
-        type_hints = get_type_hints(fn, include_extras=True)
-    except Exception:
-        # If resolution fails, use raw annotations if they exist
-        type_hints = getattr(fn, "__annotations__", {})
+    # Use cached type hints
+    type_hints = cached_get_type_hints(fn)
 
     sig = inspect.signature(fn)
     for name, param in sig.parameters.items():

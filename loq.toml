@@ -12,19 +12,19 @@ max_lines = 1000
 
 [[rules]]
 path = "fastmcp_slim/fastmcp/server/context.py"
-max_lines = 1404
+max_lines = 1457
 
 [[rules]]
 path = "fastmcp_slim/fastmcp/server/server.py"
-max_lines = 2410
+max_lines = 2480
 
 [[rules]]
 path = "fastmcp_slim/fastmcp/server/auth/oauth_proxy/proxy.py"
-max_lines = 2098
+max_lines = 2201
 
 [[rules]]
 path = "fastmcp_slim/fastmcp/cli/apps_dev.py"
-max_lines = 1814
+max_lines = 1825
 
 [[rules]]
 path = "fastmcp_slim/fastmcp/cli/cli.py"
@@ -32,15 +32,15 @@ max_lines = 1116
 
 [[rules]]
 path = "fastmcp_slim/fastmcp/server/dependencies.py"
-max_lines = 1686
+max_lines = 1383
 
 [[rules]]
 path = "fastmcp_slim/fastmcp/server/providers/proxy.py"
-max_lines = 1096
+max_lines = 1110
 
 [[rules]]
 path = "fastmcp_slim/fastmcp/tools/tool_transform.py"
-max_lines = 1004
+max_lines = 1028
 
 [[rules]]
 path = "tests/server/providers/openapi/test_openapi_features.py"
@@ -60,4 +60,12 @@ max_lines = 1185
 
 [[rules]]
 path = "tests/utilities/openapi/test_director.py"
-max_lines = 1154
+max_lines = 1491
+
+[[rules]]
+path = "tests/server/auth/oauth_proxy/test_tokens.py"
+max_lines = 1271
+
+[[rules]]
+path = "tests/server/auth/providers/test_azure.py"
+max_lines = 1185

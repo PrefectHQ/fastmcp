@@ -7,7 +7,7 @@ import inspect
 import types
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Annotated, Any, Generic, Union, get_args, get_origin, get_type_hints
+from typing import Annotated, Any, Generic, Union, get_args, get_origin
 
 import mcp.types
 from pydantic import PydanticSchemaGenerationError
@@ -25,6 +25,7 @@ from fastmcp.utilities.types import (
     Audio,
     File,
     Image,
+    cached_get_type_hints,
     create_function_without_params,
     get_cached_typeadapter,
     is_class_member_of_type,
@@ -226,14 +227,9 @@ class ParsedFunction:
 
         # If the annotation is a string (from __future__ annotations), resolve it
         if isinstance(output_type, str):
-            try:
-                # Use get_type_hints to resolve the return type
-                # include_extras=True preserves Annotated metadata
-                type_hints = get_type_hints(fn, include_extras=True)
-                output_type = type_hints.get("return", output_type)
-            except Exception as e:
-                # If resolution fails, keep the string annotation
-                logger.debug("Failed to resolve type hint for return annotation: %s", e)
+            # Use cached_get_type_hints to resolve the return type
+            type_hints = cached_get_type_hints(fn)
+            output_type = type_hints.get("return", output_type)
 
         # Save original for return_type before any schema-related replacement
         original_output_type = output_type

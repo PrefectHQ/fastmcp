@@ -12,6 +12,7 @@ import inspect
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any
 
 from griffe import Docstring, DocstringSectionKind
@@ -32,6 +33,7 @@ class ParsedDocstring:
     parameters: dict[str, str] = field(default_factory=dict)
 
 
+@lru_cache(maxsize=2048)
 def parse_docstring(fn: Callable[..., Any]) -> ParsedDocstring:
     """Parse a function's docstring into a summary and parameter descriptions.
 

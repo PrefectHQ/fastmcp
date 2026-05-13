@@ -17,7 +17,7 @@ from contextvars import ContextVar
 from datetime import datetime, timezone
 from functools import lru_cache
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Protocol, cast, get_type_hints, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
 from mcp.server.auth.middleware.auth_context import (
     get_access_token as _sdk_get_access_token,
@@ -39,7 +39,11 @@ from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
 )
-from fastmcp.utilities.types import find_kwarg_by_type, is_class_member_of_type
+from fastmcp.utilities.types import (
+    cached_get_type_hints,
+    find_kwarg_by_type,
+    is_class_member_of_type,
+)
 
 if TYPE_CHECKING:
     from docket import Docket
@@ -205,10 +209,7 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
         return fn
 
     # Get type hints for accurate type checking
-    try:
-        type_hints = get_type_hints(fn, include_extras=True)
-    except Exception:
-        type_hints = getattr(fn, "__annotations__", {})
+    type_hints = cached_get_type_hints(fn)
 
     # First pass: identify which params need transformation
     params_to_transform: set[str] = set()
@@ -607,10 +608,7 @@ def without_injected_parameters(
     # the original function's module context. The wrapper's __globals__ points to
     # this module (dependencies.py) and is read-only, so some Pydantic versions
     # can't resolve names like Annotated or Literal from string annotations.
-    try:
-        resolved_hints = get_type_hints(fn, include_extras=True)
-    except Exception:
-        resolved_hints = getattr(fn, "__annotations__", {})
+    resolved_hints = cached_get_type_hints(fn)
 
     wrapper.__signature__ = new_sig  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
     wrapper.__annotations__ = {
