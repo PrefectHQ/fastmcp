@@ -1,8 +1,14 @@
 """OpenTelemetry instrumentation for FastMCP.
 
-This module provides native OpenTelemetry integration for FastMCP servers and clients.
-It uses only the opentelemetry-api package, so telemetry is a no-op unless the user
-installs an OpenTelemetry SDK and configures exporters.
+This module provides native OpenTelemetry integration for FastMCP servers and
+clients. It uses only the opentelemetry-api package, so telemetry is a no-op
+unless the user installs an OpenTelemetry SDK and configures exporters.
+
+FastMCP always propagates OpenTelemetry context through MCP ``params._meta``.
+Native FastMCP spans can be suppressed globally via
+``FASTMCP_TELEMETRY_MODE=propagation_only`` or programmatically with
+``suppress_fastmcp_telemetry()`` when another instrumentation layer owns the
+MCP span hierarchy.
 
 Example usage with SDK:
     ```python
@@ -21,18 +27,57 @@ Example usage with SDK:
     ```
 """
 
+from collections.abc import Generator
+from contextlib import contextmanager
 from typing import Any
 
 from opentelemetry import context as otel_context
 from opentelemetry import propagate, trace
 from opentelemetry.context import Context
-from opentelemetry.trace import Span, Status, StatusCode, Tracer
+from opentelemetry.trace import INVALID_SPAN, Span, Status, StatusCode, Tracer
 from opentelemetry.trace import get_tracer as otel_get_tracer
 
 INSTRUMENTATION_NAME = "fastmcp"
 
 TRACE_PARENT_KEY = "traceparent"
 TRACE_STATE_KEY = "tracestate"
+
+_SUPPRESS_FASTMCP_TELEMETRY_KEY = otel_context.create_key("fastmcp_suppress_telemetry")
+
+
+def native_telemetry_enabled() -> bool:
+    """Return whether FastMCP should create native MCP spans.
+
+    False when the global setting is ``propagation_only`` or when
+    the current context has been suppressed via ``suppress_fastmcp_telemetry()``.
+    """
+    import fastmcp
+
+    if fastmcp.settings.telemetry_mode != "native":
+        return False
+    return not otel_context.get_value(_SUPPRESS_FASTMCP_TELEMETRY_KEY)
+
+
+@contextmanager
+def suppress_fastmcp_telemetry() -> Generator[None, None, None]:
+    """Suppress native FastMCP spans while preserving context propagation.
+
+    This is narrower than OpenTelemetry's global instrumentation suppression:
+    it disables only FastMCP's own spans, allowing unrelated nested
+    instrumentations (HTTP clients, databases, etc.) to continue emitting.
+    """
+    token = otel_context.attach(
+        otel_context.set_value(_SUPPRESS_FASTMCP_TELEMETRY_KEY, True)
+    )
+    try:
+        yield
+    finally:
+        otel_context.detach(token)
+
+
+def get_noop_span() -> Span:
+    """Return the sentinel span used when native FastMCP telemetry is suppressed."""
+    return INVALID_SPAN
 
 
 def get_tracer(version: str | None = None) -> Tracer:
@@ -116,7 +161,10 @@ __all__ = [
     "TRACE_PARENT_KEY",
     "TRACE_STATE_KEY",
     "extract_trace_context",
+    "get_noop_span",
     "get_tracer",
     "inject_trace_context",
+    "native_telemetry_enabled",
     "record_span_error",
+    "suppress_fastmcp_telemetry",
 ]

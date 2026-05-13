@@ -28,6 +28,12 @@ You can change which `.env` file is loaded by setting the `FASTMCP_ENV_FILE` env
 | `FASTMCP_ENABLE_RICH_TRACEBACKS` | `bool` | `true` | Use rich tracebacks for errors. |
 | `FASTMCP_DEPRECATION_WARNINGS` | `bool` | `true` | Show deprecation warnings. |
 
+## Telemetry
+
+| Environment Variable | Type | Default | Description |
+|---|---|---|---|
+| `FASTMCP_TELEMETRY_MODE` | `Literal["native", "propagation_only"]` | `native` | Controls FastMCP's native OpenTelemetry span creation. `native` emits FastMCP MCP spans and propagates trace context. `propagation_only` keeps `_meta` trace propagation but suppresses FastMCP's own spans so another instrumentation layer can own the MCP span hierarchy. |
+
 ## Transport & HTTP
 
 These control how the server listens when running with an HTTP transport.

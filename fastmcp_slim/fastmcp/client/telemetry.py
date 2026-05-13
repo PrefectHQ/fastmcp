@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
 from fastmcp.exceptions import ToolError as _ToolError
-from fastmcp.telemetry import get_tracer
+from fastmcp.telemetry import get_noop_span, get_tracer, native_telemetry_enabled
 
 
 @contextmanager
@@ -23,6 +23,10 @@ def client_span(
 
     Automatically records any exception on the span and sets error status.
     """
+    if not native_telemetry_enabled():
+        yield get_noop_span()
+        return
+
     tracer = get_tracer()
     with tracer.start_as_current_span(name, kind=SpanKind.CLIENT) as span:
         if span.is_recording():
