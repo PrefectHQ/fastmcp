@@ -428,6 +428,26 @@ class AzureProvider(OAuthProxy):
                 prefixed.append(f"{self.identifier_uri}/{scope}")
         return prefixed
 
+    def _translate_scopes_from_idp(self, scopes: list[str]) -> list[str]:
+        """Strip ``{identifier_uri}/`` from custom API scopes Azure echoes back.
+
+        Inverse of :meth:`_prefix_scopes_for_azure`. Azure echoes the prefixed
+        form (``api://{client_id}/read``) in its token response's ``scope``
+        field, while MCP clients request and recognize the short form
+        (``read``) — the same form advertised on
+        ``/.well-known/oauth-authorization-server`` via ``valid_scopes``. Without
+        this translation, strict clients compare requested vs. granted scopes
+        and surface a "permissions not granted" warning (e.g. ChatGPT) even
+        when nothing is actually wrong.
+
+        OIDC scopes (``openid``, ``profile``, ``email``, ``offline_access``) and
+        external resource URIs (Microsoft Graph, etc.) never carry the prefix,
+        so :meth:`str.removeprefix` is a no-op on them and they pass through
+        unchanged.
+        """
+        prefix = f"{self.identifier_uri}/"
+        return [s.removeprefix(prefix) for s in scopes]
+
     def _build_upstream_authorize_url(
         self, txn_id: str, transaction: dict[str, Any]
     ) -> str:

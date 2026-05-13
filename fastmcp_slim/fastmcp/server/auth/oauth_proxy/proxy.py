@@ -1049,6 +1049,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             if "scope" in idp_tokens
             else list(authorization_code.scopes)
         )
+        # Translate IdP-wire scopes into the client-facing form before they
+        # propagate to storage, the FastMCP JWT, and the response body. Default
+        # implementation is identity; AzureProvider overrides this to strip the
+        # identifier_uri prefix Azure echoes back on custom API scopes.
+        granted_scopes = self._translate_scopes_from_idp(granted_scopes)
 
         # Clean up client code (one-time use)
         await self._code_store.delete(key=authorization_code.code)
@@ -1229,6 +1234,35 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         """
         return scopes
 
+    def _translate_scopes_from_idp(self, scopes: list[str]) -> list[str]:
+        """Translate IdP-returned scopes into the client-facing form.
+
+        Some IdPs (notably Azure) require scopes on the wire in a form that
+        differs from the form MCP clients use — e.g. Azure requires custom API
+        scopes to be prefixed with the application's identifier URI
+        (``api://{client_id}/read``) on outbound requests and echoes that same
+        prefixed form back in the token response. MCP clients, however, request
+        and recognize the short form (``read``) advertised via
+        ``/.well-known/oauth-authorization-server``.
+
+        This hook is the inverse of provider-specific outbound translation
+        (e.g. :meth:`AzureProvider._prefix_scopes_for_azure`). The default
+        implementation returns the scopes unchanged, which is correct for any
+        provider where IdP-wire scopes already match the client-facing form.
+
+        It is called once on each ``scope`` value parsed out of an IdP token
+        response, before that value is stored, embedded in the FastMCP JWT
+        scope claim, or echoed to the client. Applying the translation here
+        keeps storage, the issued JWT, and the response body consistent.
+
+        Args:
+            scopes: Scopes parsed from the IdP token response's ``scope`` field.
+
+        Returns:
+            List of scopes in the form clients expect.
+        """
+        return scopes
+
     def _prepare_scopes_for_upstream_refresh(self, scopes: list[str]) -> list[str]:
         """Prepare scopes for upstream token refresh request.
 
@@ -1398,6 +1432,10 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             if "scope" in token_response
             else scopes
         )
+        # Same translation as in exchange_authorization_code — keep storage,
+        # the rotated FastMCP JWT, and the response body all in client-facing
+        # scope form.
+        refreshed_scopes = self._translate_scopes_from_idp(refreshed_scopes)
         upstream_token_set.scope = " ".join(refreshed_scopes)
 
         # Handle upstream refresh token rotation and expiry
