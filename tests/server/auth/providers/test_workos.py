@@ -103,6 +103,81 @@ class TestWorkOSProvider:
         assert provider._redirect_path == "/auth/callback"
         # WorkOS provider has no default scopes but we can't easily verify without accessing internals
 
+    def test_extra_authorize_params_default_none(self, memory_storage: MemoryStore):
+        """WorkOS doesn't set provider-specific defaults — empty unless caller opts in."""
+        provider = WorkOSProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            authkit_domain="https://test.authkit.app",
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        assert provider._extra_authorize_params == {}
+
+    def test_extra_authorize_params_passed_through(self, memory_storage: MemoryStore):
+        """Caller-supplied params are forwarded to the upstream authorize URL.
+
+        Common use case: force `offline_access` into the scope so WorkOS issues
+        a refresh token.
+        """
+        provider = WorkOSProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            authkit_domain="https://test.authkit.app",
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+            extra_authorize_params={
+                "scope": "openid profile email offline_access",
+            },
+        )
+
+        assert provider._extra_authorize_params == {
+            "scope": "openid profile email offline_access",
+        }
+
+    def test_valid_scopes_passed_through(self, memory_storage: MemoryStore):
+        """valid_scopes is forwarded to OAuthProxy and advertised via DCR."""
+        provider = WorkOSProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            authkit_domain="https://test.authkit.app",
+            base_url="https://myserver.com",
+            required_scopes=["openid"],
+            valid_scopes=["openid", "profile", "email", "offline_access"],
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        reg_options = provider.client_registration_options
+        assert reg_options is not None
+        assert reg_options.valid_scopes is not None
+        assert set(reg_options.valid_scopes) == {
+            "openid",
+            "profile",
+            "email",
+            "offline_access",
+        }
+
+    def test_valid_scopes_defaults_to_required(self, memory_storage: MemoryStore):
+        """When valid_scopes is omitted, the OAuthProxy falls back to required_scopes."""
+        provider = WorkOSProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            authkit_domain="https://test.authkit.app",
+            base_url="https://myserver.com",
+            required_scopes=["openid", "profile"],
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        reg_options = provider.client_registration_options
+        assert reg_options is not None
+        assert reg_options.valid_scopes is not None
+        assert set(reg_options.valid_scopes) == {"openid", "profile"}
+
     def test_oauth_endpoints_configured_correctly(self, memory_storage: MemoryStore):
         """Test that OAuth endpoints are configured correctly."""
         provider = WorkOSProvider(
