@@ -7,7 +7,7 @@ This package contains the app-related components:
 - ``ResourceCSP`` / ``ResourcePermissions`` — security configuration
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING as _TYPE_CHECKING
 
 from fastmcp.apps.config import AppConfig as AppConfig
 from fastmcp.apps.config import PrefabAppConfig as PrefabAppConfig
@@ -18,7 +18,7 @@ from fastmcp.apps.config import app_config_to_meta_dict as app_config_to_meta_di
 from fastmcp.utilities.mime import UI_MIME_TYPE as UI_MIME_TYPE
 from fastmcp.utilities.mime import resolve_ui_mime_type as resolve_ui_mime_type
 
-if TYPE_CHECKING:
+if _TYPE_CHECKING:
     from fastmcp.apps.app import FastMCPApp as FastMCPApp
 
 
