@@ -18,6 +18,18 @@ from fastmcp.apps.config import app_config_to_meta_dict as app_config_to_meta_di
 from fastmcp.utilities.mime import UI_MIME_TYPE as UI_MIME_TYPE
 from fastmcp.utilities.mime import resolve_ui_mime_type as resolve_ui_mime_type
 
+__all__ = [
+    "UI_EXTENSION_ID",
+    "UI_MIME_TYPE",
+    "AppConfig",
+    "FastMCPApp",
+    "PrefabAppConfig",
+    "ResourceCSP",
+    "ResourcePermissions",
+    "app_config_to_meta_dict",
+    "resolve_ui_mime_type",
+]
+
 if _TYPE_CHECKING:
     from fastmcp.apps.app import FastMCPApp as FastMCPApp
 
