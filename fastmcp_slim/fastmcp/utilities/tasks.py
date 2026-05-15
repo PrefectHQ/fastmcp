@@ -20,23 +20,42 @@ DEFAULT_TTL_MS = 60_000
 
 @dataclass
 class TaskMeta:
+    """Metadata for task-augmented execution requests.
+
+    Attributes:
+        ttl: Client-requested TTL in milliseconds. If None, uses server default.
+        fn_key: Docket routing key. Auto-derived from component name if None.
+    """
+
     ttl: int | None = None
     fn_key: str | None = None
 
 
 @dataclass
 class TaskConfig:
+    """Configuration for MCP background task execution.
+
+    Controls how a component handles task-augmented requests:
+
+    - ``forbidden``: Component does not support task execution.
+    - ``optional``: Component supports both synchronous and task execution.
+    - ``required``: Component requires task execution.
+    """
+
     mode: TaskMode = "optional"
     poll_interval: timedelta = DEFAULT_POLL_INTERVAL
 
     @classmethod
     def from_bool(cls, value: bool) -> TaskConfig:
+        """Convert a boolean task flag to a TaskConfig."""
         return cls(mode="optional" if value else "forbidden")
 
     def supports_tasks(self) -> bool:
+        """Check if this component supports task execution."""
         return self.mode != "forbidden"
 
     def validate_function(self, fn: Callable[..., Any], name: str) -> None:
+        """Validate that a function is compatible with this task config."""
         if not self.supports_tasks():
             return
 

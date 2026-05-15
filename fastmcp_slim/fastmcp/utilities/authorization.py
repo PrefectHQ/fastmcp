@@ -1,4 +1,9 @@
-"""Authorization checks for FastMCP components."""
+"""Authorization checks for FastMCP components.
+
+Auth checks are callables that receive an ``AuthContext`` and return True to
+allow access or False to deny it. They can also raise ``AuthorizationError`` to
+deny with a custom message; other exceptions are masked and treated as denial.
+"""
 
 from __future__ import annotations
 
@@ -20,13 +25,20 @@ if TYPE_CHECKING:
 
 @dataclass
 class AuthContext:
-    """Context passed to auth check callables."""
+    """Context passed to auth check callables.
+
+    Attributes:
+        token: The current access token, or None if unauthenticated.
+        component: The tool, resource, resource template, or prompt being accessed.
+        tool: Backwards-compatible alias for component when it is a Tool.
+    """
 
     token: AccessToken | None
     component: FastMCPComponent
 
     @property
     def tool(self) -> Tool | None:
+        """Backwards-compatible access to the component as a Tool."""
         from fastmcp.tools.base import Tool
 
         return self.component if isinstance(self.component, Tool) else None
@@ -36,6 +48,7 @@ AuthCheck = Callable[[AuthContext], bool] | Callable[[AuthContext], Awaitable[bo
 
 
 def require_scopes(*scopes: str) -> AuthCheck:
+    """Require all of the given OAuth scopes."""
     required = set(scopes)
 
     def check(ctx: AuthContext) -> bool:
@@ -47,6 +60,7 @@ def require_scopes(*scopes: str) -> AuthCheck:
 
 
 def restrict_tag(tag: str, *, scopes: list[str]) -> AuthCheck:
+    """Require scopes when the accessed component has a specific tag."""
     required = set(scopes)
 
     def check(ctx: AuthContext) -> bool:
@@ -63,6 +77,7 @@ async def run_auth_checks(
     checks: AuthCheck | list[AuthCheck],
     ctx: AuthContext,
 ) -> bool:
+    """Run auth checks with AND logic."""
     check_list = [checks] if not isinstance(checks, list) else checks
     check_list = cast(list[AuthCheck], check_list)
 
