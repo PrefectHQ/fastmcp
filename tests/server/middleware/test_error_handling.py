@@ -1,14 +1,17 @@
 """Tests for error handling middleware."""
 
 import logging
+from typing import Annotated
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from mcp import McpError
+from pydantic import Field
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import NotFoundError, ToolError
+from fastmcp.exceptions import ValidationError as FastMCPValidationError
 from fastmcp.server.middleware.error_handling import (
     ErrorHandlingMiddleware,
     RetryMiddleware,
@@ -565,6 +568,35 @@ class TestErrorHandlingMiddlewareIntegration:
 
         # Error should still exist (may be wrapped by FastMCP)
         assert exc_info.value is not None
+
+    async def test_tool_argument_validation_raises_fastmcp_validation_error(self):
+        """Pydantic argument errors are normalized before middleware observes them."""
+        captured_errors: list[Exception] = []
+        server = FastMCP("ValidationErrorTest")
+
+        def error_callback(error, context):
+            captured_errors.append(error)
+
+        server.add_middleware(
+            ErrorHandlingMiddleware(
+                error_callback=error_callback,
+                transform_errors=False,
+            )
+        )
+
+        @server.tool
+        def bounded(value: Annotated[int, Field(le=10)]) -> int:
+            return value
+
+        async with Client(server) as client:
+            with pytest.raises(Exception):
+                await client.call_tool("bounded", {"value": 11})
+
+        assert len(captured_errors) == 1
+        error = captured_errors[0]
+        assert isinstance(error, FastMCPValidationError)
+        assert isinstance(error.__cause__, Exception)
+        assert "less than or equal to 10" in str(error)
 
 
 class TestRetryMiddlewareIntegration:

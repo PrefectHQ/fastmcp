@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 from fastmcp import FastMCP
+from fastmcp.exceptions import ValidationError as FastMCPValidationError
 from fastmcp.utilities.types import Image
 
 
@@ -109,8 +110,6 @@ class TestToolParameters:
         assert result.content[0].data == base64.b64encode(b"fake png data").decode()
 
     async def test_tool_with_invalid_input(self):
-        from pydantic import ValidationError
-
         mcp = FastMCP()
 
         @mcp.tool
@@ -118,7 +117,7 @@ class TestToolParameters:
             return x + 1
 
         with pytest.raises(
-            ValidationError,
+            FastMCPValidationError,
             match="Input should be a valid integer",
         ):
             await mcp.call_tool("my_tool", {"x": "not an int"})
@@ -149,8 +148,6 @@ class TestToolParameters:
         assert result.structured_content == {"result": True}
 
     async def test_annotated_field_validation(self):
-        from pydantic import ValidationError
-
         mcp = FastMCP()
 
         @mcp.tool
@@ -158,14 +155,12 @@ class TestToolParameters:
             pass
 
         with pytest.raises(
-            ValidationError,
+            FastMCPValidationError,
             match="Input should be greater than or equal to 1",
         ):
             await mcp.call_tool("analyze", {"x": 0})
 
     async def test_default_field_validation(self):
-        from pydantic import ValidationError
-
         mcp = FastMCP()
 
         @mcp.tool
@@ -173,26 +168,22 @@ class TestToolParameters:
             pass
 
         with pytest.raises(
-            ValidationError,
+            FastMCPValidationError,
             match="Input should be greater than or equal to 1",
         ):
             await mcp.call_tool("analyze", {"x": 0})
 
     async def test_default_field_is_still_required_if_no_default_specified(self):
-        from pydantic import ValidationError
-
         mcp = FastMCP()
 
         @mcp.tool
         def analyze(x: int = Field()) -> None:
             pass
 
-        with pytest.raises(ValidationError, match="missing"):
+        with pytest.raises(FastMCPValidationError, match="missing"):
             await mcp.call_tool("analyze", {})
 
     async def test_literal_type_validation_error(self):
-        from pydantic import ValidationError
-
         mcp = FastMCP()
 
         @mcp.tool
@@ -200,7 +191,7 @@ class TestToolParameters:
             pass
 
         with pytest.raises(
-            ValidationError,
+            FastMCPValidationError,
             match="Input should be 'a' or 'b'",
         ):
             await mcp.call_tool("analyze", {"x": "c"})
@@ -216,8 +207,6 @@ class TestToolParameters:
         assert result.structured_content == {"result": "a"}
 
     async def test_enum_type_validation_error(self):
-        from pydantic import ValidationError
-
         mcp = FastMCP()
 
         class MyEnum(Enum):
@@ -230,7 +219,7 @@ class TestToolParameters:
             return x.value
 
         with pytest.raises(
-            ValidationError,
+            FastMCPValidationError,
             match="Input should be 'red', 'green' or 'blue'",
         ):
             await mcp.call_tool("analyze", {"x": "some-color"})
@@ -251,8 +240,6 @@ class TestToolParameters:
         assert result.structured_content == {"result": "red"}
 
     async def test_union_type_validation(self):
-        from pydantic import ValidationError
-
         mcp = FastMCP()
 
         @mcp.tool
@@ -266,7 +253,7 @@ class TestToolParameters:
         assert result.structured_content == {"result": "1.0"}
 
         with pytest.raises(
-            ValidationError,
+            FastMCPValidationError,
             match="Input should be a valid",
         ):
             await mcp.call_tool("analyze", {"x": "not a number"})
@@ -285,15 +272,15 @@ class TestToolParameters:
         assert result.structured_content == {"result": str(test_path)}
 
     async def test_path_type_error(self):
-        from pydantic import ValidationError
-
         mcp = FastMCP()
 
         @mcp.tool
         def send_path(path: Path) -> str:
             return str(path)
 
-        with pytest.raises(ValidationError, match="Input is not a valid path"):
+        with pytest.raises(
+            FastMCPValidationError, match="Input is not a valid path"
+        ):
             await mcp.call_tool("send_path", {"path": 1})
 
     async def test_uuid_type(self):
@@ -310,15 +297,15 @@ class TestToolParameters:
         assert result.structured_content == {"result": str(test_uuid)}
 
     async def test_uuid_type_error(self):
-        from pydantic import ValidationError
-
         mcp = FastMCP()
 
         @mcp.tool
         def send_uuid(x: uuid.UUID) -> str:
             return str(x)
 
-        with pytest.raises(ValidationError, match="Input should be a valid UUID"):
+        with pytest.raises(
+            FastMCPValidationError, match="Input should be a valid UUID"
+        ):
             await mcp.call_tool("send_uuid", {"x": "not a uuid"})
 
     async def test_datetime_type(self):
@@ -344,15 +331,15 @@ class TestToolParameters:
         assert result.structured_content == {"result": "2021-01-01T00:00:00"}
 
     async def test_datetime_type_error(self):
-        from pydantic import ValidationError
-
         mcp = FastMCP()
 
         @mcp.tool
         def send_datetime(x: datetime.datetime) -> str:
             return x.isoformat()
 
-        with pytest.raises(ValidationError, match="Input should be a valid datetime"):
+        with pytest.raises(
+            FastMCPValidationError, match="Input should be a valid datetime"
+        ):
             await mcp.call_tool("send_datetime", {"x": "not a datetime"})
 
     async def test_date_type(self):
