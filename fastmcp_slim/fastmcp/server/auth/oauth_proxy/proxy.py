@@ -1711,17 +1711,19 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 return None
             validated = await self._token_validator.verify_token(verification_token)
 
-            # 4. If upstream validation failed due to token expiry and we
-            # have a refresh token, attempt transparent refresh to avoid
-            # forcing the client into a full re-auth flow. Only refresh on
-            # expiry — other failures (scope mismatch, revocation) won't be
-            # helped by a refresh and would just burn tokens.
-            if (
-                not validated
-                and upstream_token_set.refresh_token
-                and upstream_token_set.expires_at
+            # 4. Determine if refresh is needed. Two cases:
+            #    a) Validation failed and token is expired/within threshold
+            #    b) Validation passed but token is within threshold (proactive)
+            needs_refresh = upstream_token_set.refresh_token and (
+                upstream_token_set.expires_at
                 <= time.time() + self._token_expiry_threshold_seconds
-            ):
+            )
+            should_refresh = needs_refresh and (
+                not validated
+                or (validated and self._token_expiry_threshold_seconds > 0)
+            )
+
+            if should_refresh:
                 try:
                     token_id = upstream_token_set.upstream_token_id
 
@@ -1746,12 +1748,10 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                             )
 
                         # Only refresh if the (possibly reloaded) token is
-                        # still expired (or within threshold) — a non-expiry
-                        # failure on a fresh token (scope mismatch, revocation)
-                        # won't be helped by refreshing.
+                        # still within threshold — a freshly-refreshed token
+                        # doesn't need another refresh.
                         if (
-                            not validated
-                            and upstream_token_set.expires_at
+                            upstream_token_set.expires_at
                             <= time.time() + self._token_expiry_threshold_seconds
                         ):
                             upstream_token_set = await self._try_transparent_refresh(
