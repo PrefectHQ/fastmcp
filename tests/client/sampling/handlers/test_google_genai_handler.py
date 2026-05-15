@@ -432,3 +432,170 @@ def test_response_to_result_with_tools_mixed_content():
     assert isinstance(tool_use, ToolUseContent)
     assert tool_use.type == "tool_use"
     assert tool_use.name == "search"
+
+
+# ────────────────────────────────────────────────────────────
+# Test for title stripping (PR #3860)
+# ────────────────────────────────────────────────────────────
+
+
+def test_convert_tool_strips_titles():
+    """_convert_tool_to_google_genai should strip titles from inputSchema.
+
+    We test via compress_schema directly rather than constructing a
+    FunctionDeclaration because older google-genai versions may not
+    support the parameters_json_schema field.
+    """
+    from fastmcp.utilities.json_schema import compress_schema
+
+    input_schema = {
+        "title": "Params",
+        "type": "object",
+        "properties": {
+            "query": {"title": "Query", "type": "string"},
+        },
+    }
+
+    schema = compress_schema(input_schema, prune_titles=True)
+    assert "title" not in schema
+    assert "title" not in schema["properties"]["query"]
+    assert schema["properties"]["query"]["type"] == "string"
+
+
+# ────────────────────────────────────────────────────────────
+# Tests for thought-part filtering and improved error messages
+# (PR #3849)
+# ────────────────────────────────────────────────────────────
+
+
+def test_thought_parts_filtered_on_tool_path():
+    """Thought parts should be excluded; only the real text part should appear."""
+    mock_candidate = MagicMock(spec=Candidate)
+    mock_candidate.content = MagicMock()
+    mock_candidate.content.parts = [
+        Part(text="thinking about the problem...", thought=True),
+        Part(text="Here is the real answer"),
+    ]
+    mock_candidate.finish_reason = "STOP"
+
+    mock_response = MagicMock(spec=GenerateContentResponse)
+    mock_response.candidates = [mock_candidate]
+
+    result = _response_to_result_with_tools(mock_response, model="gemini-2.5-flash")
+
+    assert len(result.content) == 1  # ty: ignore[invalid-argument-type]
+    assert isinstance(result.content[0], TextContent)  # ty: ignore[not-subscriptable]
+    assert result.content[0].text == "Here is the real answer"  # ty: ignore[not-subscriptable]
+
+
+def test_thought_only_response_on_tool_path_raises():
+    """When the response contains ONLY thought parts the tool path should raise
+    a ValueError whose message includes the finish_reason."""
+    mock_candidate = MagicMock(spec=Candidate)
+    mock_candidate.content = MagicMock()
+    mock_candidate.content.parts = [
+        Part(text="deep thinking...", thought=True),
+    ]
+    mock_candidate.finish_reason = "STOP"
+
+    mock_response = MagicMock(spec=GenerateContentResponse)
+    mock_response.candidates = [mock_candidate]
+
+    with pytest.raises(ValueError, match="finish_reason=STOP"):
+        _response_to_result_with_tools(mock_response, model="gemini-2.5-flash")
+
+
+def test_thought_only_response_on_non_tool_path_raises():
+    """When the non-tool path receives only thoughts the error message should
+    mention 'thinking/reasoning content'."""
+    mock_candidate = MagicMock(spec=Candidate)
+    mock_candidate.content = MagicMock()
+    mock_candidate.content.parts = [
+        Part(text="internal reasoning...", thought=True),
+    ]
+    mock_candidate.finish_reason = "STOP"
+
+    mock_response = MagicMock(spec=GenerateContentResponse)
+    mock_response.text = None  # No real text available
+    mock_response.candidates = [mock_candidate]
+
+    with pytest.raises(ValueError, match="thinking/reasoning content"):
+        _response_to_create_message_result(mock_response, model="gemini-2.5-flash")
+
+
+def test_safety_filtered_response_on_tool_path_raises():
+    """A safety-filtered response (no parts) should raise with the finish_reason
+    included in the error message."""
+    mock_candidate = MagicMock(spec=Candidate)
+    mock_candidate.content = MagicMock()
+    mock_candidate.content.parts = []  # Empty parts after safety filtering
+    mock_candidate.finish_reason = "SAFETY"
+
+    mock_response = MagicMock(spec=GenerateContentResponse)
+    mock_response.candidates = [mock_candidate]
+
+    with pytest.raises(ValueError, match="finish_reason=SAFETY"):
+        _response_to_result_with_tools(mock_response, model="gemini-2.5-flash")
+
+
+def test_safety_filtered_response_on_non_tool_path_raises():
+    """A safety-filtered response on the non-tool path should include
+    finish_reason in the error."""
+    mock_candidate = MagicMock(spec=Candidate)
+    mock_candidate.content = MagicMock()
+    mock_candidate.content.parts = []
+    mock_candidate.finish_reason = "SAFETY"
+
+    mock_response = MagicMock(spec=GenerateContentResponse)
+    mock_response.text = None
+    mock_response.candidates = [mock_candidate]
+
+    with pytest.raises(ValueError, match="finish_reason=SAFETY"):
+        _response_to_create_message_result(mock_response, model="gemini-2.5-flash")
+
+
+def test_normal_response_text_and_function_call():
+    """A normal response with both real text and a function call should
+    produce both TextContent and ToolUseContent in the result."""
+    mock_candidate = MagicMock(spec=Candidate)
+    mock_candidate.content = MagicMock()
+    mock_candidate.content.parts = [
+        Part(text="Let me look that up."),
+        Part(function_call=FunctionCall(name="lookup", args={"q": "test"})),
+    ]
+    mock_candidate.finish_reason = "STOP"
+
+    mock_response = MagicMock(spec=GenerateContentResponse)
+    mock_response.candidates = [mock_candidate]
+
+    result = _response_to_result_with_tools(mock_response, model="gemini-2.5-flash")
+
+    assert len(result.content) == 2  # ty: ignore[invalid-argument-type]
+    assert isinstance(result.content[0], TextContent)  # ty: ignore[not-subscriptable]
+    assert result.content[0].text == "Let me look that up."  # ty: ignore[not-subscriptable]
+    assert isinstance(result.content[1], ToolUseContent)  # ty: ignore[not-subscriptable]
+    assert result.content[1].name == "lookup"  # ty: ignore[not-subscriptable]
+    assert result.content[1].input == {"q": "test"}  # ty: ignore[not-subscriptable]
+    assert result.stopReason == "toolUse"
+
+
+def test_thought_with_function_call_keeps_function_call():
+    """When thinking parts accompany a function call, only the function call
+    should appear in the content (thought parts filtered out)."""
+    mock_candidate = MagicMock(spec=Candidate)
+    mock_candidate.content = MagicMock()
+    mock_candidate.content.parts = [
+        Part(text="reasoning about what tool to use...", thought=True),
+        Part(function_call=FunctionCall(name="get_weather", args={"city": "NYC"})),
+    ]
+    mock_candidate.finish_reason = "STOP"
+
+    mock_response = MagicMock(spec=GenerateContentResponse)
+    mock_response.candidates = [mock_candidate]
+
+    result = _response_to_result_with_tools(mock_response, model="gemini-2.5-flash")
+
+    assert len(result.content) == 1  # ty: ignore[invalid-argument-type]
+    assert isinstance(result.content[0], ToolUseContent)  # ty: ignore[not-subscriptable]
+    assert result.content[0].name == "get_weather"  # ty: ignore[not-subscriptable]
+    assert result.stopReason == "toolUse"

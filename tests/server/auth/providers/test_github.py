@@ -57,6 +57,23 @@ class TestGitHubProvider:
         # The required_scopes should be passed to the token verifier
         assert provider._token_validator.required_scopes == ["user"]
 
+    def test_init_with_resource_base_url(self, memory_storage: MemoryStore):
+        """Test that resource_base_url overrides the advertised protected resource."""
+        provider = GitHubProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            base_url="https://auth.example.com/proxy",
+            resource_base_url="https://api.example.com",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        provider.set_mcp_path("/mcp")
+
+        assert str(provider.base_url) == "https://auth.example.com/proxy"
+        assert str(provider.resource_base_url) == "https://api.example.com/"
+        assert provider.jwt_issuer.audience == "https://api.example.com/mcp"
+
 
 class TestGitHubTokenVerifier:
     """Test GitHubTokenVerifier."""

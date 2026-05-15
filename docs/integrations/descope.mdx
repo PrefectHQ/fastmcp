@@ -63,8 +63,8 @@ from fastmcp.server.auth.providers.descope import DescopeProvider
 # The DescopeProvider automatically discovers Descope endpoints
 # and configures JWT token validation
 auth_provider = DescopeProvider(
-    config_url=https://.../.well-known/openid-configuration,        # Your MCP Server .well-known URL
-    base_url=SERVER_URL,                  # Your server's public URL
+    config_url="https://.../.well-known/openid-configuration",  # Your MCP Server .well-known URL
+    base_url=SERVER_URL,                                        # Your server's public URL
 )
 
 # Create FastMCP server with auth

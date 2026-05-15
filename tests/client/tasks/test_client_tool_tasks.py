@@ -10,6 +10,7 @@ import pytest
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.tasks import ToolTask
+from fastmcp.exceptions import ToolError
 
 
 @pytest.fixture
@@ -85,3 +86,71 @@ async def test_tool_task_status_and_wait(tool_task_server):
         await task.wait(timeout=2.0)
         final_status = await task.status()
         assert final_status.status == "completed"
+
+
+async def test_immediate_tool_task_respects_raise_on_error_true():
+    """Immediate task fallback should still raise ToolError when requested."""
+    mcp = FastMCP("immediate-tool-task-error")
+
+    @mcp.tool
+    def failing_tool() -> str:
+        raise ValueError("immediate task failure")
+
+    async with Client(mcp) as client:
+        task = await client.call_tool("failing_tool", task=True, raise_on_error=True)
+
+        assert task.returned_immediately
+        with pytest.raises(
+            ToolError, match="does not support task-augmented execution"
+        ):
+            await task.result()
+
+
+async def test_immediate_tool_task_respects_raise_on_error_false():
+    """Immediate task fallback should return error results when requested."""
+    mcp = FastMCP("immediate-tool-task-no-raise")
+
+    @mcp.tool
+    def failing_tool() -> str:
+        raise ValueError("immediate task failure")
+
+    async with Client(mcp) as client:
+        task = await client.call_tool("failing_tool", task=True, raise_on_error=False)
+
+        assert task.returned_immediately
+        result = await task.result()
+        assert result.is_error is True
+        assert "does not support task-augmented execution" in str(result)
+
+
+async def test_background_tool_task_respects_raise_on_error_true():
+    """Background tasks should still raise ToolError by default on errors."""
+    mcp = FastMCP("background-tool-task-error")
+
+    @mcp.tool(task=True)
+    async def failing_tool() -> str:
+        raise ValueError("background task failure")
+
+    async with Client(mcp) as client:
+        task = await client.call_tool("failing_tool", task=True, raise_on_error=True)
+
+        assert not task.returned_immediately
+        with pytest.raises(ToolError, match="background task failure"):
+            await task.result()
+
+
+async def test_background_tool_task_respects_raise_on_error_false():
+    """Background tasks should return error results when raise_on_error is disabled."""
+    mcp = FastMCP("background-tool-task-no-raise")
+
+    @mcp.tool(task=True)
+    async def failing_tool() -> str:
+        raise ValueError("background task failure")
+
+    async with Client(mcp) as client:
+        task = await client.call_tool("failing_tool", task=True, raise_on_error=False)
+
+        assert not task.returned_immediately
+        result = await task.result()
+        assert result.is_error is True
+        assert "background task failure" in str(result)

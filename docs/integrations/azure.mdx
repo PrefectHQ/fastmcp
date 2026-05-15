@@ -458,3 +458,85 @@ For advanced OBO scenarios, use `CurrentAccessToken()` to get the user's token, 
 <Tip>
 For a complete working example of Azure OBO with FastMCP, see [Pamela Fox's blog post on OBO flow for Entra-based MCP servers](https://blog.pamelafox.org/2026/01/using-on-behalf-of-flow-for-entra-based.html).
 </Tip>
+
+## Azure AD B2C
+
+<VersionBadge version="3.3.0" />
+
+Azure AD B2C (Business-to-Consumer) uses different endpoints, scope URIs, and
+token issuers than standard Microsoft Entra ID. The `AzureProvider.from_b2c()`
+factory handles all of these differences automatically.
+
+<Warning>
+Azure AD B2C does **not** support the On-Behalf-Of (OBO) flow. If you need
+OBO for downstream API calls, use `AzureProvider` with standard Entra ID
+instead.
+</Warning>
+
+### Quick Start
+
+```python server.py
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.azure import AzureProvider
+
+auth = AzureProvider.from_b2c(
+    tenant_name="mytenant",
+    policy_name="B2C_1_susi",
+    client_id="00000000-0000-0000-0000-000000000000",
+    client_secret="my-secret",
+    required_scopes=["mcp-access"],
+    base_url="https://myserver.com",
+)
+
+mcp = FastMCP("My App", auth=auth)
+```
+
+`from_b2c()` derives the following values automatically:
+
+| Derived value | Formula |
+|---|---|
+| Authority host | `{tenant_name}.b2clogin.com` |
+| Authorization endpoint | `https://{tenant_name}.b2clogin.com/{tenant_name}.onmicrosoft.com/{policy_name}/oauth2/v2.0/authorize` |
+| Token endpoint | `https://{tenant_name}.b2clogin.com/{tenant_name}.onmicrosoft.com/{policy_name}/oauth2/v2.0/token` |
+| Scope identifier URI | `https://{tenant_name}.onmicrosoft.com/{client_id}` |
+
+### Token Issuer Validation
+
+B2C access tokens carry the **tenant GUID** (not the `.onmicrosoft.com` name)
+in the `iss` claim, and the exact format varies by policy and custom-domain
+configuration. `from_b2c()` therefore **disables issuer validation by
+default**; **audience validation still enforces that tokens target the correct
+application**.
+
+Once you have confirmed a successful end-to-end login, read the actual `iss`
+value from the decoded claims and enable strict validation:
+
+```python
+auth = AzureProvider.from_b2c(
+    tenant_name="mytenant",
+    policy_name="B2C_1_susi",
+    client_id="00000000-0000-0000-0000-000000000000",
+    client_secret="my-secret",
+    required_scopes=["mcp-access"],
+    base_url="https://myserver.com",
+    token_issuer="https://mytenant.b2clogin.com/11111111-2222-3333-4444-555555555555/v2.0/",
+)
+```
+
+### Custom Domains
+
+If your B2C tenant uses a [custom domain](https://learn.microsoft.com/en-us/azure/active-directory-b2c/custom-domain)
+(e.g. `auth.mycompany.com` instead of `mytenant.b2clogin.com`), pass it via
+`custom_domain`:
+
+```python
+auth = AzureProvider.from_b2c(
+    tenant_name="mytenant",
+    policy_name="B2C_1_susi",
+    client_id="00000000-0000-0000-0000-000000000000",
+    client_secret="my-secret",
+    required_scopes=["mcp-access"],
+    base_url="https://myserver.com",
+    custom_domain="auth.mycompany.com",
+)
+```

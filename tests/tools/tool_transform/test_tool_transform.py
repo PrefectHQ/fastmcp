@@ -270,6 +270,81 @@ async def test_hidden_param_prunes_defs():
     }
 
 
+async def test_arg_transform_type_hoists_defs_to_root():
+    """Regression test for #4093: ArgTransform(type=...) must hoist any $defs
+    introduced by the new type to the schema root, not leave them nested
+    inside the property where $ref values like '#/$defs/...' would dangle.
+    """
+
+    class Filter(BaseModel):
+        value: str
+
+    @Tool.from_function
+    def search(query: str, filters: dict | None = None) -> str:
+        return ""
+
+    new_tool = Tool.from_tool(
+        search, transform_args={"filters": ArgTransform(type=list[Filter])}
+    )
+
+    schema = new_tool.parameters
+    assert "$defs" in schema
+    assert "Filter" in schema["$defs"]
+    assert "$defs" not in schema["properties"]["filters"]
+    assert schema["properties"]["filters"]["items"] == {"$ref": "#/$defs/Filter"}
+
+
+async def test_arg_transform_type_merges_with_parent_defs():
+    """When the parent tool already has $defs, ArgTransform(type=...) defs
+    should be merged into the existing root $defs alongside them."""
+
+    class Existing(BaseModel):
+        a: int
+
+    class Added(BaseModel):
+        b: int
+
+    @Tool.from_function
+    def tool_fn(x: Existing, y: dict | None = None) -> int:
+        return x.a + (y["b"] if y else 0)
+
+    new_tool = Tool.from_tool(
+        tool_fn, transform_args={"y": ArgTransform(type=list[Added])}
+    )
+
+    schema = new_tool.parameters
+    assert "Existing" in schema["$defs"]
+    assert "Added" in schema["$defs"]
+    assert "$defs" not in schema["properties"]["y"]
+
+
+async def test_arg_transform_type_raises_on_defs_name_collision():
+    """ArgTransform must not silently overwrite a parent's $defs entry when
+    the colliding name maps to a different schema; refs already copied from
+    the parent would then resolve to the wrong type."""
+
+    class Foo(BaseModel):
+        a: int
+
+    @Tool.from_function
+    def tool_fn(foo: Foo, other: dict | None = None) -> int:
+        return foo.a
+
+    # Parent already defines `Foo`; introduce a transform whose new type is
+    # also exposed under the `Foo` key in $defs but with a different schema.
+    # We do this by mutating the parent tool's parameters in place to plant a
+    # colliding definition, then applying a transform that re-introduces it.
+    tool_fn.parameters["$defs"]["Foo"] = {
+        "type": "object",
+        "properties": {"different": {"type": "string"}},
+        "required": ["different"],
+        "title": "Foo",
+    }
+
+    with pytest.raises(ValueError, match=r"\$defs collision for 'Foo'"):
+        Tool.from_tool(tool_fn, transform_args={"other": ArgTransform(type=list[Foo])})
+
+
 async def test_forward_with_argument_mapping(add_tool):
     async def custom_fn(new_x: int, **kwargs) -> str:
         result = await forward(new_x=new_x, **kwargs)
@@ -618,3 +693,41 @@ class TestProxy:
             result = await client.call_tool("add_transformed", {"new_x": 1, "old_y": 2})
             assert isinstance(result.content[0], TextContent)
             assert result.content[0].text == "3"
+
+
+async def test_sync_transform_fn():
+    """Sync transform_fn should not crash when called (was unconditionally awaited)."""
+
+    @Tool.from_function
+    def parent(x: int, y: int = 10) -> int:
+        return x + y
+
+    def sync_transform(x: int, **kwargs) -> str:
+        return f"transformed: {x}"
+
+    transformed = Tool.from_tool(parent, transform_fn=sync_transform)
+    result = await transformed.run(arguments={"x": 7})
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text == "transformed: 7"
+
+
+async def test_transform_args_do_not_mutate_parent_schema():
+    """Mutating a transformed tool's schema must not corrupt the parent's schema."""
+
+    @Tool.from_function
+    def parent(x: int, y: int = 10) -> int:
+        return x + y
+
+    parent_props_before = {
+        k: dict(v) for k, v in parent.parameters["properties"].items()
+    }
+
+    transformed = Tool.from_tool(
+        parent,
+        transform_args={"x": ArgTransform(name="a")},
+    )
+
+    transformed.parameters["properties"]["a"]["description"] = "INJECTED"
+
+    parent_props_after = parent.parameters["properties"]
+    assert parent_props_after == parent_props_before

@@ -10,7 +10,7 @@ This example demonstrates how to use the Azure OAuth provider with FastMCP serve
 2. Click "New registration" and configure:
    - Name: Your app name
    - Supported account types: Choose based on your needs
-   - Redirect URI: `http://localhost:8000/auth/callback` (Web platform)
+   - Redirect URI: `http://127.0.0.1:8000/auth/callback` (Web platform)
 3. After creation, go to "Certificates & secrets" → "New client secret"
 4. Note these values from the Overview page:
    - Application (client) ID

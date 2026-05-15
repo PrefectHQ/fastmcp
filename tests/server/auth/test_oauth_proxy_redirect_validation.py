@@ -106,8 +106,8 @@ class TestProxyDCRClient:
         with pytest.raises(InvalidRedirectUriError):
             client.validate_redirect_uri(AnyUrl("https://example.com"))
 
-    def test_empty_list_allows_none(self):
-        """Test that empty pattern list allows no URIs."""
+    def test_empty_list_blocks_all(self):
+        """Empty allowed_redirect_uri_patterns blocks all redirect URIs, including pre-registered ones."""
         client = ProxyDCRClient(
             client_id="test",
             client_secret="secret",
@@ -115,11 +115,9 @@ class TestProxyDCRClient:
             allowed_redirect_uri_patterns=[],
         )
 
-        # Nothing should be allowed (except the pre-registered redirect_uris via fallback)
-        # Pre-registered URI should work via fallback to base validation
-        assert client.validate_redirect_uri(AnyUrl("http://localhost:3000"))
-
-        # Non-registered URIs should be rejected
+        # All URIs must be rejected — [] means "block all", not "fall back to redirect_uris"
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(AnyUrl("http://localhost:3000"))
         with pytest.raises(InvalidRedirectUriError):
             client.validate_redirect_uri(AnyUrl("http://example.com"))
         with pytest.raises(InvalidRedirectUriError):
@@ -138,6 +136,31 @@ class TestProxyDCRClient:
         # None should use the first registered URI
         result = client.validate_redirect_uri(None)
         assert result == AnyUrl("http://localhost:3000")
+
+    def test_none_redirect_uri_with_matching_patterns(self):
+        """DCR client with single URI and patterns: None resolves and validates against patterns."""
+        client = ProxyDCRClient(
+            client_id="test",
+            client_secret="secret",
+            redirect_uris=[AnyUrl("http://localhost:3000")],
+            allowed_redirect_uri_patterns=["http://localhost:*"],
+        )
+
+        # Resolves to registered URI which matches the pattern — should succeed
+        result = client.validate_redirect_uri(None)
+        assert result == AnyUrl("http://localhost:3000")
+
+    def test_none_redirect_uri_with_nonmatching_patterns(self):
+        """DCR client with single URI and patterns: None raises if resolved URI doesn't match."""
+        client = ProxyDCRClient(
+            client_id="test",
+            client_secret="secret",
+            redirect_uris=[AnyUrl("http://localhost:3000")],
+            allowed_redirect_uri_patterns=["https://myapp.example.com/*"],
+        )
+
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(None)
 
     def test_cimd_none_redirect_uri_single_exact(self):
         """CIMD clients may omit redirect_uri only when a single exact URI exists."""

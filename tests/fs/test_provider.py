@@ -1,5 +1,6 @@
 """Tests for FileSystemProvider."""
 
+import asyncio
 import time
 from pathlib import Path
 
@@ -183,7 +184,7 @@ def original() -> str:
         assert provider._loaded
         assert len(provider._components) == 1
 
-        # Add another file - should be picked up on next _ensure_loaded
+        # Add another file - should be picked up on next read
         (tmp_path / "tool2.py").write_text(
             """\
 from fastmcp.tools import tool
@@ -194,9 +195,9 @@ def added() -> str:
 """
         )
 
-        # With reload=True, _ensure_loaded re-scans
-        await provider._ensure_loaded()
-        assert len(provider._components) == 2
+        # With reload=True, reading triggers a re-scan
+        tools = await provider._list_tools()
+        assert len(tools) == 2
 
     async def test_warning_deduplication_same_file(self, tmp_path: Path, capsys):
         """Warnings for the same broken file should not repeat."""
@@ -211,7 +212,7 @@ def added() -> str:
         assert "WARNING" in captured.err and "Failed to import" in captured.err
 
         # Second load (same file, unchanged) - should NOT warn again
-        await provider._ensure_loaded()
+        await provider._list_tools()
         captured = capsys.readouterr()
         assert "Failed to import" not in captured.err
 
@@ -232,7 +233,7 @@ def added() -> str:
         bad_file.write_text("syntax error here !!!")
 
         # Next load - should warn again (file changed)
-        await provider._ensure_loaded()
+        await provider._list_tools()
         captured = capsys.readouterr()
         # Check for warning indicator (rich may truncate long paths)
         assert "WARNING" in captured.err and "Failed to import" in captured.err
@@ -262,7 +263,7 @@ def my_tool() -> str:
         )
 
         # Load again - should NOT warn, file is fixed
-        await provider._ensure_loaded()
+        await provider._list_tools()
         captured = capsys.readouterr()
         assert "Failed to import" not in captured.err
         assert len(provider._components) == 1
@@ -272,10 +273,48 @@ def my_tool() -> str:
         bad_file.write_text("1/0  # broken again")
 
         # Should warn again
-        await provider._ensure_loaded()
+        await provider._list_tools()
         captured = capsys.readouterr()
         # Check for warning indicator (rich may truncate long paths)
         assert "WARNING" in captured.err and "Failed to import" in captured.err
+
+
+class TestFileSystemProviderReloadRace:
+    """Test that concurrent readers don't see empty components during reload."""
+
+    async def test_concurrent_reader_never_sees_empty(self, tmp_path: Path):
+        """A reader during reload should see either old or new components, never empty."""
+        (tmp_path / "tool.py").write_text(
+            """\
+from fastmcp.tools import tool
+
+@tool
+def my_tool() -> str:
+    return "hello"
+"""
+        )
+
+        provider = FileSystemProvider(tmp_path, reload=True)
+        assert len(await provider._list_tools()) == 1
+
+        observed_empty = False
+
+        async def reader():
+            nonlocal observed_empty
+            for _ in range(20):
+                tools = await provider._list_tools()
+                if len(tools) == 0:
+                    observed_empty = True
+                await asyncio.sleep(0)
+
+        async def reloader():
+            for _ in range(5):
+                provider._loaded = False
+                await provider._list_tools()  # triggers reload
+                await asyncio.sleep(0)
+
+        await asyncio.gather(reader(), reloader())
+        assert not observed_empty, "Reader saw empty components during reload"
 
 
 class TestFileSystemProviderIntegration:

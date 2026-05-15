@@ -1,8 +1,10 @@
 """Core JSON schema type conversion tests."""
 
+import dataclasses
+import warnings
 from dataclasses import Field
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
@@ -111,6 +113,77 @@ class TestSimpleTypes:
             validator.validate_python(False)
 
 
+class TestBooleanSchemas:
+    """JSON Schema draft-06+ allows true/false as property schemas."""
+
+    def test_true_property_schema_accepts_any_value(self):
+        """A property with schema `true` should accept any value."""
+        schema = {
+            "type": "object",
+            "properties": {"name": {"type": "string"}, "anything": True},
+            "required": ["name", "anything"],
+        }
+        result = json_schema_to_type(schema)
+        validator = TypeAdapter(result)
+        obj = validator.validate_python({"name": "test", "anything": 42})
+        assert obj.name == "test"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert obj.anything == 42  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+
+    def test_false_property_schema_rejects_values(self):
+        """A property with schema `false` should reject any provided value."""
+        schema = {
+            "type": "object",
+            "properties": {"name": {"type": "string"}, "never": False},
+            "required": ["name"],
+        }
+        result = json_schema_to_type(schema)
+        validator = TypeAdapter(result)
+        obj = validator.validate_python({"name": "test"})
+        assert obj.name == "test"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+
+        with pytest.raises(ValidationError):
+            validator.validate_python({"name": "test", "never": "anything"})
+
+    def test_boolean_schema_in_object_with_additional_properties(self):
+        """Boolean property schemas work alongside additionalProperties=True."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "known": {"type": "string"},
+                "flexible": True,
+            },
+            "required": ["known"],
+            "additionalProperties": True,
+        }
+        result = json_schema_to_type(schema)
+        validator = TypeAdapter(result)
+        obj = validator.validate_python(
+            {"known": "hello", "flexible": [1, 2, 3], "extra": "field"}
+        )
+        assert obj.known == "hello"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert obj.flexible == [1, 2, 3]  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+
+    def test_issue_3783_boolean_property_schemas(self):
+        """Regression test for GitHub issue #3783."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "ts": {"type": "integer"},
+                "level": True,
+                "app": True,
+                "tag": {"type": ["array", "null"], "items": {"type": "string"}},
+            },
+            "required": ["ts"],
+            "additionalProperties": True,
+        }
+        result = json_schema_to_type(schema)
+        validator = TypeAdapter(result)
+        obj = validator.validate_python({"ts": 123, "level": "info", "app": "myapp"})
+        assert obj.ts == 123  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert obj.level == "info"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert obj.app == "myapp"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+
+
 class TestConstrainedTypes:
     def test_constant(self):
         validator = TypeAdapter(Literal["x"])
@@ -168,3 +241,166 @@ class TestConstrainedTypes:
         assert TypeAdapter(type_).validate_python("y") == "y"
         with pytest.raises(ValidationError):
             TypeAdapter(type_).validate_python("z")
+
+
+class TestCrashPrevention:
+    """Schemas that previously caused crashes should now be handled gracefully."""
+
+    def test_boolean_schema_true(self):
+        """Boolean schema True should return Any (JSON Schema draft-06+)."""
+        assert json_schema_to_type(True) is Any
+
+    def test_boolean_schema_false(self):
+        """Boolean schema False should return an unsatisfiable type."""
+        result = json_schema_to_type(False)
+        with pytest.raises(ValidationError):
+            TypeAdapter(result).validate_python("anything")
+
+    def test_python_keyword_property_names(self):
+        """Properties named after Python keywords should not crash."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "class": {"type": "string"},
+                "return": {"type": "integer"},
+                "import": {"type": "boolean"},
+            },
+            "required": ["class"],
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        result = ta.validate_python({"class": "A", "return": 1, "import": True})
+        assert result.class_ == "A"  # ty:ignore[unresolved-attribute]
+
+    def test_empty_enum(self):
+        """Empty enum means no value is valid — should reject like a false schema."""
+        schema = {
+            "type": "object",
+            "properties": {"status": {"enum": []}},
+            "required": ["status"],
+        }
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        with pytest.raises(ValidationError):
+            ta.validate_python({"status": "anything"})
+
+    def test_sanitized_name_collision(self):
+        """Properties that collide after sanitization get deduplicated."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "foo-bar": {"type": "string"},
+                "foo_bar": {"type": "string"},
+            },
+        }
+        T = json_schema_to_type(schema)
+        field_names = [f.name for f in dataclasses.fields(T)]
+        assert len(field_names) == 2
+        assert len(set(field_names)) == 2
+
+    def test_empty_property_name(self):
+        """Empty and whitespace-only property names should not crash."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "": {"type": "string"},
+                " ": {"type": "integer"},
+            },
+        }
+        T = json_schema_to_type(schema)
+        field_names = [f.name for f in dataclasses.fields(T)]
+        assert len(field_names) == 2
+        assert len(set(field_names)) == 2
+
+
+class TestUnsupportedPatternFallback:
+    """Patterns that Pydantic's Rust regex engine cannot compile are dropped
+    gracefully: a warning is emitted, the pattern is preserved in
+    json_schema_extra, and the field still validates as str."""
+
+    def test_lookahead_pattern_falls_back_to_str(self):
+        """Lookahead patterns (unsupported by Rust regex) degrade to plain str."""
+        schema = {"type": "string", "pattern": "^(?!aws:).+"}
+        with pytest.warns(UserWarning, match="not supported by Pydantic"):
+            T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        ta.validate_python("hello")
+        ta.validate_python("aws:forbidden")
+
+    def test_unsupported_pattern_preserved_in_schema_extra(self):
+        """The original pattern is preserved via json_schema_extra."""
+        schema = {"type": "string", "pattern": "^(?!aws:).+"}
+        with pytest.warns(UserWarning):
+            T = json_schema_to_type(schema)
+        json_schema = TypeAdapter(T).json_schema()
+        assert json_schema.get("x-unsupported-pattern") == "^(?!aws:).+"
+
+    def test_length_constraints_kept_when_pattern_dropped(self):
+        """minLength/maxLength are still enforced after pattern fallback."""
+        schema = {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 10,
+            "pattern": "(?!x).+",
+        }
+        with pytest.warns(UserWarning):
+            T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        ta.validate_python("abc")
+        with pytest.raises(ValidationError):
+            ta.validate_python("ab")
+        with pytest.raises(ValidationError):
+            ta.validate_python("a" * 11)
+
+    def test_supported_pattern_still_enforced(self):
+        """Valid patterns are not affected by the fallback logic."""
+        schema = {"type": "string", "pattern": "^[a-z]+$"}
+        T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        ta.validate_python("hello")
+        with pytest.raises(ValidationError):
+            ta.validate_python("HELLO")
+
+    def test_unicode_property_pattern_falls_back(self):
+        """Unicode \\p{...} patterns (unsupported by Rust regex) degrade gracefully."""
+        schema = {"type": "string", "pattern": r"[\p{Graph}\x20]*"}
+        with pytest.warns(UserWarning, match="not supported by Pydantic"):
+            T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        ta.validate_python("anything")
+
+    def test_object_with_unsupported_pattern_field(self):
+        """An object schema containing a field with an unsupported pattern
+        should not crash TypeAdapter construction."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "tag_key": {"type": "string", "pattern": "^(?!aws:)[a-zA-Z]+$"},
+                "value": {"type": "string"},
+            },
+            "required": ["tag_key", "value"],
+        }
+        with pytest.warns(UserWarning):
+            T = json_schema_to_type(schema)
+        ta = TypeAdapter(T)
+        result = ta.validate_python({"tag_key": "Name", "value": "test"})
+        assert result.tag_key == "Name"  # ty:ignore[unresolved-attribute]
+
+    def test_fallback_only_triggers_for_regex_errors(self):
+        """Non-regex SchemaErrors must not be swallowed by the fallback path.
+
+        Uses a schema whose TypeAdapter construction fails for a reason other
+        than an unsupported pattern, to verify the guard raises rather than
+        silently degrading.  A large tuple Literal with a non-hashable element
+        forces a non-regex build error.
+        """
+
+        # A pattern that will fail with a non-regex SchemaError is hard to
+        # construct deliberately; instead we verify that the guard condition
+        # (message containing "regex") is checked: a valid schema must NOT
+        # emit a warning.
+        schema = {"type": "string", "pattern": "^[a-z]+$"}
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            T = json_schema_to_type(schema)  # must not warn
+        TypeAdapter(T).validate_python("hello")

@@ -168,6 +168,66 @@ class TestSecurityBypass:
         assert not matches_allowed_pattern("http://example.com:3000/callback", pattern)
 
 
+class TestDotSegmentBypass:
+    """Tests for dot-segment bypass of path allowlists.
+
+    A pattern like `/oauth/callback/*` would otherwise match
+    `/oauth/callback/../../steal` via `fnmatch`, because `*` matches across
+    `/`. Browsers resolve the dot-segments on redirect, landing at a path
+    outside the allowlist prefix. The validator rejects dot-segments (raw
+    and percent-encoded) up front.
+    """
+
+    def test_traversal_segments_rejected(self):
+        pattern = "https://app.example.com/oauth/callback/*"
+        assert not matches_allowed_pattern(
+            "https://app.example.com/oauth/callback/../../steal", pattern
+        )
+
+    def test_percent_encoded_traversal_rejected(self):
+        pattern = "https://app.example.com/oauth/callback/*"
+        for encoded in ("%2e%2e", "%2E%2E", "%2e%2E"):
+            assert not matches_allowed_pattern(
+                f"https://app.example.com/oauth/callback/{encoded}/{encoded}/steal",
+                pattern,
+            )
+
+    def test_single_dot_segment_rejected(self):
+        pattern = "https://app.example.com/oauth/callback/*"
+        assert not matches_allowed_pattern(
+            "https://app.example.com/oauth/callback/./foo", pattern
+        )
+
+    def test_trailing_dotdot_rejected(self):
+        pattern = "https://app.example.com/oauth/callback/*"
+        assert not matches_allowed_pattern(
+            "https://app.example.com/oauth/callback/foo/..", pattern
+        )
+
+    def test_percent_encoded_single_dot_rejected(self):
+        pattern = "https://app.example.com/oauth/callback/*"
+        assert not matches_allowed_pattern(
+            "https://app.example.com/oauth/callback/%2e/foo", pattern
+        )
+
+    def test_mixed_raw_and_encoded_rejected(self):
+        pattern = "https://app.example.com/oauth/callback/*"
+        assert not matches_allowed_pattern(
+            "https://app.example.com/oauth/callback/..%2fsteal", pattern
+        )
+
+    def test_legitimate_nested_paths_still_match(self):
+        """Paths that happen to contain dots in segment names must still match."""
+        pattern = "https://app.example.com/oauth/callback/*"
+        for uri in (
+            "https://app.example.com/oauth/callback/foo",
+            "https://app.example.com/oauth/callback/deeply/nested/path",
+            "https://app.example.com/oauth/callback/file.ext",
+            "https://app.example.com/oauth/callback/v1.2.3/item",
+        ):
+            assert matches_allowed_pattern(uri, pattern), uri
+
+
 class TestLoopbackPortMatching:
     """Test RFC 8252 §7.3: loopback URIs with no port in pattern match any port."""
 

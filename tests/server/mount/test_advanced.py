@@ -460,6 +460,135 @@ class TestToolNameOverrides:
             )
 
 
+class TestMountedServerLifespanContext:
+    """Regression tests for mounted server lifespan_context resolution.
+
+    A mounted server's tools should see *their own* lifespan context via
+    ``ctx.lifespan_context``, not the parent's. Previously the result yielded
+    by a mounted server's lifespan was discarded and ``ctx.lifespan_context``
+    fell through to the parent's MCP-session lifespan context.
+    """
+
+    async def test_mounted_child_sees_own_lifespan_context(self):
+        """A tool on a mounted child reads its own lifespan result."""
+        from collections.abc import AsyncIterator
+        from contextlib import asynccontextmanager
+
+        from fastmcp.server.context import Context
+
+        @asynccontextmanager
+        async def parent_lifespan(_mcp: FastMCP) -> AsyncIterator[dict]:
+            yield {"who": "parent", "parent_only": "P"}
+
+        @asynccontextmanager
+        async def child_lifespan(_mcp: FastMCP) -> AsyncIterator[dict]:
+            yield {"who": "child", "child_only": "C"}
+
+        parent = FastMCP("Parent", lifespan=parent_lifespan)
+        child = FastMCP("Child", lifespan=child_lifespan)
+
+        @child.tool
+        def whoami(ctx: Context) -> dict:
+            return ctx.lifespan_context
+
+        parent.mount(child, "child")
+
+        async with Client(parent) as client:
+            result = await client.call_tool("child_whoami", {})
+
+        assert result.data == {"who": "child", "child_only": "C"}
+
+    async def test_independent_sibling_servers_each_get_own_lifecycle(self):
+        """Two unrelated servers entered in the same async context are not nested.
+
+        Each must run its own ``_docket_lifespan_root`` and establish its own
+        Docket / server-context — they are not in a parent/child relationship,
+        only the same async stack.
+        """
+        from contextlib import AsyncExitStack
+
+        from fastmcp.server.dependencies import _current_server
+
+        server_a = FastMCP("A")
+        server_b = FastMCP("B")
+
+        async with AsyncExitStack() as stack:
+            await stack.enter_async_context(server_a._lifespan_manager())
+            # While only A is active, _current_server resolves to A.
+            ref = _current_server.get()
+            assert ref is not None and ref() is server_a
+
+            await stack.enter_async_context(server_b._lifespan_manager())
+            # B established its own lifecycle; _current_server now resolves to B.
+            ref = _current_server.get()
+            assert ref is not None and ref() is server_b
+
+    async def test_unrelated_server_after_parent_with_mount(self):
+        """A parent with a mounted child must not contaminate later entries.
+
+        ``FastMCPProvider`` sets ``_lifespan_root_active`` while entering the
+        wrapped child. The flag must be cleared by the time the parent's
+        ``_lifespan_manager`` yields, otherwise an unrelated server entered
+        later in the same task would see the flag and skip its own root setup.
+        """
+        from contextlib import AsyncExitStack
+
+        from fastmcp.server.dependencies import _current_server
+
+        parent = FastMCP("Parent")
+        child = FastMCP("Child")
+        parent.mount(child, "child")
+
+        unrelated = FastMCP("Unrelated")
+
+        async with AsyncExitStack() as stack:
+            await stack.enter_async_context(parent._lifespan_manager())
+            # Parent's mount has run FastMCPProvider.lifespan; the flag set
+            # during child entry must have been reset by now.
+            await stack.enter_async_context(unrelated._lifespan_manager())
+            # Unrelated established its own lifecycle.
+            ref = _current_server.get()
+            assert ref is not None and ref() is unrelated
+
+    async def test_nested_grandchild_lifespan_runs(self):
+        """A grandchild's lifespan is entered exactly once and visible to its tools."""
+        from collections.abc import AsyncIterator
+        from contextlib import asynccontextmanager
+
+        from fastmcp.server.context import Context
+
+        events: list[str] = []
+
+        @asynccontextmanager
+        async def grandchild_lifespan(_mcp: FastMCP) -> AsyncIterator[dict]:
+            events.append("enter")
+            try:
+                yield {"who": "grandchild"}
+            finally:
+                events.append("exit")
+
+        parent = FastMCP("Parent")
+        child = FastMCP("Child")
+        grandchild = FastMCP("Grandchild", lifespan=grandchild_lifespan)
+
+        @grandchild.tool
+        def whoami(ctx: Context) -> dict:
+            return ctx.lifespan_context
+
+        child.mount(grandchild, "g")
+        parent.mount(child, "c")
+
+        async with Client(parent) as client:
+            result1 = await client.call_tool("c_g_whoami", {})
+            result2 = await client.call_tool("c_g_whoami", {})
+
+        assert result1.data == {"who": "grandchild"}
+        assert result2.data == {"who": "grandchild"}
+        # Lifespan is entered once at startup and exited once at teardown,
+        # not per-call and not per-mount level.
+        assert events == ["enter", "exit"]
+
+
 class TestMountedServerDocketBehavior:
     """Regression tests for mounted server lifecycle behavior.
 

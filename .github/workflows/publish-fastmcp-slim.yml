@@ -1,0 +1,30 @@
+name: Publish fastmcp-slim to PyPI
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  pypi-publish:
+    name: Upload fastmcp-slim to PyPI
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Build fastmcp-slim
+        run: uv build --package fastmcp-slim
+
+      - name: Publish fastmcp-slim to PyPI
+        run: uv publish -v dist/fastmcp_slim-*.tar.gz dist/fastmcp_slim-*.whl

@@ -140,6 +140,35 @@ class TestObjectTypes:
         generated_type = json_schema_to_type(schema)
         assert generated_type == expected_type
 
+    @pytest.mark.parametrize(
+        "input_type, expected_type",
+        [
+            # list[dict] roundtrips correctly (not list[Root()])
+            (list[dict], list[dict[str, Any]]),
+            # list[dict[str, Any]] stays the same
+            (list[dict[str, Any]], list[dict[str, Any]]),
+            # list[dict[str, str]] preserves value type
+            (list[dict[str, str]], list[dict[str, str]]),
+            # list[dict[str, int]] preserves value type
+            (list[dict[str, int]], list[dict[str, int]]),
+        ],
+    )
+    def test_list_of_dict_types_roundtrip(self, input_type, expected_type):
+        """Ensure list[dict] schemas produce dict types, not dataclasses (issue #3867)."""
+        schema = TypeAdapter(input_type).json_schema()
+        generated_type = json_schema_to_type(schema)
+        assert generated_type == expected_type
+
+    def test_list_dict_validates_data(self):
+        """list[dict] schema should validate actual dict data, not produce Root() (issue #3867)."""
+        schema = TypeAdapter(list[dict]).json_schema()
+        generated_type = json_schema_to_type(schema)
+        validator = TypeAdapter(generated_type)
+        result = validator.validate_python(
+            [{"city": "NYC", "temp": 72}, {"city": "LA", "temp": 85}]
+        )
+        assert result == [{"city": "NYC", "temp": 72}, {"city": "LA", "temp": 85}]
+
     def test_object_accepts_valid(self, simple_object):
         validator = TypeAdapter(simple_object)
         result = validator.validate_python({"name": "test", "age": 30})

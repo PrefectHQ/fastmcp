@@ -6,11 +6,13 @@ from mcp.types import (
     AudioContent,
     CreateMessageRequestParams,
     CreateMessageResult,
+    EmbeddedResource,
     ImageContent,
     ModelHint,
     ModelPreferences,
     SamplingMessage,
     TextContent,
+    TextResourceContents,
     ToolUseContent,
 )
 from openai import AsyncOpenAI
@@ -25,6 +27,7 @@ from openai.types.chat import (
     ChatCompletionUserMessageParam,
 )
 from openai.types.chat.chat_completion import Choice
+from pydantic import AnyUrl
 
 from fastmcp.client.sampling.handlers.openai import (
     OpenAISamplingHandler,
@@ -316,3 +319,25 @@ async def test_chat_completion_to_create_message_result():
         role="assistant",
         model="gpt-4o-mini",
     )
+
+
+def test_convert_messages_raises_on_unsupported_content_type():
+    """Unsupported content types should raise ValueError.
+
+    SamplingMessage validates content against a union of known types, so
+    we use model_construct to bypass validation and simulate a future
+    SDK content type that the handler doesn't know about yet.
+    """
+    embedded = EmbeddedResource(
+        type="resource",
+        resource=TextResourceContents(
+            uri=AnyUrl("file:///test.txt"), text="hello", mimeType="text/plain"
+        ),
+    )
+    msg = SamplingMessage.model_construct(
+        role="user",
+        content=[TextContent(type="text", text="prefix"), embedded],
+    )
+
+    with pytest.raises(ValueError, match="Unsupported content type for OpenAI"):
+        OpenAISamplingHandler._convert_to_openai_messages(None, [msg])

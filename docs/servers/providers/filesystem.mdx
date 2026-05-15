@@ -34,13 +34,13 @@ from pathlib import Path
 from fastmcp import FastMCP
 from fastmcp.server.providers import FileSystemProvider
 
-mcp = FastMCP("MyServer", providers=[FileSystemProvider(Path(__file__).parent / "mcp")])
+mcp = FastMCP("MyServer", providers=[FileSystemProvider(Path(__file__).parent / "components")])
 ```
 
-In your `mcp/` directory, create Python files with decorated functions.
+In your `components/` directory, create Python files with decorated functions.
 
 ```python
-# mcp/tools/greet.py
+# components/tools/greet.py
 from fastmcp.tools import tool
 
 @tool
@@ -114,7 +114,7 @@ The decorator supports: `uri` (required), `name`, `title`, `description`, `icons
 
 Mark a function as a prompt template.
 
-```python
+```python test="skip"
 from fastmcp.prompts import prompt
 
 @prompt
@@ -139,7 +139,7 @@ The decorator supports: `name`, `title`, `description`, `icons`, `tags`, and `me
 The directory structure is purely organizational. The provider recursively scans all `.py` files regardless of which subdirectory they're in. Subdirectories like `tools/`, `resources/`, and `prompts/` are optional conventions that help you organize code.
 
 ```
-mcp/
+components/
 ├── tools/
 │   ├── greeting.py      # @tool functions
 │   └── calculator.py    # @tool functions
@@ -152,7 +152,7 @@ mcp/
 You can also put all components in a single file or organize by feature rather than type.
 
 ```
-mcp/
+components/
 ├── user_management.py   # @tool, @resource, @prompt for users
 ├── billing.py           # @tool, @resource for billing
 └── analytics.py         # @tool for analytics
@@ -176,9 +176,9 @@ The provider follows these rules when scanning:
 If your directory contains an `__init__.py` file, the provider imports files as proper Python package members. This means relative imports work correctly within your components directory.
 
 ```python
-# mcp/__init__.py exists
+# components/__init__.py exists
 
-# mcp/tools/greeting.py
+# components/tools/greeting.py
 from ..helpers import format_name  # Relative imports work
 
 @tool
@@ -197,7 +197,7 @@ from pathlib import Path
 
 from fastmcp.server.providers import FileSystemProvider
 
-provider = FileSystemProvider(Path(__file__).parent / "mcp", reload=True)
+provider = FileSystemProvider(Path(__file__).parent / "components", reload=True)
 ```
 
 With `reload=True`, the provider:
@@ -227,7 +227,7 @@ A complete example is available in the repository at `examples/filesystem-provid
 ```
 examples/filesystem-provider/
 ├── server.py                    # Server entry point
-└── mcp/
+└── components/
     ├── tools/
     │   ├── greeting.py          # greet, farewell tools
     │   └── calculator.py        # add, multiply tools
@@ -246,7 +246,7 @@ from fastmcp import FastMCP
 from fastmcp.server.providers import FileSystemProvider
 
 provider = FileSystemProvider(
-    root=Path(__file__).parent / "mcp",
+    root=Path(__file__).parent / "components",
     reload=True,
 )
 

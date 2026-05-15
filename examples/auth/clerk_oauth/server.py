@@ -21,7 +21,7 @@ auth = ClerkProvider(
     domain=os.getenv("FASTMCP_SERVER_AUTH_CLERK_DOMAIN") or "",
     client_id=os.getenv("FASTMCP_SERVER_AUTH_CLERK_CLIENT_ID") or "",
     client_secret=os.getenv("FASTMCP_SERVER_AUTH_CLERK_CLIENT_SECRET") or "",
-    base_url="http://localhost:8000",
+    base_url="http://127.0.0.1:8000",
     # redirect_path="/auth/callback",  # Default path - change if using a different callback URL
     # Optional: specify required scopes (defaults to ["openid", "email", "profile"])
     # required_scopes=["openid", "email", "profile", "public_metadata"],

@@ -63,11 +63,49 @@ class TestClientToolTracing:
         assert client_span.attributes is not None
         # Standard MCP semantic conventions
         assert client_span.attributes["mcp.method.name"] == "tools/call"
-        # Standard RPC semantic conventions
-        assert client_span.attributes["rpc.system"] == "mcp"
-        assert client_span.attributes["rpc.method"] == "tools/call"
+        # gen_ai semantic conventions
+        assert client_span.attributes["gen_ai.tool.name"] == "add"
+        # RPC attributes must NOT be present
+        assert "rpc.system" not in client_span.attributes
+        assert "rpc.method" not in client_span.attributes
         # FastMCP-specific attributes
         assert client_span.attributes["fastmcp.component.key"] == "add"
+
+    async def test_call_tool_error_caught_by_client_span(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        """Tool error should be reflected on the client span via isError check."""
+        server = FastMCP("test-server")
+
+        @server.tool()
+        def failing_tool() -> str:
+            raise ValueError("boom")
+
+        client = Client(server)
+        async with client:
+            with pytest.raises(ToolError):
+                await client.call_tool("failing_tool", {})
+
+        spans = trace_exporter.get_finished_spans()
+
+        # Find the client span (from call_tool_mcp)
+        client_spans = [
+            s
+            for s in spans
+            if s.name == "tools/call failing_tool"
+            and s.attributes is not None
+            and "fastmcp.server.name" not in s.attributes
+        ]
+
+        # Exactly one client span should exist (no duplicate from call_tool)
+        assert len(client_spans) == 1, (
+            "There should be exactly one client span for call_tool"
+        )
+
+        error_span = client_spans[0]
+        assert error_span.status.status_code == StatusCode.ERROR
+        assert error_span.attributes is not None
+        assert error_span.attributes["error.type"] == "tool_error"
 
 
 class TestClientResourceTracing:
@@ -90,8 +128,8 @@ class TestClientResourceTracing:
         spans = trace_exporter.get_finished_spans()
         span_names = [s.name for s in spans]
 
-        # Client should create "resources/read data://config" span
-        assert "resources/read data://config" in span_names
+        # Client should create "resources/read" span (URI in attributes, not name)
+        assert "resources/read" in span_names
 
     async def test_read_resource_span_attributes(
         self, trace_exporter: InMemorySpanExporter
@@ -113,7 +151,7 @@ class TestClientResourceTracing:
             (
                 s
                 for s in spans
-                if s.name.startswith("resources/read data://")
+                if s.name == "resources/read"
                 and s.attributes is not None
                 and "fastmcp.server.name" not in s.attributes
             ),
@@ -124,9 +162,9 @@ class TestClientResourceTracing:
         # Standard MCP semantic conventions
         assert client_span.attributes["mcp.method.name"] == "resources/read"
         assert "data://" in str(client_span.attributes["mcp.resource.uri"])
-        # Standard RPC semantic conventions
-        assert client_span.attributes["rpc.system"] == "mcp"
-        assert client_span.attributes["rpc.method"] == "resources/read"
+        # RPC attributes must NOT be present
+        assert "rpc.system" not in client_span.attributes
+        assert "rpc.method" not in client_span.attributes
         # FastMCP-specific attributes
         # The URI may be normalized with trailing slash
         assert "data://" in str(client_span.attributes["fastmcp.component.key"])
@@ -183,9 +221,11 @@ class TestClientPromptTracing:
         assert client_span.attributes is not None
         # Standard MCP semantic conventions
         assert client_span.attributes["mcp.method.name"] == "prompts/get"
-        # Standard RPC semantic conventions
-        assert client_span.attributes["rpc.system"] == "mcp"
-        assert client_span.attributes["rpc.method"] == "prompts/get"
+        # gen_ai semantic conventions
+        assert client_span.attributes["gen_ai.prompt.name"] == "welcome"
+        # RPC attributes must NOT be present
+        assert "rpc.system" not in client_span.attributes
+        assert "rpc.method" not in client_span.attributes
         # FastMCP-specific attributes
         assert client_span.attributes["fastmcp.component.key"] == "welcome"
 
@@ -242,7 +282,7 @@ class TestClientServerSpanHierarchy:
         assert server_span.kind == SpanKind.SERVER, "Server span should be SERVER kind"
 
         # Verify the spans have different characteristics
-        assert client_span.attributes["rpc.method"] == "tools/call"
+        assert client_span.attributes["mcp.method.name"] == "tools/call"
         assert server_span.attributes["fastmcp.server.name"] == "test-server"
 
     async def test_trace_context_propagation(
@@ -380,7 +420,7 @@ class TestClientErrorTracing:
             (
                 s
                 for s in spans
-                if s.name.startswith("resources/read data://fail")
+                if s.name == "resources/read"
                 and s.attributes is not None
                 and "fastmcp.server.name" not in s.attributes
             ),
@@ -391,7 +431,7 @@ class TestClientErrorTracing:
             (
                 s
                 for s in spans
-                if s.name.startswith("resources/read data://fail")
+                if s.name == "resources/read"
                 and s.attributes is not None
                 and "fastmcp.server.name" in s.attributes
             ),

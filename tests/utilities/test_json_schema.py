@@ -1,3 +1,4 @@
+import copy
 from unittest.mock import patch
 
 from jsonref import replace_refs
@@ -50,6 +51,17 @@ class TestPruneParam:
         }
         result = _prune_param(schema, "foo")
         assert "required" not in result
+
+    def test_does_not_mutate_input(self):
+        """Test that _prune_param does not mutate the original schema."""
+        schema = {
+            "type": "object",
+            "properties": {"a": {"type": "string"}, "b": {"type": "integer"}},
+            "required": ["a", "b"],
+        }
+        original = copy.deepcopy(schema)
+        _prune_param(schema, "a")
+        assert schema == original
 
 
 class TestDereferenceRefs:
@@ -115,6 +127,42 @@ class TestDereferenceRefs:
         # Root should be resolved but nested refs preserved
         assert result.get("type") == "object"
         assert "$defs" in result  # $defs preserved for circular refs
+
+    def test_falls_back_for_circular_json_pointer_refs(self):
+        """Test that circular JSON Pointer $ref (non-$defs) does not crash.
+
+        .NET/System.Text.Json emits $ref with JSON Pointer paths like
+        #/properties/nodes/items instead of $defs-based references.
+        Circular pointers must not cause a RecursionError.
+        """
+        schema = {
+            "type": "object",
+            "properties": {
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "value": {"type": "string"},
+                            "children": {
+                                "type": "array",
+                                "items": {"$ref": "#/properties/nodes/items"},
+                            },
+                        },
+                    },
+                },
+            },
+        }
+        result = dereference_refs(schema)
+
+        # Should return the schema without crashing; circular refs stay unresolved
+        assert result["type"] == "object"
+        assert "properties" in result
+        # The circular $ref should be preserved (not inlined)
+        children_items = result["properties"]["nodes"]["items"]["properties"][
+            "children"
+        ]["items"]
+        assert children_items["$ref"] == "#/properties/nodes/items"
 
     def test_preserves_sibling_keywords(self):
         """Test that sibling keywords (default, description) are preserved.
@@ -449,6 +497,107 @@ class TestCompressSchema:
         assert "title" not in compressed["properties"]["dashboard_id"]
         assert "title" not in compressed["properties"]["title"]
         assert "title" not in compressed["properties"]["type"]
+
+    def test_prune_titles_on_bare_metadata_node(self):
+        """Pydantic emits `{"title": "X"}` for Any-typed fields with no sibling
+        `type`/`properties`. Gemini 2.5 Flash rejects these with
+        MALFORMED_FUNCTION_CALL, so we need to strip the title even without a
+        schema keyword — as long as every remaining key is metadata."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "anyfield": {"title": "Anyfield"},
+                "described_any": {"title": "Described", "description": "anything"},
+            },
+        }
+
+        compressed = compress_schema(schema, prune_titles=True)
+
+        assert "title" not in compressed["properties"]["anyfield"]
+        assert "title" not in compressed["properties"]["described_any"]
+        # description survives — it's also metadata but prune_titles only
+        # targets "title" specifically
+        assert compressed["properties"]["described_any"]["description"] == "anything"
+
+    def test_prune_titles_on_draft07_and_legacy_keywords(self):
+        """Sub-schemas under draft-07 and 2019-09+ keywords that previous
+        drafts still use must be treated as schemas, not opaque payload —
+        `dependencies`, `additionalItems`, `contentSchema` all hold
+        sub-schemas in at least some JSON Schema drafts."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "payload": {
+                    "type": "string",
+                    "contentMediaType": "application/json",
+                    "contentSchema": {
+                        "type": "object",
+                        "title": "Payload",
+                    },
+                },
+                "items_field": {
+                    "type": "array",
+                    "items": [{"type": "string", "title": "First"}],
+                    "additionalItems": {"type": "number", "title": "Extra"},
+                },
+            },
+            "dependencies": {
+                "credit_card": {
+                    "type": "object",
+                    "title": "HasBillingAddress",
+                    "required": ["billing_address"],
+                }
+            },
+        }
+
+        compressed = compress_schema(schema, prune_titles=True)
+
+        # title metadata stripped from sub-schemas reachable through
+        # draft-07 / 2019-09+ keywords
+        assert "title" not in compressed["properties"]["payload"]["contentSchema"]
+        assert "title" not in compressed["properties"]["items_field"]["items"][0]
+        assert "title" not in compressed["properties"]["items_field"]["additionalItems"]
+        assert "title" not in compressed["dependencies"]["credit_card"]
+
+    def test_prune_titles_preserves_user_extension_payloads(self):
+        """User extensions (json_schema_extra, x-* vendor keys) carry opaque
+        payloads that may look metadata-shaped. They must not be touched."""
+        schema = {
+            "type": "object",
+            "x-ui": {"title": "Dashboard", "description": "sidebar label"},
+            "properties": {
+                "config": {
+                    "type": "object",
+                    "x-widget": {"title": "Dropdown"},
+                }
+            },
+        }
+
+        compressed = compress_schema(schema, prune_titles=True)
+
+        assert compressed["x-ui"] == {
+            "title": "Dashboard",
+            "description": "sidebar label",
+        }
+        assert compressed["properties"]["config"]["x-widget"] == {"title": "Dropdown"}
+
+    def test_prune_titles_does_not_recurse_into_default_values(self):
+        """A user default that happens to be a dict shaped like schema metadata
+        must not be corrupted — `default` holds literal values, not sub-schemas."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "type": "object",
+                    "default": {"title": "My Dashboard", "type": "vis"},
+                }
+            },
+        }
+
+        compressed = compress_schema(schema, prune_titles=True)
+
+        default = compressed["properties"]["config"]["default"]
+        assert default == {"title": "My Dashboard", "type": "vis"}
 
     def test_title_pruning_with_nested_properties(self):
         """Test that nested property structures are handled correctly."""

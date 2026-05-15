@@ -413,7 +413,7 @@ class TestAzureJWTVerifier:
             == "https://login.microsoftonline.com/my-tenant-id/discovery/v2.0/keys"
         )
         assert verifier.issuer == "https://login.microsoftonline.com/my-tenant-id/v2.0"
-        assert verifier.audience == "my-client-id"
+        assert verifier.audience == ["my-client-id", "api://my-client-id"]
         assert verifier.algorithm == "RS256"
         assert verifier.required_scopes == ["access_as_user"]
 
@@ -431,12 +431,75 @@ class TestAzureJWTVerifier:
         token = key_pair.create_token(
             subject="test-user",
             issuer="https://login.microsoftonline.com/my-tenant-id/v2.0",
+            audience="api://my-client-id",
+            additional_claims={"scp": "access_as_user"},
+        )
+        result = await verifier.load_access_token(token)
+        assert result is not None
+        assert "access_as_user" in result.scopes
+
+    async def test_validates_token_with_client_id_audience(self):
+        """Azure AD v2 tokens use the bare client_id GUID as audience."""
+        key_pair = RSAKeyPair.generate()
+        verifier = AzureJWTVerifier(
+            client_id="my-client-id",
+            tenant_id="my-tenant-id",
+            required_scopes=["access_as_user"],
+        )
+        verifier.public_key = key_pair.public_key
+        verifier.jwks_uri = None
+
+        token = key_pair.create_token(
+            subject="test-user",
+            issuer="https://login.microsoftonline.com/my-tenant-id/v2.0",
             audience="my-client-id",
             additional_claims={"scp": "access_as_user"},
         )
         result = await verifier.load_access_token(token)
         assert result is not None
         assert "access_as_user" in result.scopes
+
+    async def test_validates_token_with_custom_identifier_uri_audience(self):
+        """Custom identifier_uri (e.g. Bicep deployments) accepted as audience."""
+        key_pair = RSAKeyPair.generate()
+        verifier = AzureJWTVerifier(
+            client_id="my-client-id",
+            tenant_id="my-tenant-id",
+            required_scopes=["read"],
+            identifier_uri="api://my-app-name",
+        )
+        verifier.public_key = key_pair.public_key
+        verifier.jwks_uri = None
+
+        token = key_pair.create_token(
+            subject="test-user",
+            issuer="https://login.microsoftonline.com/my-tenant-id/v2.0",
+            audience="api://my-app-name",
+            additional_claims={"scp": "read"},
+        )
+        result = await verifier.load_access_token(token)
+        assert result is not None
+        assert "read" in result.scopes
+
+    async def test_rejects_token_with_wrong_audience(self):
+        """Tokens for a different application must be rejected."""
+        key_pair = RSAKeyPair.generate()
+        verifier = AzureJWTVerifier(
+            client_id="my-client-id",
+            tenant_id="my-tenant-id",
+            required_scopes=["read"],
+        )
+        verifier.public_key = key_pair.public_key
+        verifier.jwks_uri = None
+
+        token = key_pair.create_token(
+            subject="test-user",
+            issuer="https://login.microsoftonline.com/my-tenant-id/v2.0",
+            audience="some-other-app-id",
+            additional_claims={"scp": "read"},
+        )
+        result = await verifier.load_access_token(token)
+        assert result is None
 
     def test_scopes_supported_returns_prefixed_form(self):
         verifier = AzureJWTVerifier(

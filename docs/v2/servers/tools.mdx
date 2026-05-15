@@ -792,15 +792,17 @@ Annotations serve several purposes in client applications:
 - Describing the safety profile of tools (destructive vs. non-destructive)
 - Signaling if tools interact with external systems
 
-You can add annotations to a tool using the `annotations` parameter in the `@mcp.tool` decorator:
+You can add annotations to a tool using the `annotations` parameter in the `@mcp.tool` decorator. FastMCP accepts either a plain dict or `ToolAnnotations`; the examples below use `ToolAnnotations` for consistency and stronger editor/type support.
 
 ```python
+from mcp.types import ToolAnnotations
+
 @mcp.tool(
-    annotations={
-        "title": "Calculate Sum",
-        "readOnlyHint": True,
-        "openWorldHint": False
-    }
+    annotations=ToolAnnotations(
+        title="Calculate Sum",
+        readOnlyHint=True,
+        openWorldHint=False,
+    )
 )
 def calculate_sum(a: float, b: float) -> float:
     """Add two numbers together."""
@@ -836,7 +838,7 @@ from mcp.types import ToolAnnotations
 
 mcp = FastMCP("Data Server")
 
-@mcp.tool(annotations={"readOnlyHint": True})
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def get_user(user_id: str) -> dict:
     """Retrieve user information by ID."""
     return {"id": user_id, "name": "Alice"}
@@ -858,7 +860,7 @@ def update_user(user_id: str, name: str) -> dict:
     """Update user information."""
     return {"id": user_id, "name": name, "updated": True}
 
-@mcp.tool(annotations={"destructiveHint": True})
+@mcp.tool(annotations=ToolAnnotations(destructiveHint=True))
 def delete_user(user_id: str) -> dict:
     """Permanently delete a user account."""
     return {"deleted": user_id}

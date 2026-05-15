@@ -40,7 +40,7 @@ For custom persistence, override the storage methods::
 
 ## Classes
 
-### `FileUpload` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/file_upload.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `FileUpload` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/file_upload.py#L102" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A Provider that adds file upload capabilities to a server.
@@ -77,7 +77,7 @@ Example::
 
 **Methods:**
 
-#### `on_store` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/file_upload.py#L174" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_store` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/file_upload.py#L183" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_store(self, files: list[dict[str, Any]], ctx: Context) -> list[dict[str, Any]]
@@ -100,7 +100,7 @@ implementation stores files in memory, scoped by
 - ``size_display``, ``uploaded_at``).
 
 
-#### `on_list` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/file_upload.py#L207" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_list` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/file_upload.py#L216" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_list(self, ctx: Context) -> list[dict[str, Any]]
@@ -118,7 +118,7 @@ implementation returns files from the current scope.
 - List of file summary dicts.
 
 
-#### `on_read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/file_upload.py#L223" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/apps/file_upload.py#L232" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_read(self, name: str, ctx: Context) -> dict[str, Any]

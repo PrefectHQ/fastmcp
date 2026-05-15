@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <title>Prefab</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/npm/@prefecthq/prefab-ui@0.19.0/dist/app/renderer.css">
+  <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@prefecthq/prefab-ui@0.19.0/dist/app/renderer.js"></script>
+</head>
+<body>
+  <div id="root" style="max-width:64rem;margin:0 auto;padding:2rem"></div>
+  <script id="prefab:initial-data" type="application/json">{
+  "$prefab": {
+    "version": "0.2"
+  },
+  "view": {
+    "cssClass": "pf-app-root",
+    "type": "Div",
+    "children": [
+      {
+        "cssClass": "p-6",
+        "type": "Column",
+        "children": [
+          {
+            "type": "PieChart",
+            "data": [
+              {
+                "category": "Bug",
+                "count": 42
+              },
+              {
+                "category": "Feature",
+                "count": 28
+              },
+              {
+                "category": "Docs",
+                "count": 15
+              },
+              {
+                "category": "Infra",
+                "count": 10
+              }
+            ],
+            "dataKey": "count",
+            "nameKey": "category",
+            "height": 240,
+            "innerRadius": 50,
+            "showLabel": false,
+            "paddingAngle": 0,
+            "showLegend": true,
+            "showTooltip": true,
+            "animate": true
+          }
+        ]
+      }
+    ]
+  }
+}</script>
+</body>
+</html>

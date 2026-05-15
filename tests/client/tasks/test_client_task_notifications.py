@@ -7,6 +7,7 @@ and invoke user callbacks.
 
 import asyncio
 import time
+from datetime import datetime, timezone
 
 import pytest
 from mcp.types import GetTaskResult
@@ -207,3 +208,28 @@ async def test_notification_with_failed_task(task_notification_server):
         assert (
             status.statusMessage is not None
         )  # Error details in statusMessage per spec
+
+
+async def test_wait_returns_on_input_required(task_notification_server):
+    """wait() should return immediately when task enters input_required, not hang."""
+    async with Client(task_notification_server) as client:
+        task = await client.call_tool("quick_task", {"value": 1}, task=True)
+
+        # Directly inject an input_required status into the cache and signal the event
+        now = datetime.now(timezone.utc)
+        input_required_status = GetTaskResult(
+            taskId=task._task_id,
+            status="input_required",
+            statusMessage="Waiting for user input",
+            createdAt=now,
+            lastUpdatedAt=now,
+            ttl=None,
+        )
+        task._status_cache = input_required_status
+        if task._status_event is None:
+            task._status_event = asyncio.Event()
+        task._status_event.set()
+
+        # Should return immediately with input_required, not hang for 300s
+        status = await task.wait(timeout=2.0)
+        assert status.status == "input_required"

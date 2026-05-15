@@ -7,10 +7,10 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "src/**"
+      - "fastmcp_slim/**"
       - "tests/**"
-      - "uv.lock"
       - "pyproject.toml"
+      - "uv.lock"
       - ".github/workflows/**"
 
   # run on all pull requests because these checks are required and will block merges otherwise
@@ -117,3 +117,130 @@ jobs:
           FASTMCP_GITHUB_TOKEN: ${{ secrets.FASTMCP_GITHUB_TOKEN }}
           FASTMCP_TEST_AUTH_GITHUB_CLIENT_ID: ${{ secrets.FASTMCP_TEST_AUTH_GITHUB_CLIENT_ID }}
           FASTMCP_TEST_AUTH_GITHUB_CLIENT_SECRET: ${{ secrets.FASTMCP_TEST_AUTH_GITHUB_CLIENT_SECRET }}
+
+  package_install_smoke:
+    name: "Package install smoke"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup uv
+        uses: ./.github/actions/setup-uv
+        with:
+          resolution: locked
+
+      - name: Build package wheels
+        run: uv build --all-packages --wheel --out-dir /tmp/fastmcp-dist
+
+      - name: Install bare slim wheel
+        run: |
+          uv venv /tmp/fastmcp-slim-bare-smoke
+          SLIM_WHEEL=$(ls /tmp/fastmcp-dist/fastmcp_slim-*.whl)
+          uv pip install --python /tmp/fastmcp-slim-bare-smoke/bin/python "$SLIM_WHEEL"
+          /tmp/fastmcp-slim-bare-smoke/bin/python - <<'PY'
+          from importlib.metadata import entry_points
+
+          import fastmcp
+          import fastmcp.settings
+
+          assert any(ep.name == "fastmcp" for ep in entry_points(group="console_scripts"))
+
+          try:
+              from fastmcp.cli import app
+          except ImportError as exc:
+              assert "FastMCP CLI support is not installed" in str(exc)
+          else:
+              raise AssertionError(f"bare fastmcp-slim unexpectedly imported CLI app {app!r}")
+
+          try:
+              fastmcp.FastMCP
+          except ImportError as exc:
+              assert "fastmcp-slim[server]" in str(exc)
+          else:
+              raise AssertionError("bare fastmcp-slim unexpectedly imported FastMCP")
+          PY
+
+      - name: Install client slim wheel
+        run: |
+          uv venv /tmp/fastmcp-slim-client-smoke
+          SLIM_WHEEL=$(ls /tmp/fastmcp-dist/fastmcp_slim-*.whl)
+          uv pip install --python /tmp/fastmcp-slim-client-smoke/bin/python "${SLIM_WHEEL}[client]"
+          /tmp/fastmcp-slim-client-smoke/bin/python - <<'PY'
+          from importlib.metadata import entry_points
+
+          from fastmcp import Client
+          from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
+          from fastmcp.mcp_config import MCPConfig
+
+          assert any(ep.name == "fastmcp" for ep in entry_points(group="console_scripts"))
+
+          try:
+              from fastmcp.cli import app
+          except ImportError as exc:
+              assert "FastMCP CLI support is not installed" in str(exc)
+          else:
+              raise AssertionError(f"client-only slim unexpectedly imported CLI app {app!r}")
+
+          assert Client("https://example.com/mcp")
+          assert StreamableHttpTransport("https://example.com/mcp")
+          assert StdioTransport(command="uvx", args=["demo"])
+          assert MCPConfig.from_dict({"mcpServers": {"demo": {"url": "https://example.com/mcp"}}})
+
+          try:
+              from fastmcp import FastMCP
+          except ImportError as exc:
+              assert "fastmcp-slim[server]" in str(exc)
+          else:
+              raise AssertionError(f"client-only slim unexpectedly imported {FastMCP!r}")
+          PY
+
+      - name: Install server slim wheel
+        run: |
+          uv venv /tmp/fastmcp-slim-server-smoke
+          SLIM_WHEEL=$(ls /tmp/fastmcp-dist/fastmcp_slim-*.whl)
+          uv pip install --python /tmp/fastmcp-slim-server-smoke/bin/python "${SLIM_WHEEL}[server]"
+          /tmp/fastmcp-slim-server-smoke/bin/python - <<'PY'
+          from importlib.metadata import entry_points
+
+          from fastmcp import FastMCP
+          from fastmcp.cli import app
+
+          assert any(
+              ep.name == "fastmcp" and ep.value == "fastmcp.cli:app"
+              for ep in entry_points(group="console_scripts")
+          )
+
+          mcp = FastMCP("smoke")
+          assert app is not None
+          assert mcp.name == "smoke"
+          PY
+
+      - name: Install full package from matching local wheels
+        run: |
+          uv venv /tmp/fastmcp-full-smoke
+          FULL_WHEEL=$(ls /tmp/fastmcp-dist/fastmcp-*.whl)
+          uv pip install --python /tmp/fastmcp-full-smoke/bin/python --find-links /tmp/fastmcp-dist "$FULL_WHEEL"
+          /tmp/fastmcp-full-smoke/bin/python - <<'PY'
+          from importlib.metadata import entry_points
+          from importlib.metadata import requires
+
+          from fastmcp import Client, FastMCP
+          from fastmcp.client.client import CallToolResult
+          from fastmcp.exceptions import ToolError
+
+          fastmcp_reqs = requires("fastmcp") or []
+          assert any("fastmcp-slim[client,server]" in req for req in fastmcp_reqs)
+          assert not any("fastmcp-slim[full" in req for req in fastmcp_reqs)
+
+          assert any(
+              ep.name == "fastmcp" and ep.value == "fastmcp.cli:app"
+              for ep in entry_points(group="console_scripts")
+          )
+
+          assert Client("https://example.com/mcp")
+          assert FastMCP("smoke").name == "smoke"
+          assert CallToolResult is not None
+          assert ToolError is not None
+          PY

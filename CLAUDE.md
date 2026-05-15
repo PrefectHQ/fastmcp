@@ -27,7 +27,7 @@ uv run prek run --all-files          # Ruff + Prettier + ty
 
 | Path              | Purpose                                |
 | ----------------- | -------------------------------------- |
-| `src/fastmcp/`    | Library source code                    |
+| `fastmcp_slim/fastmcp/` | Library source code                    |
 | `├─server/`       | Server implementation                  |
 | `│ ├─auth/`       | Authentication providers               |
 | `│ └─middleware/` | Error handling, logging, rate limiting |
@@ -50,6 +50,8 @@ When modifying MCP functionality, changes typically need to be applied across al
 - **Resource Templates** (`src/resources/`)
 - **Prompts** (`src/prompts/`)
 
+**Before writing cross-component logic (dedupe, grouping, lookups, identity checks), read `FastMCPComponent` in `fastmcp_slim/fastmcp/utilities/components.py`.** The base class defines the shared surface — `name`, `version`, `tags`, `meta`, and critically the `key` property which is the canonical MCP identity (encodes type, identifier, and version). Prefer `item.key` over ad-hoc `name or uri or uri_template` fallbacks; overrides in `Resource` and `ResourceTemplate` already handle URI-based identity, and `.key` includes the version suffix so variants of the same component don't falsely collide.
+
 ## Development Rules
 
 **Read `CONTRIBUTING.md` before opening issues or PRs.** It describes when PRs are appropriate, what we expect from enhancement proposals, and what we'll close without review.
@@ -63,6 +65,9 @@ When modifying MCP functionality, changes typically need to be applied across al
 - **NEVER** force-push on collaborative repos
 - **ALWAYS** run prek before PRs
 - **NEVER** create a release, comment on an issue, or open a PR unless specifically instructed to do so.
+- **NEVER** merge a PR marked as do-not-merge or draft. Check title, body, AND labels for `[DNM]`, `DNM`, `DO NOT MERGE`, `DON'T MERGE`, `DONT MERGE`, `do-not-merge`, `dont-merge`, `[DRAFT]`, or `DRAFT` (case-insensitive, any variation — some authors use `[DRAFT]` in the title even when `isDraft` is false). Authors use these as hard stops — respect them even if CI is green and review looks clean. When triaging a batch of PRs, filter these out up front AND re-check each one's labels immediately before merging, since labels can change mid-session.
+- **ALWAYS** read review-bot comments before approving a PR. CodeRabbit and chatgpt-codex-connector (Codex) leave substantive review comments on most PRs in this repo — these bots have read the diff and often flag real issues that aren't in the PR description. Use `gh pr view <num> --comments` and read the bot feedback as part of review. Unlike proposed solutions from issue reporters, review-bot feedback should be evaluated on its merits, not discounted.
+- **Be constructively skeptical of bot review comments on your own PRs.** CodeRabbit, Codex, and claude[bot] run a fresh review pass on every push, which means a PR with active churn can accumulate bot comments in a stream that never really ends — each fix surfaces a new edge case the next pass can flag. Most of the early feedback is real and worth acting on; diminishing returns set in fast. Evaluate each comment on its merits, the same way you would a human reviewer: is this a real bug users will hit, or a hypothetical that requires an adversarial setup? Does the fix introduce more complexity than the problem? Has the bot missed context that's obvious to a human reader (a `*,` keyword-only marker, a design decision documented elsewhere, something already resolved on a later commit)? When a comment is pedantic, a false positive, or flagging something already fixed, reply on the thread explaining the reasoning and move on — don't keep iterating just because more comments arrive. If you find yourself three rounds deep and the feedback is shifting toward "what if someone does X" hypotheticals, you're past the point where each fix is improving the PR. Stop, document the contract as-is, and ship.
 
 ### Releases
 
@@ -81,6 +86,16 @@ Most releases target `main`, but maintenance or backport releases may target a d
 The handwritten notes are prepended above the auto-generated changelog and are the part that matters. Do not include a title in the notes body — the release title (`v{version}: {pun}`) already serves as the heading. Work with the maintainer to draft the notes — propose a draft, get feedback, iterate. Do not publish without the maintainer's sign-off.
 
 **Before drafting, always read recent existing releases** (`gh release list` then `gh release view <tag>`) to absorb the voice, structure, and level of detail. Each release builds on the tone of previous ones — don't guess at the style from these instructions alone.
+
+**To preview what PRs will be in the release** before it's cut, call the GitHub generate-notes API. This returns the exact auto-generated changelog that `--generate-notes` would append, so you can see the full PR list — useful for picking a pun theme and making sure nothing's been missed:
+
+```bash
+gh api -X POST repos/PrefectHQ/fastmcp/releases/generate-notes \
+  -f tag_name=v3.2.3 \
+  -f target_commitish=main \
+  -f previous_tag_name=v3.2.2 \
+  --jq '.body'
+```
 
 **Point releases** (3.0, 3.1, 3.2) get narrative prose: open with the theme of the release, then walk through headline features conceptually — what they enable, why they matter, how they fit together. Write it the way a blog post reads, not a changelog. Multiple paragraphs, code examples where they clarify.
 
@@ -132,9 +147,9 @@ The handwritten notes are prepended above the auto-generated changelog and are t
 - Uses Mintlify framework
 - Files must be in docs.json to be included
 - Do not manually modify `docs/python-sdk/**` — these files are auto-generated from source code by a bot and maintained via a long-lived PR. Do not include changes to these files in contributor PRs.
-- Do not manually modify `docs/public/schemas/**` or `src/fastmcp/utilities/mcp_server_config/v1/schema.json` — these are auto-generated and maintained via a long-lived PR.
+- Do not manually modify `docs/public/schemas/**` or `fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/schema.json` — these are auto-generated and maintained via a long-lived PR.
 - **Core Principle:** A feature doesn't exist unless it is documented!
-- When adding or modifying settings in `src/fastmcp/settings.py`, update `docs/more/settings.mdx` to match.
+- When adding or modifying settings in `fastmcp_slim/fastmcp/settings.py`, update `docs/more/settings.mdx` to match.
 
 ### Documentation Guidelines
 

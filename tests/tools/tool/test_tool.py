@@ -49,6 +49,7 @@ class TestToolFromFunction:
                     "mode": "forbidden",
                     "poll_interval": timedelta(seconds=5),
                 },
+                "run_in_thread": True,
             }
         )
 
@@ -100,6 +101,7 @@ class TestToolFromFunction:
                     "mode": "forbidden",
                     "poll_interval": timedelta(seconds=5),
                 },
+                "run_in_thread": True,
             }
         )
 
@@ -137,6 +139,7 @@ class TestToolFromFunction:
                     "mode": "forbidden",
                     "poll_interval": timedelta(seconds=5),
                 },
+                "run_in_thread": True,
             }
         )
 
@@ -174,6 +177,7 @@ class TestToolFromFunction:
                     "mode": "forbidden",
                     "poll_interval": timedelta(seconds=5),
                 },
+                "run_in_thread": True,
             }
         )
 
@@ -220,6 +224,7 @@ class TestToolFromFunction:
                     "mode": "forbidden",
                     "poll_interval": timedelta(seconds=5),
                 },
+                "run_in_thread": True,
             }
         )
 
@@ -279,7 +284,7 @@ class TestToolFromFunction:
                 "tags": set(),
                 "parameters": {
                     "additionalProperties": False,
-                    "properties": {"x": {"title": "X"}},
+                    "properties": {"x": {}},
                     "required": ["x"],
                     "type": "object",
                 },
@@ -287,6 +292,7 @@ class TestToolFromFunction:
                     "mode": "forbidden",
                     "poll_interval": timedelta(seconds=5),
                 },
+                "run_in_thread": True,
             }
         )
 
@@ -323,6 +329,7 @@ class TestToolFromFunction:
                     "mode": "forbidden",
                     "poll_interval": timedelta(seconds=5),
                 },
+                "run_in_thread": True,
             }
         )
 
@@ -381,6 +388,7 @@ class TestToolFromFunction:
                     "mode": "forbidden",
                     "poll_interval": timedelta(seconds=5),
                 },
+                "run_in_thread": True,
             }
         )
 

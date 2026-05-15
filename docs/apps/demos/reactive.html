@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <title>Prefab</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/npm/@prefecthq/prefab-ui@0.19.0/dist/app/renderer.css">
+  <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@prefecthq/prefab-ui@0.19.0/dist/app/renderer.js"></script>
+</head>
+<body>
+  <div id="root" style="max-width:64rem;margin:0 auto;padding:2rem"></div>
+  <script id="prefab:initial-data" type="application/json">{
+  "$prefab": {
+    "version": "0.2"
+  },
+  "view": {
+    "cssClass": "pf-app-root",
+    "type": "Div",
+    "children": [
+      {
+        "cssClass": "gap-4 p-6",
+        "let": {
+          "data": "{{ region == 'south' ? south : region == 'west' ? west : north }}"
+        },
+        "type": "Column",
+        "children": [
+          {
+            "cssClass": "gap-4 items-center",
+            "type": "Row",
+            "children": [
+              {
+                "cssClass": "w-40",
+                "name": "region",
+                "type": "Select",
+                "size": "default",
+                "disabled": false,
+                "required": false,
+                "invalid": false,
+                "children": [
+                  {
+                    "type": "SelectOption",
+                    "value": "north",
+                    "label": "North",
+                    "selected": false,
+                    "disabled": false
+                  },
+                  {
+                    "type": "SelectOption",
+                    "value": "south",
+                    "label": "South",
+                    "selected": false,
+                    "disabled": false
+                  },
+                  {
+                    "type": "SelectOption",
+                    "value": "west",
+                    "label": "West",
+                    "selected": false,
+                    "disabled": false
+                  }
+                ]
+              },
+              {
+                "cssClass": "ml-auto",
+                "name": "show_target",
+                "value": false,
+                "type": "Switch",
+                "size": "default",
+                "disabled": false,
+                "required": false
+              },
+              {
+                "cssClass": "text-sm text-muted-foreground",
+                "content": "Show target",
+                "type": "Text"
+              }
+            ]
+          },
+          {
+            "type": "BarChart",
+            "data": "{{ data }}",
+            "series": [
+              {
+                "dataKey": "sales",
+                "label": "Sales"
+              }
+            ],
+            "xAxis": "month",
+            "height": 200,
+            "stacked": false,
+            "horizontal": false,
+            "barRadius": 4,
+            "showLegend": true,
+            "showTooltip": true,
+            "animate": true,
+            "showGrid": true,
+            "showYAxis": true,
+            "yAxisFormat": "auto"
+          },
+          {
+            "type": "Condition",
+            "cases": [
+              {
+                "when": "{{ show_target }}",
+                "children": [
+                  {
+                    "type": "Metric",
+                    "label": "Q1 Target",
+                    "value": "$75,000"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "state": {
+    "region": "north",
+    "north": [
+      {
+        "month": "Jan",
+        "sales": 22000
+      },
+      {
+        "month": "Feb",
+        "sales": 25500
+      },
+      {
+        "month": "Mar",
+        "sales": 24200
+      }
+    ],
+    "south": [
+      {
+        "month": "Jan",
+        "sales": 5800
+      },
+      {
+        "month": "Feb",
+        "sales": 6400
+      },
+      {
+        "month": "Mar",
+        "sales": 5600
+      }
+    ],
+    "west": [
+      {
+        "month": "Jan",
+        "sales": 6000
+      },
+      {
+        "month": "Feb",
+        "sales": 6000
+      },
+      {
+        "month": "Mar",
+        "sales": 5600
+      }
+    ],
+    "show_target": true
+  }
+}</script>
+</body>
+</html>

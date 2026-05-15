@@ -10,6 +10,8 @@ import asyncio
 import mcp.types as mt
 import pytest
 from docket import Docket
+from mcp.types import Tool as MCPTool
+from mcp.types import ToolExecution
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -17,6 +19,7 @@ from fastmcp.prompts.base import PromptResult
 from fastmcp.resources.base import ResourceResult
 from fastmcp.server.dependencies import CurrentDocket, CurrentFastMCP
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
+from fastmcp.server.providers.proxy import ProxyTool
 from fastmcp.server.tasks import TaskConfig
 from fastmcp.tools.base import ToolResult
 
@@ -173,7 +176,10 @@ class TestMountedToolTasks:
         """Sync-only mounted tool returns error with task=True."""
         async with Client(parent_server) as client:
             task = await client.call_tool(
-                "child_sync_child_tool", {"message": "hello"}, task=True
+                "child_sync_child_tool",
+                {"message": "hello"},
+                task=True,
+                raise_on_error=False,
             )
 
             # Should return immediately with an error
@@ -571,6 +577,21 @@ class TestMountedTaskMetadata:
         assert child_mcp_tool.execution.taskSupport == "optional"
         assert parent_mcp_tool.execution.taskSupport == "optional"
 
+    async def test_proxy_tool_preserves_execution_metadata(self):
+        """ProxyTool.from_mcp_tool should propagate execution.taskSupport (#3569)."""
+        mcp_tool = MCPTool(
+            name="remote_task_tool",
+            description="A remote tool that supports tasks",
+            inputSchema={"type": "object", "properties": {}},
+            execution=ToolExecution(taskSupport="optional"),
+        )
+
+        proxy = ProxyTool.from_mcp_tool(lambda: None, mcp_tool)  # ty: ignore[invalid-argument-type]
+        result = proxy.to_mcp_tool(name=proxy.name)
+
+        assert result.execution is not None
+        assert result.execution.taskSupport == "optional"
+
 
 class TestMountedTaskConfigModes:
     """Test TaskConfig mode enforcement for mounted tools."""
@@ -645,7 +666,9 @@ class TestMountedTaskConfigModes:
     async def test_forbidden_mode_with_task_through_mount(self, parent_with_modes):
         """Forbidden mode tool degrades gracefully with task through mount."""
         async with Client(parent_with_modes) as client:
-            task = await client.call_tool("child_forbidden_tool", {}, task=True)
+            task = await client.call_tool(
+                "child_forbidden_tool", {}, task=True, raise_on_error=False
+            )
 
             # Should return immediately (graceful degradation)
             assert task.returned_immediately

@@ -36,7 +36,7 @@ def add(a: int, b: int) -> int:
 
 When this tool is registered, FastMCP automatically:
 - Uses the function name (`add`) as the tool name.
-- Uses the function's docstring (`Adds two integer numbers...`) as the tool description.
+- Parses the function's docstring for the tool description and, if present, per-parameter descriptions (see [Docstring Descriptions](#docstring-descriptions)).
 - Generates an input schema based on the function's parameters and type annotations.
 - Handles parameter validation and error reporting.
 
@@ -70,7 +70,7 @@ def search_products_implementation(query: str, category: str | None = None) -> l
 </ParamField>
 
 <ParamField body="description" type="str | None">
-  Provides the description exposed via MCP. If set, the function's docstring is ignored for this purpose
+  Provides the description exposed via MCP. If set, the function's docstring is ignored for the tool description, though docstring-derived parameter descriptions still apply (see [Docstring Descriptions](#docstring-descriptions)).
 </ParamField>
 
 <ParamField body="tags" type="set[str] | None">
@@ -132,6 +132,10 @@ def search_products_implementation(query: str, category: str | None = None) -> l
 
   Optional JSON schema for the tool's output. When provided, the tool must return structured output matching this schema. If not provided, FastMCP automatically generates a schema from the function's return type annotation. See [Output Schemas](#output-schemas) for details.
 </ParamField>
+
+<ParamField body="run_in_thread" type="bool" default="True">
+  Applies to sync tool functions only. When `True` (default), sync functions are dispatched to a thread pool so they don't block the event loop. Set to `False` to run the function inline on the event loop thread — useful for libraries with thread affinity like Windows COM (`pywin32`, `uiautomation`, `comtypes`), `tkinter`, or certain GPU/driver bindings. Ignored for async functions, which always run on the event loop. See [Thread affinity](#thread-affinity) for details.
+</ParamField>
 </Card>
 
 ### Using with Methods
@@ -174,6 +178,28 @@ def slow_tool(x: int) -> int:
 ```
 
 For I/O-bound operations like network requests or database queries, async tools are still preferred since they're more efficient than threadpool dispatch. Use sync tools when working with synchronous libraries or for simple operations where the threading overhead doesn't matter.
+
+### Thread affinity
+
+This section applies to sync tools only. Async tools already run on the event loop and are not affected.
+
+Some libraries bind state to the thread they're first used from and break when called from a different thread. The most common case is Windows COM — libraries like `uiautomation`, `comtypes`, and parts of `pywin32` require `CoInitialize` to have been called on the current thread, and worker-pool threads don't initialize COM by default. Similar constraints apply to `tkinter`, some GPU bindings (CUDA contexts), and certain hardware drivers.
+
+For these cases, pass `run_in_thread=False` so FastMCP invokes the sync function inline on the event loop thread instead of dispatching it to a worker:
+
+```python
+import uiautomation as auto
+
+@mcp.tool(run_in_thread=False)
+def list_windows() -> list[str]:
+    """List desktop windows via Windows UI Automation (COM)."""
+    desktop = auto.GetRootControl()
+    return [w.Name for w in desktop.GetChildren()[:5]]
+```
+
+The tradeoff is that the event loop is blocked for the duration of the call — other in-flight requests wait until the tool returns. Keep `run_in_thread=False` reserved for tools that genuinely need thread affinity, and prefer short-running calls in that path.
+
+Inline sync calls have no cancellation checkpoints, so `timeout` cannot interrupt them. Combining `timeout` with `run_in_thread=False` on a sync function is rejected at registration — drop one or the other.
 
 ## Arguments
 
@@ -288,6 +314,33 @@ The default flexible validation mode is recommended for most use cases as it han
 ### Parameter Metadata
 
 You can provide additional metadata about parameters in several ways:
+
+#### Docstring Descriptions
+
+<VersionBadge version="3.2.4" />
+
+FastMCP parses your function's docstring to extract both the tool description and per-parameter descriptions. Google, NumPy, and Sphinx docstring styles are all supported — the parser tries each and uses whichever finds parameter descriptions:
+
+```python
+@mcp.tool
+def process_image(
+    image_url: str,
+    resize: bool = False,
+    width: int = 800,
+) -> dict:
+    """Process an image with optional resizing.
+
+    Args:
+        image_url: URL of the image to process.
+        resize: Whether to resize the image.
+        width: Target width in pixels.
+    """
+    # Implementation...
+```
+
+The free-form text above the `Args` section — whether a single line or multiple paragraphs — becomes the tool description, and each parameter's docstring entry becomes the description for that parameter in the generated schema. Sections like `Returns`, `Raises`, and `Example` are excluded from the description but otherwise ignored.
+
+If a parameter already has an explicit description — via `Annotated[x, "..."]` or `Field(description=...)` — that description takes precedence over the docstring. This makes it safe to adopt docstring-based descriptions incrementally: existing annotations keep working, and docstrings fill in the gaps.
 
 #### Simple String Descriptions
 
@@ -888,15 +941,17 @@ Annotations serve several purposes in client applications:
 - Describing the safety profile of tools (destructive vs. non-destructive)
 - Signaling if tools interact with external systems
 
-You can add annotations to a tool using the `annotations` parameter in the `@mcp.tool` decorator:
+You can add annotations to a tool using the `annotations` parameter in the `@mcp.tool` decorator. FastMCP accepts either a plain dict or `ToolAnnotations`; the examples below use `ToolAnnotations` for consistency and stronger editor/type support.
 
 ```python
+from mcp.types import ToolAnnotations
+
 @mcp.tool(
-    annotations={
-        "title": "Calculate Sum",
-        "readOnlyHint": True,
-        "openWorldHint": False
-    }
+    annotations=ToolAnnotations(
+        title="Calculate Sum",
+        readOnlyHint=True,
+        openWorldHint=False,
+    )
 )
 def calculate_sum(a: float, b: float) -> float:
     """Add two numbers together."""
@@ -932,7 +987,7 @@ from mcp.types import ToolAnnotations
 
 mcp = FastMCP("Data Server")
 
-@mcp.tool(annotations={"readOnlyHint": True})
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def get_user(user_id: str) -> dict:
     """Retrieve user information by ID."""
     return {"id": user_id, "name": "Alice"}
@@ -954,7 +1009,7 @@ def update_user(user_id: str, name: str) -> dict:
     """Update user information."""
     return {"id": user_id, "name": name, "updated": True}
 
-@mcp.tool(annotations={"destructiveHint": True})
+@mcp.tool(annotations=ToolAnnotations(destructiveHint=True))
 def delete_user(user_id: str) -> dict:
     """Permanently delete a user account."""
     return {"deleted": user_id}

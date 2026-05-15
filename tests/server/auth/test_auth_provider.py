@@ -5,12 +5,35 @@ import pytest
 from pydantic import AnyHttpUrl
 
 from fastmcp import FastMCP
-from fastmcp.server.auth import RemoteAuthProvider
+from fastmcp.server.auth import RemoteAuthProvider, TokenVerifier
+from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
+
+
+class LegacyTokenVerifier(TokenVerifier):
+    """Mimics custom verifiers that still call the old positional super().__init__."""
+
+    def __init__(
+        self,
+        base_url: AnyHttpUrl | str | None = None,
+        required_scopes: list[str] | None = None,
+    ):
+        super().__init__(base_url, required_scopes)
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        return None
 
 
 class TestAuthProviderBase:
     """Test suite for base AuthProvider behaviors that apply to all auth providers."""
+
+    def test_token_verifier_preserves_legacy_positional_required_scopes(self):
+        """Legacy positional super().__init__(base_url, required_scopes) should keep working."""
+        verifier = LegacyTokenVerifier("https://my-server.com", ["read"])
+
+        assert verifier.base_url == AnyHttpUrl("https://my-server.com/")
+        assert verifier.required_scopes == ["read"]
+        assert verifier.resource_base_url is None
 
     @pytest.fixture
     def basic_remote_provider(self):
