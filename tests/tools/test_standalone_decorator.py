@@ -24,6 +24,7 @@ from fastmcp.tools.function_tool import DecoratedTool, FunctionTool, ToolMeta
         "from fastmcp.tools import tool",
         "from fastmcp.resources import Resource, resource",
         "from fastmcp.prompts import Prompt, prompt",
+        "import sys; import fastmcp.apps.config; assert 'fastmcp.tools.function_tool' not in sys.modules",
         "from fastmcp.server.auth.authorization import AuthCheck",
         "from fastmcp.server import Context, FastMCP, create_proxy",
     ],

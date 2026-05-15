@@ -26,9 +26,6 @@ from pydantic.json_schema import SkipJsonSchema
 import fastmcp
 from fastmcp.decorators import get_fastmcp_meta, resolve_task_config
 from fastmcp.exceptions import FastMCPDeprecationWarning
-from fastmcp.server.auth.authorization import AuthCheck
-from fastmcp.server.dependencies import without_injected_parameters
-from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.base import (
     Tool,
     ToolResult,
@@ -39,7 +36,9 @@ from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
 )
+from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.tasks import TaskConfig
 from fastmcp.utilities.types import (
     NotSet,
     NotSetT,
@@ -284,6 +283,8 @@ class FunctionTool(Tool):
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
         """Run the tool with arguments."""
+        from fastmcp.server.dependencies import without_injected_parameters
+
         wrapper_fn = without_injected_parameters(
             self.fn, run_in_thread=self.run_in_thread
         )

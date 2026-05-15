@@ -24,15 +24,11 @@ from pydantic import (
 )
 
 from fastmcp.resources.base import Resource, ResourceResult
-from fastmcp.server.auth.authorization import AuthCheck
-from fastmcp.server.dependencies import (
-    transform_context_annotations,
-    without_injected_parameters,
-)
-from fastmcp.server.tasks.config import TaskConfig, TaskMeta
+from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.mime import resolve_ui_mime_type
+from fastmcp.utilities.tasks import TaskConfig, TaskMeta
 from fastmcp.utilities.types import get_cached_typeadapter
 
 
@@ -580,6 +576,11 @@ class FunctionResourceTemplate(ResourceTemplate):
             raise ValueError("URI template must contain at least one parameter")
 
         # Use wrapper to get user-facing parameters (excludes injected params)
+        from fastmcp.server.dependencies import (
+            transform_context_annotations,
+            without_injected_parameters,
+        )
+
         wrapper_fn = without_injected_parameters(fn)
         user_sig = inspect.signature(wrapper_fn)
         func_params = set(user_sig.parameters.keys())
