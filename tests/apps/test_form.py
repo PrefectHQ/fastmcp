@@ -11,6 +11,7 @@ from fastmcp.apps.form import (
     FormInput,
     _backfill_boolean_defaults,
 )
+from fastmcp.exceptions import ValidationError as FastMCPValidationError
 from fastmcp.server.providers.addressing import hashed_backend_name
 
 
@@ -126,7 +127,7 @@ class TestFormInputProvider:
         # Should reach model validation (not crash with "missing required argument"
         # for the data parameter itself). Pydantic will still reject missing
         # required fields like title/content, but that's expected.
-        with pytest.raises(pydantic.ValidationError, match="title"):
+        with pytest.raises(FastMCPValidationError, match="title"):
             await server.call_tool(hashed_backend_name("NoteForm", "submit_form"), {})
 
     async def test_multiple_models(self):

@@ -9,6 +9,7 @@ from mcp.types import TextContent, TextResourceContents
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.dependencies import CurrentContext, Depends, Shared
+from fastmcp.exceptions import ValidationError as FastMCPValidationError
 from fastmcp.server.context import Context
 
 HUZZAH = "huzzah!"
@@ -451,9 +452,7 @@ async def test_argument_validation_with_dependencies(mcp: FastMCP):
     assert result.structured_content["result"] == "age=25"
 
     # Invalid argument type should fail validation
-    import pydantic
-
-    with pytest.raises(pydantic.ValidationError):
+    with pytest.raises(FastMCPValidationError):
         await mcp.call_tool("validated_tool", {"age": "not a number"})
 
 
@@ -599,9 +598,7 @@ async def test_external_user_cannot_override_dependency(mcp: FastMCP):
     assert "admin=not_admin" in result.structured_content["result"]
 
     # Try to override dependency - rejected (not in schema)
-    import pydantic
-
-    with pytest.raises(pydantic.ValidationError):
+    with pytest.raises(FastMCPValidationError):
         await mcp.call_tool("check_permission", {"action": "read", "admin": "hacker"})
 
 
