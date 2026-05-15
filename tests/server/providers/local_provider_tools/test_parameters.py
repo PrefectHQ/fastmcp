@@ -278,9 +278,7 @@ class TestToolParameters:
         def send_path(path: Path) -> str:
             return str(path)
 
-        with pytest.raises(
-            FastMCPValidationError, match="Input is not a valid path"
-        ):
+        with pytest.raises(FastMCPValidationError, match="Input is not a valid path"):
             await mcp.call_tool("send_path", {"path": 1})
 
     async def test_uuid_type(self):
