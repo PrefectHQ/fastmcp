@@ -566,6 +566,22 @@ class TestErrorHandlingMiddlewareIntegration:
         # Error should still exist (may be wrapped by FastMCP)
         assert exc_info.value is not None
 
+    async def test_error_handling_middleware_transform_errors_to_protocol_error(
+        self, error_handling_server
+    ):
+        """Unhandled tool errors can be transformed into JSON-RPC protocol errors."""
+        error_handling_server.add_middleware(
+            ErrorHandlingMiddleware(transform_errors=True)
+        )
+
+        async with Client(error_handling_server) as client:
+            with pytest.raises(McpError) as exc_info:
+                await client.call_tool("failing_operation", {"error_type": "generic"})
+
+        error = exc_info.value.error
+        assert error.code == -32603
+        assert "Internal error" in error.message
+
 
 class TestRetryMiddlewareIntegration:
     """Integration tests for retry middleware with real FastMCP server."""

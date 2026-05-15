@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
+import jsonschema
 import mcp.types
-from mcp.shared.exceptions import McpError
+from mcp.shared.exceptions import McpError, UrlElicitationRequiredError
 from mcp.types import ContentBlock
 from pydantic import AnyUrl
 
@@ -60,7 +62,8 @@ class MCPOperationsMixin:
         Exception: list_resource_templates SDK decorator doesn't pass the request,
         so we register that handler directly.
 
-        The call_tool decorator is from the SDK (supports CreateTaskResult + validate_input).
+        The call_tool handler is registered directly so middleware can surface
+        McpError as protocol errors instead of tool error results.
         The read_resource and get_prompt decorators are from LowLevelServer to add
         CreateTaskResult support until the SDK provides it natively.
         """
@@ -74,8 +77,8 @@ class MCPOperationsMixin:
             self._wrap_list_handler(self._list_resource_templates_mcp)
         )
 
-        self._mcp_server.call_tool(validate_input=self.strict_input_validation)(
-            self._call_tool_mcp
+        self._mcp_server.request_handlers[mcp.types.CallToolRequest] = (
+            self._wrap_call_tool_handler(self._call_tool_mcp)
         )
         self._mcp_server.read_resource()(self._read_resource_mcp)
         self._mcp_server.get_prompt()(self._get_prompt_mcp)
@@ -92,6 +95,84 @@ class MCPOperationsMixin:
         async def wrapper(request: Any) -> mcp.types.ServerResult:
             result = await handler(request)
             return mcp.types.ServerResult(result)
+
+        return wrapper
+
+    def _wrap_call_tool_handler(
+        self: FastMCP, handler: Callable[..., Awaitable[Any]]
+    ) -> Callable[..., Awaitable[mcp.types.ServerResult]]:
+        """Wrap call_tool while preserving McpError protocol errors.
+
+        The upstream MCP SDK call_tool decorator catches every exception and turns it
+        into an isError tool result. FastMCP middleware can intentionally raise
+        McpError to produce JSON-RPC protocol errors, so this wrapper mirrors the
+        SDK's normalization while allowing McpError to propagate.
+        """
+
+        async def wrapper(request: mcp.types.CallToolRequest) -> mcp.types.ServerResult:
+            try:
+                tool_name = request.params.name
+                arguments = request.params.arguments or {}
+                tool = await self._mcp_server._get_cached_tool_definition(tool_name)
+
+                if self.strict_input_validation and tool:
+                    try:
+                        jsonschema.validate(instance=arguments, schema=tool.inputSchema)
+                    except jsonschema.ValidationError as e:
+                        return self._mcp_server._make_error_result(
+                            f"Input validation error: {e.message}"
+                        )
+
+                result = await handler(tool_name, arguments)
+
+                if isinstance(result, mcp.types.CallToolResult):
+                    return mcp.types.ServerResult(result)
+                if isinstance(result, mcp.types.CreateTaskResult):
+                    return mcp.types.ServerResult(result)
+                if isinstance(result, tuple) and len(result) == 2:
+                    unstructured_content, structured_content = result
+                elif isinstance(result, dict):
+                    structured_content = result
+                    unstructured_content = [
+                        mcp.types.TextContent(
+                            type="text", text=json.dumps(result, indent=2)
+                        )
+                    ]
+                elif hasattr(result, "__iter__"):  # pragma: no cover
+                    unstructured_content = result
+                    structured_content = None
+                else:  # pragma: no cover
+                    return self._mcp_server._make_error_result(
+                        f"Unexpected return type from tool: {type(result).__name__}"
+                    )
+
+                if tool and tool.outputSchema is not None:
+                    if structured_content is None:
+                        return self._mcp_server._make_error_result(
+                            "Output validation error: outputSchema defined but no structured output returned"
+                        )
+                    try:
+                        jsonschema.validate(
+                            instance=structured_content, schema=tool.outputSchema
+                        )
+                    except jsonschema.ValidationError as e:
+                        return self._mcp_server._make_error_result(
+                            f"Output validation error: {e.message}"
+                        )
+
+                return mcp.types.ServerResult(
+                    mcp.types.CallToolResult(
+                        content=list(unstructured_content),
+                        structuredContent=structured_content,
+                        isError=False,
+                    )
+                )
+            except UrlElicitationRequiredError:
+                raise
+            except McpError:
+                raise
+            except Exception as e:
+                return self._mcp_server._make_error_result(str(e))
 
         return wrapper
 
