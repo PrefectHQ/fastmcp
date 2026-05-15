@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import suppress
 from dataclasses import dataclass
 
 import pytest
@@ -148,6 +149,36 @@ class TestStatefulProxyClient:
             result_b = await client.call_tool("b_tool_b", {})
             assert result_a.data == "a"
             assert result_b.data == "b"
+
+    async def test_stateful_proxy_forwards_tool_cancellation(self):
+        """Test proxy request cancellation is forwarded to the upstream tool."""
+        backend = FastMCP("backend")
+        started = asyncio.Event()
+        cancelled = asyncio.Event()
+
+        @backend.tool
+        async def slow_task() -> None:
+            started.set()
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+        proxy = FastMCPProxy(
+            client_factory=StatefulProxyClient(backend).new_stateful,
+            name="proxy",
+        )
+
+        async with Client(proxy) as client:
+            task = asyncio.create_task(client.call_tool("slow_task", {}))
+            await asyncio.wait_for(started.wait(), timeout=2)
+
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+            await asyncio.wait_for(cancelled.wait(), timeout=2)
 
     @pytest.mark.timeout(10)
     async def test_stateful_proxy_elicitation_over_http(self):

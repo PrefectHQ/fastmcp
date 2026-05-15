@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 import weakref
+from contextlib import suppress
 from typing import TYPE_CHECKING, Any, Literal, overload
 
+import anyio
 import mcp.types
 from opentelemetry.trace import Status, StatusCode
 from pydantic import RootModel
@@ -158,15 +161,25 @@ class ClientToolsMixin:
             # Inject trace context into meta for propagation to server
             propagated_meta = inject_trace_context(meta)
 
-            result = await self._await_with_session_monitoring(
-                self.session.call_tool(
-                    name=name,
-                    arguments=arguments,
-                    read_timeout_seconds=normalize_timeout_to_timedelta(timeout),
-                    progress_callback=progress_handler or self._progress_handler,
-                    meta=propagated_meta if propagated_meta else None,
+            request_id = getattr(self.session, "_request_id", None)
+            try:
+                result = await self._await_with_session_monitoring(
+                    self.session.call_tool(
+                        name=name,
+                        arguments=arguments,
+                        read_timeout_seconds=normalize_timeout_to_timedelta(timeout),
+                        progress_callback=progress_handler or self._progress_handler,
+                        meta=propagated_meta if propagated_meta else None,
+                    )
                 )
-            )
+            except asyncio.CancelledError:
+                if request_id is not None:
+                    with anyio.CancelScope(shield=True), suppress(Exception):
+                        await self.cancel(
+                            request_id,
+                            reason=f"Client cancelled tools/call request for {name}",
+                        )
+                raise
 
             # Reflect tool-level errors on the span so callers see ERROR
             # status even though the MCP protocol call itself succeeded.
