@@ -140,6 +140,23 @@ class TestEventStore:
         result = await event_store.replay_events_after(event_ids[3], callback)
         assert result == "stream-1"
 
+    async def test_missing_evicted_event_is_ignored(self, sample_message):
+        """Concurrent eviction can delete the same old event first."""
+        event_store = EventStore(max_events_per_stream=1, ttl=3600)
+        first_event_id = await event_store.store_event("stream-1", sample_message)
+
+        async def delete_raises_for_first_event(key: str):
+            if key == first_event_id:
+                raise FileNotFoundError("already deleted")
+
+        event_store._event_store.delete = delete_raises_for_first_event
+
+        second_event_id = await event_store.store_event("stream-1", sample_message)
+
+        stream_data = await event_store._stream_store.get(key="stream-1")
+        assert stream_data is not None
+        assert stream_data.event_ids == [second_event_id]
+
     async def test_multiple_streams_are_isolated(self, event_store):
         """Events from different streams should not interfere with each other."""
         msg1 = JSONRPCMessage(
