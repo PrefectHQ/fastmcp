@@ -57,9 +57,24 @@ class ClientPromptsMixin:
         ):
             logger.debug(f"[{self.name}] called list_prompts")
 
-            result = await self._await_with_session_monitoring(
-                self.session.list_prompts(cursor=cursor)
-            )
+            propagated_meta = inject_trace_context()
+            if propagated_meta:
+                request = mcp.types.ListPromptsRequest(
+                    params=mcp.types.PaginatedRequestParams(
+                        cursor=cursor,
+                        _meta=propagated_meta,  # type: ignore[unknown-argument]  # pydantic alias  # ty:ignore[unknown-argument]
+                    )
+                )
+                result = await self._await_with_session_monitoring(
+                    self.session.send_request(
+                        request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+                        result_type=mcp.types.ListPromptsResult,
+                    )
+                )
+            else:
+                result = await self._await_with_session_monitoring(
+                    self.session.list_prompts(cursor=cursor)
+                )
             return result
 
     async def list_prompts(

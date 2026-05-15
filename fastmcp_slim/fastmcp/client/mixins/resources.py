@@ -56,9 +56,24 @@ class ClientResourcesMixin:
         ):
             logger.debug(f"[{self.name}] called list_resources")
 
-            result = await self._await_with_session_monitoring(
-                self.session.list_resources(cursor=cursor)
-            )
+            propagated_meta = inject_trace_context()
+            if propagated_meta:
+                request = mcp.types.ListResourcesRequest(
+                    params=mcp.types.PaginatedRequestParams(
+                        cursor=cursor,
+                        _meta=propagated_meta,  # type: ignore[unknown-argument]  # pydantic alias  # ty:ignore[unknown-argument]
+                    )
+                )
+                result = await self._await_with_session_monitoring(
+                    self.session.send_request(
+                        request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+                        result_type=mcp.types.ListResourcesResult,
+                    )
+                )
+            else:
+                result = await self._await_with_session_monitoring(
+                    self.session.list_resources(cursor=cursor)
+                )
             return result
 
     async def list_resources(
@@ -132,9 +147,24 @@ class ClientResourcesMixin:
         ):
             logger.debug(f"[{self.name}] called list_resource_templates")
 
-            result = await self._await_with_session_monitoring(
-                self.session.list_resource_templates(cursor=cursor)
-            )
+            propagated_meta = inject_trace_context()
+            if propagated_meta:
+                request = mcp.types.ListResourceTemplatesRequest(
+                    params=mcp.types.PaginatedRequestParams(
+                        cursor=cursor,
+                        _meta=propagated_meta,  # type: ignore[unknown-argument]  # pydantic alias  # ty:ignore[unknown-argument]
+                    )
+                )
+                result = await self._await_with_session_monitoring(
+                    self.session.send_request(
+                        request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+                        result_type=mcp.types.ListResourceTemplatesResult,
+                    )
+                )
+            else:
+                result = await self._await_with_session_monitoring(
+                    self.session.list_resource_templates(cursor=cursor)
+                )
             return result
 
     async def list_resource_templates(

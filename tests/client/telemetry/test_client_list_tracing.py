@@ -8,6 +8,35 @@ from opentelemetry.trace import SpanKind
 from fastmcp import Client, FastMCP
 
 
+def assert_trace_context_propagated(spans, span_name: str) -> None:
+    client_span = next(
+        (
+            s
+            for s in spans
+            if s.name == span_name
+            and s.attributes is not None
+            and "fastmcp.server.name" not in s.attributes
+        ),
+        None,
+    )
+    server_span = next(
+        (
+            s
+            for s in spans
+            if s.name == span_name
+            and s.attributes is not None
+            and "fastmcp.server.name" in s.attributes
+        ),
+        None,
+    )
+
+    assert client_span is not None, "Client span should exist"
+    assert server_span is not None, "Server span should exist"
+    assert server_span.context.trace_id == client_span.context.trace_id
+    assert server_span.parent is not None
+    assert server_span.parent.span_id == client_span.context.span_id
+
+
 class TestClientListToolsTracing:
     """Tests for client tools/list tracing."""
 
@@ -80,6 +109,23 @@ class TestClientListToolsTracing:
         assert client_span.kind == SpanKind.CLIENT
         assert server_span.kind == SpanKind.SERVER
 
+    async def test_list_tools_propagates_trace_context(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        server = FastMCP("test-server")
+
+        @server.tool()
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        client = Client(server)
+        async with client:
+            await client.list_tools()
+
+        assert_trace_context_propagated(
+            trace_exporter.get_finished_spans(), "tools/list"
+        )
+
 
 class TestClientListResourcesTracing:
     """Tests for client resources/list tracing."""
@@ -112,6 +158,23 @@ class TestClientListResourcesTracing:
         assert span.kind == SpanKind.CLIENT
         assert span.attributes is not None
         assert span.attributes["mcp.method.name"] == "resources/list"
+
+    async def test_list_resources_propagates_trace_context(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        server = FastMCP("test-server")
+
+        @server.resource("data://config")
+        def get_config() -> str:
+            return "config"
+
+        client = Client(server)
+        async with client:
+            await client.list_resources()
+
+        assert_trace_context_propagated(
+            trace_exporter.get_finished_spans(), "resources/list"
+        )
 
 
 class TestClientListResourceTemplatesTracing:
@@ -146,6 +209,23 @@ class TestClientListResourceTemplatesTracing:
         assert span.attributes is not None
         assert span.attributes["mcp.method.name"] == "resources/templates/list"
 
+    async def test_list_resource_templates_propagates_trace_context(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        server = FastMCP("test-server")
+
+        @server.resource("users://{user_id}/profile")
+        def get_profile(user_id: str) -> str:
+            return f"profile {user_id}"
+
+        client = Client(server)
+        async with client:
+            await client.list_resource_templates()
+
+        assert_trace_context_propagated(
+            trace_exporter.get_finished_spans(), "resources/templates/list"
+        )
+
 
 class TestClientListPromptsTracing:
     """Tests for client prompts/list tracing."""
@@ -178,3 +258,20 @@ class TestClientListPromptsTracing:
         assert span.kind == SpanKind.CLIENT
         assert span.attributes is not None
         assert span.attributes["mcp.method.name"] == "prompts/list"
+
+    async def test_list_prompts_propagates_trace_context(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        server = FastMCP("test-server")
+
+        @server.prompt()
+        def greeting() -> str:
+            return "Hello!"
+
+        client = Client(server)
+        async with client:
+            await client.list_prompts()
+
+        assert_trace_context_propagated(
+            trace_exporter.get_finished_spans(), "prompts/list"
+        )

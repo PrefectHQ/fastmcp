@@ -61,9 +61,24 @@ class ClientToolsMixin:
         ):
             logger.debug(f"[{self.name}] called list_tools")
 
-            result = await self._await_with_session_monitoring(
-                self.session.list_tools(cursor=cursor)
-            )
+            propagated_meta = inject_trace_context()
+            if propagated_meta:
+                request = mcp.types.ListToolsRequest(
+                    params=mcp.types.PaginatedRequestParams(
+                        cursor=cursor,
+                        _meta=propagated_meta,  # type: ignore[unknown-argument]  # pydantic alias  # ty:ignore[unknown-argument]
+                    )
+                )
+                result = await self._await_with_session_monitoring(
+                    self.session.send_request(
+                        request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+                        result_type=mcp.types.ListToolsResult,
+                    )
+                )
+            else:
+                result = await self._await_with_session_monitoring(
+                    self.session.list_tools(cursor=cursor)
+                )
             return result
 
     async def list_tools(
