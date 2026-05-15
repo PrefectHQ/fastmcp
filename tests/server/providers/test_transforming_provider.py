@@ -1,6 +1,7 @@
 """Tests for Namespace and ToolTransform."""
 
 import pytest
+from mcp.types import AnyUrl, ResourceLink
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -257,6 +258,39 @@ class TestTransformStacking:
         async with Client(main) as client:
             result = await client.call_tool("short", {})
             assert result.data == "success"
+
+    async def test_namespace_rewrites_tool_resource_link_results(self):
+        sub = FastMCP("Sub")
+
+        @sub.resource("demo://resource/dynamic/text/2")
+        def dynamic_text() -> str:
+            return "hello"
+
+        @sub.tool
+        def linked_resource() -> ResourceLink:
+            return ResourceLink(
+                type="resource_link",
+                name="dynamic-text",
+                uri=AnyUrl("demo://resource/dynamic/text/2"),
+            )
+
+        main = FastMCP("Main")
+        provider = FastMCPProvider(sub)
+        provider.add_transform(Namespace("everything"))
+        main.add_provider(provider)
+
+        async with Client(main) as client:
+            resources = await client.list_resources()
+            assert str(resources[0].uri) == "demo://everything/resource/dynamic/text/2"
+
+            result = await client.call_tool("everything_linked_resource", {})
+            assert len(result.content) == 1
+            assert result.content[0].type == "resource_link"
+            assert isinstance(result.content[0].uri, AnyUrl)
+            assert (
+                str(result.content[0].uri)
+                == "demo://everything/resource/dynamic/text/2"
+            )
 
 
 class TestNoTransformation:

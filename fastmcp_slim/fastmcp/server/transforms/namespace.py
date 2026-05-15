@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, overload
+
+import mcp.types
 
 from fastmcp.server.transforms import (
     GetPromptNext,
@@ -13,16 +15,99 @@ from fastmcp.server.transforms import (
     GetToolNext,
     Transform,
 )
+from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.versions import VersionSpec
 
 if TYPE_CHECKING:
     from fastmcp.prompts.base import Prompt
     from fastmcp.resources.base import Resource
     from fastmcp.resources.template import ResourceTemplate
-    from fastmcp.tools.base import Tool
+    from fastmcp.server.tasks.config import TaskMeta
 
 # Pattern for matching URIs: protocol://path
 _URI_PATTERN = re.compile(r"^([^:]+://)(.*?)$")
+
+
+class _NamespacedResultTool(Tool):
+    """Tool wrapper that keeps the wrapped tool's execution path intact."""
+
+    _tool: Tool
+    _namespace: Any
+
+    def __init__(self, tool: Tool, namespace: Namespace, name: str) -> None:
+        super().__init__(
+            name=name,
+            version=tool.version,
+            title=tool.title,
+            description=tool.description,
+            icons=tool.icons,
+            tags=tool.tags,
+            meta=tool.meta,
+            task_config=tool.task_config,
+            parameters=tool.parameters,
+            output_schema=tool.output_schema,
+            annotations=tool.annotations,
+            execution=tool.execution,
+            serializer=tool.serializer,
+            auth=tool.auth,
+            timeout=tool.timeout,
+        )
+        self._tool = tool
+        self._namespace = namespace
+
+    @overload
+    async def _run(
+        self,
+        arguments: dict[str, Any],
+        task_meta: None = None,
+    ) -> ToolResult: ...
+
+    @overload
+    async def _run(
+        self,
+        arguments: dict[str, Any],
+        task_meta: TaskMeta,
+    ) -> mcp.types.CreateTaskResult: ...
+
+    async def _run(
+        self,
+        arguments: dict[str, Any],
+        task_meta: TaskMeta | None = None,
+    ) -> ToolResult | mcp.types.CreateTaskResult:
+        result = await self._tool._run(arguments, task_meta=task_meta)
+        return self._transform_result(result)
+
+    async def run(self, arguments: dict[str, Any]) -> ToolResult:
+        return self._namespace._transform_tool_result(await self._tool.run(arguments))
+
+    def register_with_docket(self, docket: Any) -> None:
+        if not self.task_config.supports_tasks():
+            return
+        self._register_with_docket_as(docket, self.key)
+
+    def _register_with_docket_as(self, docket: Any, key: str) -> None:
+        fn = getattr(self._tool, "fn", None)
+        if fn is not None:
+            docket.register(fn, names=[key])
+            return
+
+        if isinstance(self._tool, _NamespacedResultTool):
+            self._tool._register_with_docket_as(docket, key)
+            return
+
+        docket.register(self.run, names=[key])
+
+    def get_span_attributes(self) -> dict[str, Any]:
+        return self._tool.get_span_attributes() | {
+            "fastmcp.component.key": self.key,
+        }
+
+    def _transform_result(
+        self, result: ToolResult | mcp.types.CreateTaskResult
+    ) -> ToolResult | mcp.types.CreateTaskResult:
+        if isinstance(result, mcp.types.CreateTaskResult):
+            return result
+        return self._namespace._transform_tool_result(result)
 
 
 class Namespace(Transform):
@@ -96,9 +181,7 @@ class Namespace(Transform):
 
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         """Prefix tool names with namespace."""
-        return [
-            t.model_copy(update={"name": self._transform_name(t.name)}) for t in tools
-        ]
+        return [self._transform_tool(t, self._transform_name(t.name)) for t in tools]
 
     async def get_tool(
         self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
@@ -109,8 +192,31 @@ class Namespace(Transform):
             return None
         tool = await call_next(original, version=version)
         if tool:
-            return tool.model_copy(update={"name": name})
+            return self._transform_tool(tool, name)
         return None
+
+    def _transform_tool(self, tool: Tool, name: str) -> Tool:
+        """Prefix a tool name and project ResourceLink result URIs."""
+        return _NamespacedResultTool(tool, namespace=self, name=name)
+
+    def _transform_tool_result(self, result: ToolResult) -> ToolResult:
+        content = [self._transform_content_block(block) for block in result.content]
+        if content == result.content:
+            return result
+        return ToolResult(
+            content=content,
+            structured_content=result.structured_content,
+            meta=result.meta,
+        )
+
+    def _transform_content_block(
+        self, block: mcp.types.ContentBlock
+    ) -> mcp.types.ContentBlock:
+        if not isinstance(block, mcp.types.ResourceLink):
+            return block
+        return block.model_copy(
+            update={"uri": mcp.types.AnyUrl(self._transform_uri(str(block.uri)))}
+        )
 
     # -------------------------------------------------------------------------
     # Resources
