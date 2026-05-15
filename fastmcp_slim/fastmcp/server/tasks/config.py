@@ -6,14 +6,13 @@ handle task-augmented execution as specified in SEP-1686.
 
 from __future__ import annotations
 
-import functools
-import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, Literal
 
 from fastmcp.utilities.async_utils import is_coroutine_function
+from fastmcp.utilities.callable_utils import prepare_callable
 
 # Task execution modes per SEP-1686 / MCP ToolExecution.taskSupport
 TaskMode = Literal["forbidden", "optional", "required"]
@@ -90,6 +89,23 @@ class TaskConfig:
         """
         return cls(mode="optional" if value else "forbidden")
 
+    @classmethod
+    def normalize(cls, task: bool | TaskConfig | None) -> TaskConfig:
+        """Convert a task parameter to a TaskConfig.
+
+        Args:
+            task: True/False for simple enable/disable, TaskConfig for full
+                control, or None for the default (forbidden).
+
+        Returns:
+            A TaskConfig instance.
+        """
+        if task is None:
+            return cls(mode="forbidden")
+        if isinstance(task, bool):
+            return cls.from_bool(task)
+        return task
+
     def supports_tasks(self) -> bool:
         """Check if this component supports task execution.
 
@@ -126,15 +142,7 @@ class TaskConfig:
         require_docket(f"`task=True` on function '{name}'")
 
         # Unwrap callable classes and staticmethods
-        fn_to_check = fn
-        if (
-            not inspect.isroutine(fn)
-            and not isinstance(fn, functools.partial)
-            and callable(fn)
-        ):
-            fn_to_check = fn.__call__
-        if isinstance(fn_to_check, staticmethod):
-            fn_to_check = fn_to_check.__func__
+        fn_to_check = prepare_callable(fn)
 
         if not is_coroutine_function(fn_to_check):
             raise ValueError(
