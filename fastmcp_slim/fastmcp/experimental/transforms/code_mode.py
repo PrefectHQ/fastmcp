@@ -1,3 +1,4 @@
+import asyncio
 import importlib
 import json
 from collections.abc import Awaitable, Callable, Sequence
@@ -131,11 +132,16 @@ class MontySandboxProvider:
         }
 
         monty = pydantic_monty.Monty(code, inputs=list(inputs))
-        return await monty.run_async(
+        fut = monty.run_async(
             inputs=inputs or None,
             external_functions=async_functions or None,
             limits=self.limits,
         )
+        try:
+            return await fut
+        except asyncio.CancelledError:
+            fut.cancel()
+            raise
 
 
 # ---------------------------------------------------------------------------
