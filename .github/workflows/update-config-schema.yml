@@ -7,8 +7,8 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "src/fastmcp/utilities/mcp_server_config/**"
-      - "!src/fastmcp/utilities/mcp_server_config/v1/schema.json"
+      - "fastmcp_slim/fastmcp/utilities/mcp_server_config/**"
+      - "!fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/schema.json"
   workflow_dispatch:
 
 permissions:
@@ -47,7 +47,7 @@ jobs:
           from fastmcp.utilities.mcp_server_config import generate_schema
           generate_schema('docs/public/schemas/fastmcp.json/latest.json')
           generate_schema('docs/public/schemas/fastmcp.json/v1.json')
-          generate_schema('src/fastmcp/utilities/mcp_server_config/v1/schema.json')
+          generate_schema('fastmcp_slim/fastmcp/utilities/mcp_server_config/v1/schema.json')
           "
 
       - name: Create Pull Request
@@ -59,7 +59,7 @@ jobs:
           body: |
             This PR updates the fastmcp.json schema files to match the current source code.
 
-            The schema is automatically generated from `src/fastmcp/utilities/mcp_server_config/` to ensure consistency.
+            The schema is automatically generated from `fastmcp_slim/fastmcp/utilities/mcp_server_config/` to ensure consistency.
 
             **Note:** This PR is fully automated and will update itself with any subsequent changes to the schema, or close automatically if the schema becomes up-to-date through other means.
 

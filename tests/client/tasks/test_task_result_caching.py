@@ -142,7 +142,7 @@ async def test_forbidden_mode_tool_caches_error_result():
 
     async with Client(mcp) as client:
         # Request as task, but mode="forbidden" will reject with error
-        task = await client.call_tool("non_task_tool", task=True)
+        task = await client.call_tool("non_task_tool", task=True, raise_on_error=False)
 
         # Should be immediate (error returned immediately)
         assert task.returned_immediately

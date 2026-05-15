@@ -24,7 +24,7 @@ Create a `.env` file:
 # Required Scalekit credentials
 SCALEKIT_ENVIRONMENT_URL=<YOUR_APP_ENVIRONMENT_URL>
 SCALEKIT_RESOURCE_ID=<YOUR_APP_RESOURCE_ID> # res_926EXAMPLE5878
-BASE_URL=http://localhost:8000/
+BASE_URL=http://127.0.0.1:8000/
 # Optional: additional scopes tokens must include (comma-separated)
 # SCALEKIT_REQUIRED_SCOPES=read,write
 ```
@@ -38,7 +38,7 @@ Start the server:
 uv run python server.py
 ```
 
-The server will start on `http://localhost:8000/mcp` with Scalekit OAuth authentication enabled.
+The server will start on `http://127.0.0.1:8000/mcp` with Scalekit OAuth authentication enabled.
 
 Test with client:
 

@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <title>Prefab</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/npm/@prefecthq/prefab-ui@0.19.0/dist/app/renderer.css">
+  <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@prefecthq/prefab-ui@0.19.0/dist/app/renderer.js"></script>
+</head>
+<body>
+  <div id="root" style="max-width:64rem;margin:0 auto;padding:2rem"></div>
+  <script id="prefab:initial-data" type="application/json">{
+  "$prefab": {
+    "version": "0.2"
+  },
+  "view": {
+    "cssClass": "pf-app-root",
+    "type": "Div",
+    "children": [
+      {
+        "cssClass": "gap-4 p-6",
+        "type": "Column",
+        "children": [
+          {
+            "cssClass": "gap-6",
+            "type": "Row",
+            "children": [
+              {
+                "type": "Metric",
+                "label": "Revenue (Q1-Q4)",
+                "value": "$220,500"
+              },
+              {
+                "type": "Metric",
+                "label": "Deals",
+                "value": "4"
+              }
+            ]
+          },
+          {
+            "type": "BarChart",
+            "data": [
+              {
+                "month": "Jan",
+                "revenue": 48200,
+                "costs": 31000
+              },
+              {
+                "month": "Feb",
+                "revenue": 52100,
+                "costs": 32500
+              },
+              {
+                "month": "Mar",
+                "revenue": 61800,
+                "costs": 34200
+              },
+              {
+                "month": "Apr",
+                "revenue": 58400,
+                "costs": 33800
+              }
+            ],
+            "series": [
+              {
+                "dataKey": "revenue",
+                "label": "Revenue"
+              },
+              {
+                "dataKey": "costs",
+                "label": "Costs"
+              }
+            ],
+            "xAxis": "month",
+            "height": 200,
+            "stacked": false,
+            "horizontal": false,
+            "barRadius": 4,
+            "showLegend": true,
+            "showTooltip": true,
+            "animate": true,
+            "showGrid": true,
+            "showYAxis": true,
+            "yAxisFormat": "auto"
+          },
+          {
+            "type": "Separator",
+            "orientation": "horizontal"
+          },
+          {
+            "type": "DataTable",
+            "columns": [
+              {
+                "key": "account",
+                "header": "Account",
+                "sortable": true
+              },
+              {
+                "key": "value",
+                "header": "Value",
+                "sortable": true
+              },
+              {
+                "key": "stage",
+                "header": "Stage",
+                "sortable": false
+              }
+            ],
+            "rows": [
+              {
+                "account": "Acme Corp",
+                "value": "$84,000",
+                "stage": {
+                  "type": "Badge",
+                  "label": "Won",
+                  "variant": "success"
+                }
+              },
+              {
+                "account": "Globex Inc",
+                "value": "$52,000",
+                "stage": {
+                  "type": "Badge",
+                  "label": "Negotiation",
+                  "variant": "secondary"
+                }
+              },
+              {
+                "account": "Initech",
+                "value": "$31,500",
+                "stage": {
+                  "type": "Badge",
+                  "label": "Proposal",
+                  "variant": "secondary"
+                }
+              },
+              {
+                "account": "Wayne Enterprises",
+                "value": "$45,000",
+                "stage": {
+                  "type": "Badge",
+                  "label": "Lost",
+                  "variant": "destructive"
+                }
+              }
+            ],
+            "search": false,
+            "paginated": false,
+            "pageSize": 10
+          }
+        ]
+      }
+    ]
+  }
+}</script>
+</body>
+</html>

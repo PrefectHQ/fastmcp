@@ -3,7 +3,6 @@ title: Development
 sidebarTitle: Development
 description: Preview and test your app tools locally without a full MCP host.
 icon: flask
-tag: NEW
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
@@ -14,11 +13,11 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
   <img src="/apps/images/dev-app.png" alt="The dev UI showing a rendered Prefab app with the MCP inspector panel" />
 </Frame>
 
-`fastmcp dev apps` launches a browser-based preview for your app tools. It starts your MCP server and a local dev UI side by side — you pick a tool, fill in its arguments, and see the rendered result in a new tab. No MCP host client needed.
+`fastmcp dev apps` gives you a browser preview for your app tools without needing an MCP host client. It starts your server and a local dev UI side by side: you pick a tool, fill in its arguments, and the rendered result opens in a new tab.
 
-This works with both [Prefab apps](/apps/prefab) and [custom HTML apps](/apps/low-level).
+Works with both [Interactive Tools](/apps/prefab) and [custom HTML apps](/apps/low-level).
 
-## Quick Start
+## Quick start
 
 ```bash
 fastmcp dev apps server.py
@@ -26,7 +25,7 @@ fastmcp dev apps server.py
 
 The dev UI opens at `http://localhost:8080`. Your MCP server runs on port 8000 with auto-reload enabled by default — save a file and the server restarts automatically.
 
-## How It Works
+## How it works
 
 The dev server does three things:
 
@@ -36,7 +35,7 @@ When you submit a form, the dev server **calls your tool** via the MCP protocol 
 
 A **reverse proxy** on `/mcp` forwards requests from the browser to your MCP server, avoiding CORS issues that would otherwise block the iframe-based renderer from talking to a different port.
 
-## MCP Inspector
+## MCP inspector
 
 The dev UI includes an inspector panel on the left side that captures MCP traffic in real time. It shows JSON-RPC messages flowing between the browser and your server — requests, responses, and AppBridge `postMessage` traffic.
 
@@ -56,7 +55,7 @@ fastmcp dev apps server.py:mcp --mcp-port 9000 --dev-port 9090 --no-reload
 | Dev Port | `--dev-port` | `8080` | Port for the dev UI |
 | Auto-Reload | `--reload` / `--no-reload` | On | Watch files and restart the server on changes |
 
-## Multiple Tools
+## Multiple tools
 
 If your server has multiple app tools, the picker shows a dropdown. Each tool gets its own form and launch button. The tool's `title` is displayed when available, falling back to the tool name.
 

@@ -12,7 +12,8 @@ import pytest
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.tools import tool
-from fastmcp.tools.function_tool import DecoratedTool, ToolMeta
+from fastmcp.tools.base import Tool
+from fastmcp.tools.function_tool import DecoratedTool, FunctionTool, ToolMeta
 
 
 class TestToolDecorator:
@@ -88,6 +89,33 @@ class TestToolDecorator:
         assert decorated.__fastmcp__.description == "Greets people"
         assert decorated.__fastmcp__.tags == {"greeting", "demo"}
         assert decorated.__fastmcp__.meta == {"custom": "value"}
+
+    @pytest.mark.parametrize(
+        "factory", [Tool.from_function, FunctionTool.from_function]
+    )
+    def test_from_function_preserves_decorator_metadata(self, factory):
+        """Direct from_function calls should respect @tool metadata."""
+
+        @tool(
+            name="custom-greet",
+            version="v1",
+            title="Greeting Tool",
+            description="Greets people",
+            tags={"greeting", "demo"},
+            meta={"custom": "value"},
+        )
+        def greet(name: str) -> str:
+            """Fallback description."""
+            return f"Hello, {name}!"
+
+        created_tool = factory(greet)
+
+        assert created_tool.name == "custom-greet"
+        assert created_tool.version == "v1"
+        assert created_tool.title == "Greeting Tool"
+        assert created_tool.description == "Greets people"
+        assert created_tool.tags == {"greeting", "demo"}
+        assert created_tool.meta == {"custom": "value"}
 
     async def test_tool_function_still_callable(self):
         """Decorated function should still be directly callable."""

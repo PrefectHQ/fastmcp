@@ -9,29 +9,32 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 
 <VersionBadge version="2.11.0" />
 
-This guide shows you how to secure your FastMCP server using WorkOS's **AuthKit**, a complete authentication and user management solution. This integration uses the [**Remote OAuth**](/servers/auth/remote-oauth) pattern, where AuthKit handles user login and your FastMCP server validates the tokens.
-
-<Warning>
-AuthKit does not currently support [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707.html) resource indicators, so FastMCP cannot validate that tokens were issued for the specific resource server. If you need resource-specific audience validation, consider using [WorkOSProvider](/integrations/workos) (OAuth proxy pattern) instead.
-</Warning>
+This guide shows you how to secure your FastMCP server using WorkOS's **AuthKit**, a complete authentication and user management solution. This integration uses the [**Remote OAuth**](/servers/auth/remote-oauth) pattern with [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707.html) resource indicators: AuthKit issues tokens whose `aud` claim is bound to your server's resource URL, and FastMCP validates that claim automatically.
 
 ## Configuration
+
 ### Prerequisites
 
 Before you begin, you will need:
 1.  A **[WorkOS Account](https://workos.com/)** and a new **Project**.
 2.  An **[AuthKit](https://www.authkit.com/)** instance configured within your WorkOS project.
-3.  Your FastMCP server's URL (can be localhost for development, e.g., `http://localhost:8000`).
+3.  Your FastMCP server's URL (can be localhost for development, e.g., `http://127.0.0.1:8000`).
 
-### Step 1: AuthKit Configuration
+### Step 1: WorkOS Dashboard
 
-In your WorkOS Dashboard, enable AuthKit and configure the following settings:
+In the WorkOS Dashboard, go to **Connect → Configuration** and configure:
 
 <Steps>
-<Step title="Enable Dynamic Client Registration">
-    Go to **Applications → Configuration** and enable **Dynamic Client Registration**. This allows MCP clients register with your application automatically.
+<Step title="MCP Auth">
+    Enable **Dynamic Client Registration** (DCR) so MCP clients can register themselves. Alternatively, enable **Client ID Metadata Document** (CIMD) if your clients support it.
+</Step>
 
-    ![Enable Dynamic Client Registration](./images/authkit/enable_dcr.png)
+<Step title="MCP resource indicators">
+    Add your FastMCP server's resource URL (e.g., `http://127.0.0.1:8000/mcp`) as a valid resource indicator.
+
+    This must exactly match what FastMCP advertises in its protected resource metadata. Start your server first and it will log the correct URL on startup — copy that value.
+
+    Without this step, AuthKit falls back to a default environment-scoped audience and audience validation will fail with a 401.
 </Step>
 
 <Step title="Note Your AuthKit Domain">
@@ -47,15 +50,17 @@ Create your FastMCP server file and use the `AuthKitProvider` to handle all the 
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.workos import AuthKitProvider
 
-# The AuthKitProvider automatically discovers WorkOS endpoints
-# and configures JWT token validation
+# AuthKitProvider automatically discovers WorkOS endpoints, configures JWT
+# validation, and binds the token audience to this server's resource URL.
 auth_provider = AuthKitProvider(
     authkit_domain="https://your-project-12345.authkit.app",
-    base_url="http://localhost:8000"  # Use your actual server URL
+    base_url="http://127.0.0.1:8000",  # Use your actual server URL
 )
 
 mcp = FastMCP(name="AuthKit Secured App", auth=auth_provider)
 ```
+
+When the server starts, it logs the resource URL it is validating against. Paste that URL into your Dashboard's **MCP resource indicators** list.
 
 ## Testing
 
@@ -75,7 +80,7 @@ import asyncio
 auth = OAuth(additional_client_metadata={"token_endpoint_auth_method": "none"})
 
 async def main():
-    async with Client("http://localhost:8000/mcp", auth=auth) as client:
+    async with Client("http://127.0.0.1:8000/mcp", auth=auth) as client:
         assert await client.ping()
 
 if __name__ == "__main__":
@@ -94,7 +99,7 @@ from fastmcp.server.auth.providers.workos import AuthKitProvider
 # Load configuration from environment variables
 auth = AuthKitProvider(
     authkit_domain=os.environ.get("AUTHKIT_DOMAIN"),
-    base_url=os.environ.get("BASE_URL", "https://your-server.com")
+    base_url=os.environ.get("BASE_URL", "https://your-server.com"),
 )
 
 mcp = FastMCP(name="AuthKit Secured App", auth=auth)

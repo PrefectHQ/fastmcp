@@ -248,7 +248,7 @@ The [FastMCP Client](/clients/client) uses storage for persisting OAuth tokens l
 
 ```python
 from pathlib import Path
-from fastmcp.client.auth import OAuthClientProvider
+from fastmcp.client.auth import OAuth
 from key_value.aio.stores.filetree import (
     FileTreeStore,
     FileTreeV1KeySanitizationStrategy,
@@ -263,7 +263,7 @@ token_storage = FileTreeStore(
     collection_sanitization_strategy=FileTreeV1CollectionSanitizationStrategy(token_dir),
 )
 
-oauth_provider = OAuthClientProvider(
+oauth_provider = OAuth(
     mcp_url="https://your-mcp-server.com/mcp/sse",
     token_storage=token_storage
 )

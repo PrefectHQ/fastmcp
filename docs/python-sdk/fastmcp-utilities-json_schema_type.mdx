@@ -22,6 +22,24 @@ for validation with Pydantic. It supports:
 - Enums and constants
 - Union types
 
+## Unsupported regex patterns
+
+Pydantic uses a Rust-based regex engine that does not support all regex
+features found in real-world JSON Schemas (particularly those from AWS,
+Azure, and other large OpenAPI providers). Unsupported constructs include
+lookahead/lookbehind assertions (`(?!...)`, `(?<=...)`), Unicode property
+escapes (`\p{Graph}`, `\p{Print}`), and very large compiled patterns.
+
+When a `pattern` constraint cannot be compiled, `json_schema_to_type`
+degrades gracefully:
+
+1. The pattern is **dropped** from the Pydantic `StringConstraints` so
+   the type will not raise a `SchemaError`.
+2. A `UserWarning` is emitted with the unsupported pattern.
+3. The original pattern is preserved in the type metadata as
+   `x-unsupported-pattern` (visible via `TypeAdapter(T).json_schema()`).
+4. Other constraints (`minLength`, `maxLength`) are still enforced.
+
 Example:
     ```python
     schema = {
@@ -42,17 +60,18 @@ Example:
 
 ## Functions
 
-### `json_schema_to_type` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/json_schema_type.py#L111" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `json_schema_to_type` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/json_schema_type.py#L164" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-json_schema_to_type(schema: Mapping[str, Any], name: str | None = None) -> type
+json_schema_to_type(schema: Mapping[str, Any] | bool, name: str | None = None) -> type
 ```
 
 
 Convert JSON schema to appropriate Python type with validation.
 
 **Args:**
-- `schema`: A JSON Schema dictionary defining the type structure and validation rules
+- `schema`: A JSON Schema dictionary defining the type structure and validation rules.
+Boolean schemas are also accepted (``True`` = any type, ``False`` = unsatisfiable).
 - `name`: Optional name for object schemas. Only allowed when schema type is "object".
 If not provided for objects, name will be inferred from schema's "title"
 property or default to "Root".
@@ -107,4 +126,4 @@ class Name:
 
 ## Classes
 
-### `JSONSchema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/json_schema_type.py#L78" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `JSONSchema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/utilities/json_schema_type.py#L131" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>

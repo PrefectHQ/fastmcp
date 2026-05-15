@@ -31,6 +31,7 @@ from fastmcp.prompts.base import Message, Prompt
 from fastmcp.prompts.function_prompt import FunctionPrompt
 from fastmcp.resources.base import Resource
 from fastmcp.server.middleware.caching import (
+    ANONYMOUS_AUTH_KEY,
     CachableToolResult,
     CallToolSettings,
     ResponseCachingMiddleware,
@@ -671,3 +672,170 @@ class TestCacheKeyGeneration:
         assert len(key) == 64
         assert "ABC123" not in key
         assert key == _make_get_prompt_cache_key(msg)
+
+    def test_call_tool_key_partitions_by_auth(self):
+        msg = mcp.types.CallToolRequestParams(name="t", arguments={"a": 1})
+
+        anon = _make_call_tool_cache_key(msg)
+        user_a = _make_call_tool_cache_key(msg, auth_key="user_a")
+        user_b = _make_call_tool_cache_key(msg, auth_key="user_b")
+
+        assert anon == _make_call_tool_cache_key(msg, auth_key=ANONYMOUS_AUTH_KEY)
+        assert user_a != user_b
+        assert user_a != anon
+
+    def test_read_resource_key_partitions_by_auth(self):
+        msg = mcp.types.ReadResourceRequestParams(uri=AnyUrl("file:///tmp/x"))
+
+        user_a = _make_read_resource_cache_key(msg, auth_key="user_a")
+        user_b = _make_read_resource_cache_key(msg, auth_key="user_b")
+
+        assert user_a != user_b
+
+    def test_get_prompt_key_partitions_by_auth(self):
+        msg = mcp.types.GetPromptRequestParams(name="p", arguments={"a": "1"})
+
+        user_a = _make_get_prompt_cache_key(msg, auth_key="user_a")
+        user_b = _make_get_prompt_cache_key(msg, auth_key="user_b")
+
+        assert user_a != user_b
+
+
+class TestAuthAwareCaching:
+    """Cached responses must not leak across users with different auth tokens.
+
+    Regression tests for issue #4037: ResponseCachingMiddleware was caching
+    list/call responses with a global key, so a list filtered by per-component
+    auth checks for one user was served back to other users.
+    """
+
+    @staticmethod
+    def _make_token(scopes: list[str]):
+        from fastmcp.server.auth import AccessToken
+
+        return AccessToken(
+            token=f"token-{'-'.join(scopes) or 'none'}",
+            client_id="test-client",
+            scopes=scopes,
+            expires_at=None,
+            claims={},
+        )
+
+    @staticmethod
+    def _set_token(token):
+        from mcp.server.auth.middleware.auth_context import auth_context_var
+        from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
+
+        if token is None:
+            return auth_context_var.set(None)
+        return auth_context_var.set(AuthenticatedUser(token))
+
+    async def test_list_tools_cache_does_not_leak_across_tokens(self):
+        from fastmcp.server.auth import require_scopes
+
+        mcp_server = FastMCP("test")
+        mcp_server.add_middleware(ResponseCachingMiddleware())
+
+        @mcp_server.tool(auth=require_scopes("read"))
+        def reader() -> str:
+            return "ok"
+
+        @mcp_server.tool(auth=require_scopes("read", "write"))
+        def writer() -> str:
+            return "ok"
+
+        from mcp.server.auth.middleware.auth_context import auth_context_var
+
+        # Privileged user lists tools first - both visible, gets cached.
+        privileged = self._make_token(["read", "write"])
+        tok = self._set_token(privileged)
+        try:
+            tools = await mcp_server.list_tools()
+            names = {t.name for t in tools}
+            assert names == {"reader", "writer"}
+        finally:
+            auth_context_var.reset(tok)
+
+        # Lower-privileged user must not see the cached privileged list.
+        limited = self._make_token(["read"])
+        tok = self._set_token(limited)
+        try:
+            tools = await mcp_server.list_tools()
+            names = {t.name for t in tools}
+            assert names == {"reader"}
+        finally:
+            auth_context_var.reset(tok)
+
+        # And same-token repeats still hit the cache (sanity check).
+        tok = self._set_token(limited)
+        try:
+            tools = await mcp_server.list_tools()
+            assert {t.name for t in tools} == {"reader"}
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_list_resources_cache_does_not_leak_across_tokens(self):
+        from fastmcp.server.auth import require_scopes
+
+        mcp_server = FastMCP("test")
+        mcp_server.add_middleware(ResponseCachingMiddleware())
+
+        @mcp_server.resource("data://public", auth=require_scopes("read"))
+        def public() -> str:
+            return "public"
+
+        @mcp_server.resource("data://secret", auth=require_scopes("read", "admin"))
+        def secret() -> str:
+            return "secret"
+
+        from mcp.server.auth.middleware.auth_context import auth_context_var
+
+        privileged = self._make_token(["read", "admin"])
+        tok = self._set_token(privileged)
+        try:
+            resources = await mcp_server.list_resources()
+            uris = {str(r.uri) for r in resources}
+            assert uris == {"data://public", "data://secret"}
+        finally:
+            auth_context_var.reset(tok)
+
+        limited = self._make_token(["read"])
+        tok = self._set_token(limited)
+        try:
+            resources = await mcp_server.list_resources()
+            uris = {str(r.uri) for r in resources}
+            assert uris == {"data://public"}
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_list_prompts_cache_does_not_leak_across_tokens(self):
+        from fastmcp.server.auth import require_scopes
+
+        mcp_server = FastMCP("test")
+        mcp_server.add_middleware(ResponseCachingMiddleware())
+
+        @mcp_server.prompt(auth=require_scopes("read"))
+        def public_prompt() -> str:
+            return "public"
+
+        @mcp_server.prompt(auth=require_scopes("read", "admin"))
+        def admin_prompt() -> str:
+            return "admin"
+
+        from mcp.server.auth.middleware.auth_context import auth_context_var
+
+        privileged = self._make_token(["read", "admin"])
+        tok = self._set_token(privileged)
+        try:
+            prompts = await mcp_server.list_prompts()
+            assert {p.name for p in prompts} == {"public_prompt", "admin_prompt"}
+        finally:
+            auth_context_var.reset(tok)
+
+        limited = self._make_token(["read"])
+        tok = self._set_token(limited)
+        try:
+            prompts = await mcp_server.list_prompts()
+            assert {p.name for p in prompts} == {"public_prompt"}
+        finally:
+            auth_context_var.reset(tok)

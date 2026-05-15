@@ -1,0 +1,87 @@
+name: Publish fastmcp to PyPI
+
+on:
+  workflow_run:
+    workflows: ["Publish fastmcp-slim to PyPI"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  pypi-publish:
+    name: Upload fastmcp to PyPI
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'release')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Build fastmcp
+        run: uv build --package fastmcp
+
+      - name: Verify matching fastmcp-slim is published
+        run: |
+          SLIM_VERSION=$(python - <<'PY'
+          import email.parser
+          import re
+          import zipfile
+          from pathlib import Path
+
+          wheel = next(Path("dist").glob("fastmcp-*.whl"))
+          metadata_name = next(
+              name for name in zipfile.ZipFile(wheel).namelist()
+              if name.endswith(".dist-info/METADATA")
+          )
+          metadata = email.parser.Parser().parsestr(
+              zipfile.ZipFile(wheel).read(metadata_name).decode()
+          )
+          for value in metadata.get_all("Requires-Dist", []):
+              requirement, _, marker = value.partition(";")
+              if marker.strip():
+                  continue
+              match = re.fullmatch(
+                  r"fastmcp-slim(?:\[[^\]]+\])?==([^;\s]+)",
+                  requirement.strip(),
+              )
+              if match:
+                  print(match.group(1))
+                  break
+          else:
+              raise RuntimeError("Could not find the base fastmcp-slim dependency")
+          PY
+          )
+
+          for attempt in {1..12}; do
+            if python - "$SLIM_VERSION" <<'PY'
+          import json
+          import sys
+          import urllib.request
+
+          version = sys.argv[1]
+          url = f"https://pypi.org/pypi/fastmcp-slim/{version}/json"
+          with urllib.request.urlopen(url, timeout=30) as response:
+              json.load(response)
+          PY
+            then
+              exit 0
+            fi
+
+            echo "fastmcp-slim ${SLIM_VERSION} is not available on PyPI yet; retrying (${attempt}/12)."
+            sleep 10
+          done
+
+          echo "fastmcp-slim ${SLIM_VERSION} is not available on PyPI; refusing to publish fastmcp." >&2
+          exit 1
+
+      - name: Publish fastmcp to PyPI
+        run: uv publish -v dist/fastmcp-*.tar.gz dist/fastmcp-*.whl

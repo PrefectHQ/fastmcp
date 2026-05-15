@@ -123,6 +123,12 @@ These parameters control how your server presents itself to clients.
 
   List of icon representations for your server. See [Icons](/servers/icons) for details
 </ParamField>
+
+<ParamField body="experimental_capabilities" type="dict[str, dict[str, Any]] | None">
+  <VersionBadge version="3.2.5" />
+
+  Arbitrary experimental capabilities to advertise in the MCP `initialize` response. Use this to declare cross-server interop conventions or draft extensions that follow the MCP spec's `experimental` field. Keys are capability names; values are free-form dicts. FastMCP's built-in derived capabilities (`tools`, `resources`, etc.) are unaffected — this only populates `capabilities.experimental`
+</ParamField>
 </Card>
 
 ### Composition

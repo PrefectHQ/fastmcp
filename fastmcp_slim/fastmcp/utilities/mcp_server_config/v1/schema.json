@@ -1,0 +1,365 @@
+{
+  "$defs": {
+    "Deployment": {
+      "description": "Configuration for server deployment and runtime settings.",
+      "properties": {
+        "transport": {
+          "anyOf": [
+            {
+              "enum": [
+                "stdio",
+                "http",
+                "sse",
+                "streamable-http"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Transport protocol to use",
+          "title": "Transport"
+        },
+        "host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Host to bind to when using HTTP transport",
+          "examples": [
+            "127.0.0.1",
+            "0.0.0.0",
+            "localhost"
+          ],
+          "title": "Host"
+        },
+        "port": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Port to bind to when using HTTP transport",
+          "examples": [
+            8000,
+            3000,
+            5000
+          ],
+          "title": "Port"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "URL path for the server endpoint",
+          "examples": [
+            "/mcp/",
+            "/api/mcp/",
+            "/sse/"
+          ],
+          "title": "Path"
+        },
+        "log_level": {
+          "anyOf": [
+            {
+              "enum": [
+                "DEBUG",
+                "INFO",
+                "WARNING",
+                "ERROR",
+                "CRITICAL"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Log level for the server",
+          "title": "Log Level"
+        },
+        "cwd": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Working directory for the server process",
+          "examples": [
+            ".",
+            "./src",
+            "/app"
+          ],
+          "title": "Cwd"
+        },
+        "env": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Environment variables to set when running the server",
+          "examples": [
+            {
+              "API_KEY": "secret",
+              "DEBUG": "true"
+            }
+          ],
+          "title": "Env"
+        },
+        "args": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Arguments to pass to the server (after --)",
+          "examples": [
+            [
+              "--config",
+              "config.json",
+              "--debug"
+            ]
+          ],
+          "title": "Args"
+        }
+      },
+      "title": "Deployment",
+      "type": "object"
+    },
+    "FileSystemSource": {
+      "description": "Source for local Python files.",
+      "properties": {
+        "type": {
+          "const": "filesystem",
+          "default": "filesystem",
+          "title": "Type",
+          "type": "string"
+        },
+        "path": {
+          "description": "Path to Python file containing the server",
+          "title": "Path",
+          "type": "string"
+        },
+        "entrypoint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Name of server instance or factory function (a no-arg function that returns a FastMCP server)",
+          "title": "Entrypoint"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "FileSystemSource",
+      "type": "object"
+    },
+    "UVEnvironment": {
+      "description": "Configuration for Python environment setup.",
+      "properties": {
+        "type": {
+          "const": "uv",
+          "default": "uv",
+          "title": "Type",
+          "type": "string"
+        },
+        "python": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Python version constraint",
+          "examples": [
+            "3.10",
+            "3.11",
+            "3.12"
+          ],
+          "title": "Python"
+        },
+        "dependencies": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Python packages to install with PEP 508 specifiers",
+          "examples": [
+            [
+              "fastmcp>=2.0,<3",
+              "httpx",
+              "pandas>=2.0"
+            ]
+          ],
+          "title": "Dependencies"
+        },
+        "requirements": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Path to requirements.txt file",
+          "examples": [
+            "requirements.txt",
+            "../requirements/prod.txt"
+          ],
+          "title": "Requirements"
+        },
+        "project": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Path to project directory containing pyproject.toml",
+          "examples": [
+            ".",
+            "../my-project"
+          ],
+          "title": "Project"
+        },
+        "editable": {
+          "anyOf": [
+            {
+              "items": {
+                "format": "path",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Directories to install in editable mode",
+          "examples": [
+            [
+              ".",
+              "../my-package"
+            ],
+            [
+              "/path/to/package"
+            ]
+          ],
+          "title": "Editable"
+        }
+      },
+      "title": "UVEnvironment",
+      "type": "object"
+    }
+  },
+  "description": "Configuration file for FastMCP servers",
+  "properties": {
+    "$schema": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
+      "description": "JSON schema for IDE support and validation",
+      "title": "$Schema"
+    },
+    "source": {
+      "$ref": "#/$defs/FileSystemSource",
+      "description": "Source configuration for the server",
+      "examples": [
+        {
+          "path": "server.py"
+        },
+        {
+          "entrypoint": "app",
+          "path": "server.py"
+        },
+        {
+          "entrypoint": "mcp",
+          "path": "src/server.py",
+          "type": "filesystem"
+        }
+      ]
+    },
+    "environment": {
+      "$ref": "#/$defs/UVEnvironment",
+      "description": "Python environment setup configuration"
+    },
+    "deployment": {
+      "$ref": "#/$defs/Deployment",
+      "description": "Server deployment and runtime settings"
+    }
+  },
+  "required": [
+    "source"
+  ],
+  "title": "FastMCP Configuration",
+  "type": "object",
+  "$id": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json"
+}

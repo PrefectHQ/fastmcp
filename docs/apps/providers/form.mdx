@@ -44,7 +44,7 @@ This registers two tools:
 
 The tool name is derived from the model class name, lowercased: `collect_{modelname}`. So `BugReport` becomes `collect_bugreport`, `ShippingAddress` becomes `collect_shippingaddress`. Use `tool_name` to override if needed. The LLM calls it with a prompt explaining what it needs, and the user gets a form with fields matching the model.
 
-## Field Mapping
+## Field mapping
 
 `FormInput` uses Prefab's `Form.from_model()`, which maps Pydantic types to form components:
 
@@ -89,7 +89,7 @@ FormInput(
 
 Set `send_message=True` to push the result back into the conversation via `SendMessage`, triggering the LLM's next turn. Without it, the result is just the tool return value.
 
-## Multiple Forms
+## Multiple forms
 
 Add multiple providers for different models — each gets its own tool:
 

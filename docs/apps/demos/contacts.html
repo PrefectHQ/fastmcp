@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <title>Prefab</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/npm/@prefecthq/prefab-ui@0.19.0/dist/app/renderer.css">
+  <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@prefecthq/prefab-ui@0.19.0/dist/app/renderer.js"></script>
+</head>
+<body>
+  <div id="root" style="max-width:64rem;margin:0 auto;padding:2rem"></div>
+  <script id="prefab:initial-data" type="application/json">{
+  "$prefab": {
+    "version": "0.2"
+  },
+  "view": {
+    "cssClass": "pf-app-root",
+    "type": "Div",
+    "children": [
+      {
+        "cssClass": "gap-4 p-6",
+        "type": "Column",
+        "children": [
+          {
+            "type": "DataTable",
+            "columns": [
+              {
+                "key": "name",
+                "header": "Name",
+                "sortable": true
+              },
+              {
+                "key": "email",
+                "header": "Email",
+                "sortable": false
+              },
+              {
+                "key": "category",
+                "header": "Category",
+                "sortable": false
+              }
+            ],
+            "rows": [
+              {
+                "name": "Arthur Dent",
+                "email": "arthur@earth.com",
+                "category": {
+                  "type": "Badge",
+                  "label": "Customer",
+                  "variant": "success"
+                }
+              },
+              {
+                "name": "Ford Prefect",
+                "email": "ford@betelgeuse.org",
+                "category": {
+                  "type": "Badge",
+                  "label": "Partner",
+                  "variant": "secondary"
+                }
+              },
+              {
+                "name": "Trillian Astra",
+                "email": "trillian@heartofgold.com",
+                "category": {
+                  "type": "Badge",
+                  "label": "Customer",
+                  "variant": "success"
+                }
+              },
+              {
+                "name": "Zaphod Beeblebrox",
+                "email": "zaphod@galaxy.gov",
+                "category": {
+                  "type": "Badge",
+                  "label": "Vendor",
+                  "variant": "outline"
+                }
+              }
+            ],
+            "search": true,
+            "paginated": false,
+            "pageSize": 10
+          },
+          {
+            "type": "Separator",
+            "orientation": "horizontal"
+          },
+          {
+            "content": "Add Contact",
+            "type": "H3"
+          },
+          {
+            "cssClass": "gap-4",
+            "type": "Form",
+            "onSubmit": {
+              "action": "showToast",
+              "message": "Contact saved! (preview demo \u2014 no backend wired)",
+              "variant": "success"
+            },
+            "children": [
+              {
+                "cssClass": "gap-4",
+                "type": "Row",
+                "children": [
+                  {
+                    "name": "name",
+                    "type": "Input",
+                    "inputType": "text",
+                    "placeholder": "Full name",
+                    "disabled": false,
+                    "readOnly": false,
+                    "required": true
+                  },
+                  {
+                    "name": "email",
+                    "type": "Input",
+                    "inputType": "text",
+                    "placeholder": "name@example.com",
+                    "disabled": false,
+                    "readOnly": false,
+                    "required": true
+                  }
+                ]
+              },
+              {
+                "name": "category",
+                "type": "Select",
+                "size": "default",
+                "disabled": false,
+                "required": false,
+                "invalid": false,
+                "children": [
+                  {
+                    "type": "SelectOption",
+                    "value": "Customer",
+                    "label": "Customer",
+                    "selected": false,
+                    "disabled": false
+                  },
+                  {
+                    "type": "SelectOption",
+                    "value": "Partner",
+                    "label": "Partner",
+                    "selected": false,
+                    "disabled": false
+                  },
+                  {
+                    "type": "SelectOption",
+                    "value": "Vendor",
+                    "label": "Vendor",
+                    "selected": false,
+                    "disabled": false
+                  }
+                ]
+              },
+              {
+                "type": "Button",
+                "label": "Save Contact",
+                "variant": "default",
+                "size": "default",
+                "disabled": false
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}</script>
+</body>
+</html>

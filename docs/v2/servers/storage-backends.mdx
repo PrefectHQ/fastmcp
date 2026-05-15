@@ -236,13 +236,13 @@ middleware = ResponseCachingMiddleware(cache_storage=namespaced_store)
 The [FastMCP Client](/v2/clients/client) uses storage for persisting OAuth tokens locally. By default, tokens are stored in memory:
 
 ```python
-from fastmcp.client.auth import OAuthClientProvider
+from fastmcp.client.auth import OAuth
 from key_value.aio.stores.disk import DiskStore
 
 # Store tokens on disk for persistence across restarts
 token_storage = DiskStore(directory="~/.local/share/fastmcp/tokens")
 
-oauth_provider = OAuthClientProvider(
+oauth_provider = OAuth(
     mcp_url="https://your-mcp-server.com/mcp/sse",
     token_storage=token_storage
 )

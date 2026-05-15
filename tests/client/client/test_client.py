@@ -13,6 +13,7 @@ from pydantic import AnyUrl
 
 import fastmcp
 from fastmcp.client import Client
+from fastmcp.client.tasks import TaskNotificationHandler
 from fastmcp.client.transports import (
     ClientTransport,
     FastMCPTransport,
@@ -283,7 +284,7 @@ async def test_server_deserialization_error():
     client = Client(transport=FastMCPTransport(server))
 
     async with client:
-        with pytest.raises(McpError, match="Error rendering prompt"):
+        with pytest.raises(McpError, match="Could not convert argument"):
             await client.get_prompt(
                 "strict_typed_prompt",
                 {
@@ -439,6 +440,32 @@ class _DelayedConnectTransport(ClientTransport):
         await self._inner.close()
 
 
+class _DelayedDisconnectTransport(ClientTransport):
+    def __init__(
+        self,
+        inner: ClientTransport,
+        disconnect_started: anyio.Event,
+        allow_disconnect: anyio.Event,
+    ) -> None:
+        self._inner = inner
+        self._disconnect_started = disconnect_started
+        self._allow_disconnect = allow_disconnect
+
+    @contextlib.asynccontextmanager
+    async def connect_session(
+        self, **session_kwargs: Any
+    ) -> AsyncIterator[ClientSession]:
+        async with self._inner.connect_session(**session_kwargs) as session:
+            try:
+                yield session
+            finally:
+                self._disconnect_started.set()
+                await self._allow_disconnect.wait()
+
+    async def close(self) -> None:
+        await self._inner.close()
+
+
 async def test_client_nested_context_manager(fastmcp_server):
     """Test that the client connects and disconnects once in nested context manager."""
 
@@ -550,6 +577,88 @@ async def test_cancelled_context_entry_waiter_does_not_close_active_session(
     # task_b is fully cancelled; allow task_a to exercise the connected session.
     b_done.set()
     assert await a == 3
+
+
+async def test_force_close_cancelled_wait_starts_fresh_session(fastmcp_server):
+    disconnect_started = anyio.Event()
+    allow_disconnect = anyio.Event()
+    client = Client(
+        transport=_DelayedDisconnectTransport(
+            FastMCPTransport(fastmcp_server),
+            disconnect_started=disconnect_started,
+            allow_disconnect=allow_disconnect,
+        )
+    )
+
+    await client._connect()
+    original_session_task = client._session_state.session_task
+    assert original_session_task is not None
+
+    close_task = asyncio.create_task(client.close())
+    await disconnect_started.wait()
+
+    close_task.cancel()
+
+    async def reconnect_and_count_tools() -> int:
+        async with client:
+            assert client._session_state.session_task is not original_session_task
+            tools = await client.list_tools()
+            return len(tools)
+
+    reconnect_task = asyncio.create_task(reconnect_and_count_tools())
+    await asyncio.sleep(0)
+    assert not reconnect_task.done()
+
+    allow_disconnect.set()
+
+    with contextlib.suppress(asyncio.CancelledError):
+        await close_task
+
+    assert await reconnect_task == 3
+    assert original_session_task.done()
+
+
+async def test_disconnect_with_hanging_transport_does_not_leak_session_task(
+    fastmcp_server, monkeypatch
+):
+    """A hung transport teardown must not leak the background session task.
+
+    Simulates the failure mode reported in
+    https://github.com/PrefectHQ/fastmcp/issues/3947: the remote HTTP server
+    has dropped the keep-alive connection, so the termination POST inside
+    the transport never returns. ``__aexit__`` must bound the wait and
+    cancel the runner so a subsequent Client can reuse the same transport
+    resources.
+    """
+    monkeypatch.setattr(fastmcp.settings, "client_disconnect_timeout", 0.2)
+
+    disconnect_started = anyio.Event()
+    never_allow_disconnect = anyio.Event()
+
+    client = Client(
+        transport=_DelayedDisconnectTransport(
+            FastMCPTransport(fastmcp_server),
+            disconnect_started=disconnect_started,
+            allow_disconnect=never_allow_disconnect,
+        )
+    )
+
+    async with client:
+        tools = await client.list_tools()
+        assert len(tools) == 3
+        session_task = client._session_state.session_task
+        assert session_task is not None
+
+    # Transport hung during teardown; the client should have bounded the
+    # wait, cancelled the runner, and cleared its own reference.
+    assert disconnect_started.is_set()
+    assert client._session_state.session_task is None
+    assert session_task.done()
+
+    # And the Client is reusable for a fresh session.
+    async with client:
+        tools = await client.list_tools()
+        assert len(tools) == 3
 
 
 async def test_concurrent_client_context_managers():
@@ -749,3 +858,52 @@ async def test_client_does_not_unwrap_dict_result():
         assert result.structured_content == {"a": 1}
         assert result.data == {"a": 1}
         assert result.meta is None
+
+
+async def test_client_list_dict_return_type():
+    """list[dict] return type should produce list of dicts, not Root() objects (issue #3867)."""
+    server = FastMCP()
+
+    @server.tool
+    def get_temperatures() -> list[dict]:
+        """Get current temperatures for all cities"""
+        return [
+            {"city": "NYC", "temp": 72},
+            {"city": "LA", "temp": 85},
+        ]
+
+    client = Client(transport=FastMCPTransport(server))
+    async with client:
+        result = await client.call_tool("get_temperatures", {})
+        assert result.data == [{"city": "NYC", "temp": 72}, {"city": "LA", "temp": 85}]
+
+
+def test_client_new_resets_mutable_task_state(fastmcp_server):
+    """Client.new() should not share mutable task tracking structures."""
+    client = Client(transport=FastMCPTransport(fastmcp_server))
+
+    client._task_registry["task-1"] = lambda: None  # type: ignore[assignment]  # ty:ignore[invalid-assignment]
+    client._submitted_task_ids.add("task-1")
+
+    clone = client.new()
+
+    assert clone is not client
+    assert clone._task_registry == {}
+    assert clone._submitted_task_ids == set()
+    assert clone._task_registry is not client._task_registry
+    assert clone._submitted_task_ids is not client._submitted_task_ids
+
+
+def test_client_new_rebinds_default_task_notification_handler(fastmcp_server):
+    """Client.new() should bind the default task handler to the cloned client."""
+    client = Client(transport=FastMCPTransport(fastmcp_server))
+
+    handler = client._session_kwargs.get("message_handler")
+    assert isinstance(handler, TaskNotificationHandler)
+
+    clone = client.new()
+
+    clone_handler = clone._session_kwargs.get("message_handler")
+    assert isinstance(clone_handler, TaskNotificationHandler)
+    assert clone_handler is not handler
+    assert clone_handler._client_ref() is clone

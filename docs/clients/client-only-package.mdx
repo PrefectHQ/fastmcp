@@ -1,0 +1,89 @@
+---
+title: Client-Only Package
+description: Use FastMCP's client without installing the full server framework.
+icon: package
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.3.0" />
+
+FastMCP's full `fastmcp` package includes everything needed to build and run MCP servers, apps, proxies, and clients. If you are only embedding an MCP client in another framework, building your own LLM host, or testing MCP servers, you can install the smaller client-only package instead.
+
+```bash
+pip install "fastmcp-slim[client]"
+```
+
+The client-only package uses the `fastmcp` import namespace:
+
+```python
+from fastmcp import Client
+
+client = Client("https://example.com/mcp")
+```
+
+Use `fastmcp-slim[client]` when your code connects to MCP servers but does not define or run FastMCP servers itself. For example, framework authors can depend on `fastmcp-slim[client]` to provide MCP connectivity without requiring users to install the full FastMCP server stack.
+
+## Supported Usage
+
+Client-only installs support remote and subprocess transports:
+
+```python
+from fastmcp import Client
+
+# Remote MCP server
+http_client = Client("https://example.com/mcp")
+
+# Local MCP server over stdio
+stdio_client = Client("my_server.py")
+```
+
+Single-server MCP configuration works as well:
+
+```python
+from fastmcp import Client
+
+config = {
+    "mcpServers": {
+        "weather": {
+            "url": "https://weather.example.com/mcp"
+        }
+    }
+}
+
+client = Client(config)
+```
+
+Optional sampling handlers are available through the same extras as the full package:
+
+```bash
+pip install "fastmcp-slim[client,openai]"
+pip install "fastmcp-slim[client,anthropic]"
+pip install "fastmcp-slim[client,gemini]"
+```
+
+## When to Use the Full Package
+
+Install `fastmcp` when you need server-side FastMCP features:
+
+```bash
+pip install fastmcp
+```
+
+The full package remains the default for most users and continues to support the existing import style:
+
+```python
+from fastmcp import Client, FastMCP
+
+server = FastMCP("Example")
+client = Client(server)
+```
+
+Use the full package for:
+
+- defining or running FastMCP servers
+- in-memory clients connected directly to `FastMCP` server objects
+- multi-server MCP configurations
+- FastMCP apps, proxies, server auth, middleware, and other server-side features
+
+The `fastmcp-slim` package is intentionally narrower: it is for client-only consumers who want FastMCP's MCP client behavior without depending on the full framework.

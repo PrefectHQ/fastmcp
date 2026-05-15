@@ -19,11 +19,11 @@ The experimental OpenAPI parser is now the standard implementation. The legacy p
 **If you were using the experimental parser:** Update your imports from the experimental module to the standard location:
 
 <CodeGroup>
-```python Before
+```python test="skip" Before
 from fastmcp.experimental.server.openapi import FastMCPOpenAPI, RouteMap, MCPType
 ```
 
-```python After
+```python test="skip" After
 from fastmcp.server.openapi import FastMCPOpenAPI, RouteMap, MCPType
 ```
 </CodeGroup>
@@ -36,7 +36,7 @@ The following deprecated features have been removed in v2.14.0:
 
 **BearerAuthProvider** (deprecated in v2.11):
 <CodeGroup>
-```python Before
+```python test="skip" Before
 from fastmcp.server.auth.providers.bearer import BearerAuthProvider
 ```
 
@@ -47,7 +47,7 @@ from fastmcp.server.auth.providers.jwt import JWTVerifier
 
 **Context.get_http_request()** (deprecated in v2.2.11):
 <CodeGroup>
-```python Before
+```python test="skip" Before
 request = context.get_http_request()
 ```
 
@@ -59,7 +59,7 @@ request = get_http_request()
 
 **Top-level Image import** (deprecated in v2.8.1):
 <CodeGroup>
-```python Before
+```python test="skip" Before
 from fastmcp import Image
 ```
 

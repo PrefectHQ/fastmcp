@@ -208,10 +208,13 @@ class TestResourceResult:
         assert result.contents[0].content == b"\xff\xfe"
         assert result.contents[0].mime_type == "application/octet-stream"
 
-    def test_init_from_dict_raises_type_error(self):
-        """Dict input raises TypeError - must use ResourceContent for serialization."""
-        with pytest.raises(TypeError, match="must be str, bytes, or list"):
-            ResourceResult({"page": 1, "total": 100})  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+    def test_init_from_dict_auto_serializes(self):
+        """Dict input is auto-serialized to JSON text."""
+        result = ResourceResult({"page": 1, "total": 100})  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+        assert len(result.contents) == 1
+        text = str(result.contents[0].content)
+        assert '"page"' in text
+        assert '"total"' in text
 
     def test_init_from_single_resource_content_raises_type_error(self):
         """Single ResourceContent raises TypeError - must be in a list."""
@@ -354,3 +357,16 @@ class TestResourceMetaPropagation:
             result = await client.read_resource_mcp("test://both-meta")
             assert result.meta == {"result_key": "result_val"}
             assert result.contents[0].meta == {"item_key": "item_val"}
+
+    async def test_json_native_return_preserves_component_meta(self):
+        """JSON-native returns should propagate component-level meta to content."""
+        mcp = FastMCP()
+
+        @mcp.resource("test://json-meta", meta={"csp": "default-src 'none'"})
+        def json_resource() -> dict[str, str]:
+            return {"hello": "world"}
+
+        async with Client(mcp) as client:
+            result = await client.read_resource_mcp("test://json-meta")
+            assert len(result.contents) == 1
+            assert result.contents[0].meta == {"csp": "default-src 'none'"}

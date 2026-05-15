@@ -30,13 +30,13 @@ from fastmcp.tools.base import Tool
 
 
 class TestFastMCPAppInit:
-    def test_app_name_with_triple_underscore_rejected(self):
-        with pytest.raises(ValueError, match="must not contain '___'"):
-            FastMCPApp("my___app")
-
-    def test_app_name_with_single_or_double_underscore_ok(self):
+    def test_app_name_with_underscores_ok(self):
+        # The old `___` separator is gone — backend tool routing now uses
+        # a hashed positional address rather than a name-based prefix, so
+        # any character is fine inside an app name.
         FastMCPApp("my_app")
         FastMCPApp("my__app")
+        FastMCPApp("my___app")
 
 
 class TestAppTool:
@@ -246,7 +246,8 @@ class TestAppUI:
         assert meta is not None
         assert meta["ui"]["resourceUri"] == "ui://prefab/renderer.html"
 
-    async def test_ui_has_csp(self):
+    async def test_ui_tool_has_no_csp(self):
+        """CSP belongs on the UI resource, not the tool (per MCP Apps spec)."""
         app = FastMCPApp("test")
 
         @app.ui()
@@ -256,8 +257,7 @@ class TestAppUI:
         tools = await app._list_tools()
         meta = tools[0].meta
         assert meta is not None
-        csp = meta["ui"].get("csp")
-        assert csp is not None
+        assert "csp" not in meta["ui"]
 
     async def test_ui_with_title_and_description(self):
         app = FastMCPApp("test")
@@ -287,65 +287,29 @@ class TestAppUI:
 
 
 class TestResolveToolRef:
-    def test_resolve_string_no_app_name(self):
-        """Without an app name, strings pass through unprefixed."""
+    def test_resolve_string_no_context(self):
+        """Without a running Context the resolver returns bare names."""
         result = _make_resolver()("save_contact")
         assert isinstance(result, ResolvedTool)
         assert result.name == "save_contact"
 
     def test_resolve_string_with_app_name(self):
-        """With an app name, strings get the ___-prefix."""
-        result = _make_resolver("Files")("store_files")
-        assert isinstance(result, ResolvedTool)
-        assert result.name == "Files___store_files"
+        """With an app name the resolver produces a hashed backend name."""
+        from fastmcp.server.providers.addressing import hashed_backend_name
 
-    def test_resolve_string_already_prefixed(self):
-        """Strings that already contain ___ are not double-prefixed."""
-        result = _make_resolver("Files")("Other___store_files")
+        result = _make_resolver("contacts")("save_contact")
         assert isinstance(result, ResolvedTool)
-        assert result.name == "Other___store_files"
+        assert result.name == hashed_backend_name("contacts", "save_contact")
 
-    def test_resolve_callable_no_app_name(self):
+    def test_resolve_callable_no_context(self):
+        """Without context, callables resolve to their bare __name__."""
+
         def my_tool():
             pass
 
         result = _make_resolver()(my_tool)
         assert isinstance(result, ResolvedTool)
         assert result.name == "my_tool"
-
-    def test_resolve_callable_with_app_name(self):
-        """Callables also get the ___-prefix when an app name is set."""
-
-        def store_files():
-            pass
-
-        result = _make_resolver("Files")(store_files)
-        assert isinstance(result, ResolvedTool)
-        assert result.name == "Files___store_files"
-
-    def test_resolve_fastmcp_metadata(self):
-        from fastmcp.tools.function_tool import ToolMeta
-
-        def my_tool():
-            pass
-
-        my_tool.__fastmcp__ = ToolMeta(name="custom_name")  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-
-        result = _make_resolver()(my_tool)
-        assert isinstance(result, ResolvedTool)
-        assert result.name == "custom_name"
-
-    def test_resolve_fastmcp_metadata_with_app_name(self):
-        from fastmcp.tools.function_tool import ToolMeta
-
-        def my_tool():
-            pass
-
-        my_tool.__fastmcp__ = ToolMeta(name="custom_name")  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-
-        result = _make_resolver("MyApp")(my_tool)
-        assert isinstance(result, ResolvedTool)
-        assert result.name == "MyApp___custom_name"
 
     def test_resolve_unresolvable_raises(self):
         with pytest.raises(ValueError):
@@ -491,8 +455,12 @@ class TestProviderInterface:
 
 
 class TestCallToolAppRouting:
-    async def test_call_tool_with_app_name(self):
-        """Server.call_tool routes via get_app_tool when app_name is set."""
+    async def test_call_tool_with_hashed_name(self):
+        """A backend tool with visibility=['app'] is callable via its
+        hashed-name address — the same form a Prefab UI's resolver would
+        produce when serializing a peer reference."""
+        from fastmcp.server.providers.addressing import hashed_backend_name
+
         app = FastMCPApp("contacts")
 
         @app.tool()
@@ -502,11 +470,13 @@ class TestCallToolAppRouting:
         server = FastMCP("Platform")
         server.add_provider(app)
 
-        result = await server.call_tool("contacts___save", {"name": "alice"})
+        result = await server.call_tool(
+            hashed_backend_name("contacts", "save"), {"name": "alice"}
+        )
         assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
-    async def test_call_tool_without_app_name_model_visible(self):
-        """Regular name-based resolution works for model-visible tools."""
+    async def test_call_tool_model_visible_uses_display_name(self):
+        """Tools with visibility=['app','model'] are callable by display name."""
         app = FastMCPApp("test")
 
         @app.tool(model=True)
@@ -519,8 +489,12 @@ class TestCallToolAppRouting:
         result = await server.call_tool("save", {"name": "bob"})
         assert result.content[0].text == "saved bob"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
-    async def test_app_name_survives_namespace(self):
-        """app_name routing bypasses namespace transforms."""
+    async def test_hashed_name_survives_namespace_mount(self):
+        """The hashed-name path bypasses display-layer transforms entirely.
+        A FastMCPApp mounted under a Namespace transform still has its
+        backend tools reachable via the same hash."""
+        from fastmcp.server.providers.addressing import hashed_backend_name
+
         app = FastMCPApp("crm")
 
         @app.tool()
@@ -530,11 +504,13 @@ class TestCallToolAppRouting:
         server = FastMCP("Platform")
         server.add_provider(app, namespace="crm")
 
-        result = await server.call_tool("crm___save_contact", {"name": "alice"})
+        result = await server.call_tool(
+            hashed_backend_name("crm", "save_contact"), {"name": "alice"}
+        )
         assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
-    async def test_namespaced_name_also_works(self):
-        """Namespaced tool name works through normal resolution."""
+    async def test_namespaced_display_name_also_works(self):
+        """Model-visible tools still resolve through Namespace as before."""
         app = FastMCPApp("crm")
 
         @app.tool(model=True)
@@ -547,10 +523,11 @@ class TestCallToolAppRouting:
         result = await server.call_tool("crm_save_contact", {"name": "bob"})
         assert result.content[0].text == "saved bob"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
-    async def test_app_name_auth_blocks_unauthorized(self):
-        """Auth checks run even when routing via app_name."""
+    async def test_hashed_name_auth_blocks_unauthorized(self):
+        """Auth checks run on the hashed-name dispatch path too."""
         from fastmcp.exceptions import NotFoundError
         from fastmcp.server.context import _current_transport
+        from fastmcp.server.providers.addressing import hashed_backend_name
 
         app = FastMCPApp("test")
         deny_all = AsyncMock(return_value=False)
@@ -565,12 +542,16 @@ class TestCallToolAppRouting:
         token = _current_transport.set("streamable-http")
         try:
             with pytest.raises(NotFoundError):
-                await server.call_tool("test___secret", {})
+                await server.call_tool(hashed_backend_name("test", "secret"), {})
         finally:
             _current_transport.reset(token)
 
-    async def test_two_apps_same_tool_name_routed_correctly(self):
-        """Two apps with same tool name disambiguated by app_name."""
+    async def test_two_apps_same_tool_name_routed_by_address(self):
+        """Two FastMCPApps each with a `save` tool live at distinct
+        addresses, so they hash differently and the dispatcher routes
+        each call to the right app without name collisions."""
+        from fastmcp.server.providers.addressing import hashed_backend_name
+
         contacts = FastMCPApp("contacts")
         billing = FastMCPApp("billing")
 
@@ -583,33 +564,18 @@ class TestCallToolAppRouting:
             return f"invoice: {amount}"
 
         server = FastMCP("Platform")
-        server.add_provider(contacts)
-        server.add_provider(billing)
+        server.add_provider(contacts)  # → address (0,)
+        server.add_provider(billing)  # → address (1,)
 
-        r1 = await server.call_tool("contacts___save", {"name": "alice"})
-        r2 = await server.call_tool("billing___save", {"amount": "100"})
+        r1 = await server.call_tool(
+            hashed_backend_name("contacts", "save"), {"name": "alice"}
+        )
+        r2 = await server.call_tool(
+            hashed_backend_name("billing", "save"), {"amount": "100"}
+        )
 
         assert r1.content[0].text == "contact: alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
         assert r2.content[0].text == "invoice: 100"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
-
-    async def test_deeply_nested_app(self):
-        """App tool is found even through multiple levels of nesting."""
-        app = FastMCPApp("deep")
-
-        @app.tool()
-        def hidden(x: str) -> str:
-            return x
-
-        inner = FastMCP("Inner")
-        inner.add_provider(app, namespace="app")
-
-        outer = FastMCP("Outer")
-        outer.mount(inner, namespace="inner")
-
-        # Normal resolution: would need "inner_app_hidden"
-        # App routing: bypasses all transforms
-        result = await outer.call_tool("deep___hidden", {"x": "found"})
-        assert result.content[0].text == "found"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
 
 # ---------------------------------------------------------------------------
@@ -679,8 +645,12 @@ class TestAppOnlyToolFiltering:
         names = [t.name for t in tools]
         assert "save" not in names
 
-        # But still callable via app_name routing
-        result = await server.call_tool("contacts___save", {"name": "alice"})
+        # But still callable via the hashed-address routing path.
+        from fastmcp.server.providers.addressing import hashed_backend_name
+
+        result = await server.call_tool(
+            hashed_backend_name("contacts", "save"), {"name": "alice"}
+        )
         assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
     async def test_app_only_tool_hidden_from_get_tool(self):
@@ -831,8 +801,15 @@ class TestComposition:
         server.add_provider(crm, namespace="crm")
         server.add_provider(billing, namespace="billing")
 
-        r1 = await server.call_tool("CRM___save_contact", {"name": "alice"})
-        r2 = await server.call_tool("Billing___create_invoice", {"amount": 100})
+        from fastmcp.server.providers.addressing import hashed_backend_name
+
+        # CRM is at address (0,), billing at (1,) — registration order.
+        r1 = await server.call_tool(
+            hashed_backend_name("CRM", "save_contact"), {"name": "alice"}
+        )
+        r2 = await server.call_tool(
+            hashed_backend_name("Billing", "create_invoice"), {"amount": 100}
+        )
 
         assert r1.content[0].text == "alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
         assert r2.content[0].text == "100"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
@@ -853,16 +830,21 @@ class TestComposition:
         names = {t.name for t in tools}
         assert names == {"dashboard", "save"}
 
-    async def test_ui_registers_prefab_renderer_resource(self):
+    async def test_ui_synthesizes_per_tool_renderer_resource(self):
+        """Each @app.ui() tool gets its own renderer resource synthesized
+        on demand from the server's address registry."""
         app = FastMCPApp("test")
 
         @app.ui()
         def dashboard() -> str:
             return "ui"
 
-        resources = await app._list_resources()
-        uris = [str(r.uri) for r in resources]
-        assert any("ui://prefab/renderer.html" in uri for uri in uris)
+        server = FastMCP("Platform")
+        server.add_provider(app)
+
+        resources = list(await server.list_resources())
+        prefab = [r for r in resources if "prefab/tool" in str(r.uri)]
+        assert len(prefab) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -874,7 +856,9 @@ class TestAppIntegration:
     async def test_full_app_lifecycle_through_client(self):
         """End-to-end: mount an app on a namespaced server, call UI tool
         through a client (verifying structured_content is returned), then
-        call the backend tool via the ___-prefixed name."""
+        call the backend tool via its hashed-address name."""
+        from fastmcp.server.providers.addressing import hashed_backend_name
+
         app = FastMCPApp("contacts")
 
         @app.ui()
@@ -901,10 +885,10 @@ class TestAppIntegration:
             sc = result.structuredContent
             assert sc is not None
 
-        # Call the backend tool via prefixed name
-        # (bypasses namespace transforms and visibility filtering)
+        # Call the backend tool via its hashed address — bypasses namespace
+        # transforms and visibility filtering by going through the registry.
         backend_result = await server.call_tool(
-            "contacts___save_contact",
+            hashed_backend_name("contacts", "save_contact"),
             {"name": "Alice", "email": "alice@example.com"},
         )
         result_text = backend_result.content[0].text  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]

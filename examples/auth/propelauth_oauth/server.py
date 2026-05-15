@@ -9,7 +9,7 @@ Required environment variables:
 
 Optional:
 - PROPELAUTH_REQUIRED_SCOPES: Comma-separated scopes tokens must include
-- BASE_URL: Public URL where the FastMCP server is exposed (defaults to `http://localhost:8000/`)
+- BASE_URL: Public URL where the FastMCP server is exposed (defaults to `http://127.0.0.1:8000/`)
 
 To run:
     python server.py
@@ -29,7 +29,7 @@ auth = PropelAuthProvider(
     auth_url=os.environ["PROPELAUTH_AUTH_URL"],
     introspection_client_id=os.environ["PROPELAUTH_INTROSPECTION_CLIENT_ID"],
     introspection_client_secret=os.environ["PROPELAUTH_INTROSPECTION_CLIENT_SECRET"],
-    base_url=os.getenv("BASE_URL", "http://localhost:8000/"),
+    base_url=os.getenv("BASE_URL", "http://127.0.0.1:8000/"),
 )
 
 mcp = FastMCP("PropelAuth OAuth Example Server", auth=auth)

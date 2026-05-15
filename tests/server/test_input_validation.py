@@ -13,6 +13,7 @@ from mcp.types import TextContent
 from pydantic import BaseModel
 
 from fastmcp import Client, FastMCP
+from fastmcp.exceptions import ToolError
 
 
 class UserProfile(BaseModel):
@@ -130,8 +131,13 @@ class TestPydanticModelArguments:
             assert "Alice" in result.content[0].text
             assert "30" in result.content[0].text
 
-    async def test_pydantic_model_with_stringified_json_no_strict(self):
-        """Test if stringified JSON is accepted for Pydantic models without strict validation."""
+    async def test_stringified_json_not_auto_parsed_for_pydantic_models(self):
+        """Stringified JSON is rejected for Pydantic model parameters.
+
+        Some LLM clients send stringified JSON (a JSON string containing a
+        JSON object) instead of a proper JSON object.  FastMCP does not
+        auto-parse these; callers get a validation error.
+        """
         mcp = FastMCP("TestServer", strict_input_validation=False)
 
         @mcp.tool
@@ -140,32 +146,12 @@ class TestPydanticModelArguments:
             return f"Created user {profile.name}, age {profile.age}"
 
         async with Client(mcp) as client:
-            # Some LLM clients send stringified JSON instead of actual JSON
             stringified = json.dumps(
                 {"name": "Bob", "age": 25, "email": "bob@example.com"}
             )
 
-            # This test verifies whether we handle stringified JSON
-            try:
-                result = await client.call_tool("create_user", {"profile": stringified})
-                # If this succeeds, we're handling stringified JSON
-                assert isinstance(result.content[0], TextContent)
-                assert "Bob" in result.content[0].text
-                stringified_json_works = True
-            except Exception as e:
-                # If this fails, we're not handling stringified JSON
-                stringified_json_works = False
-                error_msg = str(e)
-
-            # Document the behavior - we want to know if this works or not
-            if stringified_json_works:
-                # This is the desired behavior
-                pass
-            else:
-                # This means stringified JSON doesn't work - document it
-                assert (
-                    "validation" in error_msg.lower() or "invalid" in error_msg.lower()
-                )
+            with pytest.raises(ToolError, match="validation"):
+                await client.call_tool("create_user", {"profile": stringified})
 
     async def test_pydantic_model_with_coercion(self):
         """Pydantic models should benefit from coercion without strict validation."""
@@ -363,3 +349,71 @@ class TestEdgeCases:
             result = await client.call_tool("sum_numbers", {"numbers": ["1", "2", "3"]})
             assert isinstance(result.content[0], TextContent)
             assert result.content[0].text == "6"
+
+
+class TestExpectedToolFailureLogging:
+    async def test_validation_error_logs_warning_without_traceback(self, caplog):
+        mcp = FastMCP("TestServer", strict_input_validation=False)
+
+        @mcp.tool
+        def create_user(profile: UserProfile) -> str:
+            return profile.name
+
+        with caplog.at_level("DEBUG", logger="fastmcp.server.server"):
+            async with Client(mcp) as client:
+                with pytest.raises(ToolError):
+                    await client.call_tool(
+                        "create_user",
+                        {"profile": {"name": "x", "age": "nope", "email": "e"}},
+                    )
+
+        records = [
+            r for r in caplog.records if "Invalid arguments for tool" in r.getMessage()
+        ]
+        assert records, "expected a single 'Invalid arguments' warning"
+        assert records[0].levelname == "WARNING"
+        assert records[0].exc_info is None
+        assert "int_parsing" in records[0].getMessage()
+        assert "errors.pydantic.dev" not in records[0].getMessage()
+
+    async def test_tool_raised_tool_error_logs_without_traceback(self, caplog):
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def do_thing() -> str:
+            raise ToolError("structured failure payload")
+
+        with caplog.at_level("DEBUG", logger="fastmcp.server.server"):
+            async with Client(mcp) as client:
+                with pytest.raises(ToolError):
+                    await client.call_tool("do_thing", {})
+
+        records = [
+            r
+            for r in caplog.records
+            if r.getMessage() == "Error calling tool 'do_thing'"
+        ]
+        assert records, "expected an 'Error calling tool' log without traceback"
+        assert records[0].levelname == "ERROR"
+        assert not records[0].exc_info
+
+    async def test_unexpected_exception_still_logs_with_traceback(self, caplog):
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def do_thing() -> str:
+            raise RuntimeError("actual bug")
+
+        with caplog.at_level("DEBUG", logger="fastmcp.server.server"):
+            async with Client(mcp) as client:
+                with pytest.raises(ToolError):
+                    await client.call_tool("do_thing", {})
+
+        records = [
+            r
+            for r in caplog.records
+            if r.getMessage() == "Error calling tool 'do_thing'"
+        ]
+        assert records, "expected an 'Error calling tool' exception log"
+        assert records[0].levelname == "ERROR"
+        assert records[0].exc_info is not None

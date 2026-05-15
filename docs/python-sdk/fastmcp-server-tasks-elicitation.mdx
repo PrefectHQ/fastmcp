@@ -23,7 +23,7 @@ internal APIs for background task coordination.
 
 ## Functions
 
-### `elicit_for_task` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L42" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `elicit_for_task` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L47" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 elicit_for_task(task_id: str, session: ServerSession | None, message: str, schema: dict[str, Any], fastmcp: FastMCP) -> mcp.types.ElicitResult
@@ -50,10 +50,10 @@ in a Docket worker context where there's no active MCP request.
 - `McpError`: If the elicitation request fails
 
 
-### `relay_elicitation` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L234" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `relay_elicitation` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L239" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-relay_elicitation(session: ServerSession, session_id: str, task_id: str, elicitation: dict[str, Any], fastmcp: FastMCP) -> None
+relay_elicitation(session: ServerSession, task_scope: str | None, task_id: str, elicitation: dict[str, Any], fastmcp: FastMCP) -> None
 ```
 
 
@@ -66,16 +66,16 @@ response to Redis so the blocked worker can resume.
 
 **Args:**
 - `session`: MCP ServerSession
-- `session_id`: Session identifier
+- `task_scope`: Authorization scope for Redis key construction
 - `task_id`: Background task ID
 - `elicitation`: Elicitation metadata (message, requestedSchema)
 - `fastmcp`: FastMCP server instance
 
 
-### `handle_task_input` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L290" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `handle_task_input` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/server/tasks/elicitation.py#L295" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-handle_task_input(task_id: str, session_id: str, action: str, content: dict[str, Any] | None, fastmcp: FastMCP) -> bool
+handle_task_input(task_id: str, task_scope: str | None, action: str, content: dict[str, Any] | None, fastmcp: FastMCP) -> bool
 ```
 
 
@@ -86,7 +86,7 @@ request from a background task.
 
 **Args:**
 - `task_id`: The background task ID
-- `session_id`: The MCP session ID
+- `task_scope`: Authorization scope for Redis key construction
 - `action`: The elicitation action ("accept", "decline", "cancel")
 - `content`: The response content (for "accept" action)
 - `fastmcp`: The FastMCP server instance

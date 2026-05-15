@@ -225,11 +225,11 @@ class TestToolRegistrationWithApp:
         def my_tool() -> str:
             return "hello"
 
-        # App-only tools (visibility=["app"]) are hidden from list_tools
+        # app-only tools declared directly on the server are looked up normally.
+        # Filtering them out is the responsibility of the host.
         tools = list(await server.list_tools())
-        assert len(tools) == 0
+        assert len(tools) == 1
 
-        # But the tool exists on the provider
         tool = await server._get_tool("my_tool")
         assert tool is not None
         assert tool.meta is not None
@@ -256,10 +256,10 @@ class TestToolRegistrationWithApp:
         def my_tool() -> str:
             return "hello"
 
-        # App-only tools are hidden from list_tools, verify via provider
-        tool = await server._get_tool("my_tool")
-        assert tool is not None
-        mcp_tool = tool.to_mcp_tool()
+        tools = list(await server.list_tools())
+        assert len(tools) == 1
+
+        mcp_tool = tools[0].to_mcp_tool()
         assert mcp_tool.meta is not None
         assert mcp_tool.meta["ui"]["resourceUri"] == "ui://app"
         assert mcp_tool.meta["ui"]["visibility"] == ["app"]
@@ -398,6 +398,23 @@ class TestExtensionAdvertisement:
             extensions = extras.get("extensions", {})
             assert UI_EXTENSION_ID in extensions
 
+    async def test_experimental_capabilities_in_initialize_result(self):
+        server = FastMCP(
+            "test",
+            experimental_capabilities={"file_exchange": {"version": "0.3"}},
+        )
+
+        async with Client(server) as client:
+            experimental = client.initialize_result.capabilities.experimental or {}
+            assert experimental.get("file_exchange") == {"version": "0.3"}
+
+    async def test_experimental_capabilities_default_empty(self):
+        server = FastMCP("test")
+
+        async with Client(server) as client:
+            experimental = client.initialize_result.capabilities.experimental
+            assert not experimental
+
 
 # ---------------------------------------------------------------------------
 # Context.client_supports_extension
@@ -473,6 +490,18 @@ class TestIntegration:
 
         async with Client(server) as client:
             result = await client.call_tool("greet", {"name": "Alice"})
+            assert any("Hello, Alice!" in str(c) for c in result.content)
+
+    async def test_app_backend_tool_callable(self):
+        """A tool registered with AppConfig(visibility=["app"]) is callable."""
+        server = FastMCP("test")
+
+        @server.tool(app=AppConfig(visibility=["app"]))
+        async def backend_greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        async with Client(server) as client:
+            result = await client.call_tool("backend_greet", {"name": "Alice"})
             assert any("Hello, Alice!" in str(c) for c in result.content)
 
     async def test_extension_and_tool_together(self):
@@ -585,7 +614,8 @@ class TestPrefabAppConfig:
         assert config.csp is not None
         assert config.csp.frame_domains == ["https://example.com"]
 
-    async def test_auto_registers_renderer_resource(self):
+    async def test_auto_synthesizes_renderer_resource(self):
+        """Each prefab tool gets a per-tool renderer resource on demand."""
         from fastmcp.apps import PrefabAppConfig
 
         server = FastMCP("test")
@@ -595,11 +625,11 @@ class TestPrefabAppConfig:
             return "hello"
 
         resources = list(await server.list_resources())
-        uris = [str(r.uri) for r in resources]
-        assert any("ui://prefab/renderer.html" in u for u in uris)
+        prefab = [r for r in resources if "prefab/tool" in str(r.uri)]
+        assert len(prefab) == 1
 
     async def test_equivalent_to_app_true(self):
-        """PrefabAppConfig() should produce the same tool metadata as app=True."""
+        """PrefabAppConfig() and app=True both synthesize a per-tool renderer."""
         from fastmcp.apps import PrefabAppConfig
 
         server1 = FastMCP("test1")
@@ -621,4 +651,6 @@ class TestPrefabAppConfig:
         assert tools2[0].meta is not None
         ui2 = tools2[0].meta.get("ui", {})
 
-        assert ui1.get("resourceUri") == ui2.get("resourceUri")
+        # Both produce per-tool URIs in the prefab/tool/<hash>/ form.
+        assert ui1.get("resourceUri", "").startswith("ui://prefab/tool/")
+        assert ui2.get("resourceUri", "").startswith("ui://prefab/tool/")
