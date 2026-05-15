@@ -10,7 +10,7 @@ from typing import Annotated, Any, Literal, cast
 
 import pydantic_core
 from mcp.types import ToolAnnotations
-from pydantic import ConfigDict
+from pydantic import ConfigDict, PrivateAttr
 from pydantic.fields import Field
 from pydantic.functional_validators import BeforeValidator
 from pydantic.json_schema import SkipJsonSchema
@@ -266,6 +266,7 @@ class TransformedTool(Tool):
         Callable[..., Any]
     ]  # Always present, handles arg transformation
     transform_args: dict[str, ArgTransform]
+    _disable_structured_output: bool = PrivateAttr(default=False)
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
         """Run the tool with context set for forward() functions.
@@ -320,6 +321,19 @@ class TransformedTool(Tool):
                 result = await call_sync_fn_in_threadpool(self.fn, **arguments)
                 if inspect.isawaitable(result):
                     result = await result
+
+            if self._disable_structured_output:
+                if isinstance(result, ToolResult):
+                    return ToolResult(
+                        content=result.content,
+                        structured_content=None,
+                        meta=result.meta,
+                    )
+
+                return ToolResult(
+                    content=_convert_to_content(result, serializer=self.serializer),
+                    structured_content=None,
+                )
 
             # If transform function returns ToolResult, respect our output_schema setting
             if isinstance(result, ToolResult):
@@ -379,7 +393,7 @@ class TransformedTool(Tool):
         transform_fn: Callable[..., Any] | None = None,
         transform_args: dict[str, ArgTransform] | None = None,
         annotations: ToolAnnotations | NotSetT | None = NotSet,
-        output_schema: dict[str, Any] | NotSetT | None = NotSet,
+        output_schema: dict[str, Any] | Literal[False] | NotSetT | None = NotSet,
         serializer: Callable[[Any], str] | NotSetT | None = NotSet,  # Deprecated
         meta: dict[str, Any] | NotSetT | None = NotSet,
     ) -> TransformedTool:
@@ -400,8 +414,10 @@ class TransformedTool(Tool):
             tags: New tags. Defaults to parent's tags.
             annotations: New annotations. Defaults to parent's annotations.
             output_schema: Control output schema for structured outputs:
-                - None (default): Inherit from transform_fn if available, then parent tool
+                - NotSet (default): Inherit from transform_fn if available, then parent tool
                 - dict: Use custom output schema
+                - None: Remove output schema but still auto-detect structured content
+                - False: Disable output schema and strip structured content from results
             serializer: Deprecated. Return ToolResult from your tools for full control over serialization.
             meta: Control meta information:
                 - NotSet (default): Inherit from parent tool
@@ -443,8 +459,11 @@ class TransformedTool(Tool):
                 "properties": {"status": {"type": "string"}}
             })
 
-            # Disable structured outputs
+            # Remove output schema but keep automatic dict structured content
             Tool.from_tool(parent, output_schema=None)
+
+            # Disable structured outputs entirely
+            Tool.from_tool(parent, output_schema=False)
 
             # Return ToolResult for full control
             async def custom_output(**kwargs) -> ToolResult:
@@ -489,6 +508,7 @@ class TransformedTool(Tool):
         schema, forwarding_fn = cls._create_forwarding_transform(tool, transform_args)
 
         # Handle output schema
+        disable_structured_output = False
         if output_schema is NotSet:
             # Use smart fallback: try custom function, then parent
             if transform_fn is not None:
@@ -505,6 +525,9 @@ class TransformedTool(Tool):
                         final_output_schema = tool.output_schema
             else:
                 final_output_schema = tool.output_schema
+        elif output_schema is False:
+            final_output_schema = None
+            disable_structured_output = True
         else:
             final_output_schema = cast(dict | None, output_schema)
 
@@ -609,6 +632,7 @@ class TransformedTool(Tool):
             transform_args=transform_args,
             auth=tool.auth,
         )
+        transformed_tool._disable_structured_output = disable_structured_output
 
         return transformed_tool
 

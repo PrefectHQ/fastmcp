@@ -7,6 +7,7 @@ from typing import (
     Annotated,
     Any,
     ClassVar,
+    Literal,
     TypeAlias,
     overload,
 )
@@ -417,7 +418,7 @@ class Tool(FastMCPComponent):
         description: str | NotSetT | None = NotSet,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | NotSetT | None = NotSet,
-        output_schema: dict[str, Any] | NotSetT | None = NotSet,
+        output_schema: dict[str, Any] | Literal[False] | NotSetT | None = NotSet,
         serializer: ToolResultSerializerType | None = None,  # Deprecated
         meta: dict[str, Any] | NotSetT | None = NotSet,
         transform_args: dict[str, ArgTransform] | None = None,

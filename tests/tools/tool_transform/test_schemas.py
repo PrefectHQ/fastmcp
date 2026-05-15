@@ -86,6 +86,62 @@ class TestTransformToolOutputSchema:
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "Result: 5"
 
+    async def test_transform_output_schema_false_disables_structured_content(
+        self, base_dict_tool
+    ):
+        """Test output_schema=False disables structured content for raw dict results."""
+        new_tool = Tool.from_tool(base_dict_tool, output_schema=False)
+
+        assert new_tool.output_schema is None
+
+        result = await new_tool.run({"x": 5})
+
+        assert result.structured_content is None
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == '{"value":5}'
+
+    async def test_transform_output_schema_false_strips_tool_result_structured_content(
+        self, base_string_tool
+    ):
+        """Test output_schema=False strips structured content from ToolResult returns."""
+
+        async def custom_fn(x: int) -> ToolResult:
+            return ToolResult(
+                content=[TextContent(type="text", text=f"Direct: {x}")],
+                structured_content={"direct_value": x},
+                meta={"trace": "kept"},
+            )
+
+        new_tool = Tool.from_tool(
+            base_string_tool, transform_fn=custom_fn, output_schema=False
+        )
+
+        assert new_tool.output_schema is None
+
+        result = await new_tool.run({"x": 5})
+
+        assert result.structured_content is None
+        assert result.meta == {"trace": "kept"}
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "Direct: 5"
+
+    async def test_transform_output_schema_false_vs_none(self, base_dict_tool):
+        """Test None keeps dict fallback structured content while False disables it."""
+        tool_explicit_none = Tool.from_tool(base_dict_tool, output_schema=None)
+        tool_explicit_false = Tool.from_tool(base_dict_tool, output_schema=False)
+
+        result_none = await tool_explicit_none.run({"x": 5})
+        result_false = await tool_explicit_false.run({"x": 5})
+
+        assert result_none.structured_content == {"value": 5}
+        assert result_false.structured_content is None
+
+    def test_transform_output_schema_false_mcp_tool(self, base_dict_tool):
+        """Test output_schema=False removes the MCP output schema."""
+        new_tool = Tool.from_tool(base_dict_tool, output_schema=False)
+
+        assert new_tool.to_mcp_tool().outputSchema is None
+
     def test_transform_with_explicit_output_schema_dict(self, base_string_tool):
         """Test that explicit output schema overrides parent."""
         custom_schema = {
