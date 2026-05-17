@@ -285,7 +285,17 @@ mcp = FastMCP("Server", transforms=[code_mode])
 
 ### Resource Limits
 
-The default `MontySandboxProvider` can enforce execution limits — timeouts, memory caps, recursion depth, and more. Without limits, LLM-generated scripts can run indefinitely.
+The default `MontySandboxProvider` enforces execution limits — timeouts, memory caps, recursion depth, and more.
+
+Constructed with no arguments, it applies a conservative baseline so the out-of-box configuration is not unbounded: `max_duration_secs=30` and `max_memory=100_000_000` (100 MB). Pass an explicit `limits` dict to override it, or `limits=None` to run with no limits at all:
+
+```python
+from fastmcp.experimental.transforms.code_mode import MontySandboxProvider
+
+MontySandboxProvider()                  # baseline: 30s, 100 MB
+MontySandboxProvider(limits={...})      # your own limits
+MontySandboxProvider(limits=None)       # explicitly uncapped
+```
 
 ```python
 from fastmcp.experimental.transforms.code_mode import CodeMode
@@ -307,6 +317,18 @@ All keys are optional — omit any to leave that dimension uncapped:
 | `max_allocations` | `int` | Cap on total object allocations |
 | `max_recursion_depth` | `int` | Maximum recursion depth |
 | `gc_interval` | `int` | Garbage collection frequency |
+
+### Tool Call Limits
+
+A single `execute` block can issue many `call_tool()` invocations — a loop in LLM-generated code can fan out into a large number of backend operations from one request. `CodeMode` caps this at `max_tool_calls` (default `50`); exceeding it raises a `ToolError`. Pass `None` for no cap:
+
+```python
+from fastmcp.experimental.transforms.code_mode import CodeMode
+
+CodeMode()                      # default: 50 call_tool() calls per execute()
+CodeMode(max_tool_calls=200)    # raise the cap
+CodeMode(max_tool_calls=None)   # no cap
+```
 
 ### Custom Sandbox Providers
 
