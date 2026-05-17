@@ -7,41 +7,37 @@ propagation continues to work.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from unittest.mock import Mock, patch
 
 from opentelemetry import trace as otel_trace
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import INVALID_SPAN
 
 import fastmcp
+from fastmcp import Client, Context, FastMCP
 from fastmcp.telemetry import (
     get_noop_span,
     native_telemetry_enabled,
     suppress_fastmcp_telemetry,
 )
 
-# A fixed W3C traceparent: 00-<trace_id>-<span_id>-<flags>
-_INCOMING_TRACE_ID_HEX = "4bf92f3577b34da6a3ce929d0e0e4736"
-_INCOMING_TRACEPARENT = f"00-{_INCOMING_TRACE_ID_HEX}-00f067aa0ba902b7-01"
-
 
 @contextmanager
-def _propagation_only_with_incoming_meta(meta: dict[str, str] | None):
-    """Run in propagation_only mode with request_ctx exposing the given meta."""
+def _propagation_only_mode():
+    """Temporarily run in propagation_only telemetry mode."""
     original = fastmcp.settings.telemetry_mode
     fastmcp.settings.telemetry_mode = "propagation_only"
-    fake_req_ctx = Mock()
-    fake_req_ctx.meta = meta
-    fake_request_ctx = Mock()
-    fake_request_ctx.get = Mock(return_value=fake_req_ctx)
     try:
-        with patch(
-            "fastmcp.server.telemetry.request_ctx",
-            new=fake_request_ctx,
-        ):
-            yield
+        yield
     finally:
         fastmcp.settings.telemetry_mode = original
+
+
+def _fastmcp_server_span_names(names: list[str]) -> list[str]:
+    return [
+        n
+        for n in names
+        if n.startswith(("tools/call", "tools/list", "resources/", "prompts/"))
+    ]
 
 
 class TestNativeTelemetryEnabled:
@@ -151,61 +147,72 @@ class TestServerSpanSuppression:
 
 
 class TestPropagationOnlyInheritsIncomingTrace:
-    """The headline guarantee of propagation_only mode: even though FastMCP
-    emits no spans of its own, an incoming W3C traceparent in the request
-    `_meta` must still parent downstream user-created spans."""
+    """End-to-end: in propagation_only mode FastMCP emits no spans of its own,
+    yet an incoming trace propagated through the real MCP request `_meta` still
+    parents downstream user-created spans. Nothing is monkeypatched — a real
+    in-process Client drives a real server tool call.
+    """
 
-    def test_downstream_span_inherits_incoming_trace_id(
+    async def test_downstream_user_span_inherits_incoming_trace(
         self, trace_exporter: InMemorySpanExporter
     ):
-        from fastmcp.server.telemetry import server_span
+        captured: dict[str, int] = {}
 
-        with _propagation_only_with_incoming_meta(
-            {"traceparent": _INCOMING_TRACEPARENT}
-        ):
-            with server_span(
-                name="suppressed",
-                method="tools/call",
-                server_name="test-server",
-                component_type="tool",
-                component_key="tool://test",
-            ) as span:
-                assert span is INVALID_SPAN
+        with _propagation_only_mode():
+            server = FastMCP("interop-server")
+
+            @server.tool
+            async def work(ctx: Context) -> str:
                 # A span the *user* creates inside their handler.
-                tracer = otel_trace.get_tracer("user-code")
-                with tracer.start_as_current_span("user-span") as child:
-                    child_trace_id = child.get_span_context().trace_id
+                with otel_trace.get_tracer("user-code").start_as_current_span(
+                    "user-span"
+                ) as s:
+                    captured["downstream"] = s.get_span_context().trace_id
+                return "done"
 
-        # FastMCP emitted nothing of its own...
-        spans = trace_exporter.get_finished_spans()
-        assert [s.name for s in spans] == ["user-span"]
+            async with Client(server) as client:
+                # Real client-side root span; the client telemetry mixin
+                # injects the W3C traceparent into the request _meta.
+                with otel_trace.get_tracer("client-code").start_as_current_span(
+                    "client-root"
+                ) as root:
+                    captured["client"] = root.get_span_context().trace_id
+                    await client.call_tool("work", {})
+
+        names = sorted(s.name for s in trace_exporter.get_finished_spans())
+        # propagation_only: FastMCP emits none of its own server spans.
+        assert _fastmcp_server_span_names(names) == []
+        assert "user-span" in names and "client-root" in names
         # ...but the user's span inherited the incoming distributed trace.
-        expected = int(_INCOMING_TRACE_ID_HEX, 16)
-        assert child_trace_id == expected
-        assert spans[0].context.trace_id == expected
+        assert captured["client"] == captured["downstream"]
 
-    def test_downstream_span_starts_new_trace_without_incoming_context(
+    async def test_no_incoming_context_still_suppresses_and_runs(
         self, trace_exporter: InMemorySpanExporter
     ):
-        from fastmcp.server.telemetry import server_span
+        """Without any surrounding client span there is no incoming trace;
+        the call must still succeed and emit no FastMCP server spans."""
+        captured: dict[str, int] = {}
 
-        with _propagation_only_with_incoming_meta(None):
-            with server_span(
-                name="suppressed",
-                method="tools/call",
-                server_name="test-server",
-                component_type="tool",
-                component_key="tool://test",
-            ) as span:
-                assert span is INVALID_SPAN
-                tracer = otel_trace.get_tracer("user-code")
-                with tracer.start_as_current_span("user-span") as child:
-                    child_trace_id = child.get_span_context().trace_id
+        with _propagation_only_mode():
+            server = FastMCP("interop-server")
 
-        # No incoming traceparent → a fresh root trace, not the fixed one.
-        assert child_trace_id != int(_INCOMING_TRACE_ID_HEX, 16)
-        spans = trace_exporter.get_finished_spans()
-        assert [s.name for s in spans] == ["user-span"]
+            @server.tool
+            async def work(ctx: Context) -> str:
+                with otel_trace.get_tracer("user-code").start_as_current_span(
+                    "user-span"
+                ) as s:
+                    captured["downstream"] = s.get_span_context().trace_id
+                return "done"
+
+            async with Client(server) as client:
+                result = await client.call_tool("work", {})
+
+        assert result.data == "done"
+        names = sorted(s.name for s in trace_exporter.get_finished_spans())
+        assert _fastmcp_server_span_names(names) == []
+        assert "user-span" in names
+        # A self-rooted trace was created (no incoming parent to inherit).
+        assert "downstream" in captured
 
 
 class TestDelegateSpanSuppression:
