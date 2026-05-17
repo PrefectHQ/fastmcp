@@ -28,7 +28,10 @@ on:
     # BASE repo. NEVER check out or execute PR-head code here — it would run
     # with these permissions. This workflow only reads the PR payload and
     # calls the API; it never checks anything out.
-    types: [opened, edited, reopened, labeled, unlabeled]
+    # ready_for_review matters because the job skips drafts: without it a
+    # draft opened with no issue link would never be checked when it later
+    # becomes reviewable.
+    types: [opened, edited, reopened, ready_for_review, labeled, unlabeled]
 
 # Dry run: when 'false' the check still runs and logs its verdict but makes
 # NO mutations at all (no label, comment, close, reopen, or failure). Flip
@@ -163,10 +166,17 @@ jobs:
               }
             }
 
-            // Shared "this PR passes" cleanup: drop the label, reopen the PR
-            // only if THIS workflow had closed it (payload labels still show
-            // pre-removal state), and retire any stale enforcement comment.
-            async function clearEnforcement() {
+            // Shared "this PR passes" cleanup: drop the label, reopen, and
+            // retire any stale enforcement comment.
+            //
+            // For the normal pass paths we only reopen if THIS workflow had
+            // closed the PR — inferred from the label still being on the
+            // payload. The maintainer-override paths pass forceReopen: the
+            // `unlabeled` event payload no longer carries the just-removed
+            // label, so the heuristic can't see it; without forcing, the
+            // advertised "remove the label to bypass" gesture would leave
+            // the PR closed.
+            async function clearEnforcement(forceReopen = false) {
               await mutate(`remove "${LABEL}" from PR #${prNumber}`, async () => {
                 try {
                   await github.rest.issues.removeLabel({
@@ -177,7 +187,7 @@ jobs:
                 }
               });
               const hadLabel = pr.labels.map(l => l.name).includes(LABEL);
-              if (pr.state === 'closed' && hadLabel) {
+              if (pr.state === 'closed' && (forceReopen || hadLabel)) {
                 await mutate(`reopen PR #${prNumber}`, async () => {
                   await github.rest.pulls.update({
                     owner, repo, pull_number: prNumber, state: 'open',
@@ -189,7 +199,7 @@ jobs:
 
             async function applyBypass(reason) {
               console.log(reason);
-              await clearEnforcement();
+              await clearEnforcement(true);
               await mutate(`add sticky "bypass-issue-check" to PR #${prNumber}`, async () => {
                 try {
                   await github.rest.issues.getLabel({ owner, repo, name: 'bypass-issue-check' });
