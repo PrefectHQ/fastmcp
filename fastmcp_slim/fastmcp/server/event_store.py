@@ -121,7 +121,15 @@ class EventStore(SDKEventStore):
         # Trim to max events (delete old events)
         if len(event_ids) > self._max_events_per_stream:
             for old_id in event_ids[: -self._max_events_per_stream]:
-                await self._event_store.delete(key=old_id)
+                try:
+                    await self._event_store.delete(key=old_id)
+                except FileNotFoundError:
+                    # Race with another concurrent eviction (or external
+                    # removal) — the entry is already gone, which is the
+                    # desired post-condition. Some backends (e.g. file-tree
+                    # stores) surface this as FileNotFoundError instead of
+                    # treating delete as idempotent.
+                    logger.debug("event_store: %s already evicted", old_id)
             event_ids = event_ids[-self._max_events_per_stream :]
 
         await self._stream_store.put(

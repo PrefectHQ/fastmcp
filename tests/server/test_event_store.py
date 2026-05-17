@@ -194,6 +194,46 @@ class TestEventStore:
         assert len(replayed) == 1
 
 
+class TestEventStoreEvictionRace:
+    """Regression tests for issue #4143: concurrent eviction must not crash."""
+
+    async def test_eviction_swallows_file_not_found(self):
+        """A FileNotFoundError from the underlying delete must not propagate.
+
+        Some AsyncKeyValue backends (e.g. FileTreeStore from py-key-value-aio)
+        do an exists()-then-unlink() that races: two concurrent store_event
+        calls can both decide to evict the same key, and the loser hits
+        FileNotFoundError. The eviction is idempotent by intent, so a missing
+        key is success-by-another-name.
+        """
+        event_store = EventStore(max_events_per_stream=2, ttl=3600)
+
+        original_delete = event_store._event_store.delete
+        call_count = {"n": 0}
+
+        async def flaky_delete(*args, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise FileNotFoundError(
+                    2, "No such file or directory", "/tmp/missing.json"
+                )
+            return await original_delete(*args, **kwargs)
+
+        event_store._event_store.delete = flaky_delete  # type: ignore[method-assign]
+
+        msg = JSONRPCMessage(root=JSONRPCRequest(jsonrpc="2.0", method="t", id=1))
+
+        # Fill past the cap so eviction triggers; first eviction call raises
+        # FileNotFoundError and must be swallowed.
+        await event_store.store_event("stream-1", msg)
+        await event_store.store_event("stream-1", msg)
+        # This third call triggers eviction of the first event and should
+        # not raise even though the backing delete reports FileNotFound.
+        third = await event_store.store_event("stream-1", msg)
+        assert third is not None
+        assert call_count["n"] >= 1
+
+
 class TestEventStoreIntegration:
     """Integration tests for EventStore with actual message types."""
 
