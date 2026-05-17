@@ -274,9 +274,7 @@ class TestRateLimiterLRUEviction:
     """LRU bounding of per-client limiters (issue #4053)."""
 
     def test_token_bucket_evicts_lru_when_full(self):
-        mw = RateLimitingMiddleware(
-            get_client_id=lambda ctx: ctx, max_clients=2
-        )
+        mw = RateLimitingMiddleware(get_client_id=lambda ctx: ctx, max_clients=2)
         mw._get_limiter("a")
         mw._get_limiter("b")
         # Cache full at 2; adding "c" evicts the LRU ("a"), not the newcomer.
@@ -284,9 +282,7 @@ class TestRateLimiterLRUEviction:
         assert list(mw._client_limiters) == ["b", "c"]
 
     def test_token_bucket_move_to_end_on_access_protects_active_client(self):
-        mw = RateLimitingMiddleware(
-            get_client_id=lambda ctx: ctx, max_clients=2
-        )
+        mw = RateLimitingMiddleware(get_client_id=lambda ctx: ctx, max_clients=2)
         mw._get_limiter("a")
         mw._get_limiter("b")
         # Touch "a" so it is most-recently-used; "b" is now LRU.
@@ -300,9 +296,7 @@ class TestRateLimiterLRUEviction:
         assert mw._get_limiter("a") is first
 
     def test_token_bucket_bound_never_exceeds_max_clients(self):
-        mw = RateLimitingMiddleware(
-            get_client_id=lambda ctx: ctx, max_clients=5
-        )
+        mw = RateLimitingMiddleware(get_client_id=lambda ctx: ctx, max_clients=5)
         for i in range(100):
             mw._get_limiter(f"client-{i}")
         assert len(mw._client_limiters) == 5
@@ -337,9 +331,7 @@ class TestRateLimiterLRUEviction:
             SlidingWindowRateLimitingMiddleware(max_requests=10, max_clients=bad)
 
     def test_max_clients_one_keeps_only_newest(self):
-        mw = RateLimitingMiddleware(
-            get_client_id=lambda ctx: ctx, max_clients=1
-        )
+        mw = RateLimitingMiddleware(get_client_id=lambda ctx: ctx, max_clients=1)
         mw._get_limiter("a")
         mw._get_limiter("b")
         assert list(mw._client_limiters) == ["b"]
