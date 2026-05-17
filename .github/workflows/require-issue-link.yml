@@ -4,9 +4,15 @@
 # tracked issue; this enforces that for outside contributors.
 #
 # Adapted from langchain-ai/langchain's require_issue_link.yml. Differences:
-#   - Self-contained: "external" is derived from the PR author's
-#     author_association, not a label applied by a separate labeler
-#     workflow, so this can also run on `opened`.
+#   - Self-contained: it does NOT depend on a separate labeler workflow
+#     applying an "external" label first, so it can run on `opened`.
+#   - "External" is determined authoritatively, in-script, from the PR
+#     author's repo collaborator permission level — NOT from the event
+#     payload's author_association. author_association reports MEMBER only
+#     for *public* org members; a maintainer whose org membership is
+#     private appears as CONTRIBUTOR/NONE, so gating on it would wrongly
+#     enforce against private-member maintainers. getCollaboratorPermission
+#     reflects effective write access regardless of membership visibility.
 #   - No assignee requirement. fastmcp's CONTRIBUTING.md states that
 #     referencing an issue "isn't a permission step" — only the link is
 #     enforced, not issue assignment.
@@ -39,15 +45,19 @@ concurrency:
 
 jobs:
   check-issue-link:
-    # Skip drafts, bots, maintainers (write+ access shows up as OWNER /
-    # MEMBER / COLLABORATOR), and PRs already bypassed or trusted. Only the
-    # primary actions plus the maintainer-override action (removing the
-    # missing-issue-link label) get past this gate.
+    # Cheap pre-filters only. Maintainer detection is deliberately NOT done
+    # here: the job-level `if` can't call the API, and author_association is
+    # unreliable for private org members (see file header). The job runs,
+    # then the script resolves the author's real permission level and
+    # exits early for maintainers. The extra cost is a couple of API calls
+    # on maintainer PRs — acceptable for a correct, single source of truth.
+    #
+    # Gate: skip drafts, bots, and already-bypassed/trusted PRs. Allow the
+    # primary actions plus the one maintainer-override action we care about
+    # (removing the missing-issue-link label).
     if: >-
       github.event.pull_request.draft == false &&
-      github.actor != 'dependabot[bot]' &&
       !endsWith(github.actor, '[bot]') &&
-      !contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association) &&
       !contains(github.event.pull_request.labels.*.name, 'trusted-contributor') &&
       !contains(github.event.pull_request.labels.*.name, 'bypass-issue-check') &&
       (
@@ -88,35 +98,54 @@ jobs:
               });
             }
 
-            // ── Does the event sender have write+ access on this repo? ─────
-            // Uses the collaborator-permission endpoint, not org membership:
-            // GITHUB_TOKEN is an app installation token and is never an org
-            // member, so the org endpoint always 403s.
+            // ── Does `username` have write+ access on this repo? ───────────
+            // Authoritative maintainer check. Uses the collaborator-
+            // permission endpoint rather than org membership or the event
+            // payload's author_association:
+            //   - GITHUB_TOKEN is an app installation token and is never an
+            //     org member, so the org-membership endpoint always 403s.
+            //   - author_association reports MEMBER only for *public* org
+            //     members; a private-member maintainer shows as
+            //     CONTRIBUTOR/NONE. Permission level is membership-visibility
+            //     independent and reflects effective access.
+            // A 404 (not a collaborator at all) → not a maintainer. Other
+            // errors (rate limit, 5xx) must throw: silently treating them
+            // as "not a maintainer" could wrongly enforce against — and
+            // close — a legitimate maintainer's PR.
+            async function hasWriteAccess(username) {
+              if (!username) {
+                throw new Error('No username supplied — cannot check permissions');
+              }
+              try {
+                const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                  owner, repo, username,
+                });
+                const perm = data.permission;
+                const isMaintainer = ['admin', 'maintain', 'write'].includes(perm);
+                console.log(
+                  `${username} has ${perm} permission — ` +
+                  `${isMaintainer ? 'treating as maintainer' : 'not a maintainer'}`,
+                );
+                return isMaintainer;
+              } catch (e) {
+                if (e.status === 404) {
+                  console.log(`${username} is not a collaborator — not a maintainer`);
+                  return false;
+                }
+                throw new Error(
+                  `Permission check failed for ${username} (HTTP ${e.status ?? 'unknown'}): ${e.message}`,
+                );
+              }
+            }
+
+            // Thin wrapper for the maintainer-override paths, which key off
+            // the event sender (who reopened the PR / removed the label).
             async function senderIsMaintainer() {
               const sender = context.payload.sender?.login;
               if (!sender) {
                 throw new Error('Event has no sender — cannot check permissions');
               }
-              try {
-                const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
-                  owner, repo, username: sender,
-                });
-                const perm = data.permission;
-                if (['admin', 'maintain', 'write'].includes(perm)) {
-                  console.log(`${sender} has ${perm} permission — treating as maintainer`);
-                  return { isMaintainer: true, login: sender };
-                }
-                console.log(`${sender} has ${perm} permission — not a maintainer`);
-                return { isMaintainer: false, login: sender };
-              } catch (e) {
-                if (e.status === 404) {
-                  console.log(`Cannot resolve permissions for ${sender} — treating as non-maintainer`);
-                  return { isMaintainer: false, login: sender };
-                }
-                throw new Error(
-                  `Permission check failed for ${sender} (HTTP ${e.status ?? 'unknown'}): ${e.message}`,
-                );
-              }
+              return { isMaintainer: await hasWriteAccess(sender), login: sender };
             }
 
             const MARKER = '<!-- require-issue-link -->';
@@ -170,6 +199,19 @@ jobs:
               await ensureAndAddLabel('bypass-issue-check', '0e8a16');
               await minimizeStaleComment();
               core.setOutput('has-link', 'true');
+            }
+
+            // ── Maintainer-authored PRs are exempt entirely ────────────────
+            // Authoritative check (see hasWriteAccess). This is why the
+            // job-level `if` does NOT gate on author_association: a
+            // private-member maintainer would slip past that and get
+            // enforced against. Resolving real permission here is the single
+            // source of truth.
+            const prAuthor = context.payload.pull_request.user.login;
+            if (await hasWriteAccess(prAuthor)) {
+              console.log(`PR author ${prAuthor} has write access — exempt from issue-link enforcement`);
+              core.setOutput('has-link', 'true');
+              return;
             }
 
             // ── Maintainer override: removed "missing-issue-link" label ────
