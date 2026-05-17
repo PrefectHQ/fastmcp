@@ -968,6 +968,33 @@ class TestKeycloakOAuthProxy:
             "offline_access",
         ]
 
+    def test_redirect_path_defaults_to_auth_callback(self, jwt_verifier):
+        proxy = KeycloakOAuthProxy(
+            realm_url="https://keycloak.example.com/realms/test",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+        )
+        assert proxy._redirect_path == "/auth/callback"
+
+    def test_redirect_path_forwarded_for_custom_callback(self, jwt_verifier):
+        """Migrating a deployment whose Keycloak client uses a non-default
+        callback path must not silently revert to /auth/callback."""
+        proxy = KeycloakOAuthProxy(
+            realm_url="https://keycloak.example.com/realms/test",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+            redirect_path="/custom/oauth/callback",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+        )
+        assert proxy._redirect_path == "/custom/oauth/callback"
+
     async def test_refresh_expires_in_zero_subsequent_refresh_does_not_shrink(
         self, proxy
     ):

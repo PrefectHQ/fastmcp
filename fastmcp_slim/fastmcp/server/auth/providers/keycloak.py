@@ -132,6 +132,7 @@ class KeycloakOAuthProxy(OAuthProxy):
         upstream_authorization_endpoint: str | None = None,
         upstream_token_endpoint: str | None = None,
         upstream_revocation_endpoint: str | None = None,
+        redirect_path: str | None = None,
         # Pass-through OAuthProxy options
         jwt_signing_key: str | bytes | None = None,
         client_storage: AsyncKeyValue | None = None,
@@ -162,6 +163,11 @@ class KeycloakOAuthProxy(OAuthProxy):
             upstream_token_endpoint: Override the token endpoint URL.
                 Required if `realm_url` is not provided.
             upstream_revocation_endpoint: Optional token revocation endpoint.
+            redirect_path: Callback path registered with the upstream Keycloak
+                client. Defaults to `/auth/callback`. Set this when migrating an
+                existing deployment whose Keycloak client uses a non-default
+                callback path, so the authorization request keeps matching the
+                registered redirect URI.
             jwt_signing_key: Secret for signing FastMCP JWTs.
             client_storage: Storage backend for OAuth state.
             require_authorization_consent: Consent screen behaviour (default True).
@@ -216,6 +222,7 @@ class KeycloakOAuthProxy(OAuthProxy):
             upstream_client_secret=upstream_client_secret,
             token_verifier=token_verifier,
             valid_scopes=parsed_valid_scopes,
+            redirect_path=redirect_path,
             base_url=base_url,
             jwt_signing_key=jwt_signing_key,
             client_storage=client_storage,
