@@ -12,8 +12,10 @@ import pytest
 from mcp.types import TextContent
 from pydantic import BaseModel
 
+from pydantic import ValidationError as PydanticValidationError
+
 from fastmcp import Client, FastMCP
-from fastmcp.exceptions import ToolError
+from fastmcp.exceptions import ToolError, ValidationError
 
 
 class UserProfile(BaseModel):
@@ -417,3 +419,46 @@ class TestExpectedToolFailureLogging:
         assert records, "expected an 'Error calling tool' exception log"
         assert records[0].levelname == "ERROR"
         assert records[0].exc_info is not None
+
+
+class TestArgumentValidationErrorWrapping:
+    """Argument validation must surface fastmcp's ValidationError, not the raw
+    pydantic one, so middleware and downstream consumers (e.g. Sentry filters
+    configured with ``ignore_errors=[fastmcp.exceptions.ValidationError]``) can
+    match on the framework's error type. See issue #4128."""
+
+    async def test_call_tool_wraps_pydantic_validation_error(self):
+        mcp = FastMCP("TestServer", strict_input_validation=False)
+
+        @mcp.tool
+        def create_user(profile: UserProfile) -> str:
+            return profile.name
+
+        with pytest.raises(ValidationError) as exc_info:
+            await mcp.call_tool(
+                "create_user",
+                {"profile": {"name": "x", "age": "nope", "email": "e"}},
+            )
+
+        assert not isinstance(exc_info.value, PydanticValidationError)
+        assert isinstance(exc_info.value.__cause__, PydanticValidationError)
+        assert "int_parsing" in str(exc_info.value)
+
+    async def test_wrapped_validation_error_reaches_client_as_tool_error(self):
+        """End-to-end: an invalid-argument call still surfaces as a ToolError on
+        the client side (preserving the wire-level contract) while the server
+        raises fastmcp.exceptions.ValidationError on the inside."""
+        mcp = FastMCP("TestServer", strict_input_validation=False)
+
+        @mcp.tool
+        def create_user(profile: UserProfile) -> str:
+            return profile.name
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError) as exc_info:
+                await client.call_tool(
+                    "create_user",
+                    {"profile": {"name": "x", "age": "nope", "email": "e"}},
+                )
+
+        assert "int_parsing" in str(exc_info.value)

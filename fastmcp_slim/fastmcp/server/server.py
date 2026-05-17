@@ -55,6 +55,7 @@ from fastmcp.exceptions import (
     PromptError,
     ResourceError,
     ToolError,
+    ValidationError,
 )
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.prompts import Prompt
@@ -1284,7 +1285,7 @@ class FastMCP(
                         name,
                         e.errors(include_url=False),
                     )
-                    raise
+                    raise ValidationError(str(e)) from e
                 except Exception as e:
                     logger.exception(f"Error calling tool {name!r}")
                     # Handle actionable errors that should reach the LLM
