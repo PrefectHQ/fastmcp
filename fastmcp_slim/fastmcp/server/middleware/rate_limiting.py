@@ -125,9 +125,12 @@ class RateLimitingMiddleware(Middleware):
             burst_capacity: Maximum burst capacity. If None, defaults to 2x max_requests_per_second
             get_client_id: Function to extract client ID from context. If None, uses global limiting
             global_limit: If True, apply limit globally; if False, per-client
-            max_clients: Maximum number of per-client limiters to track. When reached,
-                the least recently used client is evicted to make room for a new client.
+            max_clients: Maximum number of per-client limiters to track. Must be >= 1.
+                When reached, the least recently used client is evicted to make
+                room for a new client.
         """
+        if max_clients < 1:
+            raise ValueError(f"max_clients must be >= 1, got {max_clients}")
         self.max_requests_per_second = max_requests_per_second
         self.burst_capacity = burst_capacity or int(max_requests_per_second * 2)
         self.get_client_id = get_client_id
@@ -135,7 +138,6 @@ class RateLimitingMiddleware(Middleware):
         self._max_clients = max_clients
 
         # Per-client limiters stored in LRU order (oldest at front, newest at back)
-
         self._client_limiters: OrderedDict[str, TokenBucketRateLimiter] = OrderedDict()
 
         # Global rate limiter
@@ -222,9 +224,12 @@ class SlidingWindowRateLimitingMiddleware(Middleware):
             max_requests: Maximum requests allowed in the time window
             window_minutes: Time window in minutes
             get_client_id: Function to extract client ID from context
-            max_clients: Maximum number of per-client limiters to track. When reached,
-                the least recently used client is evicted to make room for a new client.
+            max_clients: Maximum number of per-client limiters to track. Must be >= 1.
+                When reached, the least recently used client is evicted to make
+                room for a new client.
         """
+        if max_clients < 1:
+            raise ValueError(f"max_clients must be >= 1, got {max_clients}")
         self.max_requests = max_requests
         self.window_seconds = window_minutes * 60
         self.get_client_id = get_client_id

@@ -270,6 +270,81 @@ class TestSlidingWindowRateLimitingMiddleware:
             await middleware.on_request(mock_context, mock_call_next)
 
 
+class TestRateLimiterLRUEviction:
+    """LRU bounding of per-client limiters (issue #4053)."""
+
+    def test_token_bucket_evicts_lru_when_full(self):
+        mw = RateLimitingMiddleware(
+            get_client_id=lambda ctx: ctx, max_clients=2
+        )
+        mw._get_limiter("a")
+        mw._get_limiter("b")
+        # Cache full at 2; adding "c" evicts the LRU ("a"), not the newcomer.
+        mw._get_limiter("c")
+        assert list(mw._client_limiters) == ["b", "c"]
+
+    def test_token_bucket_move_to_end_on_access_protects_active_client(self):
+        mw = RateLimitingMiddleware(
+            get_client_id=lambda ctx: ctx, max_clients=2
+        )
+        mw._get_limiter("a")
+        mw._get_limiter("b")
+        # Touch "a" so it is most-recently-used; "b" is now LRU.
+        mw._get_limiter("a")
+        mw._get_limiter("c")
+        assert list(mw._client_limiters) == ["a", "c"]
+
+    def test_token_bucket_reuses_same_limiter_instance(self):
+        mw = RateLimitingMiddleware(get_client_id=lambda ctx: ctx)
+        first = mw._get_limiter("a")
+        assert mw._get_limiter("a") is first
+
+    def test_token_bucket_bound_never_exceeds_max_clients(self):
+        mw = RateLimitingMiddleware(
+            get_client_id=lambda ctx: ctx, max_clients=5
+        )
+        for i in range(100):
+            mw._get_limiter(f"client-{i}")
+        assert len(mw._client_limiters) == 5
+        # Only the 5 most-recent survive.
+        assert list(mw._client_limiters) == [f"client-{i}" for i in range(95, 100)]
+
+    def test_sliding_window_evicts_lru_when_full(self):
+        mw = SlidingWindowRateLimitingMiddleware(
+            max_requests=10, get_client_id=lambda ctx: ctx, max_clients=2
+        )
+        mw._get_limiter("a")
+        mw._get_limiter("b")
+        mw._get_limiter("c")
+        assert list(mw._client_limiters) == ["b", "c"]
+
+    def test_sliding_window_bound_never_exceeds_max_clients(self):
+        mw = SlidingWindowRateLimitingMiddleware(
+            max_requests=10, get_client_id=lambda ctx: ctx, max_clients=3
+        )
+        for i in range(50):
+            mw._get_limiter(f"c{i}")
+        assert len(mw._client_limiters) == 3
+
+    @pytest.mark.parametrize("bad", [0, -1, -100])
+    def test_token_bucket_rejects_non_positive_max_clients(self, bad):
+        with pytest.raises(ValueError, match="max_clients must be >= 1"):
+            RateLimitingMiddleware(max_clients=bad)
+
+    @pytest.mark.parametrize("bad", [0, -1])
+    def test_sliding_window_rejects_non_positive_max_clients(self, bad):
+        with pytest.raises(ValueError, match="max_clients must be >= 1"):
+            SlidingWindowRateLimitingMiddleware(max_requests=10, max_clients=bad)
+
+    def test_max_clients_one_keeps_only_newest(self):
+        mw = RateLimitingMiddleware(
+            get_client_id=lambda ctx: ctx, max_clients=1
+        )
+        mw._get_limiter("a")
+        mw._get_limiter("b")
+        assert list(mw._client_limiters) == ["b"]
+
+
 class TestRateLimitError:
     """Test rate limit error."""
 
