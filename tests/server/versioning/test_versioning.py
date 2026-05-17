@@ -12,8 +12,10 @@ from fastmcp import FastMCP
 from fastmcp.tools import Tool
 from fastmcp.utilities.versions import (
     VersionKey,
+    VersionSpec,
     compare_versions,
     is_version_greater,
+    version_sort_key,
 )
 
 
@@ -82,6 +84,82 @@ class TestVersionFunctions:
         assert not is_version_greater("1.0", "1.0")
         assert is_version_greater("1.0", None)
         assert not is_version_greater(None, "1.0")
+
+
+class _FakeComponent:
+    """Minimal stand-in exposing only `.version` for version_sort_key."""
+
+    def __init__(self, version: str | None) -> None:
+        self.version = version
+
+
+class TestVersionSpecEq:
+    """Tests for VersionSpec(eq=...) matching semantics."""
+
+    def test_exact_string_match(self):
+        assert VersionSpec(eq="1.0").matches("1.0")
+        assert not VersionSpec(eq="1.0").matches("2.0")
+
+    def test_v_prefix_insensitive_both_directions(self):
+        # Spec has v-prefix, component does not
+        assert VersionSpec(eq="v1.0").matches("1.0")
+        # Component has v-prefix, spec does not
+        assert VersionSpec(eq="1.0").matches("v1.0")
+        assert VersionSpec(eq="v2.3").matches("v2.3")
+
+    def test_pep440_equivalent_spellings_match(self):
+        """PEP 440 treats 1, 1.0, 1.0.0 as the same version."""
+        assert VersionSpec(eq="1.0").matches("1")
+        assert VersionSpec(eq="1").matches("1.0")
+        assert VersionSpec(eq="1.0").matches("1.0.0")
+        assert not VersionSpec(eq="1.0").matches("1.0.1")
+
+    def test_malformed_versions_use_exact_string_equality(self):
+        """Non-PEP 440 strings compare exactly (no normalization, no crash)."""
+        assert VersionSpec(eq="latest").matches("latest")
+        assert not VersionSpec(eq="latest").matches("LATEST")
+        assert VersionSpec(eq="2024-01-01").matches("2024-01-01")
+        assert not VersionSpec(eq="2024-01-01").matches("2024-01-02")
+
+    def test_eq_does_not_match_none_when_match_none_false(self):
+        assert VersionSpec(eq="1.0").matches(None, match_none=False) is False
+        assert VersionSpec(eq="1.0").matches(None, match_none=True) is True
+
+
+class TestVersionSelectionDeterminism:
+    """Selection among PEP 440-equivalent spellings must be deterministic.
+
+    Regression: previously `max(matching, key=version_sort_key)` returned the
+    first element on a tie, so registering both "1" and "1.0" made selection
+    depend on registration order. version_sort_key now has a raw tie-breaker.
+    """
+
+    def test_version_sort_key_is_total_ordering_tuple(self):
+        # PEP 440-equivalent but distinct spellings tie on VersionKey;
+        # the raw string breaks the tie deterministically.
+        k1 = version_sort_key(_FakeComponent("1"))
+        k10 = version_sort_key(_FakeComponent("1.0"))
+        assert k1[0] == k10[0]  # same VersionKey (PEP 440 equal)
+        assert k1 != k10  # but distinct sort keys
+        assert k10 > k1  # deterministic order ("1.0" > "1")
+
+    def test_max_is_order_independent(self):
+        forward = [_FakeComponent("1"), _FakeComponent("1.0")]
+        reverse = [_FakeComponent("1.0"), _FakeComponent("1")]
+        assert max(forward, key=version_sort_key).version == "1.0"
+        assert max(reverse, key=version_sort_key).version == "1.0"
+
+    def test_unversioned_components_do_not_crash_tiebreak(self):
+        # Two unversioned components: raw tie-breaker is "" for both,
+        # must not raise (None < None would).
+        items = [_FakeComponent(None), _FakeComponent(None)]
+        assert max(items, key=version_sort_key).version is None
+
+    def test_distinct_versions_unaffected_by_tiebreak(self):
+        # Primary ordering still wins; raw tie-breaker never overrides it.
+        # "1.9" < "1.10" semantically even though "1.9" > "1.10" as strings.
+        items = [_FakeComponent("1.10"), _FakeComponent("1.9")]
+        assert max(items, key=version_sort_key).version == "1.10"
 
 
 class TestComponentVersioning:
