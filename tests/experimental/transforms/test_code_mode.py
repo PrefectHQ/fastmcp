@@ -717,34 +717,27 @@ async def test_monty_provider_no_limits_by_default() -> None:
     assert result == 3
 
 
-async def test_monty_provider_cancels_future_when_task_cancelled(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Cancelling the awaiting task must cancel the underlying Monty future.
+async def test_monty_provider_cancels_future_when_task_cancelled() -> None:
+    """Cancelling the awaiting task must cancel the underlying sandbox future.
 
-    Otherwise the native sandbox thread keeps running to completion after a
-    client disconnects or the request times out.
+    Otherwise the native Monty thread keeps running to completion after a
+    client disconnects or the request times out. A subclass overrides the
+    launch seam so the cancellation handling in `run()` is exercised against
+    a controllable future rather than a live sandbox thread.
     """
     import asyncio
-
-    import pydantic_monty
 
     loop = asyncio.get_running_loop()
     sandbox_future: asyncio.Future[Any] = loop.create_future()
 
-    class _FakeMonty:
-        def __init__(self, code: str, inputs: Any) -> None:
-            pass
-
-        def run_async(self, **kwargs: Any) -> asyncio.Future[Any]:
+    class _NeverFinishingProvider(MontySandboxProvider):
+        def _run_monty(self, monty: Any, *, inputs: Any, external_functions: Any):
             return sandbox_future
 
-    monkeypatch.setattr(pydantic_monty, "Monty", _FakeMonty)
-
-    provider = MontySandboxProvider()
+    provider = _NeverFinishingProvider()
     task = asyncio.create_task(provider.run("return 1"))
 
-    # Let the task advance to `await future` (no suspension before it).
+    # Advance the task to `await future` (no suspension point before it).
     for _ in range(3):
         await asyncio.sleep(0)
         if not task.done():
