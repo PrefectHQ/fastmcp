@@ -86,11 +86,9 @@ class TestVersionFunctions:
         assert not is_version_greater(None, "1.0")
 
 
-class _FakeComponent:
-    """Minimal stand-in exposing only `.version` for version_sort_key."""
-
-    def __init__(self, version: str | None) -> None:
-        self.version = version
+def _tool(version: str | None) -> Tool:
+    """Build a real Tool component (a FastMCPComponent) with a version."""
+    return Tool.from_function(lambda: None, name="t", version=version)
 
 
 class TestVersionSpecEq:
@@ -137,29 +135,56 @@ class TestVersionSelectionDeterminism:
     def test_version_sort_key_is_total_ordering_tuple(self):
         # PEP 440-equivalent but distinct spellings tie on VersionKey;
         # the raw string breaks the tie deterministically.
-        k1 = version_sort_key(_FakeComponent("1"))
-        k10 = version_sort_key(_FakeComponent("1.0"))
+        k1 = version_sort_key(_tool("1"))
+        k10 = version_sort_key(_tool("1.0"))
         assert k1[0] == k10[0]  # same VersionKey (PEP 440 equal)
         assert k1 != k10  # but distinct sort keys
         assert k10 > k1  # deterministic order ("1.0" > "1")
 
-    def test_max_is_order_independent(self):
-        forward = [_FakeComponent("1"), _FakeComponent("1.0")]
-        reverse = [_FakeComponent("1.0"), _FakeComponent("1")]
-        assert max(forward, key=version_sort_key).version == "1.0"
-        assert max(reverse, key=version_sort_key).version == "1.0"
-
     def test_unversioned_components_do_not_crash_tiebreak(self):
         # Two unversioned components: raw tie-breaker is "" for both,
-        # must not raise (None < None would).
-        items = [_FakeComponent(None), _FakeComponent(None)]
-        assert max(items, key=version_sort_key).version is None
+        # must compare equal without raising (None < None would).
+        a = version_sort_key(_tool(None))
+        b = version_sort_key(_tool(None))
+        assert a == b
 
     def test_distinct_versions_unaffected_by_tiebreak(self):
         # Primary ordering still wins; raw tie-breaker never overrides it.
         # "1.9" < "1.10" semantically even though "1.9" > "1.10" as strings.
-        items = [_FakeComponent("1.10"), _FakeComponent("1.9")]
-        assert max(items, key=version_sort_key).version == "1.10"
+        k19 = version_sort_key(_tool("1.9"))
+        k110 = version_sort_key(_tool("1.10"))
+        assert k110 > k19
+
+    async def test_selection_is_registration_order_independent(self):
+        """End-to-end: registering two PEP 440-equivalent spellings of the
+        same tool must select the same one regardless of registration order
+        (exercises the real `max(..., key=version_sort_key)` selection path)."""
+
+        forward = FastMCP()
+
+        @forward.tool(name="add", version="1")
+        def add_a(x: int) -> int:
+            return x
+
+        @forward.tool(name="add", version="1.0")
+        def add_b(x: int) -> int:
+            return x
+
+        reverse = FastMCP()
+
+        @reverse.tool(name="add", version="1.0")
+        def add_c(x: int) -> int:
+            return x
+
+        @reverse.tool(name="add", version="1")
+        def add_d(x: int) -> int:
+            return x
+
+        fwd = await forward.get_tool("add")
+        rev = await reverse.get_tool("add")
+        assert fwd is not None and rev is not None
+        # Deterministic regardless of order (previously order-dependent).
+        assert fwd.version == rev.version == "1.0"
 
 
 class TestComponentVersioning:
