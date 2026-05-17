@@ -152,7 +152,10 @@ def extract_trace_context(meta: dict[str, Any] | None) -> Context:
         carrier["tracestate"] = str(meta[TRACE_STATE_KEY])
 
     if carrier:
-        return propagate.extract(carrier)
+        # Extract onto the current context (not a fresh root) so the parent
+        # trace is added without dropping context values such as FastMCP's
+        # suppression marker or active baggage.
+        return propagate.extract(carrier, context=otel_context.get_current())
     return otel_context.get_current()
 
 

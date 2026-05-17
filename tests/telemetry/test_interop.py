@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 
+from opentelemetry import context as otel_context
 from opentelemetry import trace as otel_trace
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import INVALID_SPAN
@@ -15,10 +16,14 @@ from opentelemetry.trace import INVALID_SPAN
 import fastmcp
 from fastmcp import Client, Context, FastMCP
 from fastmcp.telemetry import (
+    extract_trace_context,
     get_noop_span,
     native_telemetry_enabled,
     suppress_fastmcp_telemetry,
 )
+
+# A well-formed W3C traceparent for extraction tests.
+_TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
 
 
 @contextmanager
@@ -80,6 +85,24 @@ class TestSuppressFastMCPTelemetry:
                 raise RuntimeError("boom")
         except RuntimeError:
             pass
+        assert native_telemetry_enabled()
+
+    def test_extracted_parent_context_preserves_suppression(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        """Regression: attaching the context extracted from an incoming
+        traceparent must NOT drop the suppression marker. Otherwise nested
+        FastMCP spans re-enable inside a suppress_fastmcp_telemetry() block.
+        """
+        with suppress_fastmcp_telemetry():
+            assert not native_telemetry_enabled()
+            parent_context = extract_trace_context({"traceparent": _TRACEPARENT})
+            token = otel_context.attach(parent_context)
+            try:
+                # Suppression must survive the attach of the extracted parent.
+                assert not native_telemetry_enabled()
+            finally:
+                otel_context.detach(token)
         assert native_telemetry_enabled()
 
 
