@@ -125,6 +125,7 @@ class KeycloakOAuthProxy(OAuthProxy):
         upstream_client_secret: str | None = None,
         base_url: AnyHttpUrl | str,
         required_scopes: list[str] | str | None = None,
+        valid_scopes: list[str] | str | None = None,
         audience: str | list[str] | None = None,
         token_verifier: TokenVerifier | None = None,
         # Direct endpoint overrides (optional if realm_url is provided)
@@ -148,6 +149,11 @@ class KeycloakOAuthProxy(OAuthProxy):
             upstream_client_secret: Client secret. Optional for public clients.
             base_url: Public URL of this FastMCP server.
             required_scopes: Scopes to require on incoming tokens. Defaults to `["openid"]`.
+            valid_scopes: Scopes advertised to clients via the `/.well-known` endpoints
+                and accepted during Dynamic Client Registration. Defaults to
+                `required_scopes`. Set this to include `offline_access` so clients can
+                register for the long-lived offline refresh tokens this proxy handles
+                without also forcing `offline_access` onto every access token.
             audience: Optional JWT audience for token validation. Recommended for production.
             token_verifier: Custom token verifier. Defaults to a JWTVerifier configured
                 for the Keycloak realm's JWKS endpoint.
@@ -185,6 +191,9 @@ class KeycloakOAuthProxy(OAuthProxy):
         parsed_scopes = (
             parse_scopes(required_scopes) if required_scopes is not None else ["openid"]
         )
+        parsed_valid_scopes = (
+            parse_scopes(valid_scopes) if valid_scopes is not None else None
+        )
 
         if token_verifier is None:
             if realm is None:
@@ -206,6 +215,7 @@ class KeycloakOAuthProxy(OAuthProxy):
             upstream_client_id=upstream_client_id,
             upstream_client_secret=upstream_client_secret,
             token_verifier=token_verifier,
+            valid_scopes=parsed_valid_scopes,
             base_url=base_url,
             jwt_signing_key=jwt_signing_key,
             client_storage=client_storage,

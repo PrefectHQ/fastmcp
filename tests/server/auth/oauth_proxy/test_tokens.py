@@ -925,6 +925,49 @@ class TestKeycloakOAuthProxy:
         assert upstream_token_set.refresh_token_never_expires is True
         assert upstream_token_set.refresh_token_expires_at is None
 
+    def test_valid_scopes_forwarded_for_dcr(self, jwt_verifier):
+        """valid_scopes must be advertised/accepted for DCR independently of required_scopes.
+
+        Offline tokens (the whole point of this proxy) require clients to register
+        the `offline_access` scope. Without a separate valid_scopes pass-through,
+        DCR scope validation falls back to required_scopes and rejects it.
+        """
+        proxy = KeycloakOAuthProxy(
+            realm_url="https://keycloak.example.com/realms/test",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=jwt_verifier,
+            valid_scopes=["openid", "offline_access"],
+            base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+        )
+        assert proxy.client_registration_options is not None
+        assert proxy.client_registration_options.valid_scopes == [
+            "openid",
+            "offline_access",
+        ]
+        # required_scopes (token verification) stays independent of valid_scopes (DCR)
+        assert jwt_verifier.required_scopes == ["read", "write"]
+
+    def test_valid_scopes_accepts_string(self, jwt_verifier):
+        """A space/comma-delimited string is parsed like required_scopes."""
+        proxy = KeycloakOAuthProxy(
+            realm_url="https://keycloak.example.com/realms/test",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=jwt_verifier,
+            valid_scopes="openid offline_access",
+            base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+        )
+        assert proxy.client_registration_options is not None
+        assert proxy.client_registration_options.valid_scopes == [
+            "openid",
+            "offline_access",
+        ]
+
     async def test_refresh_expires_in_zero_subsequent_refresh_does_not_shrink(
         self, proxy
     ):
