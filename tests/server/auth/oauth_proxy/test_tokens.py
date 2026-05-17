@@ -1539,3 +1539,162 @@ class TestTransparentUpstreamRefresh:
             returned = await mock_verifier.verify_token(call.args[0])
             if returned:
                 assert "upstream_claims" not in returned.claims
+
+
+class TestKeycloakTransparentRefreshZero:
+    """The transparent-refresh path (load_access_token) must preserve the
+    Keycloak never-expires sentinel when a rotated offline token comes back
+    with refresh_expires_in=0.
+
+    This is the third token path (alongside auth-code exchange and explicit
+    refresh-token exchange) and was previously only covered indirectly.
+    """
+
+    @pytest.fixture
+    def mock_verifier(self):
+        verifier = Mock(spec=TokenVerifier)
+        verifier.required_scopes = ["read"]
+
+        async def verify(token: str) -> AccessToken | None:
+            if token.startswith("refreshed-") or token.startswith("valid-"):
+                return AccessToken(
+                    token=token,
+                    client_id="test-client",
+                    scopes=["read"],
+                    expires_at=int(time.time() + 3600),
+                )
+            return None
+
+        verifier.verify_token = AsyncMock(side_effect=verify)
+        return verifier
+
+    @pytest.fixture
+    def proxy(self, mock_verifier):
+        proxy = KeycloakOAuthProxy(
+            realm_url="https://keycloak.example.com/realms/test",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=mock_verifier,
+            base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+        )
+        proxy.set_mcp_path("/mcp")
+        return proxy
+
+    async def _setup_expired_session(self, proxy) -> str:
+        upstream_token_id = "upstream-tok-id"
+        access_jti = "test-access-jti"
+        await proxy._upstream_token_store.put(
+            key=upstream_token_id,
+            value=UpstreamTokenSet(
+                upstream_token_id=upstream_token_id,
+                access_token="expired-upstream-access",
+                refresh_token="upstream-refresh-tok",
+                refresh_token_expires_at=time.time() + 86400,
+                expires_at=time.time() - 60,
+                token_type="Bearer",
+                scope="read",
+                client_id="test-client",
+                created_at=time.time() - 3600,
+            ),
+            ttl=86400,
+        )
+        await proxy._jti_mapping_store.put(
+            key=access_jti,
+            value=JTIMapping(
+                jti=access_jti,
+                upstream_token_id=upstream_token_id,
+                created_at=time.time(),
+            ),
+            ttl=3600,
+        )
+        return proxy.jwt_issuer.issue_access_token(
+            client_id="test-client",
+            scopes=["read"],
+            jti=access_jti,
+            expires_in=3600,
+        )
+
+    async def test_transparent_refresh_zero_preserves_never_expires(self, proxy):
+        fastmcp_jwt = await self._setup_expired_session(proxy)
+
+        mock_oauth_client = AsyncMock()
+        mock_oauth_client.refresh_token = AsyncMock(
+            return_value={
+                "access_token": "refreshed-upstream-access",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "refresh_token": "rotated-upstream-refresh",
+                "refresh_expires_in": 0,  # Keycloak offline sentinel
+                "scope": "read",
+            }
+        )
+
+        with patch.object(
+            proxy, "_create_upstream_oauth_client", return_value=mock_oauth_client
+        ):
+            result = await proxy.load_access_token(fastmcp_jwt)
+
+        assert result is not None
+        assert result.token == "refreshed-upstream-access"
+
+        stored = await proxy._upstream_token_store.get(key="upstream-tok-id")
+        assert stored is not None
+        assert stored.refresh_token == "rotated-upstream-refresh"
+        # The sentinel must be preserved, not reset to a wall-clock deadline.
+        assert stored.refresh_token_never_expires is True
+        assert stored.refresh_token_expires_at is None
+
+    async def test_base_proxy_transparent_refresh_zero_is_not_never_expires(self):
+        """The base OAuthProxy must NOT treat a transparent-refresh
+        refresh_expires_in=0 as never-expires (opt-in only)."""
+        verifier = Mock(spec=TokenVerifier)
+        verifier.required_scopes = ["read"]
+
+        async def verify(token: str) -> AccessToken | None:
+            if token.startswith("refreshed-"):
+                return AccessToken(
+                    token=token,
+                    client_id="test-client",
+                    scopes=["read"],
+                    expires_at=int(time.time() + 3600),
+                )
+            return None
+
+        verifier.verify_token = AsyncMock(side_effect=verify)
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://idp.example.com/authorize",
+            upstream_token_endpoint="https://idp.example.com/token",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=verifier,
+            base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+        )
+        proxy.set_mcp_path("/mcp")
+        fastmcp_jwt = await TestKeycloakTransparentRefreshZero._setup_expired_session(
+            self, proxy
+        )
+
+        mock_oauth_client = AsyncMock()
+        mock_oauth_client.refresh_token = AsyncMock(
+            return_value={
+                "access_token": "refreshed-upstream-access",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "refresh_token": "rotated-upstream-refresh",
+                "refresh_expires_in": 0,
+                "scope": "read",
+            }
+        )
+        with patch.object(
+            proxy, "_create_upstream_oauth_client", return_value=mock_oauth_client
+        ):
+            result = await proxy.load_access_token(fastmcp_jwt)
+
+        assert result is not None
+        stored = await proxy._upstream_token_store.get(key="upstream-tok-id")
+        assert stored is not None
+        assert stored.refresh_token_never_expires is False
