@@ -732,6 +732,26 @@ async def test_monty_provider_explicit_limits_override_defaults() -> None:
     assert provider.limits == {"max_duration_secs": 0.1}
 
 
+async def test_monty_provider_default_limits_are_not_shared_between_instances() -> None:
+    """Each default provider must own its limits dict.
+
+    `limits` is a mutable public attribute; if instances shared the
+    module-level baseline, mutating one would silently change the defaults
+    for every other default provider in the process.
+    """
+    a = MontySandboxProvider()
+    b = MontySandboxProvider()
+
+    assert a.limits is not b.limits
+    assert a.limits is not _DEFAULT_LIMITS
+
+    assert a.limits is not None
+    a.limits["max_duration_secs"] = 1
+
+    assert b.limits == {"max_duration_secs": 30.0, "max_memory": 100_000_000}
+    assert _DEFAULT_LIMITS == {"max_duration_secs": 30.0, "max_memory": 100_000_000}
+
+
 async def test_code_mode_max_tool_calls_default_is_50() -> None:
     assert CodeMode().max_tool_calls == 50
 

@@ -132,8 +132,11 @@ class MontySandboxProvider:
         *,
         limits: "ResourceLimits | None | _UnsetType" = _UNSET,
     ) -> None:
+        # Copy the baseline so each provider owns its dict — `limits` is a
+        # mutable public attribute, and sharing the module-level object would
+        # let one provider's edits leak into every other default provider.
         self.limits: ResourceLimits | None = (
-            _DEFAULT_LIMITS if isinstance(limits, _UnsetType) else limits
+            _DEFAULT_LIMITS.copy() if isinstance(limits, _UnsetType) else limits
         )
 
     async def run(
