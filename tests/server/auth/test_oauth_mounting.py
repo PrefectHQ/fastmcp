@@ -411,7 +411,9 @@ class TestOAuthMounting:
         oidc_paths = {r.path for r in oidc_routes}
 
         assert "/.well-known/openid-configuration/api" in oidc_paths  # RFC 8414 §5
-        assert "/.well-known/openid-configuration" in oidc_paths  # OIDC 1.0 / proxy compat
+        assert (
+            "/.well-known/openid-configuration" in oidc_paths
+        )  # OIDC 1.0 / proxy compat
 
     async def test_oidc_discovery_alias_root(self, test_tokens):
         """Test that /.well-known/openid-configuration alias is added for root issuers."""
