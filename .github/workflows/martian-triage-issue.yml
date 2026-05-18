@@ -41,7 +41,7 @@ jobs:
       - name: React to issue with eyes
         env:
           GH_TOKEN: ${{ steps.marvin-token.outputs.token }}
-            ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
         run: |
           gh api "repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/reactions" -f content=eyes 2>/dev/null || true
 
@@ -60,7 +60,7 @@ jobs:
             </context>
 
             <issue_body>
-            ${{ github.event.issue.body }}
+            $ISSUE_BODY
             </issue_body>
 
             <task>
