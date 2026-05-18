@@ -281,6 +281,16 @@ def resolve_root_ref(schema: dict[str, Any]) -> dict[str, Any]:
             if def_name in defs:
                 # Create a new schema by copying the referenced definition
                 resolved = dict(defs[def_name])
+
+                # Preserve root-level sibling metadata from the original schema.
+                # Pydantic may put user-facing fields such as title, description,
+                # default, or examples next to the root $ref. Those fields still
+                # describe the root schema even when we can only resolve that
+                # root reference for circular schemas.
+                for key, value in schema.items():
+                    if key not in {"$ref", "$defs"}:
+                        resolved[key] = value
+
                 # Preserve $defs for nested references (other fields may still use them)
                 resolved["$defs"] = defs
                 return resolved
