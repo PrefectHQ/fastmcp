@@ -46,7 +46,7 @@ jobs:
       - name: React to comment with eyes
         env:
           GH_TOKEN: ${{ steps.marvin-token.outputs.token }}
-            ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
         run: |
           gh api "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" -f content=eyes 2>/dev/null || true
 
@@ -62,7 +62,7 @@ jobs:
             <context>
             Repository: ${{ github.repository }}
             Issue Number: #${{ github.event.issue.number }}
-            Issue Title: ${{ github.event.issue.title }}
+            Issue Title: $ISSUE_TITLE
             Issue Author: ${{ github.event.issue.user.login }}
             Comment Author: ${{ github.event.comment.user.login }}
             </context>
