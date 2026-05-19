@@ -1,6 +1,7 @@
 """Tests for Azure provider scope handling, JWT verifier, and OBO integration."""
 
 import pytest
+pytest.importorskip("azure.identity.aio")
 from key_value.aio.stores.memory import MemoryStore
 
 from fastmcp.server.auth.auth import MultiAuth
