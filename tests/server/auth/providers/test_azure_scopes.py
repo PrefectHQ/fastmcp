@@ -3,6 +3,8 @@
 import pytest
 from key_value.aio.stores.memory import MemoryStore
 
+pytest.importorskip("azure.identity.aio")
+
 from fastmcp.server.auth.auth import MultiAuth
 from fastmcp.server.auth.providers.azure import (
     OIDC_SCOPES,
