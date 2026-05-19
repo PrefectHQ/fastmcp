@@ -1,7 +1,6 @@
 """Tests for Azure provider scope handling, JWT verifier, and OBO integration."""
 
 import pytest
-pytest.importorskip("azure.identity.aio")
 from key_value.aio.stores.memory import MemoryStore
 
 from fastmcp.server.auth.auth import MultiAuth
@@ -599,6 +598,9 @@ class TestAzureJWTVerifier:
 
 
 class TestAzureOBOIntegration:
+    azure_identity_aio = pytest.importorskip("azure.identity.aio")
+
+    ...
     """Tests for azure.identity OBO integration (get_obo_credential, EntraOBOToken)."""
 
     async def test_get_obo_credential_returns_configured_credential(self):
