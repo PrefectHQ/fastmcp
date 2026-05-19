@@ -2,6 +2,7 @@ import functools
 from urllib.parse import quote
 
 import pytest
+from mcp.types import Annotations, Icon
 from pydantic import BaseModel
 
 from fastmcp import Context, FastMCP
@@ -194,6 +195,31 @@ class TestResourceTemplate:
         resource_result = await resource._read()
         assert len(resource_result.contents) == 1
         assert resource_result.contents[0].content == "key=foo, value=123"
+
+    async def test_create_resource_preserves_template_metadata(self):
+        def my_func(key: str) -> str:
+            return f"value={key}"
+
+        icons = [Icon(src="https://example.com/resource.png")]
+        annotations = Annotations(audience=["user"], priority=0.7)
+        template = ResourceTemplate.from_function(
+            fn=my_func,
+            uri_template="test://{key}",
+            name="test",
+            title="Test Resource",
+            tags={"alpha"},
+            icons=icons,
+            annotations=annotations,
+            meta={"custom": "value"},
+        )
+
+        resource = await template.create_resource("test://foo", {"key": "foo"})
+
+        assert resource.title == "Test Resource"
+        assert resource.tags == {"alpha"}
+        assert resource.icons == icons
+        assert resource.annotations == annotations
+        assert resource.meta == {"custom": "value"}
 
     async def test_async_text_resource(self):
         """Test creating a text resource from async function."""

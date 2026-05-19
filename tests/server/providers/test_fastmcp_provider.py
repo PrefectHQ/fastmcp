@@ -227,6 +227,37 @@ class TestResourceTemplateOperations:
             assert isinstance(result[0], mt.TextResourceContents)
             assert result[0].text == "data for 123"
 
+    async def test_create_resource_template_preserves_metadata(self):
+        """Template-created provider resources keep mounted template metadata."""
+        sub = FastMCP("Sub")
+
+        icons = [mt.Icon(src="https://example.com/template.png")]
+        annotations = mt.Annotations(audience=["user"], priority=0.7)
+
+        @sub.resource(
+            "resource://{id}/data",
+            title="Template Resource",
+            tags={"alpha"},
+            icons=icons,
+            annotations=annotations,
+            meta={"custom": "value"},
+        )
+        def my_template(id: str) -> str:
+            return f"data for {id}"
+
+        provider = FastMCPProvider(sub)
+        template = await provider.get_resource_template("resource://123/data")
+
+        assert template is not None
+        resource = await template.create_resource("resource://123/data", {"id": "123"})
+
+        assert resource.title == "Template Resource"
+        assert resource.tags == {"alpha"}
+        assert resource.icons == icons
+        assert resource.annotations == annotations
+        assert resource.meta is not None
+        assert resource.meta["custom"] == "value"
+
 
 class TestPromptOperations:
     """Test prompt operations through FastMCPProvider."""

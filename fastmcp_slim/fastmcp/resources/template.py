@@ -442,6 +442,10 @@ class FunctionResourceTemplate(ResourceTemplate):
             description=self.description,
             mime_type=self.mime_type,
             tags=self.tags,
+            icons=self.icons,
+            annotations=self.annotations,
+            meta=self.meta,
+            title=self.title,
             task=self.task_config,
             auth=self.auth,
         )
