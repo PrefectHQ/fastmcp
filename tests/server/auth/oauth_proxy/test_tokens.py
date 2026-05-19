@@ -995,6 +995,41 @@ class TestKeycloakOAuthProxy:
         )
         assert proxy._redirect_path == "/custom/oauth/callback"
 
+    def test_issuer_and_resource_base_url_default_to_base_url(self, jwt_verifier):
+        proxy = KeycloakOAuthProxy(
+            realm_url="https://keycloak.example.com/realms/test",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+        )
+        assert str(proxy.issuer_url).rstrip("/") == "https://proxy.example.com"
+        assert proxy.resource_base_url is None
+
+    def test_issuer_and_resource_base_url_forwarded(self, jwt_verifier):
+        """Behind a gateway, switching to KeycloakOAuthProxy must not drop the
+        issuer/resource overrides that OAuthProxy supports (correct metadata
+        and JWT audience)."""
+        proxy = KeycloakOAuthProxy(
+            realm_url="https://keycloak.example.com/realms/test",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://internal.proxy.local",
+            issuer_url="https://public.gateway.example.com",
+            resource_base_url="https://public.gateway.example.com/mcp",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+        )
+        assert str(proxy.issuer_url).rstrip("/") == "https://public.gateway.example.com"
+        assert proxy.resource_base_url is not None
+        assert (
+            str(proxy.resource_base_url).rstrip("/")
+            == "https://public.gateway.example.com/mcp"
+        )
+
     async def test_refresh_expires_in_zero_subsequent_refresh_does_not_shrink(
         self, proxy
     ):

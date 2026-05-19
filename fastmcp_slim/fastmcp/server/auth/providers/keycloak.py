@@ -124,6 +124,8 @@ class KeycloakOAuthProxy(OAuthProxy):
         upstream_client_id: str,
         upstream_client_secret: str | None = None,
         base_url: AnyHttpUrl | str,
+        resource_base_url: AnyHttpUrl | str | None = None,
+        issuer_url: AnyHttpUrl | str | None = None,
         required_scopes: list[str] | str | None = None,
         valid_scopes: list[str] | str | None = None,
         audience: str | list[str] | None = None,
@@ -149,6 +151,13 @@ class KeycloakOAuthProxy(OAuthProxy):
             upstream_client_id: Client ID of the application registered in Keycloak.
             upstream_client_secret: Client secret. Optional for public clients.
             base_url: Public URL of this FastMCP server.
+            resource_base_url: Optional public base URL for the protected resource
+                metadata and token audience. Defaults to `base_url`. Set this when
+                the resource is served under a different origin/path than the
+                proxy (e.g. behind a gateway).
+            issuer_url: Issuer URL for OAuth metadata. Defaults to `base_url`. Set
+                this when the authorization-server metadata must advertise a
+                different issuer than `base_url` (e.g. behind a gateway).
             required_scopes: Scopes to require on incoming tokens. Defaults to `["openid"]`.
             valid_scopes: Scopes advertised to clients via the `/.well-known` endpoints
                 and accepted during Dynamic Client Registration. Defaults to
@@ -224,6 +233,8 @@ class KeycloakOAuthProxy(OAuthProxy):
             valid_scopes=parsed_valid_scopes,
             redirect_path=redirect_path,
             base_url=base_url,
+            resource_base_url=resource_base_url,
+            issuer_url=issuer_url,
             jwt_signing_key=jwt_signing_key,
             client_storage=client_storage,
             require_authorization_consent=require_authorization_consent,
