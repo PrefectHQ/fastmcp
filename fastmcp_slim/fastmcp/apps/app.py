@@ -30,15 +30,17 @@ from __future__ import annotations
 import inspect
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
-from typing import Any, Literal, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
 
 from mcp.types import AnyFunction, Icon, ToolAnnotations
 
-from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.providers.base import Provider
-from fastmcp.server.providers.local_provider import LocalProvider
-from fastmcp.tools.base import Tool
+from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.logging import get_logger
+
+if TYPE_CHECKING:
+    from fastmcp.server.providers.local_provider import LocalProvider
+    from fastmcp.tools.base import Tool
 
 logger = get_logger(__name__)
 
@@ -149,9 +151,11 @@ class FastMCPApp(Provider):
     """
 
     def __init__(self, name: str) -> None:
+        from fastmcp.server.providers.local_provider import LocalProvider
+
         super().__init__()
         self.name = name
-        self._local = LocalProvider(on_duplicate="error")
+        self._local: LocalProvider = LocalProvider(on_duplicate="error")
 
     def __repr__(self) -> str:
         return f"FastMCPApp({self.name!r})"
@@ -215,6 +219,8 @@ class FastMCPApp(Provider):
         )
 
         def _register(fn: F, tool_name: str | None) -> F:
+            from fastmcp.tools.base import Tool
+
             resolved_name = tool_name or getattr(fn, "__name__", None)
             if resolved_name is None:
                 raise ValueError(f"Cannot determine tool name for {fn!r}")
@@ -315,6 +321,7 @@ class FastMCPApp(Provider):
             from fastmcp.server.providers.local_provider.decorators.tools import (
                 PREFAB_RENDERER_URI,
             )
+            from fastmcp.tools.base import Tool
 
             resolved = tool_name or getattr(fn, "__name__", None) or "unknown"
             app_config = AppConfig(
@@ -360,6 +367,8 @@ class FastMCPApp(Provider):
 
         The tool is tagged with this app's name for routing.
         """
+        from fastmcp.tools.base import Tool
+
         if not isinstance(tool, Tool):
             tool = Tool._ensure_tool(tool)
 

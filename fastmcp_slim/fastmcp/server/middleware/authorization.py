@@ -136,11 +136,15 @@ class AuthMiddleware(Middleware):
                 f"Authorization failed for tool '{tool_name}': missing context"
             )
 
-        # Get tool (component auth is checked in get_tool, raises if unauthorized)
+        # get_tool returns None both when the tool does not exist and when
+        # component-level auth denied access, so the two cases are
+        # indistinguishable here. Keep the message ambiguous to avoid
+        # disclosing existence of tools the caller is not authorized to see.
         tool = await fastmcp.fastmcp.get_tool(tool_name)
         if tool is None:
             raise AuthorizationError(
-                f"Authorization failed for tool '{tool_name}': tool not found"
+                f"Authorization failed for tool '{tool_name}': "
+                "not found or not authorized"
             )
 
         # Global auth check
@@ -204,13 +208,17 @@ class AuthMiddleware(Middleware):
                 f"Authorization failed for resource '{uri}': missing context"
             )
 
-        # Get resource/template (component auth is checked in get_*, raises if unauthorized)
+        # get_resource/get_resource_template return None both when the resource
+        # does not exist and when component-level auth denied access, so the two
+        # cases are indistinguishable here. Keep the message ambiguous to avoid
+        # disclosing existence of resources the caller is not authorized to see.
         component = await fastmcp.fastmcp.get_resource(str(uri))
         if component is None:
             component = await fastmcp.fastmcp.get_resource_template(str(uri))
         if component is None:
             raise AuthorizationError(
-                f"Authorization failed for resource '{uri}': resource not found"
+                f"Authorization failed for resource '{uri}': "
+                "not found or not authorized"
             )
 
         # Global auth check
@@ -303,11 +311,15 @@ class AuthMiddleware(Middleware):
                 f"Authorization failed for prompt '{prompt_name}': missing context"
             )
 
-        # Get prompt (component auth is checked in get_prompt, raises if unauthorized)
+        # get_prompt returns None both when the prompt does not exist and when
+        # component-level auth denied access, so the two cases are
+        # indistinguishable here. Keep the message ambiguous to avoid
+        # disclosing existence of prompts the caller is not authorized to see.
         prompt = await fastmcp.fastmcp.get_prompt(prompt_name)
         if prompt is None:
             raise AuthorizationError(
-                f"Authorization failed for prompt '{prompt_name}': prompt not found"
+                f"Authorization failed for prompt '{prompt_name}': "
+                "not found or not authorized"
             )
 
         # Global auth check

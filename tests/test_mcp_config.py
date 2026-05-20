@@ -1,6 +1,7 @@
 import asyncio
 import gc
 import inspect
+import json
 import logging
 import os
 import sys
@@ -128,6 +129,58 @@ def test_parse_extra_keys():
     assert (
         serialized_mcp_config["mcpServers"]["test_server"]["leaf_extra"] == "leaf_extra"
     )
+
+
+def test_mcp_config_file_io_uses_utf8(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """MCP config files must be read and written as UTF-8.
+
+    On Windows, Path.read_text()/write_text() default to a locale encoding such
+    as cp1252. This simulates that failure mode so Unicode config values keep
+    working on every platform.
+    """
+    config_path = tmp_path / "mcp.json"
+    raw_config = {
+        "mcpServers": {
+            "emoji_server": {
+                "command": "python",
+                "args": ["serve_✅.py"],
+                "description": "Handles café data ✅",
+            }
+        }
+    }
+    config_path.write_text(json.dumps(raw_config, ensure_ascii=False), encoding="utf-8")
+
+    original_read_text = Path.read_text
+    original_write_text = Path.write_text
+
+    def strict_read_text(self: Path, *args: Any, **kwargs: Any) -> str:
+        if kwargs.get("encoding") != "utf-8":
+            raise UnicodeDecodeError(
+                "charmap", b"\x9d", 0, 1, "simulated cp1252 default"
+            )
+        return original_read_text(self, *args, **kwargs)
+
+    def strict_write_text(self: Path, data: str, *args: Any, **kwargs: Any) -> int:
+        if kwargs.get("encoding") != "utf-8":
+            raise UnicodeEncodeError("charmap", "✅", 0, 1, "simulated cp1252 default")
+        return original_write_text(self, data, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", strict_read_text)
+    monkeypatch.setattr(Path, "write_text", strict_write_text)
+
+    config = MCPConfig.from_file(config_path)
+    server = config.mcpServers["emoji_server"]
+    assert isinstance(server, StdioMCPServer)
+    assert server.args == ["serve_✅.py"]
+    assert server.description == "Handles café data ✅"
+
+    output_path = tmp_path / "written" / "mcp.json"
+    config.write_to_file(output_path)
+    output = original_read_text(output_path, encoding="utf-8")
+    assert "serve_✅.py" in output
+    assert "Handles café data ✅" in output
 
 
 def test_parse_mcpservers_at_root():

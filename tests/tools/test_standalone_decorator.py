@@ -5,6 +5,8 @@ to a server. Functions can be added explicitly via server.add_tool() or
 discovered by FileSystemProvider.
 """
 
+import subprocess
+import sys
 from typing import cast
 
 import pytest
@@ -14,6 +16,27 @@ from fastmcp.client import Client
 from fastmcp.tools import tool
 from fastmcp.tools.base import Tool
 from fastmcp.tools.function_tool import DecoratedTool, FunctionTool, ToolMeta
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "from fastmcp.tools import tool",
+        "from fastmcp.resources import Resource, resource",
+        "from fastmcp.prompts import Prompt, prompt",
+        "import sys; import fastmcp.apps.config; assert 'fastmcp.tools.function_tool' not in sys.modules",
+        "from fastmcp.server.auth.authorization import AuthCheck",
+        "from fastmcp.server import Context, FastMCP, create_proxy",
+    ],
+)
+def test_component_import_works_in_fresh_interpreter(statement: str):
+    result = subprocess.run(
+        [sys.executable, "-c", statement],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 class TestToolDecorator:

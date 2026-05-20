@@ -1,0 +1,561 @@
+# Require external PRs to reference an issue with an auto-close keyword
+# (e.g. "Fixes #123") AND have the PR author assigned to that issue.
+# Otherwise the PR is labeled "missing-issue-link", commented on, and
+# closed. CONTRIBUTING.md requires external contributors to be assigned to
+# an issue before opening a PR; this enforces that.
+#
+# Adapted from langchain-ai/langchain's require_issue_link.yml. Differences:
+#   - Self-contained: it does NOT depend on a separate labeler workflow
+#     applying an "external" label first, so it can run on `opened`.
+#   - "External" is determined authoritatively, in-script, from the PR
+#     author's repo collaborator permission level — NOT from the event
+#     payload's author_association. author_association reports MEMBER only
+#     for *public* org members; a maintainer whose org membership is
+#     private appears as CONTRIBUTOR/NONE, so gating on it would wrongly
+#     enforce against private-member maintainers. getCollaboratorPermission
+#     reflects effective write access regardless of membership visibility.
+#   - The enforcement path is a single github-script step (the upstream
+#     version is split across four, forcing the label/comment/reopen helpers
+#     to be duplicated per scope).
+#   - Issue assignment events are handled in this same workflow so assigning
+#     the linked issue reopens previously closed PRs automatically.
+#
+# Maintainer override: reopen the PR, or remove the "missing-issue-link"
+# label — either applies a sticky "bypass-issue-check" label and reopens.
+
+name: Require Issue Link
+
+on:
+  pull_request_target:
+    # SECURITY: pull_request_target runs with repo write scope against the
+    # BASE repo. NEVER check out or execute PR-head code here — it would run
+    # with these permissions. This workflow only reads the PR payload and
+    # calls the API; it never checks anything out.
+    # ready_for_review matters because the job skips drafts: without it a
+    # draft opened with no issue link would never be checked when it later
+    # becomes reviewable.
+    types: [opened, edited, reopened, ready_for_review, labeled, unlabeled]
+  issues:
+    # Assignment is what makes a previously closed "not assigned" PR compliant,
+    # so it needs a separate event path that finds and reopens matching PRs.
+    types: [assigned]
+
+# Dry run: when 'false' the check still runs and logs its verdict but makes
+# NO mutations at all (no label, comment, close, reopen, or failure). Flip
+# to 'true' to enforce.
+env:
+  ENFORCE_ISSUE_LINK: "true"
+
+permissions:
+  contents: read
+
+jobs:
+  check-issue-link:
+    # Cheap pre-filters only. Maintainer detection is deliberately NOT done
+    # here: the job-level `if` can't call the API, and author_association is
+    # unreliable for private org members (see file header). The job runs,
+    # then the script resolves the author's real permission and exits early
+    # for maintainers.
+    #
+    # Gate: skip drafts, bots, and already-bypassed/trusted PRs. Allow the
+    # primary actions plus the one maintainer-override action we care about
+    # (removing the missing-issue-link label).
+    if: >-
+      github.event.pull_request.draft == false &&
+      !endsWith(github.actor, '[bot]') &&
+      !contains(github.event.pull_request.labels.*.name, 'trusted-contributor') &&
+      !contains(github.event.pull_request.labels.*.name, 'bypass-issue-check') &&
+      (
+        (github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
+        (github.event.action == 'unlabeled' && github.event.label.name == 'missing-issue-link')
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: require-issue-link-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    permissions:
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Enforce issue link
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const pr = context.payload.pull_request;
+            const prNumber = pr.number;
+            const action = context.payload.action;
+            const enforce = process.env.ENFORCE_ISSUE_LINK === 'true';
+            const LABEL = 'missing-issue-link';
+            const MARKER = '<!-- require-issue-link -->';
+
+            // Dry-run guard: every mutating call goes through this so that
+            // ENFORCE_ISSUE_LINK=false means strictly read-only.
+            async function mutate(description, fn) {
+              if (!enforce) {
+                console.log(`[dry-run] would ${description}`);
+                return;
+              }
+              await fn();
+            }
+
+            // Authoritative maintainer check. Uses collaborator permission,
+            // not org membership or author_association:
+            //   - GITHUB_TOKEN is an app token and is never an org member,
+            //     so the org-membership endpoint always 403s.
+            //   - author_association reports MEMBER only for *public* org
+            //     members; a private-member maintainer shows as
+            //     CONTRIBUTOR/NONE. Permission level is visibility-
+            //     independent and reflects effective access.
+            // 404 (not a collaborator) → not a maintainer. Other errors
+            // (rate limit, 5xx) MUST throw: silently treating them as
+            // "not a maintainer" could wrongly close a maintainer's PR.
+            // A throw aborts the script before any close/label call, so the
+            // job fails red and the PR is left untouched — the safe direction.
+            async function hasWriteAccess(username) {
+              if (!username) throw new Error('No username — cannot check permissions');
+              try {
+                const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                  owner, repo, username,
+                });
+                const ok = ['admin', 'maintain', 'write'].includes(data.permission);
+                console.log(`${username}: ${data.permission} — ${ok ? 'maintainer' : 'not a maintainer'}`);
+                return ok;
+              } catch (e) {
+                if (e.status === 404) {
+                  console.log(`${username} is not a collaborator — not a maintainer`);
+                  return false;
+                }
+                throw new Error(
+                  `Permission check failed for ${username} (HTTP ${e.status ?? 'unknown'}): ${e.message}`,
+                );
+              }
+            }
+
+            async function addLabel() {
+              await mutate(`label PR #${prNumber} "${LABEL}"`, async () => {
+                try {
+                  await github.rest.issues.getLabel({ owner, repo, name: LABEL });
+                } catch (e) {
+                  if (e.status !== 404) throw e;
+                  try {
+                    await github.rest.issues.createLabel({ owner, repo, name: LABEL, color: 'b76e79' });
+                  } catch (createErr) {
+                    // 422 = created by a concurrent run between GET and POST.
+                    if (createErr.status !== 422) throw createErr;
+                  }
+                }
+                await github.rest.issues.addLabels({
+                  owner, repo, issue_number: prNumber, labels: [LABEL],
+                });
+              });
+            }
+
+            async function minimizeStaleComment() {
+              try {
+                const comments = await github.paginate(
+                  github.rest.issues.listComments,
+                  { owner, repo, issue_number: prNumber, per_page: 100 },
+                );
+                const stale = comments.find(c => c.body && c.body.includes(MARKER));
+                if (!stale) return;
+                await mutate(`minimize stale comment ${stale.id}`, () => github.graphql(`
+                  mutation($id: ID!) {
+                    minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) {
+                      minimizedComment { isMinimized }
+                    }
+                  }
+                `, { id: stale.node_id }));
+              } catch (e) {
+                core.warning(`Could not minimize stale comment on PR #${prNumber}: ${e.message}`);
+              }
+            }
+
+            // Shared "this PR passes" cleanup: drop the label, reopen, and
+            // retire any stale enforcement comment.
+            //
+            // For the normal pass paths we only reopen if THIS workflow had
+            // closed the PR — inferred from the label still being on the
+            // payload. The maintainer-override paths pass forceReopen: the
+            // `unlabeled` event payload no longer carries the just-removed
+            // label, so the heuristic can't see it; without forcing, the
+            // advertised "remove the label to bypass" gesture would leave
+            // the PR closed.
+            async function clearEnforcement(forceReopen = false) {
+              await mutate(`remove "${LABEL}" from PR #${prNumber}`, async () => {
+                try {
+                  await github.rest.issues.removeLabel({
+                    owner, repo, issue_number: prNumber, name: LABEL,
+                  });
+                } catch (e) {
+                  if (e.status !== 404) throw e;
+                }
+              });
+              const hadLabel = pr.labels.map(l => l.name).includes(LABEL);
+              if (pr.state === 'closed' && (forceReopen || hadLabel)) {
+                await mutate(`reopen PR #${prNumber}`, async () => {
+                  await github.rest.pulls.update({
+                    owner, repo, pull_number: prNumber, state: 'open',
+                  });
+                });
+              }
+              await minimizeStaleComment();
+            }
+
+            async function applyBypass(reason) {
+              console.log(reason);
+              await clearEnforcement(true);
+              await mutate(`add sticky "bypass-issue-check" to PR #${prNumber}`, async () => {
+                try {
+                  await github.rest.issues.getLabel({ owner, repo, name: 'bypass-issue-check' });
+                } catch (e) {
+                  if (e.status !== 404) throw e;
+                  try {
+                    await github.rest.issues.createLabel({
+                      owner, repo, name: 'bypass-issue-check', color: '0e8a16',
+                    });
+                  } catch (createErr) {
+                    if (createErr.status !== 422) throw createErr;
+                  }
+                }
+                await github.rest.issues.addLabels({
+                  owner, repo, issue_number: prNumber, labels: ['bypass-issue-check'],
+                });
+              });
+            }
+
+            // ── Maintainer-authored PRs are exempt entirely ────────────────
+            if (await hasWriteAccess(pr.user.login)) {
+              console.log(`PR author ${pr.user.login} has write access — exempt`);
+              await clearEnforcement();
+              return;
+            }
+
+            const sender = context.payload.sender?.login;
+
+            // ── Maintainer override: removed the "missing-issue-link" label ─
+            if (action === 'unlabeled') {
+              if (await hasWriteAccess(sender)) {
+                await applyBypass(`Maintainer ${sender} removed ${LABEL} from PR #${prNumber} — bypassing`);
+                return;
+              }
+              // Only triage/admin can manage labels, so a non-write actor
+              // reaching here is rare (triage role). Fall through to the
+              // normal check, which recomputes link + assignment and
+              // re-enforces with the correct message if still failing.
+              console.log(`Non-maintainer ${sender} removed ${LABEL} — re-checking`);
+            }
+
+            // ── Maintainer override: reopened a PR we had closed ───────────
+            if (
+              action === 'reopened' &&
+              pr.labels.map(l => l.name).includes(LABEL) &&
+              (await hasWriteAccess(sender))
+            ) {
+              await applyBypass(`Maintainer ${sender} reopened PR #${prNumber} — bypassing`);
+              return;
+            }
+
+            // ── Race guard: re-read live labels ────────────────────────────
+            const { data: liveLabels } = await github.rest.issues.listLabelsOnIssue({
+              owner, repo, issue_number: prNumber,
+            });
+            const liveNames = liveLabels.map(l => l.name);
+            if (liveNames.includes('trusted-contributor') || liveNames.includes('bypass-issue-check')) {
+              console.log('PR carries trusted-contributor or bypass-issue-check — clearing any prior enforcement');
+              await clearEnforcement();
+              return;
+            }
+
+            // ── The actual check: an auto-close keyword + issue number ─────
+            const body = pr.body || '';
+            const pattern = /(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s*#(\d+)/gi;
+            const matches = [...body.matchAll(pattern)];
+
+            if (matches.length === 0) {
+              console.log('No issue link found in PR body');
+              await enforceFailure('no-link');
+              return;
+            }
+
+            // The author must be assigned to at least one linked issue.
+            // CONTRIBUTING.md requires external contributors to be assigned
+            // before opening a PR (so maintainers can deconflict / steer
+            // approach first).
+            const MAX_ISSUES = 5;
+            const allNumbers = [...new Set(matches.map(m => parseInt(m[1], 10)))];
+            const numbers = allNumbers.slice(0, MAX_ISSUES);
+            if (allNumbers.length > MAX_ISSUES) {
+              core.warning(`PR references ${allNumbers.length} issues — checking only the first ${MAX_ISSUES}`);
+            }
+
+            const prAuthor = pr.user.login.toLowerCase();
+            let sawRealIssue = false;
+            let assignedToAny = false;
+            for (const num of numbers) {
+              let issue;
+              try {
+                ({ data: issue } = await github.rest.issues.get({
+                  owner, repo, issue_number: num,
+                }));
+              } catch (e) {
+                if (e.status === 404) {
+                  console.log(`#${num} does not exist — ignoring`);
+                  continue;
+                }
+                // Same safe-direction rule as hasWriteAccess: a transient
+                // error must not be read as "not assigned" and close the PR.
+                throw new Error(`Cannot fetch issue #${num} (HTTP ${e.status ?? 'unknown'}): ${e.message}`);
+              }
+              sawRealIssue = true;
+              const assignees = (issue.assignees || []).map(a => a.login.toLowerCase());
+              if (assignees.includes(prAuthor)) {
+                console.log(`PR author ${pr.user.login} is assigned to #${num}`);
+                assignedToAny = true;
+                break;
+              }
+              console.log(`PR author ${pr.user.login} is NOT assigned to #${num} (assignees: ${assignees.join(', ') || 'none'})`);
+            }
+
+            if (!sawRealIssue) {
+              console.log('Referenced issue(s) do not exist');
+              await enforceFailure('no-link');
+              return;
+            }
+            if (!assignedToAny) {
+              await enforceFailure('not-assigned');
+              return;
+            }
+
+            console.log('Linked and assigned — clearing any prior enforcement');
+            await clearEnforcement();
+
+            // ── Label, comment, close, and fail ────────────────────────────
+            // `kind`: 'no-link' (no valid issue reference) or 'not-assigned'
+            // (referenced an issue, but the author isn't assigned to it).
+            async function enforceFailure(kind) {
+              await addLabel();
+
+              const intro = kind === 'no-link'
+                ? '**This PR has been automatically closed** because its description does not reference a tracked issue.'
+                : '**This PR has been automatically closed** because you are not assigned to the issue it references.';
+              const steps = kind === 'no-link'
+                ? [
+                    `1. Find or [open an issue](https://github.com/${owner}/${repo}/issues/new/choose) describing the change.`,
+                    '2. Comment on the issue to ask a maintainer to assign it to you.',
+                    '3. Add `Fixes #<issue>`, `Closes #<issue>`, or `Resolves #<issue>` to the PR description.',
+                    '4. Once you are assigned and the link is present, the PR reopens automatically.',
+                  ]
+                : [
+                    '1. Comment on the linked issue to ask a maintainer to assign it to you.',
+                    '2. Once a maintainer assigns you, the PR reopens automatically.',
+                  ];
+
+              const commentBody = [
+                MARKER,
+                intro,
+                '',
+                `Per [CONTRIBUTING.md](https://github.com/${owner}/${repo}/blob/main/CONTRIBUTING.md), an external PR must reference an issue that is assigned to its author. To proceed:`,
+                '',
+                ...steps,
+                '',
+                `*Maintainers: reopen this PR or remove the \`${LABEL}\` label to bypass this check.*`,
+              ].join('\n');
+
+              const comments = await github.paginate(
+                github.rest.issues.listComments,
+                { owner, repo, issue_number: prNumber, per_page: 100 },
+              );
+              const existing = comments.find(c => c.body && c.body.includes(MARKER));
+              if (!existing) {
+                await mutate(`comment on PR #${prNumber}`, () => github.rest.issues.createComment({
+                  owner, repo, issue_number: prNumber, body: commentBody,
+                }));
+              } else if (existing.body !== commentBody) {
+                await mutate(`update comment ${existing.id}`, () => github.rest.issues.updateComment({
+                  owner, repo, comment_id: existing.id, body: commentBody,
+                }));
+              } else {
+                console.log('Requirement comment already present — skipping');
+              }
+
+              if (pr.state === 'open') {
+                await mutate(`close PR #${prNumber}`, () => github.rest.pulls.update({
+                  owner, repo, pull_number: prNumber, state: 'closed',
+                }));
+              }
+
+              if (enforce) {
+                core.setFailed(
+                  kind === 'no-link'
+                    ? 'PR must reference a tracked issue using an auto-close keyword (e.g. "Fixes #123").'
+                    : 'PR author must be assigned to the referenced issue.',
+                );
+              }
+            }
+
+  reopen-on-assignment:
+    if: github.event_name == 'issues' && github.event.action == 'assigned' && !github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: reopen-on-assignment-${{ github.event.issue.number }}-${{ github.event.assignee.login }}
+      cancel-in-progress: false
+    permissions:
+      actions: write
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Reopen linked PRs
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issueNumber = context.payload.issue.number;
+            const assignee = context.payload.assignee.login;
+            const enforce = process.env.ENFORCE_ISSUE_LINK === 'true';
+            const LABEL = 'missing-issue-link';
+            const MARKER = '<!-- require-issue-link -->';
+            const pattern = /(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s*#(\d+)/gi;
+
+            async function mutate(description, fn) {
+              if (!enforce) {
+                console.log(`[dry-run] would ${description}`);
+                return;
+              }
+              await fn();
+            }
+
+            console.log(`Issue #${issueNumber} assigned to ${assignee} — searching for closed PRs to reopen`);
+
+            const q = [
+              'is:pr',
+              'is:closed',
+              `author:${assignee}`,
+              `label:${LABEL}`,
+              `repo:${owner}/${repo}`,
+            ].join(' ');
+
+            let search;
+            try {
+              ({ data: search } = await github.rest.search.issuesAndPullRequests({
+                q,
+                per_page: 30,
+              }));
+            } catch (e) {
+              throw new Error(
+                `Failed to search closed PRs for ${assignee} after assigning #${issueNumber} ` +
+                  `(HTTP ${e.status ?? 'unknown'}): ${e.message}`,
+              );
+            }
+
+            if (search.total_count === 0) {
+              console.log('No matching closed PRs found');
+              return;
+            }
+
+            console.log(`Found ${search.total_count} candidate PR(s)`);
+
+            for (const item of search.items) {
+              const prNumber = item.number;
+
+              let issue;
+              try {
+                ({ data: issue } = await github.rest.issues.get({
+                  owner, repo, issue_number: prNumber,
+                }));
+              } catch (e) {
+                throw new Error(`Cannot fetch PR #${prNumber} issue data (HTTP ${e.status ?? 'unknown'}): ${e.message}`);
+              }
+
+              const labels = (issue.labels || []).map(label => label.name);
+              if (labels.includes('bypass-issue-check')) {
+                console.log(`PR #${prNumber} already has bypass-issue-check — skipping`);
+                continue;
+              }
+
+              const body = issue.body || '';
+              const referencedIssues = [...body.matchAll(pattern)].map(match => parseInt(match[1], 10));
+              if (!referencedIssues.includes(issueNumber)) {
+                console.log(`PR #${prNumber} does not reference #${issueNumber} — skipping`);
+                continue;
+              }
+
+              try {
+                await mutate(`reopen PR #${prNumber}`, () => github.rest.pulls.update({
+                  owner, repo, pull_number: prNumber, state: 'open',
+                }));
+              } catch (e) {
+                if (e.status === 422) {
+                  core.warning(`Cannot reopen PR #${prNumber}: the head branch was likely deleted`);
+                  await mutate(`comment on unreopenable PR #${prNumber}`, () => github.rest.issues.createComment({
+                    owner,
+                    repo,
+                    issue_number: prNumber,
+                    body:
+                      `You have been assigned to #${issueNumber}, but this PR could not be ` +
+                      'reopened because the head branch has been deleted. Please open a new PR ' +
+                      'referencing the issue.',
+                  }));
+                  continue;
+                }
+                throw e;
+              }
+
+              await mutate(`remove "${LABEL}" from PR #${prNumber}`, async () => {
+                try {
+                  await github.rest.issues.removeLabel({
+                    owner, repo, issue_number: prNumber, name: LABEL,
+                  });
+                } catch (e) {
+                  if (e.status !== 404) throw e;
+                }
+              });
+
+              try {
+                const comments = await github.paginate(
+                  github.rest.issues.listComments,
+                  { owner, repo, issue_number: prNumber, per_page: 100 },
+                );
+                const stale = comments.find(comment => comment.body && comment.body.includes(MARKER));
+                if (stale) {
+                  await mutate(`minimize stale comment ${stale.id}`, () => github.graphql(`
+                    mutation($id: ID!) {
+                      minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) {
+                        minimizedComment { isMinimized }
+                      }
+                    }
+                  `, { id: stale.node_id }));
+                }
+              } catch (e) {
+                core.warning(`Could not minimize stale comment on PR #${prNumber}: ${e.message}`);
+              }
+
+              try {
+                const { data: pr } = await github.rest.pulls.get({
+                  owner, repo, pull_number: prNumber,
+                });
+                const { data: runs } = await github.rest.actions.listWorkflowRuns({
+                  owner,
+                  repo,
+                  workflow_id: 'require-issue-link.yml',
+                  head_sha: pr.head.sha,
+                  status: 'failure',
+                  per_page: 1,
+                });
+                if (runs.workflow_runs.length === 0) {
+                  console.log(`No failed require-issue-link runs found for PR #${prNumber}`);
+                  continue;
+                }
+                await mutate(`re-run failed require-issue-link run for PR #${prNumber}`, () =>
+                  github.rest.actions.reRunWorkflowFailedJobs({
+                    owner, repo, run_id: runs.workflow_runs[0].id,
+                  }),
+                );
+              } catch (e) {
+                core.warning(`Could not re-run require-issue-link for PR #${prNumber}: ${e.message}`);
+              }
+            }

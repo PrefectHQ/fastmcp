@@ -17,17 +17,13 @@ import fastmcp
 from fastmcp.decorators import resolve_task_config
 from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.resources.base import Resource, ResourceResult
-from fastmcp.server.auth.authorization import AuthCheck
-from fastmcp.server.dependencies import (
-    transform_context_annotations,
-    without_injected_parameters,
-)
-from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
 )
+from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.mime import resolve_ui_mime_type
+from fastmcp.utilities.tasks import TaskConfig
 
 if TYPE_CHECKING:
     from docket import Docket
@@ -182,6 +178,11 @@ class FunctionResource(Resource):
             fn = fn.__func__
 
         # Transform Context type annotations to Depends() for unified DI
+        from fastmcp.server.dependencies import (
+            transform_context_annotations,
+            without_injected_parameters,
+        )
+
         fn = transform_context_annotations(fn)
 
         # Wrap fn to handle dependency resolution internally
