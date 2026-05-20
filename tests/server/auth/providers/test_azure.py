@@ -14,7 +14,7 @@ from mcp.server.auth.provider import (
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 
-from fastmcp.server.auth.oauth_proxy.models import ClientCode
+from fastmcp.server.auth.oauth_proxy.models import ClientCode, UpstreamTokenSet
 from fastmcp.server.auth.providers.azure import AzureProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
 
@@ -1400,6 +1400,55 @@ class TestAzureScopeRoundTrip:
         assert granted == {"read", "write"}, (
             f"Expected unprefixed scopes after refresh, got {refreshed.scope!r}"
         )
+
+    async def test_transparent_refresh_unprefixes_echoed_scopes(
+        self, memory_storage: MemoryStore
+    ):
+        """Transparent refresh stores client-facing scopes too.
+
+        Otherwise the scope mismatch can reappear when an expired upstream token
+        is refreshed during access-token validation.
+        """
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="common",
+            identifier_uri="api://my-api",
+            required_scopes=["read", "write"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        upstream_token_set = UpstreamTokenSet(
+            upstream_token_id="upstream-token-id",
+            access_token="expired-upstream-token",
+            refresh_token="refresh-token",
+            refresh_token_expires_at=time.time() + 3600,
+            expires_at=time.time() - 60,
+            token_type="Bearer",
+            scope="read write",
+            client_id=self.CLIENT_ID,
+            created_at=time.time() - 3600,
+        )
+
+        mock_oauth_client = AsyncMock()
+        mock_oauth_client.refresh_token = AsyncMock(
+            return_value={
+                "access_token": "rotated-upstream-token",
+                "refresh_token": "rotated-refresh-token",
+                "expires_in": 3600,
+                "token_type": "Bearer",
+                "scope": "api://my-api/read api://my-api/write",
+            }
+        )
+
+        with patch.object(
+            provider, "_create_upstream_oauth_client", return_value=mock_oauth_client
+        ):
+            refreshed = await provider._try_transparent_refresh(upstream_token_set)
+
+        assert refreshed.scope == "read write"
 
     def test_translate_scopes_from_idp_is_inverse_of_prefix(
         self, memory_storage: MemoryStore

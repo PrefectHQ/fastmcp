@@ -1650,10 +1650,13 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         upstream_token_set.access_token = token_response["access_token"]
         upstream_token_set.expires_at = time.time() + new_expires_in
-        upstream_token_set.scope = " ".join(
+        refreshed_scopes = (
             parse_scopes(token_response["scope"]) or []
             if "scope" in token_response
             else scopes
+        )
+        upstream_token_set.scope = " ".join(
+            self._translate_scopes_from_idp(refreshed_scopes)
         )
 
         # Handle upstream refresh token rotation
