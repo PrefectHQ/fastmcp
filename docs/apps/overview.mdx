@@ -8,6 +8,7 @@ mode: center
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
 import PrefabPinWarning from '/snippets/prefab-pin-warning.mdx'
+import { PrefabDemoFrame } from '/snippets/prefab-demo-frame.mdx'
 
 <VersionBadge version="3.0.0" />
 
@@ -21,7 +22,7 @@ A FastMCP app is a tool that returns an interactive UI instead of text. When the
   maskImage: 'linear-gradient(to bottom, black 75%, transparent)',
   WebkitMaskImage: 'linear-gradient(to bottom, black 75%, transparent)',
 }}>
-  <iframe src="/apps/demos/hitchhikers.html" style={{width:"100%", height:"2000px", border:"none", borderRadius:"8px", background:"transparent"}} frameBorder="0" scrolling="no" allowtransparency="true"></iframe>
+  <PrefabDemoFrame demo="hitchhikers" height="2000px" title="Prefab showcase demo" />
 </div>
 
 The dashboard above is a [Prefab](https://prefab.prefect.io) showcase — a taste of what you can deliver from a FastMCP tool. Every card, chart, slider, dialog, and carousel is a Python component. Build a composition like this, add `@mcp.tool(app=True)`, and the host renders it inside the conversation.

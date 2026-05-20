@@ -8,12 +8,13 @@ tag: NEW
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
 import PrefabPinWarning from '/snippets/prefab-pin-warning.mdx'
+import { PrefabDemoFrame } from '/snippets/prefab-demo-frame.mdx'
 
 <VersionBadge version="3.1.0" />
 
 <PrefabPinWarning />
 
-<iframe src="/apps/demos/dashboard.html" style={{width:"100%", height:"680px", border:"none", overflow:"hidden", borderRadius:"8px"}} frameBorder="0" scrolling="no"></iframe>
+<PrefabDemoFrame demo="dashboard" height="680px" title="Sales dashboard demo" />
 
 Believe it or not, that dashboard is a FastMCP tool. The chart has tooltips. The table is sortable. The badges are styled by deal stage. The whole thing is about 40 lines of Python, and the user sees it right inside their conversation instead of a wall of JSON.
 
@@ -23,7 +24,7 @@ The pattern behind every example on this page is the same: add `app=True` to you
 
 Most tools return data the user wants to explore. A `DataTable` is often the smallest useful upgrade — your data goes from a JSON blob to a searchable, sortable table:
 
-<iframe src="/apps/demos/data-table.html" style={{width:"100%", height:"530px", border:"none", overflow:"hidden", borderRadius:"8px"}} frameBorder="0" scrolling="no"></iframe>
+<PrefabDemoFrame demo="data-table" height="530px" title="Data table demo" />
 
 ```python
 from prefab_ui.components import DataTable, DataTableColumn
@@ -62,7 +63,7 @@ That's it. Add `app=True`, return a Prefab component instead of raw dicts. FastM
 
 When numbers tell a better story as a visual, swap in a chart. The API is the same: pass your data as a list of dicts, tell the chart which keys to plot.
 
-<iframe src="/apps/demos/bar-chart.html" style={{width:"100%", height:"430px", border:"none", overflow:"hidden", borderRadius:"8px"}} frameBorder="0" scrolling="no"></iframe>
+<PrefabDemoFrame demo="bar-chart" height="430px" title="Bar chart demo" />
 
 ```python
 @mcp.tool(app=True)
@@ -88,7 +89,7 @@ def quarterly_revenue(year: int) -> BarChart:
 
 Each `ChartSeries` plots a different key from the data. `BarChart`, `LineChart`, `AreaChart`, `PieChart`, `RadarChart`, and `RadialChart` all follow the same pattern. Hover over the bars to see tooltips.
 
-<iframe src="/apps/demos/pie-chart.html" style={{width:"100%", height:"410px", border:"none", overflow:"hidden", borderRadius:"8px"}} frameBorder="0" scrolling="no"></iframe>
+<PrefabDemoFrame demo="pie-chart" height="410px" title="Pie chart demo" />
 
 ```python
 @mcp.tool(app=True)
@@ -116,7 +117,7 @@ See the [Prefab chart docs](https://prefab.prefect.io/docs/components) for stack
 
 Tables and charts are useful on their own, but the real power comes from composing them. `Column` stacks children vertically, `Row` lays them out side by side, and `with` blocks establish nesting — the indentation is the layout.
 
-<iframe src="/apps/demos/dashboard.html" style={{width:"100%", height:"680px", border:"none", overflow:"hidden", borderRadius:"8px"}} frameBorder="0" scrolling="no"></iframe>
+<PrefabDemoFrame demo="dashboard" height="680px" title="Sales dashboard demo" />
 
 ```python expandable
 @mcp.tool(app=True)
@@ -184,7 +185,7 @@ Notice how `Badge` components can be placed inside table cells — any Prefab co
 
 Everything above renders once from the data your Python provides. But interactive tools can also respond to user input in real time, without any server round-trips. Prefab's state system lets components read and write client-side values, so the UI updates instantly as the user interacts with it.
 
-<iframe src="/apps/demos/reactive.html" style={{width:"100%", height:"500px", border:"none", overflow:"hidden", borderRadius:"8px"}} frameBorder="0" scrolling="no"></iframe>
+<PrefabDemoFrame demo="reactive" height="500px" title="Reactive sales demo" />
 
 Try switching regions in the dropdown, and toggling the switch on and off.
 
