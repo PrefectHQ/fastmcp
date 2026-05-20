@@ -977,7 +977,9 @@ class TestRunWithReloadWithServerArgs:
                 "fastmcp.cli.cli.load_and_merge_config",
                 return_value=(mock_config, "server.py"),
             ),
-            patch("fastmcp.cli.cli.subprocess.run", return_value=mock_result) as mock_run,
+            patch(
+                "fastmcp.cli.cli.subprocess.run", return_value=mock_result
+            ) as mock_run,
             pytest.raises(SystemExit) as exc_info,
         ):
             await run("server.py", stateless=True)
@@ -991,7 +993,6 @@ class TestRunWithReloadWithServerArgs:
             "server.py",
             "--stateless",
         ]
-
 
 
 class TestInspectorModuleMode:
