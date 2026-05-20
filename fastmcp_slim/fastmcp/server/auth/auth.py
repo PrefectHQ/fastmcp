@@ -357,6 +357,11 @@ class AuthProvider(TokenVerifierProtocol):
             return None
 
         if path:
+            resource_path = urlparse(str(resource_base_url)).path.rstrip("/")
+            path_suffix = "/" + path.strip("/")
+            if resource_path == path_suffix:
+                return resource_base_url
+
             prefix = str(resource_base_url).rstrip("/")
             suffix = path.lstrip("/")
             return AnyHttpUrl(f"{prefix}/{suffix}")

@@ -16,6 +16,7 @@ from starlette.routing import Mount
 from fastmcp import FastMCP
 from fastmcp.server.auth import RemoteAuthProvider
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
+from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 
 
@@ -111,6 +112,21 @@ class TestOAuthMounting:
 
             # There will also be an extra route at /api/.well-known/oauth-protected-resource/mcp
             # (from the mounted MCP app), but we don't care about that as long as the correct one exists
+
+    async def test_well_known_does_not_duplicate_matching_mcp_path(self):
+        """base_url may already include the full externally mounted MCP path."""
+        auth_provider = InMemoryOAuthProvider(
+            base_url="https://api.example.com/api/mcp/v1"
+        )
+
+        well_known_routes = auth_provider.get_well_known_routes(mcp_path="/api/mcp/v1")
+        paths = {route.path for route in well_known_routes}
+
+        assert "/.well-known/oauth-authorization-server/api/mcp/v1" in paths
+        assert "/.well-known/oauth-protected-resource/api/mcp/v1" in paths
+        assert (
+            "/.well-known/oauth-protected-resource/api/mcp/v1/api/mcp/v1" not in paths
+        )
 
     async def test_mcp_endpoint_with_mounted_app(self, test_tokens):
         """Test that MCP endpoint works correctly when mounted.
