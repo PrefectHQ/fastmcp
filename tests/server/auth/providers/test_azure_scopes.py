@@ -12,6 +12,14 @@ from fastmcp.server.auth.providers.azure import (
 )
 from fastmcp.server.auth.providers.jwt import RSAKeyPair, StaticTokenVerifier
 
+# Import the optional azure-identity SDK once, at collection time. The OBO
+# tests mock it via patch("azure.identity.aio.OnBehalfOfCredential"), but the
+# provider imports it lazily — so without this the heavy SDK import lands
+# inside the first OBO test's 5s pytest-timeout window and flakes on cold
+# Windows runners (#4175). importorskip also skips cleanly if the optional
+# `azure` extra is absent, instead of hard-failing at runtime.
+pytest.importorskip("azure.identity.aio")
+
 
 @pytest.fixture
 def memory_storage() -> MemoryStore:

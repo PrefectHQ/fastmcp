@@ -39,6 +39,13 @@ class VersionSpec:
         gte: If set, only versions >= this value match.
         lt: If set, only versions < this value match.
         eq: If set, only this exact version matches (gte/lt ignored).
+            Matching is PEP 440-normalized and `v`-prefix insensitive, so
+            `eq="v1.0"` matches a component versioned `"1.0"`, and `eq="1.0"`
+            matches `"1"` (PEP 440 treats `1` and `1.0` as the same version).
+            If a server registers two PEP 440-equivalent spellings of the
+            same component (e.g. both `"1"` and `"1.0"`), they are the same
+            version under this spec; selection among them is deterministic
+            (see `version_sort_key`), not registration-order dependent.
     """
 
     gte: str | None = None
@@ -62,7 +69,7 @@ class VersionSpec:
             return match_none
 
         if self.eq is not None:
-            return version == self.eq
+            return parse_version_key(version) == parse_version_key(self.eq)
 
         key = parse_version_key(version)
 
@@ -199,16 +206,24 @@ def parse_version_key(version: str | None) -> VersionKey:
     return VersionKey(version)
 
 
-def version_sort_key(component: FastMCPComponent) -> VersionKey:
+def version_sort_key(component: FastMCPComponent) -> tuple[VersionKey, str]:
     """Get a sort key for a component based on its version.
 
     Use with sorted() or max() to order components by version.
+
+    The key is a `(VersionKey, raw)` tuple. The `VersionKey` orders by PEP 440
+    semantics (or lexicographically for non-PEP 440 strings); the raw version
+    string is a deterministic tie-breaker so that two components whose versions
+    are PEP 440-equivalent but spelled differently (e.g. `"1"` and `"1.0"`) are
+    ordered reproducibly instead of by registration order. The raw tie-breaker
+    only affects equivalent-version ties and never the primary version order,
+    so range/equality matching (which uses `VersionKey` directly) is unchanged.
 
     Args:
         component: The component to get a sort key for.
 
     Returns:
-        A sortable VersionKey.
+        A deterministic, sortable `(VersionKey, raw)` tuple.
 
     Example:
         ```python
@@ -216,7 +231,7 @@ def version_sort_key(component: FastMCPComponent) -> VersionKey:
         highest = max(tools, key=version_sort_key)  # Returns tool_v2
         ```
     """
-    return parse_version_key(component.version)
+    return (parse_version_key(component.version), component.version or "")
 
 
 def compare_versions(a: str | None, b: str | None) -> int:
