@@ -92,6 +92,7 @@ class UpstreamTokenSet(BaseModel):
     refresh_token_expires_at: (
         float | None
     )  # Unix timestamp when refresh token expires (if known)
+    refresh_token_never_expires: bool = False  # True = upstream explicitly said "no expiry" (e.g. Keycloak offline_access)
     expires_at: float  # Unix timestamp when access token expires
     token_type: str  # Usually "Bearer"
     scope: str  # Space-separated scopes

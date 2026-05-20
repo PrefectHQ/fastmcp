@@ -29,6 +29,7 @@ from fastmcp.server.auth.oauth_proxy.models import (
     _hash_token,
 )
 from fastmcp.server.auth.providers.jwt import JWTVerifier
+from fastmcp.server.auth.providers.keycloak import KeycloakOAuthProxy
 
 
 class TestOAuthProxyTokenEndpointAuth:
@@ -822,6 +823,37 @@ class TestUpstreamTokenStorageTTL:
         )
         assert upstream_tokens is not None
 
+
+class TestKeycloakOAuthProxy:
+    """Tests specific to KeycloakOAuthProxy's offline token handling.
+
+    Keycloak returns refresh_expires_in=0 for offline_access tokens to signal
+    "no time-based expiry".  KeycloakOAuthProxy must handle this correctly:
+    issue a refresh token, and never let the FastMCP RT TTL shrink across
+    repeated refresh cycles.
+    """
+
+    @pytest.fixture
+    def jwt_verifier(self):
+        verifier = Mock(spec=TokenVerifier)
+        verifier.required_scopes = ["read", "write"]
+        verifier.verify_token = AsyncMock(return_value=None)
+        return verifier
+
+    @pytest.fixture
+    def proxy(self, jwt_verifier):
+        proxy = KeycloakOAuthProxy(
+            realm_url="https://keycloak.example.com/realms/test",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+        )
+        proxy.set_mcp_path("/mcp")
+        return proxy
+
     async def test_refresh_expires_in_zero_issues_refresh_token(self, proxy):
         """refresh_expires_in=0 should fall back to the configured default.
 
@@ -878,6 +910,306 @@ class TestUpstreamTokenStorageTTL:
             key=_hash_token(result.refresh_token)
         )
         assert refresh_meta is not None
+
+        # Upstream token set should be marked as never-expiring
+        jti_mapping = await proxy._jti_mapping_store.get(
+            key=proxy.jwt_issuer.verify_token(
+                result.refresh_token, expected_token_use="refresh"
+            )["jti"]
+        )
+        assert jti_mapping is not None
+        upstream_token_set = await proxy._upstream_token_store.get(
+            key=jti_mapping.upstream_token_id
+        )
+        assert upstream_token_set is not None
+        assert upstream_token_set.refresh_token_never_expires is True
+        assert upstream_token_set.refresh_token_expires_at is None
+
+    def test_valid_scopes_forwarded_for_dcr(self, jwt_verifier):
+        """valid_scopes must be advertised/accepted for DCR independently of required_scopes.
+
+        Offline tokens (the whole point of this proxy) require clients to register
+        the `offline_access` scope. Without a separate valid_scopes pass-through,
+        DCR scope validation falls back to required_scopes and rejects it.
+        """
+        proxy = KeycloakOAuthProxy(
+            realm_url="https://keycloak.example.com/realms/test",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=jwt_verifier,
+            valid_scopes=["openid", "offline_access"],
+            base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+        )
+        assert proxy.client_registration_options is not None
+        assert proxy.client_registration_options.valid_scopes == [
+            "openid",
+            "offline_access",
+        ]
+        # required_scopes (token verification) stays independent of valid_scopes (DCR)
+        assert jwt_verifier.required_scopes == ["read", "write"]
+
+    def test_valid_scopes_accepts_string(self, jwt_verifier):
+        """A space/comma-delimited string is parsed like required_scopes."""
+        proxy = KeycloakOAuthProxy(
+            realm_url="https://keycloak.example.com/realms/test",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=jwt_verifier,
+            valid_scopes="openid offline_access",
+            base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+        )
+        assert proxy.client_registration_options is not None
+        assert proxy.client_registration_options.valid_scopes == [
+            "openid",
+            "offline_access",
+        ]
+
+    def test_redirect_path_defaults_to_auth_callback(self, jwt_verifier):
+        proxy = KeycloakOAuthProxy(
+            realm_url="https://keycloak.example.com/realms/test",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+        )
+        assert proxy._redirect_path == "/auth/callback"
+
+    def test_redirect_path_forwarded_for_custom_callback(self, jwt_verifier):
+        """Migrating a deployment whose Keycloak client uses a non-default
+        callback path must not silently revert to /auth/callback."""
+        proxy = KeycloakOAuthProxy(
+            realm_url="https://keycloak.example.com/realms/test",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+            redirect_path="/custom/oauth/callback",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+        )
+        assert proxy._redirect_path == "/custom/oauth/callback"
+
+    def test_issuer_and_resource_base_url_default_to_base_url(self, jwt_verifier):
+        proxy = KeycloakOAuthProxy(
+            realm_url="https://keycloak.example.com/realms/test",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+        )
+        assert str(proxy.issuer_url).rstrip("/") == "https://proxy.example.com"
+        assert proxy.resource_base_url is None
+
+    def test_issuer_and_resource_base_url_forwarded(self, jwt_verifier):
+        """Behind a gateway, switching to KeycloakOAuthProxy must not drop the
+        issuer/resource overrides that OAuthProxy supports (correct metadata
+        and JWT audience)."""
+        proxy = KeycloakOAuthProxy(
+            realm_url="https://keycloak.example.com/realms/test",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://internal.proxy.local",
+            issuer_url="https://public.gateway.example.com",
+            resource_base_url="https://public.gateway.example.com/mcp",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+        )
+        assert str(proxy.issuer_url).rstrip("/") == "https://public.gateway.example.com"
+        assert proxy.resource_base_url is not None
+        assert (
+            str(proxy.resource_base_url).rstrip("/")
+            == "https://public.gateway.example.com/mcp"
+        )
+
+    async def test_refresh_expires_in_zero_subsequent_refresh_does_not_shrink(
+        self, proxy
+    ):
+        """Repeated refresh cycles with refresh_expires_in=0 must not shrink the RT TTL.
+
+        Keycloak offline tokens return refresh_expires_in=0 on every token response.
+        The first exchange correctly stores a 1-year FastMCP RT.  Subsequent
+        exchange_refresh_token calls (triggered by the MCP client refreshing its tokens)
+        must each issue a new FastMCP RT with the same full fallback TTL — not a
+        gradually decaying value computed from the original wall-clock timestamp.
+        """
+        import jwt as pyjwt
+
+        client = OAuthClientInformationFull(
+            client_id="kc-shrink-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+        await proxy.register_client(client)
+
+        # ── step 1: initial authorization code exchange ──────────────────────
+        client_code = ClientCode(
+            code="kc-offline-code",
+            client_id="kc-shrink-client",
+            redirect_uri="http://localhost:12345/callback",
+            code_challenge="test-challenge",
+            code_challenge_method="S256",
+            scopes=["read"],
+            idp_tokens={
+                "access_token": "upstream-at-v1",
+                "refresh_token": "upstream-rt-v1",
+                "expires_in": 3600,
+                "refresh_expires_in": 0,  # Keycloak offline sentinel
+                "token_type": "Bearer",
+            },
+            expires_at=time.time() + 300,
+            created_at=time.time(),
+        )
+        await proxy._code_store.put(key=client_code.code, value=client_code)
+
+        auth_code = AuthorizationCode(
+            code="kc-offline-code",
+            scopes=["read"],
+            expires_at=time.time() + 300,
+            client_id="kc-shrink-client",
+            code_challenge="test-challenge",
+            redirect_uri=AnyUrl("http://localhost:12345/callback"),
+            redirect_uri_provided_explicitly=True,
+        )
+        result1 = await proxy.exchange_authorization_code(
+            client=client,
+            authorization_code=auth_code,
+        )
+        assert result1.refresh_token is not None
+        first_rt = result1.refresh_token
+        first_payload = pyjwt.decode(
+            first_rt, options={"verify_signature": False, "verify_exp": False}
+        )
+        first_ttl = first_payload["exp"] - first_payload["iat"]
+        assert first_ttl > 60 * 60 * 24 * 300, (
+            f"First RT TTL {first_ttl}s should be close to 1 year"
+        )
+
+        # ── step 2: simulate a later refresh cycle (Keycloak returns 0 again) ─
+        async def fake_refresh(url, refresh_token, scope=None, **_kwargs):
+            return {
+                "access_token": "upstream-at-v2",
+                "refresh_token": "upstream-rt-v2",
+                "expires_in": 3600,
+                "refresh_expires_in": 0,  # same Keycloak sentinel
+                "token_type": "Bearer",
+            }
+
+        mock_client = Mock()
+        mock_client.refresh_token = AsyncMock(side_effect=fake_refresh)
+        with patch.object(
+            proxy, "_create_upstream_oauth_client", return_value=mock_client
+        ):
+            first_rt_meta = await proxy._refresh_token_store.get(
+                key=_hash_token(first_rt)
+            )
+            assert first_rt_meta is not None
+            result2 = await proxy.exchange_refresh_token(
+                client=client,
+                refresh_token=RefreshToken(
+                    token=first_rt,
+                    client_id="kc-shrink-client",
+                    scopes=["read"],
+                    expires_at=first_rt_meta.expires_at,
+                ),
+                scopes=["read"],
+            )
+
+        assert result2.refresh_token is not None
+        second_payload = pyjwt.decode(
+            result2.refresh_token,
+            options={"verify_signature": False, "verify_exp": False},
+        )
+        second_ttl = second_payload["exp"] - second_payload["iat"]
+        assert second_ttl > 60 * 60 * 24 * 300, (
+            f"Refreshed RT TTL {second_ttl}s shrank — expected close to 1 year"
+        )
+
+    async def test_base_proxy_does_not_treat_zero_as_never_expires(self):
+        """Base OAuthProxy must not interpret refresh_expires_in=0 as never-expires.
+
+        Only KeycloakOAuthProxy opts in to that behaviour.  The base proxy should
+        fall through to the standard fallback (1-year wall-clock timestamp), preserving
+        existing behaviour for all other providers.
+        """
+        verifier = Mock(spec=TokenVerifier)
+        verifier.required_scopes = ["read"]
+        verifier.verify_token = AsyncMock(return_value=None)
+
+        base_proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://idp.example.com/authorize",
+            upstream_token_endpoint="https://idp.example.com/token",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=verifier,
+            base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+        )
+        base_proxy.set_mcp_path("/mcp")
+
+        client = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+        await base_proxy.register_client(client)
+
+        client_code = ClientCode(
+            code="base-zero-code",
+            client_id="test-client",
+            redirect_uri="http://localhost:12345/callback",
+            code_challenge="test-challenge",
+            code_challenge_method="S256",
+            scopes=["read"],
+            idp_tokens={
+                "access_token": "upstream-at",
+                "refresh_token": "upstream-rt",
+                "expires_in": 3600,
+                "refresh_expires_in": 0,
+                "token_type": "Bearer",
+            },
+            expires_at=time.time() + 300,
+            created_at=time.time(),
+        )
+        await base_proxy._code_store.put(key=client_code.code, value=client_code)
+
+        auth_code = AuthorizationCode(
+            code="base-zero-code",
+            scopes=["read"],
+            expires_at=time.time() + 300,
+            client_id="test-client",
+            code_challenge="test-challenge",
+            redirect_uri=AnyUrl("http://localhost:12345/callback"),
+            redirect_uri_provided_explicitly=True,
+        )
+        result = await base_proxy.exchange_authorization_code(
+            client=client,
+            authorization_code=auth_code,
+        )
+        assert result.refresh_token is not None
+
+        jti_mapping = await base_proxy._jti_mapping_store.get(
+            key=base_proxy.jwt_issuer.verify_token(
+                result.refresh_token, expected_token_use="refresh"
+            )["jti"]
+        )
+        assert jti_mapping is not None
+        upstream_token_set = await base_proxy._upstream_token_store.get(
+            key=jti_mapping.upstream_token_id
+        )
+        assert upstream_token_set is not None
+        # Base proxy: never_expires stays False, expires_at is set (wall-clock fallback)
+        assert upstream_token_set.refresh_token_never_expires is False
+        assert upstream_token_set.refresh_token_expires_at is not None
 
 
 class TestTransparentUpstreamRefresh:
@@ -1269,3 +1601,162 @@ class TestTransparentUpstreamRefresh:
             returned = await mock_verifier.verify_token(call.args[0])
             if returned:
                 assert "upstream_claims" not in returned.claims
+
+
+class TestKeycloakTransparentRefreshZero:
+    """The transparent-refresh path (load_access_token) must preserve the
+    Keycloak never-expires sentinel when a rotated offline token comes back
+    with refresh_expires_in=0.
+
+    This is the third token path (alongside auth-code exchange and explicit
+    refresh-token exchange) and was previously only covered indirectly.
+    """
+
+    @pytest.fixture
+    def mock_verifier(self):
+        verifier = Mock(spec=TokenVerifier)
+        verifier.required_scopes = ["read"]
+
+        async def verify(token: str) -> AccessToken | None:
+            if token.startswith("refreshed-") or token.startswith("valid-"):
+                return AccessToken(
+                    token=token,
+                    client_id="test-client",
+                    scopes=["read"],
+                    expires_at=int(time.time() + 3600),
+                )
+            return None
+
+        verifier.verify_token = AsyncMock(side_effect=verify)
+        return verifier
+
+    @pytest.fixture
+    def proxy(self, mock_verifier):
+        proxy = KeycloakOAuthProxy(
+            realm_url="https://keycloak.example.com/realms/test",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=mock_verifier,
+            base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+        )
+        proxy.set_mcp_path("/mcp")
+        return proxy
+
+    async def _setup_expired_session(self, proxy) -> str:
+        upstream_token_id = "upstream-tok-id"
+        access_jti = "test-access-jti"
+        await proxy._upstream_token_store.put(
+            key=upstream_token_id,
+            value=UpstreamTokenSet(
+                upstream_token_id=upstream_token_id,
+                access_token="expired-upstream-access",
+                refresh_token="upstream-refresh-tok",
+                refresh_token_expires_at=time.time() + 86400,
+                expires_at=time.time() - 60,
+                token_type="Bearer",
+                scope="read",
+                client_id="test-client",
+                created_at=time.time() - 3600,
+            ),
+            ttl=86400,
+        )
+        await proxy._jti_mapping_store.put(
+            key=access_jti,
+            value=JTIMapping(
+                jti=access_jti,
+                upstream_token_id=upstream_token_id,
+                created_at=time.time(),
+            ),
+            ttl=3600,
+        )
+        return proxy.jwt_issuer.issue_access_token(
+            client_id="test-client",
+            scopes=["read"],
+            jti=access_jti,
+            expires_in=3600,
+        )
+
+    async def test_transparent_refresh_zero_preserves_never_expires(self, proxy):
+        fastmcp_jwt = await self._setup_expired_session(proxy)
+
+        mock_oauth_client = AsyncMock()
+        mock_oauth_client.refresh_token = AsyncMock(
+            return_value={
+                "access_token": "refreshed-upstream-access",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "refresh_token": "rotated-upstream-refresh",
+                "refresh_expires_in": 0,  # Keycloak offline sentinel
+                "scope": "read",
+            }
+        )
+
+        with patch.object(
+            proxy, "_create_upstream_oauth_client", return_value=mock_oauth_client
+        ):
+            result = await proxy.load_access_token(fastmcp_jwt)
+
+        assert result is not None
+        assert result.token == "refreshed-upstream-access"
+
+        stored = await proxy._upstream_token_store.get(key="upstream-tok-id")
+        assert stored is not None
+        assert stored.refresh_token == "rotated-upstream-refresh"
+        # The sentinel must be preserved, not reset to a wall-clock deadline.
+        assert stored.refresh_token_never_expires is True
+        assert stored.refresh_token_expires_at is None
+
+    async def test_base_proxy_transparent_refresh_zero_is_not_never_expires(self):
+        """The base OAuthProxy must NOT treat a transparent-refresh
+        refresh_expires_in=0 as never-expires (opt-in only)."""
+        verifier = Mock(spec=TokenVerifier)
+        verifier.required_scopes = ["read"]
+
+        async def verify(token: str) -> AccessToken | None:
+            if token.startswith("refreshed-"):
+                return AccessToken(
+                    token=token,
+                    client_id="test-client",
+                    scopes=["read"],
+                    expires_at=int(time.time() + 3600),
+                )
+            return None
+
+        verifier.verify_token = AsyncMock(side_effect=verify)
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://idp.example.com/authorize",
+            upstream_token_endpoint="https://idp.example.com/token",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=verifier,
+            base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+        )
+        proxy.set_mcp_path("/mcp")
+        fastmcp_jwt = await TestKeycloakTransparentRefreshZero._setup_expired_session(
+            self, proxy
+        )
+
+        mock_oauth_client = AsyncMock()
+        mock_oauth_client.refresh_token = AsyncMock(
+            return_value={
+                "access_token": "refreshed-upstream-access",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "refresh_token": "rotated-upstream-refresh",
+                "refresh_expires_in": 0,
+                "scope": "read",
+            }
+        )
+        with patch.object(
+            proxy, "_create_upstream_oauth_client", return_value=mock_oauth_client
+        ):
+            result = await proxy.load_access_token(fastmcp_jwt)
+
+        assert result is not None
+        stored = await proxy._upstream_token_store.get(key="upstream-tok-id")
+        assert stored is not None
+        assert stored.refresh_token_never_expires is False

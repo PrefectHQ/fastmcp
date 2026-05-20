@@ -231,6 +231,18 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
     - Generic: Works with any spec-compliant provider
     """
 
+    def _upstream_refresh_token_never_expires(self, refresh_expires_in: int) -> bool:
+        """Return True if the upstream's refresh_expires_in value signals the token never expires.
+
+        Override in subclasses to handle provider-specific conventions. The base
+        implementation always returns False — an unknown value is treated as a
+        normal (finite) expiry and falls through to the configured fallback TTL.
+
+        Args:
+            refresh_expires_in: The raw integer value from the upstream token response.
+        """
+        return False
+
     def __init__(
         self,
         *,
@@ -1090,22 +1102,35 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Some providers include refresh_expires_in, some don't
         refresh_expires_in = None
         refresh_token_expires_at = None
+        refresh_token_never_expires = False
         if idp_tokens.get("refresh_token"):
-            if "refresh_expires_in" in idp_tokens and int(
-                idp_tokens["refresh_expires_in"]
-            ):
-                refresh_expires_in = int(idp_tokens["refresh_expires_in"])
-                refresh_token_expires_at = time.time() + refresh_expires_in
-                logger.debug(
-                    "Upstream refresh token expires in %d seconds", refresh_expires_in
-                )
-            else:
-                # Upstream didn't specify; use configured fallback (default 1 year).
-                # The FastMCP refresh JWT is just a signed pointer — if the real
-                # upstream refresh has expired or been revoked, the next refresh
-                # call to upstream will fail and the client re-auths.
+            if "refresh_expires_in" in idp_tokens:
+                val = int(idp_tokens["refresh_expires_in"])
+                if val > 0:
+                    refresh_expires_in = val
+                    refresh_token_expires_at = time.time() + refresh_expires_in
+                    logger.debug(
+                        "Upstream refresh token expires in %d seconds",
+                        refresh_expires_in,
+                    )
+                elif val == 0 and self._upstream_refresh_token_never_expires(val):
+                    # Provider explicitly signals "no expiry" (e.g. Keycloak offline_access).
+                    # refresh_token_expires_at stays None (no upstream expiry to track).
+                    # We still need a finite FastMCP RT TTL; use the configured fallback.
+                    # The FastMCP RT is renewed on every transparent refresh, so active
+                    # sessions roll forward automatically without ever hitting a hard wall.
+                    refresh_token_never_expires = True
+                    logger.debug(
+                        "Upstream refresh_expires_in=0 (never expires); "
+                        "FastMCP RT will use fallback TTL of %d seconds",
+                        self._fallback_refresh_token_expiry_seconds,
+                    )
+            if refresh_expires_in is None:
+                # Upstream didn't specify expiry; use configured fallback (default 1 year).
                 refresh_expires_in = self._fallback_refresh_token_expiry_seconds
-                refresh_token_expires_at = time.time() + refresh_expires_in
+                if not refresh_token_never_expires:
+                    # Track wall-clock expiry only for tokens with a real deadline.
+                    refresh_token_expires_at = time.time() + refresh_expires_in
                 logger.debug(
                     "Upstream refresh token expiry unknown, using fallback %d seconds",
                     refresh_expires_in,
@@ -1119,6 +1144,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             if idp_tokens.get("refresh_token")
             else None,
             refresh_token_expires_at=refresh_token_expires_at,
+            refresh_token_never_expires=refresh_token_never_expires,
             expires_at=time.time() + expires_in,
             token_type=idp_tokens.get("token_type", "Bearer"),
             scope=" ".join(granted_scopes),
@@ -1408,28 +1434,35 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 logger.debug("Upstream refresh token rotated")
 
             # Update refresh token expiry if provided
-            if "refresh_expires_in" in token_response and int(
-                token_response["refresh_expires_in"]
-            ):
-                new_refresh_expires_in = int(token_response["refresh_expires_in"])
-                upstream_token_set.refresh_token_expires_at = (
-                    time.time() + new_refresh_expires_in
-                )
-                logger.debug(
-                    "Upstream refresh token expires in %d seconds",
-                    new_refresh_expires_in,
-                )
-            elif upstream_token_set.refresh_token_expires_at:
-                # Keep existing expiry if upstream doesn't provide new one
-                new_refresh_expires_in = int(
-                    upstream_token_set.refresh_token_expires_at - time.time()
-                )
-            else:
-                # Upstream rotated the refresh token but gave no expiry; use fallback
-                new_refresh_expires_in = self._fallback_refresh_token_expiry_seconds
-                upstream_token_set.refresh_token_expires_at = (
-                    time.time() + new_refresh_expires_in
-                )
+            if "refresh_expires_in" in token_response:
+                val = int(token_response["refresh_expires_in"])
+                if val > 0:
+                    new_refresh_expires_in = val
+                    upstream_token_set.refresh_token_expires_at = (
+                        time.time() + new_refresh_expires_in
+                    )
+                    logger.debug(
+                        "Upstream refresh token expires in %d seconds",
+                        new_refresh_expires_in,
+                    )
+                elif val == 0 and self._upstream_refresh_token_never_expires(val):
+                    # Provider signals "no expiry" — mark and clear stale wall-clock time
+                    # so the fallback below always issues a fresh full-length FastMCP RT.
+                    upstream_token_set.refresh_token_never_expires = True
+                    upstream_token_set.refresh_token_expires_at = None
+            if new_refresh_expires_in is None:
+                if upstream_token_set.refresh_token_expires_at:
+                    # Keep existing expiry if upstream doesn't provide new one
+                    new_refresh_expires_in = int(
+                        upstream_token_set.refresh_token_expires_at - time.time()
+                    )
+                else:
+                    # Upstream rotated the refresh token but gave no expiry (or never-expires); use fallback
+                    new_refresh_expires_in = self._fallback_refresh_token_expiry_seconds
+                    if not upstream_token_set.refresh_token_never_expires:
+                        upstream_token_set.refresh_token_expires_at = (
+                            time.time() + new_refresh_expires_in
+                        )
 
         upstream_token_set.raw_token_data = {
             **upstream_token_set.raw_token_data,
@@ -1623,22 +1656,28 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         if new_upstream_refresh := token_response.get("refresh_token"):
             if new_upstream_refresh != upstream_token_set.refresh_token:
                 upstream_token_set.refresh_token = new_upstream_refresh
-            if "refresh_expires_in" in token_response and int(
-                token_response["refresh_expires_in"]
-            ):
-                new_refresh_expires_in = int(token_response["refresh_expires_in"])
-                upstream_token_set.refresh_token_expires_at = (
-                    time.time() + new_refresh_expires_in
-                )
-            elif upstream_token_set.refresh_token_expires_at:
-                new_refresh_expires_in = int(
-                    upstream_token_set.refresh_token_expires_at - time.time()
-                )
-            else:
-                new_refresh_expires_in = self._fallback_refresh_token_expiry_seconds
-                upstream_token_set.refresh_token_expires_at = (
-                    time.time() + new_refresh_expires_in
-                )
+            if "refresh_expires_in" in token_response:
+                val = int(token_response["refresh_expires_in"])
+                if val > 0:
+                    new_refresh_expires_in = val
+                    upstream_token_set.refresh_token_expires_at = (
+                        time.time() + new_refresh_expires_in
+                    )
+                elif val == 0 and self._upstream_refresh_token_never_expires(val):
+                    # Provider signals "no expiry" — mark and clear stale wall-clock time.
+                    upstream_token_set.refresh_token_never_expires = True
+                    upstream_token_set.refresh_token_expires_at = None
+            if new_refresh_expires_in is None:
+                if upstream_token_set.refresh_token_expires_at:
+                    new_refresh_expires_in = int(
+                        upstream_token_set.refresh_token_expires_at - time.time()
+                    )
+                else:
+                    new_refresh_expires_in = self._fallback_refresh_token_expiry_seconds
+                    if not upstream_token_set.refresh_token_never_expires:
+                        upstream_token_set.refresh_token_expires_at = (
+                            time.time() + new_refresh_expires_in
+                        )
 
         upstream_token_set.raw_token_data = {
             **upstream_token_set.raw_token_data,

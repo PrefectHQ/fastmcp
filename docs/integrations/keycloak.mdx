@@ -139,3 +139,47 @@ auth = KeycloakAuthProvider(
     token_verifier=custom_verifier,
 )
 ```
+
+## Proxying to Keycloak with Offline Tokens
+
+`KeycloakAuthProvider` expects clients that can complete Dynamic Client
+Registration and the full OAuth flow themselves. When your MCP clients cannot
+do that — or when you want FastMCP to act as the OAuth client and broker tokens
+on their behalf — use `KeycloakOAuthProxy` instead. It behaves like the generic
+`OAuthProxy`, but understands one Keycloak-specific convention that the generic
+proxy gets wrong.
+
+Keycloak issues long-lived *offline* refresh tokens (requested via the
+`offline_access` scope) and signals "this refresh token has no fixed expiry" by
+returning `refresh_expires_in=0`. The generic `OAuthProxy` interprets `0` as an
+unknown/zero lifetime, so the FastMCP refresh token TTL shrinks on every refresh
+cycle until it hits zero and forces the user to re-authenticate — even though
+the underlying Keycloak offline token is still valid. `KeycloakOAuthProxy`
+treats `0` as the never-expires sentinel and keeps offline sessions alive
+indefinitely.
+
+Because offline tokens require the `offline_access` scope at registration time,
+pass `valid_scopes` so clients can register for it. Keep `required_scopes`
+focused on what every access token must carry — `valid_scopes` controls what
+Dynamic Client Registration will accept, independently of token verification:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.keycloak import KeycloakOAuthProxy
+
+auth = KeycloakOAuthProxy(
+    realm_url="https://keycloak.example.com/realms/myrealm",
+    upstream_client_id="my-client",
+    upstream_client_secret="my-secret",
+    base_url="https://my-mcp-server.example.com",
+    jwt_signing_key="a-strong-signing-secret",
+    required_scopes=["openid"],
+    valid_scopes=["openid", "offline_access"],
+)
+
+mcp = FastMCP("My App", auth=auth)
+```
+
+The FastMCP refresh token is reissued on every refresh cycle, so as long as the
+client keeps refreshing, the offline session remains valid without further user
+interaction.
