@@ -1,0 +1,286 @@
+# When the linked issue is assigned to a PR author, reopen any closed PR
+# that this workflow's sibling, `require-issue-link.yml`, closed for the
+# `not-assigned` failure mode. This is the happy-path continuation of the
+# enforcement workflow: a contributor referenced a real issue but wasn't
+# assigned to it; the natural maintainer response is to assign them, and
+# the PR should resume without requiring a separate PR-side action.
+#
+# Out of scope: PRs closed for the `no-link` failure mode (no auto-close
+# keyword in body). No signal connects an arbitrary issue assignment to
+# such a PR. Those require a PR edit to retrigger.
+#
+# Coupling with `require-issue-link.yml` — keep in sync if changed there:
+#   • the `missing-issue-link` label name (LABEL constant)
+#   • the `bypass-issue-check` label name
+#   • the `<!-- require-issue-link -->` comment marker (MARKER constant)
+#   • the auto-close keyword regex
+#
+# SECURITY: `issues` events run with the BASE repo token. This workflow
+# never checks out or executes PR-head code; it only reads the event
+# payload and calls the API.
+
+name: Reopen on Issue Assignment
+
+on:
+  issues:
+    types: [assigned]
+
+# Dry run: when "false" the check still runs and logs its decisions but
+# makes NO mutations. Mirror of the sibling workflow's flag so the pair
+# can be flipped together.
+env:
+  ENFORCE_ISSUE_LINK: "true"
+
+permissions:
+  contents: read
+
+concurrency:
+  # Serialize per (issue, assignee): rapid re-assignments don't race.
+  # Different issues / different assignees run in parallel.
+  group: reopen-on-issue-assignment-${{ github.event.issue.number }}-${{ github.event.assignee.login }}
+  cancel-in-progress: false
+
+jobs:
+  reopen:
+    # Skip when the assignment is on a PR (in the GitHub API a PR is an
+    # issue; the payload has `pull_request` set when the issue is in fact
+    # a PR — we only care about real issue assignments). Skip bots.
+    if: >-
+      github.event.assignee != null &&
+      !github.event.issue.pull_request &&
+      !endsWith(github.event.assignee.login, '[bot]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # pull-requests: write — reopen, remove label, post the
+      #   deleted-branch comment, minimize the stale enforcement comment
+      #   (all PR-as-issue API endpoints; require pull-requests scope).
+      # issues: read — GraphQL issue.timelineItems on the assigned issue.
+      # actions: write — re-run the original failed enforce workflow so
+      #   the PR's red check run flips to green, instead of leaving the
+      #   old run red alongside the new event-driven green check run.
+      pull-requests: write
+      issues: read
+      actions: write
+
+    steps:
+      - name: Reopen PRs newly compliant after issue assignment
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issueNumber = context.payload.issue.number;
+            const assignee = context.payload.assignee.login;
+            const enforce = process.env.ENFORCE_ISSUE_LINK === 'true';
+
+            // ── Contracts shared with require-issue-link.yml ──────────────
+            const LABEL = 'missing-issue-link';
+            const BYPASS_LABEL = 'bypass-issue-check';
+            const MARKER = '<!-- require-issue-link -->';
+            // Identical regex to the enforce path: kept byte-for-byte the
+            // same so the two paths can't disagree about what counts as
+            // an auto-close link.
+            const pattern = /(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s*#(\d+)/gi;
+
+            async function mutate(description, fn) {
+              if (!enforce) {
+                console.log(`[dry-run] would ${description}`);
+                return;
+              }
+              await fn();
+            }
+
+            console.log(
+              `Issue #${issueNumber} assigned to ${assignee} — ` +
+              `searching for closed PRs to reopen`
+            );
+
+            // ── Discover candidates via the issue's timeline ─────────────
+            // CROSS_REFERENCED_EVENT + body regex re-check is preferred
+            // over the Search API: no indexing lag (Search can take ~30s
+            // to reflect a freshly-closed PR), and the response gives
+            // state + body + labels + author in a single round trip.
+            const query = `
+              query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  issue(number: $number) {
+                    timelineItems(itemTypes: [CROSS_REFERENCED_EVENT], first: 50) {
+                      nodes {
+                        ... on CrossReferencedEvent {
+                          source {
+                            __typename
+                            ... on PullRequest {
+                              number
+                              state
+                              body
+                              author { login }
+                              labels(first: 30) { nodes { name } }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `;
+
+            let timeline;
+            try {
+              const result = await github.graphql(query, {
+                owner, repo, number: issueNumber,
+              });
+              timeline = result?.repository?.issue?.timelineItems?.nodes ?? [];
+            } catch (e) {
+              throw new Error(
+                `Cannot fetch timeline for #${issueNumber} ` +
+                `(HTTP ${e.status ?? 'unknown'}): ${e.message}`
+              );
+            }
+
+            // Dedupe + filter to closed (not merged) PRs the sibling
+            // workflow closed for *this specific* issue, authored by the
+            // newly-assigned user, and not already bypassed.
+            const assigneeLower = assignee.toLowerCase();
+            const seen = new Set();
+            const candidates = [];
+            for (const node of timeline) {
+              const src = node?.source;
+              if (!src || src.__typename !== 'PullRequest') continue;
+              // state is OPEN | CLOSED | MERGED — only act on CLOSED
+              // (never resurrect a merged PR).
+              if (src.state !== 'CLOSED') continue;
+              if (seen.has(src.number)) continue;
+              seen.add(src.number);
+
+              const labels = (src.labels?.nodes ?? []).map(l => l.name);
+              if (!labels.includes(LABEL)) continue;
+              if (labels.includes(BYPASS_LABEL)) {
+                console.log(`PR #${src.number} already bypassed — skipping`);
+                continue;
+              }
+
+              const authorLogin = src.author?.login?.toLowerCase();
+              if (!authorLogin || authorLogin !== assigneeLower) continue;
+
+              // Re-apply the enforce path's regex against the PR body to
+              // confirm an auto-close link to *this* issue (rather than a
+              // cross-reference from a comment or commit mention).
+              const referenced = [...(src.body ?? '').matchAll(pattern)]
+                .map(m => parseInt(m[1], 10));
+              if (!referenced.includes(issueNumber)) continue;
+
+              candidates.push(src.number);
+            }
+
+            if (candidates.length === 0) {
+              console.log('No matching closed PRs found');
+              return;
+            }
+
+            console.log(`Reopening PR(s): ${candidates.join(', ')}`);
+
+            for (const prNumber of candidates) {
+              // ── Reopen the PR (handle deleted head branch) ──────────────
+              let reopened = false;
+              try {
+                await mutate(`reopen PR #${prNumber}`, () =>
+                  github.rest.pulls.update({
+                    owner, repo, pull_number: prNumber, state: 'open',
+                  }),
+                );
+                reopened = true;
+              } catch (e) {
+                if (e.status === 422) {
+                  core.warning(
+                    `Cannot reopen PR #${prNumber}: ` +
+                    `the head branch was likely deleted`
+                  );
+                  await mutate(`comment on unreopenable PR #${prNumber}`, () =>
+                    github.rest.issues.createComment({
+                      owner, repo, issue_number: prNumber,
+                      body:
+                        `You have been assigned to #${issueNumber}, but ` +
+                        `this PR could not be reopened because the head ` +
+                        `branch has been deleted. Please open a new PR ` +
+                        `referencing the issue.`,
+                    }),
+                  );
+                  continue;
+                }
+                throw e;
+              }
+
+              // ── Remove the enforcement label ────────────────────────────
+              await mutate(`remove "${LABEL}" from PR #${prNumber}`, async () => {
+                try {
+                  await github.rest.issues.removeLabel({
+                    owner, repo, issue_number: prNumber, name: LABEL,
+                  });
+                } catch (e) {
+                  if (e.status !== 404) throw e;
+                }
+              });
+
+              // ── Minimize the stale enforcement comment ──────────────────
+              // listComments paginated: a long-running PR can accumulate
+              // many comments and per_page caps at 100.
+              try {
+                const comments = await github.paginate(
+                  github.rest.issues.listComments,
+                  { owner, repo, issue_number: prNumber, per_page: 100 },
+                );
+                const stale = comments.find(
+                  c => c.body && c.body.includes(MARKER),
+                );
+                if (stale) {
+                  await mutate(`minimize stale comment ${stale.id}`, () =>
+                    github.graphql(`
+                      mutation($id: ID!) {
+                        minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) {
+                          minimizedComment { isMinimized }
+                        }
+                      }
+                    `, { id: stale.node_id }),
+                  );
+                }
+              } catch (e) {
+                core.warning(
+                  `Could not minimize stale comment on PR #${prNumber}: ${e.message}`
+                );
+              }
+
+              // ── Re-run the failed enforce run so the red check turns ───
+              // green on this same head SHA, instead of leaving the
+              // original failure visible alongside the new event-driven
+              // run that the reopen itself triggers.
+              if (!reopened) continue;
+              try {
+                const { data: pr } = await github.rest.pulls.get({
+                  owner, repo, pull_number: prNumber,
+                });
+                const { data: runs } = await github.rest.actions.listWorkflowRuns({
+                  owner, repo,
+                  workflow_id: 'require-issue-link.yml',
+                  head_sha: pr.head.sha,
+                  status: 'failure',
+                  per_page: 1,
+                });
+                if (runs.workflow_runs.length === 0) {
+                  console.log(
+                    `No failed require-issue-link runs found for PR #${prNumber}`
+                  );
+                  continue;
+                }
+                await mutate(
+                  `re-run failed require-issue-link run for PR #${prNumber}`,
+                  () => github.rest.actions.reRunWorkflowFailedJobs({
+                    owner, repo, run_id: runs.workflow_runs[0].id,
+                  }),
+                );
+              } catch (e) {
+                core.warning(
+                  `Could not re-run require-issue-link for PR #${prNumber}: ${e.message}`
+                );
+              }
+            }
