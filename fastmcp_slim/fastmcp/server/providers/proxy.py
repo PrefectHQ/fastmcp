@@ -18,10 +18,11 @@ import anyio
 import httpx
 import mcp.types
 from mcp import ServerSession
-from mcp.client.session import ClientSession
+from mcp.client.session import ClientSession, MessageHandlerFnT
 from mcp.server.lowlevel.server import request_ctx
 from mcp.shared.context import LifespanContextT, RequestContext
 from mcp.shared.exceptions import McpError
+from mcp.shared.session import RequestResponder
 from mcp.types import (
     METHOD_NOT_FOUND,
     BlobResourceContents,
@@ -65,6 +66,11 @@ logger = get_logger(__name__)
 
 # Type alias for client factory functions
 ClientFactoryT = Callable[[], Client] | Callable[[], Awaitable[Client]]
+ProxyMessageT = (
+    RequestResponder[mcp.types.ServerRequest, mcp.types.ClientResult]
+    | mcp.types.ServerNotification
+    | Exception
+)
 
 
 def _proxy_upstream_error(error: Exception) -> McpError:
@@ -185,8 +191,9 @@ class ProxyTool(Tool):
                 # its receive-loop task has stale ContextVars from the first
                 # request. Stash the current RequestContext in the shared
                 # ref so handlers can restore it before forwarding.
-                if isinstance(client, StatefulProxyClient):
-                    client._proxy_rc_ref[0] = (
+                proxy_rc_ref = getattr(client, "_proxy_rc_ref", None)
+                if proxy_rc_ref is not None:
+                    proxy_rc_ref[0] = (
                         ctx.request_context,
                         ctx._fastmcp,  # weakref to FastMCP, not the Context
                     )
@@ -849,12 +856,17 @@ def _create_client_factory(
             )
 
             def reuse_client_factory() -> Client:
+                if not isinstance(client, ProxyClient):
+                    _install_plain_client_proxy_message_handler(client)
                 return client
 
             return reuse_client_factory
 
         def fresh_client_factory() -> Client:
-            return client.new()
+            fresh_client = client.new()
+            if not isinstance(fresh_client, ProxyClient):
+                _install_plain_client_proxy_message_handler(fresh_client)
+            return fresh_client
 
         return fresh_client_factory
     else:
@@ -1074,12 +1086,122 @@ def _make_restoring_handler(handler: Callable, rc_ref: list[Any]) -> Callable:
     ``inspect.isfunction()`` checks in handler registration paths
     (e.g., ``create_roots_callback``).
     """
+    if getattr(handler, "_fastmcp_proxy_restores_context", False):
+        return handler
 
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
         _restore_request_context(rc_ref)
         return await handler(*args, **kwargs)
 
+    wrapper_with_flags = cast(Any, wrapper)
+    wrapper_with_flags._fastmcp_proxy_restores_context = True
+    if getattr(handler, "_fastmcp_proxy_message_handler", False):
+        wrapper_with_flags._fastmcp_proxy_message_handler = True
+        wrapper_with_flags._fastmcp_proxy_forwards_logging = getattr(
+            handler,
+            "_fastmcp_proxy_forwards_logging",
+            False,
+        )
+
     return wrapper
+
+
+async def default_proxy_message_handler(
+    message: object,
+    *,
+    forward_logging_and_progress: bool = False,
+) -> None:
+    if not isinstance(message, mcp.types.ServerNotification):
+        return
+
+    forwarded_types = (
+        mcp.types.ToolListChangedNotification,
+        mcp.types.ResourceListChangedNotification,
+        mcp.types.PromptListChangedNotification,
+        mcp.types.ResourceUpdatedNotification,
+    )
+    if forward_logging_and_progress:
+        forwarded_types = (
+            *forwarded_types,
+            mcp.types.LoggingMessageNotification,
+            mcp.types.ProgressNotification,
+        )
+
+    if not isinstance(message.root, forwarded_types):
+        return
+
+    try:
+        ctx = get_context()
+    except RuntimeError:
+        logger.debug(
+            "Dropping upstream server notification outside a proxy request: %s",
+            message.root.method,
+        )
+        return
+
+    root_data = message.root.model_dump(
+        by_alias=True,
+        mode="json",
+        exclude_none=True,
+    )
+    root_data.pop("jsonrpc", None)
+    forwarded_root = type(message.root).model_validate(root_data)
+
+    await ctx.session.send_notification(
+        mcp.types.ServerNotification(forwarded_root),
+        related_request_id=ctx.request_id,
+    )
+
+
+def _compose_proxy_message_handler(
+    user_handler: MessageHandlerFnT | None,
+    *,
+    forward_logging_and_progress: bool,
+) -> MessageHandlerFnT:
+    if (
+        user_handler is not None
+        and getattr(user_handler, "_fastmcp_proxy_message_handler", False)
+        and (
+            not forward_logging_and_progress
+            or getattr(user_handler, "_fastmcp_proxy_forwards_logging", False)
+        )
+    ):
+        return user_handler
+
+    async def message_handler(message: ProxyMessageT) -> None:
+        if user_handler is not None:
+            await user_handler(message)
+        await default_proxy_message_handler(
+            message,
+            forward_logging_and_progress=forward_logging_and_progress,
+        )
+
+    message_handler_with_flags = cast(Any, message_handler)
+    message_handler_with_flags._fastmcp_proxy_message_handler = True
+    message_handler_with_flags._fastmcp_proxy_forwards_logging = (
+        forward_logging_and_progress
+    )
+    return cast(MessageHandlerFnT, message_handler)
+
+
+def _install_plain_client_proxy_message_handler(client: Client) -> None:
+    proxy_rc_ref = getattr(client, "_proxy_rc_ref", None)
+    if proxy_rc_ref is None:
+        proxy_rc_ref = [None]
+        cast(Any, client)._proxy_rc_ref = proxy_rc_ref
+
+    current_handler = client._session_kwargs.get("message_handler")
+    message_handler = _compose_proxy_message_handler(
+        current_handler,
+        forward_logging_and_progress=True,
+    )
+    message_handler = cast(
+        MessageHandlerFnT,
+        _make_restoring_handler(message_handler, proxy_rc_ref),
+    )
+    client._session_kwargs["message_handler"] = message_handler
+    if client.is_connected():
+        cast(Any, client.session)._message_handler = message_handler
 
 
 class ProxyClient(Client[ClientTransportT]):
@@ -1112,6 +1234,10 @@ class ProxyClient(Client[ClientTransportT]):
             kwargs["log_handler"] = default_proxy_log_handler
         if "progress_handler" not in kwargs:
             kwargs["progress_handler"] = default_proxy_progress_handler
+        kwargs["message_handler"] = _compose_proxy_message_handler(
+            kwargs.get("message_handler"),
+            forward_logging_and_progress=False,
+        )
         super().__init__(transport=transport, **kwargs)
 
         # Enable forwarding of inbound HTTP headers (e.g. authorization) to
@@ -1168,6 +1294,13 @@ class StatefulProxyClient(ProxyClient[ClientTransportT]):
             if key not in kwargs:
                 kwargs[key] = _make_restoring_handler(default_fn, self._proxy_rc_ref)
                 self._proxy_restoring_handler_keys.add(key)
+        kwargs["message_handler"] = _make_restoring_handler(
+            _compose_proxy_message_handler(
+                kwargs.get("message_handler"),
+                forward_logging_and_progress=False,
+            ),
+            self._proxy_rc_ref,
+        )
 
         super().__init__(*args, **kwargs)
         self._caches: dict[ServerSession, Client[ClientTransportT]] = {}

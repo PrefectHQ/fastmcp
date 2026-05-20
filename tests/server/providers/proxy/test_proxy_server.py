@@ -18,6 +18,7 @@ from fastmcp.client.transports import FastMCPTransport, StreamableHttpTransport
 from fastmcp.exceptions import ToolError
 from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.server import create_proxy
+from fastmcp.server.context import Context
 from fastmcp.server.providers.proxy import (
     FastMCPProxy,
     ProxyClient,
@@ -171,6 +172,105 @@ async def test_create_proxy_with_client(fastmcp_server):
     assert isinstance(server, FastMCPProxy)
     assert isinstance(server, FastMCP)
     assert server.name.startswith("FastMCPProxy-")
+
+
+async def test_create_proxy_forwards_upstream_server_notifications_from_client():
+    backend = FastMCP("NotificationBackend")
+
+    @backend.tool
+    async def emit_notifications(ctx: Context) -> dict[str, bool]:
+        await ctx.send_notification(mcp_types.ToolListChangedNotification())
+        await ctx.send_notification(mcp_types.ResourceListChangedNotification())
+        await ctx.send_notification(mcp_types.PromptListChangedNotification())
+        await ctx.send_notification(
+            mcp_types.ResourceUpdatedNotification(
+                params=mcp_types.ResourceUpdatedNotificationParams(
+                    uri=AnyUrl("resource://backend/example"),
+                ),
+            ),
+        )
+        await ctx.info("backend emitted notifications")
+        return {"emitted": True}
+
+    upstream_seen: list[str] = []
+    downstream_seen: list[str] = []
+
+    async def upstream_handler(message: object) -> None:
+        if isinstance(message, mcp_types.ServerNotification):
+            upstream_seen.append(message.root.method)
+
+    async def downstream_handler(message: object) -> None:
+        if isinstance(message, mcp_types.ServerNotification):
+            downstream_seen.append(message.root.method)
+
+    upstream_client = Client(
+        FastMCPTransport(backend),
+        message_handler=upstream_handler,
+    )
+    proxy = create_proxy(upstream_client)
+
+    async with Client(proxy, message_handler=downstream_handler) as client:
+        await client.call_tool("emit_notifications", {})
+
+    expected = [
+        "notifications/tools/list_changed",
+        "notifications/resources/list_changed",
+        "notifications/prompts/list_changed",
+        "notifications/resources/updated",
+        "notifications/message",
+    ]
+    assert upstream_seen == expected
+    assert downstream_seen == expected
+
+
+async def test_create_proxy_forwards_notifications_from_connected_plain_client():
+    backend = FastMCP("NotificationBackend")
+
+    @backend.tool
+    async def emit_notifications(ctx: Context) -> dict[str, bool]:
+        await ctx.send_notification(mcp_types.ToolListChangedNotification())
+        await ctx.send_notification(mcp_types.ResourceListChangedNotification())
+        await ctx.send_notification(mcp_types.PromptListChangedNotification())
+        await ctx.send_notification(
+            mcp_types.ResourceUpdatedNotification(
+                params=mcp_types.ResourceUpdatedNotificationParams(
+                    uri=AnyUrl("resource://backend/example"),
+                ),
+            ),
+        )
+        await ctx.info("backend emitted notifications")
+        return {"emitted": True}
+
+    upstream_seen: list[str] = []
+    downstream_seen: list[str] = []
+
+    async def upstream_handler(message: object) -> None:
+        if isinstance(message, mcp_types.ServerNotification):
+            upstream_seen.append(message.root.method)
+
+    async def downstream_handler(message: object) -> None:
+        if isinstance(message, mcp_types.ServerNotification):
+            downstream_seen.append(message.root.method)
+
+    upstream_client = Client(
+        FastMCPTransport(backend),
+        message_handler=upstream_handler,
+    )
+
+    async with upstream_client:
+        proxy = create_proxy(upstream_client)
+        async with Client(proxy, message_handler=downstream_handler) as client:
+            await client.call_tool("emit_notifications", {})
+
+    expected = [
+        "notifications/tools/list_changed",
+        "notifications/resources/list_changed",
+        "notifications/prompts/list_changed",
+        "notifications/resources/updated",
+        "notifications/message",
+    ]
+    assert upstream_seen == expected
+    assert downstream_seen == expected
 
 
 async def test_create_proxy_with_server(fastmcp_server):
