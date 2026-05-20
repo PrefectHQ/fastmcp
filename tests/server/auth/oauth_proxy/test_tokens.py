@@ -1269,3 +1269,262 @@ class TestTransparentUpstreamRefresh:
             returned = await mock_verifier.verify_token(call.args[0])
             if returned:
                 assert "upstream_claims" not in returned.claims
+
+    async def test_transparent_refresh_triggered_by_threshold(self, mock_verifier):
+        """Token within expiry threshold is treated as expired and refreshed."""
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://idp.example.com/authorize",
+            upstream_token_endpoint="https://idp.example.com/token",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=mock_verifier,
+            base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+            token_expiry_threshold_seconds=60,
+        )
+        proxy.set_mcp_path("/mcp")
+
+        upstream_token_id = "upstream-tok-threshold"
+        access_jti = "test-threshold-jti"
+
+        upstream_token_set = UpstreamTokenSet(
+            upstream_token_id=upstream_token_id,
+            access_token="almost-expired-upstream-access",
+            refresh_token="upstream-refresh-tok",
+            refresh_token_expires_at=time.time() + 86400,
+            expires_at=time.time() + 30,  # expires in 30s, within 60s threshold
+            token_type="Bearer",
+            scope="read",
+            client_id="test-client",
+            created_at=time.time() - 3600,
+        )
+        await proxy._upstream_token_store.put(
+            key=upstream_token_id,
+            value=upstream_token_set,
+            ttl=86400,
+        )
+        await proxy._jti_mapping_store.put(
+            key=access_jti,
+            value=JTIMapping(
+                jti=access_jti,
+                upstream_token_id=upstream_token_id,
+                created_at=time.time(),
+            ),
+            ttl=3600,
+        )
+        fastmcp_jwt = proxy.jwt_issuer.issue_access_token(
+            client_id="test-client",
+            scopes=["read"],
+            jti=access_jti,
+            expires_in=3600,
+        )
+
+        mock_oauth_client = AsyncMock()
+        mock_oauth_client.refresh_token = AsyncMock(
+            return_value={
+                "access_token": "refreshed-upstream-access",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "refresh_token": "upstream-refresh-tok",
+                "scope": "read",
+            }
+        )
+
+        with patch.object(
+            proxy, "_create_upstream_oauth_client", return_value=mock_oauth_client
+        ):
+            result = await proxy.load_access_token(fastmcp_jwt)
+
+        assert result is not None
+        assert result.token == "refreshed-upstream-access"
+        mock_oauth_client.refresh_token.assert_called_once()
+
+    async def test_no_refresh_when_within_threshold_but_no_refresh_token(
+        self, mock_verifier
+    ):
+        """Token within threshold but without refresh token is not refreshed."""
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://idp.example.com/authorize",
+            upstream_token_endpoint="https://idp.example.com/token",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=mock_verifier,
+            base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+            token_expiry_threshold_seconds=60,
+        )
+        proxy.set_mcp_path("/mcp")
+
+        upstream_token_id = "upstream-tok-no-refresh"
+        access_jti = "test-no-refresh-jti"
+
+        upstream_token_set = UpstreamTokenSet(
+            upstream_token_id=upstream_token_id,
+            access_token="valid-upstream-access",
+            refresh_token=None,
+            refresh_token_expires_at=None,
+            expires_at=time.time() + 30,  # expires in 30s, within 60s threshold
+            token_type="Bearer",
+            scope="read",
+            client_id="test-client",
+            created_at=time.time() - 3600,
+        )
+        await proxy._upstream_token_store.put(
+            key=upstream_token_id,
+            value=upstream_token_set,
+            ttl=86400,
+        )
+        await proxy._jti_mapping_store.put(
+            key=access_jti,
+            value=JTIMapping(
+                jti=access_jti,
+                upstream_token_id=upstream_token_id,
+                created_at=time.time(),
+            ),
+            ttl=3600,
+        )
+        fastmcp_jwt = proxy.jwt_issuer.issue_access_token(
+            client_id="test-client",
+            scopes=["read"],
+            jti=access_jti,
+            expires_in=3600,
+        )
+
+        result = await proxy.load_access_token(fastmcp_jwt)
+
+        # Token validates via the verifier (starts with "valid-"), so even though
+        # it's within threshold, no refresh is attempted without a refresh token.
+        assert result is not None
+        assert result.token == "valid-upstream-access"
+
+    async def test_zero_threshold_only_refreshes_on_actual_expiry(self, mock_verifier):
+        """With threshold=0, token that's not yet expired is not refreshed."""
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://idp.example.com/authorize",
+            upstream_token_endpoint="https://idp.example.com/token",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=mock_verifier,
+            base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+            token_expiry_threshold_seconds=0,
+        )
+        proxy.set_mcp_path("/mcp")
+
+        upstream_token_id = "upstream-tok-zero-threshold"
+        access_jti = "test-zero-threshold-jti"
+
+        upstream_token_set = UpstreamTokenSet(
+            upstream_token_id=upstream_token_id,
+            access_token="valid-upstream-access",
+            refresh_token="upstream-refresh-tok",
+            refresh_token_expires_at=time.time() + 86400,
+            expires_at=time.time() + 30,  # expires in 30s, but threshold is 0
+            token_type="Bearer",
+            scope="read",
+            client_id="test-client",
+            created_at=time.time() - 3600,
+        )
+        await proxy._upstream_token_store.put(
+            key=upstream_token_id,
+            value=upstream_token_set,
+            ttl=86400,
+        )
+        await proxy._jti_mapping_store.put(
+            key=access_jti,
+            value=JTIMapping(
+                jti=access_jti,
+                upstream_token_id=upstream_token_id,
+                created_at=time.time(),
+            ),
+            ttl=3600,
+        )
+        fastmcp_jwt = proxy.jwt_issuer.issue_access_token(
+            client_id="test-client",
+            scopes=["read"],
+            jti=access_jti,
+            expires_in=3600,
+        )
+
+        result = await proxy.load_access_token(fastmcp_jwt)
+
+        # With threshold=0, token with 30s remaining is still valid
+        assert result is not None
+        assert result.token == "valid-upstream-access"
+
+    async def test_proactive_refresh_when_validated_but_within_threshold(
+        self, mock_verifier
+    ):
+        """Token that passes validation but is within threshold gets proactively refreshed."""
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://idp.example.com/authorize",
+            upstream_token_endpoint="https://idp.example.com/token",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=mock_verifier,
+            base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+            token_expiry_threshold_seconds=60,
+        )
+        proxy.set_mcp_path("/mcp")
+
+        upstream_token_id = "upstream-tok-proactive"
+        access_jti = "test-proactive-jti"
+
+        # Token starts with "valid-" so the mock verifier accepts it,
+        # but it expires in 30s which is within the 60s threshold.
+        upstream_token_set = UpstreamTokenSet(
+            upstream_token_id=upstream_token_id,
+            access_token="valid-but-near-expiry",
+            refresh_token="upstream-refresh-tok",
+            refresh_token_expires_at=time.time() + 86400,
+            expires_at=time.time() + 30,
+            token_type="Bearer",
+            scope="read",
+            client_id="test-client",
+            created_at=time.time() - 3600,
+        )
+        await proxy._upstream_token_store.put(
+            key=upstream_token_id,
+            value=upstream_token_set,
+            ttl=86400,
+        )
+        await proxy._jti_mapping_store.put(
+            key=access_jti,
+            value=JTIMapping(
+                jti=access_jti,
+                upstream_token_id=upstream_token_id,
+                created_at=time.time(),
+            ),
+            ttl=3600,
+        )
+        fastmcp_jwt = proxy.jwt_issuer.issue_access_token(
+            client_id="test-client",
+            scopes=["read"],
+            jti=access_jti,
+            expires_in=3600,
+        )
+
+        mock_oauth_client = AsyncMock()
+        mock_oauth_client.refresh_token = AsyncMock(
+            return_value={
+                "access_token": "refreshed-upstream-access",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "refresh_token": "upstream-refresh-tok",
+                "scope": "read",
+            }
+        )
+
+        with patch.object(
+            proxy, "_create_upstream_oauth_client", return_value=mock_oauth_client
+        ):
+            result = await proxy.load_access_token(fastmcp_jwt)
+
+        assert result is not None
+        assert result.token == "refreshed-upstream-access"
+        mock_oauth_client.refresh_token.assert_called_once()

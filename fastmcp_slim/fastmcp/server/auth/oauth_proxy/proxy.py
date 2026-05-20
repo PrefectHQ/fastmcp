@@ -271,6 +271,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Token expiry fallback
         fallback_access_token_expiry_seconds: int | None = None,
         fallback_refresh_token_expiry_seconds: int | None = None,
+        # Token refresh threshold
+        token_expiry_threshold_seconds: int = 0,
         # CIMD (Client ID Metadata Document) support
         enable_cimd: bool = True,
     ):
@@ -346,6 +348,10 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 lifetime — the actual upstream refresh remains the source of truth. If the
                 upstream rejects the refresh, the client gets `invalid_grant` and re-auths,
                 regardless of how much life is left on the FastMCP refresh token.
+            token_expiry_threshold_seconds: Number of seconds before actual expiry to consider
+                a token as expired (default 0). This prevents race conditions where a token
+                passes the expiry check but expires before the next operation completes.
+                For example, set to 30 to refresh tokens that will expire within 30 seconds.
             enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
                 client IDs. When True, clients can authenticate using HTTPS URLs as client
                 IDs, with metadata fetched from the URL. Supports private_key_jwt auth.
@@ -450,6 +456,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             if fallback_refresh_token_expiry_seconds is not None
             else DEFAULT_REFRESH_TOKEN_EXPIRY_SECONDS
         )
+        self._token_expiry_threshold_seconds: int = token_expiry_threshold_seconds
 
         if jwt_signing_key is None:
             if upstream_client_secret is None:
@@ -1049,6 +1056,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             if "scope" in idp_tokens
             else list(authorization_code.scopes)
         )
+        # Translate IdP-wire scopes into the client-facing form before they
+        # propagate to storage, the FastMCP JWT, and the response body. Default
+        # implementation is identity; AzureProvider overrides this to strip the
+        # identifier_uri prefix Azure echoes back on custom API scopes.
+        granted_scopes = self._translate_scopes_from_idp(granted_scopes)
 
         # Clean up client code (one-time use)
         await self._code_store.delete(key=authorization_code.code)
@@ -1229,6 +1241,35 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         """
         return scopes
 
+    def _translate_scopes_from_idp(self, scopes: list[str]) -> list[str]:
+        """Translate IdP-returned scopes into the client-facing form.
+
+        Some IdPs (notably Azure) require scopes on the wire in a form that
+        differs from the form MCP clients use — e.g. Azure requires custom API
+        scopes to be prefixed with the application's identifier URI
+        (``api://{client_id}/read``) on outbound requests and echoes that same
+        prefixed form back in the token response. MCP clients, however, request
+        and recognize the short form (``read``) advertised via
+        ``/.well-known/oauth-authorization-server``.
+
+        This hook is the inverse of provider-specific outbound translation
+        (e.g. :meth:`AzureProvider._prefix_scopes_for_azure`). The default
+        implementation returns the scopes unchanged, which is correct for any
+        provider where IdP-wire scopes already match the client-facing form.
+
+        It is called once on each ``scope`` value parsed out of an IdP token
+        response, before that value is stored, embedded in the FastMCP JWT
+        scope claim, or echoed to the client. Applying the translation here
+        keeps storage, the issued JWT, and the response body consistent.
+
+        Args:
+            scopes: Scopes parsed from the IdP token response's ``scope`` field.
+
+        Returns:
+            List of scopes in the form clients expect.
+        """
+        return scopes
+
     def _prepare_scopes_for_upstream_refresh(self, scopes: list[str]) -> list[str]:
         """Prepare scopes for upstream token refresh request.
 
@@ -1398,6 +1439,10 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             if "scope" in token_response
             else scopes
         )
+        # Same translation as in exchange_authorization_code — keep storage,
+        # the rotated FastMCP JWT, and the response body all in client-facing
+        # scope form.
+        refreshed_scopes = self._translate_scopes_from_idp(refreshed_scopes)
         upstream_token_set.scope = " ".join(refreshed_scopes)
 
         # Handle upstream refresh token rotation and expiry
@@ -1612,10 +1657,13 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         upstream_token_set.access_token = token_response["access_token"]
         upstream_token_set.expires_at = time.time() + new_expires_in
-        upstream_token_set.scope = " ".join(
+        refreshed_scopes = (
             parse_scopes(token_response["scope"]) or []
             if "scope" in token_response
             else scopes
+        )
+        upstream_token_set.scope = " ".join(
+            self._translate_scopes_from_idp(refreshed_scopes)
         )
 
         # Handle upstream refresh token rotation
@@ -1704,16 +1752,19 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 return None
             validated = await self._token_validator.verify_token(verification_token)
 
-            # 4. If upstream validation failed due to token expiry and we
-            # have a refresh token, attempt transparent refresh to avoid
-            # forcing the client into a full re-auth flow. Only refresh on
-            # expiry — other failures (scope mismatch, revocation) won't be
-            # helped by a refresh and would just burn tokens.
-            if (
+            # 4. Determine if refresh is needed. Two cases:
+            #    a) Validation failed and token is expired/within threshold
+            #    b) Validation passed but token is within threshold (proactive)
+            needs_refresh = upstream_token_set.refresh_token and (
+                upstream_token_set.expires_at
+                <= time.time() + self._token_expiry_threshold_seconds
+            )
+            should_refresh = needs_refresh and (
                 not validated
-                and upstream_token_set.refresh_token
-                and upstream_token_set.expires_at <= time.time()
-            ):
+                or (validated and self._token_expiry_threshold_seconds > 0)
+            )
+
+            if should_refresh:
                 try:
                     token_id = upstream_token_set.upstream_token_id
 
@@ -1738,12 +1789,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                             )
 
                         # Only refresh if the (possibly reloaded) token is
-                        # still expired — a non-expiry failure on a fresh
-                        # token (scope mismatch, revocation) won't be
-                        # helped by refreshing.
+                        # still within threshold — a freshly-refreshed token
+                        # doesn't need another refresh.
                         if (
-                            not validated
-                            and upstream_token_set.expires_at <= time.time()
+                            upstream_token_set.expires_at
+                            <= time.time() + self._token_expiry_threshold_seconds
                         ):
                             upstream_token_set = await self._try_transparent_refresh(
                                 upstream_token_set

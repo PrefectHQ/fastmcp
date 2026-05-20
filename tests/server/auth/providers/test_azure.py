@@ -1,13 +1,20 @@
 """Tests for Azure (Microsoft Entra) OAuth provider."""
 
+import time
+from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs, urlparse
 
 import pytest
 from key_value.aio.stores.memory import MemoryStore
-from mcp.server.auth.provider import AuthorizationParams
+from mcp.server.auth.provider import (
+    AuthorizationCode,
+    AuthorizationParams,
+    RefreshToken,
+)
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 
+from fastmcp.server.auth.oauth_proxy.models import ClientCode, UpstreamTokenSet
 from fastmcp.server.auth.providers.azure import AzureProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
 
@@ -1183,3 +1190,284 @@ class TestAzureProviderFromB2CInputValidation:
                 jwt_signing_key="test-secret",
                 client_storage=memory_storage,
             )
+
+
+class TestAzureScopeRoundTrip:
+    """Azure echoes ``api://{client_id}/<scope>`` back in its token response's
+    ``scope`` field, but MCP clients request and recognize the unprefixed form
+    advertised on ``/.well-known/oauth-authorization-server``. Without
+    translation, strict clients (e.g. ChatGPT) compare requested vs. granted
+    and surface a "permissions not granted" warning even though the token is
+    fully valid.
+    """
+
+    CLIENT_ID = "dummy"
+    REDIRECT_URI = "http://localhost:12345/callback"
+
+    async def _register_and_store_code(
+        self,
+        provider: AzureProvider,
+        *,
+        code: str,
+        idp_tokens: dict,
+    ) -> tuple[OAuthClientInformationFull, AuthorizationCode]:
+        # set_mcp_path() is what initializes the JWT issuer used during the
+        # token exchange. Normally get_routes() does this; for a unit test we
+        # call it directly.
+        provider.set_mcp_path("/mcp")
+
+        client = OAuthClientInformationFull(
+            client_id=self.CLIENT_ID,
+            client_secret="secret",
+            redirect_uris=[AnyUrl(self.REDIRECT_URI)],
+        )
+        await provider.register_client(client)
+
+        await provider._code_store.put(
+            key=code,
+            value=ClientCode(
+                code=code,
+                client_id=self.CLIENT_ID,
+                redirect_uri=self.REDIRECT_URI,
+                code_challenge="",
+                code_challenge_method="S256",
+                scopes=["read", "write"],
+                idp_tokens=idp_tokens,
+                expires_at=time.time() + 300,
+                created_at=time.time(),
+            ),
+        )
+
+        auth_code = AuthorizationCode(
+            code=code,
+            scopes=["read", "write"],
+            expires_at=time.time() + 300,
+            client_id=self.CLIENT_ID,
+            code_challenge="",
+            redirect_uri=AnyUrl(self.REDIRECT_URI),
+            redirect_uri_provided_explicitly=True,
+        )
+        return client, auth_code
+
+    async def test_exchange_authorization_code_unprefixes_echoed_scopes(
+        self, memory_storage: MemoryStore
+    ):
+        """OAuthToken.scope returned to the client must use the unprefixed form
+        advertised on /.well-known, not the prefixed form Azure echoes back.
+        """
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="common",
+            identifier_uri="api://my-api",
+            required_scopes=["read", "write"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        client, auth_code = await self._register_and_store_code(
+            provider,
+            code="test-auth-code",
+            idp_tokens={
+                "access_token": "upstream-access-token",
+                "refresh_token": "upstream-refresh-token",
+                "expires_in": 3600,
+                "token_type": "Bearer",
+                # This is what Azure actually returns — the prefixed form.
+                "scope": "api://my-api/read api://my-api/write",
+            },
+        )
+
+        result = await provider.exchange_authorization_code(client, auth_code)
+
+        assert result.scope is not None
+        granted = set(result.scope.split())
+        assert granted == {"read", "write"}, (
+            f"Expected unprefixed scopes echoed to client, got {result.scope!r}"
+        )
+
+    async def test_exchange_authorization_code_preserves_external_scopes(
+        self, memory_storage: MemoryStore
+    ):
+        """External resource URIs (e.g. Microsoft Graph) and OIDC scopes don't
+        carry the identifier_uri prefix, so the translation must leave them
+        alone."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="common",
+            identifier_uri="api://my-api",
+            required_scopes=["read"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        client, auth_code = await self._register_and_store_code(
+            provider,
+            code="test-auth-code-mixed",
+            idp_tokens={
+                "access_token": "upstream-access-token",
+                "refresh_token": "upstream-refresh-token",
+                "expires_in": 3600,
+                "token_type": "Bearer",
+                "scope": (
+                    "api://my-api/read https://graph.microsoft.com/User.Read openid"
+                ),
+            },
+        )
+
+        result = await provider.exchange_authorization_code(client, auth_code)
+
+        assert result.scope is not None
+        granted = set(result.scope.split())
+        assert granted == {
+            "read",
+            "https://graph.microsoft.com/User.Read",
+            "openid",
+        }
+
+    async def test_exchange_refresh_token_unprefixes_echoed_scopes(
+        self, memory_storage: MemoryStore
+    ):
+        """The same translation must apply on refresh — otherwise the cosmetic
+        scope mismatch reappears after the first refresh."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="common",
+            identifier_uri="api://my-api",
+            required_scopes=["read", "write"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        with patch(
+            "fastmcp.server.auth.oauth_proxy.proxy.AsyncOAuth2Client"
+        ) as MockClient:
+            mock_client = AsyncMock()
+            mock_client.fetch_token = AsyncMock(
+                return_value={
+                    "access_token": "upstream-access-token",
+                    "refresh_token": "upstream-refresh-token",
+                    "expires_in": 3600,
+                    "token_type": "Bearer",
+                    "scope": "api://my-api/read api://my-api/write",
+                }
+            )
+            MockClient.return_value = mock_client
+
+            client, auth_code = await self._register_and_store_code(
+                provider,
+                code="test-auth-code-refresh",
+                idp_tokens={
+                    "access_token": "upstream-access-token",
+                    "refresh_token": "upstream-refresh-token",
+                    "expires_in": 3600,
+                    "token_type": "Bearer",
+                    "scope": "api://my-api/read api://my-api/write",
+                },
+            )
+            initial = await provider.exchange_authorization_code(client, auth_code)
+
+            assert initial.refresh_token is not None
+            fastmcp_refresh = RefreshToken(
+                token=initial.refresh_token,
+                client_id=self.CLIENT_ID,
+                scopes=["read", "write"],
+                expires_at=None,
+            )
+
+            # Simulate Azure echoing prefixed scopes on the refresh response too.
+            mock_client.refresh_token = AsyncMock(
+                return_value={
+                    "access_token": "rotated-upstream-token",
+                    "refresh_token": "rotated-upstream-refresh",
+                    "expires_in": 3600,
+                    "token_type": "Bearer",
+                    "scope": "api://my-api/read api://my-api/write",
+                }
+            )
+
+            refreshed = await provider.exchange_refresh_token(
+                client, fastmcp_refresh, ["read", "write"]
+            )
+
+        assert refreshed.scope is not None
+        granted = set(refreshed.scope.split())
+        assert granted == {"read", "write"}, (
+            f"Expected unprefixed scopes after refresh, got {refreshed.scope!r}"
+        )
+
+    async def test_transparent_refresh_unprefixes_echoed_scopes(
+        self, memory_storage: MemoryStore
+    ):
+        """Transparent refresh stores client-facing scopes too.
+
+        Otherwise the scope mismatch can reappear when an expired upstream token
+        is refreshed during access-token validation.
+        """
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="common",
+            identifier_uri="api://my-api",
+            required_scopes=["read", "write"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        upstream_token_set = UpstreamTokenSet(
+            upstream_token_id="upstream-token-id",
+            access_token="expired-upstream-token",
+            refresh_token="refresh-token",
+            refresh_token_expires_at=time.time() + 3600,
+            expires_at=time.time() - 60,
+            token_type="Bearer",
+            scope="read write",
+            client_id=self.CLIENT_ID,
+            created_at=time.time() - 3600,
+        )
+
+        mock_oauth_client = AsyncMock()
+        mock_oauth_client.refresh_token = AsyncMock(
+            return_value={
+                "access_token": "rotated-upstream-token",
+                "refresh_token": "rotated-refresh-token",
+                "expires_in": 3600,
+                "token_type": "Bearer",
+                "scope": "api://my-api/read api://my-api/write",
+            }
+        )
+
+        with patch.object(
+            provider, "_create_upstream_oauth_client", return_value=mock_oauth_client
+        ):
+            refreshed = await provider._try_transparent_refresh(upstream_token_set)
+
+        assert refreshed.scope == "read write"
+
+    def test_translate_scopes_from_idp_is_inverse_of_prefix(
+        self, memory_storage: MemoryStore
+    ):
+        """The new hook should be the exact inverse of _prefix_scopes_for_azure
+        for any input the provider would have sent upstream."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="common",
+            identifier_uri="api://my-api",
+            required_scopes=["read", "write"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        original = ["read", "write", "openid", "https://graph.microsoft.com/User.Read"]
+        round_tripped = provider._translate_scopes_from_idp(
+            provider._prefix_scopes_for_azure(original)
+        )
+        assert round_tripped == original

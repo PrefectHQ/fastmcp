@@ -727,6 +727,8 @@ async def run(
             inner_cmd.extend(["--log-level", final_log_level])
         if final_no_banner:
             inner_cmd.append("--no-banner")
+        if stateless:
+            inner_cmd.append("--stateless")
         # Add skip-env flag to prevent infinite recursion
         inner_cmd.append("--skip-env")
 

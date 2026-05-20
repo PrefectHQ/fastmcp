@@ -234,6 +234,8 @@ class OIDCProxy(OAuthProxy):
         # Token expiry fallback
         fallback_access_token_expiry_seconds: int | None = None,
         fallback_refresh_token_expiry_seconds: int | None = None,
+        # Token refresh threshold
+        token_expiry_threshold_seconds: int = 0,
         # CIMD configuration
         enable_cimd: bool = True,
     ) -> None:
@@ -300,6 +302,9 @@ class OIDCProxy(OAuthProxy):
                 Defaults to 1 year. The actual upstream refresh remains the source of
                 truth — if upstream rejects the refresh, the client gets `invalid_grant`
                 and re-auths.
+            token_expiry_threshold_seconds: Number of seconds before actual expiry to consider
+                a token as expired (default 0). Prevents race conditions where a token
+                passes the expiry check but expires before the next operation completes.
             enable_cimd: Whether to enable CIMD (Client ID Metadata Document) client support.
                 When True, clients can use their metadata document URL as client_id instead of
                 Dynamic Client Registration. Default is True.
@@ -391,6 +396,7 @@ class OIDCProxy(OAuthProxy):
             "forward_resource": forward_resource,
             "fallback_access_token_expiry_seconds": fallback_access_token_expiry_seconds,
             "fallback_refresh_token_expiry_seconds": fallback_refresh_token_expiry_seconds,
+            "token_expiry_threshold_seconds": token_expiry_threshold_seconds,
             "enable_cimd": enable_cimd,
         }
 

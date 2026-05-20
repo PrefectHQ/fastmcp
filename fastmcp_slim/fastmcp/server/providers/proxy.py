@@ -937,7 +937,8 @@ async def default_proxy_progress_handler(
 def _restore_request_context(
     rc_ref: list[Any],
 ) -> None:
-    """Set the ``request_ctx`` and ``_current_context`` ContextVars from stashed values.
+    """Set the ``request_ctx``, ``_current_context`` and ``_current_server``
+    ContextVars from stashed values.
 
     Called at the start of proxy handler invocations in
     ``StatefulProxyClient`` to fix stale ContextVars in the receive-loop
@@ -950,8 +951,19 @@ def _restore_request_context(
     ContextVar-dependent and would resolve stale values in the receive
     loop.  Instead we construct a fresh ``Context`` here after restoring
     ``request_ctx``, so its property accesses read the correct values.
+
+    This is a set-only repair of a long-lived task's ContextVars, not a
+    scope: we never ``reset()`` because the prior values are stale and
+    the loop keeps running.  ``_current_server`` is restored alongside
+    ``_current_context`` so handlers that resolve the server via
+    dependency injection (e.g. ``get_server()``) see the right instance;
+    it is set directly rather than via ``Context.__aenter__`` to avoid
+    opening a context-manager lifecycle on an unscoped path.
     """
+    import weakref
+
     from fastmcp.server.context import Context, _current_context
+    from fastmcp.server.dependencies import _current_server
 
     stashed = rc_ref[0]
     if stashed is None:
@@ -965,12 +977,14 @@ def _restore_request_context(
         fastmcp = fastmcp_ref()
         if fastmcp is not None:
             _current_context.set(Context(fastmcp))
+            _current_server.set(weakref.ref(fastmcp))
         return
     if current_rc.session is rc.session and current_rc.request_id != rc.request_id:
         request_ctx.set(rc)
         fastmcp = fastmcp_ref()
         if fastmcp is not None:
             _current_context.set(Context(fastmcp))
+            _current_server.set(weakref.ref(fastmcp))
 
 
 def _make_restoring_handler(handler: Callable, rc_ref: list[Any]) -> Callable:
