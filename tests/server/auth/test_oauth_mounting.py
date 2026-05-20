@@ -382,3 +382,102 @@ class TestOAuthMounting:
 
         # Should be at root (no path suffix) when issuer_url is root
         assert auth_server_routes[0].path == "/.well-known/oauth-authorization-server"
+
+    async def test_oidc_discovery_alias_path_aware(self, test_tokens):
+        """Test that /.well-known/openid-configuration aliases are added for path-aware issuers.
+
+        RFC 8414 §5 allows servers to expose OAuth metadata at the OIDC discovery path.
+        The MCP SDK client probes both paths; fastmcp must respond to either.
+
+        For a path-aware issuer (e.g. https://api.example.com/api) two OIDC paths
+        are registered:
+        - /.well-known/openid-configuration/api  (RFC 8414 §5, path-aware)
+        - /.well-known/openid-configuration      (OIDC 1.0 / reverse-proxy compat)
+        """
+        token_verifier = StaticTokenVerifier(tokens=test_tokens)
+        auth_provider = OAuthProxy(
+            upstream_authorization_endpoint="https://upstream.example.com/authorize",
+            upstream_token_endpoint="https://upstream.example.com/token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="test-client-secret",
+            token_verifier=token_verifier,
+            base_url="https://api.example.com/api",
+            client_storage=MemoryStore(),
+        )
+
+        well_known_routes = auth_provider.get_well_known_routes(mcp_path="/mcp")
+
+        oidc_routes = [r for r in well_known_routes if "openid-configuration" in r.path]
+        oidc_paths = {r.path for r in oidc_routes}
+
+        assert "/.well-known/openid-configuration/api" in oidc_paths  # RFC 8414 §5
+        assert (
+            "/.well-known/openid-configuration" in oidc_paths
+        )  # OIDC 1.0 / proxy compat
+
+    async def test_oidc_discovery_alias_root(self, test_tokens):
+        """Test that /.well-known/openid-configuration alias is added for root issuers."""
+        token_verifier = StaticTokenVerifier(tokens=test_tokens)
+        auth_provider = OAuthProxy(
+            upstream_authorization_endpoint="https://upstream.example.com/authorize",
+            upstream_token_endpoint="https://upstream.example.com/token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="test-client-secret",
+            token_verifier=token_verifier,
+            base_url="https://api.example.com/api",
+            issuer_url="https://api.example.com",
+            client_storage=MemoryStore(),
+        )
+
+        well_known_routes = auth_provider.get_well_known_routes(mcp_path="/mcp")
+
+        oidc_routes = [r for r in well_known_routes if "openid-configuration" in r.path]
+        assert len(oidc_routes) == 1
+        assert oidc_routes[0].path == "/.well-known/openid-configuration"
+
+    async def test_oidc_discovery_returns_auth_server_metadata(self, test_tokens):
+        """Test that /.well-known/openid-configuration returns valid OAuth server metadata.
+
+        The response must include the core RFC 8414 fields so that OIDC-aware
+        clients (e.g. Claude Desktop backend) can discover the authorization endpoint.
+        """
+        token_verifier = StaticTokenVerifier(tokens=test_tokens)
+        auth_provider = OAuthProxy(
+            upstream_authorization_endpoint="https://upstream.example.com/authorize",
+            upstream_token_endpoint="https://upstream.example.com/token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="test-client-secret",
+            token_verifier=token_verifier,
+            base_url="https://api.example.com/api",
+            client_storage=MemoryStore(),
+        )
+
+        mcp = FastMCP("test-server", auth=auth_provider)
+        mcp_app = mcp.http_app(path="/mcp")
+        well_known_routes = auth_provider.get_well_known_routes(mcp_path="/mcp")
+
+        parent_app = Starlette(
+            routes=[
+                *well_known_routes,
+                Mount("/api", app=mcp_app),
+            ],
+            lifespan=mcp_app.lifespan,
+        )
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=parent_app),
+            base_url="https://api.example.com",
+        ) as client:
+            # Path-aware OIDC discovery (RFC 8414 §5)
+            response = await client.get("/.well-known/openid-configuration/api")
+            assert response.status_code == 200
+            metadata = response.json()
+            assert "authorization_endpoint" in metadata
+            assert "token_endpoint" in metadata
+
+            # Root OIDC discovery (OIDC 1.0 / reverse-proxy compat)
+            response = await client.get("/.well-known/openid-configuration")
+            assert response.status_code == 200
+            metadata = response.json()
+            assert "authorization_endpoint" in metadata
+            assert "token_endpoint" in metadata

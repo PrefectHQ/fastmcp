@@ -821,28 +821,52 @@ class OAuthProvider(
         """
         routes = super().get_well_known_routes(mcp_path)
 
-        # RFC 8414: If issuer_url has a path, use path-aware discovery
-        if self.issuer_url:
-            parsed = urlparse(str(self.issuer_url))
-            issuer_path = parsed.path.rstrip("/")
+        if not self.issuer_url:
+            return routes
+
+        parsed = urlparse(str(self.issuer_url))
+        issuer_path = parsed.path.rstrip("/")
+
+        new_routes = []
+        for route in routes:
+            if route.path != "/.well-known/oauth-authorization-server":
+                new_routes.append(route)
+                continue
 
             if issuer_path and issuer_path != "/":
-                # Replace /.well-known/oauth-authorization-server with path-aware version
-                new_routes = []
-                for route in routes:
-                    if route.path == "/.well-known/oauth-authorization-server":
-                        new_path = (
-                            f"/.well-known/oauth-authorization-server{issuer_path}"
-                        )
-                        new_routes.append(
-                            Route(
-                                new_path,
-                                endpoint=route.endpoint,
-                                methods=route.methods,
-                            )
-                        )
-                    else:
-                        new_routes.append(route)
-                return new_routes
+                # RFC 8414: replace base path with path-aware authorization server metadata
+                new_routes.append(
+                    Route(
+                        f"/.well-known/oauth-authorization-server{issuer_path}",
+                        endpoint=route.endpoint,
+                        methods=route.methods,
+                    )
+                )
+                # RFC 8414 §5: path-aware OIDC discovery alias
+                new_routes.append(
+                    Route(
+                        f"/.well-known/openid-configuration{issuer_path}",
+                        endpoint=route.endpoint,
+                        methods=route.methods,
+                    )
+                )
+            else:
+                # Root deployment: keep standard RFC 8414 path
+                new_routes.append(route)
 
-        return routes
+            # Always register /.well-known/openid-configuration regardless of path depth.
+            # Two reasons:
+            # 1. Root deployments: direct OIDC discovery alias (RFC 8414 §5 / OIDC 1.0).
+            # 2. Path-prefix reverse proxy deployments: the proxy strips the path prefix
+            #    before forwarding, so a client request for
+            #    /{prefix}/.well-known/openid-configuration arrives here as
+            #    /.well-known/openid-configuration.
+            new_routes.append(
+                Route(
+                    "/.well-known/openid-configuration",
+                    endpoint=route.endpoint,
+                    methods=route.methods,
+                )
+            )
+
+        return new_routes

@@ -12,8 +12,10 @@ from fastmcp import FastMCP
 from fastmcp.tools import Tool
 from fastmcp.utilities.versions import (
     VersionKey,
+    VersionSpec,
     compare_versions,
     is_version_greater,
+    version_sort_key,
 )
 
 
@@ -82,6 +84,107 @@ class TestVersionFunctions:
         assert not is_version_greater("1.0", "1.0")
         assert is_version_greater("1.0", None)
         assert not is_version_greater(None, "1.0")
+
+
+def _tool(version: str | None) -> Tool:
+    """Build a real Tool component (a FastMCPComponent) with a version."""
+    return Tool.from_function(lambda: None, name="t", version=version)
+
+
+class TestVersionSpecEq:
+    """Tests for VersionSpec(eq=...) matching semantics."""
+
+    def test_exact_string_match(self):
+        assert VersionSpec(eq="1.0").matches("1.0")
+        assert not VersionSpec(eq="1.0").matches("2.0")
+
+    def test_v_prefix_insensitive_both_directions(self):
+        # Spec has v-prefix, component does not
+        assert VersionSpec(eq="v1.0").matches("1.0")
+        # Component has v-prefix, spec does not
+        assert VersionSpec(eq="1.0").matches("v1.0")
+        assert VersionSpec(eq="v2.3").matches("v2.3")
+
+    def test_pep440_equivalent_spellings_match(self):
+        """PEP 440 treats 1, 1.0, 1.0.0 as the same version."""
+        assert VersionSpec(eq="1.0").matches("1")
+        assert VersionSpec(eq="1").matches("1.0")
+        assert VersionSpec(eq="1.0").matches("1.0.0")
+        assert not VersionSpec(eq="1.0").matches("1.0.1")
+
+    def test_malformed_versions_use_exact_string_equality(self):
+        """Non-PEP 440 strings compare exactly (no normalization, no crash)."""
+        assert VersionSpec(eq="latest").matches("latest")
+        assert not VersionSpec(eq="latest").matches("LATEST")
+        assert VersionSpec(eq="2024-01-01").matches("2024-01-01")
+        assert not VersionSpec(eq="2024-01-01").matches("2024-01-02")
+
+    def test_eq_does_not_match_none_when_match_none_false(self):
+        assert VersionSpec(eq="1.0").matches(None, match_none=False) is False
+        assert VersionSpec(eq="1.0").matches(None, match_none=True) is True
+
+
+class TestVersionSelectionDeterminism:
+    """Selection among PEP 440-equivalent spellings must be deterministic.
+
+    Regression: previously `max(matching, key=version_sort_key)` returned the
+    first element on a tie, so registering both "1" and "1.0" made selection
+    depend on registration order. version_sort_key now has a raw tie-breaker.
+    """
+
+    def test_version_sort_key_is_total_ordering_tuple(self):
+        # PEP 440-equivalent but distinct spellings tie on VersionKey;
+        # the raw string breaks the tie deterministically.
+        k1 = version_sort_key(_tool("1"))
+        k10 = version_sort_key(_tool("1.0"))
+        assert k1[0] == k10[0]  # same VersionKey (PEP 440 equal)
+        assert k1 != k10  # but distinct sort keys
+        assert k10 > k1  # deterministic order ("1.0" > "1")
+
+    def test_unversioned_components_do_not_crash_tiebreak(self):
+        # Two unversioned components: raw tie-breaker is "" for both,
+        # must compare equal without raising (None < None would).
+        a = version_sort_key(_tool(None))
+        b = version_sort_key(_tool(None))
+        assert a == b
+
+    def test_distinct_versions_unaffected_by_tiebreak(self):
+        # Primary ordering still wins; raw tie-breaker never overrides it.
+        # "1.9" < "1.10" semantically even though "1.9" > "1.10" as strings.
+        k19 = version_sort_key(_tool("1.9"))
+        k110 = version_sort_key(_tool("1.10"))
+        assert k110 > k19
+
+    async def test_selection_is_registration_order_independent(self):
+        """End-to-end: registering two PEP 440-equivalent spellings of the
+        same tool must select the same one regardless of registration order
+        (exercises the real `max(..., key=version_sort_key)` selection path)."""
+
+        forward = FastMCP()
+
+        @forward.tool(name="add", version="1")
+        def add_a(x: int) -> int:
+            return x
+
+        @forward.tool(name="add", version="1.0")
+        def add_b(x: int) -> int:
+            return x
+
+        reverse = FastMCP()
+
+        @reverse.tool(name="add", version="1.0")
+        def add_c(x: int) -> int:
+            return x
+
+        @reverse.tool(name="add", version="1")
+        def add_d(x: int) -> int:
+            return x
+
+        fwd = await forward.get_tool("add")
+        rev = await reverse.get_tool("add")
+        assert fwd is not None and rev is not None
+        # Deterministic regardless of order (previously order-dependent).
+        assert fwd.version == rev.version == "1.0"
 
 
 class TestComponentVersioning:

@@ -1,8 +1,11 @@
 import asyncio
+import weakref
 from dataclasses import dataclass
+from unittest.mock import MagicMock
 
 import pytest
 from anyio import create_task_group
+from mcp.server.lowlevel.server import request_ctx
 from mcp.types import LoggingLevel
 
 from fastmcp import Client, Context, FastMCP
@@ -10,8 +13,14 @@ from fastmcp.client.elicitation import ElicitResult
 from fastmcp.client.logging import LogMessage
 from fastmcp.client.transports import FastMCPTransport
 from fastmcp.exceptions import ToolError
+from fastmcp.server.context import _current_context
+from fastmcp.server.dependencies import get_server
 from fastmcp.server.elicitation import AcceptedElicitation
-from fastmcp.server.providers.proxy import FastMCPProxy, StatefulProxyClient
+from fastmcp.server.providers.proxy import (
+    FastMCPProxy,
+    StatefulProxyClient,
+    _restore_request_context,
+)
 from fastmcp.utilities.tests import find_available_port, run_server_async
 
 
@@ -199,3 +208,78 @@ class TestStatefulProxyClient:
                 # one that would hang without the fix.
                 result2 = await client.call_tool("ask_name", {})
                 assert result2.data == "Hello, Alice!"
+
+
+class TestRestoreRequestContextCurrentServer:
+    """Regression tests for `_restore_request_context` (refs #4054, Bug 4).
+
+    The receive-loop repair must also restore `_current_server`, so handlers
+    that resolve the server via dependency injection (e.g. `get_server()`)
+    work. It must do so set-only — without opening a `Context` context-manager
+    scope — since this patches a long-lived task's ContextVars in place.
+    """
+
+    async def _run_in_child_context(self, fn):
+        # Run in a child task so contextvar writes are isolated from the test
+        # task and `request_ctx` is genuinely unset (LookupError branch).
+        return await asyncio.create_task(fn())
+
+    async def test_lookup_error_branch_restores_current_server(self):
+        fastmcp = FastMCP("restore-test")
+        rc = MagicMock()
+        rc.session = MagicMock()
+        rc.request_id = "req-1"
+        rc_ref: list = [(rc, weakref.ref(fastmcp))]
+
+        async def body():
+            with pytest.raises(LookupError):
+                request_ctx.get()
+            _restore_request_context(rc_ref)
+
+            # The actual Bug 4 fix: get_server() now resolves.
+            assert get_server() is fastmcp
+            assert request_ctx.get() is rc
+
+            ctx = _current_context.get()
+            assert ctx is not None
+            assert ctx.fastmcp is fastmcp
+            # Set-only: no context-manager scope was opened, so __aenter__'s
+            # token bookkeeping never ran.
+            assert ctx._tokens == []
+            assert not hasattr(ctx, "_shared_context")
+
+        await self._run_in_child_context(body)
+
+    async def test_stale_override_branch_restores_current_server(self):
+        fastmcp = FastMCP("restore-test")
+        session = MagicMock()
+
+        stale_rc = MagicMock()
+        stale_rc.session = session
+        stale_rc.request_id = "old"
+
+        fresh_rc = MagicMock()
+        fresh_rc.session = session
+        fresh_rc.request_id = "new"
+
+        rc_ref: list = [(fresh_rc, weakref.ref(fastmcp))]
+
+        async def body():
+            request_ctx.set(stale_rc)
+            _restore_request_context(rc_ref)
+
+            assert request_ctx.get() is fresh_rc
+            assert get_server() is fastmcp
+
+        await self._run_in_child_context(body)
+
+    async def test_no_stash_is_noop(self):
+        rc_ref: list = [None]
+
+        async def body():
+            # No stash: nothing restored, no error.
+            _restore_request_context(rc_ref)
+            with pytest.raises(LookupError):
+                request_ctx.get()
+
+        await self._run_in_child_context(body)

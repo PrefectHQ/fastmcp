@@ -1,3 +1,4 @@
+import asyncio
 import importlib
 import json
 from typing import Any
@@ -8,6 +9,7 @@ from mcp.types import ImageContent, TextContent
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.experimental.transforms.code_mode import (
+    _DEFAULT_LIMITS,
     CodeMode,
     GetSchemas,
     GetToolCatalog,
@@ -711,7 +713,123 @@ async def test_monty_provider_forwards_limits() -> None:
         await provider.run("x = 0\nfor _ in range(10**9):\n    x += 1")
 
 
-async def test_monty_provider_no_limits_by_default() -> None:
+async def test_monty_provider_applies_default_limits() -> None:
     provider = MontySandboxProvider()
+    assert provider.limits == _DEFAULT_LIMITS
+    # Default limits are generous enough for ordinary code.
     result = await provider.run("return 1 + 2")
     assert result == 3
+
+
+async def test_monty_provider_explicit_none_disables_limits() -> None:
+    provider = MontySandboxProvider(limits=None)
+    assert provider.limits is None
+    result = await provider.run("return 1 + 2")
+    assert result == 3
+
+
+async def test_monty_provider_explicit_limits_override_defaults() -> None:
+    provider = MontySandboxProvider(limits={"max_duration_secs": 0.1})
+    assert provider.limits == {"max_duration_secs": 0.1}
+
+
+async def test_monty_provider_default_limits_are_not_shared_between_instances() -> None:
+    """Each default provider must own its limits dict.
+
+    `limits` is a mutable public attribute; if instances shared the
+    module-level baseline, mutating one would silently change the defaults
+    for every other default provider in the process.
+    """
+    a = MontySandboxProvider()
+    b = MontySandboxProvider()
+
+    assert a.limits is not b.limits
+    assert a.limits is not _DEFAULT_LIMITS
+
+    assert a.limits is not None
+    a.limits["max_duration_secs"] = 1
+
+    assert b.limits == {"max_duration_secs": 30.0, "max_memory": 100_000_000}
+    assert _DEFAULT_LIMITS == {"max_duration_secs": 30.0, "max_memory": 100_000_000}
+
+
+async def test_code_mode_max_tool_calls_default_is_50() -> None:
+    assert CodeMode().max_tool_calls == 50
+
+
+async def test_code_mode_max_tool_calls_enforced() -> None:
+    mcp = FastMCP("CodeMode ToolCap")
+
+    @mcp.tool
+    def ping() -> str:
+        return "pong"
+
+    mcp.add_transform(
+        CodeMode(sandbox_provider=_UnsafeTestSandboxProvider(), max_tool_calls=3)
+    )
+
+    code = "\n".join(
+        [
+            "results = []",
+            "for _ in range(5):",
+            "    results.append(await call_tool('ping', {}))",
+            "return results",
+        ]
+    )
+    with pytest.raises(ToolError, match=r"Tool call limit exceeded: at most 3"):
+        await _run_tool(mcp, "execute", {"code": code})
+
+
+async def test_code_mode_max_tool_calls_none_is_unlimited() -> None:
+    mcp = FastMCP("CodeMode ToolCapNone")
+
+    @mcp.tool
+    def ping() -> str:
+        return "pong"
+
+    mcp.add_transform(
+        CodeMode(sandbox_provider=_UnsafeTestSandboxProvider(), max_tool_calls=None)
+    )
+
+    code = "\n".join(
+        [
+            "n = 0",
+            "for _ in range(60):",
+            "    await call_tool('ping', {})",
+            "    n += 1",
+            "return n",
+        ]
+    )
+    result = await _run_tool(mcp, "execute", {"code": code})
+    assert _unwrap_result(result) == 60
+
+
+async def test_monty_provider_cancels_future_when_task_cancelled() -> None:
+    """Cancelling the awaiting task must cancel the underlying sandbox future.
+
+    Otherwise the native Monty thread keeps running to completion after a
+    client disconnects or the request times out. A subclass overrides the
+    launch seam so the cancellation handling in `run()` is exercised against
+    a controllable future rather than a live sandbox thread.
+    """
+    loop = asyncio.get_running_loop()
+    sandbox_future: asyncio.Future[Any] = loop.create_future()
+
+    class _NeverFinishingProvider(MontySandboxProvider):
+        def _run_monty(self, monty: Any, *, inputs: Any, external_functions: Any):
+            return sandbox_future
+
+    provider = _NeverFinishingProvider()
+    task = asyncio.create_task(provider.run("return 1"))
+
+    # Advance the task to `await future` (no suspension point before it).
+    for _ in range(3):
+        await asyncio.sleep(0)
+        if not task.done():
+            break
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert sandbox_future.cancelled()

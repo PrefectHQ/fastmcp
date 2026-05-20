@@ -208,6 +208,7 @@ class DiscordProvider(OAuthProxy):
         consent_csp_policy: str | None = None,
         forward_resource: bool = True,
         fallback_refresh_token_expiry_seconds: int | None = None,
+        token_expiry_threshold_seconds: int = 0,
         http_client: httpx.AsyncClient | None = None,
         enable_cimd: bool = True,
     ):
@@ -280,6 +281,7 @@ class DiscordProvider(OAuthProxy):
             consent_csp_policy=consent_csp_policy,
             forward_resource=forward_resource,
             fallback_refresh_token_expiry_seconds=fallback_refresh_token_expiry_seconds,
+            token_expiry_threshold_seconds=token_expiry_threshold_seconds,
             enable_cimd=enable_cimd,
         )
 
