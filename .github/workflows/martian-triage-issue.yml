@@ -41,12 +41,14 @@ jobs:
       - name: React to issue with eyes
         env:
           GH_TOKEN: ${{ steps.marvin-token.outputs.token }}
-          ISSUE_BODY: ${{ github.event.issue.body }}
         run: |
           gh api "repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/reactions" -f content=eyes 2>/dev/null || true
 
       - name: Run Claude for Triage
         uses: ./.github/actions/run-claude
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
         with:
           claude-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github-token: ${{ steps.marvin-token.outputs.token }}
@@ -55,12 +57,12 @@ jobs:
             <context>
             Repository: ${{ github.repository }}
             Issue Number: #${{ github.event.issue.number }}
-            Issue Title: ${{ github.event.issue.title }}
+            Issue Title: ${{ env.ISSUE_TITLE }}
             Issue Author: ${{ github.event.issue.user.login }}
             </context>
 
             <issue_body>
-            $ISSUE_BODY
+            ${{ env.ISSUE_BODY }}
             </issue_body>
 
             <task>

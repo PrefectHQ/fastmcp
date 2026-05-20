@@ -46,12 +46,14 @@ jobs:
       - name: React to comment with eyes
         env:
           GH_TOKEN: ${{ steps.marvin-token.outputs.token }}
-          ISSUE_TITLE: ${{ github.event.issue.title }}
         run: |
           gh api "repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" -f content=eyes 2>/dev/null || true
 
       - name: Run Claude for Issue Comment
         uses: ./.github/actions/run-claude
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
         with:
           claude-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github-token: ${{ steps.marvin-token.outputs.token }}
@@ -62,13 +64,13 @@ jobs:
             <context>
             Repository: ${{ github.repository }}
             Issue Number: #${{ github.event.issue.number }}
-            Issue Title: $ISSUE_TITLE
+            Issue Title: ${{ env.ISSUE_TITLE }}
             Issue Author: ${{ github.event.issue.user.login }}
             Comment Author: ${{ github.event.comment.user.login }}
             </context>
 
             <user_request>
-            ${{ github.event.comment.body }}
+            ${{ env.COMMENT_BODY }}
             </user_request>
 
             <task>

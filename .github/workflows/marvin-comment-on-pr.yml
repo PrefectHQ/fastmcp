@@ -72,6 +72,8 @@ jobs:
           PR_REVIEW_HEAD_SHA: ${{ steps.pr-info.outputs.head_sha }}
           PR_REVIEW_COMMENTS_DIR: /tmp/pr-review-comments
           PR_REVIEW_HELPERS_DIR: ${{ github.workspace }}/.github/scripts/pr-review
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          PR_TITLE: ${{ github.event.issue.title }}
         with:
           claude-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github-token: ${{ steps.marvin-token.outputs.token }}
@@ -82,7 +84,7 @@ jobs:
             <context>
             Repository: ${{ github.repository }}
             PR Number: #${{ steps.pr-info.outputs.pr_number }}
-            PR Title: ${{ github.event.issue.title }}
+            PR Title: ${{ env.PR_TITLE }}
             PR Author: ${{ github.event.issue.user.login }}
             Comment Author: ${{ github.event.comment.user.login }}
 
@@ -90,7 +92,7 @@ jobs:
             </context>
 
             <user_request>
-            ${{ github.event.comment.body }}
+            ${{ env.COMMENT_BODY }}
             </user_request>
 
             <task>
