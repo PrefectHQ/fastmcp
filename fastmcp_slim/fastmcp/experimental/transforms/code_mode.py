@@ -1,3 +1,4 @@
+import asyncio
 import importlib
 import json
 from collections.abc import Awaitable, Callable, Sequence
@@ -161,9 +162,38 @@ class MontySandboxProvider:
         }
 
         monty = pydantic_monty.Monty(code, inputs=list(inputs))
-        return await monty.run_async(
-            inputs=inputs or None,
-            external_functions=async_functions or None,
+        future = asyncio.ensure_future(
+            self._run_monty(
+                monty,
+                inputs=inputs or None,
+                external_functions=async_functions or None,
+            )
+        )
+        try:
+            return await future
+        except asyncio.CancelledError:
+            # Awaiting alone does not stop the native sandbox thread when the
+            # surrounding task is cancelled (e.g. an HTTP client disconnects
+            # mid-execution). Explicitly cancel so the Monty runtime tears the
+            # thread down instead of leaving it running to completion.
+            future.cancel()
+            raise
+
+    def _run_monty(
+        self,
+        monty: Any,
+        *,
+        inputs: dict[str, Any] | None,
+        external_functions: dict[str, Callable[..., Any]] | None,
+    ) -> Any:
+        """Launch the sandbox and return its awaitable.
+
+        Isolated so the cancellation handling in `run()` can be exercised
+        without a live `pydantic-monty` runtime.
+        """
+        return monty.run_async(
+            inputs=inputs,
+            external_functions=external_functions,
             limits=self.limits,
         )
 

@@ -168,6 +168,7 @@ class WorkOSProvider(OAuthProxy):
         issuer_url: AnyHttpUrl | str | None = None,
         redirect_path: str | None = None,
         required_scopes: list[str] | None = None,
+        valid_scopes: list[str] | None = None,
         timeout_seconds: int = 10,
         allowed_client_redirect_uris: list[str] | None = None,
         client_storage: AsyncKeyValue | None = None,
@@ -176,6 +177,7 @@ class WorkOSProvider(OAuthProxy):
         consent_csp_policy: str | None = None,
         forward_resource: bool = True,
         fallback_refresh_token_expiry_seconds: int | None = None,
+        extra_authorize_params: dict[str, str] | None = None,
         http_client: httpx.AsyncClient | None = None,
         enable_cimd: bool = True,
     ):
@@ -192,6 +194,10 @@ class WorkOSProvider(OAuthProxy):
                 to avoid 404s during discovery when mounting under a path.
             redirect_path: Redirect path configured in WorkOS (defaults to "/auth/callback")
             required_scopes: Required OAuth scopes (no default)
+            valid_scopes: All scopes that clients are allowed to request, advertised through
+                well-known endpoints. Defaults to required_scopes if not provided. Use this
+                when you want clients to be able to request additional scopes beyond the
+                required minimum.
             timeout_seconds: HTTP request timeout for WorkOS API calls (defaults to 10)
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
@@ -207,6 +213,9 @@ class WorkOSProvider(OAuthProxy):
                 When "external", the built-in consent screen is skipped but no warning is
                 logged, indicating that consent is handled externally (e.g. by the upstream IdP).
                 SECURITY WARNING: Only set to False for local development or testing environments.
+            extra_authorize_params: Additional parameters to forward to WorkOS's authorization endpoint.
+                Useful for forcing scopes like `offline_access` so WorkOS issues a refresh token,
+                e.g. ``{"scope": "openid profile email offline_access"}``.
             http_client: Optional httpx.AsyncClient for connection pooling in token verification.
                 When provided, the client is reused across verify_token calls and the caller
                 is responsible for its lifecycle. When None (default), a fresh client is created per call.
@@ -220,6 +229,9 @@ class WorkOSProvider(OAuthProxy):
         authkit_domain_final = authkit_domain_str.rstrip("/")
         scopes_final = (
             parse_scopes(required_scopes) if required_scopes is not None else []
+        )
+        valid_scopes_final = (
+            parse_scopes(valid_scopes) if valid_scopes is not None else None
         )
 
         # Create WorkOS token verifier
@@ -248,6 +260,8 @@ class WorkOSProvider(OAuthProxy):
             consent_csp_policy=consent_csp_policy,
             forward_resource=forward_resource,
             fallback_refresh_token_expiry_seconds=fallback_refresh_token_expiry_seconds,
+            extra_authorize_params=extra_authorize_params,
+            valid_scopes=valid_scopes_final,
             enable_cimd=enable_cimd,
         )
 

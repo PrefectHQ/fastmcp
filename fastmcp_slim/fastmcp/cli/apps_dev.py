@@ -1375,6 +1375,7 @@ def _make_dev_app(
     app_bridge_js: str,
     import_map_tag: str,
     message_log: _MessageLog,
+    log_panel: bool,
 ) -> Starlette:
     """Build the Starlette dev server application."""
 
@@ -1391,7 +1392,11 @@ def _make_dev_app(
             on_open_link="bridge.onopenlink = async ({ url }) => { window.location.href = url; return {}; };",
             on_initialized="bridge.oninitialized = async () => {};",
         )
-        return HTMLResponse(_inject_log_panel(host_html))
+        return (
+            HTMLResponse(_inject_log_panel(host_html))
+            if log_panel
+            else HTMLResponse(host_html)
+        )
 
     async def picker_app(request: Request) -> HTMLResponse:
         """Prefab picker UI — tool list with one tab per UI tool."""
@@ -1416,7 +1421,11 @@ def _make_dev_app(
             tool_args_json=json.dumps(tool_args),
             mcp_sdk_version=_MCP_SDK_VERSION,
         )
-        return HTMLResponse(_inject_log_panel(host_html))
+        return (
+            HTMLResponse(_inject_log_panel(host_html))
+            if log_panel
+            else HTMLResponse(host_html)
+        )
 
     async def api_launch(request: Request) -> Response:
         """Picker form submits here; returns a /launch URL string for OpenLink."""
@@ -1525,7 +1534,9 @@ def _make_dev_app(
 
         # Use a reasonable default timeout to prevent the proxy from hanging
         # if the backend server is unresponsive.
-        client = httpx.AsyncClient(timeout=httpx.Timeout(60.0, read=None))
+        client = httpx.AsyncClient(
+            timeout=httpx.Timeout(60.0, read=None), trust_env=False
+        )
 
         async def _stream_and_cleanup(resp: httpx.Response) -> Any:
             is_sse = "text/event-stream" in resp.headers.get("content-type", "")
@@ -1653,6 +1664,7 @@ async def _start_user_server(
     mcp_port: int,
     *,
     reload: bool = True,
+    host: str = "127.0.0.1",
 ) -> asyncio.subprocess.Process:
     """Start the user's MCP server as a subprocess on mcp_port."""
     cmd = [
@@ -1663,6 +1675,8 @@ async def _start_user_server(
         server_spec,
         "--transport",
         "http",
+        "--host",
+        host,
         "--port",
         str(mcp_port),
         "--no-banner",
@@ -1684,7 +1698,7 @@ async def _wait_for_server(url: str, timeout: float = 15.0) -> bool:
     """Poll until the server is accepting connections."""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(trust_env=False) as client:
         while loop.time() < deadline:
             try:
                 await client.get(url, timeout=1.0)
@@ -1704,6 +1718,8 @@ async def run_dev_apps(
     mcp_port: int = 8000,
     dev_port: int = 8080,
     reload: bool = True,
+    host: str = "127.0.0.1",
+    log_panel: bool = True,
 ) -> None:
     """Start the full dev environment for a FastMCPApp server.
 
@@ -1711,8 +1727,16 @@ async def run_dev_apps(
     on *dev_port* (with an /mcp proxy to the user's server), then opens
     the browser.
     """
-    mcp_url = f"http://localhost:{mcp_port}/mcp"
-    dev_url = f"http://localhost:{dev_port}"
+    mcp_url = (
+        f"http://{host}:{mcp_port}/mcp"
+        if ":" not in host
+        else f"http://[{host}]:{mcp_port}/mcp"
+    )
+    dev_url = (
+        f"http://{host}:{dev_port}"
+        if ":" not in host
+        else f"http://[{host}]:{dev_port}"
+    )
 
     user_proc: asyncio.subprocess.Process | None = None
 
@@ -1727,10 +1751,20 @@ async def run_dev_apps(
             (dev_port, "dev UI", "--dev-port"),
         ]:
             in_use = False
-            for family, addr in (
-                (socket.AF_INET, ("127.0.0.1", port)),
-                (socket.AF_INET6, ("::1", port, 0, 0)),
-            ):
+            _targets = (
+                (
+                    (socket.AF_INET, ("127.0.0.1", port)),
+                    (socket.AF_INET6, ("::1", port, 0, 0)),
+                )
+                if host == "127.0.0.1"
+                else (
+                    ((socket.AF_INET6, (host, port, 0, 0)),)
+                    if ":" in host
+                    else ((socket.AF_INET, (host, port)),)
+                )
+            )
+
+            for family, addr in _targets:
                 try:
                     with socket.socket(family, socket.SOCK_STREAM) as s:
                         if s.connect_ex(addr) == 0:
@@ -1751,7 +1785,9 @@ async def run_dev_apps(
         # Start the server first so user_proc is assigned before anything
         # that might fail (e.g. npm fetch).  This ensures the finally
         # cleanup can kill the subprocess even if the bundle fetch raises.
-        user_proc = await _start_user_server(server_spec, mcp_port, reload=reload)
+        user_proc = await _start_user_server(
+            server_spec, mcp_port, reload=reload, host=host
+        )
         app_bridge_js, import_map_json = await _fetch_app_bridge_bundle(
             _EXT_APPS_VERSION, _MCP_SDK_VERSION
         )
@@ -1766,10 +1802,12 @@ async def run_dev_apps(
 
         logger.info(f"FastMCP dev UI at {dev_url}")
 
-        dev_app = _make_dev_app(mcp_url, app_bridge_js, import_map_tag, _MessageLog())
+        dev_app = _make_dev_app(
+            mcp_url, app_bridge_js, import_map_tag, _MessageLog(), log_panel
+        )
         config = uvicorn.Config(
             dev_app,
-            host="localhost",
+            host=host,
             port=dev_port,
             log_level="warning",
             ws="websockets-sansio",

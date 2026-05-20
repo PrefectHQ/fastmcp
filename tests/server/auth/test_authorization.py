@@ -810,3 +810,77 @@ class TestAuthMiddlewareCallTool:
                 )
         finally:
             auth_context_var.reset(tok)
+
+
+# =============================================================================
+# Tests for component-level auth denial messaging (issue #4054 bug 1)
+# =============================================================================
+
+
+def _allow_all(ctx: AuthContext) -> bool:
+    """Global auth check that always passes (component-level auth still applies)."""
+    return True
+
+
+class TestComponentAuthDenialMessage:
+    """When component-level auth denies access, get_tool/get_resource/get_prompt
+    return None, so the middleware cannot distinguish "missing" from "denied".
+
+    The message must stay ambiguous ("not found or not authorized") rather than
+    asserting the component does not exist (misleading) or that it exists but is
+    forbidden (leaks existence to unauthorized callers).
+    """
+
+    async def test_call_tool_denied_by_component_auth(self):
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=_allow_all)])
+
+        @mcp.tool(auth=require_scopes("admin"))
+        def secret_tool() -> str:
+            return "secret"
+
+        token = make_token(scopes=["read"])
+        tok = set_token(token)
+        try:
+            async with Client(mcp) as client:
+                with pytest.raises(Exception) as exc_info:
+                    await client.call_tool("secret_tool", {})
+            message = str(exc_info.value)
+            assert "not found or not authorized" in message
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_read_resource_denied_by_component_auth(self):
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=_allow_all)])
+
+        @mcp.resource("data://secret", auth=require_scopes("admin"))
+        def secret_resource() -> str:
+            return "secret"
+
+        token = make_token(scopes=["read"])
+        tok = set_token(token)
+        try:
+            async with Client(mcp) as client:
+                with pytest.raises(Exception) as exc_info:
+                    await client.read_resource("data://secret")
+            message = str(exc_info.value)
+            assert "not found or not authorized" in message
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_get_prompt_denied_by_component_auth(self):
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=_allow_all)])
+
+        @mcp.prompt(auth=require_scopes("admin"))
+        def secret_prompt() -> str:
+            return "secret"
+
+        token = make_token(scopes=["read"])
+        tok = set_token(token)
+        try:
+            async with Client(mcp) as client:
+                with pytest.raises(Exception) as exc_info:
+                    await client.get_prompt("secret_prompt")
+            message = str(exc_info.value)
+            assert "not found or not authorized" in message
+        finally:
+            auth_context_var.reset(tok)

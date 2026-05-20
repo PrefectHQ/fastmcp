@@ -332,12 +332,14 @@ class MCPConfig(BaseModel):
     def write_to_file(self, file_path: Path) -> None:
         """Write configuration to JSON file."""
         file_path.parent.mkdir(parents=True, exist_ok=True)
-        file_path.write_text(self.model_dump_json(indent=2))
+        file_path.write_text(self.model_dump_json(indent=2), encoding="utf-8")
 
     @classmethod
     def from_file(cls, file_path: Path) -> Self:
         """Load configuration from JSON file."""
-        if file_path.exists() and (content := file_path.read_text().strip()):
+        if file_path.exists() and (
+            content := file_path.read_text(encoding="utf-8").strip()
+        ):
             return cls.model_validate_json(content)  # ty: ignore[possibly-unresolved-reference]
 
         raise ValueError(f"No MCP servers defined in the config: {file_path}")
