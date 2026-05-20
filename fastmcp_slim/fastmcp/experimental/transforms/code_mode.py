@@ -1,3 +1,4 @@
+import asyncio
 import importlib
 import json
 from collections.abc import Awaitable, Callable, Sequence
@@ -9,7 +10,7 @@ if TYPE_CHECKING:
 from mcp.types import TextContent
 from pydantic import Field
 
-from fastmcp.exceptions import NotFoundError
+from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.server.context import Context
 from fastmcp.server.transforms import GetToolNext
 from fastmcp.server.transforms.catalog import CatalogTransform
@@ -91,6 +92,25 @@ class SandboxProvider(Protocol):
     ) -> Any: ...
 
 
+class _UnsetType:
+    """Sentinel distinguishing "argument omitted" from an explicit value."""
+
+    def __repr__(self) -> str:
+        return "UNSET"
+
+
+_UNSET = _UnsetType()
+
+
+_DEFAULT_LIMITS: "ResourceLimits" = {
+    "max_duration_secs": 30.0,
+    "max_memory": 100_000_000,  # 100 MB
+}
+"""Baseline limits applied when ``MontySandboxProvider`` is constructed
+without an explicit ``limits`` argument. Pass ``limits=None`` to opt out
+entirely, or a dict to override."""
+
+
 class MontySandboxProvider:
     """Sandbox provider backed by `pydantic-monty`.
 
@@ -100,14 +120,25 @@ class MontySandboxProvider:
             ``max_memory`` (int), ``max_recursion_depth`` (int),
             ``gc_interval`` (int).  All are optional; omit a key to
             leave that limit uncapped.
+
+            When the argument is omitted entirely, a conservative baseline
+            is applied (``max_duration_secs=30``, ``max_memory=100 MB``) so
+            the out-of-box configuration is not unbounded. Pass
+            ``limits=None`` to explicitly run without any limits, or a dict
+            to set your own.
     """
 
     def __init__(
         self,
         *,
-        limits: "ResourceLimits | None" = None,
+        limits: "ResourceLimits | None | _UnsetType" = _UNSET,
     ) -> None:
-        self.limits = limits
+        # Copy the baseline so each provider owns its dict — `limits` is a
+        # mutable public attribute, and sharing the module-level object would
+        # let one provider's edits leak into every other default provider.
+        self.limits: ResourceLimits | None = (
+            _DEFAULT_LIMITS.copy() if isinstance(limits, _UnsetType) else limits
+        )
 
     async def run(
         self,
@@ -131,9 +162,38 @@ class MontySandboxProvider:
         }
 
         monty = pydantic_monty.Monty(code, inputs=list(inputs))
-        return await monty.run_async(
-            inputs=inputs or None,
-            external_functions=async_functions or None,
+        future = asyncio.ensure_future(
+            self._run_monty(
+                monty,
+                inputs=inputs or None,
+                external_functions=async_functions or None,
+            )
+        )
+        try:
+            return await future
+        except asyncio.CancelledError:
+            # Awaiting alone does not stop the native sandbox thread when the
+            # surrounding task is cancelled (e.g. an HTTP client disconnects
+            # mid-execution). Explicitly cancel so the Monty runtime tears the
+            # thread down instead of leaving it running to completion.
+            future.cancel()
+            raise
+
+    def _run_monty(
+        self,
+        monty: Any,
+        *,
+        inputs: dict[str, Any] | None,
+        external_functions: dict[str, Callable[..., Any]] | None,
+    ) -> Any:
+        """Launch the sandbox and return its awaitable.
+
+        Isolated so the cancellation handling in `run()` can be exercised
+        without a live `pydantic-monty` runtime.
+        """
+        return monty.run_async(
+            inputs=inputs,
+            external_functions=external_functions,
             limits=self.limits,
         )
 
@@ -454,10 +514,12 @@ class CodeMode(CatalogTransform):
         discovery_tools: list[DiscoveryToolFactory] | None = None,
         execute_tool_name: str = "execute",
         execute_description: str | None = None,
+        max_tool_calls: int | None = 50,
     ) -> None:
         super().__init__()
         self.execute_tool_name = execute_tool_name
         self.execute_description = execute_description
+        self.max_tool_calls = max_tool_calls
         self.sandbox_provider = sandbox_provider or MontySandboxProvider()
 
         self._discovery_factories = (
@@ -526,6 +588,7 @@ class CodeMode(CatalogTransform):
 
     def _make_execute_tool(self) -> Tool:
         transform = self
+        max_tool_calls = self.max_tool_calls
 
         async def execute(
             code: Annotated[
@@ -540,7 +603,18 @@ class CodeMode(CatalogTransform):
         ) -> Any:
             """Execute tool calls using Python code."""
 
+            call_count = 0
+
             async def call_tool(tool_name: str, params: dict[str, Any]) -> Any:
+                nonlocal call_count
+                if max_tool_calls is not None:
+                    call_count += 1
+                    if call_count > max_tool_calls:
+                        raise ToolError(
+                            f"Tool call limit exceeded: at most {max_tool_calls} "
+                            "call_tool() invocations are allowed per execute()."
+                        )
+
                 backend_tools = await transform.get_tool_catalog(ctx)
                 tool = transform._find_tool(tool_name, backend_tools)
                 if tool is None:

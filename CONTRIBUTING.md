@@ -20,7 +20,7 @@ We encourage you to use LLMs to help identify bugs, write MREs, and prepare cont
 
 ## When to open a pull request
 
-An open issue is not an invitation to submit a PR. Issues track problems; whether and how to solve them is a separate decision. If you want to work on something, propose your approach in the issue first — especially for anything beyond a trivial fix.
+An open issue is not an invitation to submit a PR. Issues track problems; whether and how to solve them is a separate decision. If you want to work on something, propose your approach in the issue first and ask a maintainer to assign it to you — especially for anything beyond a trivial fix. External PRs that reference an issue not assigned to their author are closed automatically (see [PR guidelines](#pr-guidelines)).
 
 **Bug fixes** — PRs are welcome for simple, well-scoped bug fixes where the problem and solution are both straightforward. "The function raises `TypeError` when passed `None` because of a missing guard" is a good candidate. If the fix requires design decisions or touches multiple subsystems, open an issue with a design proposal instead.
 
@@ -34,7 +34,7 @@ An open issue is not an invitation to submit a PR. Issues track problems; whethe
 
 If you do open a PR:
 
-- **Reference an issue.** Every PR should address a tracked issue. If there isn't one, open an issue first. This isn't a permission step — you don't need to wait for a response. But the issue gives us context on the problem, and if a maintainer is already working on it, we can let you know before you invest time in code.
+- **Reference an issue you're assigned to.** Every PR must reference a tracked issue using an auto-close keyword (`Fixes #123`, `Closes #123`, or `Resolves #123`), and the referenced issue must be assigned to you. If there isn't an issue, open one; then comment to ask a maintainer to assign it to you. This lets us deconflict effort and steer the approach before you invest time in code. External PRs that don't meet both conditions are automatically labeled `missing-issue-link` and closed; they reopen automatically once the link is present and you're assigned.
 - **Keep it focused.** One logical change per PR. Don't bundle unrelated fixes or refactors.
 - **Match existing patterns.** Follow the code style, type annotation conventions, and test patterns you see in the codebase. Run `uv run prek run --all-files` before submitting.
 - **Write tests.** Bug fixes should include a test that fails without the fix. Enhancements should include tests for the new behavior.

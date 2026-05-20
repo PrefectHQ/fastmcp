@@ -136,6 +136,7 @@ gh api -X POST repos/PrefectHQ/fastmcp/releases/generate-notes \
 
 ### Module Exports
 
+- **Do not create overeager `__init__.py` files.** Package initializers should not import heavy submodules, provider stacks, optional integrations, or modules that can point back into the package. Overeager re-exports make the framework sprawl and create circular imports that only appear in fresh interpreters or clean installs.
 - **Be intentional about re-exports** - don't blindly re-export everything to parent namespaces
 - Core types that define a module's purpose should be exported (e.g., `Middleware` from `fastmcp.server.middleware`)
 - Specialized features can live in submodules (e.g., `fastmcp.server.middleware.dynamic`)

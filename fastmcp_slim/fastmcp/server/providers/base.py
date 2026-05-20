@@ -35,17 +35,17 @@ from typing import TYPE_CHECKING, Literal, cast
 
 from typing_extensions import Self
 
-from fastmcp.prompts.base import Prompt
-from fastmcp.resources.base import Resource
-from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.transforms.visibility import Visibility
-from fastmcp.tools.base import Tool
 from fastmcp.utilities.async_utils import gather
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.versions import VersionSpec, version_sort_key
 
 if TYPE_CHECKING:
+    from fastmcp.prompts.base import Prompt
+    from fastmcp.resources.base import Resource
+    from fastmcp.resources.template import ResourceTemplate
     from fastmcp.server.transforms import Transform
+    from fastmcp.tools.base import Tool
 
 
 class Provider:
@@ -480,10 +480,10 @@ class Provider:
             self._list_resource_templates(),
             self._list_prompts(),
         )
-        tools = cast(Sequence[Tool], results[0])
-        resources = cast(Sequence[Resource], results[1])
-        templates = cast(Sequence[ResourceTemplate], results[2])
-        prompts = cast(Sequence[Prompt], results[3])
+        tools = cast("Sequence[Tool]", results[0])
+        resources = cast("Sequence[Resource]", results[1])
+        templates = cast("Sequence[ResourceTemplate]", results[2])
+        prompts = cast("Sequence[Prompt]", results[3])
 
         # Apply provider's own transforms sequentially
         # For tasks, we need the fully-transformed names

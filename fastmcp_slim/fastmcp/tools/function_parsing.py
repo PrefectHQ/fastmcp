@@ -13,10 +13,6 @@ import mcp.types
 from pydantic import PydanticSchemaGenerationError
 from typing_extensions import TypeVar as TypeVarExt
 
-from fastmcp.server.dependencies import (
-    transform_context_annotations,
-    without_injected_parameters,
-)
 from fastmcp.tools.base import ToolResult
 from fastmcp.utilities.docstring_parsing import ParsedDocstring, parse_docstring
 from fastmcp.utilities.json_schema import compress_schema
@@ -188,6 +184,11 @@ class ParsedFunction:
         )
 
         # Transform Context type annotations to Depends() for unified DI
+        from fastmcp.server.dependencies import (
+            transform_context_annotations,
+            without_injected_parameters,
+        )
+
         fn = transform_context_annotations(fn)
 
         # Handle injected parameters (Context, Docket dependencies)

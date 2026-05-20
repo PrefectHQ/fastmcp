@@ -31,9 +31,9 @@ from pydantic.json_schema import SkipJsonSchema
 from typing_extensions import Self
 
 from fastmcp.exceptions import FastMCPDeprecationWarning
-from fastmcp.server.auth.authorization import AuthCheck
-from fastmcp.server.tasks.config import TaskConfig, TaskMeta
+from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.components import FastMCPComponent
+from fastmcp.utilities.tasks import TaskConfig, TaskMeta
 
 
 class ResourceContent(pydantic.BaseModel):

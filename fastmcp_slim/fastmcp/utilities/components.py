@@ -7,7 +7,7 @@ from mcp.types import Icon
 from pydantic import BeforeValidator, Field
 from typing_extensions import Self, TypeVar
 
-from fastmcp.server.tasks.config import TaskConfig
+from fastmcp.utilities.tasks import TaskConfig
 from fastmcp.utilities.types import FastMCPBaseModel
 
 if TYPE_CHECKING:

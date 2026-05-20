@@ -26,19 +26,15 @@ import fastmcp
 from fastmcp.decorators import resolve_task_config
 from fastmcp.exceptions import FastMCPDeprecationWarning, FastMCPError, PromptError
 from fastmcp.prompts.base import Prompt, PromptArgument, PromptResult
-from fastmcp.server.auth.authorization import AuthCheck
-from fastmcp.server.dependencies import (
-    transform_context_annotations,
-    without_injected_parameters,
-)
-from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
 )
+from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.docstring_parsing import ParsedDocstring, parse_docstring
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.tasks import TaskConfig
 from fastmcp.utilities.types import get_cached_typeadapter
 
 if TYPE_CHECKING:
@@ -193,6 +189,11 @@ class FunctionPrompt(Prompt):
         )
 
         # Transform Context type annotations to Depends() for unified DI
+        from fastmcp.server.dependencies import (
+            transform_context_annotations,
+            without_injected_parameters,
+        )
+
         fn = transform_context_annotations(fn)
 
         # Wrap fn to handle dependency resolution internally

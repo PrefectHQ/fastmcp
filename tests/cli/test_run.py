@@ -8,8 +8,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
+from starlette.testclient import TestClient
 
-from fastmcp.cli.cli import inspector, run
+from fastmcp.cli.apps_dev import _make_dev_app, _MessageLog
+from fastmcp.cli.cli import apps, inspector, run
 from fastmcp.cli.run import (
     create_mcp_config_server,
     is_url,
@@ -991,3 +993,157 @@ class TestInspectorModuleMode:
         # --module should be in the subprocess command
         cmd = mock_subprocess.call_args[0][0]
         assert "--module" in cmd
+
+
+class TestRunDevApps:
+    """Test running dev apps with the run command."""
+
+    @pytest.mark.parametrize(
+        "host, expected_host",
+        [
+            ("0.0.0.0", "0.0.0.0"),
+            ("127.0.0.1", "127.0.0.1"),
+        ],
+    )
+    async def test_run_dev_apps_with_host(self, host, expected_host):
+        """Test run command can run a dev app with below new options for issue 4121.
+        - host option to support binding specific address other than localhost.
+        """
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+
+        mock_server = AsyncMock()
+        mock_server.install_signal_handlers = MagicMock()
+        mock_server.serve = AsyncMock()
+
+        mock_uvicorn = MagicMock()
+        mock_uvicorn.Config = MagicMock()
+        mock_uvicorn.Server.return_value = mock_server
+
+        mock_make_dev_app = MagicMock(return_value=MagicMock())
+        mock_webbrowser_open = MagicMock()
+
+        with (
+            patch(
+                "fastmcp.cli.apps_dev._start_user_server",
+                new_callable=AsyncMock,
+                return_value=mock_proc,
+            ),
+            patch(
+                "fastmcp.cli.apps_dev._fetch_app_bridge_bundle",
+                new_callable=AsyncMock,
+                return_value=("js_content", "{}"),
+            ),
+            patch(
+                "fastmcp.cli.apps_dev._wait_for_server",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch("fastmcp.cli.apps_dev._make_dev_app", mock_make_dev_app),
+            patch("fastmcp.cli.apps_dev.uvicorn", mock_uvicorn),
+            patch("fastmcp.cli.apps_dev.webbrowser.open", mock_webbrowser_open),
+            patch("fastmcp.cli.apps_dev.asyncio.sleep", new_callable=AsyncMock),
+            patch("socket.socket"),
+        ):
+            await apps("server.py", host=host)
+
+        make_dev_app_first_arg = mock_make_dev_app.call_args[0][0]
+        assert expected_host in make_dev_app_first_arg
+
+        webbrowser_open_first_arg = mock_webbrowser_open.call_args[0][0]
+        assert expected_host in webbrowser_open_first_arg
+
+    @pytest.mark.parametrize(
+        "log_panel, expected_log_panel",
+        [
+            (True, True),
+            (False, False),
+        ],
+    )
+    async def test_run_dev_apps_log_panel_propagation(
+        self, log_panel, expected_log_panel
+    ):
+        """Test run command can run a dev app with below new options for issue 4121.
+        - toggle log-panel option to hide log/debug message in normal cases.
+
+        The test divided into two parts:
+        - first, verify if log_panel is correctly propagated to _make_dev_app.
+        - second, verify if _make_dev_app calls _inject_log_panel only when log_panel=True
+
+        This test function implements the first part, and the second part is implemented in test_make_dev_app_log_panel_controls_inject
+        """
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+
+        mock_server = AsyncMock()
+        mock_server.install_signal_handlers = MagicMock()
+        mock_server.serve = AsyncMock()
+
+        mock_uvicorn = MagicMock()
+        mock_uvicorn.Config = MagicMock()
+        mock_uvicorn.Server.return_value = mock_server
+
+        mock_make_dev_app = MagicMock(return_value=MagicMock())
+        mock_webbrowser_open = MagicMock()
+
+        with (
+            patch(
+                "fastmcp.cli.apps_dev._start_user_server",
+                new_callable=AsyncMock,
+                return_value=mock_proc,
+            ),
+            patch(
+                "fastmcp.cli.apps_dev._fetch_app_bridge_bundle",
+                new_callable=AsyncMock,
+                return_value=("js_content", "{}"),
+            ),
+            patch(
+                "fastmcp.cli.apps_dev._wait_for_server",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch("fastmcp.cli.apps_dev._make_dev_app", mock_make_dev_app),
+            patch("fastmcp.cli.apps_dev.uvicorn", mock_uvicorn),
+            patch("fastmcp.cli.apps_dev.webbrowser.open", mock_webbrowser_open),
+            patch("fastmcp.cli.apps_dev.asyncio.sleep", new_callable=AsyncMock),
+            patch("socket.socket"),
+        ):
+            await apps("server.py", log_panel=log_panel)
+
+        # log_panel is the 5th positional argument to _make_dev_app
+        actual_log_panel = mock_make_dev_app.call_args[0][4]
+        assert actual_log_panel is expected_log_panel
+
+    @pytest.mark.parametrize("log_panel", [True, False])
+    def test_make_dev_app_log_panel_controls_inject(self, log_panel):
+        """Test if _make_dev_app calls _inject_log_panel only when log_panel=True, regarding issue 4121:
+        - toggle log-panel option to hide log/debug message in normal cases.
+
+        The test divided into two parts:
+        - first, verify if log_panel is correctly propagated to _make_dev_app.
+        - second, verify if _make_dev_app calls _inject_log_panel only when log_panel=True
+
+        This test function implements the second part, and the first part is implemented in test_run_dev_apps_log_panel_propagation
+        """
+
+        mock_message_log = _MessageLog()
+
+        with patch(
+            "fastmcp.cli.apps_dev._inject_log_panel",
+            return_value="<html>injected</html>",
+        ) as mock_inject:
+            starlette_app = _make_dev_app(
+                mcp_url="http://127.0.0.1:8000/mcp",
+                app_bridge_js="// js",
+                import_map_tag="",
+                message_log=mock_message_log,
+                log_panel=log_panel,
+            )
+            client = TestClient(starlette_app, raise_server_exceptions=False)
+            client.get("/")
+
+        if log_panel:
+            mock_inject.assert_called_once()
+        else:
+            mock_inject.assert_not_called()
