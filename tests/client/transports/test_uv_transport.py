@@ -94,7 +94,7 @@ async def test_uv_transport_module():
                     "--directory",
                     tmpdir,
                     "--with-editable",
-                    str(_fastmcp_src_dir),
+                    f"{_fastmcp_src_dir}[server]",
                     "--module",
                     "my_module",
                 ],

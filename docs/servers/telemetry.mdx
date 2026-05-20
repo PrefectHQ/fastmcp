@@ -176,6 +176,73 @@ async def complex_operation(input: str) -> str:
     return result
 ```
 
+### Where custom spans help most
+
+Custom spans are most useful around work that is expensive or hard to debug:
+
+- External calls such as databases, vector stores, HTTP APIs, or queue operations
+- Multi-step tool logic where one stage dominates latency
+- Prompt or resource generation that fans out to other systems
+- Sampling calls made from inside a tool via `ctx.sample(...)`
+
+Avoid wrapping every small helper function or simple in-memory transformation. That usually adds noise without making traces easier to interpret.
+
+### Recommended naming and attributes
+
+- Use `{tool_name}.{operation}` or `{resource_name}.{operation}` for child spans such as `search.fetch`, `search.rank`, or `docs.render`
+- Add attributes that explain workload shape, such as counts, sizes, cache hits, or IDs
+- Do not record secrets, prompts with sensitive user data, or raw tokens as span attributes
+- Let exceptions propagate unless you have a specific recovery path; FastMCP's server spans already mark failures and record exceptions
+
+### Instrumenting tools, prompts, and resources
+
+```python
+from fastmcp import FastMCP
+from fastmcp.telemetry import get_tracer
+
+mcp = FastMCP("my-server")
+
+@mcp.tool
+async def search(query: str) -> str:
+    tracer = get_tracer()
+
+    with tracer.start_as_current_span("search.fetch") as span:
+        span.set_attribute("search.query_length", len(query))
+        results = await fetch_results(query)
+        span.set_attribute("search.result_count", len(results))
+
+    with tracer.start_as_current_span("search.rank"):
+        ranked = rank_results(results)
+
+    return format_results(ranked)
+
+@mcp.prompt
+async def summarize_prompt(topic: str) -> str:
+    tracer = get_tracer()
+    with tracer.start_as_current_span("summarize_prompt.render") as span:
+        span.set_attribute("prompt.topic_length", len(topic))
+        return f"Summarize the latest updates about {topic}."
+
+@mcp.resource("docs://{slug}")
+async def docs_resource(slug: str) -> str:
+    tracer = get_tracer()
+    with tracer.start_as_current_span("docs_resource.load") as span:
+        span.set_attribute("docs.slug", slug)
+        return await load_doc(slug)
+```
+
+### Sampling calls inside tools
+
+If your tool uses `ctx.sample(...)`, keep the LLM work nested under the tool span so traces show both application logic and model latency together.
+
+For providers with their own OTEL integrations, prefer enabling that instrumentation rather than manually creating a span around every model call. For example, if you use Google GenAI, `logfire.instrument_google_genai()` will emit child spans with token and request metadata under the active FastMCP tool span.
+
+### Exporter choices
+
+- For local debugging, `ConsoleSpanExporter` or `otel-desktop-viewer` gives quick feedback with minimal setup
+- For shared environments, use OTLP exporters to backends like Logfire, Jaeger, Tempo, Datadog, or New Relic
+- If traces are too noisy, tune sampling in your OpenTelemetry SDK instead of removing FastMCP instrumentation
+
 ## Error Handling
 
 When errors occur, spans are automatically marked with error status and the exception is recorded:

@@ -11,35 +11,35 @@ path = "tests/**"
 max_lines = 1000
 
 [[rules]]
-path = "src/fastmcp/server/context.py"
+path = "fastmcp_slim/fastmcp/server/context.py"
 max_lines = 1404
 
 [[rules]]
-path = "src/fastmcp/server/server.py"
+path = "fastmcp_slim/fastmcp/server/server.py"
 max_lines = 2410
 
 [[rules]]
-path = "src/fastmcp/server/auth/oauth_proxy/proxy.py"
+path = "fastmcp_slim/fastmcp/server/auth/oauth_proxy/proxy.py"
 max_lines = 2098
 
 [[rules]]
-path = "src/fastmcp/cli/apps_dev.py"
+path = "fastmcp_slim/fastmcp/cli/apps_dev.py"
 max_lines = 1814
 
 [[rules]]
-path = "src/fastmcp/cli/cli.py"
+path = "fastmcp_slim/fastmcp/cli/cli.py"
 max_lines = 1116
 
 [[rules]]
-path = "src/fastmcp/server/dependencies.py"
+path = "fastmcp_slim/fastmcp/server/dependencies.py"
 max_lines = 1686
 
 [[rules]]
-path = "src/fastmcp/server/providers/proxy.py"
+path = "fastmcp_slim/fastmcp/server/providers/proxy.py"
 max_lines = 1096
 
 [[rules]]
-path = "src/fastmcp/tools/tool_transform.py"
+path = "fastmcp_slim/fastmcp/tools/tool_transform.py"
 max_lines = 1004
 
 [[rules]]

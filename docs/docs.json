@@ -190,6 +190,7 @@
                     "pages": [
                       "deployment/running-server",
                       "deployment/http",
+                      "deployment/sandboxed-agents",
                       "deployment/prefect-horizon",
                       "deployment/server-configuration",
                       "servers/testing",
@@ -234,6 +235,7 @@
                 "group": "Clients",
                 "pages": [
                   "clients/client",
+                  "clients/client-only-package",
                   "clients/transports",
                   {
                     "collapsed": true,
@@ -321,7 +323,8 @@
                     "pages": [
                       "integrations/anthropic",
                       "integrations/gemini",
-                      "integrations/openai"
+                      "integrations/openai",
+                      "integrations/pydantic-ai"
                     ]
                   },
                   "integrations/mcp-json-configuration"

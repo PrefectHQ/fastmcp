@@ -120,6 +120,9 @@ class TestDereferenceRefs:
                 }
             },
             "$ref": "#/$defs/Node",
+            "title": "Tree node",
+            "description": "A recursive tree node.",
+            "examples": [{"children": []}],
         }
         result = dereference_refs(schema)
 
@@ -127,6 +130,9 @@ class TestDereferenceRefs:
         # Root should be resolved but nested refs preserved
         assert result.get("type") == "object"
         assert "$defs" in result  # $defs preserved for circular refs
+        assert result["title"] == "Tree node"
+        assert result["description"] == "A recursive tree node."
+        assert result["examples"] == [{"children": []}]
 
     def test_falls_back_for_circular_json_pointer_refs(self):
         """Test that circular JSON Pointer $ref (non-$defs) does not crash.

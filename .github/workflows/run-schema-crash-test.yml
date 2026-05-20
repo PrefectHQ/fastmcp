@@ -4,21 +4,21 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "src/fastmcp/utilities/json_schema_type.py"
-      - "src/fastmcp/utilities/json_schema.py"
-      - "src/fastmcp/utilities/openapi/**"
-      - "src/fastmcp/server/providers/openapi/**"
-      - "src/fastmcp/client/mixins/tools.py"
+      - "fastmcp_slim/fastmcp/utilities/json_schema_type.py"
+      - "fastmcp_slim/fastmcp/utilities/json_schema.py"
+      - "fastmcp_slim/fastmcp/utilities/openapi/**"
+      - "fastmcp_slim/fastmcp/server/providers/openapi/**"
+      - "fastmcp_slim/fastmcp/client/mixins/tools.py"
       - "tests/utilities/json_schema_type/test_real_world_schemas.py"
       - ".github/workflows/run-schema-crash-test.yml"
 
   pull_request:
     paths:
-      - "src/fastmcp/utilities/json_schema_type.py"
-      - "src/fastmcp/utilities/json_schema.py"
-      - "src/fastmcp/utilities/openapi/**"
-      - "src/fastmcp/server/providers/openapi/**"
-      - "src/fastmcp/client/mixins/tools.py"
+      - "fastmcp_slim/fastmcp/utilities/json_schema_type.py"
+      - "fastmcp_slim/fastmcp/utilities/json_schema.py"
+      - "fastmcp_slim/fastmcp/utilities/openapi/**"
+      - "fastmcp_slim/fastmcp/server/providers/openapi/**"
+      - "fastmcp_slim/fastmcp/client/mixins/tools.py"
       - "tests/utilities/json_schema_type/test_real_world_schemas.py"
       - ".github/workflows/run-schema-crash-test.yml"
 

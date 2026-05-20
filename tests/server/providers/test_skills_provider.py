@@ -658,3 +658,55 @@ class TestPathTraversalPrevention:
                 await client.read_resource(
                     AnyUrl("skill://test-skill/../../../secret.txt")
                 )
+
+
+async def test_skill_provider_loads_and_serves_utf8_skill_md(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SKILL.md and its supporting text files must be read as utf-8.
+
+    Regression test for #4084. On Windows the default encoding is cp1252,
+    so a bare ``read_text()`` call fails to decode UTF-8 content with
+    ``UnicodeDecodeError: 'charmap' codec can't decode byte ...``. The fix
+    passes ``encoding="utf-8"`` explicitly at every read site: skill load,
+    main-file resource read, and supporting-file template/resource reads.
+    This test simulates the Windows behavior on any platform by failing
+    every text read that doesn't pass ``encoding="utf-8"``.
+    """
+    skill_dir = tmp_path / "test-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: test-skill\n"
+        "description: Test skill with UTF-8 characters\n"
+        "---\n"
+        "# Test Skill 🎯\n"
+        "- ✅ Success indicator\n",
+        encoding="utf-8",
+    )
+    (skill_dir / "reference.md").write_text(
+        "# Reference\n- ✨ utf-8 supporting file\n", encoding="utf-8"
+    )
+
+    original_read_text = Path.read_text
+
+    def strict_read_text(self: Path, *args, **kwargs):
+        if kwargs.get("encoding") != "utf-8":
+            raise UnicodeDecodeError(
+                "charmap", b"\x9d", 0, 1, "simulated cp1252 default"
+            )
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", strict_read_text)
+
+    mcp = FastMCP("Test")
+    mcp.add_provider(SkillProvider(skill_path=skill_dir))
+
+    async with Client(mcp) as client:
+        main = await client.read_resource(AnyUrl("skill://test-skill/SKILL.md"))
+        assert isinstance(main[0], TextResourceContents)
+        assert "🎯" in main[0].text
+
+        ref = await client.read_resource(AnyUrl("skill://test-skill/reference.md"))
+        assert isinstance(ref[0], TextResourceContents)
+        assert "✨" in ref[0].text

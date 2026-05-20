@@ -850,6 +850,25 @@ class TestMalformedURITemplates:
         assert result is not None
         assert result["user_id"] == "alice"
 
+    def test_query_param_with_blank_value_is_preserved(self):
+        """Regression for #4056: blank query values (e.g. ?format=) should
+        not be silently dropped. parse_qs without keep_blank_values=True
+        elides empty values, which loses caller intent."""
+        result = match_uri_template(
+            "resource://data/42?format=", "resource://data/{id}{?format}"
+        )
+        assert result is not None
+        assert result == {"id": "42", "format": ""}
+
+    def test_query_param_with_blank_and_present_values(self):
+        """Mix of blank and non-blank query values are both surfaced."""
+        result = match_uri_template(
+            "resource://data/42?format=&verbose=true",
+            "resource://data/{id}{?format,verbose}",
+        )
+        assert result is not None
+        assert result == {"id": "42", "format": "", "verbose": "true"}
+
     def test_from_function_rejects_hyphen_underscore_collision(self):
         """Two raw param names that normalize to the same key are rejected."""
 

@@ -273,11 +273,13 @@ class TestPromptTypeConversion:
 
         prompt = Prompt.from_function(typed_prompt)
 
-        # Test with invalid JSON - should raise PromptError due to exception handling in render()
+        # Test with invalid JSON - should raise PromptError with type conversion details
         with pytest.raises(PromptError) as exc_info:
             await prompt.render(arguments={"numbers": "not valid json"})
 
-        assert f"Error rendering prompt {prompt.name!r}" in str(exc_info.value)
+        # PromptError passes through unchanged
+        assert "Could not convert argument 'numbers'" in str(exc_info.value)
+        assert "list[int]" in str(exc_info.value)
 
     async def test_json_parsing_fallback(self):
         """Test that JSON parsing falls back to direct validation when needed."""

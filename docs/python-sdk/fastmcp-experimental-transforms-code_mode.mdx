@@ -7,7 +7,7 @@ sidebarTitle: code_mode
 
 ## Classes
 
-### `SandboxProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/experimental/transforms/code_mode.py#L76" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SandboxProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L76" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Interface for executing LLM-generated Python code in a sandbox.
@@ -20,13 +20,13 @@ sandbox — never with plain ``exec()``.  Use ``MontySandboxProvider``
 
 **Methods:**
 
-#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/experimental/transforms/code_mode.py#L85" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L85" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run(self, code: str) -> Any
 ```
 
-### `MontySandboxProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/experimental/transforms/code_mode.py#L94" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `MontySandboxProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L94" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Sandbox provider backed by `pydantic-monty`.
@@ -41,13 +41,13 @@ leave that limit uncapped.
 
 **Methods:**
 
-#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/experimental/transforms/code_mode.py#L112" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L112" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run(self, code: str) -> Any
 ```
 
-### `Search` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/experimental/transforms/code_mode.py#L178" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `Search` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L178" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Discovery tool factory that searches the catalog by query.
@@ -64,7 +64,7 @@ Defaults to BM25 ranking.
 The LLM can override this per call.  ``None`` means no limit.
 
 
-### `GetSchemas` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/experimental/transforms/code_mode.py#L260" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `GetSchemas` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L260" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Discovery tool factory that returns schemas for tools by name.
@@ -78,7 +78,7 @@ types, and required markers.
 ``"full"`` returns the complete JSON schema.
 
 
-### `GetTags` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/experimental/transforms/code_mode.py#L321" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `GetTags` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L321" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Discovery tool factory that lists tool tags from the catalog.
@@ -93,7 +93,7 @@ without tags appear under ``"untagged"``.
 ``"full"`` lists all tools under each tag.
 
 
-### `ListTools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/experimental/transforms/code_mode.py#L388" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ListTools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L388" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Discovery tool factory that lists all tools in the catalog.
@@ -106,7 +106,7 @@ Discovery tool factory that lists all tools in the catalog.
 ``"full"`` returns the complete JSON schema.
 
 
-### `CodeMode` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/experimental/transforms/code_mode.py#L437" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CodeMode` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L437" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Transform that collapses all tools into discovery + execute meta-tools.
@@ -123,13 +123,13 @@ environment with ``call_tool(name, params)`` in scope.
 
 **Methods:**
 
-#### `transform_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/experimental/transforms/code_mode.py#L487" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `transform_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L487" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 transform_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]
 ```
 
-#### `get_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/src/fastmcp/experimental/transforms/code_mode.py#L490" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L490" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_tool(self, name: str, call_next: GetToolNext) -> Tool | None

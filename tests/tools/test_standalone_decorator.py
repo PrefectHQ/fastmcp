@@ -5,6 +5,8 @@ to a server. Functions can be added explicitly via server.add_tool() or
 discovered by FileSystemProvider.
 """
 
+import subprocess
+import sys
 from typing import cast
 
 import pytest
@@ -12,7 +14,29 @@ import pytest
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.tools import tool
-from fastmcp.tools.function_tool import DecoratedTool, ToolMeta
+from fastmcp.tools.base import Tool
+from fastmcp.tools.function_tool import DecoratedTool, FunctionTool, ToolMeta
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "from fastmcp.tools import tool",
+        "from fastmcp.resources import Resource, resource",
+        "from fastmcp.prompts import Prompt, prompt",
+        "import sys; import fastmcp.apps.config; assert 'fastmcp.tools.function_tool' not in sys.modules",
+        "from fastmcp.server.auth.authorization import AuthCheck",
+        "from fastmcp.server import Context, FastMCP, create_proxy",
+    ],
+)
+def test_component_import_works_in_fresh_interpreter(statement: str):
+    result = subprocess.run(
+        [sys.executable, "-c", statement],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 class TestToolDecorator:
@@ -88,6 +112,33 @@ class TestToolDecorator:
         assert decorated.__fastmcp__.description == "Greets people"
         assert decorated.__fastmcp__.tags == {"greeting", "demo"}
         assert decorated.__fastmcp__.meta == {"custom": "value"}
+
+    @pytest.mark.parametrize(
+        "factory", [Tool.from_function, FunctionTool.from_function]
+    )
+    def test_from_function_preserves_decorator_metadata(self, factory):
+        """Direct from_function calls should respect @tool metadata."""
+
+        @tool(
+            name="custom-greet",
+            version="v1",
+            title="Greeting Tool",
+            description="Greets people",
+            tags={"greeting", "demo"},
+            meta={"custom": "value"},
+        )
+        def greet(name: str) -> str:
+            """Fallback description."""
+            return f"Hello, {name}!"
+
+        created_tool = factory(greet)
+
+        assert created_tool.name == "custom-greet"
+        assert created_tool.version == "v1"
+        assert created_tool.title == "Greeting Tool"
+        assert created_tool.description == "Greets people"
+        assert created_tool.tags == {"greeting", "demo"}
+        assert created_tool.meta == {"custom": "value"}
 
     async def test_tool_function_still_callable(self):
         """Decorated function should still be directly callable."""

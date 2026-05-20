@@ -125,7 +125,7 @@ jobs:
 
             <evidence_standards>
             Every claim in your response must be grounded in evidence you can cite:
-            - **Code references**: Always include file path and line number (e.g., `src/fastmcp/client/client.py:142`). Never say "the client code does X" without pointing to where.
+            - **Code references**: Always include file path and line number (e.g., `fastmcp_slim/fastmcp/client/client.py:142`). Never say "the client code does X" without pointing to where.
             - **Bug confirmation**: If you say a bug is real, show the specific code path that produces it. If you ran a test, include the command and output.
             - **Related items**: When citing a related issue or PR, explain specifically why it's related — not just that it exists.
             - **Confidence**: If you're uncertain about a finding, say so. "I don't know" or "I couldn't confirm this" is better than a speculative diagnosis. Only report findings you would confidently defend.

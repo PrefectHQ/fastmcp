@@ -915,3 +915,69 @@ class TestProxyProviderCache:
             result = await proxy.call_tool("greet", {"name": "Alice"})
             mock_list.assert_not_called()
         assert result.content[0].text == "Hello, Alice!"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+
+
+class TestProxySpanAttributes:
+    """Regression tests for span attributes on un-renamed proxy components.
+
+    A proxy component's private ``_backend_*`` field is only populated when
+    the component is renamed via ``model_copy``. For un-renamed components it
+    stays ``None``, so ``get_span_attributes()`` would emit ``None`` for the
+    ``fastmcp.proxy.backend_*`` keys — which OpenTelemetry rejects with
+    ``Invalid type NoneType for attribute ... value`` and drops, producing
+    log spam on every proxied call.
+    """
+
+    async def test_proxy_tool_span_attributes_fall_back_to_name(self, proxy_server):
+        proxy_provider = next(
+            p for p in proxy_server.providers if isinstance(p, ProxyProvider)
+        )
+        tools = await proxy_provider._list_tools()
+        assert tools, "expected the fixture to expose at least one tool"
+        for tool in tools:
+            attrs = tool.get_span_attributes()
+            assert attrs["fastmcp.proxy.backend_name"] == tool.name
+            assert all(v is not None for v in attrs.values()), (
+                f"OpenTelemetry rejects None attribute values; got {attrs!r}"
+            )
+
+    async def test_proxy_resource_span_attributes_fall_back_to_uri(self, proxy_server):
+        proxy_provider = next(
+            p for p in proxy_server.providers if isinstance(p, ProxyProvider)
+        )
+        resources = await proxy_provider._list_resources()
+        assert resources, "expected the fixture to expose at least one resource"
+        for resource in resources:
+            attrs = resource.get_span_attributes()
+            assert attrs["fastmcp.proxy.backend_uri"] == str(resource.uri)
+            assert all(v is not None for v in attrs.values()), (
+                f"OpenTelemetry rejects None attribute values; got {attrs!r}"
+            )
+
+    async def test_proxy_template_span_attributes_fall_back_to_uri_template(
+        self, proxy_server
+    ):
+        proxy_provider = next(
+            p for p in proxy_server.providers if isinstance(p, ProxyProvider)
+        )
+        templates = await proxy_provider._list_resource_templates()
+        assert templates, "expected the fixture to expose at least one template"
+        for template in templates:
+            attrs = template.get_span_attributes()
+            assert attrs["fastmcp.proxy.backend_uri_template"] == template.uri_template
+            assert all(v is not None for v in attrs.values()), (
+                f"OpenTelemetry rejects None attribute values; got {attrs!r}"
+            )
+
+    async def test_proxy_prompt_span_attributes_fall_back_to_name(self, proxy_server):
+        proxy_provider = next(
+            p for p in proxy_server.providers if isinstance(p, ProxyProvider)
+        )
+        prompts = await proxy_provider._list_prompts()
+        assert prompts, "expected the fixture to expose at least one prompt"
+        for prompt in prompts:
+            attrs = prompt.get_span_attributes()
+            assert attrs["fastmcp.proxy.backend_name"] == prompt.name
+            assert all(v is not None for v in attrs.values()), (
+                f"OpenTelemetry rejects None attribute values; got {attrs!r}"
+            )

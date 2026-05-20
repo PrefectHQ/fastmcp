@@ -15,6 +15,7 @@ import pytest
 from mcp import ServerSession
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
+from mcp.types import CreateMessageResult, TextContent
 from pydantic import BaseModel
 
 from fastmcp import FastMCP
@@ -282,6 +283,35 @@ class TestBackgroundTaskIntegration:
             task = await client.call_tool("check_origin_request_id", {}, task=True)
             result = await task.result()
             assert result.data == "ok"
+
+    async def test_sample_uses_origin_request_id_in_background_task(self):
+        """E2E: ctx.sample() works in a task without an active request context."""
+        mcp = FastMCP("sample-background-test")
+        captured: dict[str, object] = {}
+
+        @mcp.tool(task=True)
+        async def ask_client(ctx: Context) -> str:
+            assert ctx.is_background_task is True
+            assert ctx.request_context is None
+            assert ctx.origin_request_id is not None
+            result = await ctx.sample("Say hello")
+            return result.text or ""
+
+        def sampling_handler(messages, params, ctx):
+            captured["called"] = True
+            return CreateMessageResult(
+                role="assistant",
+                content=TextContent(type="text", text="hello from background"),
+                model="test-model",
+                stopReason="endTurn",
+            )
+
+        async with Client(mcp, sampling_handler=sampling_handler) as client:
+            task = await client.call_tool("ask_client", {}, task=True)
+            result = await task.result()
+
+        assert result.data == "hello from background"
+        assert captured["called"] is True
 
     async def test_elicit_accept_flow(self):
         """E2E: tool elicits input, client accepts via elicitation_handler."""
