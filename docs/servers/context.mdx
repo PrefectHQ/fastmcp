@@ -238,12 +238,12 @@ async def get_counter(ctx: Context) -> int:
 Each client session has its own isolated state—two different clients calling `increment_counter` will each have their own counter.
 
 **Method signatures:**
-- **`await ctx.set_state(key, value, *, serializable=True)`**: Store a value in session state
+- **`await ctx.set_state(key, value, *, serializable=True, ttl=None)`**: Store a value in session state
 - **`await ctx.get_state(key)`**: Retrieve a value (returns None if not found)
 - **`await ctx.delete_state(key)`**: Remove a value from session state
 
 <Note>
-State methods are async and require `await`. State expires after 1 day to prevent unbounded memory growth.
+State methods are async and require `await`. State expires after 1 day by default to prevent unbounded memory growth.
 </Note>
 
 #### Non-Serializable Values
@@ -263,6 +263,22 @@ async def my_tool(ctx: Context) -> str:
 ```
 
 Values stored with `serializable=False` only live for the current MCP request (a single tool call, resource read, or prompt render). They will not be available in subsequent requests within the session.
+
+#### Per-Key TTL
+
+By default, all state expires after 1 day. Pass `ttl` (in seconds) to `set_state` to control expiration per key:
+
+```python
+@mcp.tool
+async def my_tool(ctx: Context) -> str:
+    # Cache for 5 minutes
+    await ctx.set_state("user_profile", profile, ttl=300)
+
+    # Use the default TTL (24 hours)
+    await ctx.set_state("firm_context", firm_data)
+
+    return "done"
+```
 
 #### Custom Storage Backends
 

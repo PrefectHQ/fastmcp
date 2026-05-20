@@ -1247,7 +1247,12 @@ class Context:
         return f"{self.session_id}:{key}"
 
     async def set_state(
-        self, key: str, value: Any, *, serializable: bool = True
+        self,
+        key: str,
+        value: Any,
+        *,
+        serializable: bool = True,
+        ttl: int | None = None,
     ) -> None:
         """Set a value in the state store.
 
@@ -1262,6 +1267,13 @@ class Context:
         requests.
 
         The key is automatically prefixed with the session identifier.
+
+        Args:
+            key: The state key.
+            value: The value to store.
+            serializable: If False, store in request-scoped memory only.
+            ttl: Per-key TTL in seconds. Defaults to ``_STATE_TTL_SECONDS``
+                (86400). Only applies to the session-scoped store.
         """
         prefixed_key = self._make_state_key(key)
         if not serializable:
@@ -1269,11 +1281,12 @@ class Context:
             return
         # Clear any request-scoped shadow so the session value is visible
         self._request_state.pop(prefixed_key, None)
+        effective_ttl = ttl if ttl is not None else self._STATE_TTL_SECONDS
         try:
             await self.fastmcp._state_store.put(
                 key=prefixed_key,
                 value=StateValue(value=value),
-                ttl=self._STATE_TTL_SECONDS,
+                ttl=effective_ttl,
             )
         except Exception as e:
             # Catch serialization errors from Pydantic (ValueError) or
