@@ -8,6 +8,7 @@ on:
     branches: ["main"]
     paths:
       - "fastmcp_slim/**"
+      - "fastmcp_remote/**"
       - "tests/**"
       - "pyproject.toml"
       - "uv.lock"

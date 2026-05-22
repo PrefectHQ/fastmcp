@@ -1,0 +1,62 @@
+[project]
+name = "fastmcp-remote"
+dynamic = ["version", "dependencies"]
+description = "A Python stdio bridge for remote MCP servers, powered by FastMCP."
+authors = [{ name = "Jeremiah Lowin" }]
+
+requires-python = ">=3.10"
+readme = "README.md"
+license = "Apache-2.0"
+
+keywords = [
+    "mcp",
+    "fastmcp remote",
+    "mcp remote",
+    "model context protocol",
+    "fastmcp",
+    "stdio",
+    "oauth",
+]
+classifiers = [
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://gofastmcp.com"
+Repository = "https://github.com/PrefectHQ/fastmcp"
+Documentation = "https://gofastmcp.com"
+"Original npm project" = "https://github.com/geelen/mcp-remote"
+
+[project.scripts]
+fastmcp-remote = "fastmcp_remote.cli:main"
+
+[build-system]
+requires = ["hatchling", "uv-dynamic-versioning>=0.7.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["fastmcp_remote"]
+
+[tool.uv-dynamic-versioning]
+vcs = "git"
+style = "pep440"
+bump = true
+fallback-version = "0.0.0"
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning]
+dependencies = [
+    "fastmcp-slim[client,server]=={{ version }}",
+]

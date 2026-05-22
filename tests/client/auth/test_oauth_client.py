@@ -176,6 +176,20 @@ class TestOAuthClientUrlHandling:
         # Token storage should key by the full URL, not just the host
         assert oauth.token_storage_adapter._server_url == mcp_url
 
+    def test_oauth_uses_configured_callback_host_port_and_timeout(self):
+        oauth = OAuth(
+            mcp_url="https://example.com/mcp",
+            callback_port=8765,
+            callback_host="127.0.0.1",
+            callback_timeout=12.5,
+        )
+
+        assert oauth.context.client_metadata.redirect_uris is not None
+        assert str(oauth.context.client_metadata.redirect_uris[0]) == (
+            "http://127.0.0.1:8765/callback"
+        )
+        assert oauth._callback_timeout == 12.5
+
 
 class TestOAuthGeneratorCleanup:
     """Tests for OAuth async generator cleanup (issue #2643).

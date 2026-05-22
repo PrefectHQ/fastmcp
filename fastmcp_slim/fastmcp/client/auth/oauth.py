@@ -179,6 +179,8 @@ class OAuth(OAuthClientProvider):
         token_storage: AsyncKeyValue | None = None,
         additional_client_metadata: dict[str, Any] | None = None,
         callback_port: int | None = None,
+        callback_host: str = "localhost",
+        callback_timeout: float = 300.0,
         httpx_client_factory: McpHttpClientFactory | None = None,
         # Alternative to dynamic client registration:
         # --- Clients host a static JSON document at an HTTPS URL ---
@@ -200,6 +202,8 @@ class OAuth(OAuthClientProvider):
             token_storage: An AsyncKeyValue-compatible token store, tokens are stored in memory if not provided
             additional_client_metadata: Extra fields for OAuthClientMetadata
             callback_port: Fixed port for OAuth callback (default: random available port)
+            callback_host: Hostname used for OAuth redirect URI and callback server.
+            callback_timeout: Seconds to wait for OAuth callback before timing out.
             client_metadata_url: A CIMD (Client ID Metadata Document) URL. When
                 provided, this URL is used as the client_id instead of performing
                 Dynamic Client Registration. Must be an HTTPS URL with a non-root
@@ -214,6 +218,8 @@ class OAuth(OAuthClientProvider):
         self._token_storage = token_storage
         self._additional_client_metadata = additional_client_metadata
         self._callback_port = callback_port
+        self._callback_host = callback_host
+        self._callback_timeout = callback_timeout
         self._client_metadata_url = client_metadata_url
         self._client_id = client_id
         self._client_secret = client_secret
@@ -236,7 +242,7 @@ class OAuth(OAuthClientProvider):
         mcp_url = mcp_url.rstrip("/")
 
         self.redirect_port = self._callback_port or find_available_port()
-        redirect_uri = f"http://localhost:{self.redirect_port}/callback"
+        redirect_uri = f"http://{self._callback_host}:{self.redirect_port}/callback"
 
         scopes_str: str
         if isinstance(self._scopes, list):
@@ -297,6 +303,7 @@ class OAuth(OAuthClientProvider):
             storage=self.token_storage_adapter,
             redirect_handler=self.redirect_handler,
             callback_handler=self.callback_handler,
+            timeout=self._callback_timeout,
             client_metadata_url=self._client_metadata_url,
         )
 
@@ -347,6 +354,7 @@ class OAuth(OAuthClientProvider):
         # Create server with result tracking
         server: Server = create_oauth_callback_server(
             port=self.redirect_port,
+            host=self._callback_host,
             server_url=self.mcp_url,
             result_container=result,
             result_ready=result_ready,
@@ -356,19 +364,18 @@ class OAuth(OAuthClientProvider):
         async with anyio.create_task_group() as tg:
             tg.start_soon(server.serve)
             logger.info(
-                f"🎧 OAuth callback server started on http://localhost:{self.redirect_port}"
+                f"🎧 OAuth callback server started on http://{self._callback_host}:{self.redirect_port}"
             )
 
-            TIMEOUT = 300.0  # 5 minute timeout
             try:
-                with anyio.fail_after(TIMEOUT):
+                with anyio.fail_after(self._callback_timeout):
                     await result_ready.wait()
                     if result.error:
                         raise result.error
                     return result.code, result.state  # type: ignore
             except TimeoutError as e:
                 raise TimeoutError(
-                    f"OAuth callback timed out after {TIMEOUT} seconds"
+                    f"OAuth callback timed out after {self._callback_timeout} seconds"
                 ) from e
             finally:
                 server.should_exit = True

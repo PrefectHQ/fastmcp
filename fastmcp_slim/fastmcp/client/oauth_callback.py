@@ -102,6 +102,7 @@ class OAuthCallbackResult:
 
 def create_oauth_callback_server(
     port: int,
+    host: str = "127.0.0.1",
     callback_path: str = "/callback",
     server_url: str | None = None,
     result_container: OAuthCallbackResult | None = None,
@@ -207,7 +208,7 @@ def create_oauth_callback_server(
     return Server(
         Config(
             app=app,
-            host="127.0.0.1",
+            host=host,
             port=port,
             lifespan="off",
             log_level="warning",

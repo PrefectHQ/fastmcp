@@ -1,0 +1,115 @@
+---
+title: fastmcp-remote
+description: Bridge remote MCP servers into stdio-only MCP hosts with uvx fastmcp-remote.
+icon: bridge
+---
+
+`fastmcp-remote` is FastMCP's standalone stdio bridge for remote MCP servers. Use it when an MCP host expects to launch a local command, but the server you want to use is hosted over Streamable HTTP or SSE.
+
+```json
+{
+  "mcpServers": {
+    "linear": {
+      "command": "uvx",
+      "args": ["fastmcp-remote", "https://mcp.linear.app/mcp"]
+    }
+  }
+}
+```
+
+The package is powered by FastMCP. It builds one FastMCP client for the remote URL, exposes that client as a local stdio proxy, and keeps the executable focused on that bridge. For running Python server files, local project environments, FastMCP config files, and development reload loops, use [`fastmcp run`](/cli/running).
+
+The command shape follows the original [`mcp-remote`](https://github.com/geelen/mcp-remote) npm project, which established this stdio-to-remote bridge pattern for MCP hosts.
+
+## Installation
+
+Most MCP hosts can run `fastmcp-remote` directly through `uvx`, so you usually do not need to install it yourself:
+
+```bash
+uvx fastmcp-remote https://example.com/mcp
+```
+
+If your host requires an already-installed command, install the package with your Python package manager:
+
+```bash
+uv tool install fastmcp-remote
+```
+
+## Host Configuration
+
+For hosts that use `mcpServers` JSON configuration, set the command to `uvx` and pass `fastmcp-remote` plus the remote server URL as arguments:
+
+```json
+{
+  "mcpServers": {
+    "remote-api": {
+      "command": "uvx",
+      "args": ["fastmcp-remote", "https://example.com/mcp"]
+    }
+  }
+}
+```
+
+OAuth is enabled automatically for HTTPS servers. The first connection opens the browser-based OAuth flow when the server requires authentication, then stores tokens locally for future runs.
+
+To pass a bearer token or another custom header directly, provide a header. An `Authorization` header disables OAuth by default:
+
+```json
+{
+  "mcpServers": {
+    "private-api": {
+      "command": "uvx",
+      "args": [
+        "fastmcp-remote",
+        "https://example.com/mcp",
+        "--header",
+        "Authorization: Bearer <token>"
+      ]
+    }
+  }
+}
+```
+
+For local development servers over plain HTTP, opt in to HTTP explicitly:
+
+```bash
+uvx fastmcp-remote http://localhost:8000/mcp --allow-http --auth none
+```
+
+## OAuth Storage
+
+OAuth tokens are stored under `~/.fastmcp/remote` by default. Set `FASTMCP_REMOTE_CONFIG_DIR` to use another directory:
+
+```bash
+FASTMCP_REMOTE_CONFIG_DIR=~/.config/fastmcp-remote uvx fastmcp-remote https://example.com/mcp
+```
+
+Use `--resource` to isolate tokens for a particular remote server identity:
+
+```bash
+uvx fastmcp-remote https://example.com/mcp --resource example-prod
+```
+
+If the remote authorization server requires a fixed callback port or hostname, pass them after the URL:
+
+```bash
+uvx fastmcp-remote https://example.com/mcp 3334 --host 127.0.0.1
+```
+
+## Options
+
+| Option | Description |
+| ------ | ----------- |
+| `--transport` | Choose `http-first`, `http-only`, `sse-first`, or `sse-only`. The `*-first` values select the corresponding transport without probing a second transport. |
+| `--header` | Add a header to upstream requests. Repeat for multiple headers. |
+| `--allow-http` | Permit plain HTTP URLs for trusted local or private networks. |
+| `--auth` | Choose `oauth` or `none`. The default uses OAuth unless an `Authorization` header is provided. |
+| `--resource` | Isolate OAuth token storage for a named remote resource. |
+| `--host` | Set the OAuth callback hostname. Defaults to `localhost`. |
+| `--auth-timeout` | Set how long to wait for the OAuth callback. Defaults to 300 seconds. |
+| `--enable-proxy` | Accepted for npm compatibility. HTTP proxy environment variables are honored by default. |
+| `--ignore-tool` | Hide tools whose names match a glob pattern. Repeat for multiple patterns. |
+| `--static-oauth-client-metadata` | Provide OAuth client metadata as JSON or `@/path/to/file.json`. |
+| `--static-oauth-client-info` | Provide OAuth client information as JSON or `@/path/to/file.json`. |
+| `--debug` | Enable debug logging. |
+| `--silent` | Suppress non-critical logs. |

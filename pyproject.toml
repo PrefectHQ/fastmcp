@@ -67,7 +67,7 @@ bump = true
 fallback-version = "0.0.0"
 
 [tool.uv.workspace]
-members = ["fastmcp_slim"]
+members = ["fastmcp_slim", "fastmcp_remote"]
 
 [tool.uv]
 default-groups = ["dev"]
@@ -77,6 +77,7 @@ dev = [
     "dirty-equals>=0.9.0",
     "fastmcp[anthropic,apps,azure,code-mode,gemini,openai,tasks]",
     "fastapi>=0.115.12",
+    "fastmcp-remote",
     "opentelemetry-sdk>=1.20.0",
     "inline-snapshot[dirty-equals]>=0.27.2",
     "ipython>=8.12.3",
@@ -105,6 +106,7 @@ dev = [
 [tool.uv.sources]
 fastmcp = { workspace = true }
 fastmcp-slim = { workspace = true }
+fastmcp-remote = { workspace = true }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -125,7 +127,7 @@ markers = [
     "client_process: marks tests that spawn client processes via stdio transport. These can create issues when run in the same CI environment as other subprocess-based tests.",
     "conformance: marks MCP conformance tests (require Node.js/npx)",
 ]
-pythonpath = ["fastmcp_slim"]
+pythonpath = ["fastmcp_slim", "fastmcp_remote"]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
@@ -133,7 +135,7 @@ python_functions = ["test_*"]
 addopts = ["--inline-snapshot=disable"]
 
 [tool.ty.src]
-include = ["fastmcp_slim", "tests"]
+include = ["fastmcp_slim", "fastmcp_remote", "tests"]
 exclude = ["**/node_modules", "**/__pycache__", ".venv", ".git", "dist"]
 
 [tool.ty.environment]
@@ -183,7 +185,7 @@ extend-select = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["fastmcp"]
+known-first-party = ["fastmcp", "fastmcp_remote"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401", "I001", "RUF013"]

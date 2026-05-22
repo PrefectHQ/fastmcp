@@ -138,3 +138,7 @@ Any server that appears here can be used by name with `list`, `call`, and other 
 For LLM agents that can execute shell commands but don't have native MCP support, the CLI provides a clean bridge. The agent calls `fastmcp list --json` to discover available tools with full schemas, then `fastmcp call --json` to invoke them with structured results.
 
 Because the CLI handles connection management, transport selection, and type coercion internally, the agent doesn't need to understand MCP protocol details — it just reads JSON and constructs shell commands.
+
+## Remote Stdio Bridges
+
+For MCP hosts that expect a local stdio command but need to connect to a remote HTTP server, use [`fastmcp-remote`](/clients/fastmcp-remote). It provides a small standalone bridge for host configuration, while `fastmcp list` and `fastmcp call` remain focused on direct inspection and invocation from the terminal.

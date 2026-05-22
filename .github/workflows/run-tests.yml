@@ -8,6 +8,7 @@ on:
     branches: ["main"]
     paths:
       - "fastmcp_slim/**"
+      - "fastmcp_remote/**"
       - "tests/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -243,4 +244,24 @@ jobs:
           assert FastMCP("smoke").name == "smoke"
           assert CallToolResult is not None
           assert ToolError is not None
+          PY
+
+      - name: Install fastmcp-remote from matching local wheels
+        run: |
+          uv venv /tmp/fastmcp-remote-smoke
+          REMOTE_WHEEL=$(ls /tmp/fastmcp-dist/fastmcp_remote-*.whl)
+          uv pip install --python /tmp/fastmcp-remote-smoke/bin/python --find-links /tmp/fastmcp-dist "$REMOTE_WHEEL"
+          /tmp/fastmcp-remote-smoke/bin/python - <<'PY'
+          from importlib.metadata import entry_points
+          from importlib.metadata import requires
+
+          from fastmcp_remote.cli import build_parser
+
+          remote_reqs = requires("fastmcp-remote") or []
+          assert any("fastmcp-slim[client,server]" in req for req in remote_reqs)
+          assert any(
+              ep.name == "fastmcp-remote" and ep.value == "fastmcp_remote.cli:main"
+              for ep in entry_points(group="console_scripts")
+          )
+          assert build_parser().prog == "fastmcp-remote"
           PY

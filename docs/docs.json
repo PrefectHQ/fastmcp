@@ -237,6 +237,7 @@
                   "clients/client",
                   "clients/client-only-package",
                   "clients/transports",
+                  "clients/fastmcp-remote",
                   {
                     "collapsed": true,
                     "group": "Operations",

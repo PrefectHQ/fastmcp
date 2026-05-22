@@ -42,3 +42,9 @@ async def test_oauth_callback_result_ignores_subsequent_callbacks():
         assert result.state == "s1"
 
         tg.cancel_scope.cancel()
+
+
+def test_oauth_callback_server_uses_configured_host():
+    server = create_oauth_callback_server(port=find_available_port(), host="localhost")
+
+    assert server.config.host == "localhost"

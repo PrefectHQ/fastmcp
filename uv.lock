@@ -12,6 +12,7 @@ resolution-markers = [
 [manifest]
 members = [
     "fastmcp",
+    "fastmcp-remote",
     "fastmcp-slim",
 ]
 
@@ -861,6 +862,7 @@ dev = [
     { name = "dirty-equals" },
     { name = "fastapi" },
     { name = "fastmcp", extra = ["anthropic", "apps", "azure", "code-mode", "gemini", "openai", "tasks"] },
+    { name = "fastmcp-remote" },
     { name = "inline-snapshot", extra = ["dirty-equals"] },
     { name = "ipython", version = "8.39.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "ipython", version = "9.10.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
@@ -906,6 +908,7 @@ dev = [
     { name = "dirty-equals", specifier = ">=0.9.0" },
     { name = "fastapi", specifier = ">=0.115.12" },
     { name = "fastmcp", extras = ["anthropic", "apps", "azure", "code-mode", "gemini", "openai", "tasks"], editable = "." },
+    { name = "fastmcp-remote", editable = "fastmcp_remote" },
     { name = "inline-snapshot", extras = ["dirty-equals"], specifier = ">=0.27.2" },
     { name = "ipython", specifier = ">=8.12.3" },
     { name = "loq", specifier = ">=0.1.0a3" },
@@ -930,6 +933,16 @@ dev = [
     { name = "ruff", specifier = ">=0.12.8" },
     { name = "ty", specifier = ">=0.0.29" },
 ]
+
+[[package]]
+name = "fastmcp-remote"
+source = { editable = "fastmcp_remote" }
+dependencies = [
+    { name = "fastmcp-slim", extra = ["client", "server"] },
+]
+
+[package.metadata]
+requires-dist = [{ name = "fastmcp-slim", extras = ["client", "server"], editable = "fastmcp_slim" }]
 
 [[package]]
 name = "fastmcp-slim"
