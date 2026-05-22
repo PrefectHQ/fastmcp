@@ -15,6 +15,7 @@ Examples:
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from copy import deepcopy
 from dataclasses import dataclass
 from functools import total_ordering
 from typing import TYPE_CHECKING, Any, TypeVar, cast
@@ -332,17 +333,8 @@ def dedupe_with_versions(
                 key=parse_version_key,
                 reverse=True,
             )
-            meta = highest.meta or {}
-            highest = highest.model_copy(
-                update={
-                    "meta": {
-                        **meta,
-                        "fastmcp": {
-                            **meta.get("fastmcp", {}),
-                            "versions": all_versions,
-                        },
-                    }
-                }
-            )
+            meta = deepcopy(highest.meta) if highest.meta else {}
+            meta["fastmcp"] = {**meta.get("fastmcp", {}), "versions": all_versions}
+            highest = highest.model_copy(update={"meta": meta})
         result.append(highest)
     return result

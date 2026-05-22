@@ -14,6 +14,7 @@ from fastmcp.utilities.versions import (
     VersionKey,
     VersionSpec,
     compare_versions,
+    dedupe_with_versions,
     is_version_greater,
     version_sort_key,
 )
@@ -89,6 +90,22 @@ class TestVersionFunctions:
 def _tool(version: str | None) -> Tool:
     """Build a real Tool component (a FastMCPComponent) with a version."""
     return Tool.from_function(lambda: None, name="t", version=version)
+
+
+class TestDedupeWithVersions:
+    """Tests for dedupe_with_versions meta handling."""
+
+    def test_injected_meta_does_not_share_nested_state(self):
+        """Injecting versions must not alias the source component's nested meta."""
+        low = Tool.from_function(lambda: None, name="t", version="1.0")
+        high = Tool.from_function(lambda: None, name="t", version="2.0")
+        high.meta = {"nested": {"items": [1, 2]}}
+
+        (result,) = dedupe_with_versions([low, high], key_fn=lambda c: c.name)
+        assert result.meta is not None
+        result.meta["nested"]["items"].append(3)
+
+        assert high.meta["nested"]["items"] == [1, 2]
 
 
 class TestVersionSpecEq:
