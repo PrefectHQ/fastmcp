@@ -56,13 +56,29 @@ gh pr view <pr> --repo PrefectHQ/fastmcp --json number,title,body,labels,files,a
 gh pr view <pr> --repo PrefectHQ/fastmcp --comments
 ```
 
-## Step 2 — Classify the issue (is it valid?)
+## Step 2 — Classify the issue (is it valid AND a real bug?)
 
 - Is there a real, reproducible problem? For bugs, demand an MRE that shows FastMCP misbehaving
   — not user config error, not a question, not an upstream-SDK issue.
 - Is it a duplicate or already fixed on `main`? Check the dedupe bot's comment and recent commits.
 - If the issue itself is weak, **stop here and decline** — don't evaluate the PR. A good PR
   attached to a bad issue is still declined.
+
+**A reproducible MRE is not the same as a bug.** This is the trap that produces wrong verdicts:
+an MRE can demonstrate real, observable behavior that is nonetheless *not a bug*, because it
+violates no contract the framework intends to hold. The decisive question is not "does this
+reproduce?" but "does the demonstrated behavior violate the intended contract for this API?" A
+shared-mutable-state MRE only matters if callers are *supposed* to mutate that state; an
+ordering/timing MRE only matters if the framework promises an order; a "wrong" value only matters
+relative to what the API guarantees. An MRE that has to reach past the supported surface to
+trigger the behavior (mutating a field meant to be set only at construction, depending on an
+internal that isn't part of the public contract) is showing you a property, not a defect.
+
+You usually cannot read the intended contract off the code — the code shows what it *does*, not
+what it *promises*. **The maintainer is often the only authoritative source for the contract, so
+stopping to ask is legitimate and expected here.** Ask "is X a supported pattern / does this API
+promise Y?" before sinking time into investigating a fix. If the behavior is in-contract correct,
+decline — no matter how cleanly the PR fixes it, and no matter how real the MRE looks.
 
 ## Step 3 — Investigate the PR (mandatory; do NOT skip if a PR exists)
 
