@@ -31,6 +31,9 @@ Homepage = "https://gofastmcp.com"
 Repository = "https://github.com/PrefectHQ/fastmcp"
 Documentation = "https://gofastmcp.com"
 
+[project.scripts]
+fastmcp = "fastmcp.cli:app"
+
 [build-system]
 requires = ["hatchling", "uv-dynamic-versioning>=0.7.0"]
 build-backend = "hatchling.build"

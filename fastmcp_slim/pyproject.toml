@@ -55,7 +55,12 @@ source = "uv-dynamic-versioning"
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["fastmcp"]
+bypass-selection = true
+only-include = []
+
+[tool.hatch.build.targets.wheel.force-include]
+fastmcp = "fastmcp_slim/fastmcp"
+"fastmcp_slim.pth" = "fastmcp_slim.pth"
 
 [tool.uv-dynamic-versioning]
 vcs = "git"
