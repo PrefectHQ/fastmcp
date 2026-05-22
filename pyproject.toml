@@ -141,6 +141,7 @@ exclude = ["**/node_modules", "**/__pycache__", ".venv", ".git", "dist"]
 
 [tool.ty.environment]
 python-version = "3.10"
+extra-paths = ["fastmcp_slim"]
 
 [tool.ty.rules]
 division-by-zero = "warn"
