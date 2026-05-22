@@ -9,6 +9,13 @@ resolution-markers = [
     "python_full_version < '3.11'",
 ]
 
+[options]
+exclude-newer = "2026-05-15T22:43:18.553853Z"
+exclude-newer-span = "P1W"
+
+[options.exclude-newer-package]
+prefab-ui = false
+
 [manifest]
 members = [
     "fastmcp",
