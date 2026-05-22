@@ -57,10 +57,16 @@ jobs:
     # then the script resolves the author's real permission and exits early
     # for maintainers.
     #
-    # Gate: skip drafts, bots, and already-bypassed/trusted PRs. Allow the
-    # primary actions plus the one maintainer-override action we care about
-    # (removing the missing-issue-link label).
+    # Gate: only run on pull_request_target events. The workflow also listens
+    # to `issues.assigned` (handled by reopen-on-assignment below), and without
+    # this guard the job would also fire there — `github.event.pull_request` is
+    # null on an issues event, so `...draft == false` coerces to true and the
+    # script then dereferences a missing PR and crashes. Beyond the event type,
+    # skip drafts, bots, and already-bypassed/trusted PRs, and allow the primary
+    # actions plus the one maintainer-override action we care about (removing
+    # the missing-issue-link label).
     if: >-
+      github.event_name == 'pull_request_target' &&
       github.event.pull_request.draft == false &&
       !endsWith(github.actor, '[bot]') &&
       !contains(github.event.pull_request.labels.*.name, 'trusted-contributor') &&
