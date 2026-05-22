@@ -47,8 +47,9 @@ gh pr list --repo PrefectHQ/fastmcp --state all --search "author:<login> #N in:b
   --json number,title,state,url,labels
 ```
 
-If a PR exists, read it and its review-bot comments (CodeRabbit, Codex) — they've already read
-the diff:
+If a PR exists, pull its metadata and any review-bot comments (CodeRabbit, Codex). Treat the bot
+comments as leads, not conclusions — they often don't run on closed PRs at all, and even when
+they do you still owe the PR your own read:
 
 ```bash
 gh pr view <pr> --repo PrefectHQ/fastmcp --json number,title,body,labels,files,additions,deletions
@@ -63,7 +64,38 @@ gh pr view <pr> --repo PrefectHQ/fastmcp --comments
 - If the issue itself is weak, **stop here and decline** — don't evaluate the PR. A good PR
   attached to a bad issue is still declined.
 
-## Step 3 — Decide if an external PR is appropriate (CONTRIBUTING.md)
+## Step 3 — Investigate the PR (mandatory; do NOT skip if a PR exists)
+
+The most common failure of this skill is judging a PR from the diff hunk and the PR description
+alone. That is a cursory review and it produces wrong verdicts — a redundant-looking conditional
+can be a real bug fix; a tidy-looking diff can patch the wrong layer. **You cannot assess a PR
+without reading the code it changes in context.** Reading `gh pr diff` is necessary but never
+sufficient.
+
+Do all of this before forming any opinion on quality:
+
+1. **Read the diff in full**, then **open every file it touches in the repo** (`Read`, not just
+   the patch). The hunk shows *what changed*; the file shows *what it changed into*.
+2. **Trace the functions and values the change depends on.** Grep for the called functions,
+   the fields being set, and the defaults. If the PR overrides or replaces a value, find what
+   produced the original value and what consumes it downstream.
+3. **Establish the actual root cause from the issue's MRE**, then check whether the change fixes
+   *that* — at the layer where the bug originates, not a compensating patch elsewhere.
+4. **Check consistency with adjacent code.** Does the new value/behavior match how nearby code
+   already handles the same case? An inconsistency is a real finding; a match is evidence the fix
+   is correct.
+5. **Run or read the tests** the PR adds/changes — do they actually exercise the bug, and would
+   they fail without the fix?
+
+Write down, for yourself, a one-line answer to: *what was broken, where, and does this change fix
+it there?* If you can't answer from evidence you've actually read, you haven't investigated yet.
+
+Then separate findings by severity: a **cosmetic** nit (style, a redundant-but-harmless line) is a
+review comment, not a blocker. A **substantive** defect (wrong layer, breaks an adjacent path,
+doesn't actually fix the MRE) changes the verdict. Don't let a cosmetic nit read as a reason to
+decline, and don't let a clean style read as evidence of correctness.
+
+## Step 4 — Decide if an external PR is appropriate (CONTRIBUTING.md)
 
 This is the gate CONTRIBUTING.md actually enforces. Map the change to a category:
 
@@ -77,19 +109,11 @@ This is the gate CONTRIBUTING.md actually enforces. Map the change to a category
   separate package.
 - **Sweeping / multi-subsystem change with no prior discussion** → decline.
 
-Independently judge the *quality signal*: does the PR fix the cause or paper over a symptom? Does
-it read like unedited LLM output (verbose body, speculative/shotgun changes)? CONTRIBUTING.md says
-we close those — a closed PR that reads that way is staying closed.
+Combine the category with the Step 3 investigation: does it fix the cause or paper over a symptom?
+Does it read like unedited LLM output (verbose body, speculative/shotgun changes)? CONTRIBUTING.md
+says we close those — a closed PR that reads that way is staying closed.
 
-**Before judging quality, read the surrounding code path — not just the diff hunk.** Open the
-files the PR touches and the functions it calls. What does the default/existing behavior do, does
-the change address the *documented* root cause, and is it consistent with adjacent code? A diff
-can look like a "smell" (e.g. a redundant-looking conditional) while actually fixing a real bug,
-and it can look clean while patching the wrong layer. You cannot tell from the hunk alone.
-Distinguish a *cosmetic* nit (worth a review comment, not a blocker) from a *substantive* defect
-(wrong layer, breaks an adjacent path) — only the latter changes the assign/decline call.
-
-## Step 4 — Recommend, then act
+## Step 5 — Recommend, then act
 
 Present a short verdict to the maintainer before mutating anything: **assign** or **decline**,
 one or two sentences of reasoning, and the exact command you'll run. Wait for confirmation on
