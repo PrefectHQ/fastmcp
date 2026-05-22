@@ -1,0 +1,128 @@
+---
+name: review-issue
+description: Review an incoming external issue (and any gated-closed PR behind it) and decide whether to assign the contributor or decline. Use when the maintainer says "look at this issue", "review issue #N", "should we take this", or asks whether to assign someone. Assigning the author auto-reopens their PR for normal review. This is the entry point for incoming-issue triage — distinct from review-pr, which responds to bot reviews on your own open PR.
+---
+
+# Triaging contributions under the issue-link gate
+
+FastMCP auto-closes external PRs unless the author is **assigned to a referenced issue**
+(see [require-issue-link.yml](../../../.github/workflows/require-issue-link.yml)). The practical
+effect: contributors open an issue, open a PR, get auto-closed, and ask to be assigned. The
+maintainer almost never sees the PR directly — **the issue is the decision point**, and
+**assigning the author is the single action that reopens their PR** and sends it into review.
+
+This skill turns "look at this issue" into one of two outcomes:
+- **Assign** — the issue is valid, we want it fixed, an external PR is appropriate, and a sound
+  PR already exists → assign the author (auto-reopens the PR) and queue it for code review.
+- **Decline** — leave the issue/PR closed and explain why on the issue.
+
+Be opinionated about declining. The gate moved spam from junk PRs to junk issues; this skill is
+worthless if it just rubber-stamps assignment. Assignment is a commitment to review and likely
+merge, not a courtesy.
+
+## How the gate works (the part that matters here)
+
+- External PR is closed unless its body has `Fixes/Closes/Resolves #N` **and** the author is
+  assigned to issue `#N`.
+- **Assigning the author to the issue auto-reopens their closed PR** and re-runs the check —
+  this is the lever you pull. `gh issue edit N --add-assignee <login>`. The assignment fires a
+  `require-issue-link` run; expect it to pass. If it fails, the gate itself misbehaved (not the
+  PR) — investigate the run, don't re-assign.
+- Maintainer-authored PRs are exempt. A `trusted-contributor` label exempts a contributor up
+  front. Reopening the PR or removing the `missing-issue-link` label applies a sticky
+  `bypass-issue-check`.
+- Sibling bots have usually already run on the issue: `martian-triage-issue` (investigates +
+  recommends), `marvin-dedupe-issues` / `auto-close-duplicates` (dupes), `auto-close-needs-mre`
+  (missing MRE). Read their comments before re-deriving anything.
+
+## Step 1 — Orient
+
+Read the issue, its bot triage, and any PR behind it. Run these together:
+
+```bash
+gh issue view N --repo PrefectHQ/fastmcp \
+  --json number,title,state,author,body,labels,assignees,comments
+# Find PRs the author opened that reference this issue (they're likely CLOSED):
+gh pr list --repo PrefectHQ/fastmcp --state all --search "author:<login> #N in:body" \
+  --json number,title,state,url,labels
+```
+
+If a PR exists, read it and its review-bot comments (CodeRabbit, Codex) — they've already read
+the diff:
+
+```bash
+gh pr view <pr> --repo PrefectHQ/fastmcp --json number,title,body,labels,files,additions,deletions
+gh pr view <pr> --repo PrefectHQ/fastmcp --comments
+```
+
+## Step 2 — Classify the issue (is it valid?)
+
+- Is there a real, reproducible problem? For bugs, demand an MRE that shows FastMCP misbehaving
+  — not user config error, not a question, not an upstream-SDK issue.
+- Is it a duplicate or already fixed on `main`? Check the dedupe bot's comment and recent commits.
+- If the issue itself is weak, **stop here and decline** — don't evaluate the PR. A good PR
+  attached to a bad issue is still declined.
+
+## Step 3 — Decide if an external PR is appropriate (CONTRIBUTING.md)
+
+This is the gate CONTRIBUTING.md actually enforces. Map the change to a category:
+
+- **Simple, well-scoped bug fix** → external PR welcome. Assignable.
+- **Docs / typo / example fix** → welcome. Assignable.
+- **Auth provider** → assignable (auth is the one integration exception).
+- **Enhancement / feature** → needs a maintainer-approved design proposal *in the issue first*.
+  Do **not** assign just because code exists. If the proposal is sound, the path is "approve the
+  approach in the issue, then assign" — not "assign because they were fast."
+- **Third-party integration** (middleware, provider adapters, non-auth) → decline; belongs in a
+  separate package.
+- **Sweeping / multi-subsystem change with no prior discussion** → decline.
+
+Independently judge the *quality signal*: does the PR fix the cause or paper over a symptom? Does
+it read like unedited LLM output (verbose body, speculative/shotgun changes)? CONTRIBUTING.md says
+we close those — a closed PR that reads that way is staying closed.
+
+**Before judging quality, read the surrounding code path — not just the diff hunk.** Open the
+files the PR touches and the functions it calls. What does the default/existing behavior do, does
+the change address the *documented* root cause, and is it consistent with adjacent code? A diff
+can look like a "smell" (e.g. a redundant-looking conditional) while actually fixing a real bug,
+and it can look clean while patching the wrong layer. You cannot tell from the hunk alone.
+Distinguish a *cosmetic* nit (worth a review comment, not a blocker) from a *substantive* defect
+(wrong layer, breaks an adjacent path) — only the latter changes the assign/decline call.
+
+## Step 4 — Recommend, then act
+
+Present a short verdict to the maintainer before mutating anything: **assign** or **decline**,
+one or two sentences of reasoning, and the exact command you'll run. Wait for confirmation on
+borderline calls; for clear-cut ones you may proceed and report.
+
+**Assign** (valid issue + appropriate external contribution + sound PR exists):
+
+```bash
+gh issue edit N --repo PrefectHQ/fastmcp --add-assignee <login>
+```
+
+That reopens the PR automatically. Then hand off to code review — invoke the `code-review` /
+`review-pr` skills on the reopened PR. Assignment is not approval; the code still gets the normal
+pass.
+
+If a PR's head branch was deleted, assignment can't reopen it — the workflow comments asking the
+author to open a fresh PR. Don't try to force it.
+
+**Decline** (invalid issue, wrong contribution type, or low-quality PR): leave it closed and
+comment on the **issue** explaining the decision, pointing to the relevant CONTRIBUTING.md
+section. Per repo rules, use `--body-file`, never inline `--body`, for any comment that could
+contain `$`, backticks, or code:
+
+```bash
+gh issue comment N --repo PrefectHQ/fastmcp --body-file /tmp/triage-reply.md
+```
+
+Keep the reply short and point to the relevant CONTRIBUTING.md section. (If a `github-reply`
+skill is available for maintainer voice/tone, use it — but it isn't required.)
+
+## What this skill does NOT do
+
+- It doesn't bypass the gate via `trusted-contributor` / `bypass-issue-check` — that's a
+  deliberate maintainer escalation, not a triage outcome.
+- It doesn't merge. Assignment → reopen → review → (maybe) merge are distinct steps.
+- It doesn't re-run the first-pass triage the bots already did; read their output instead.
