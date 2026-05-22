@@ -79,6 +79,8 @@ def test_fastmcp_metapackage_delegates_to_slim() -> None:
 def test_fastmcp_slim_installs_private_import_root() -> None:
     pyproject = (PROJECT_ROOT / "fastmcp_slim" / "pyproject.toml").read_text()
 
+    assert "[project.scripts]" not in pyproject
+    assert 'fastmcp = "fastmcp.cli:app"' not in pyproject
     assert "[tool.hatch.build.targets.wheel]" in pyproject
     assert "bypass-selection = true" in pyproject
     assert "only-include = []" in pyproject

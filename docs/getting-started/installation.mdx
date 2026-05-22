@@ -62,6 +62,23 @@ Alternatively, wait for the stable v5 release. See [this issue](https://github.c
 </Info>
 ## Upgrading
 
+### From FastMCP 3.3.0 or 3.3.1
+
+FastMCP 3.3.2 repairs a package split issue that could affect environments upgraded from FastMCP 3.2.x with pip. Upgrade to the latest release to restore both the `fastmcp` import package and the `fastmcp` CLI:
+
+```bash
+python -m pip install --upgrade fastmcp
+uv pip install --upgrade fastmcp
+uv sync --upgrade-package fastmcp
+```
+
+For an environment that still has missing package files after upgrading, reinstall the paired packages:
+
+```bash
+python -m pip install --upgrade --force-reinstall fastmcp fastmcp-slim
+uv pip install --upgrade --reinstall-package fastmcp --reinstall-package fastmcp-slim fastmcp
+```
+
 ### From FastMCP 2.0
 
 See the [Upgrade Guide](/getting-started/upgrading/from-fastmcp-2) for a complete list of breaking changes and migration steps.

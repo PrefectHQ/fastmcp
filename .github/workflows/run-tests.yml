@@ -145,7 +145,7 @@ jobs:
           import fastmcp
           import fastmcp.settings
 
-          assert any(ep.name == "fastmcp" for ep in entry_points(group="console_scripts"))
+          assert not any(ep.name == "fastmcp" for ep in entry_points(group="console_scripts"))
 
           try:
               from fastmcp.cli import app
@@ -174,7 +174,7 @@ jobs:
           from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
           from fastmcp.mcp_config import MCPConfig
 
-          assert any(ep.name == "fastmcp" for ep in entry_points(group="console_scripts"))
+          assert not any(ep.name == "fastmcp" for ep in entry_points(group="console_scripts"))
 
           try:
               from fastmcp.cli import app
@@ -207,10 +207,7 @@ jobs:
           from fastmcp import FastMCP
           from fastmcp.cli import app
 
-          assert any(
-              ep.name == "fastmcp" and ep.value == "fastmcp.cli:app"
-              for ep in entry_points(group="console_scripts")
-          )
+          assert not any(ep.name == "fastmcp" for ep in entry_points(group="console_scripts"))
 
           mcp = FastMCP("smoke")
           assert app is not None
@@ -235,7 +232,9 @@ jobs:
           assert not any("fastmcp-slim[full" in req for req in fastmcp_reqs)
 
           assert any(
-              ep.name == "fastmcp" and ep.value == "fastmcp.cli:app"
+              ep.name == "fastmcp"
+              and ep.value == "fastmcp.cli:app"
+              and ep.dist.name == "fastmcp"
               for ep in entry_points(group="console_scripts")
           )
 
