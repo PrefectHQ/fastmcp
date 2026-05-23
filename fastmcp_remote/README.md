@@ -25,7 +25,7 @@ Run a remote MCP server through a local stdio bridge:
 uvx fastmcp-remote https://example.com/mcp
 ```
 
-For authenticated MCP servers, OAuth is enabled automatically. To pass a bearer token or other custom header instead, provide a header. Quote the header when the value contains spaces, just like any other shell argument:
+For authenticated MCP servers, OAuth is enabled automatically. To pass a bearer token or other custom header instead, provide a header. The header name ends at the first colon, so values can contain additional colons. Quote the header when the value contains spaces, just like any other shell argument:
 
 ```bash
 uvx fastmcp-remote https://example.com/mcp \
@@ -38,7 +38,29 @@ Repeat `--header` to send multiple headers. Header values use `Name: Value` form
 uvx fastmcp-remote https://example.com/mcp \
   --header "Authorization: Bearer <token>" \
   --header "X-Workspace: production" \
-  --header "X-Client-Name: My MCP Host"
+  --header "X-Client-Name: My MCP Host" \
+  --header "X-Callback-Url: https://example.com/oauth/callback"
+```
+
+Some MCP hosts on Windows have trouble preserving spaces inside command arguments. Put the spaced value in an environment variable and reference it from the header value:
+
+```json
+{
+  "mcpServers": {
+    "remote-api": {
+      "command": "uvx",
+      "args": [
+        "fastmcp-remote",
+        "https://example.com/mcp",
+        "--header",
+        "Authorization:${AUTH_HEADER}"
+      ],
+      "env": {
+        "AUTH_HEADER": "Bearer <token>"
+      }
+    }
+  }
+}
 ```
 
 Use `--auth none` for unauthenticated development servers:
@@ -50,7 +72,7 @@ uvx fastmcp-remote http://localhost:8000/mcp --auth none
 ## Options
 
 - `--transport`: Choose `http` or `sse`. Defaults to `http`.
-- `--header`: Add a header to upstream requests, for example `--header "Authorization: Bearer <token>"`. Quote headers whose values contain spaces. Repeat for multiple headers.
+- `--header`: Add a header to upstream requests, for example `--header "Authorization: Bearer <token>"`. Values may contain colons. Quote headers whose values contain spaces. Use `${VAR}` to expand environment variables inside values. Repeat for multiple headers.
 - `--resource`: Isolate OAuth token storage for a named remote resource.
 - `--host`: Set the OAuth callback hostname. Defaults to `localhost`.
 - `--auth-timeout`: Set how long to wait for the OAuth callback. Defaults to 300 seconds.

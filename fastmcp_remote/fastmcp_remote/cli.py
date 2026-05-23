@@ -4,6 +4,7 @@ import argparse
 import fnmatch
 import hashlib
 import os
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +29,7 @@ from fastmcp.utilities.versions import VersionSpec
 
 RemoteTransport = Literal["http", "sse"]
 AuthMode = Literal["oauth", "none"]
+ENV_VAR_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
 @dataclass(frozen=True)
@@ -71,7 +73,15 @@ def parse_header(value: str) -> tuple[str, str]:
     name, separator, header_value = value.partition(":")
     if not separator or not name.strip():
         raise argparse.ArgumentTypeError("Headers must use the format 'Name: Value'.")
-    return name.strip(), header_value.strip()
+    try:
+        expanded_value = ENV_VAR_PATTERN.sub(
+            lambda match: os.environ[match.group(1)], header_value
+        )
+    except KeyError as exc:
+        raise argparse.ArgumentTypeError(
+            f"Environment variable {exc.args[0]} is not set."
+        ) from exc
+    return name.strip(), expanded_value.strip()
 
 
 def default_storage_dir(resource: str | None = None) -> Path:

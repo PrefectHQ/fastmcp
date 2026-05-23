@@ -27,6 +27,29 @@ def test_parse_header_preserves_spaces_inside_value():
     )
 
 
+def test_parse_header_preserves_colons_inside_value():
+    assert parse_header("X-Callback-Url: https://example.com/oauth/callback") == (
+        "X-Callback-Url",
+        "https://example.com/oauth/callback",
+    )
+
+
+def test_parse_header_expands_environment_variables_in_value(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("AUTH_HEADER", "Bearer token with spaces")
+
+    assert parse_header("Authorization:${AUTH_HEADER}") == (
+        "Authorization",
+        "Bearer token with spaces",
+    )
+
+
+def test_parse_header_rejects_missing_environment_variable():
+    with pytest.raises(SystemExit):
+        parse_args(["https://example.com/mcp", "--header", "Authorization:${MISSING}"])
+
+
 def test_parse_header_accepts_unspaced_value():
     assert parse_header("Authorization:Bearer token") == (
         "Authorization",
