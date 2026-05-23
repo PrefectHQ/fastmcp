@@ -9,7 +9,6 @@ import secrets
 import warnings
 from collections.abc import (
     AsyncIterator,
-    Awaitable,
     Callable,
     Sequence,
 )
@@ -65,7 +64,7 @@ from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth import AuthCheck, AuthContext, AuthProvider, run_auth_checks
 from fastmcp.server.lifespan import Lifespan
 from fastmcp.server.low_level import LowLevelServer
-from fastmcp.server.middleware import Middleware, MiddlewareContext
+from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.mixins import LifespanMixin, MCPOperationsMixin, TransportMixin
 from fastmcp.server.providers import LocalProvider, Provider
 from fastmcp.server.providers.aggregate import AggregateProvider
@@ -480,12 +479,21 @@ class FastMCP(
     async def _run_middleware(
         self,
         context: MiddlewareContext[Any],
-        call_next: Callable[[MiddlewareContext[Any]], Awaitable[Any]],
+        call_next: CallNext[Any, Any],
     ) -> Any:
         """Builds and executes the middleware chain."""
         chain = call_next
         for mw in reversed(self.middleware):
-            chain = partial(mw, call_next=chain)
+            next_chain: CallNext[Any, Any] = chain
+
+            async def wrapped(
+                ctx: MiddlewareContext[Any],
+                mw: Middleware = mw,
+                call_next: CallNext[Any, Any] = next_chain,
+            ) -> Any:
+                return await mw(ctx, call_next)
+
+            chain = cast(CallNext[Any, Any], wrapped)
         return await chain(context)
 
     def add_middleware(self, middleware: Middleware) -> None:

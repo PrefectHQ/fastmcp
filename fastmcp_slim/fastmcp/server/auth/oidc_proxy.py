@@ -10,7 +10,7 @@ This implementation is based on:
 """
 
 from collections.abc import Sequence
-from typing import Literal
+from typing import Any, Literal
 
 import httpx
 from key_value.aio.protocols import AsyncKeyValue
@@ -151,7 +151,7 @@ class OIDCConfiguration(BaseModel):
             strict: The strict flag for the configuration
             timeout_seconds: HTTP request timeout in seconds
         """
-        get_kwargs = {}
+        get_kwargs: dict[str, Any] = {}
         if timeout_seconds is not None:
             get_kwargs["timeout"] = timeout_seconds
 

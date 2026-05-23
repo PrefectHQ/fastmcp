@@ -323,7 +323,7 @@ class ResourceTemplate(FastMCPComponent):
             annotations=overrides.get("annotations", self.annotations),
             _meta=overrides.get(  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                 "_meta", self.get_meta()
-            ),  # ty:ignore[unknown-argument]
+            ),
         )
 
     @classmethod

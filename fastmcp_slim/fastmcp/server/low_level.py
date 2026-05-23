@@ -3,7 +3,7 @@ from __future__ import annotations
 import weakref
 from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import anyio
 import mcp.types
@@ -28,6 +28,7 @@ from fastmcp.apps.config import UI_EXTENSION_ID
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
+    from fastmcp.server.middleware import CallNext
     from fastmcp.server.server import FastMCP
 
 logger = get_logger(__name__)
@@ -131,7 +132,8 @@ class MiddlewareServerSession(ServerSession):
 
                 try:
                     return await self.fastmcp._run_middleware(
-                        mw_context, call_original_handler
+                        mw_context,
+                        cast("CallNext[Any, Any]", call_original_handler),
                     )
                 except McpError as e:
                     # McpError can be thrown from middleware in `on_initialize`
@@ -212,19 +214,22 @@ class LowLevelServer(_Server[LifespanResultT, RequestT]):
             experimental_capabilities or {},
         )
 
-        # Set tasks as a first-class field (not experimental) per SEP-1686
-        capabilities.tasks = get_task_capabilities()
-
         # Advertise MCP Apps extension support (io.modelcontextprotocol/ui)
-        # Uses the same extra-field pattern as tasks above — ServerCapabilities
+        # Uses the same extra-field pattern as tasks above - ServerCapabilities
         # has extra="allow" so this survives serialization.
         # Merge with any existing extensions to avoid clobbering other features.
-        existing_extensions: dict[str, Any] = (
-            getattr(capabilities, "extensions", None) or {}
+        existing_extensions_value = (capabilities.model_extra or {}).get("extensions")
+        existing_extensions = (
+            existing_extensions_value
+            if isinstance(existing_extensions_value, dict)
+            else {}
         )
-        capabilities.extensions = {**existing_extensions, UI_EXTENSION_ID: {}}
-
-        return capabilities
+        return capabilities.model_copy(
+            update={
+                "tasks": get_task_capabilities(),
+                "extensions": {**existing_extensions, UI_EXTENSION_ID: {}},
+            }
+        )
 
     async def run(
         self,

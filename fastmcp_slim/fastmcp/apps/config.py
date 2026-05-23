@@ -27,22 +27,26 @@ class ResourceCSP(BaseModel):
 
     connect_domains: list[str] | None = Field(
         default=None,
-        alias="connectDomains",
+        validation_alias="connectDomains",
+        serialization_alias="connectDomains",
         description="Origins allowed for fetch/XHR/WebSocket (connect-src)",
     )
     resource_domains: list[str] | None = Field(
         default=None,
-        alias="resourceDomains",
+        validation_alias="resourceDomains",
+        serialization_alias="resourceDomains",
         description="Origins allowed for scripts, images, styles, fonts (script-src etc.)",
     )
     frame_domains: list[str] | None = Field(
         default=None,
-        alias="frameDomains",
+        validation_alias="frameDomains",
+        serialization_alias="frameDomains",
         description="Origins allowed for nested iframes (frame-src)",
     )
     base_uri_domains: list[str] | None = Field(
         default=None,
-        alias="baseUriDomains",
+        validation_alias="baseUriDomains",
+        serialization_alias="baseUriDomains",
         description="Allowed base URIs for the document (base-uri)",
     )
 
@@ -69,7 +73,8 @@ class ResourcePermissions(BaseModel):
     )
     clipboard_write: dict[str, Any] | None = Field(
         default=None,
-        alias="clipboardWrite",
+        validation_alias="clipboardWrite",
+        serialization_alias="clipboardWrite",
         description="Request clipboard-write access",
     )
 
@@ -91,7 +96,8 @@ class AppConfig(BaseModel):
 
     resource_uri: str | None = Field(
         default=None,
-        alias="resourceUri",
+        validation_alias="resourceUri",
+        serialization_alias="resourceUri",
         description="URI of the UI resource (typically ui:// scheme). Tools only.",
     )
     visibility: list[Literal["app", "model"]] | None = Field(
@@ -107,7 +113,8 @@ class AppConfig(BaseModel):
     domain: str | None = Field(default=None, description="Domain for the iframe")
     prefers_border: bool | None = Field(
         default=None,
-        alias="prefersBorder",
+        validation_alias="prefersBorder",
+        serialization_alias="prefersBorder",
         description="Whether the UI prefers a visible border",
     )
 

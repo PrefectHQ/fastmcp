@@ -143,7 +143,7 @@ class ToolResult(BaseModel):
                 structuredContent=self.structured_content,
                 content=self.content,
                 isError=self.is_error,
-                _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field  # ty:ignore[unknown-argument]
+                _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
             )
         if self.structured_content is None:
             return self.content
@@ -215,7 +215,7 @@ class Tool(FastMCPComponent):
             execution=overrides.get("execution", self.execution),
             _meta=overrides.get(  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                 "_meta", self.get_meta()
-            ),  # ty:ignore[unknown-argument]
+            ),
         )
 
         if (
