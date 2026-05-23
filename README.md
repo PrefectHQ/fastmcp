@@ -104,6 +104,9 @@ For full installation instructions, including verification and upgrading, see th
 - [Upgrading from the MCP Python SDK](https://gofastmcp.com/getting-started/upgrading/from-mcp-sdk)
 - [Upgrading from the low-level SDK](https://gofastmcp.com/getting-started/upgrading/from-low-level-sdk)
 
+> [!NOTE]
+> If `import fastmcp` fails right after a `pip` upgrade from FastMCP 3.2 or earlier, run `pip install --force-reinstall fastmcp`. See the [FAQ](https://gofastmcp.com/more/faq) for why this happens (`uv` is unaffected).
+
 ## 📚 Documentation
 
 FastMCP's complete documentation is available at **[gofastmcp.com](https://gofastmcp.com)**, including detailed guides, API references, and advanced patterns.
