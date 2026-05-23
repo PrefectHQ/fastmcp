@@ -88,8 +88,7 @@
                 "pages": [
                   "getting-started/welcome",
                   "getting-started/installation",
-                  "getting-started/quickstart",
-                  "getting-started/faq"
+                  "getting-started/quickstart"
                 ]
               },
               {
@@ -378,7 +377,8 @@
                       "updates",
                       "changelog"
                     ]
-                  }
+                  },
+                  "more/faq"
                 ]
               }
             ],
