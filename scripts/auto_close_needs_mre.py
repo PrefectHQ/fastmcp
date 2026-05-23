@@ -19,6 +19,8 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
+MAINTAINER_AUTHOR_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
+
 
 @dataclass
 class Issue:
@@ -31,6 +33,7 @@ class Issue:
     user_id: int
     user_login: str
     body: str | None
+    author_association: str
 
 
 @dataclass
@@ -104,6 +107,7 @@ class GitHubClient:
                         user_id=item["user"]["id"],
                         user_login=item["user"]["login"],
                         body=item.get("body"),
+                        author_association=item.get("author_association", "NONE"),
                     )
                 )
 
@@ -307,6 +311,10 @@ def should_close_as_needs_mre(
     timeline: list[dict],
 ) -> bool:
     """Determine if an issue should be closed for needing an MRE."""
+    if issue.author_association in MAINTAINER_AUTHOR_ASSOCIATIONS:
+        print(f"Issue #{issue.number}: Skipping maintainer-authored issue")
+        return False
+
     # Check if label is old enough (7 days)
     seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
 
