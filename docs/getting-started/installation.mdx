@@ -62,18 +62,6 @@ Alternatively, wait for the stable v5 release. See [this issue](https://github.c
 </Info>
 ## Upgrading
 
-### From FastMCP 3.2 or earlier
-
-FastMCP 3.3 split the project into a metadata-only `fastmcp` distribution and a `fastmcp-slim` distribution that ships the importable code. When you upgrade directly from FastMCP 3.2 or earlier with `pip`, pip can write the new files and then delete them again while uninstalling the old `fastmcp` distribution, leaving `import fastmcp` broken even though the command reports success. `uv` upgrades in an order that avoids this.
-
-If `from fastmcp import FastMCP` fails after a `pip` upgrade, reinstall in a single step:
-
-```bash
-pip install --force-reinstall fastmcp
-```
-
-See the [FAQ](/more/faq) for the clean-reinstall fallback and an explanation of why this happens.
-
 ### From FastMCP 2.0
 
 See the [Upgrade Guide](/getting-started/upgrading/from-fastmcp-2) for a complete list of breaking changes and migration steps.
@@ -87,6 +75,27 @@ If you're using FastMCP 1.0 via the `mcp` package (meaning you import FastMCP as
 #### From the Low-Level Server API
 
 If you built your server directly on the `mcp` package's `Server` class — with `list_tools()`/`call_tool()` handlers and hand-written JSON Schema — see the [migration guide](/getting-started/upgrading/from-low-level-sdk) for a full walkthrough.
+
+## Troubleshooting
+
+### `import fastmcp` fails after a pip upgrade
+
+This affects one specific case: upgrading to FastMCP 3.3 or later from FastMCP 3.2 or earlier with `pip`. Fresh installs and `uv` upgrades are unaffected, so you can skip this unless you did exactly that.
+
+If `import fastmcp` raises `ModuleNotFoundError`, or `from fastmcp import FastMCP` raises `ImportError`, immediately after the upgrade, your install is in a half-removed state. Reinstall in a single step:
+
+```bash
+pip install --force-reinstall fastmcp
+```
+
+If that doesn't resolve it, remove both distributions and reinstall from a clean state:
+
+```bash
+pip uninstall -y fastmcp fastmcp-slim
+pip install fastmcp
+```
+
+FastMCP 3.3 moved the importable code from the `fastmcp` distribution into `fastmcp-slim`. During a single-command `pip` upgrade, pip can install the new files and then delete them while uninstalling the old `fastmcp` distribution, whose file manifest still lists those paths. `uv` uninstalls before it installs, so it is unaffected.
 
 ## Versioning Policy
 

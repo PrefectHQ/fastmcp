@@ -105,7 +105,7 @@ For full installation instructions, including verification and upgrading, see th
 - [Upgrading from the low-level SDK](https://gofastmcp.com/getting-started/upgrading/from-low-level-sdk)
 
 > [!NOTE]
-> If `import fastmcp` fails right after a `pip` upgrade from FastMCP 3.2 or earlier, run `pip install --force-reinstall fastmcp`. See the [FAQ](https://gofastmcp.com/more/faq) for why this happens (`uv` is unaffected).
+> If `import fastmcp` fails right after a `pip` upgrade from FastMCP 3.2 or earlier, run `pip install --force-reinstall fastmcp`. See [Troubleshooting](https://gofastmcp.com/getting-started/installation#troubleshooting) for why this happens (`uv` is unaffected).
 
 ## 📚 Documentation
 
