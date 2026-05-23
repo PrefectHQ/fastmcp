@@ -1,3 +1,4 @@
+import socket
 import time
 from unittest.mock import patch
 from urllib.parse import urlparse
@@ -7,6 +8,7 @@ import pytest
 from mcp.types import TextResourceContents
 
 import fastmcp.client.auth.oauth as oauth_module
+import fastmcp.utilities.http as http_module
 from fastmcp.client import Client
 from fastmcp.client.auth import OAuth
 from fastmcp.client.transports import StreamableHttpTransport
@@ -229,6 +231,47 @@ class TestOAuthClientUrlHandling:
         assert str(oauth.context.client_metadata.redirect_uris[0]) == (
             "http://[::1]:8765/callback"
         )
+
+    @pytest.mark.parametrize(
+        ("host", "expected_family"),
+        [
+            ("localhost", socket.AF_INET),
+            ("127.0.0.1", socket.AF_INET),
+            ("::1", socket.AF_INET6),
+        ],
+    )
+    def test_available_port_uses_uvicorn_host_family(
+        self,
+        host: str,
+        expected_family: socket.AddressFamily,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        seen: list[tuple[socket.AddressFamily, tuple[str, int]]] = []
+
+        class FakeSocket:
+            def __init__(
+                self,
+                family: socket.AddressFamily,
+                socket_type: socket.SocketKind,
+            ):
+                self.family = family
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args: object) -> None:
+                return None
+
+            def bind(self, address: tuple[str, int]) -> None:
+                seen.append((self.family, address))
+
+            def getsockname(self) -> tuple[str, int]:
+                return host, 8765
+
+        monkeypatch.setattr(http_module.socket, "socket", FakeSocket)
+
+        assert http_module.find_available_port(host=host) == 8765
+        assert seen == [(expected_family, (host, 0))]
 
 
 class TestOAuthGeneratorCleanup:
