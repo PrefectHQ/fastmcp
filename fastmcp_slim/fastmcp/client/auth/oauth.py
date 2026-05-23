@@ -253,7 +253,9 @@ class OAuth(OAuthClientProvider):
 
         mcp_url = mcp_url.rstrip("/")
 
-        self.redirect_port = self._callback_port or find_available_port()
+        self.redirect_port = self._callback_port or find_available_port(
+            host=self._callback_host
+        )
         redirect_host = _format_callback_host_for_url(self._callback_host)
         redirect_uri = f"http://{redirect_host}:{self.redirect_port}/callback"
 

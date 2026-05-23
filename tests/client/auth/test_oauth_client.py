@@ -6,6 +6,7 @@ import httpx
 import pytest
 from mcp.types import TextResourceContents
 
+import fastmcp.client.auth.oauth as oauth_module
 from fastmcp.client import Client
 from fastmcp.client.auth import OAuth
 from fastmcp.client.transports import StreamableHttpTransport
@@ -205,6 +206,29 @@ class TestOAuthClientUrlHandling:
             "http://[::1]:8765/callback"
         )
         assert oauth._callback_host == "::1"
+
+    def test_oauth_finds_available_port_on_callback_host(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        seen_hosts: list[str] = []
+
+        def find_available_port(host: str = "127.0.0.1") -> int:
+            seen_hosts.append(host)
+            return 8765
+
+        monkeypatch.setattr(oauth_module, "find_available_port", find_available_port)
+
+        oauth = OAuth(
+            mcp_url="https://example.com/mcp",
+            callback_host="[::1]",
+        )
+
+        assert seen_hosts == ["::1"]
+        assert oauth.redirect_port == 8765
+        assert oauth.context.client_metadata.redirect_uris is not None
+        assert str(oauth.context.client_metadata.redirect_uris[0]) == (
+            "http://[::1]:8765/callback"
+        )
 
 
 class TestOAuthGeneratorCleanup:
