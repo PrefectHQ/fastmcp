@@ -238,7 +238,6 @@ async def run(config: RemoteConfig) -> None:
         client,
         name="fastmcp-remote",
         provider_error_strategy="raise",
-        validate_on_initialize=True,
     )
     if config.ignore_tools:
         server.add_transform(IgnoreTools(config.ignore_tools))

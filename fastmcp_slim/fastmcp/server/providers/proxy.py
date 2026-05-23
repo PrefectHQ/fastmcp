@@ -14,8 +14,6 @@ from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import quote
 
-import anyio
-import httpx
 import mcp.types
 from mcp import ServerSession
 from mcp.client.session import ClientSession
@@ -44,7 +42,6 @@ from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.resources.base import ResourceContent, ResourceResult
 from fastmcp.server.context import Context
 from fastmcp.server.dependencies import get_context
-from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.providers.aggregate import ProviderErrorStrategy
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.server import FastMCP
@@ -63,46 +60,6 @@ logger = get_logger(__name__)
 
 # Type alias for client factory functions
 ClientFactoryT = Callable[[], Client] | Callable[[], Awaitable[Client]]
-
-
-def _proxy_upstream_error(error: Exception) -> McpError:
-    return McpError(
-        mcp.types.ErrorData(
-            code=mcp.types.INTERNAL_ERROR,
-            message=str(error),
-        )
-    )
-
-
-class ProxyInitializeMiddleware(Middleware):
-    def __init__(self, proxy: FastMCPProxy) -> None:
-        self.proxy = proxy
-
-    async def on_initialize(
-        self,
-        context: MiddlewareContext[mcp.types.InitializeRequest],
-        call_next: CallNext[
-            mcp.types.InitializeRequest,
-            mcp.types.InitializeResult | None,
-        ],
-    ) -> mcp.types.InitializeResult | None:
-        client = await self.proxy._get_client()
-        try:
-            async with client:
-                pass
-        except McpError:
-            raise
-        except (
-            RuntimeError,
-            TimeoutError,
-            httpx.HTTPError,
-            anyio.ClosedResourceError,
-            anyio.EndOfStream,
-            anyio.BrokenResourceError,
-        ) as error:
-            raise _proxy_upstream_error(error) from error
-
-        return await call_next(context)
 
 
 # -----------------------------------------------------------------------------
@@ -881,7 +838,6 @@ class FastMCPProxy(FastMCP):
         *,
         client_factory: ClientFactoryT,
         provider_error_strategy: ProviderErrorStrategy = "warn",
-        validate_on_initialize: bool = False,
         **kwargs,
     ):
         """Initialize the proxy server.
@@ -896,8 +852,6 @@ class FastMCPProxy(FastMCP):
             provider_error_strategy: How provider errors should affect aggregate
                 operations. Defaults to ``"warn"`` for compatibility; use
                 ``"raise"`` when the proxy should surface upstream failures.
-            validate_on_initialize: If true, connect to the upstream server during
-                the incoming MCP initialize request.
             **kwargs: Additional settings for the FastMCP server.
         """
         super().__init__(**kwargs)
@@ -905,8 +859,6 @@ class FastMCPProxy(FastMCP):
         self.client_factory = client_factory
         provider: Provider = ProxyProvider(client_factory)
         self.add_provider(provider)
-        if validate_on_initialize:
-            self.middleware.append(ProxyInitializeMiddleware(self))
         self._setup_proxy_ping_handler()
 
     async def _get_client(self) -> Client:
