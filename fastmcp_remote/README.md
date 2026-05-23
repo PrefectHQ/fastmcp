@@ -25,7 +25,7 @@ Run a remote MCP server through a local stdio bridge:
 uvx fastmcp-remote https://example.com/mcp
 ```
 
-For authenticated MCP servers, OAuth is enabled automatically. To pass a bearer token or other custom header instead, provide a header:
+For authenticated MCP servers, OAuth is enabled automatically. To pass a bearer token or other custom header instead, provide a header. Quote the header when the value contains spaces, just like any other shell argument:
 
 ```bash
 uvx fastmcp-remote https://example.com/mcp \
@@ -37,7 +37,8 @@ Repeat `--header` to send multiple headers. Header values use `Name: Value` form
 ```bash
 uvx fastmcp-remote https://example.com/mcp \
   --header "Authorization: Bearer <token>" \
-  --header "X-Workspace: production"
+  --header "X-Workspace: production" \
+  --header "X-Client-Name: My MCP Host"
 ```
 
 Use `--auth none` for unauthenticated development servers:
@@ -49,7 +50,7 @@ uvx fastmcp-remote http://localhost:8000/mcp --auth none
 ## Options
 
 - `--transport`: Choose `http` or `sse`. Defaults to `http`.
-- `--header`: Add a header to upstream requests in `Name: Value` form. Repeat for multiple headers.
+- `--header`: Add a header to upstream requests, for example `--header "Authorization: Bearer <token>"`. Quote headers whose values contain spaces. Repeat for multiple headers.
 - `--resource`: Isolate OAuth token storage for a named remote resource.
 - `--host`: Set the OAuth callback hostname. Defaults to `localhost`.
 - `--auth-timeout`: Set how long to wait for the OAuth callback. Defaults to 300 seconds.

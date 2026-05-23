@@ -52,7 +52,7 @@ For hosts that use `mcpServers` JSON configuration, set the command to `uvx` and
 
 OAuth is enabled automatically for HTTPS servers. The first connection opens the browser-based OAuth flow when the server requires authentication, then stores tokens locally for future runs.
 
-To pass a bearer token or another custom header directly, provide `--header` in `Name: Value` form. An `Authorization` header disables OAuth by default:
+To pass a bearer token or another custom header directly, provide `--header` in `Name: Value` form. Quote the header when the value contains spaces, just like any other shell argument. An `Authorization` header disables OAuth by default:
 
 ```json
 {
@@ -75,7 +75,8 @@ Repeat `--header` to send multiple headers:
 ```bash
 uvx fastmcp-remote https://example.com/mcp \
   --header "Authorization: Bearer <token>" \
-  --header "X-Workspace: production"
+  --header "X-Workspace: production" \
+  --header "X-Client-Name: My MCP Host"
 ```
 
 For local development servers over plain HTTP, disable OAuth when the server is unauthenticated:
@@ -109,7 +110,7 @@ uvx fastmcp-remote https://example.com/mcp 3334 --host 127.0.0.1
 | Option | Description |
 | ------ | ----------- |
 | `--transport` | Choose `http` or `sse`. Defaults to `http`. |
-| `--header` | Add a header to upstream requests in `Name: Value` form. Repeat for multiple headers. |
+| `--header` | Add a header to upstream requests, for example `--header "Authorization: Bearer <token>"`. Quote headers whose values contain spaces. Repeat for multiple headers. |
 | `--auth` | Choose `oauth` or `none`. The default uses OAuth unless an `Authorization` header is provided. |
 | `--resource` | Isolate OAuth token storage for a named remote resource. |
 | `--host` | Set the OAuth callback hostname. Defaults to `localhost`. |

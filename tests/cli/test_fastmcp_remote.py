@@ -20,6 +20,13 @@ def test_parse_header_accepts_spaced_value():
     )
 
 
+def test_parse_header_preserves_spaces_inside_value():
+    assert parse_header("X-Client-Name: My MCP Host") == (
+        "X-Client-Name",
+        "My MCP Host",
+    )
+
+
 def test_parse_header_accepts_unspaced_value():
     assert parse_header("Authorization:Bearer token") == (
         "Authorization",
