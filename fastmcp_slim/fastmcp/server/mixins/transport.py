@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import socket
 from collections.abc import Awaitable, Callable
 from functools import partial
 from typing import TYPE_CHECKING, Any, Literal
@@ -236,6 +237,7 @@ class TransportMixin:
         json_response: bool | None = None,
         stateless_http: bool | None = None,
         stateless: bool | None = None,
+        sockets: list[socket.socket] | None = None,
     ) -> None:
         """Run the server using HTTP transport.
 
@@ -250,6 +252,7 @@ class TransportMixin:
             json_response: Whether to use JSON response format (defaults to settings.json_response)
             stateless_http: Whether to use stateless HTTP (defaults to settings.stateless_http)
             stateless: Alias for stateless_http for CLI consistency
+            sockets: Pre-bound sockets to pass to Uvicorn
         """
         # Allow stateless as alias for stateless_http
         if stateless is not None and stateless_http is None:
@@ -302,7 +305,10 @@ class TransportMixin:
                     f"Starting MCP server {self.name!r} with transport {transport!r}{mode} on http://{host}:{port}/{path}"
                 )
 
-                await server.serve()
+                if sockets is not None:
+                    await server.serve(sockets=sockets)
+                else:
+                    await server.serve()
 
     def http_app(
         self: FastMCP,
