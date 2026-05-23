@@ -519,7 +519,7 @@ def tool(
             auth=auth,
             run_in_thread=run_in_thread,
         )
-        target = fn.__func__ if isinstance(fn, MethodType) else fn
+        target = fn.__func__ if isinstance(fn, staticmethod | MethodType) else fn
         cast(Any, target).__fastmcp__ = metadata
         return fn
 

@@ -15,7 +15,6 @@ exclude-newer-span = "P1W"
 
 [options.exclude-newer-package]
 prefab-ui = false
-ty = false
 
 [manifest]
 members = [

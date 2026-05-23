@@ -335,7 +335,7 @@ def resource(
             task=task,
             auth=auth,
         )
-        target = fn.__func__ if isinstance(fn, MethodType) else fn
+        target = fn.__func__ if isinstance(fn, staticmethod | MethodType) else fn
         cast(Any, target).__fastmcp__ = metadata
         return fn
 
