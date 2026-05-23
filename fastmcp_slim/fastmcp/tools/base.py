@@ -76,12 +76,19 @@ class ToolResult(BaseModel):
     meta: dict[str, Any] | None = Field(
         default=None, description="Runtime metadata about the tool execution"
     )
+    is_error: bool = Field(
+        default=False,
+        description="Whether this result represents a tool execution error. "
+        "When True, it maps to CallToolResult.isError so the error is returned "
+        "to the client rather than raised.",
+    )
 
     def __init__(
         self,
         content: list[ContentBlock] | Any | None = None,
         structured_content: dict[str, Any] | Any | None = None,
         meta: dict[str, Any] | None = None,
+        is_error: bool = False,
     ):
         if content is None and structured_content is None:
             raise ValueError("Either content or structured_content must be provided")
@@ -118,7 +125,10 @@ class ToolResult(BaseModel):
                 )
 
         super().__init__(
-            content=converted_content, structured_content=structured_content, meta=meta
+            content=converted_content,
+            structured_content=structured_content,
+            meta=meta,
+            is_error=is_error,
         )
 
     def to_mcp_result(
@@ -126,10 +136,13 @@ class ToolResult(BaseModel):
     ) -> (
         list[ContentBlock] | tuple[list[ContentBlock], dict[str, Any]] | CallToolResult
     ):
-        if self.meta is not None:
+        # An error result must round-trip through CallToolResult so isError
+        # reaches the client; the plain content/tuple returns can't carry it.
+        if self.meta is not None or self.is_error:
             return CallToolResult(
                 structuredContent=self.structured_content,
                 content=self.content,
+                isError=self.is_error,
                 _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field  # ty:ignore[unknown-argument]
             )
         if self.structured_content is None:

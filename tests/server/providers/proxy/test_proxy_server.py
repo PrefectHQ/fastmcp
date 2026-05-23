@@ -360,6 +360,28 @@ class TestTools:
                 async with Client(proxy_server) as client:
                     await client.call_tool("error_tool", {})
 
+    async def test_error_tool_passthrough_preserves_content(self, proxy_server):
+        """Upstream error results pass through with content intact, not flattened."""
+        error_result = mcp_types.CallToolResult(
+            content=[
+                mcp_types.ImageContent(
+                    type="image", data="abc123", mimeType="image/png"
+                )
+            ],
+            structuredContent={"detail": "boom"},
+            isError=True,
+        )
+        with patch.object(
+            Client, "call_tool_mcp", new_callable=AsyncMock, return_value=error_result
+        ):
+            async with Client(proxy_server) as client:
+                result = await client.call_tool("error_tool", {}, raise_on_error=False)
+
+        assert result.is_error is True
+        assert isinstance(result.content[0], mcp_types.ImageContent)
+        assert result.content[0].data == "abc123"
+        assert result.structured_content == {"detail": "boom"}
+
     async def test_call_tool_forwards_meta(self, fastmcp_server, proxy_server):
         """Test that metadata from proxied tool results is properly forwarded."""
 

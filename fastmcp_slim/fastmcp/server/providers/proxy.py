@@ -34,7 +34,7 @@ from fastmcp.client.logging import LogMessage
 from fastmcp.client.roots import RootsList
 from fastmcp.client.telemetry import client_span
 from fastmcp.client.transports import ClientTransportT
-from fastmcp.exceptions import ResourceError, ToolError
+from fastmcp.exceptions import ResourceError
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.prompts import Message, Prompt, PromptResult
 from fastmcp.prompts.base import PromptArgument
@@ -160,19 +160,16 @@ class ProxyTool(Tool):
                 result = await client.call_tool_mcp(
                     name=backend_name, arguments=arguments, meta=meta
                 )
-            if result.isError:
-                first = result.content[0] if result.content else None
-                if isinstance(first, mcp.types.TextContent):
-                    raise ToolError(first.text)
-                elif first is None:
-                    raise ToolError("Tool returned an error with no content")
-                else:
-                    raise ToolError(f"Tool returned an error ({type(first).__name__})")
+            # Pass an upstream error result through faithfully rather than
+            # collapsing it into a raised ToolError — this preserves the
+            # backend's content (including non-text and structured content),
+            # and the client still raises on isError by default.
             # Preserve backend's meta (includes task metadata for background tasks)
             return ToolResult(
                 content=result.content,
                 structured_content=result.structuredContent,
                 meta=result.meta,
+                is_error=result.isError,
             )
 
     def get_span_attributes(self) -> dict[str, Any]:

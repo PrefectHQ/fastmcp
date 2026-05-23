@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pytest
+from mcp.types import CallToolResult, TextContent
 
 from fastmcp.tools.base import Tool, ToolResult
 
@@ -68,6 +69,56 @@ class TestToolResultCasting:
         assert result.content[0].text == "test data"
         assert result.structured_content == {"data_type": "test"}
         assert result.meta == {"some": "metadata"}
+
+
+class TestToolResultIsError:
+    """A tool can return an error result (isError) instead of raising."""
+
+    def test_to_mcp_result_sets_iserror_and_preserves_content(self):
+        result = ToolResult(
+            content="boom", structured_content={"code": 42}, is_error=True
+        )
+        mcp_result = result.to_mcp_result()
+        assert isinstance(mcp_result, CallToolResult)
+        assert mcp_result.isError is True
+        assert isinstance(mcp_result.content[0], TextContent)
+        assert mcp_result.content[0].text == "boom"
+        assert mcp_result.structuredContent == {"code": 42}
+
+    def test_default_is_not_error(self):
+        result = ToolResult(content="ok")
+        assert result.is_error is False
+
+    async def test_returned_error_raises_on_client_by_default(self):
+        from fastmcp import FastMCP
+        from fastmcp.client import Client
+        from fastmcp.exceptions import ToolError
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def failing() -> ToolResult:
+            return ToolResult(content="upstream boom", is_error=True)
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool("failing", {})
+
+    async def test_returned_error_preserves_content_when_not_raising(self):
+        from fastmcp import FastMCP
+        from fastmcp.client import Client
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def failing() -> ToolResult:
+            return ToolResult(content="upstream boom", is_error=True)
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("failing", {}, raise_on_error=False)
+
+        assert result.is_error is True
+        assert result.content[0].text == "upstream boom"
 
 
 class TestUnionReturnTypes:
