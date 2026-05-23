@@ -85,3 +85,21 @@ jobs:
 
       - name: Publish fastmcp to PyPI
         run: uv publish -v dist/fastmcp-*.tar.gz dist/fastmcp-*.whl
+
+  update-published-docs:
+    name: Update published-docs branch
+    runs-on: ubuntu-latest
+    needs: pypi-publish
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.event == 'release'
+    timeout-minutes: 2
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Point published-docs at published release
+        run: git push --force origin "HEAD:published-docs"
