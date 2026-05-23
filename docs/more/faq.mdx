@@ -6,22 +6,7 @@ icon: circle-question
 
 ## `import fastmcp` stopped working after I upgraded with pip
 
-This affects one specific case: upgrading to FastMCP 3.3 or later from FastMCP 3.2 or earlier with `pip`. Fresh installs and `uv` upgrades are unaffected, so you can skip this section unless you did exactly that.
-
-If `import fastmcp` raises `ModuleNotFoundError` or `from fastmcp import FastMCP` raises `ImportError` immediately after the upgrade, your install is in a half-removed state. Reinstall in a single step:
-
-```bash
-pip install --force-reinstall fastmcp
-```
-
-If that doesn't resolve it, remove both distributions and reinstall from a clean state:
-
-```bash
-pip uninstall -y fastmcp fastmcp-slim
-pip install fastmcp
-```
-
-This happens because FastMCP 3.3 moved the importable code from the `fastmcp` distribution into `fastmcp-slim`. During a single-command `pip` upgrade, pip can install the new files and then delete them again while uninstalling the old `fastmcp` distribution, whose file manifest still lists those paths. The install reports success, but the code on disk is gone. `uv` uninstalls before it installs, so it is unaffected.
+This can happen when you upgrade to FastMCP 3.3 or later from FastMCP 3.2 or earlier with `pip`. The quick fix is `pip install --force-reinstall fastmcp`. See [Troubleshooting](/getting-started/installation#troubleshooting) for the clean-reinstall fallback and an explanation of why it happens.
 
 ## What's the difference between `fastmcp` and `fastmcp-slim`?
 
