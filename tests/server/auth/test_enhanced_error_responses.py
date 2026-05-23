@@ -248,7 +248,9 @@ class TestEnhancedRequireAuthMiddleware:
 
         with TestClient(app) as client:
             # Request WITH an invalid Authorization header
-            response = client.post("/mcp", headers={"Authorization": "Bearer invalid-token"})
+            response = client.post(
+                "/mcp", headers={"Authorization": "Bearer invalid-token"}
+            )
 
             assert response.status_code == 401
             assert "www-authenticate" in response.headers
@@ -273,7 +275,9 @@ class TestEnhancedRequireAuthMiddleware:
 
         with TestClient(app) as client:
             # Request WITH an invalid token
-            response = client.post("/mcp", headers={"Authorization": "Bearer invalid-token"})
+            response = client.post(
+                "/mcp", headers={"Authorization": "Bearer invalid-token"}
+            )
 
             assert response.status_code == 401
             www_auth = response.headers["www-authenticate"]
