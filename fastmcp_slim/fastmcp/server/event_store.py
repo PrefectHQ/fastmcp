@@ -121,7 +121,10 @@ class EventStore(SDKEventStore):
         # Trim to max events (delete old events)
         if len(event_ids) > self._max_events_per_stream:
             for old_id in event_ids[: -self._max_events_per_stream]:
-                await self._event_store.delete(key=old_id)
+                try:
+                    await self._event_store.delete(key=old_id)
+                except FileNotFoundError:
+                    logger.debug(f"Event {old_id} was already evicted")
             event_ids = event_ids[-self._max_events_per_stream :]
 
         await self._stream_store.put(
