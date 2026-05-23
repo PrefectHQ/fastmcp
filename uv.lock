@@ -1026,7 +1026,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'client'", specifier = ">=0.28.1,<1.0" },
     { name = "httpx", marker = "extra == 'mcp'", specifier = ">=0.28.1,<1.0" },
     { name = "httpx", marker = "extra == 'server'", specifier = ">=0.28.1,<1.0" },
-    { name = "joserfc", marker = "extra == 'server'", specifier = ">=1.0.0" },
+    { name = "joserfc", marker = "extra == 'server'", specifier = ">=1.1.0" },
     { name = "jsonref", marker = "extra == 'gemini'", specifier = ">=1.1.0" },
     { name = "jsonref", marker = "extra == 'server'", specifier = ">=1.1.0" },
     { name = "jsonschema-path", marker = "extra == 'server'", specifier = ">=0.3.4" },
