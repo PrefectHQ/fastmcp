@@ -82,6 +82,7 @@ class CachableToolResult(FastMCPBaseModel):
     content: list[mcp.types.ContentBlock]
     structured_content: dict[str, Any] | None
     meta: dict[str, Any] | None
+    is_error: bool = False
 
     @classmethod
     def wrap(cls, value: ToolResult) -> Self:
@@ -89,6 +90,7 @@ class CachableToolResult(FastMCPBaseModel):
             content=value.content,
             structured_content=value.structured_content,
             meta=value.meta,
+            is_error=value.is_error,
         )
 
     def unwrap(self) -> ToolResult:
@@ -96,6 +98,7 @@ class CachableToolResult(FastMCPBaseModel):
             content=self.content,
             structured_content=self.structured_content,
             meta=self.meta,
+            is_error=self.is_error,
         )
 
 

@@ -543,6 +543,13 @@ class TestCachableToolResult:
         assert cached_tool_result.structured_content == tool_result.structured_content
         assert cached_tool_result.meta == tool_result.meta
 
+    def test_wrap_and_unwrap_preserves_is_error(self):
+        tool_result = ToolResult("boom", is_error=True)
+
+        cached_tool_result = CachableToolResult.wrap(tool_result).unwrap()
+
+        assert cached_tool_result.is_error is True
+
 
 class TestCachingWithImportedServerPrefixes:
     """Test that caching preserves prefixes from imported servers.
