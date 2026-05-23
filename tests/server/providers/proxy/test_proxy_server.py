@@ -259,15 +259,28 @@ async def test_proxy_ping_surfaces_wrong_remote_path():
     async with run_server_async(remote, transport="http") as url:
         proxy = create_proxy(StreamableHttpTransport(url.removesuffix("/mcp")))
 
-        async with Client(proxy) as client:
-            with pytest.raises(McpError, match="Session terminated"):
-                await client.ping()
+        with pytest.raises(McpError, match="Session terminated"):
+            async with Client(proxy):
+                pass
 
 
-async def test_proxy_initialize_does_not_connect_to_remote():
+async def test_proxy_initialize_forwards_remote_connection_error():
     port = find_available_port()
     proxy = create_proxy(
         StreamableHttpTransport(f"http://127.0.0.1:{port}/mcp"),
+        provider_error_strategy="raise",
+    )
+
+    with pytest.raises(McpError, match="Client failed to connect"):
+        async with Client(proxy):
+            pass
+
+
+async def test_proxy_initialize_can_skip_forwarding():
+    port = find_available_port()
+    proxy = create_proxy(
+        StreamableHttpTransport(f"http://127.0.0.1:{port}/mcp"),
+        forward_initialize=False,
         provider_error_strategy="raise",
     )
 

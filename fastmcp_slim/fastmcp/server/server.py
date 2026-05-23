@@ -2473,6 +2473,7 @@ def create_proxy(
         _create_client_factory,
     )
 
+    settings.setdefault("forward_initialize", True)
     client_factory = _create_client_factory(target)
     return FastMCPProxy(
         client_factory=client_factory,
