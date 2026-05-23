@@ -3,12 +3,11 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import hashlib
-import json
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 from urllib.parse import urlparse
 
 import anyio
@@ -27,7 +26,6 @@ from fastmcp.server.transforms import GetToolNext, Transform
 from fastmcp.tools import Tool
 from fastmcp.utilities.versions import VersionSpec
 
-TransportStrategy = Literal["http-first", "http-only", "sse-first", "sse-only"]
 RemoteTransport = Literal["http", "sse"]
 AuthMode = Literal["oauth", "none"]
 
@@ -42,8 +40,6 @@ class RemoteConfig:
     callback_host: str
     callback_timeout: float
     storage_dir: Path
-    static_oauth_client_metadata: dict[str, Any] | None
-    static_oauth_client_info: dict[str, Any] | None
     ignore_tools: tuple[str, ...]
     show_banner: bool
     log_level: str | None
@@ -78,28 +74,6 @@ def parse_header(value: str) -> tuple[str, str]:
     return name.strip(), header_value.strip()
 
 
-def read_json_argument(value: str) -> dict[str, Any]:
-    if value.startswith("@"):
-        path = Path(value[1:]).expanduser()
-        try:
-            text = path.read_text()
-        except OSError as exc:
-            raise argparse.ArgumentTypeError(
-                f"Could not read JSON file {path}: {exc}"
-            ) from exc
-    else:
-        text = value
-
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise argparse.ArgumentTypeError(f"Invalid JSON: {exc}") from exc
-
-    if not isinstance(data, dict):
-        raise argparse.ArgumentTypeError("Expected a JSON object.")
-    return data
-
-
 def default_storage_dir(resource: str | None = None) -> Path:
     if config_dir := os.environ.get("FASTMCP_REMOTE_CONFIG_DIR"):
         base = Path(config_dir).expanduser()
@@ -109,12 +83,6 @@ def default_storage_dir(resource: str | None = None) -> Path:
         return base
     digest = hashlib.sha256(resource.encode()).hexdigest()[:16]
     return base / "resources" / digest
-
-
-def normalize_transport(strategy: TransportStrategy) -> RemoteTransport:
-    if strategy in {"sse-first", "sse-only"}:
-        return "sse"
-    return "http"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -131,9 +99,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--transport",
-        choices=["http-first", "http-only", "sse-first", "sse-only"],
-        default="http-first",
-        help="Remote transport compatibility mode. Defaults to http-first.",
+        choices=["http", "sse"],
+        default="http",
+        help="Remote transport. Defaults to http.",
     )
     parser.add_argument(
         "--header",
@@ -141,11 +109,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         type=parse_header,
         help="Header to send upstream, in 'Name: Value' form. Repeat for multiple headers.",
-    )
-    parser.add_argument(
-        "--allow-http",
-        action="store_true",
-        help="Allow plain HTTP URLs for trusted local or private networks.",
     )
     parser.add_argument(
         "--auth",
@@ -169,25 +132,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Seconds to wait for the OAuth callback. Defaults to 300.",
     )
     parser.add_argument(
-        "--enable-proxy",
-        action="store_true",
-        help="Accepted for npm compatibility. HTTP proxy environment variables are honored by default.",
-    )
-    parser.add_argument(
         "--ignore-tool",
         action="append",
         default=[],
         help="Hide tools matching this glob pattern. Repeat for multiple patterns.",
-    )
-    parser.add_argument(
-        "--static-oauth-client-metadata",
-        type=read_json_argument,
-        help="OAuth client metadata as JSON or @/path/to/file.json.",
-    )
-    parser.add_argument(
-        "--static-oauth-client-info",
-        type=read_json_argument,
-        help="OAuth client information as JSON or @/path/to/file.json.",
     )
     parser.add_argument(
         "--debug",
@@ -209,8 +157,6 @@ def parse_args(argv: Sequence[str] | None = None) -> RemoteConfig:
     parsed_url = urlparse(args.url)
     if parsed_url.scheme not in {"http", "https"}:
         parser.error("The remote MCP server URL must start with http:// or https://.")
-    if parsed_url.scheme == "http" and not args.allow_http:
-        parser.error("Plain HTTP URLs require --allow-http.")
 
     headers = dict(args.header)
     if args.silent and args.debug:
@@ -225,14 +171,12 @@ def parse_args(argv: Sequence[str] | None = None) -> RemoteConfig:
     return RemoteConfig(
         url=args.url,
         headers=headers,
-        transport=normalize_transport(args.transport),
+        transport=args.transport,
         auth=args.auth,
         callback_port=args.callback_port,
         callback_host=args.host,
         callback_timeout=args.auth_timeout,
         storage_dir=default_storage_dir(args.resource),
-        static_oauth_client_metadata=args.static_oauth_client_metadata,
-        static_oauth_client_info=args.static_oauth_client_info,
         ignore_tools=tuple(args.ignore_tool),
         show_banner=not args.silent,
         log_level=log_level,
@@ -263,30 +207,11 @@ def resolve_auth(config: RemoteConfig) -> OAuth | None:
     if auth_mode == "none":
         return None
 
-    client_metadata = dict(config.static_oauth_client_metadata or {})
-    client_id: str | None = None
-    client_secret: str | None = None
-
-    if config.static_oauth_client_info:
-        client_info = dict(config.static_oauth_client_info)
-        raw_client_id = client_info.pop("client_id", None)
-        raw_client_secret = client_info.pop("client_secret", None)
-        if not isinstance(raw_client_id, str):
-            raise ValueError("static OAuth client info must include string client_id.")
-        if raw_client_secret is not None and not isinstance(raw_client_secret, str):
-            raise ValueError("static OAuth client_secret must be a string.")
-        client_id = raw_client_id
-        client_secret = raw_client_secret
-        client_metadata.update(client_info)
-
     return OAuth(
         token_storage=build_token_storage(config.storage_dir),
-        additional_client_metadata=client_metadata or None,
         callback_port=config.callback_port,
         callback_host=config.callback_host,
         callback_timeout=config.callback_timeout,
-        client_id=client_id,
-        client_secret=client_secret,
     )
 
 

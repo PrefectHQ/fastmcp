@@ -32,24 +32,28 @@ uvx fastmcp-remote https://example.com/mcp \
   --header "Authorization: Bearer <token>"
 ```
 
+Repeat `--header` to send multiple headers. Header values use `Name: Value` format:
+
+```bash
+uvx fastmcp-remote https://example.com/mcp \
+  --header "Authorization: Bearer <token>" \
+  --header "X-Workspace: production"
+```
+
 Use `--auth none` for unauthenticated development servers:
 
 ```bash
-uvx fastmcp-remote http://localhost:8000/mcp --allow-http --auth none
+uvx fastmcp-remote http://localhost:8000/mcp --auth none
 ```
 
 ## Options
 
-- `--transport`: Choose `http-first`, `http-only`, `sse-first`, or `sse-only`. The `*-first` values select the corresponding transport without probing a second transport.
-- `--header`: Add a header to upstream requests. Repeat for multiple headers.
-- `--allow-http`: Permit plain HTTP URLs for trusted local or private networks.
+- `--transport`: Choose `http` or `sse`. Defaults to `http`.
+- `--header`: Add a header to upstream requests in `Name: Value` form. Repeat for multiple headers.
 - `--resource`: Isolate OAuth token storage for a named remote resource.
 - `--host`: Set the OAuth callback hostname. Defaults to `localhost`.
 - `--auth-timeout`: Set how long to wait for the OAuth callback. Defaults to 300 seconds.
-- `--enable-proxy`: Accepted for npm compatibility. HTTP proxy environment variables are honored by default.
 - `--ignore-tool`: Hide tools whose names match a glob pattern.
-- `--static-oauth-client-metadata`: Provide OAuth client metadata as JSON or `@/path/to/file.json`.
-- `--static-oauth-client-info`: Provide OAuth client information as JSON or `@/path/to/file.json`.
 - `--auth`: Choose `oauth` or `none`. The default uses OAuth unless an `Authorization` header is provided.
 
 OAuth tokens are stored under `~/.fastmcp/remote` by default. Set `FASTMCP_REMOTE_CONFIG_DIR` to use another directory.
