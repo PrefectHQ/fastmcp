@@ -1,0 +1,33 @@
+---
+title: FAQ
+description: Answers to common questions about installing and using FastMCP
+icon: circle-question
+---
+
+## `import fastmcp` stopped working after I upgraded with pip
+
+If `import fastmcp` raises `ModuleNotFoundError`, or `from fastmcp import FastMCP` raises `ImportError`, immediately after a `pip` upgrade, your install is in a half-removed state. Reinstall in a single step:
+
+```bash
+pip install --force-reinstall fastmcp
+```
+
+FastMCP 3.3 moved the importable code from the `fastmcp` distribution into `fastmcp-slim`. When pip upgrades from FastMCP 3.2 or earlier in a single command, it can install the new files and then delete them while uninstalling the old `fastmcp` distribution, whose file manifest still lists those paths. The install reports success, but the code on disk is gone. `uv` uninstalls before it installs, so it is unaffected.
+
+See [Troubleshooting](/getting-started/installation#troubleshooting) for the full recovery steps.
+
+## What's the difference between `fastmcp` and `fastmcp-slim`?
+
+`fastmcp` is the full distribution. Installing it gives you the complete framework — server, client, CLI, and the common integrations — and is the right choice for most users:
+
+```bash
+pip install fastmcp
+```
+
+`fastmcp-slim` ships the same importable `fastmcp` package with a minimal set of required dependencies. You opt into the pieces you need through extras, which keeps environments lean when you only use part of the framework:
+
+```bash
+pip install "fastmcp-slim[client]"
+```
+
+Both distributions expose the same `import fastmcp`, so application code is identical regardless of which one you install.

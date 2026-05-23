@@ -88,7 +88,8 @@
                 "pages": [
                   "getting-started/welcome",
                   "getting-started/installation",
-                  "getting-started/quickstart"
+                  "getting-started/quickstart",
+                  "getting-started/faq"
                 ]
               },
               {
