@@ -234,7 +234,12 @@ def build_transport(config: RemoteConfig) -> SSETransport | StreamableHttpTransp
 
 async def run(config: RemoteConfig) -> None:
     client = Client(build_transport(config))
-    server = create_proxy(client, name="fastmcp-remote")
+    server = create_proxy(
+        client,
+        name="fastmcp-remote",
+        provider_error_strategy="raise",
+        validate_on_initialize=True,
+    )
     if config.ignore_tools:
         server.add_transform(IgnoreTools(config.ignore_tools))
     await server.run_async(

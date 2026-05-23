@@ -45,6 +45,7 @@ from fastmcp.resources.base import ResourceContent, ResourceResult
 from fastmcp.server.context import Context
 from fastmcp.server.dependencies import get_context
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
+from fastmcp.server.providers.aggregate import ProviderErrorStrategy
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.server import FastMCP
 from fastmcp.server.tasks.config import TaskConfig
@@ -879,6 +880,8 @@ class FastMCPProxy(FastMCP):
         self,
         *,
         client_factory: ClientFactoryT,
+        provider_error_strategy: ProviderErrorStrategy = "warn",
+        validate_on_initialize: bool = False,
         **kwargs,
     ):
         """Initialize the proxy server.
@@ -890,14 +893,20 @@ class FastMCPProxy(FastMCP):
             client_factory: A callable that returns a Client instance when called.
                            This gives you full control over session creation and reuse.
                            Can be either a synchronous or asynchronous function.
+            provider_error_strategy: How provider errors should affect aggregate
+                operations. Defaults to ``"warn"`` for compatibility; use
+                ``"raise"`` when the proxy should surface upstream failures.
+            validate_on_initialize: If true, connect to the upstream server during
+                the incoming MCP initialize request.
             **kwargs: Additional settings for the FastMCP server.
         """
         super().__init__(**kwargs)
-        self.provider_error_strategy = "raise"
+        self.provider_error_strategy = provider_error_strategy
         self.client_factory = client_factory
         provider: Provider = ProxyProvider(client_factory)
         self.add_provider(provider)
-        self.middleware.append(ProxyInitializeMiddleware(self))
+        if validate_on_initialize:
+            self.middleware.append(ProxyInitializeMiddleware(self))
         self._setup_proxy_ping_handler()
 
     async def _get_client(self) -> Client:
