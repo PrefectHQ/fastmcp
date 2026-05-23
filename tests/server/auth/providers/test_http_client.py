@@ -8,6 +8,7 @@ import time
 
 import httpx
 import pytest
+from joserfc import jwk
 from pytest_httpx import HTTPXMock
 
 from fastmcp.server.auth.providers.introspection import IntrospectionTokenVerifier
@@ -151,10 +152,8 @@ class TestJWTVerifierHttpClient:
         httpx_mock: HTTPXMock,
     ):
         """When http_client is provided, JWKS fetches should use it."""
-        from authlib.jose import JsonWebKey
-
         # Build a JWKS response from the RSA key pair
-        public_key_obj = JsonWebKey.import_key(rsa_key_pair.public_key)
+        public_key_obj = jwk.import_key(rsa_key_pair.public_key, "RSA")
         jwk_dict = dict(public_key_obj.as_dict())
         jwk_dict["kid"] = "test-key-1"
         jwk_dict["use"] = "sig"

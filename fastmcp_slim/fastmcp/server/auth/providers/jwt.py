@@ -5,28 +5,14 @@ from __future__ import annotations
 import contextlib
 import json
 import time
-import warnings
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, TypeAlias, cast
 
 import httpx
-
-with warnings.catch_warnings():
-    # authlib.jose emits AuthlibDeprecationWarning on import; suppress it so
-    # importing this provider does not trigger the warning under
-    # `warnings.simplefilter("error")`. The `authlib.deprecate` import lives
-    # inside this block too: importing it for the first time runs
-    # `warnings.simplefilter("always", AuthlibDeprecationWarning)` at module
-    # scope, which would otherwise leak past `catch_warnings()` and clobber
-    # the caller's filter for subsequent Authlib deprecations. See
-    # jlowin/fastmcp#4098.
-    from authlib.deprecate import AuthlibDeprecationWarning
-
-    warnings.simplefilter("ignore", AuthlibDeprecationWarning)
-    from authlib.jose import JsonWebKey, JsonWebToken
-    from authlib.jose.errors import JoseError
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from joserfc import jwk, jwt
+from joserfc.errors import JoseError
 from pydantic import AnyHttpUrl, SecretStr
 from typing_extensions import TypedDict
 
@@ -36,6 +22,27 @@ from fastmcp.utilities.auth import decode_jwt_header, parse_scopes
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
+
+JWKKeyData: TypeAlias = dict[str, str | list[str]]
+
+
+def _import_key_for_algorithm(key: str | bytes | JWKKeyData, algorithm: str):
+    if algorithm.startswith("HS"):
+        return jwk.import_key(key, "oct")
+    if algorithm.startswith(("RS", "PS")):
+        return jwk.import_key(key, "RSA")
+    if algorithm.startswith("ES"):
+        return jwk.import_key(key, "EC")
+    raise ValueError(f"Unsupported algorithm: {algorithm}.")
+
+
+def _jwk_to_pem(key_data: JWKKeyData) -> str:
+    key_type = key_data.get("kty")
+    if key_type == "RSA":
+        return jwk.import_key(key_data, "RSA").as_pem().decode("utf-8")
+    if key_type == "EC":
+        return jwk.import_key(key_data, "EC").as_pem().decode("utf-8")
+    raise ValueError(f"Unsupported JWK key type: {key_type!r}")
 
 
 class JWKData(TypedDict, total=False):
@@ -145,12 +152,12 @@ class RSAKeyPair:
             payload.update(additional_claims)
 
         # Create JWT
-        jwt_lib = JsonWebToken(["RS256"])
-        token_bytes = jwt_lib.encode(
-            header, payload, self.private_key.get_secret_value()
+        signing_key = _import_key_for_algorithm(
+            self.private_key.get_secret_value(), "RS256"
         )
+        token = jwt.encode(header, payload, signing_key, algorithms=["RS256"])
 
-        return token_bytes.decode("utf-8")
+        return token
 
 
 def _looks_like_pem_public_key(key: str | bytes) -> bool:
@@ -282,7 +289,6 @@ class JWTVerifier(TokenVerifier):
         self.jwks_uri = jwks_uri
         self.ssrf_safe = ssrf_safe
         self._http_client = http_client
-        self.jwt = JsonWebToken([self.algorithm])
         self.logger = get_logger(__name__)
 
         # Simple JWKS cache
@@ -327,8 +333,7 @@ class JWTVerifier(TokenVerifier):
             self._jwks_cache = {}
             for key_data in jwks_data.get("keys", []):
                 key_kid = key_data.get("kid")
-                jwk = JsonWebKey.import_key(key_data)
-                public_key = jwk.get_public_key()
+                public_key = _jwk_to_pem(key_data)
 
                 if key_kid:
                     self._jwks_cache[key_kid] = public_key
@@ -364,7 +369,7 @@ class JWTVerifier(TokenVerifier):
             raise ValueError(f"Failed to fetch JWKS: {e}") from e
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JWKS JSON: {e}") from e
-        except (JoseError, TypeError, KeyError) as e:
+        except (JoseError, TypeError, KeyError, ValueError) as e:
             self.logger.debug("JWKS key processing failed: %s", e)
             raise ValueError(f"Failed to process JWKS: {e}") from e
 
@@ -423,7 +428,8 @@ class JWTVerifier(TokenVerifier):
             verification_key = await self._get_verification_key(token)
 
             # Decode and verify the JWT token
-            claims = self.jwt.decode(token, verification_key)
+            key = _import_key_for_algorithm(verification_key, self.algorithm)
+            claims = jwt.decode(token, key, algorithms=[self.algorithm]).claims
 
             # Extract client ID early for logging
             client_id = (

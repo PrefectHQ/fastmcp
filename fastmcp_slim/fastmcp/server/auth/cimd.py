@@ -16,6 +16,7 @@ This module provides:
 
 from __future__ import annotations
 
+import base64
 import json
 import time
 from collections.abc import Mapping
@@ -25,6 +26,8 @@ from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlparse
 
+from joserfc import jwk
+from joserfc.errors import JoseError
 from pydantic import AnyHttpUrl, BaseModel, Field, field_validator
 
 from fastmcp.server.auth.redirect_validation import matches_allowed_pattern
@@ -40,6 +43,15 @@ if TYPE_CHECKING:
     from fastmcp.server.auth.providers.jwt import JWTVerifier
 
 logger = get_logger(__name__)
+
+
+def _jwk_to_pem(key_data: dict[str, Any]) -> str:
+    key_type = key_data.get("kty")
+    if key_type == "RSA":
+        return jwk.import_key(key_data, "RSA").as_pem().decode("utf-8")
+    if key_type == "EC":
+        return jwk.import_key(key_data, "EC").as_pem().decode("utf-8")
+    raise ValueError(f"Unsupported JWK key type: {key_type!r}")
 
 
 class CIMDDocument(BaseModel):
@@ -629,18 +641,13 @@ class CIMDAssertionValidator:
         Raises:
             ValueError: If key cannot be found or extracted
         """
-        import base64
-        import json
-
-        from authlib.jose import JsonWebKey
-
         # Extract kid from token header
         try:
             header_b64 = token.split(".")[0]
             header_b64 += "=" * (4 - len(header_b64) % 4)  # Add padding
             header = json.loads(base64.urlsafe_b64decode(header_b64))
             kid = header.get("kid")
-        except Exception as e:
+        except (IndexError, ValueError, json.JSONDecodeError) as e:
             raise ValueError(f"Failed to extract key ID from token: {e}") from e
 
         # Find matching key in JWKS
@@ -666,9 +673,8 @@ class CIMDAssertionValidator:
 
         # Convert JWK to PEM
         try:
-            jwk = JsonWebKey.import_key(matching_key)
-            return jwk.as_pem().decode("utf-8")
-        except Exception as e:
+            return _jwk_to_pem(matching_key)
+        except (JoseError, TypeError, ValueError) as e:
             raise ValueError(f"Failed to convert JWK to PEM: {e}") from e
 
 

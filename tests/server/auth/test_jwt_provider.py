@@ -1,8 +1,11 @@
+import time
 from collections.abc import AsyncGenerator
 from typing import Any
 from unittest.mock import patch
 
 import pytest
+from joserfc import jwk as jose_jwk
+from joserfc import jwt
 from pytest_httpx import HTTPXMock
 
 from fastmcp import FastMCP
@@ -42,10 +45,6 @@ class SymmetricKeyHelper:
             additional_claims: Any additional claims to include
             algorithm: JWT signing algorithm (HS256, HS384, or HS512)
         """
-        import time
-
-        from authlib.jose import JsonWebToken
-
         # Create header
         header = {"alg": algorithm}
 
@@ -67,10 +66,10 @@ class SymmetricKeyHelper:
             payload.update(additional_claims)
 
         # Create JWT
-        jwt_lib = JsonWebToken([algorithm])
-        token_bytes = jwt_lib.encode(header, payload, self.secret)
+        signing_key = jose_jwk.import_key(self.secret, "oct")
+        token = jwt.encode(header, payload, signing_key, algorithms=[algorithm])
 
-        return token_bytes.decode("utf-8")
+        return token
 
 
 @pytest.fixture(scope="module")
@@ -433,13 +432,22 @@ class TestBearerTokenJWKS:
     @pytest.fixture
     def mock_jwks_data(self, rsa_key_pair: RSAKeyPair) -> JWKSData:
         """Create mock JWKS data from RSA key pair."""
-        from authlib.jose import JsonWebKey
-
         # Create JWK from the RSA public key
-        jwk = JsonWebKey.import_key(rsa_key_pair.public_key)
-        jwk_data: JWKData = jwk.as_dict()
-        jwk_data["kid"] = "test-key-1"
-        jwk_data["alg"] = "RS256"
+        public_key = jose_jwk.import_key(rsa_key_pair.public_key, "RSA")
+        public_key_data = public_key.as_dict()
+        kty = public_key_data["kty"]
+        n = public_key_data["n"]
+        e = public_key_data["e"]
+        assert isinstance(kty, str)
+        assert isinstance(n, str)
+        assert isinstance(e, str)
+        jwk_data = JWKData(
+            kty=kty,
+            n=n,
+            e=e,
+            kid="test-key-1",
+            alg="RS256",
+        )
 
         return {"keys": [jwk_data]}
 

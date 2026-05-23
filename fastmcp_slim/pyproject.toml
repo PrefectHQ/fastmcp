@@ -89,6 +89,7 @@ server = [
     "griffelib>=2.0.0",
     "jsonref>=1.1.0",
     "jsonschema-path>=0.3.4",
+    "joserfc>=1.0.0",
     "openapi-pydantic>=0.5.1",
     "packaging>=24.0",
     "py-key-value-aio[filetree,keyring,memory]>=0.4.4,<0.5.0",

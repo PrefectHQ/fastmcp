@@ -4,7 +4,7 @@ import base64
 import time
 
 import pytest
-from authlib.jose.errors import JoseError
+from joserfc.errors import JoseError
 
 from fastmcp.server.auth.jwt_issuer import (
     JWTIssuer,
