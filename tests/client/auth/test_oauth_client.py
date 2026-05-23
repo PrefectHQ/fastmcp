@@ -190,6 +190,22 @@ class TestOAuthClientUrlHandling:
         )
         assert oauth._callback_timeout == 12.5
 
+    @pytest.mark.parametrize("callback_host", ["::1", "[::1]"])
+    def test_oauth_brackets_ipv6_callback_host_in_redirect_uri(
+        self, callback_host: str
+    ):
+        oauth = OAuth(
+            mcp_url="https://example.com/mcp",
+            callback_port=8765,
+            callback_host=callback_host,
+        )
+
+        assert oauth.context.client_metadata.redirect_uris is not None
+        assert str(oauth.context.client_metadata.redirect_uris[0]) == (
+            "http://[::1]:8765/callback"
+        )
+        assert oauth._callback_host == "::1"
+
 
 class TestOAuthGeneratorCleanup:
     """Tests for OAuth async generator cleanup (issue #2643).

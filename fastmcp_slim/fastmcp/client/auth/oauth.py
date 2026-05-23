@@ -34,6 +34,18 @@ __all__ = ["OAuth"]
 logger = get_logger(__name__)
 
 
+def _normalize_callback_host_for_bind(host: str) -> str:
+    if host.startswith("[") and host.endswith("]"):
+        return host[1:-1]
+    return host
+
+
+def _format_callback_host_for_url(host: str) -> str:
+    if ":" in host:
+        return f"[{host}]"
+    return host
+
+
 class ClientNotFoundError(Exception):
     """Raised when OAuth client credentials are not found on the server."""
 
@@ -218,7 +230,7 @@ class OAuth(OAuthClientProvider):
         self._token_storage = token_storage
         self._additional_client_metadata = additional_client_metadata
         self._callback_port = callback_port
-        self._callback_host = callback_host
+        self._callback_host = _normalize_callback_host_for_bind(callback_host)
         self._callback_timeout = callback_timeout
         self._client_metadata_url = client_metadata_url
         self._client_id = client_id
@@ -242,7 +254,8 @@ class OAuth(OAuthClientProvider):
         mcp_url = mcp_url.rstrip("/")
 
         self.redirect_port = self._callback_port or find_available_port()
-        redirect_uri = f"http://{self._callback_host}:{self.redirect_port}/callback"
+        redirect_host = _format_callback_host_for_url(self._callback_host)
+        redirect_uri = f"http://{redirect_host}:{self.redirect_port}/callback"
 
         scopes_str: str
         if isinstance(self._scopes, list):
