@@ -15,6 +15,9 @@ jobs:
     name: Upload fastmcp to PyPI
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'release')
+    outputs:
+      is_prerelease: ${{ steps.package_version.outputs.is_prerelease }}
+      version: ${{ steps.package_version.outputs.version }}
 
     steps:
       - name: Checkout
@@ -28,6 +31,35 @@ jobs:
 
       - name: Build fastmcp
         run: uv build --package fastmcp
+
+      - name: Read built package version
+        id: package_version
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import email.parser
+          import re
+          import zipfile
+          from pathlib import Path
+
+          wheel = next(Path("dist").glob("fastmcp-*.whl"))
+          metadata_name = next(
+              name for name in zipfile.ZipFile(wheel).namelist()
+              if name.endswith(".dist-info/METADATA")
+          )
+          metadata = email.parser.Parser().parsestr(
+              zipfile.ZipFile(wheel).read(metadata_name).decode()
+          )
+          version = metadata["Version"]
+          public_version = version.partition("+")[0]
+          is_prerelease = bool(
+              re.search(
+                  r"(?i)(?:^|[0-9.])(?:a|b|c|rc|alpha|beta|pre|preview|dev)[0-9]*",
+                  public_version,
+              )
+          )
+          print(f"version={version}")
+          print(f"is_prerelease={str(is_prerelease).lower()}")
+          PY
 
       - name: Verify matching fastmcp-slim is published
         run: |
@@ -90,7 +122,7 @@ jobs:
     name: Update published-docs branch
     runs-on: ubuntu-latest
     needs: pypi-publish
-    if: github.event_name == 'workflow_run' && github.event.workflow_run.event == 'release'
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.event == 'release' && needs['pypi-publish'].outputs.is_prerelease != 'true'
     timeout-minutes: 2
     permissions:
       contents: write
