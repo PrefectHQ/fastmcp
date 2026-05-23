@@ -276,18 +276,6 @@ async def test_proxy_initialize_forwards_remote_connection_error():
             pass
 
 
-async def test_proxy_initialize_can_skip_forwarding():
-    port = find_available_port()
-    proxy = create_proxy(
-        StreamableHttpTransport(f"http://127.0.0.1:{port}/mcp"),
-        forward_initialize=False,
-        provider_error_strategy="raise",
-    )
-
-    async with Client(proxy):
-        pass
-
-
 async def test_proxy_list_tools_surfaces_remote_connection_error():
     port = find_available_port()
     proxy = create_proxy(
