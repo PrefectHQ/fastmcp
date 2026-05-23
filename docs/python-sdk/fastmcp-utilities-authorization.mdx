@@ -1,0 +1,70 @@
+---
+title: authorization
+sidebarTitle: authorization
+---
+
+# `fastmcp.utilities.authorization`
+
+
+Authorization checks for FastMCP components.
+
+Auth checks are callables that receive an ``AuthContext`` and return True to
+allow access or False to deny it. They can also raise ``AuthorizationError`` to
+deny with a custom message; other exceptions are masked and treated as denial.
+
+
+## Functions
+
+### `require_scopes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/authorization.py#L50" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+require_scopes(*scopes: str) -> AuthCheck
+```
+
+
+Require all of the given OAuth scopes.
+
+
+### `restrict_tag` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/authorization.py#L62" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+restrict_tag(tag: str) -> AuthCheck
+```
+
+
+Require scopes when the accessed component has a specific tag.
+
+
+### `run_auth_checks` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/authorization.py#L76" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+run_auth_checks(checks: AuthCheck | list[AuthCheck], ctx: AuthContext) -> bool
+```
+
+
+Run auth checks with AND logic.
+
+
+## Classes
+
+### `AuthContext` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/authorization.py#L27" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Context passed to auth check callables.
+
+**Attributes:**
+- `token`: The current access token, or None if unauthenticated.
+- `component`: The tool, resource, resource template, or prompt being accessed.
+- `tool`: Backwards-compatible alias for component when it is a Tool.
+
+
+**Methods:**
+
+#### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/authorization.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+tool(self) -> Tool | None
+```
+
+Backwards-compatible access to the component as a Tool.
+
