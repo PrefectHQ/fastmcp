@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import base64
+import json
 from pathlib import Path
+from typing import cast
 
 import pytest
+from mcp.types import BlobResourceContents, TextResourceContents
+from pydantic import AnyUrl
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.providers.skills import SkillsDirectoryProvider
@@ -17,6 +22,30 @@ from fastmcp.utilities.skills import (
     list_skills,
     sync_skills,
 )
+
+
+class FakeResourceReader:
+    def __init__(
+        self,
+        responses: dict[str, list[TextResourceContents | BlobResourceContents]],
+    ) -> None:
+        self.responses = responses
+        self.requested_uris: list[str] = []
+
+    async def read_resource(self, uri: str):
+        self.requested_uris.append(uri)
+        return self.responses.get(uri, [])
+
+
+def text_resource(uri: str, text: str) -> TextResourceContents:
+    return TextResourceContents(uri=AnyUrl(uri), text=text)
+
+
+def blob_resource(uri: str, data: bytes) -> BlobResourceContents:
+    return BlobResourceContents(
+        uri=AnyUrl(uri),
+        blob=base64.b64encode(data).decode(),
+    )
 
 
 @pytest.fixture
@@ -107,6 +136,36 @@ class TestListSkills:
 
         assert skills == []
 
+    async def test_filters_non_skill_resources(self):
+        mcp = FastMCP("Mixed Resources")
+
+        @mcp.resource("skill://team/pdf/SKILL.md")
+        def skill_document():
+            return "# Team PDF"
+
+        @mcp.resource("skill://team/pdf/reference.md")
+        def skill_reference():
+            return "# Reference"
+
+        @mcp.resource("file:///tmp/SKILL.md")
+        def non_skill_document():
+            return "# File"
+
+        @mcp.resource("skill://broken/SKILL.txt")
+        def wrong_suffix():
+            return "# Wrong suffix"
+
+        async with Client(mcp) as client:
+            skills = await list_skills(client)
+
+        assert skills == [
+            SkillSummary(
+                name="team/pdf",
+                description="",
+                uri="skill://team/pdf/SKILL.md",
+            )
+        ]
+
 
 class TestGetSkillManifest:
     async def test_returns_manifest_with_files(self, skills_server: FastMCP):
@@ -140,6 +199,34 @@ class TestGetSkillManifest:
         async with Client(skills_server) as client:
             with pytest.raises(Exception):
                 await get_skill_manifest(client, "nonexistent")
+
+    @pytest.mark.parametrize(
+        ("response", "match"),
+        [
+            ([], "Could not read manifest"),
+            (
+                [text_resource("skill://broken/_manifest", "not json")],
+                "Invalid manifest JSON",
+            ),
+            (
+                [blob_resource("skill://broken/_manifest", b"{}")],
+                "Unexpected manifest format",
+            ),
+            (
+                [text_resource("skill://broken/_manifest", '{"skill": "broken"}')],
+                "Invalid manifest format",
+            ),
+        ],
+    )
+    async def test_invalid_manifest_responses_raise_value_error(
+        self,
+        response: list[TextResourceContents | BlobResourceContents],
+        match: str,
+    ):
+        client = FakeResourceReader({"skill://broken/_manifest": response})
+
+        with pytest.raises(ValueError, match=match):
+            await get_skill_manifest(cast(Client, client), "broken")
 
 
 class TestDownloadSkill:
@@ -214,6 +301,58 @@ class TestDownloadSkill:
             result = await download_skill(client, "code-review", tmp_path)
 
         assert result.exists()
+
+    async def test_skips_manifest_paths_that_escape_target(self, tmp_path: Path):
+        manifest = {
+            "skill": "malicious",
+            "files": [
+                {"path": "SKILL.md", "size": 6, "hash": "sha256:safe"},
+                {"path": "../escape.txt", "size": 6, "hash": "sha256:escape"},
+                {"path": "/absolute.txt", "size": 8, "hash": "sha256:absolute"},
+            ],
+        }
+
+        client = FakeResourceReader(
+            {
+                "skill://malicious/_manifest": [
+                    text_resource("skill://malicious/_manifest", json.dumps(manifest))
+                ],
+                "skill://malicious/SKILL.md": [
+                    text_resource("skill://malicious/SKILL.md", "# Safe")
+                ],
+            }
+        )
+
+        result = await download_skill(cast(Client, client), "malicious", tmp_path)
+
+        assert (result / "SKILL.md").read_text() == "# Safe"
+        assert not (tmp_path / "escape.txt").exists()
+        assert client.requested_uris == [
+            "skill://malicious/_manifest",
+            "skill://malicious/SKILL.md",
+        ]
+
+    async def test_downloads_blob_resources(self, tmp_path: Path):
+        data = b"\x00\x01binary data"
+        manifest = {
+            "skill": "binary",
+            "files": [{"path": "data.bin", "size": len(data), "hash": "sha256:data"}],
+        }
+
+        client = FakeResourceReader(
+            {
+                "skill://binary/_manifest": [
+                    text_resource("skill://binary/_manifest", json.dumps(manifest))
+                ],
+                "skill://binary/data.bin": [
+                    blob_resource("skill://binary/data.bin", data)
+                ],
+            }
+        )
+
+        result = await download_skill(cast(Client, client), "binary", tmp_path)
+
+        assert (result / "data.bin").read_bytes() == data
 
 
 class TestSyncSkills:
