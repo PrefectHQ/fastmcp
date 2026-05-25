@@ -237,6 +237,8 @@ class LowLevelServer(_Server[LifespanResultT, RequestT]):
         """
         Overrides the run method to use the MiddlewareServerSession.
         """
+        import fastmcp.server.context
+
         async with AsyncExitStack() as stack:
             lifespan_context = await stack.enter_async_context(self.lifespan(self))
             session = await stack.enter_async_context(
@@ -249,18 +251,48 @@ class LowLevelServer(_Server[LifespanResultT, RequestT]):
                 )
             )
 
-            async with anyio.create_task_group() as tg:
-                # Store task group on session for subscription tasks (SEP-1686)
-                session._subscription_task_group = tg
+            # Notify middleware that a new session has been established.
+            # session_id is generated and cached on the session here so it
+            # remains consistent for the lifetime of the session.
+            if self.fastmcp.middleware:
+                async with fastmcp.server.context.Context(
+                    fastmcp=self.fastmcp, session=session
+                ) as ctx:
+                    for mw in self.fastmcp.middleware:
+                        try:
+                            await mw.on_connect(ctx)
+                        except Exception:
+                            logger.exception(
+                                "Error in %s.on_connect", type(mw).__name__
+                            )
 
-                async for message in session.incoming_messages:
-                    tg.start_soon(
-                        self._handle_message,
-                        message,
-                        session,
-                        lifespan_context,
-                        raise_exceptions,
-                    )
+            try:
+                async with anyio.create_task_group() as tg:
+                    # Store task group on session for subscription tasks (SEP-1686)
+                    session._subscription_task_group = tg
+
+                    async for message in session.incoming_messages:
+                        tg.start_soon(
+                            self._handle_message,
+                            message,
+                            session,
+                            lifespan_context,
+                            raise_exceptions,
+                        )
+            finally:
+                # Notify middleware that the session has ended.
+                # Runs even if the session ended due to an error or disconnect.
+                if self.fastmcp.middleware:
+                    async with fastmcp.server.context.Context(
+                        fastmcp=self.fastmcp, session=session
+                    ) as ctx:
+                        for mw in self.fastmcp.middleware:
+                            try:
+                                await mw.on_disconnect(ctx)
+                            except Exception:
+                                logger.exception(
+                                    "Error in %s.on_disconnect", type(mw).__name__
+                                )
 
     def read_resource(
         self,

@@ -203,3 +203,45 @@ class Middleware:
         call_next: CallNext[mt.ListPromptsRequest, Sequence[Prompt]],
     ) -> Sequence[Prompt]:
         return await call_next(context)
+
+    async def on_connect(
+        self,
+        context: "Context",
+    ) -> None:
+        """Called once when a new client session is established.
+
+        Fires before any messages are processed for the session.
+        The session_id is accessible via ``context.session_id`` and can be
+        used to track per-client state, log connections, or set up
+        session-scoped resources.
+
+        Example::
+
+            class SessionTracker(Middleware):
+                async def on_connect(self, context: Context) -> None:
+                    print(f"Client connected: {context.session_id}")
+
+                async def on_disconnect(self, context: Context) -> None:
+                    print(f"Client disconnected: {context.session_id}")
+
+        Note:
+            Unlike other middleware hooks, ``on_connect`` and ``on_disconnect``
+            do not participate in a call_next chain — all registered middleware
+            have their hooks called independently.
+        """
+
+    async def on_disconnect(
+        self,
+        context: "Context",
+    ) -> None:
+        """Called once when a client session ends.
+
+        Fires after all messages for the session have been processed,
+        including during error or disconnect scenarios.
+        The session_id is accessible via ``context.session_id``.
+
+        Note:
+            Unlike other middleware hooks, ``on_connect`` and ``on_disconnect``
+            do not participate in a call_next chain — all registered middleware
+            have their hooks called independently.
+        """
