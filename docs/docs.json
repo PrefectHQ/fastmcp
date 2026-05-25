@@ -20,10 +20,7 @@
     "primary": "#2d00f7"
   },
   "contextual": {
-    "options": [
-      "copy",
-      "view"
-    ]
+    "options": ["copy", "view"]
   },
   "description": "The fast, Pythonic way to build MCP servers and clients.",
   "errors": {
@@ -118,7 +115,8 @@
                       "servers/transforms/namespace",
                       "servers/visibility",
                       "servers/transforms/resources-as-tools",
-                      "servers/transforms/prompts-as-tools"
+                      "servers/transforms/prompts-as-tools",
+                      "servers/tool-fingerprinting"
                     ]
                   },
                   {
@@ -299,10 +297,7 @@
                     "collapsed": true,
                     "group": "Web Frameworks",
                     "icon": "code",
-                    "pages": [
-                      "integrations/fastapi",
-                      "integrations/openapi"
-                    ]
+                    "pages": ["integrations/fastapi", "integrations/openapi"]
                   },
                   {
                     "collapsed": true,
@@ -374,10 +369,7 @@
                     "collapsed": true,
                     "group": "What's New",
                     "icon": "sparkles",
-                    "pages": [
-                      "updates",
-                      "changelog"
-                    ]
+                    "pages": ["updates", "changelog"]
                   },
                   "more/faq"
                 ]
