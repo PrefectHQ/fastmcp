@@ -76,12 +76,16 @@ class ToolResult(BaseModel):
     meta: dict[str, Any] | None = Field(
         default=None, description="Runtime metadata about the tool execution"
     )
+    isError: bool = Field(
+        default=False, description="Whether the tool execution resulted in an error"
+    )
 
     def __init__(
         self,
         content: list[ContentBlock] | Any | None = None,
         structured_content: dict[str, Any] | Any | None = None,
         meta: dict[str, Any] | None = None,
+            isError: bool = False,
     ):
         if content is None and structured_content is None:
             raise ValueError("Either content or structured_content must be provided")
@@ -117,7 +121,8 @@ class ToolResult(BaseModel):
                     "Tools should wrap non-dict values based on their output_schema."
                 )
 
-        super().__init__(
+        super(, isError=isError
+        ).__init__(
             content=converted_content, structured_content=structured_content, meta=meta
         )
 
@@ -130,6 +135,7 @@ class ToolResult(BaseModel):
             return CallToolResult(
                 structuredContent=self.structured_content,
                 content=self.content,
+                isError=self.isError,
                 _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field  # ty:ignore[unknown-argument]
             )
         if self.structured_content is None:
