@@ -318,7 +318,7 @@ def dedupe_with_versions(
                 reverse=True,
             )
             meta = highest.meta or {}
-            highest = highest.model_copy(
+            highest = highest.model_copy(deep=True, 
                 update={
                     "meta": {
                         **meta,

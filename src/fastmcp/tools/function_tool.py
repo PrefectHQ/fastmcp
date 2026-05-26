@@ -171,24 +171,26 @@ class FunctionTool(Tool):
 
         # Build metadata from kwargs if not provided
         if metadata is None:
-            metadata = ToolMeta(
-                name=name,
-                version=version,
-                title=title,
-                description=description,
-                icons=icons,
-                tags=tags,
-                output_schema=output_schema,
-                annotations=annotations,
-                meta=meta,
-                task=task,
-                exclude_args=exclude_args,
-                serializer=serializer,
-                timeout=timeout,
-                auth=auth,
-                run_in_thread=True if run_in_thread is None else run_in_thread,
-            )
-
+            if hasattr(fn, "__fastmcp__"):
+                metadata = fn.__fastmcp__
+            else:
+                metadata = ToolMeta(
+                    name=name,
+                    version=version,
+                    title=title,
+                    description=description,
+                    icons=icons,
+                    tags=tags,
+                    output_schema=output_schema,
+                    annotations=annotations,
+                    meta=meta,
+                    task=task,
+                    exclude_args=exclude_args,
+                    serializer=serializer,
+                    timeout=timeout,
+                    auth=auth,
+                    run_in_thread=True if run_in_thread is None else run_in_thread,
+                )
         if metadata.serializer is not None and fastmcp.settings.deprecation_warnings:
             warnings.warn(
                 "The `serializer` parameter is deprecated. "
@@ -261,67 +263,19 @@ class FunctionTool(Tool):
             name=metadata.name or parsed_fn.name,
             version=str(metadata.version) if metadata.version is not None else None,
             title=metadata.title,
-            description=metadata.description
-            if metadata.description is not None
-            else parsed_fn.description,
+            description=metadata.description if metadata.description is not None else parsed_fn.description,
             icons=metadata.icons,
             parameters=parsed_fn.input_schema,
             output_schema=final_output_schema,
             annotations=metadata.annotations,
-            tags=metadata.tags or set(),
+            tags=metadata.tags or set(
+        )
             serializer=metadata.serializer,
             meta=metadata.meta,
             task_config=task_config,
             timeout=metadata.timeout,
             auth=metadata.auth,
             run_in_thread=metadata.run_in_thread,
-        )
-
-    async def run(self, arguments: dict[str, Any]) -> ToolResult:
-        """Run the tool with arguments."""
-        wrapper_fn = without_injected_parameters(
-            self.fn, run_in_thread=self.run_in_thread
-        )
-        type_adapter = get_cached_typeadapter(wrapper_fn)
-
-        # Apply timeout if configured. Combining timeout with
-        # run_in_thread=False on a sync function is rejected at
-        # registration (see FunctionTool.from_function), so the timeout
-        # path here only needs to handle async and threadpool-sync.
-        if self.timeout is not None:
-            try:
-                with anyio.fail_after(self.timeout):
-                    # Thread pool execution for sync functions, direct await for async
-                    if is_coroutine_function(wrapper_fn):
-                        result = await type_adapter.validate_python(arguments)
-                    else:
-                        # Sync function: run in threadpool to avoid blocking
-                        result = await call_sync_fn_in_threadpool(
-                            type_adapter.validate_python, arguments
-                        )
-                        # Handle sync wrappers that return awaitables
-                        if inspect.isawaitable(result):
-                            result = await result
-                    # Materialize generators inside timeout scope so slow
-                    # generators don't run past the configured timeout
-                    result = await self._materialize_generator(result)
-            except TimeoutError:
-                logger.warning(
-                    f"Tool '{self.name}' timed out after {self.timeout}s. "
-                    f"Consider using task=True for long-running operations. "
-                    f"See https://gofastmcp.com/servers/tasks"
-                )
-                raise McpError(
-                    ErrorData(
-                        code=-32000,
-                        message=f"Tool '{self.name}' execution timed out after {self.timeout}s",
-                    )
-                ) from None
-        else:
-            # No timeout: use existing execution path
-            if is_coroutine_function(wrapper_fn):
-                result = await type_adapter.validate_python(arguments)
-            elif self.run_in_thread:
                 result = await call_sync_fn_in_threadpool(
                     type_adapter.validate_python, arguments
                 )
