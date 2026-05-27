@@ -227,7 +227,12 @@ class TestOAuthProxyInitialization:
         assert response.status_code == 200
         metadata = response.json()
         assert metadata.get("client_id_metadata_document_supported") is True
-        assert metadata.get("token_endpoint_auth_methods_supported") == ["none"]
+        assert set(metadata.get("token_endpoint_auth_methods_supported")) == {
+            "client_secret_post",
+            "client_secret_basic",
+            "private_key_jwt",
+            "none",
+        }
 
 
 class TestOptionalClientSecret:
