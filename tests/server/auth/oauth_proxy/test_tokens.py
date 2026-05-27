@@ -189,12 +189,13 @@ class TestOAuthProxyTokenEndpointAuth:
             await proxy.exchange_refresh_token(client, fastmcp_refresh, ["read"])
 
             # Verify auth method was passed to OAuth client
-            MockClient.assert_called_with(
+            MockClient.assert_called_once_with(
                 client_id="client-id",
                 client_secret="client-secret",
                 token_endpoint_auth_method="client_secret_post",
                 timeout=30.0,
             )
+            mock_client.refresh_token.assert_called_once()
 
 
 class TestTokenHandlerErrorTransformation:

@@ -601,6 +601,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # against cross-process races in distributed deployments — those are
         # handled by re-reading from storage after refresh failure.
         self._refresh_locks: OrderedDict[str, anyio.Lock] = OrderedDict()
+        self._upstream_oauth_client: AsyncOAuth2Client | None = None
 
         logger.debug(
             "Initialized OAuth proxy provider with upstream server %s",
@@ -686,16 +687,18 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         override this to provide alternative authentication methods (e.g.,
         managed-identity client assertions instead of a static client secret).
         """
-        return AsyncOAuth2Client(
-            client_id=self._upstream_client_id,
-            client_secret=(
-                self._upstream_client_secret.get_secret_value()
-                if self._upstream_client_secret is not None
-                else None
-            ),
-            token_endpoint_auth_method=self._token_endpoint_auth_method,
-            timeout=HTTP_TIMEOUT_SECONDS,
-        )
+        if self._upstream_oauth_client is None:
+            self._upstream_oauth_client = AsyncOAuth2Client(
+                client_id=self._upstream_client_id,
+                client_secret=(
+                    self._upstream_client_secret.get_secret_value()
+                    if self._upstream_client_secret is not None
+                    else None
+                ),
+                token_endpoint_auth_method=self._token_endpoint_auth_method,
+                timeout=HTTP_TIMEOUT_SECONDS,
+            )
+        return self._upstream_oauth_client
 
     def _get_refresh_lock(self, token_id: str) -> anyio.Lock:
         """Get or create a per-token refresh lock, evicting LRU entries when at capacity."""
