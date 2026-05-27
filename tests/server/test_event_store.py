@@ -71,7 +71,7 @@ class TestEventStore:
     ):
         # Store some events
         first_event_id = await event_store.store_event("stream-1", sample_message)
-        await event_store.store_event("stream-1", sample_message)
+        second_event_id = await event_store.store_event("stream-1", sample_message)
 
         # Replay events after the first one
         replayed_events: list[EventMessage] = []
@@ -82,6 +82,10 @@ class TestEventStore:
         stream_id = await event_store.replay_events_after(first_event_id, callback)
         assert stream_id == "stream-1"
         assert len(replayed_events) == 1
+        assert replayed_events[0].event_id == second_event_id
+        replayed_message = replayed_events[0].message.root
+        assert isinstance(replayed_message, JSONRPCRequest)
+        assert replayed_message.method == "test"
 
     async def test_replay_events_after_skips_priming_events(self, event_store):
         """Priming events (message=None) should not be replayed."""
@@ -233,6 +237,7 @@ class TestEventStoreIntegration:
         await event_store.replay_events_after(event_id, callback)
 
         assert len(replayed) == 1
+        assert replayed[0].event_id is not None
         assert isinstance(replayed[0].message.root, JSONRPCRequest)
         assert replayed[0].message.root.method == "tools/call"
         assert replayed[0].message.root.id == "request-456"

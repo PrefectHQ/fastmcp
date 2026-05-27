@@ -2,9 +2,10 @@ import logging
 
 import pytest
 from mcp import LoggingLevel
+from mcp.types import LoggingMessageNotificationParams
 
 from fastmcp import Client, Context, FastMCP
-from fastmcp.client.logging import LogMessage
+from fastmcp.client.logging import LogMessage, create_log_callback
 
 
 class LogHandler:
@@ -333,3 +334,38 @@ class TestDefaultLogHandler:
             mock_logger.error.assert_called_once_with(
                 msg="Received ERROR from server: 404"
             )
+
+
+class TestCreateLogCallback:
+    async def test_callback_invokes_custom_handler(self):
+        seen: list[LoggingMessageNotificationParams] = []
+
+        async def handler(message: LoggingMessageNotificationParams) -> None:
+            seen.append(message)
+
+        message = LoggingMessageNotificationParams(
+            level="info",
+            logger="test.logger",
+            data={"msg": "hello"},
+        )
+        callback = create_log_callback(handler)
+
+        await callback(message)
+
+        assert seen == [message]
+
+    async def test_callback_uses_default_handler_when_none_is_provided(self, caplog):
+        caplog.set_level(logging.WARNING, logger="fastmcp.client.from_server")
+        message = LoggingMessageNotificationParams(
+            level="warning",
+            logger=None,
+            data="default",
+        )
+        callback = create_log_callback()
+
+        await callback(message)
+
+        assert len(caplog.records) == 1
+        assert caplog.records[0].name == "fastmcp.client.from_server"
+        assert caplog.records[0].levelname == "WARNING"
+        assert caplog.records[0].msg == "Received WARNING from server: default"

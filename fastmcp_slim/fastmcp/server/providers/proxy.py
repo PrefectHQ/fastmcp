@@ -31,9 +31,10 @@ from mcp.types import (
 from pydantic.networks import AnyUrl
 
 from fastmcp.client.client import Client, FastMCP1Server
-from fastmcp.client.elicitation import ElicitResult
-from fastmcp.client.logging import LogMessage
-from fastmcp.client.roots import RootsList
+from fastmcp.client.elicitation import ElicitResult, create_elicitation_callback
+from fastmcp.client.logging import LogMessage, create_log_callback
+from fastmcp.client.roots import RootsList, create_roots_callback
+from fastmcp.client.sampling import create_sampling_callback
 from fastmcp.client.telemetry import client_span
 from fastmcp.client.transports import ClientTransportT
 from fastmcp.exceptions import ResourceError
@@ -88,8 +89,15 @@ class ProxyInitializeMiddleware(Middleware):
     ) -> mcp.types.InitializeResult | None:
         client = await self.proxy._get_client()
         try:
+            if isinstance(client, StatefulProxyClient):
+                ctx = context.fastmcp_context
+                if ctx is not None:
+                    client._proxy_rc_ref[0] = (
+                        ctx.request_context,
+                        ctx._fastmcp,
+                    )
             async with client:
-                pass
+                await client.initialize()
         except McpError:
             raise
         except (
@@ -881,7 +889,6 @@ class FastMCPProxy(FastMCP):
         *,
         client_factory: ClientFactoryT,
         provider_error_strategy: ProviderErrorStrategy = "warn",
-        validate_on_initialize: bool = False,
         **kwargs,
     ):
         """Initialize the proxy server.
@@ -896,8 +903,6 @@ class FastMCPProxy(FastMCP):
             provider_error_strategy: How provider errors should affect aggregate
                 operations. Defaults to ``"warn"`` for compatibility; use
                 ``"raise"`` when the proxy should surface upstream failures.
-            validate_on_initialize: If true, connect to the upstream server during
-                the incoming MCP initialize request.
             **kwargs: Additional settings for the FastMCP server.
         """
         super().__init__(**kwargs)
@@ -905,8 +910,7 @@ class FastMCPProxy(FastMCP):
         self.client_factory = client_factory
         provider: Provider = ProxyProvider(client_factory)
         self.add_provider(provider)
-        if validate_on_initialize:
-            self.middleware.append(ProxyInitializeMiddleware(self))
+        self.middleware.append(ProxyInitializeMiddleware(self))
         self._setup_proxy_ping_handler()
 
     async def _get_client(self) -> Client:
@@ -1140,11 +1144,13 @@ class StatefulProxyClient(ProxyClient[ClientTransportT]):
     # would resolve stale values in the receive loop.  The restore helper
     # constructs a fresh Context from the weakref after setting request_ctx.
     _proxy_rc_ref: list[Any]
+    _proxy_restoring_handler_keys: set[str]
 
     def __init__(self, *args: Any, **kwargs: Any):
         # Install context-restoring handler wrappers BEFORE super().__init__
         # registers them with the Client's session kwargs.
         self._proxy_rc_ref = [None]
+        self._proxy_restoring_handler_keys = set()
         for key, default_fn in (
             ("roots", default_proxy_roots_handler),
             ("sampling_handler", default_proxy_sampling_handler),
@@ -1154,9 +1160,42 @@ class StatefulProxyClient(ProxyClient[ClientTransportT]):
         ):
             if key not in kwargs:
                 kwargs[key] = _make_restoring_handler(default_fn, self._proxy_rc_ref)
+                self._proxy_restoring_handler_keys.add(key)
 
         super().__init__(*args, **kwargs)
         self._caches: dict[ServerSession, Client[ClientTransportT]] = {}
+
+    def _bind_restoring_handlers(self) -> None:
+        if "roots" in self._proxy_restoring_handler_keys:
+            self._session_kwargs["list_roots_callback"] = create_roots_callback(
+                _make_restoring_handler(default_proxy_roots_handler, self._proxy_rc_ref)
+            )
+        if "sampling_handler" in self._proxy_restoring_handler_keys:
+            self._session_kwargs["sampling_callback"] = create_sampling_callback(
+                _make_restoring_handler(
+                    default_proxy_sampling_handler, self._proxy_rc_ref
+                )
+            )
+        if "elicitation_handler" in self._proxy_restoring_handler_keys:
+            self._session_kwargs["elicitation_callback"] = create_elicitation_callback(
+                _make_restoring_handler(
+                    default_proxy_elicitation_handler, self._proxy_rc_ref
+                )
+            )
+        if "log_handler" in self._proxy_restoring_handler_keys:
+            self._session_kwargs["logging_callback"] = create_log_callback(
+                _make_restoring_handler(default_proxy_log_handler, self._proxy_rc_ref)
+            )
+        if "progress_handler" in self._proxy_restoring_handler_keys:
+            self._progress_handler = _make_restoring_handler(
+                default_proxy_progress_handler, self._proxy_rc_ref
+            )
+
+    def new(self) -> StatefulProxyClient[ClientTransportT]:
+        new_client = cast(StatefulProxyClient[ClientTransportT], super().new())
+        new_client._proxy_rc_ref = [None]
+        new_client._bind_restoring_handlers()
+        return new_client
 
     async def __aexit__(self, exc_type, exc_value, traceback) -> None:  # type: ignore[override]  # ty:ignore[invalid-method-override]
         """The stateful proxy client will be forced disconnected when the session is exited.

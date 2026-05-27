@@ -162,6 +162,23 @@ class TestFunctionResource:
         assert result.contents[0].content == "Hello, world!"
         assert result.contents[0].mime_type == "text/plain"
 
+    async def test_sync_function_returning_awaitable_is_awaited(self):
+        """Test sync wrappers that return awaitables."""
+
+        async def get_data() -> str:
+            return "Hello from awaitable"
+
+        def sync_wrapper():
+            return get_data()
+
+        resource = FunctionResource(
+            uri=AnyUrl("function://test"),
+            name="test",
+            fn=sync_wrapper,
+        )
+
+        assert await resource.read() == "Hello from awaitable"
+
     async def test_resource_content_text(self):
         """Test returning ResourceContent with text content."""
 

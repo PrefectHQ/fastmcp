@@ -1,6 +1,8 @@
+import contextlib
 import ssl
+from collections.abc import AsyncIterator
 from ssl import VerifyMode
-from typing import cast
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -8,7 +10,35 @@ from mcp.shared._httpx_utils import McpHttpClientFactory
 
 from fastmcp import Client
 from fastmcp.client.auth.oauth import OAuth
-from fastmcp.client.transports import SSETransport, StreamableHttpTransport
+from fastmcp.client.transports import (
+    ClientTransport,
+    SSETransport,
+    StreamableHttpTransport,
+)
+
+
+class BasicTransport(ClientTransport):
+    @contextlib.asynccontextmanager
+    async def connect_session(self, **session_kwargs: Any) -> AsyncIterator[Any]:
+        raise AssertionError("BasicTransport does not create sessions")
+        yield
+
+
+class TestClientTransport:
+    def test_default_repr_uses_subclass_name(self):
+        assert repr(BasicTransport()) == "<BasicTransport>"
+
+    def test_default_session_id_is_none(self):
+        assert BasicTransport().get_session_id() is None
+
+    def test_client_rejects_auth_for_transports_without_auth_support(self):
+        with pytest.raises(ValueError, match="does not support auth"):
+            Client(BasicTransport(), auth="oauth")
+
+    def test_client_accepts_none_auth_for_transports_without_auth_support(self):
+        client = Client(BasicTransport(), auth=None)
+
+        assert isinstance(client.transport, BasicTransport)
 
 
 async def test_oauth_uses_same_client_as_transport_streamable_http():

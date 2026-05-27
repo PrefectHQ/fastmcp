@@ -49,6 +49,7 @@ if __name__ == "__main__":
 ```
 
 This gives you:
+
 - Safe concurrent request handling
 - Automatic forwarding of MCP features (sampling, elicitation, etc.)
 - Session isolation to prevent context mixing
@@ -56,6 +57,14 @@ This gives you:
 <Tip>
 To mount a proxy inside another FastMCP server, see [Mounting External Servers](/servers/composition#mounting-external-servers).
 </Tip>
+
+## Connection Semantics
+
+FastMCP proxies are lazy bridges. Creating the proxy object and starting the local server do not contact the upstream server. The upstream connection begins when an MCP client sends an `initialize` request to the proxy.
+
+During initialization, the proxy initializes the upstream server before responding locally. If the upstream server is unavailable, the URL does not point to an MCP endpoint, or upstream authentication cannot complete, the proxy initialization fails. This keeps the local proxy's connection status aligned with the upstream server it represents.
+
+After initialization, the proxy forwards MCP requests such as `ping`, `tools/list`, `resources/list`, `prompts/list`, tool calls, resource reads, sampling, elicitation, logging, and progress through the upstream client.
 
 ## Transport Bridging
 
