@@ -779,6 +779,14 @@ class TestResourceTemplateQueryParams:
         assert isinstance(result[0], TextResourceContents)
         assert result[0].text == "id=123 api_version=v2"
 
+    def test_same_name_in_path_and_query_is_rejected(self):
+        remote = FastMCP("Remote")
+        with pytest.raises(ValueError, match="must be optional"):
+
+            @remote.resource("data://{id}{?id}")
+            def get_data(id: str) -> str:
+                return id
+
     async def test_hyphenated_query_param_not_double_encoded(self):
         remote = FastMCP("Remote")
 
