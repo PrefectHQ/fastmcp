@@ -753,6 +753,19 @@ class TestResourceTemplateQueryParams:
         assert isinstance(result[0], TextResourceContents)
         assert result[0].text == "id=abc limit=5 offset=20"
 
+    async def test_encoded_path_param_preserved(self):
+        remote = FastMCP("Remote")
+
+        @remote.resource("data://{id}")
+        def get_data(id: str) -> str:
+            return f"id={id}"
+
+        proxy = create_proxy(Client(remote))
+        async with Client(proxy) as client:
+            result = await client.read_resource("data://a%2Fb")
+        assert isinstance(result[0], TextResourceContents)
+        assert result[0].text == "id=a/b"
+
     async def test_hyphenated_query_param_forwarded(self):
         remote = FastMCP("Remote")
 

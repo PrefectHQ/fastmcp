@@ -12,6 +12,7 @@ import inspect
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any, cast
+from urllib.parse import quote
 
 import anyio
 import httpx
@@ -50,7 +51,7 @@ from fastmcp.server.providers.base import Provider
 from fastmcp.server.server import FastMCP
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.base import Tool, ToolResult
-from fastmcp.resources.template import expand_uri_template
+from fastmcp.resources.template import expand_uri_template, extract_query_params
 from fastmcp.utilities.components import FastMCPComponent, get_fastmcp_metadata
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.versions import VersionSpec, version_sort_key
@@ -395,7 +396,12 @@ class ProxyTemplate(ResourceTemplate):
         # uri_template on the remote server.
         # quote params to ensure they are valid for the uri_template
         backend_template = self._backend_uri_template or self.uri_template
-        parameterized_uri = expand_uri_template(backend_template, params)
+        query_param_names = extract_query_params(backend_template)
+        quoted_params = {
+            k: (v if k in query_param_names else quote(str(v), safe=""))
+            for k, v in params.items()
+        }
+        parameterized_uri = expand_uri_template(backend_template, quoted_params)
         client = await self._get_client()
         async with client:
             result = await client.read_resource(parameterized_uri)
