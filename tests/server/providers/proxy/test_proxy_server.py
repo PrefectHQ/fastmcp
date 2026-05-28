@@ -753,6 +753,19 @@ class TestResourceTemplateQueryParams:
         assert isinstance(result[0], TextResourceContents)
         assert result[0].text == "id=abc limit=5 offset=20"
 
+    async def test_hyphenated_query_param_forwarded(self):
+        remote = FastMCP("Remote")
+
+        @remote.resource("data://{id}{?api-version}")
+        def get_data(id: str, api_version: str = "v1") -> str:
+            return f"id={id} api_version={api_version}"
+
+        proxy = create_proxy(Client(remote))
+        async with Client(proxy) as client:
+            result = await client.read_resource("data://123?api-version=v2")
+        assert isinstance(result[0], TextResourceContents)
+        assert result[0].text == "id=123 api_version=v2"
+
 
 class TestPrompts:
     async def test_get_prompts_server_method(self, proxy_server: FastMCPProxy):

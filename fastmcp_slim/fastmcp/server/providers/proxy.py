@@ -12,8 +12,6 @@ import inspect
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any, cast
-import re
-from urllib.parse import quote
 
 import anyio
 import httpx
@@ -52,6 +50,7 @@ from fastmcp.server.providers.base import Provider
 from fastmcp.server.server import FastMCP
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.resources.template import expand_uri_template
 from fastmcp.utilities.components import FastMCPComponent, get_fastmcp_metadata
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.versions import VersionSpec, version_sort_key
@@ -65,34 +64,6 @@ logger = get_logger(__name__)
 
 # Type alias for client factory functions
 ClientFactoryT = Callable[[], Client] | Callable[[], Awaitable[Client]]
-
-
-def _expand_uri_template(template: str, params: dict[str, Any]) -> str:
-    """Expand a URI template with parameters.
-
-    Handles both {name} path placeholders and RFC 6570 {?param1,param2}
-    query parameter syntax.
-    """
-    result = template
-
-    # Replace {name} path placeholders
-    for key, value in params.items():
-        result = re.sub(rf"\{{{key}\}}", quote(str(value), safe=""), result)
-
-    # Expand {?param1,param2,...} query parameter blocks
-    def _expand_query_block(match: re.Match[str]) -> str:
-        names = [n.strip() for n in match.group(1).split(",")]
-        parts = []
-        for name in names:
-            if name in params:
-                parts.append(f"{quote(name)}={quote(str(params[name]))}")
-        if parts:
-            return "?" + "&".join(parts)
-        return ""
-
-    result = re.sub(r"\{\?([^}]+)\}", _expand_query_block, result)
-
-    return result
 
 
 def _proxy_upstream_error(error: Exception) -> McpError:
@@ -424,7 +395,7 @@ class ProxyTemplate(ResourceTemplate):
         # uri_template on the remote server.
         # quote params to ensure they are valid for the uri_template
         backend_template = self._backend_uri_template or self.uri_template
-        parameterized_uri = _expand_uri_template(backend_template, params)
+        parameterized_uri = expand_uri_template(backend_template, params)
         client = await self._get_client()
         async with client:
             result = await client.read_resource(parameterized_uri)
