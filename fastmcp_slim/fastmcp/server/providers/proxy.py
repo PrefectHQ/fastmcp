@@ -396,7 +396,8 @@ class ProxyTemplate(ResourceTemplate):
         # uri_template on the remote server.
         # quote params to ensure they are valid for the uri_template
         backend_template = self._backend_uri_template or self.uri_template
-        query_param_names = extract_query_params(backend_template)
+        # Normalize to underscored keys to match how match_uri_template normalizes incoming params
+        query_param_names = {p.replace("-", "_") for p in extract_query_params(backend_template)}
         quoted_params = {
             k: (v if k in query_param_names else quote(str(v), safe=""))
             for k, v in params.items()
