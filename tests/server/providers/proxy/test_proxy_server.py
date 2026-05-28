@@ -711,6 +711,49 @@ class TestResourceTemplates:
             assert user_template.name == "overwritten_get_user"
 
 
+class TestResourceTemplateQueryParams:
+    """Resource templates with RFC 6570 {?param} query params work through proxy."""
+
+    async def test_query_param_forwarded(self):
+        remote = FastMCP("Remote")
+
+        @remote.resource("data://{id}{?format}")
+        def get_data(id: str, format: str = "json") -> str:
+            return f"id={id} format={format}"
+
+        proxy = create_proxy(Client(remote))
+        async with Client(proxy) as client:
+            result = await client.read_resource("data://123?format=xml")
+        assert isinstance(result[0], TextResourceContents)
+        assert result[0].text == "id=123 format=xml"
+
+    async def test_query_param_default_used_when_omitted(self):
+        remote = FastMCP("Remote")
+
+        @remote.resource("data://{id}{?format}")
+        def get_data(id: str, format: str = "json") -> str:
+            return f"id={id} format={format}"
+
+        proxy = create_proxy(Client(remote))
+        async with Client(proxy) as client:
+            result = await client.read_resource("data://123")
+        assert isinstance(result[0], TextResourceContents)
+        assert result[0].text == "id=123 format=json"
+
+    async def test_multiple_query_params_forwarded(self):
+        remote = FastMCP("Remote")
+
+        @remote.resource("data://{id}{?limit,offset}")
+        def get_data(id: str, limit: int = 10, offset: int = 0) -> str:
+            return f"id={id} limit={limit} offset={offset}"
+
+        proxy = create_proxy(Client(remote))
+        async with Client(proxy) as client:
+            result = await client.read_resource("data://abc?limit=5&offset=20")
+        assert isinstance(result[0], TextResourceContents)
+        assert result[0].text == "id=abc limit=5 offset=20"
+
+
 class TestPrompts:
     async def test_get_prompts_server_method(self, proxy_server: FastMCPProxy):
         prompts = await proxy_server.list_prompts()
