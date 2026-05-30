@@ -273,6 +273,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Token expiry fallback
         fallback_access_token_expiry_seconds: int | None = None,
         fallback_refresh_token_expiry_seconds: int | None = None,
+        # FastMCP-issued access token lifetime (decoupled from upstream)
+        fastmcp_access_token_expiry_seconds: int | None = None,
         # Token refresh threshold
         token_expiry_threshold_seconds: int = 0,
         # CIMD (Client ID Metadata Document) support
@@ -350,6 +352,21 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 lifetime — the actual upstream refresh remains the source of truth. If the
                 upstream rejects the refresh, the client gets `invalid_grant` and re-auths,
                 regardless of how much life is left on the FastMCP refresh token.
+            fastmcp_access_token_expiry_seconds: Lifetime for the FastMCP-issued access
+                token (JWT), decoupling it from the upstream provider's `expires_in`. By
+                default (None) the FastMCP access token mirrors the upstream access token
+                lifetime. The FastMCP JWT is a reference token — `load_access_token`
+                re-validates the upstream token on every request and transparently refreshes
+                it when expired — so issuing a longer-lived FastMCP token does not extend
+                upstream access: a revoked or expired upstream session still fails validation
+                and forces re-auth. Set this for bridges whose upstream issues short-lived
+                access tokens (5-60 min) that some MCP clients can't refresh gracefully
+                (e.g. `mcp-remote`), where the short client-facing TTL forces a full re-auth
+                on every idle period. Only affects the FastMCP-issued token; the upstream
+                token's real expiry is preserved internally to drive transparent refresh.
+                When the upstream provider issues no refresh token there is no way to renew
+                the access token, so the lifetime is capped at the upstream `expires_in`
+                regardless of this value (it can still be used to shorten it).
             token_expiry_threshold_seconds: Number of seconds before actual expiry to consider
                 a token as expired (default 0). This prevents race conditions where a token
                 passes the expiry check but expires before the next operation completes.
@@ -457,6 +474,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             fallback_refresh_token_expiry_seconds
             if fallback_refresh_token_expiry_seconds is not None
             else DEFAULT_REFRESH_TOKEN_EXPIRY_SECONDS
+        )
+        self._fastmcp_access_token_expiry_seconds: int | None = (
+            fastmcp_access_token_expiry_seconds
         )
         self._token_expiry_threshold_seconds: int = token_expiry_threshold_seconds
 
@@ -1108,6 +1128,20 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 "Access token TTL: %d seconds (default, no refresh token)", expires_in
             )
 
+        # The FastMCP-issued access token is a reference into our storage and may
+        # outlive the upstream access token, because transparent refresh keeps the
+        # upstream token fresh on each request. `expires_in` stays the upstream
+        # lifetime; this drives only the FastMCP JWT, its JTI mapping, and the
+        # response's expires_in. Extending past the upstream lifetime is only safe
+        # when we can refresh: without an upstream refresh token there is no way to
+        # renew the access token, so the FastMCP token must not claim to outlive the
+        # upstream token it points at.
+        fastmcp_access_expires_in = expires_in
+        if self._fastmcp_access_token_expiry_seconds is not None:
+            fastmcp_access_expires_in = self._fastmcp_access_token_expiry_seconds
+            if not idp_tokens.get("refresh_token"):
+                fastmcp_access_expires_in = min(fastmcp_access_expires_in, expires_in)
+
         # Calculate refresh token expiry if provided by upstream
         # Some providers include refresh_expires_in, some don't
         refresh_expires_in = None
@@ -1152,7 +1186,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             key=upstream_token_id,
             value=upstream_token_set,
             ttl=max(
-                refresh_expires_in or 0, expires_in, 1
+                refresh_expires_in or 0, expires_in, fastmcp_access_expires_in, 1
             ),  # Keep until longest-lived token expires (min 1s for safety)
         )
         logger.debug("Stored encrypted upstream tokens (jti=%s)", access_jti[:8])
@@ -1167,7 +1201,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             client_id=client.client_id,
             scopes=granted_scopes,
             jti=access_jti,
-            expires_in=expires_in,
+            expires_in=fastmcp_access_expires_in,
             upstream_claims=upstream_claims,
         )
 
@@ -1191,7 +1225,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 upstream_token_id=upstream_token_id,
                 created_at=time.time(),
             ),
-            ttl=expires_in,  # Auto-expire with access token
+            ttl=fastmcp_access_expires_in,  # Auto-expire with FastMCP access token
         )
         if refresh_jti:
             await self._jti_mapping_store.put(
@@ -1228,7 +1262,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         return OAuthToken(
             access_token=fastmcp_access_token,
             token_type="Bearer",
-            expires_in=expires_in,
+            expires_in=fastmcp_access_expires_in,
             refresh_token=fastmcp_refresh_token,
             scope=" ".join(granted_scopes),
         )
@@ -1441,6 +1475,15 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         upstream_token_set.access_token = token_response["access_token"]
         upstream_token_set.expires_at = time.time() + new_expires_in
 
+        # See exchange_authorization_code: the FastMCP access token may outlive the
+        # upstream one. `new_expires_in` stays the upstream lifetime (drives
+        # upstream_token_set.expires_at and transparent refresh).
+        fastmcp_access_expires_in = (
+            self._fastmcp_access_token_expiry_seconds
+            if self._fastmcp_access_token_expiry_seconds is not None
+            else new_expires_in
+        )
+
         # Prefer IdP-granted scopes from refresh response (RFC 6749 §5.1)
         refreshed_scopes: list[str] = (
             parse_scopes(token_response["scope"]) or []
@@ -1501,7 +1544,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             key=upstream_token_set.upstream_token_id,
             value=upstream_token_set,
             ttl=max(
-                refresh_ttl, new_expires_in, 1
+                refresh_ttl, new_expires_in, fastmcp_access_expires_in, 1
             ),  # Keep until longest-lived token expires (min 1s for safety)
         )
 
@@ -1518,7 +1561,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             client_id=client.client_id,
             scopes=refreshed_scopes,
             jti=new_access_jti,
-            expires_in=new_expires_in,
+            expires_in=fastmcp_access_expires_in,
             upstream_claims=upstream_claims,
         )
 
@@ -1530,7 +1573,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 upstream_token_id=upstream_token_set.upstream_token_id,
                 created_at=time.time(),
             ),
-            ttl=new_expires_in,  # Auto-expire with refreshed access token
+            ttl=fastmcp_access_expires_in,  # Auto-expire with FastMCP access token
         )
 
         # Issue NEW minimal FastMCP refresh token (rotation for security).
@@ -1591,7 +1634,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         return OAuthToken(
             access_token=new_fastmcp_access,
             token_type="Bearer",
-            expires_in=new_expires_in,
+            expires_in=fastmcp_access_expires_in,
             refresh_token=new_fastmcp_refresh,  # NEW refresh token (rotated)
             scope=" ".join(refreshed_scopes),
         )
@@ -1709,7 +1752,14 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         await self._upstream_token_store.put(
             key=upstream_token_set.upstream_token_id,
             value=upstream_token_set,
-            ttl=max(refresh_ttl, new_expires_in, 1),
+            # Include the configured FastMCP lifetime so the upstream token never
+            # expires before an extended access JTI mapping that still points at it.
+            ttl=max(
+                refresh_ttl,
+                new_expires_in,
+                self._fastmcp_access_token_expiry_seconds or 0,
+                1,
+            ),
         )
 
         return upstream_token_set

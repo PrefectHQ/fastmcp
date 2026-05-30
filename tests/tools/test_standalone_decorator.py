@@ -152,6 +152,19 @@ class TestToolDecorator:
         result = cast(DecoratedTool, greet)("World")
         assert result == "Hello, World!"
 
+    def test_staticmethod_metadata_is_available_on_unwrapped_function(self):
+        """@tool should attach metadata where staticmethod access can find it."""
+
+        class MyClass:
+            @tool(name="custom-static-tool")
+            @staticmethod
+            def my_method() -> str:
+                return "hello"
+
+        created_tool = FunctionTool.from_function(MyClass.my_method)
+
+        assert created_tool.name == "custom-static-tool"
+
     def test_tool_rejects_classmethod_decorator(self):
         """@tool should reject classmethod-decorated functions."""
         with pytest.raises(TypeError, match="classmethod"):

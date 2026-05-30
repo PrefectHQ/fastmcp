@@ -101,6 +101,23 @@ class TestResourceDecorator:
         result = cast(DecoratedResource, get_config)()
         assert result == {"setting": "value"}
 
+    async def test_staticmethod_metadata_is_available_on_unwrapped_function(self):
+        """@resource should attach metadata where staticmethod access can find it."""
+
+        class MyClass:
+            @resource("config://static")
+            @staticmethod
+            def get_config() -> str:
+                return "hello"
+
+        mcp = FastMCP("Test")
+        mcp.add_resource(MyClass.get_config)
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+
+        assert any(str(r.uri) == "config://static" for r in resources)
+
     def test_resource_rejects_classmethod_decorator(self):
         """@resource should reject classmethod-decorated functions."""
 

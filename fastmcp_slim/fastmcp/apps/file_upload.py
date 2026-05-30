@@ -312,7 +312,7 @@ class FileUpload(FastMCPApp):
                     H3(provider._title)
                     with If(STATE.stored.length()):
                         Badge(
-                            STATE.stored.length(),  # ty:ignore[invalid-argument-type]
+                            STATE.stored.length(),
                             variant="secondary",
                         )
 
@@ -337,8 +337,8 @@ class FileUpload(FastMCPApp):
                             Row(gap=2, align="center"),
                             Column(gap=0),
                         ):
-                            Small(Rx("$item.name"))  # ty:ignore[invalid-argument-type]
-                            Muted(Rx("$item.type"))  # ty:ignore[invalid-argument-type]
+                            Small(Rx("$item.name"))
+                            Muted(Rx("$item.type"))
 
                         Button(
                             "Upload to Server",
@@ -356,7 +356,7 @@ class FileUpload(FastMCPApp):
                                     ),
                                 ],
                                 on_error=ShowToast(
-                                    ERROR,  # ty:ignore[invalid-argument-type]
+                                    ERROR,
                                     variant="error",
                                 ),
                             ),
@@ -377,12 +377,12 @@ class FileUpload(FastMCPApp):
                             ),
                         ):
                             with Column(gap=0):
-                                Small(f.name)  # ty:ignore[invalid-argument-type]
-                                Muted(f.uploaded_at)  # ty:ignore[invalid-argument-type]
+                                Small(f.name)
+                                Muted(f.uploaded_at)
                             with Row(gap=2):
-                                Badge(f.type, variant="secondary")  # ty:ignore[invalid-argument-type]
+                                Badge(f.type, variant="secondary")
                                 Badge(
-                                    f.size_display,  # ty:ignore[invalid-argument-type]
+                                    f.size_display,
                                     variant="outline",
                                 )
 

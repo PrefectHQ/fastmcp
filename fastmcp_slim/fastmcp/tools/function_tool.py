@@ -6,6 +6,7 @@ import inspect
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from types import MethodType
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -13,6 +14,7 @@ from typing import (
     Literal,
     Protocol,
     TypeVar,
+    cast,
     overload,
     runtime_checkable,
 )
@@ -517,8 +519,8 @@ def tool(
             auth=auth,
             run_in_thread=run_in_thread,
         )
-        target = fn.__func__ if hasattr(fn, "__func__") else fn
-        target.__fastmcp__ = metadata
+        target = fn.__func__ if isinstance(fn, staticmethod | MethodType) else fn
+        cast(Any, target).__fastmcp__ = metadata
         return fn
 
     def decorator(fn: F, tool_name: str | None) -> F:

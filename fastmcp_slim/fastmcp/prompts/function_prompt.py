@@ -8,12 +8,14 @@ import json
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from types import MethodType
 from typing import (
     TYPE_CHECKING,
     Any,
     Literal,
     Protocol,
     TypeVar,
+    cast,
     overload,
     runtime_checkable,
 )
@@ -484,8 +486,8 @@ def prompt(
             task=task,
             auth=auth,
         )
-        target = fn.__func__ if hasattr(fn, "__func__") else fn
-        target.__fastmcp__ = metadata
+        target = fn.__func__ if isinstance(fn, staticmethod | MethodType) else fn
+        cast(Any, target).__fastmcp__ = metadata
         return fn
 
     def decorator(fn: F, prompt_name: str | None) -> F:

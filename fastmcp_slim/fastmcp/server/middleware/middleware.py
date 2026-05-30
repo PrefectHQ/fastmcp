@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
-from functools import partial
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -76,6 +75,16 @@ def make_middleware_wrapper(
     return wrapper
 
 
+def make_handler_wrapper(
+    handler: Callable[..., Awaitable[Any]],
+    call_next: CallNext[Any, Any],
+) -> CallNext[Any, Any]:
+    async def wrapper(context: MiddlewareContext[Any]) -> Any:
+        return await handler(context, call_next=call_next)
+
+    return wrapper
+
+
 class Middleware:
     """Base class for FastMCP middleware with dispatching hooks."""
 
@@ -99,29 +108,32 @@ class Middleware:
 
         match context.method:
             case "initialize":
-                handler = partial(self.on_initialize, call_next=handler)
+                handler = make_handler_wrapper(self.on_initialize, handler)
             case "tools/call":
-                handler = partial(self.on_call_tool, call_next=handler)
+                handler = make_handler_wrapper(self.on_call_tool, handler)
             case "resources/read":
-                handler = partial(self.on_read_resource, call_next=handler)
+                handler = make_handler_wrapper(self.on_read_resource, handler)
             case "prompts/get":
-                handler = partial(self.on_get_prompt, call_next=handler)
+                handler = make_handler_wrapper(self.on_get_prompt, handler)
             case "tools/list":
-                handler = partial(self.on_list_tools, call_next=handler)
+                handler = make_handler_wrapper(self.on_list_tools, handler)
             case "resources/list":
-                handler = partial(self.on_list_resources, call_next=handler)
+                handler = make_handler_wrapper(self.on_list_resources, handler)
             case "resources/templates/list":
-                handler = partial(self.on_list_resource_templates, call_next=handler)
+                handler = make_handler_wrapper(
+                    self.on_list_resource_templates,
+                    handler,
+                )
             case "prompts/list":
-                handler = partial(self.on_list_prompts, call_next=handler)
+                handler = make_handler_wrapper(self.on_list_prompts, handler)
 
         match context.type:
             case "request":
-                handler = partial(self.on_request, call_next=handler)
+                handler = make_handler_wrapper(self.on_request, handler)
             case "notification":
-                handler = partial(self.on_notification, call_next=handler)
+                handler = make_handler_wrapper(self.on_notification, handler)
 
-        handler = partial(self.on_message, call_next=handler)
+        handler = make_handler_wrapper(self.on_message, handler)
 
         return handler
 

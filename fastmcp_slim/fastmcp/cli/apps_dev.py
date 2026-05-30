@@ -1089,7 +1089,7 @@ def _build_picker_html(tools: list[dict[str, Any]]) -> str:
                     "__json_args__": Rx("__json_args__"),
                 }
 
-                on_error = ShowToast(Rx("$error"), variant="error")  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+                on_error = ShowToast(Rx("$error"), variant="error")  # type: ignore[arg-type]
 
                 input_mode = f"_mode_{name}"
                 _desc_max_lines = 10

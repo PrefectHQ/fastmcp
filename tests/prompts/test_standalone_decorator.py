@@ -101,6 +101,23 @@ class TestPromptDecorator:
         result = cast(DecoratedPrompt, analyze)("Python")
         assert result == "Please analyze: Python"
 
+    async def test_staticmethod_metadata_is_available_on_unwrapped_function(self):
+        """@prompt should attach metadata where staticmethod access can find it."""
+
+        class MyClass:
+            @prompt(name="custom-static-prompt")
+            @staticmethod
+            def my_prompt() -> str:
+                return "hello"
+
+        mcp = FastMCP("Test")
+        mcp.add_prompt(MyClass.my_prompt)
+
+        async with Client(mcp) as client:
+            prompts = await client.list_prompts()
+
+        assert any(p.name == "custom-static-prompt" for p in prompts)
+
     def test_prompt_rejects_classmethod_decorator(self):
         """@prompt should reject classmethod-decorated functions."""
         with pytest.raises(TypeError, match="classmethod"):

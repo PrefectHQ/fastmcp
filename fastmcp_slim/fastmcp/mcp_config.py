@@ -340,7 +340,7 @@ class MCPConfig(BaseModel):
         if file_path.exists() and (
             content := file_path.read_text(encoding="utf-8").strip()
         ):
-            return cls.model_validate_json(content)  # ty: ignore[possibly-unresolved-reference]
+            return cls.model_validate_json(content)
 
         raise ValueError(f"No MCP servers defined in the config: {file_path}")
 

@@ -238,7 +238,7 @@ async def run_command(
         await run_v1_server_async(server, host=host, port=port, transport=transport)
         return
 
-    kwargs = {}
+    kwargs: dict[str, Any] = {}
     if transport is not None:
         kwargs["transport"] = transport
     # Resolve effective transport for the HTTP kwargs guard — transport

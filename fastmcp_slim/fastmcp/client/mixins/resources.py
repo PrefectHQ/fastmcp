@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 import weakref
-from typing import TYPE_CHECKING, Any, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
 import mcp.types
 from pydantic import AnyUrl, RootModel
@@ -218,6 +218,7 @@ class ClientResourcesMixin:
 
             # Inject trace context into meta for propagation to server
             propagated_meta = inject_trace_context(meta)
+            request_meta = cast(mcp.types.RequestParams.Meta | None, propagated_meta)
 
             # If meta provided, use send_request for SEP-1686 task support
             if propagated_meta:
@@ -226,7 +227,7 @@ class ClientResourcesMixin:
                     params=mcp.types.ReadResourceRequestParams(
                         uri=uri,
                         task=mcp.types.TaskMetadata(**task_dict) if task_dict else None,
-                        _meta=propagated_meta,  # type: ignore[unknown-argument]  # pydantic alias  # ty:ignore[unknown-argument]
+                        _meta=request_meta,  # type: ignore[unknown-argument]  # pydantic alias
                     )
                 )
                 result = await self._await_with_session_monitoring(
@@ -340,6 +341,7 @@ class ClientResourcesMixin:
         # Per SEP-1686 final spec: client sends only ttl, server generates taskId
         # Inject trace context into meta for propagation to server
         propagated_meta = inject_trace_context(meta)
+        request_meta = cast(mcp.types.RequestParams.Meta | None, propagated_meta)
 
         if isinstance(uri, str):
             uri = AnyUrl(uri)
@@ -348,7 +350,7 @@ class ClientResourcesMixin:
             params=mcp.types.ReadResourceRequestParams(
                 uri=uri,
                 task=mcp.types.TaskMetadata(ttl=ttl),
-                _meta=propagated_meta,  # type: ignore[unknown-argument]  # pydantic alias  # ty:ignore[unknown-argument]
+                _meta=request_meta,  # type: ignore[unknown-argument]  # pydantic alias
             )
         )
 

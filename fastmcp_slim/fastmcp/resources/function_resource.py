@@ -7,7 +7,16 @@ import inspect
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar, runtime_checkable
+from types import MethodType
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Literal,
+    Protocol,
+    TypeVar,
+    cast,
+    runtime_checkable,
+)
 
 from mcp.types import Annotations, Icon
 from pydantic import AnyUrl
@@ -326,8 +335,8 @@ def resource(
             task=task,
             auth=auth,
         )
-        target = fn.__func__ if hasattr(fn, "__func__") else fn
-        target.__fastmcp__ = metadata
+        target = fn.__func__ if isinstance(fn, staticmethod | MethodType) else fn
+        cast(Any, target).__fastmcp__ = metadata
         return fn
 
     def decorator(fn: F) -> F:

@@ -244,7 +244,7 @@ class ProxyResource(Resource):
         client_factory: ClientFactoryT,
         *,
         _cached_content: ResourceResult | None = None,
-        **kwargs,
+        **kwargs: Any,
     ):
         super().__init__(**kwargs)
         self._client_factory = client_factory
@@ -1112,7 +1112,7 @@ class ProxyClient(Client[ClientTransportT]):
             kwargs["log_handler"] = default_proxy_log_handler
         if "progress_handler" not in kwargs:
             kwargs["progress_handler"] = default_proxy_progress_handler
-        super().__init__(**kwargs | {"transport": transport})
+        super().__init__(transport=transport, **kwargs)
 
         # Enable forwarding of inbound HTTP headers (e.g. authorization) to
         # the upstream server. This is only appropriate for proxy clients,

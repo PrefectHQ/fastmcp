@@ -301,7 +301,7 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
                     "io.modelcontextprotocol/related-task": {
                         "taskId": client_task_id,
                     }
-                },  # ty:ignore[unknown-argument]
+                },
             )
 
         # Parse task key to get component key
@@ -359,12 +359,12 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
                 mcp_result = mcp.types.CallToolResult(
                     content=content,
                     structuredContent=structured_content,
-                    _meta=related_task_meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field  # ty:ignore[unknown-argument]
+                    _meta=related_task_meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                 )
             else:
                 mcp_result = mcp.types.CallToolResult(
                     content=mcp_result,
-                    _meta=related_task_meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field  # ty:ignore[unknown-argument]
+                    _meta=related_task_meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                 )
             return mcp_result
 

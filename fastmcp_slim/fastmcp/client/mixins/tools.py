@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 import weakref
-from typing import TYPE_CHECKING, Any, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
 import mcp.types
 from opentelemetry.trace import Status, StatusCode
@@ -342,6 +342,7 @@ class ClientToolsMixin:
         # Per SEP-1686 final spec: client sends only ttl, server generates taskId
         # Inject trace context into meta for propagation to server
         propagated_meta = inject_trace_context(meta)
+        request_meta = cast(mcp.types.RequestParams.Meta | None, propagated_meta)
 
         # Build request with task metadata
         request = mcp.types.CallToolRequest(
@@ -349,7 +350,7 @@ class ClientToolsMixin:
                 name=name,
                 arguments=arguments or {},
                 task=mcp.types.TaskMetadata(ttl=ttl),
-                _meta=propagated_meta,  # type: ignore[unknown-argument]  # pydantic alias  # ty:ignore[unknown-argument]
+                _meta=request_meta,  # type: ignore[unknown-argument]  # pydantic alias
             )
         )
 
