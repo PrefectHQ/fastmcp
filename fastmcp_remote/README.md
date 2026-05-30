@@ -25,6 +25,10 @@ Run a remote MCP server through a local stdio bridge:
 uvx fastmcp-remote https://example.com/mcp
 ```
 
+Use the full MCP endpoint URL for the remote server. Many FastMCP HTTP servers expose MCP at `/mcp`, so a local development server may need `http://localhost:8000/mcp` rather than `http://localhost:8000`.
+
+`fastmcp-remote` starts a local stdio bridge, then connects to the upstream server when the MCP host initializes that bridge. If the upstream server is unavailable, the URL does not point to an MCP endpoint, or authentication cannot complete, initialization fails and the host should report the remote server as failed.
+
 For authenticated MCP servers, OAuth is enabled automatically. To pass a bearer token or other custom header instead, provide a header. The header name ends at the first colon, so values can contain additional colons. Quote the header when the value contains spaces, just like any other shell argument:
 
 ```bash

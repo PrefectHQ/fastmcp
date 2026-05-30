@@ -9,6 +9,13 @@ import time
 import pytest
 
 from fastmcp import Client, FastMCP
+from fastmcp.client.transports import FastMCPTransport
+
+
+def test_transport_repr_includes_server_name():
+    transport = FastMCPTransport(FastMCP("repr-test"))
+
+    assert repr(transport) == "<FastMCPTransport(server='repr-test')>"
 
 
 @pytest.mark.timeout(10)

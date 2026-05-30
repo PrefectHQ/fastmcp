@@ -1,0 +1,156 @@
+---
+title: Tool Fingerprinting
+sidebarTitle: Tool Fingerprinting
+description: Build stable fingerprints for tool identity and schema change detection
+icon: fingerprint
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx";
+
+<VersionBadge version="3.0.0" />
+
+Downstream systems like routers, gateways, and audit loggers often need to detect whether a tool's schema changed between deployments. Rather than each system inventing its own JSON normalization and hashing logic, you can build stable fingerprints from FastMCP's existing API surface.
+
+FastMCP does not define a single "contract hash" because the inclusion policy is necessarily application-specific: some systems care only about the input schema, others include the description, metadata, tags, or version. Instead, this recipe shows how to assemble a fingerprint payload from the parts you care about, then hash it deterministically.
+
+## The Recipe
+
+The two key building blocks are:
+
+- **`tool.key`** — FastMCP's canonical component identity, encoding type, name, and version (e.g. `tool:greet@1.0` or `tool:greet@`)
+- **`tool.to_mcp_tool()`** — the protocol-facing tool object that MCP clients see, including the input schema
+
+Combine them into a payload, serialize deterministically, and hash:
+
+```python
+import hashlib
+import json
+
+from fastmcp import FastMCP
+
+mcp = FastMCP("demo")
+
+
+@mcp.tool()
+def greet(name: str) -> str:
+    """Say hello."""
+    return f"Hello {name}"
+
+
+async def fingerprint_tool(server: FastMCP, tool_name: str) -> str:
+    tool = await server.get_tool(tool_name)
+    if tool is None:
+        raise ValueError(f"Tool {tool_name!r} not found")
+
+    mcp_tool = tool.to_mcp_tool()
+    dumped = mcp_tool.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+    payload = {
+        "key": tool.key,
+        "inputSchema": dumped["inputSchema"],
+    }
+
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+```
+
+The fingerprint is stable across process restarts as long as the tool's name, version, and input schema remain the same.
+
+## Why `tool.key`?
+
+`tool.key` is FastMCP's canonical component identity. It encodes the component type, identifier, and version into a single string:
+
+```
+tool:greet@1.0    # versioned tool
+tool:greet@       # unversioned tool
+```
+
+Using `key` rather than just the tool name ensures that two versions of the same tool produce distinct fingerprints, and that a tool and a resource with the same name cannot collide.
+
+## Why `to_mcp_tool()`?
+
+`to_mcp_tool()` returns the protocol-facing representation — the shape that MCP clients actually receive. This matters because routers and gateways typically operate on the protocol layer, not FastMCP internals. The `model_dump(mode="json", by_alias=True, exclude_none=True)` call produces a clean, serializable dictionary using the MCP protocol field names.
+
+## Customizing the Payload
+
+You own the inclusion policy. Add or remove fields depending on what constitutes a "contract" in your system:
+
+```python
+async def custom_fingerprint(server: FastMCP, tool_name: str) -> str:
+    tool = await server.get_tool(tool_name)
+    if tool is None:
+        raise ValueError(f"Tool {tool_name!r} not found")
+
+    mcp_tool = tool.to_mcp_tool()
+    dumped = mcp_tool.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+    # Include description to detect documentation drift
+    payload = {
+        "key": tool.key,
+        "inputSchema": dumped["inputSchema"],
+        "description": dumped.get("description"),
+    }
+
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+```
+
+Common variations:
+
+| Field          | When to include                                                            |
+| -------------- | -------------------------------------------------------------------------- |
+| `inputSchema`  | Always — this is the core contract                                         |
+| `description`  | When documentation drift matters (e.g. LLM routing decisions depend on it) |
+| `outputSchema` | When downstream consumers validate response shapes                         |
+| `annotations`  | When behavioral hints (read-only, destructive) affect routing              |
+| `_meta`        | When custom metadata drives policy decisions                               |
+
+## Detecting Schema Drift in CI
+
+Store fingerprints as artifacts and compare between deployments:
+
+```python
+import json
+import hashlib
+from pathlib import Path
+
+from fastmcp import FastMCP
+
+
+async def generate_manifest(server: FastMCP) -> dict[str, str]:
+    """Generate a fingerprint manifest for all tools."""
+    manifest = {}
+
+    for tool in await server.list_tools():
+        mcp_tool = tool.to_mcp_tool()
+        dumped = mcp_tool.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+        payload = {
+            "key": tool.key,
+            "inputSchema": dumped["inputSchema"],
+        }
+
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        manifest[tool.key] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    return manifest
+
+
+async def check_drift(server: FastMCP, baseline_path: Path) -> list[str]:
+    """Compare current fingerprints against a stored baseline."""
+    current = await generate_manifest(server)
+    baseline = json.loads(baseline_path.read_text())
+
+    changed = []
+    for key, fingerprint in current.items():
+        if baseline.get(key) != fingerprint:
+            changed.append(key)
+
+    for key in baseline:
+        if key not in current:
+            changed.append(key)
+
+    return changed
+```
+
+Run `generate_manifest` in CI after each build and compare against the previous run. Any differences indicate a schema change that downstream consumers should be aware of.

@@ -27,6 +27,8 @@ from fastmcp.tools.base import ToolResult
 from fastmcp.tools.tool_transform import (
     ToolTransformConfig,
 )
+from fastmcp.utilities.http import find_available_port
+from fastmcp.utilities.tests import run_server_async
 
 USERS = [
     {"id": "1", "name": "Alice", "active": True},
@@ -243,6 +245,58 @@ async def test_proxy_with_async_client_factory():
     assert isinstance(client, Client)
     assert isinstance(client.transport, StreamableHttpTransport)
     assert client.transport.url == "http://example.com/mcp/"
+
+
+async def test_proxy_ping_forwards_to_remote_server(fastmcp_server):
+    proxy = create_proxy(fastmcp_server)
+
+    async with Client(proxy) as client:
+        assert await client.ping() is True
+
+
+async def test_proxy_ping_surfaces_wrong_remote_path():
+    remote = FastMCP("remote")
+    async with run_server_async(remote, transport="http") as url:
+        proxy = create_proxy(StreamableHttpTransport(url.removesuffix("/mcp")))
+
+        with pytest.raises(McpError, match="Session terminated"):
+            async with Client(proxy):
+                pass
+
+
+async def test_proxy_initialize_forwards_remote_connection_error():
+    port = find_available_port()
+    proxy = create_proxy(
+        StreamableHttpTransport(f"http://127.0.0.1:{port}/mcp"),
+        provider_error_strategy="raise",
+    )
+
+    with pytest.raises(McpError, match="Client failed to connect"):
+        async with Client(proxy):
+            pass
+
+
+async def test_proxy_list_tools_surfaces_remote_connection_error():
+    port = find_available_port()
+    proxy = create_proxy(
+        StreamableHttpTransport(f"http://127.0.0.1:{port}/mcp"),
+        provider_error_strategy="raise",
+    )
+
+    with pytest.raises(RuntimeError, match="Client failed to connect"):
+        await proxy.list_tools()
+
+
+async def test_proxy_list_tools_client_surfaces_remote_connection_error():
+    port = find_available_port()
+    proxy = create_proxy(
+        StreamableHttpTransport(f"http://127.0.0.1:{port}/mcp"),
+        provider_error_strategy="raise",
+    )
+
+    with pytest.raises(McpError, match="Client failed to connect"):
+        async with Client(proxy) as client:
+            await client.list_tools()
 
 
 class TestTools:

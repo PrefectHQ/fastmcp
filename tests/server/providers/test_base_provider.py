@@ -2,6 +2,9 @@
 
 from typing import Any
 
+import pytest
+
+from fastmcp.server.providers.aggregate import AggregateProvider
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.server.transforms import Namespace
@@ -27,6 +30,11 @@ class SimpleProvider(Provider):
 
     async def _list_tools(self) -> list[Tool]:
         return self._tools
+
+
+class FailingProvider(Provider):
+    async def _list_tools(self) -> list[Tool]:
+        raise RuntimeError("provider unavailable")
 
 
 class TestBaseProviderGetTasks:
@@ -89,3 +97,19 @@ class TestBaseProviderGetTasks:
 
         assert len(tasks) == 1
         assert tasks[0].name == "api_my_tool"
+
+
+class TestAggregateProviderErrors:
+    async def test_provider_errors_warn_by_default(self):
+        aggregate = AggregateProvider([FailingProvider()])
+
+        assert await aggregate.list_tools() == []
+
+    async def test_provider_errors_can_raise(self):
+        aggregate = AggregateProvider(
+            [FailingProvider()],
+            provider_error_strategy="raise",
+        )
+
+        with pytest.raises(RuntimeError, match="provider unavailable"):
+            await aggregate.list_tools()

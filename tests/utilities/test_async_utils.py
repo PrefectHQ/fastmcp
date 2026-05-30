@@ -3,12 +3,13 @@
 import functools
 
 import pytest
+from exceptiongroup import BaseExceptionGroup
 
 from fastmcp import Client, FastMCP
 from fastmcp.prompts import prompt
 from fastmcp.resources import resource
 from fastmcp.tools import tool
-from fastmcp.utilities.async_utils import is_coroutine_function
+from fastmcp.utilities.async_utils import gather, is_coroutine_function
 
 
 async def _async_fn(x: int) -> int:
@@ -47,6 +48,36 @@ class TestIsCoroutineFunction:
 
     def test_non_callable(self) -> None:
         assert is_coroutine_function(42) is False
+
+
+class TestGather:
+    async def test_returns_results_in_input_order(self) -> None:
+        async def value(result: int) -> int:
+            return result
+
+        assert await gather(value(1), value(2), value(3)) == [1, 2, 3]
+
+    async def test_raises_by_default(self) -> None:
+        async def fail() -> int:
+            raise RuntimeError("boom")
+
+        with pytest.raises(BaseExceptionGroup) as exc_info:
+            await gather(fail())
+
+        assert len(exc_info.value.exceptions) == 1
+        assert isinstance(exc_info.value.exceptions[0], RuntimeError)
+
+    async def test_return_exceptions_collects_exceptions(self) -> None:
+        async def fail() -> int:
+            raise ValueError("bad")
+
+        async def value() -> int:
+            return 1
+
+        result = await gather(fail(), value(), return_exceptions=True)
+
+        assert isinstance(result[0], ValueError)
+        assert result[1] == 1
 
 
 class TestAsyncPartialIntegration:
