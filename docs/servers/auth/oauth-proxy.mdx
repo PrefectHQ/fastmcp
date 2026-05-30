@@ -510,7 +510,31 @@ This architecture also prevents [token passthrough](#token-passthrough) — see 
 
 **Token expiry alignment:**
 
-FastMCP token lifetimes match the upstream token lifetimes. When the upstream token expires, the FastMCP token also expires, maintaining consistent security boundaries.
+By default, FastMCP token lifetimes match the upstream token lifetimes. When the upstream token expires, the FastMCP token also expires, maintaining consistent security boundaries.
+
+**Extending the FastMCP token lifetime:**
+
+Some upstream providers issue short-lived access tokens (5–60 minutes is common). Because the FastMCP token is a reference into the proxy's storage rather than the upstream credential itself, its client-facing lifetime can be longer than the upstream token's without weakening security: every request re-validates the upstream token and transparently refreshes it when it has expired, so a revoked or genuinely expired upstream session still fails validation and forces re-authentication.
+
+This matters for MCP clients that don't refresh gracefully. For example, [`mcp-remote`](https://github.com/geelen/mcp-remote) (used by Claude Desktop) has known issues handling access-token expiry, so a short upstream lifetime can push users through a full OAuth flow after every idle period. Set `fastmcp_access_token_expiry_seconds` to decouple the FastMCP token lifetime from the upstream `expires_in`:
+
+```python
+from fastmcp.server.auth import OAuthProxy
+
+auth = OAuthProxy(
+    upstream_authorization_endpoint="https://provider.com/oauth/authorize",
+    upstream_token_endpoint="https://provider.com/oauth/token",
+    upstream_client_id="your-client-id",
+    upstream_client_secret="your-client-secret",
+    token_verifier=token_verifier,
+    base_url="https://your-server.com",
+    fastmcp_access_token_expiry_seconds=60 * 60 * 24,  # 24 hours
+)
+```
+
+The upstream token's real expiry is preserved internally to drive transparent refresh; only the FastMCP-issued token lives longer. This parameter is available on every provider built on the OAuth proxy (`GitHubProvider`, `GoogleProvider`, `AzureProvider`, and the rest).
+
+Extending the lifetime only works when the upstream provider issues a refresh token, since that's what lets the proxy renew the access token behind the scenes. When the upstream provides no refresh token, the FastMCP token lifetime is capped at the upstream `expires_in` — issuing a longer-lived token would claim a validity the proxy can't honor.
 
 **Refresh tokens:**
 

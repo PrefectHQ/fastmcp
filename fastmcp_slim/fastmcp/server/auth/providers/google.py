@@ -248,6 +248,7 @@ class GoogleProvider(OAuthProxy):
         consent_csp_policy: str | None = None,
         forward_resource: bool = True,
         fallback_refresh_token_expiry_seconds: int | None = None,
+        fastmcp_access_token_expiry_seconds: int | None = None,
         token_expiry_threshold_seconds: int = 0,
         extra_authorize_params: dict[str, str] | None = None,
         http_client: httpx.AsyncClient | None = None,
@@ -300,6 +301,17 @@ class GoogleProvider(OAuthProxy):
                 is responsible for its lifecycle. When None (default), a fresh client is created per call.
             enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
                 client IDs (default True). Set to False to disable.
+            fallback_refresh_token_expiry_seconds: Lifetime for the FastMCP-issued
+                refresh token when the upstream provider omits `refresh_expires_in`
+                (e.g. Cognito, GitHub, many OIDC IdPs). Defaults to 1 year. The upstream
+                refresh remains the source of truth. See `OAuthProxy` for details.
+            fastmcp_access_token_expiry_seconds: Lifetime for the FastMCP-issued access
+                token, decoupling it from the upstream provider's `expires_in`. Defaults
+                to None (mirror the upstream lifetime). Set this for bridges whose
+                upstream issues short-lived access tokens that some MCP clients can't
+                refresh gracefully (e.g. `mcp-remote`). See `OAuthProxy` for details.
+            token_expiry_threshold_seconds: Number of seconds before actual expiry to
+                treat a token as expired, refreshing early to avoid races. Defaults to 0.
         """
         # Parse scopes if provided as string
         # Google requires at least one scope - openid is the minimal OIDC scope
@@ -356,6 +368,7 @@ class GoogleProvider(OAuthProxy):
             consent_csp_policy=consent_csp_policy,
             forward_resource=forward_resource,
             fallback_refresh_token_expiry_seconds=fallback_refresh_token_expiry_seconds,
+            fastmcp_access_token_expiry_seconds=fastmcp_access_token_expiry_seconds,
             token_expiry_threshold_seconds=token_expiry_threshold_seconds,
             extra_authorize_params=extra_authorize_params_final,
             valid_scopes=valid_scopes_final,

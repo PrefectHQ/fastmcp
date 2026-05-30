@@ -234,6 +234,8 @@ class OIDCProxy(OAuthProxy):
         # Token expiry fallback
         fallback_access_token_expiry_seconds: int | None = None,
         fallback_refresh_token_expiry_seconds: int | None = None,
+        # FastMCP-issued access token lifetime (decoupled from upstream)
+        fastmcp_access_token_expiry_seconds: int | None = None,
         # Token refresh threshold
         token_expiry_threshold_seconds: int = 0,
         # CIMD configuration
@@ -302,6 +304,14 @@ class OIDCProxy(OAuthProxy):
                 Defaults to 1 year. The actual upstream refresh remains the source of
                 truth — if upstream rejects the refresh, the client gets `invalid_grant`
                 and re-auths.
+            fastmcp_access_token_expiry_seconds: Lifetime for the FastMCP-issued access
+                token (JWT), decoupling it from the upstream provider's `expires_in`. By
+                default (None) the FastMCP access token mirrors the upstream access token
+                lifetime. The FastMCP JWT is a reference token re-validated against upstream
+                on every request, so a longer FastMCP lifetime does not extend upstream
+                access — a revoked or expired upstream session still fails validation. Set
+                this for bridges whose upstream issues short-lived access tokens that some
+                MCP clients can't refresh gracefully (e.g. `mcp-remote`).
             token_expiry_threshold_seconds: Number of seconds before actual expiry to consider
                 a token as expired (default 0). Prevents race conditions where a token
                 passes the expiry check but expires before the next operation completes.
@@ -396,6 +406,7 @@ class OIDCProxy(OAuthProxy):
             "forward_resource": forward_resource,
             "fallback_access_token_expiry_seconds": fallback_access_token_expiry_seconds,
             "fallback_refresh_token_expiry_seconds": fallback_refresh_token_expiry_seconds,
+            "fastmcp_access_token_expiry_seconds": fastmcp_access_token_expiry_seconds,
             "token_expiry_threshold_seconds": token_expiry_threshold_seconds,
             "enable_cimd": enable_cimd,
         }
