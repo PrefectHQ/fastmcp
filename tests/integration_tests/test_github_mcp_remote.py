@@ -3,7 +3,7 @@ import os
 
 import pytest
 from mcp import McpError
-from mcp.types import TextContent, Tool
+from mcp.types import Resource, TextContent, Tool
 
 from fastmcp import Client
 from fastmcp.client import StreamableHttpTransport
@@ -75,7 +75,10 @@ class TestGithubMCPRemote:
             assert streamable_http_client.is_connected()
             resources = await streamable_http_client.list_resources()
             assert isinstance(resources, list)
-            assert len(resources) == 0
+            for resource in resources:
+                assert isinstance(resource, Resource)
+                assert resource.name
+                assert str(resource.uri)
 
     async def test_list_prompts(
         self, streamable_http_client: Client[StreamableHttpTransport]
