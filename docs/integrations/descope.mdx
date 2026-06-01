@@ -18,7 +18,7 @@ This guide shows you how to secure your FastMCP server using [**Descope**](https
 Before you begin, you will need:
 
 1. To [sign up](https://www.descope.com/sign-up) for a Free Forever Descope account
-2. Your FastMCP server's URL (can be localhost for development, e.g., `http://localhost:3000`)
+2. Your FastMCP server's URL (can be localhost for development, e.g., `http://localhost:8000`)
 
 ### Step 1: Configure Descope
 
@@ -49,7 +49,7 @@ Create a `.env` file with your Descope configuration:
 
 ```bash
 DESCOPE_CONFIG_URL=https://api.descope.com/v1/apps/agentic/P.../M.../.well-known/openid-configuration
-BASE_URL=http://localhost:3000
+BASE_URL=http://localhost:8000
 ```
 
 ### Step 3: FastMCP Configuration
@@ -66,7 +66,7 @@ from fastmcp.server.auth.providers.descope import DescopeProvider
 # and configures JWT token validation
 auth_provider = DescopeProvider(
     config_url=os.environ["DESCOPE_CONFIG_URL"],
-    base_url=os.environ.get("BASE_URL", "http://localhost:3000"),
+    base_url=os.environ.get("BASE_URL", "http://localhost:8000"),
 )
 
 # Create FastMCP server with auth
