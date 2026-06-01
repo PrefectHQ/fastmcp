@@ -262,25 +262,26 @@ async def on_list_prompts(self, context: MiddlewareContext, call_next):
 
 <VersionBadge version="2.13.0" />
 
-Called when a client connects and initializes the session. This hook cannot modify the initialization response.
+Called when a client connects and initializes the session. The initialization result flows back through middleware, so you can inspect or replace it by returning a different `InitializeResult`.
 
 ```python
 from mcp import McpError
 from mcp.types import ErrorData
 
 async def on_initialize(self, context: MiddlewareContext, call_next):
-    client_info = context.message.params.get("clientInfo", {})
-    client_name = client_info.get("name", "unknown")
+    client_info = getattr(context.message.params, "clientInfo", None)
+    client_name = getattr(client_info, "name", "unknown")
 
     # Reject before call_next to send error to client
     if client_name == "blocked-client":
         raise McpError(ErrorData(code=-32000, message="Client not supported"))
 
-    await call_next(context)
+    result = await call_next(context)
     print(f"Client {client_name} initialized")
+    return result
 ```
 
-**Returns:** `None` — The initialization response is handled internally by the MCP protocol.
+**Returns:** `InitializeResult | None` — Return the result from `call_next()` unless you intentionally replace it.
 
 <Warning>
 Raising `McpError` after `call_next()` will only log the error, not send it to the client. The response has already been sent. Always reject **before** `call_next()`.

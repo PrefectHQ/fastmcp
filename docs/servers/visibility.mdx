@@ -63,23 +63,23 @@ Visibility filtering works with two identifiers: keys (for specific components) 
 
 ### Component Keys
 
-Every component has a unique key in the format `{type}:{identifier}`.
+Every component has a unique key in the format `{type}:{identifier}@{version}`. The `@` delimiter is always present; unversioned components use an empty version suffix such as `tool:get_status@`.
 
 | Component | Key Format | Example |
 |-----------|------------|---------|
-| Tool | `tool:{name}` | `tool:delete_everything` |
-| Resource | `resource:{uri}` | `resource:data://config` |
-| Template | `template:{uri}` | `template:file://{path}` |
-| Prompt | `prompt:{name}` | `prompt:analyze` |
+| Tool | `tool:{name}@{version}` | `tool:delete_everything@` |
+| Resource | `resource:{uri}@{version}` | `resource:data://config@` |
+| Template | `template:{uri_template}@{version}` | `template:file://{path}@` |
+| Prompt | `prompt:{name}@{version}` | `prompt:analyze@` |
 
 Use keys to target specific components.
 
 ```python
 # Disable a specific tool
-mcp.disable(keys={"tool:delete_everything"})
+mcp.disable(keys={"tool:delete_everything@"})
 
 # Disable multiple specific components
-mcp.disable(keys={"tool:reset_system", "resource:data://secrets"})
+mcp.disable(keys={"tool:reset_system@", "resource:data://secrets@"})
 ```
 
 ### Tags
@@ -118,7 +118,7 @@ You can specify both keys and tags in a single call. The filters combine additiv
 
 ```python
 # Disable specific tools AND all dangerous-tagged components
-mcp.disable(keys={"tool:debug_info"}, tags={"dangerous"})
+mcp.disable(keys={"tool:debug_info@"}, tags={"dangerous"})
 ```
 
 ## Allowlist Mode
@@ -165,7 +165,7 @@ When you call `enable(only=True)`:
 
 ```python
 # Start fresh - only enable these specific tools
-mcp.enable(keys={"tool:safe_read", "tool:safe_write"}, only=True)
+mcp.enable(keys={"tool:safe_read@", "tool:safe_write@"}, only=True)
 
 # Later, switch to a different allowlist
 mcp.enable(tags={"production"}, only=True)
@@ -177,7 +177,7 @@ Later `enable()` and `disable()` calls override earlier ones. This lets you crea
 
 ```python
 mcp.enable(tags={"api"}, only=True)  # Allow all api-tagged
-mcp.disable(keys={"tool:api_admin"})  # Later disable overrides for this tool
+mcp.disable(keys={"tool:api_admin@"})  # Later disable overrides for this tool
 
 # api_admin is disabled because the later disable() overrides the allowlist
 ```
@@ -322,7 +322,7 @@ The session visibility methods accept the same filter criteria as `server.enable
 | Parameter | Description |
 |-----------|-------------|
 | `names` | Component names or URIs to match |
-| `keys` | Component keys (e.g., `{"tool:my_tool"}`) |
+| `keys` | Component keys (e.g., `{"tool:my_tool@"}` for an unversioned tool, or `{"tool:my_tool@v1"}` for a versioned tool) |
 | `tags` | Tags to match (component must have at least one) |
 | `version` | Version specification to match |
 | `components` | Component types (`{"tool"}`, `{"resource"}`, `{"prompt"}`, `{"template"}`) |

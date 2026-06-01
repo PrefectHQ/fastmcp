@@ -178,16 +178,16 @@ async def confirm_purchase(ctx: Context) -> str:
 
 These arguments only apply when FastMCP is adding the wrapper. For structured responses (`BaseModel`, dataclass, `TypedDict`), set the metadata on the individual fields via `Field(title=..., description=...)` — passing `response_title` or `response_description` alongside a model type raises `TypeError`.
 
-### No Response
+### Empty Responses
 
-Sometimes, the goal of an elicitation is to simply get a user to approve or reject an action. Pass `None` as the response type to indicate that no data is expected. The `data` field will be `None` when the user accepts.
+Passing `None` as the response type creates an empty-object schema and returns an accepted result with `data == {}`. This form is deprecated because some clients render empty forms poorly; prefer an explicit response type such as `bool` for confirmations.
 
 ```python
 @mcp.tool
 async def approve_action(ctx: Context) -> str:
-    result = await ctx.elicit("Approve this action?", response_type=None)
+    result = await ctx.elicit("Approve this action?", response_type=bool)
 
-    if result.action == "accept":
+    if result.action == "accept" and result.data:
         return do_action()
     else:
         raise ValueError("Action rejected")

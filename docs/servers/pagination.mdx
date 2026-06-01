@@ -14,7 +14,7 @@ When a server exposes many tools, resources, or prompts, returning them all in a
 
 ## Server Configuration
 
-By default, FastMCP servers return all components in a single response for backward compatibility. To enable pagination, set the `list_page_size` parameter when creating your server. This value determines the maximum number of items returned per page across all list operations.
+By default, FastMCP servers return all components in a single response for backward compatibility. To enable pagination, set the `list_page_size` parameter when creating your server. This value must be a positive integer and determines the maximum number of items returned per page across all list operations.
 
 ```python
 from fastmcp import FastMCP
