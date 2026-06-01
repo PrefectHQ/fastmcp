@@ -48,8 +48,8 @@ Before you begin, you will need:
 Create a `.env` file with your Descope configuration:
 
 ```bash
-DESCOPE_CONFIG_URL=https://.../v1/apps/agentic/P.../M.../.well-known/openid-configuration     # Your Descope Well-Known URL
-SERVER_URL=http://localhost:3000     # Your server's base URL
+DESCOPE_CONFIG_URL=https://api.descope.com/v1/apps/agentic/P.../M.../.well-known/openid-configuration
+BASE_URL=http://localhost:3000
 ```
 
 ### Step 3: FastMCP Configuration
@@ -57,14 +57,16 @@ SERVER_URL=http://localhost:3000     # Your server's base URL
 Create your FastMCP server file and use the DescopeProvider to handle all the OAuth integration automatically:
 
 ```python server.py
+import os
+
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.descope import DescopeProvider
 
 # The DescopeProvider automatically discovers Descope endpoints
 # and configures JWT token validation
 auth_provider = DescopeProvider(
-    config_url="https://.../.well-known/openid-configuration",  # Your MCP Server .well-known URL
-    base_url=SERVER_URL,                                        # Your server's public URL
+    config_url=os.environ["DESCOPE_CONFIG_URL"],
+    base_url=os.environ.get("BASE_URL", "http://localhost:3000"),
 )
 
 # Create FastMCP server with auth
