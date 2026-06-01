@@ -144,17 +144,16 @@ For decorating instance or class methods, use the standalone `@resource` decorat
 
 ### Return Values
 
-Resource functions must return one of three types:
+Resource functions can return these supported shapes:
 
 -   **`str`**: Sent as `TextResourceContents` (with `mime_type="text/plain"` by default).
 -   **`bytes`**: Base64 encoded and sent as `BlobResourceContents`. You should specify an appropriate `mime_type` (e.g., `"image/png"`, `"application/octet-stream"`).
 -   **JSON-native values** (`dict`, `list`, `tuple`, numbers, booleans, or `None`): Serialized to JSON text with `mime_type="application/json"`.
--   **`ResourceContent`**: A single content item with explicit MIME type and item metadata.
 -   **`list[ResourceContent]`**: Multiple content items with per-item MIME types and metadata.
 -   **`ResourceResult`**: Full control over contents, MIME types, and result-level metadata. See [ResourceResult](#resourceresult) below.
 
 <Note>
-For custom classes that are not JSON-native, return a `ResourceResult` or wrap values in `ResourceContent` so serialization and MIME types are explicit.
+For custom classes that are not JSON-native, return a `ResourceResult` or wrap values in a `ResourceContent` list so serialization and MIME types are explicit.
 </Note>
 
 #### ResourceResult
