@@ -1,0 +1,170 @@
+---
+title: API Keys for OAuth-Only Clients
+sidebarTitle: API Key OAuth
+description: Let OAuth-only MCP clients authenticate with an API key your users already have.
+icon: key-skeleton
+---
+
+Many services authenticate with a simple API key passed in a header, and some MCP clients support exactly that. Claude Code, for example, can attach a static header to every request:
+
+```bash
+claude mcp add -t http my-server https://example.com/mcp -H "X-API-Key: <key>"
+```
+
+Claude Desktop and ChatGPT's connectors cannot. They expose no field for a custom header, and the only authentication mechanism they implement is the MCP OAuth 2.1 handshake: when a request returns `401`, the client discovers the server's OAuth metadata and runs an authorization flow. A server whose entire auth model is an API key in a header is therefore unreachable from these clients, even though the credential the user needs is already in their possession.
+
+This recipe closes that gap by wrapping an existing API key in an OAuth flow. The server presents a standard OAuth interface so the clients are satisfied, but the authorization page asks the user to paste their API key instead of signing in. The key is stored encrypted on the server and surfaced to tools on each request, while the client holds an ordinary OAuth token that only references it. The user supplies the key during the browser approval, exactly as they would paste it into a header—the OAuth flow transports it, with no identity provider, user database, or key lookup behind it.
+
+<Tip>
+A complete, runnable version of this recipe lives in [`examples/auth/api_key_oauth/`](https://github.com/PrefectHQ/fastmcp/tree/main/examples/auth/api_key_oauth). The code below is excerpted from it to walk through the parts that matter.
+</Tip>
+
+## How it works
+
+The recipe builds on [`OAuthProvider`](/servers/auth/full-oauth-server), which implements the OAuth 2.1 endpoints, flows, and security requirements. The SDK's authorization handler stays in place and validates every request—response type, PKCE presence, redirect URI, scopes—then calls the provider's `authorize()`, which returns the URL to send the browser to. Rather than redirect straight back to the client, `authorize()` records the pending request and points the browser at a consent page the recipe adds. That page names the requesting client and asks for an API key; everything downstream—token exchange, PKCE verification, refresh—is handled by `OAuthProvider` and the MCP SDK.
+
+A connection proceeds through the usual OAuth lifecycle:
+
+1. The client receives a `401`, discovers the server's OAuth metadata, and opens a browser to `/authorize`. The SDK handler validates the request and redirects to the consent page.
+2. The consent page names the client and asks for an API key. The user pastes it and submits.
+3. The server binds the key to an opaque authorization code and redirects back to the client.
+4. The client exchanges the code (with PKCE) at `/token`. The server stores the key encrypted, keyed by a fresh `jti`, and issues a reference-token JWT carrying only that `jti`.
+5. On every subsequent request the client sends `Authorization: Bearer <jwt>`. The server validates the JWT, looks the key back up by `jti`, and tools read it from the token's claims.
+
+The next sections follow that lifecycle: the consent page that collects the key, issuing and verifying tokens at `/token`, and reading the key inside a tool.
+
+## Consent and the API key
+
+Keeping the SDK's authorization handler means the provider never reimplements request validation—it only decides where to send the browser. `authorize()` records the pending request as a short-lived transaction in the encrypted store and returns the consent page URL, built from `base_url` so it stays correct under any mount path:
+
+```python
+async def authorize(self, client, params):
+    txn_id = secrets.token_urlsafe(32)
+    await self.store.put(
+        key=txn_id,
+        value={
+            "client_id": client.client_id,
+            "redirect_uri": str(params.redirect_uri),
+            "state": params.state or "",
+            "code_challenge": params.code_challenge or "",
+            "scopes": params.scopes or [],
+        },
+        collection="auth-txns",
+        ttl=900,
+    )
+    return f"{str(self.base_url).rstrip('/')}/authorize/key?txn_id={txn_id}"
+```
+
+The consent page is a `GET` route the recipe adds. It loads the transaction, names the client, and renders a single password field for the key. Submitting it `POST`s back to the same path, where the handler refuses cross-site submissions, validates the key, and binds it to an opaque authorization code—also stored encrypted. The key rides in the POST body and never appears in the redirect URL, so it cannot leak through browser history or a `Referer` header.
+
+```python
+sec_fetch_site = request.headers.get("sec-fetch-site")
+if sec_fetch_site not in (None, "same-origin", "none"):
+    return HTMLResponse("Cross-site authorization blocked.", status_code=403)
+
+txn = await self.store.get(key=txn_id, collection="auth-txns")
+await self.store.delete(key=txn_id, collection="auth-txns")
+code = f"code_{secrets.token_hex(16)}"
+await self.store.put(
+    key=code, value={**txn, "api_key": api_key}, collection="auth-codes", ttl=300
+)
+location = construct_redirect_uri(txn["redirect_uri"], code=code, state=txn["state"])
+return RedirectResponse(location, status_code=303)
+```
+
+<Warning>
+The `code_challenge` recorded in the transaction must follow the key onto the authorization-code record, so that `load_authorization_code` can return it. The MCP SDK verifies the PKCE `code_verifier` against it at the token endpoint; if the challenge is dropped along the way, the `/token` request fails.
+</Warning>
+
+## Issuing and verifying tokens
+
+When the client exchanges the authorization code at `/token`, the provider recovers the key bound to that code—consuming the code so it cannot be replayed—and issues a token for it:
+
+```python
+async def exchange_authorization_code(self, client, authorization_code):
+    rec = await self.store.get(key=authorization_code.code, collection="auth-codes")
+    await self.store.delete(key=authorization_code.code, collection="auth-codes")
+    if rec is None:
+        raise TokenError("invalid_grant", "Authorization code not found or used.")
+    return await self._issue_tokens(
+        api_key=rec["api_key"],
+        client_id=client.client_id,
+        scopes=authorization_code.scopes,
+    )
+```
+
+The token the provider issues is a *reference token*: it carries only a `jti`, while the API key itself lives in a Fernet-encrypted store keyed by that `jti`. The key is encrypted at rest and never travels on the wire. This reuses the primitives the OAuth proxy is built on, so the security-sensitive parts are not hand-rolled.
+
+Both the token signing key and the storage encryption key derive from a single configured secret with `derive_jwt_key`, so the same secret across restarts keeps previously issued tokens valid. `JWTIssuer` mints the tokens, and the store defaults to the same encrypted file store the [OAuth proxy](/servers/auth/oauth-proxy) uses.
+
+```python
+from cryptography.fernet import Fernet
+from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+
+from fastmcp.server.auth.jwt_issuer import JWTIssuer, derive_jwt_key
+
+signing_key = derive_jwt_key(
+    low_entropy_material=jwt_signing_key, salt="fastmcp-api-key-oauth-signing"
+)
+storage_key = derive_jwt_key(
+    high_entropy_material=jwt_signing_key, salt="fastmcp-storage-encryption-key"
+)
+issuer = JWTIssuer(issuer=base_url, audience=resource_url, signing_key=signing_key)
+store = FernetEncryptionWrapper(key_value=file_store, fernet=Fernet(key=storage_key))
+```
+
+With those in place, issuing a token is storing the key under a fresh `jti` and minting a JWT that references it:
+
+```python
+access_jti = secrets.token_urlsafe(16)
+await store.put(key=access_jti, value={"api_key": api_key}, collection="api-keys")
+access_token = issuer.issue_access_token(client_id=client_id, scopes=scopes, jti=access_jti)
+```
+
+Verification runs the reverse: validate the JWT signature and claims, then look the key back up by `jti`. The decrypted key is surfaced on `AccessToken.claims` so tools can read it, where it lives only in memory for the duration of the request.
+
+```python
+async def load_access_token(self, token: str) -> AccessToken | None:
+    payload = self.jwt_issuer.verify_token(token)
+    record = await self.store.get(key=payload["jti"], collection="api-keys")
+    if record is None:
+        return None
+    return AccessToken(
+        token=token,
+        client_id=payload["client_id"],
+        scopes=payload["scope"].split(),
+        claims={API_KEY_CLAIM: record["api_key"]},
+    )
+```
+
+## Reading the key
+
+Inside a tool, the key arrives through the request's access token. The `get_access_token` dependency returns the current `AccessToken`, and the key is waiting in its claims, ready to construct whatever client the tool needs:
+
+```python
+from fastmcp.server.dependencies import get_access_token
+
+
+@mcp.tool
+def query(sql: str) -> str:
+    token = get_access_token()
+    api_key = token.claims[API_KEY_CLAIM]
+    client = my_service.Client(api_key=api_key)
+    return client.run(sql)
+```
+
+## Connecting a client
+
+Adding the server to Claude Desktop or ChatGPT as a custom connector points the client at the `/mcp` URL. The first connection opens a browser to the API-key page; from then on the connector behaves like any other OAuth connector, and the user does not see the form again until their token expires.
+
+Clients that support headers continue to work unchanged. A server that also accepts the key as a bearer token or custom header—through a [`TokenVerifier`](/servers/auth/token-verification) or middleware—can point both paths at the same verification logic, so Claude Code and the desktop apps share a single code path.
+
+## Production considerations
+
+The example is a reference rather than a drop-in, and a few details deserve attention before it goes to production:
+
+- **Load `jwt_signing_key` from a secret store.** Both the token signing key and the storage encryption key derive from it, so the same secret across restarts keeps previously issued tokens valid. A throwaway value invalidates every outstanding token on restart.
+- **The default store is single-host.** It defaults to the on-disk Fernet-encrypted file store the proxy uses. A multi-worker or multi-replica deployment needs a shared `client_storage` (Redis, a database) so a token issued by one worker resolves on another.
+- **Registered clients live in process memory.** They are cheaply re-created through dynamic client registration, but a production server may prefer to persist them; transactions, codes, and keys already live in the shared store.
+- **The consent page is deliberately minimal.** It names the client and blocks cross-site submission, which covers the basic phishing case, but it does not implement the full consent machinery—cookie-bound "remember" decisions, CSP tuning—that [`OAuthProxy`](/servers/auth/oauth-proxy) provides. Harden it before exposing the server to untrusted users.
+- **Validate the key at the authorization step.** Rejecting a bad key before a token is minted produces a clearer failure than letting it surface on the first tool call.
