@@ -26,7 +26,7 @@ is built on:
   rest. The key never travels on the wire; `load_access_token` validates the JWT
   and looks the key back up.
 
-Tools read the key through `get_access_token().claims`.
+Tools read the key from the access token claims (e.g. via `CurrentAccessToken`).
 
 Deployment notes:
 
@@ -42,9 +42,10 @@ from __future__ import annotations
 
 import hashlib
 import html
+import inspect
 import secrets
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 import anyio
 from cryptography.fernet import Fernet
@@ -110,9 +111,10 @@ class APIKeyOAuthProvider(OAuthProvider):
             encryption key are both derived from it, so the same secret across
             restarts keeps previously issued tokens valid.
         validate_api_key: Optional callable that receives the pasted key and
-            returns True if it is valid. Use it to reject bad keys at the consent
-            step instead of minting a token that fails later. Defaults to
-            accepting any non-empty key.
+            returns True if it is valid. May be sync or async — return a
+            coroutine to verify the key against your backend over HTTP. Use it to
+            reject bad keys at the consent step instead of minting a token that
+            fails later. Defaults to accepting any non-empty key.
         client_storage: Optional key-value store for the encrypted transaction,
             code, and key records. Defaults to an on-disk Fernet-encrypted file
             store. Pass a shared store for multi-worker deployments.
@@ -126,7 +128,7 @@ class APIKeyOAuthProvider(OAuthProvider):
         *,
         base_url: AnyHttpUrl | str,
         jwt_signing_key: str,
-        validate_api_key: Callable[[str], bool] | None = None,
+        validate_api_key: Callable[[str], bool | Awaitable[bool]] | None = None,
         client_storage: AsyncKeyValue | None = None,
         token_expiry_seconds: int = DEFAULT_ACCESS_TOKEN_EXPIRY_SECONDS,
         refresh_expiry_seconds: int = DEFAULT_REFRESH_TOKEN_EXPIRY_SECONDS,
@@ -279,7 +281,10 @@ class APIKeyOAuthProvider(OAuthProvider):
         if txn is None:
             return HTMLResponse("Authorization request expired.", status_code=400)
 
-        if not self._validate_api_key(api_key):
+        result = self._validate_api_key(api_key)
+        if inspect.isawaitable(result):
+            result = await result
+        if not result:
             return RedirectResponse(
                 f"{self._key_entry_url}?txn_id={txn_id}", status_code=303
             )

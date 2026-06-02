@@ -76,6 +76,17 @@ return RedirectResponse(location, status_code=303)
 The `code_challenge` recorded in the transaction must follow the key onto the authorization-code record, so that `load_authorization_code` can return it. The MCP SDK verifies the PKCE `code_verifier` against it at the token endpoint; if the challenge is dropped along the way, the `/token` request fails.
 </Warning>
 
+This is also where you confirm the key is real. The provider takes a `validate_api_key` hook that runs before the code is issued, so a bad key fails on the consent page rather than on the first tool call. The hook may be async, which is what you want when verification is an HTTP call to your own backend:
+
+```python
+async def validate_api_key(key: str) -> bool:
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            "https://api.example.com/me", headers={"Authorization": f"Bearer {key}"}
+        )
+        return response.is_success
+```
+
 ## Issuing and verifying tokens
 
 When the client exchanges the authorization code at `/token`, the provider recovers the key bound to that code—consuming the code so it cannot be replayed—and issues a token for it:
@@ -139,15 +150,15 @@ async def load_access_token(self, token: str) -> AccessToken | None:
 
 ## Reading the key
 
-Inside a tool, the key arrives through the request's access token. The `get_access_token` dependency returns the current `AccessToken`, and the key is waiting in its claims, ready to construct whatever client the tool needs:
+Inside a tool, the key arrives through the request's access token. The `CurrentAccessToken` dependency injects the current `AccessToken` (and raises if the request is unauthenticated), and the key is waiting in its claims, ready to construct whatever client the tool needs:
 
 ```python
-from fastmcp.server.dependencies import get_access_token
+from fastmcp.server.auth import AccessToken
+from fastmcp.server.dependencies import CurrentAccessToken
 
 
 @mcp.tool
-def query(sql: str) -> str:
-    token = get_access_token()
+def query(sql: str, token: AccessToken = CurrentAccessToken()) -> str:
     api_key = token.claims[API_KEY_CLAIM]
     client = my_service.Client(api_key=api_key)
     return client.run(sql)

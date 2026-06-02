@@ -30,15 +30,29 @@ unchanged) and reuses the same primitives FastMCP's OAuth proxy is built on:
 Fernet storage-encryption key, `JWTIssuer` issues *reference tokens* that carry
 only a `jti`, and a Fernet-encrypted store holds the transaction, the
 authorization code, and the API key. The key is encrypted at rest and never
-travels on the wire; tools read it back with `get_access_token()`.
+travels on the wire; tools read it back from the access token claims.
+
+Two integration points are yours to fill in. First, verify the pasted key
+against your backend before a token is issued — the hook may be async, so it can
+make an HTTP call:
+
+```python
+async def validate_api_key(key: str) -> bool:
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            API_VERIFY_URL, headers={"Authorization": f"Bearer {key}"}
+        )
+        return response.is_success
+```
+
+Second, read the key inside a tool and use it to construct your client:
 
 ```python
 @mcp.tool
-def whoami() -> str:
-    token = get_access_token()
+async def list_files(token: AccessToken = CurrentAccessToken()) -> list[str]:
     api_key = token.claims[API_KEY_CLAIM]
-    # client = my_service.Client(api_key=api_key)
-    return f"Authenticated with API key: {api_key[:4]}…"
+    client = my_service.Client(api_key=api_key)
+    return await client.list_files()
 ```
 
 ## Run it
@@ -53,9 +67,10 @@ In another terminal:
 python client.py
 ```
 
-A browser opens to the "paste your API key" page. The demo server accepts any
-non-empty key; enter anything and the connection completes. `whoami` then
-echoes the key the server recovered from your token.
+A browser opens to the consent page. The demo server accepts any non-empty key
+(set `API_VERIFY_URL` to validate against a real backend); enter anything and the
+connection completes. `list_files` then runs with the key the server recovered
+from your token.
 
 To wire it into a real client, point Claude Desktop / ChatGPT at
 `http://127.0.0.1:8000/mcp` as a custom connector.
