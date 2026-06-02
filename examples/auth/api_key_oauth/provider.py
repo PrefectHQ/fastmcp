@@ -23,8 +23,9 @@ is built on:
   carries only a `jti`, never the API key itself.
 - A Fernet-encrypted key-value store holds the transient transaction, the
   authorization code, and the API key — each keyed and TTL-bound, encrypted at
-  rest. The key never travels on the wire; `load_access_token` validates the JWT
-  and looks the key back up.
+  rest. The key never appears in a URL or in the issued token; `load_access_token`
+  validates the JWT and looks the key back up. (The user submits it once in the
+  consent POST, so serve the server over HTTPS.)
 
 Tools read the key from the access token claims (e.g. via `CurrentAccessToken`).
 
@@ -467,7 +468,7 @@ class APIKeyOAuthProvider(OAuthProvider):
 
         scope = payload.get("scope", "")
         # Surface the decrypted key on the token's claims so tools can read it
-        # via get_access_token(). It lives only in memory here, never on the wire.
+        # via get_access_token(). It lives only in memory here, never in the token.
         return AccessToken(
             token=token,
             client_id=payload.get("client_id", ""),

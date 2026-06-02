@@ -104,7 +104,7 @@ async def exchange_authorization_code(self, client, authorization_code):
     )
 ```
 
-The token the provider issues is a *reference token*: it carries only a `jti`, while the API key itself lives in a Fernet-encrypted store keyed by that `jti`. The key is encrypted at rest and never travels on the wire. This reuses the primitives the OAuth proxy is built on, so the security-sensitive parts are not hand-rolled.
+The token the provider issues is a *reference token*: it carries only a `jti`, while the API key itself lives in a Fernet-encrypted store keyed by that `jti`. The key is encrypted at rest and never appears in a URL or in the token itself—the user submits it once in the consent POST, so the server should be served over HTTPS. This reuses the primitives the OAuth proxy is built on, so the security-sensitive parts are not hand-rolled.
 
 Both the token signing key and the storage encryption key derive from a single configured secret with `derive_jwt_key`, so the same secret across restarts keeps previously issued tokens valid. `JWTIssuer` mints the tokens, and the store defaults to the same encrypted file store the [OAuth proxy](/servers/auth/oauth-proxy) uses.
 

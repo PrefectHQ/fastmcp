@@ -30,7 +30,8 @@ unchanged) and reuses the same primitives FastMCP's OAuth proxy is built on:
 Fernet storage-encryption key, `JWTIssuer` issues *reference tokens* that carry
 only a `jti`, and a Fernet-encrypted store holds the transaction, the
 authorization code, and the API key. The key is encrypted at rest and never
-travels on the wire; tools read it back from the access token claims.
+appears in a URL or in the issued token; tools read it back from the access
+token claims.
 
 Two integration points are yours to fill in. First, verify the pasted key
 against your backend before a token is issued — the hook may be async, so it can
@@ -79,10 +80,11 @@ To wire it into a real client, point Claude Desktop / ChatGPT at
 
 This is a reference, not a drop-in. Before shipping:
 
-- **The API key is encrypted at rest and never on the wire.** The access token
-  is a reference token carrying only a `jti`; the key lives in the Fernet-
-  encrypted store keyed by that `jti`. It also never travels in a URL — it is
-  submitted in the form POST body and bound to an opaque authorization code.
+- **The API key is encrypted at rest and stays out of URLs and tokens.** The
+  access token is a reference token carrying only a `jti`; the key lives in the
+  Fernet-encrypted store keyed by that `jti`, and never appears in a redirect
+  URL. The user submits it once in the consent form POST, so serve the server
+  over HTTPS to protect it in transit.
 - **Load `jwt_signing_key` from your secret store.** Both the token signing key
   and the storage encryption key derive from it, so the same secret across
   restarts keeps previously issued tokens valid.
