@@ -5,6 +5,114 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 3.4.0" description="June 2, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v3.4.0: Remote Control"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v3.4.0"
+cta="Read the release notes"
+>
+The remote release. `fastmcp-remote` is a standalone bridge that connects stdio-only MCP hosts to servers hosted over HTTP, with OAuth enabled automatically for HTTPS. The proxy layer underneath it is hardened so bridges fail loudly on a missing or misconfigured upstream, and FastMCP-issued tokens can now outlive short-lived upstream tokens to survive long idle periods.
+
+🌉 **fastmcp-remote** — `uvx fastmcp-remote https://example.com/mcp` bridges a remote server back to a stdio-only host.
+
+🔌 **Bridges fail loudly** — proxies forward `initialize` upstream, so a missing backend or wrong URL fails the handshake instead of returning an empty-but-connected proxy.
+
+🔐 **Longer-lived tokens** — `fastmcp_access_token_expiry_seconds` decouples the client-facing token lifetime from a short upstream `expires_in`.
+
+⚠️ **Returnable tool errors** — `ToolResult(..., is_error=True)` hands back rich errors the model can act on instead of only raising.
+</Card>
+</Update>
+
+<Update label="FastMCP 3.3.1" description="May 15, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v3.3.1: Loop There It Is"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v3.3.1"
+cta="Read the release notes"
+>
+Hotfix for the 3.3 packaging split: standalone component imports like `from fastmcp.tools import tool` no longer pull in the server stack or trip a circular import. Component-level auth and task primitives moved to lightweight utility modules, with the old import paths preserved as compatibility re-exports.
+</Card>
+</Update>
+
+<Update label="FastMCP 3.3.0" description="May 15, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v3.3.0: Slim Reaper"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v3.3.0"
+cta="Read the release notes"
+>
+The `fastmcp-slim` release. A dependency-light distribution that ships FastMCP's client and transport layer without Starlette, Uvicorn, or the server stack — the import namespace is unchanged. It also closes out a backlog of OAuth proxy hardening, MCP-compliant OTEL instrumentation, and auth additions.
+
+🪶 **fastmcp-slim** — install the client without the server footprint for CI, agents, and library dependencies.
+
+🔐 **OAuth proxy hardening** — silent-consent AS-in-the-middle guard, dot-segment redirect rejection, and per-token response cache partitioning.
+
+🔑 **Auth additions** — `AzureB2CProvider` user flows and a public `update_scopes()` API on `OAuthProxy`.
+
+🧵 **Thread affinity** — `@mcp.tool(run_in_thread=False)` for tools bound to a specific thread.
+</Card>
+</Update>
+
+<Update label="FastMCP 3.2.4" description="April 14, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v3.2.4: Patch Me If You Can"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v3.2.4"
+cta="Read the release notes"
+>
+A grab bag of fixes and hardening. Background tasks are now scoped to the authorization context instead of the MCP session — a breaking change for anyone relying on session-scoped semantics — and parameter descriptions are extracted from docstrings automatically.
+
+🔐 **Security** — `FileUpload` validates decoded base64 size, the proxy stops forwarding inbound headers to unrelated servers, and AuthKit binds token audience per RFC 8707.
+
+🔑 **Keycloak** — new OAuth provider for enterprise auth and local dev.
+</Card>
+</Update>
+
+<Update label="FastMCP 3.2.3" description="April 9, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v3.2.3: Redis or Not"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v3.2.3"
+cta="Read the release notes"
+>
+Pins `fakeredis<2.35.0` in the `tasks` extra: a 2.35.0 rename broke pydocket's `memory://` backend and made `fastmcp[tasks]` installs fail at startup with an `ImportError`.
+</Card>
+</Update>
+
+<Update label="FastMCP 3.2.2" description="April 9, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v3.2.2: Audience Appreciation"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v3.2.2"
+cta="Read the release notes"
+>
+Fixes the Azure audience regression from 3.2.1 — both the bare client ID GUID and a custom `identifier_uri` are now accepted as the token audience.
+</Card>
+</Update>
+
+<Update label="FastMCP 3.2.1" description="April 8, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v3.2.1: Audience Participation"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v3.2.1"
+cta="Read the release notes"
+>
+A patch focused on auth-provider audience validation: Cognito validates on `client_id`, Azure honors `identifier_uri`, and consent cookies are LRU-capped to avoid header overflow. Also fixes OpenAPI 3.0 `nullable` fields leaking into tool input schemas and server-variable substitution in base URLs.
+</Card>
+</Update>
+
+<Update label="FastMCP 3.2.0" description="March 30, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v3.2.0: Show Don't Tool"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v3.2.0"
+cta="Read the release notes"
+>
+The Apps release. Your tools can return interactive UIs — charts, dashboards, forms, maps — rendered right inside the conversation.
+
+🎨 **FastMCPApp** — separate the tools the LLM sees (`@app.ui()`) from the backend tools the UI calls (`@app.tool()`), built on Prefab.
+
+🧩 **Built-in providers** — FileUpload, Approval, Choice, FormInput, and GenerativeUI.
+
+🖥️ **Dev server** — `fastmcp dev apps` previews app tools in the browser with an MCP message inspector.
+
+🔒 **Security pass** — SSRF/path-traversal prevention, JWT algorithm restrictions, OAuth scope enforcement, and CSRF fixes.
+</Card>
+</Update>
+
 <Update label="FastMCP 3.1.1" description="March 14, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v3.1.1: 'Tis But a Patch"
@@ -131,6 +239,16 @@ FastMCP 3.0 rebuilds the framework around three primitives: components, provider
 💾 **Session-Scoped State** persists across requests, with per-session visibility control.
 
 ⚡ **DX Improvements** include `--reload` for development, automatic threadpool dispatch, tool timeouts, pagination, and OpenTelemetry tracing.
+</Card>
+</Update>
+
+<Update label="FastMCP 2.14.7" description="April 13, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP 2.14.7: Fake It Till You Break It"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v2.14.7"
+cta="Read the release notes"
+>
+A 2.x backport of the fakeredis pin: fakeredis 2.35.0 renamed a connection class that pydocket's `memory://` backend relied on, crashing `fastmcp[tasks]` installs at startup. Caps `fakeredis<2.35.0` on the 2.x line.
 </Card>
 </Update>
 
