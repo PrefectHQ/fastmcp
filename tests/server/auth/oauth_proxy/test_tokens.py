@@ -1,5 +1,6 @@
 """Tests for OAuth proxy token endpoint and handling."""
 
+import logging
 import time
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -1883,3 +1884,30 @@ class TestTransparentUpstreamRefresh:
         assert result is not None
         assert result.token == "refreshed-upstream-access"
         mock_oauth_client.refresh_token.assert_called_once()
+
+
+class TestRefreshTokenMissLogging:
+    """A refresh-token miss forces a user-visible reconnect, so it must not be silent."""
+
+    async def test_unknown_refresh_token_logs_warning(self, oauth_proxy, caplog):
+        client = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+
+        proxy_logger = logging.getLogger("fastmcp.server.auth.oauth_proxy.proxy")
+        caplog.set_level(logging.WARNING)
+        proxy_logger.addHandler(caplog.handler)
+        try:
+            result = await oauth_proxy.load_refresh_token(client, "nonexistent-token")
+        finally:
+            proxy_logger.removeHandler(caplog.handler)
+
+        assert result is None
+        assert any(
+            record.levelno == logging.WARNING
+            and "Refresh token not found" in record.getMessage()
+            and "test-client" in record.getMessage()
+            for record in caplog.records
+        )

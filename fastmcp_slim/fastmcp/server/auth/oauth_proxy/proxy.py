@@ -1371,6 +1371,13 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         token_hash = _hash_token(refresh_token)
         metadata = await self._refresh_token_store.get(key=token_hash)
         if not metadata:
+            logger.warning(
+                "Refresh token not found for client=%s (token_hash=%s); it was "
+                "already rotated, expired, or revoked. Rejecting with invalid_grant, "
+                "which forces the client to re-authenticate.",
+                client.client_id,
+                token_hash[:8],
+            )
             return None
         # Verify token belongs to this client (prevents cross-client token usage)
         if metadata.client_id != client.client_id:
