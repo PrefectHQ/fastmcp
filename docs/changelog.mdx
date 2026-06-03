@@ -279,7 +279,7 @@ A grab bag of fixes, hardening, and polish. The headline behavior change: backgr
 A stopgap pin: fakeredis 2.35.0 shipped an undocumented rename that broke pydocket's `memory://` backend, causing `fastmcp[tasks]` installs to fail at startup with an `ImportError`. This pins `fakeredis<2.35.0` in the `tasks` extra until a fixed pydocket ships.
 
 ### Fixes 🐞
-* Pin fakeredis<2.35.0 in tasks extra by [@jlowin](https://github.com/jlowin) in [#3804](https://github.com/PrefectHQ/fastmcp/pull/3804)
+* Pin `fakeredis<2.35.0` in tasks extra by [@jlowin](https://github.com/jlowin) in [#3804](https://github.com/PrefectHQ/fastmcp/pull/3804)
 ### Docs 📚
 * Document session state isolation across mount boundaries by [@jlowin](https://github.com/jlowin) in [#3801](https://github.com/PrefectHQ/fastmcp/pull/3801)
 
@@ -1309,7 +1309,7 @@ Breaking changes are minimal: for most servers, updating the import statement is
 A 2.x backport of the fakeredis pin: fakeredis 2.35.0 renamed a connection class that pydocket's `memory://` backend depended on, crashing `fastmcp[tasks]` installs at startup. This caps `fakeredis<2.35.0` on the 2.x line.
 
 ### Fixes 🐞
-* fix(deps): cap fakeredis to <2.35.0 to prevent startup crash on 2.x by [@vincent067](https://github.com/vincent067) in [#3883](https://github.com/PrefectHQ/fastmcp/pull/3883)
+* fix(deps): cap fakeredis to `<2.35.0` to prevent startup crash on 2.x by [@vincent067](https://github.com/vincent067) in [#3883](https://github.com/PrefectHQ/fastmcp/pull/3883)
 
 **Full Changelog**: [v2.14.6...v2.14.7](https://github.com/PrefectHQ/fastmcp/compare/v2.14.6...v2.14.7)
 
