@@ -26,6 +26,25 @@ requires_monty = pytest.mark.skipif(
     reason="pydantic-monty is required for the real Monty sandbox provider",
 )
 
+# test_code_mode_monty_bare_call_returns_empty deliberately runs
+# `print(call_tool(...))` without awaiting, which orphans a `Provider.get_tool`
+# coroutine. CPython reports it as "never awaited" only when the coroutine is
+# garbage-collected, which happens asynchronously — often partway through a
+# *later* test — so a per-test filter can't reliably catch it. The suite
+# promotes that warning (and its unraisable-teardown variant) to an error via
+# `filterwarnings` in pyproject.toml, so scope the suppression to the module
+# but pin it to that exact coroutine; genuine "never awaited" leaks elsewhere
+# still surface as errors.
+pytestmark = [
+    pytest.mark.filterwarnings(
+        "ignore:coroutine 'Provider.get_tool' was never awaited:RuntimeWarning"
+    ),
+    pytest.mark.filterwarnings(
+        "ignore:Exception ignored in.*Provider.get_tool:"
+        "pytest.PytestUnraisableExceptionWarning"
+    ),
+]
+
 
 def _unwrap_result(result: ToolResult) -> Any:
     """Extract the logical return value from a ToolResult."""
@@ -782,8 +801,8 @@ async def test_code_mode_monty_bare_call_returns_empty() -> None:
     block therefore returns nothing and ``execute`` yields an empty result.
     The accompanying "coroutine ... was never awaited" RuntimeWarning is a
     cascading effect of that unawaited coroutine being garbage-collected, not
-    a separate defect — and because it surfaces at GC/interpreter-teardown
-    time it is not asserted here.
+    a separate defect (see the module-level ``filterwarnings`` note for why it
+    is suppressed rather than asserted).
     """
     mcp = FastMCP("CodeMode Monty Bare Call")
 
