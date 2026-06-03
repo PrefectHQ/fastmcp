@@ -107,6 +107,13 @@ gh api -X POST repos/PrefectHQ/fastmcp/releases/generate-notes \
 
 **Patch releases** (3.1.1, 3.0.2) get 1-2 sentences explaining what broke and what the fix does. Keep it minimal — the auto-generated changelog has the details.
 
+**Update the docs changelog after cutting the release.** Two hand-maintained files mirror the GitHub release and must get a new entry for every version, newest at the top (these are `.mdx` and are not covered by the prek Prettier hook, which only runs on `yaml`/`json5` — match the existing entries' style by hand):
+
+- `docs/changelog.mdx` is the full mirror. Add an `<Update label="v<version>" description="YYYY-MM-DD">` block with: a bold linked title (`**[v<version>: <pun>](<release-url>)**`), a condensed 1-paragraph intro (one sentence for patches), the full categorized PR list reformatted from the `--generate-notes` output (`* <title> by [@user](https://github.com/user) in [#NNNN](<pull-url>)`), a `## New Contributors` list (plain `@user`, linked PR), and a `**Full Changelog**: [vA...vB](<compare-url>)` line.
+- `docs/updates.mdx` is the skimmable card feed. Add an `<Update label="FastMCP <version>" description="Month DD, YYYY" tags={["Releases"]}>` wrapping a `<Card>` that links to the GitHub release, with a 1-2 sentence summary and (for point releases) a handful of emoji-bulleted highlights.
+
+Derive both from the GitHub release: the handwritten notes become the intro/summary, the `--generate-notes` PR list becomes the changelog body. Scripting the link reformatting is reliable for long PR lists. The new entry's tag and compare links 404 until the tag is pushed, so land the docs PR with or just after the release. Maintenance/backport releases (e.g. `v2.14.7`) get an entry in the same two files, slotted into the 2.x section.
+
 ### Commit Messages and Agent Attribution
 
 - **Agents NOT acting on behalf of @jlowin MUST identify themselves** (e.g., "🤖 Generated with Claude Code" in commits/PRs)
