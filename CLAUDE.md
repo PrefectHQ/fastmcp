@@ -84,8 +84,10 @@ Only cut releases when the maintainer explicitly asks. Tags follow `v<version>` 
 Write the maintainer-approved handwritten notes to a temporary file, then create the release. `--generate-notes` appends the auto-generated changelog after the handwritten content.
 
 ```bash
-gh release create v3.2.0 --target main --title "v3.2.0: Theme Here" --generate-notes --notes-file /tmp/release-notes.md
+gh release create v3.2.0 --target main --title "v3.2.0: Theme Here" --generate-notes --notes-start-tag v3.1.1 --notes-file /tmp/release-notes.md
 ```
+
+**Always pass `--notes-start-tag <last-stable-tag>`.** Without it, `--generate-notes` picks the most recent prior tag as the changelog start point — and if a prerelease exists (e.g. `v3.4.0b1`), it starts from *that*, silently truncating the PR list to only the commits since the beta. Pin it to the last stable release (e.g. `v3.3.1` when cutting `v3.4.0`). Verify after: the compare link at the bottom of the generated notes should read `v<last-stable>...v<new>`.
 
 Most releases target `main`, but maintenance or backport releases may target a different branch (e.g., `release/2.x`). Confirm the target with the maintainer if there's any ambiguity.
 
