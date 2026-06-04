@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import time
 from collections.abc import AsyncGenerator, Callable, Generator
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
+import anyio
 from mcp.server.auth.routes import build_resource_metadata_url
 from mcp.server.lowlevel.server import LifespanResultT
 from mcp.server.sse import SseServerTransport
 from mcp.server.streamable_http import (
+    MCP_SESSION_ID_HEADER,
     EventStore,
 )
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
@@ -27,6 +30,38 @@ if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
 
 logger = get_logger(__name__)
+
+
+class ClearingStreamableHTTPSessionManager(StreamableHTTPSessionManager):
+    """A session manager that tracks last activity time on stateful session transports."""
+
+    session_timeout: float = 60.0
+    prune_interval: float = 10.0
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._last_activity_times: dict[str, float] = {}
+
+    async def _handle_stateful_request(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
+        request = Request(scope, receive)
+        request_mcp_session_id = request.headers.get(MCP_SESSION_ID_HEADER)
+
+        if (
+            request_mcp_session_id is not None
+            and request_mcp_session_id in self._server_instances
+        ):
+            self._last_activity_times[request_mcp_session_id] = time.time()
+
+        await super()._handle_stateful_request(scope, receive, send)
+
+        for session_id in self._server_instances:
+            if session_id not in self._last_activity_times:
+                self._last_activity_times[session_id] = time.time()
 
 
 class StreamableHTTPASGIApp:
@@ -359,29 +394,64 @@ def create_streamable_http_app(
     # Create a lifespan manager to start and stop the session manager
     @asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncGenerator[None, None]:
-        streamable_http_app.session_manager = StreamableHTTPSessionManager(
+        streamable_http_app.session_manager = ClearingStreamableHTTPSessionManager(
             app=server._mcp_server,
             event_store=event_store,
             retry_interval=retry_interval,
             json_response=json_response,
             stateless=stateless_http,
         )
+
+        async def prune_sessions(task_status=anyio.TASK_STATUS_IGNORED):
+            task_status.started()
+            while True:
+                sm = streamable_http_app.session_manager
+                interval = (
+                    getattr(sm, "prune_interval", 10.0) if sm is not None else 10.0
+                )
+                await anyio.sleep(interval)
+                now = time.time()
+                sm = streamable_http_app.session_manager
+                if sm is None:
+                    break
+                for session_id, transport in list(sm._server_instances.items()):
+                    last_activity = sm._last_activity_times.get(session_id, 0.0)
+                    timeout = getattr(sm, "session_timeout", 60.0)
+                    if (
+                        len(transport._request_streams) == 0
+                        and (now - last_activity) > timeout
+                    ):
+                        logger.info(
+                            f"Pruning inactive streamable-HTTP session {session_id} "
+                            f"after {now - last_activity:.1f}s of inactivity"
+                        )
+                        try:
+                            await transport.terminate()
+                        except Exception:
+                            logger.debug(
+                                f"Error terminating transport for pruned session {session_id}",
+                                exc_info=True,
+                            )
+                        finally:
+                            sm._server_instances.pop(session_id, None)
+                            sm._last_activity_times.pop(session_id, None)
+
         async with (
+            anyio.create_task_group() as tg,
             server._lifespan_manager(),
             streamable_http_app.session_manager.run(),
         ):
+            await tg.start(prune_sessions)
             try:
                 yield
             finally:
+                tg.cancel_scope.cancel()
                 # Gracefully terminate active streamable-HTTP transports before
                 # the session manager's task group is cancelled. Without this,
                 # active SSE/streaming responses are aborted mid-flight and
                 # Uvicorn logs "ASGI callable returned without completing
                 # response." See PrefectHQ/fastmcp#3025.
                 sm = streamable_http_app.session_manager
-                # `_server_instances` is a private attribute of the upstream
-                # `StreamableHTTPSessionManager` (mcp SDK); termination is
-                # idempotent and tolerates new instances being added concurrently.
                 for transport in list(sm._server_instances.values()):
                     try:
                         await transport.terminate()
