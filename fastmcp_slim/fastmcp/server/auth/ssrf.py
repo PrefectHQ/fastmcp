@@ -365,6 +365,11 @@ async def ssrf_safe_fetch_response(
                     ),
                     follow_redirects=False,
                     verify=True,
+                    # Proxy mode relies on httpx reading HTTPS_PROXY/HTTP_PROXY from the
+                    # environment; keep trust_env on (the default) so that routing works.
+                    # Disabling it would silently turn proxy-mode fetches into direct,
+                    # unpinned requests.
+                    trust_env=True,
                 ) as client,
                 client.stream(
                     "GET",
