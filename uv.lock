@@ -10,7 +10,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-05-16T14:51:14.412224Z"
+exclude-newer = "2026-05-29T12:15:02.228753Z"
 exclude-newer-span = "P1W"
 
 [options.exclude-newer-package]
@@ -981,6 +981,7 @@ client = [
     { name = "mcp" },
     { name = "opentelemetry-api" },
     { name = "py-key-value-aio", extra = ["filetree", "keyring", "memory"] },
+    { name = "starlette" },
 ]
 code-mode = [
     { name = "pydantic-monty" },
@@ -994,6 +995,7 @@ mcp = [
     { name = "httpx" },
     { name = "mcp" },
     { name = "opentelemetry-api" },
+    { name = "starlette" },
 ]
 openai = [
     { name = "openai" },
@@ -1015,6 +1017,7 @@ server = [
     { name = "pyperclip" },
     { name = "python-multipart" },
     { name = "pyyaml" },
+    { name = "starlette" },
     { name = "uncalled-for" },
     { name = "uvicorn" },
     { name = "watchfiles" },
@@ -1066,6 +1069,9 @@ requires-dist = [
     { name = "python-multipart", marker = "extra == 'server'", specifier = ">=0.0.26" },
     { name = "pyyaml", marker = "extra == 'server'", specifier = ">=6.0,<7.0" },
     { name = "rich", specifier = ">=13.9.4" },
+    { name = "starlette", marker = "extra == 'client'", specifier = ">=1.0.1" },
+    { name = "starlette", marker = "extra == 'mcp'", specifier = ">=1.0.1" },
+    { name = "starlette", marker = "extra == 'server'", specifier = ">=1.0.1" },
     { name = "typing-extensions", specifier = ">=4.0.0" },
     { name = "uncalled-for", marker = "extra == 'server'", specifier = ">=0.2.0" },
     { name = "uvicorn", marker = "extra == 'server'", specifier = ">=0.35" },
@@ -3040,15 +3046,15 @@ wheels = [
 
 [[package]]
 name = "starlette"
-version = "1.0.0"
+version = "1.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
     { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/81/69/17425771797c36cded50b7fe44e850315d039f28b15901ab44839e70b593/starlette-1.0.0.tar.gz", hash = "sha256:6a4beaf1f81bb472fd19ea9b918b50dc3a77a6f2e190a12954b25e6ed5eea149", size = 2655289, upload-time = "2026-03-22T18:29:46.779Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c5/bf/616a066c2760f6c2b1ae3437cc28149734d069fbb46511712beae118a68c/starlette-1.2.0.tar.gz", hash = "sha256:3c5a6b23fff42492914e93890bb80cbfea72dbf37de268eec06185d62a4ca553", size = 2668923, upload-time = "2026-05-28T11:42:50.568Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0b/c9/584bc9651441b4ba60cc4d557d8a547b5aff901af35bda3a4ee30c819b82/starlette-1.0.0-py3-none-any.whl", hash = "sha256:d3ec55e0bb321692d275455ddfd3df75fff145d009685eb40dc91fc66b03d38b", size = 72651, upload-time = "2026-03-22T18:29:45.111Z" },
+    { url = "https://files.pythonhosted.org/packages/9f/85/492183764d5d01d4514be3730fdb8e228a80605783099551c51627578b5d/starlette-1.2.0-py3-none-any.whl", hash = "sha256:36e0c76ac59157e75dc4b3bdeafba97fb04eaf1878045f15dbef666a6f092ed7", size = 73213, upload-time = "2026-05-28T11:42:48.801Z" },
 ]
 
 [[package]]
