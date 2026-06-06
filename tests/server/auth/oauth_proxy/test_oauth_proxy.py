@@ -310,12 +310,12 @@ class TestOptionalClientSecret:
 
 
 class TestIdpCallbackErrorForwarding:
-    """Tests for RFC 6749 §4.1.2.1 error forwarding in the IdP callback."""
+    """Tests for error forwarding in the IdP callback."""
 
     async def test_error_with_valid_transaction_redirects_to_client(self, oauth_proxy):
         """When the IdP returns an error and the transaction exists, the proxy
-        must forward the error to the client's redirect_uri (RFC 6749 §4.1.2.1)
-        rather than showing an HTML error page."""
+        must forward the error to the client's redirect_uri rather than showing
+        an HTML error page."""
         txn_id = "test-txn-123"
         client_redirect_uri = "http://localhost:12345/callback"
         client_state = "client-state-abc"
