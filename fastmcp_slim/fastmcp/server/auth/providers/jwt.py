@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from joserfc import jwk, jwt
 from joserfc.errors import JoseError
+from joserfc.jws import JWSRegistry
 from pydantic import AnyHttpUrl, SecretStr
 from typing_extensions import TypedDict
 
@@ -429,7 +430,15 @@ class JWTVerifier(TokenVerifier):
 
             # Decode and verify the JWT token
             key = _import_key_for_algorithm(verification_key, self.algorithm)
-            claims = jwt.decode(token, key, algorithms=[self.algorithm]).claims
+            claims = jwt.decode(
+                token,
+                key,
+                algorithms=[self.algorithm],
+                registry=JWSRegistry(
+                    algorithms=[self.algorithm],
+                    strict_check_header=False,
+                ),
+            ).claims
 
             # Extract client ID early for logging
             client_id = (
