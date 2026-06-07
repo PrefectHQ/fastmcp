@@ -292,6 +292,48 @@ class TestDereferenceRefs:
         actions = {v["properties"]["action"]["const"] for v in result["anyOf"]}
         assert actions == {"identify", "delete"}
 
+    def test_discriminator_property_remains_required_after_inlining(self):
+        schema = {
+            "$defs": {
+                "Comprehensive": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {"const": "comprehensive", "type": "string"},
+                    },
+                },
+                "Validate": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {"const": "validate", "type": "string"},
+                        "target_id": {"type": "string"},
+                    },
+                    "required": ["target_id"],
+                },
+            },
+            "anyOf": [
+                {"$ref": "#/$defs/Comprehensive"},
+                {"$ref": "#/$defs/Validate"},
+            ],
+            "discriminator": {
+                "mapping": {
+                    "comprehensive": "#/$defs/Comprehensive",
+                    "validate": "#/$defs/Validate",
+                },
+                "propertyName": "kind",
+            },
+        }
+        result = dereference_refs(schema)
+
+        assert "discriminator" not in result
+        for variant in result["anyOf"]:
+            assert "kind" in variant["required"]
+        validate_schema = next(
+            variant
+            for variant in result["anyOf"]
+            if variant["properties"]["kind"]["const"] == "validate"
+        )
+        assert validate_schema["required"] == ["target_id", "kind"]
+
     def test_preserves_property_named_discriminator(self):
         """A field *named* 'discriminator' inside properties must survive."""
         schema = {

@@ -89,6 +89,25 @@ def _strip_discriminator(obj: Any) -> Any:
     """
     if isinstance(obj, dict):
         skip = "discriminator" in obj and ("anyOf" in obj or "oneOf" in obj)
+        if skip:
+            discriminator = obj.get("discriminator")
+            property_name = (
+                discriminator.get("propertyName")
+                if isinstance(discriminator, dict)
+                else None
+            )
+            if isinstance(property_name, str):
+                obj = obj.copy()
+                for key in ("anyOf", "oneOf"):
+                    variants = obj.get(key)
+                    if not isinstance(variants, list):
+                        continue
+                    obj[key] = [
+                        _require_property(variant, property_name)
+                        if isinstance(variant, dict)
+                        else variant
+                        for variant in variants
+                    ]
         # Keys that hold instance data, not sub-schemas — don't recurse.
         _DATA_KEYS = {"default", "const", "examples", "enum"}
         return {
@@ -99,6 +118,16 @@ def _strip_discriminator(obj: Any) -> Any:
     if isinstance(obj, list):
         return [_strip_discriminator(item) for item in obj]
     return obj
+
+
+def _require_property(schema: dict[str, Any], property_name: str) -> dict[str, Any]:
+    """Return a copy of *schema* with *property_name* in ``required``."""
+    required = schema.get("required")
+    if required is None:
+        return {**schema, "required": [property_name]}
+    if isinstance(required, list) and property_name not in required:
+        return {**schema, "required": [*required, property_name]}
+    return schema
 
 
 def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
