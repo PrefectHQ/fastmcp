@@ -459,6 +459,47 @@ def charge(amount: float) -> str:
             names = {t.name for t in tools_list}
             assert names == {"greet", "charge"}
 
+    async def test_mounted_servers_with_same_package_name(self, tmp_path: Path):
+        """Same package names in different provider roots should not collide."""
+        for server_name, tool_name in [
+            ("server1", "server1_tool"),
+            ("server2", "server2_tool"),
+        ]:
+            components = tmp_path / server_name / "components"
+            components.mkdir(parents=True)
+            (components / "__init__.py").write_text("")
+            (components / "tools.py").write_text(
+                f"""\
+from fastmcp.tools import tool
+
+@tool
+def {tool_name}() -> str:
+    return "{tool_name}"
+"""
+            )
+
+        server1 = FastMCP(
+            "server1",
+            providers=[
+                FileSystemProvider(tmp_path / "server1" / "components"),
+            ],
+        )
+        server2 = FastMCP(
+            "server2",
+            providers=[
+                FileSystemProvider(tmp_path / "server2" / "components"),
+            ],
+        )
+        parent = FastMCP("parent")
+        parent.mount(server1)
+        parent.mount(server2)
+
+        tools = await parent.list_tools()
+        assert {t.name for t in tools} == {"server1_tool", "server2_tool"}
+
+        result = await parent.call_tool("server2_tool", {})
+        assert "server2_tool" in str(result)
+
 
 class TestFileSystemProviderVersioning:
     """Tests for version propagation through FileSystemProvider."""

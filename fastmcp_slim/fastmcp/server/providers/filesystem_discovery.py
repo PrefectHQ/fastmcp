@@ -13,6 +13,7 @@ import hashlib
 import importlib.util
 import sys
 from dataclasses import dataclass, field
+from importlib.machinery import ModuleSpec
 from pathlib import Path
 from types import ModuleType
 
@@ -116,6 +117,79 @@ def _compute_module_name(file_path: Path, package_root: Path) -> str:
     return ".".join(parts)
 
 
+def _module_file_matches(module: ModuleType, file_path: Path) -> bool:
+    module_file = getattr(module, "__file__", None)
+    if module_file is None:
+        return False
+    return Path(module_file).resolve() == file_path.resolve()
+
+
+def _package_path_matches(module: ModuleType, package_root: Path) -> bool:
+    module_paths = getattr(module, "__path__", None)
+    if not module_paths:
+        return False
+    package_root = package_root.resolve()
+    return any(Path(p).resolve() == package_root for p in module_paths)
+
+
+def _private_package_prefix(package_root: Path) -> str:
+    digest = hashlib.sha1(str(package_root.resolve()).encode()).hexdigest()[:12]
+    return f"_fastmcp_pkg_{digest}"
+
+
+def _ensure_package_alias(name: str, package_path: Path) -> None:
+    package_path = package_path.resolve()
+    existing = sys.modules.get(name)
+    if existing is not None and _package_path_matches(existing, package_path):
+        return
+
+    init_file = package_path / "__init__.py"
+    if init_file.exists():
+        spec = importlib.util.spec_from_file_location(
+            name,
+            init_file,
+            submodule_search_locations=[str(package_path)],
+        )
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Cannot load package spec for {init_file}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+        return
+
+    module = ModuleType(name)
+    module.__path__ = [str(package_path)]  # type: ignore[attr-defined]
+    module.__package__ = name
+    module.__spec__ = ModuleSpec(name, loader=None, is_package=True)
+    sys.modules[name] = module
+
+
+def _import_module_from_spec(module_name: str, file_path: Path) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load spec for {file_path}")
+
+    existing = sys.modules.get(module_name)
+    if existing is not None:
+        existing.__spec__ = spec
+        existing.__loader__ = spec.loader
+        existing.__file__ = str(file_path)
+        try:
+            spec.loader.exec_module(existing)
+        except Exception as e:
+            raise ImportError(f"Failed to reload module {file_path}: {e}") from e
+        return existing
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception as e:
+        sys.modules.pop(module_name, None)
+        raise ImportError(f"Failed to execute module {file_path}: {e}") from e
+    return module
+
+
 def import_module_from_file(
     file_path: Path, provider_root: Path | None = None
 ) -> ModuleType:
@@ -149,6 +223,20 @@ def import_module_from_file(
     if package_root is not None:
         # Import as part of a package
         module_name = _compute_module_name(file_path, package_root)
+        existing = sys.modules.get(module_name)
+        if existing is not None and not _module_file_matches(existing, file_path):
+            prefix = _private_package_prefix(package_root)
+            private_module_name = f"{prefix}.{module_name}"
+            _ensure_package_alias(prefix, package_root.parent)
+
+            package_name = prefix
+            package_path = package_root.parent
+            for part in module_name.split(".")[:-1]:
+                package_name = f"{package_name}.{part}"
+                package_path = package_path / part
+                _ensure_package_alias(package_name, package_path)
+
+            return _import_module_from_spec(private_module_name, file_path)
 
         # Temporarily add package root's parent to sys.path for the import
         package_parent = str(package_root.parent)
