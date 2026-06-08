@@ -364,7 +364,8 @@ class FunctionTool(Tool):
             if _exception_traceback_contains_callable(e, self.fn):
                 raise
             raise ValidationError(
-                f"Invalid arguments for tool {self.name!r}: {e.errors(include_url=False)}",
+                f"Invalid arguments for tool {self.name!r}: validation failed: "
+                f"{e.errors(include_url=False)}",
                 log_level=logging.WARNING,
             ) from e
 
