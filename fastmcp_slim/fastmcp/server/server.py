@@ -1281,9 +1281,7 @@ class FastMCP(
                 try:
                     return await tool._run(arguments or {}, task_meta=task_meta)
                 except ValidationError as e:
-                    logger.log(
-                        e.log_level, f"Invalid arguments for tool {name!r}: {e}"
-                    )
+                    logger.log(e.log_level, f"Invalid arguments for tool {name!r}: {e}")
                     raise
                 except FastMCPError as e:
                     logger.log(

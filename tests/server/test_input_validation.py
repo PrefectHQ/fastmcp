@@ -15,7 +15,8 @@ from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
 from fastmcp import Client, FastMCP
-from fastmcp.exceptions import ToolError, ValidationError as FastMCPValidationError
+from fastmcp.exceptions import ToolError
+from fastmcp.exceptions import ValidationError as FastMCPValidationError
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools import ToolResult
 
