@@ -8,12 +8,16 @@ strict_input_validation=False, the default).
 
 import json
 
+import mcp.types
 import pytest
 from mcp.types import TextContent
 from pydantic import BaseModel
+from pydantic import ValidationError as PydanticValidationError
 
 from fastmcp import Client, FastMCP
-from fastmcp.exceptions import ToolError
+from fastmcp.exceptions import ToolError, ValidationError as FastMCPValidationError
+from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
+from fastmcp.tools import ToolResult
 
 
 class UserProfile(BaseModel):
@@ -352,6 +356,58 @@ class TestEdgeCases:
 
 
 class TestExpectedToolFailureLogging:
+    async def test_invalid_tool_arguments_raise_fastmcp_validation_error(self):
+        server = FastMCP("TestServer", strict_input_validation=False)
+
+        @server.tool
+        def square(n: int) -> int:
+            return n * n
+
+        with pytest.raises(FastMCPValidationError) as exc_info:
+            await server.call_tool("square", {"n": "not-a-number"})
+
+        assert isinstance(exc_info.value.__cause__, PydanticValidationError)
+        assert "Invalid arguments for tool 'square'" in str(exc_info.value)
+
+    async def test_middleware_can_catch_invalid_tool_argument_validation_error(self):
+        server = FastMCP("TestServer", strict_input_validation=False)
+        observed: list[FastMCPValidationError] = []
+
+        @server.tool
+        def square(n: int) -> int:
+            return n * n
+
+        class ObservingMiddleware(Middleware):
+            async def on_call_tool(
+                self,
+                context: MiddlewareContext[mcp.types.CallToolRequestParams],
+                call_next: CallNext[mcp.types.CallToolRequestParams, ToolResult],
+            ) -> ToolResult:
+                try:
+                    return await call_next(context)
+                except FastMCPValidationError as exc:
+                    observed.append(exc)
+                    raise
+
+        server.add_middleware(ObservingMiddleware())
+
+        with pytest.raises(FastMCPValidationError):
+            await server.call_tool("square", {"n": "not-a-number"})
+
+        assert len(observed) == 1
+
+    async def test_tool_body_pydantic_validation_error_is_tool_error(self):
+        server = FastMCP("TestServer", strict_input_validation=False)
+
+        @server.tool
+        def validate_inside() -> None:
+            UserProfile.model_validate({"name": "x", "age": "nope", "email": "e"})
+
+        with pytest.raises(ToolError) as exc_info:
+            await server.call_tool("validate_inside", {})
+
+        assert isinstance(exc_info.value.__cause__, PydanticValidationError)
+
     async def test_validation_error_logs_warning_without_traceback(self, caplog):
         mcp = FastMCP("TestServer", strict_input_validation=False)
 

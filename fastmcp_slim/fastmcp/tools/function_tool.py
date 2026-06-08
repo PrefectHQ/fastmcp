@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -23,11 +24,12 @@ import anyio
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, Icon, ToolAnnotations
 from pydantic import Field
+from pydantic import ValidationError as PydanticValidationError
 from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
 from fastmcp.decorators import get_fastmcp_meta, resolve_task_config
-from fastmcp.exceptions import FastMCPDeprecationWarning
+from fastmcp.exceptions import FastMCPDeprecationWarning, ValidationError
 from fastmcp.tools.base import (
     Tool,
     ToolResult,
@@ -54,6 +56,23 @@ if TYPE_CHECKING:
     from docket.execution import Execution
 
 F = TypeVar("F", bound=Callable[..., Any])
+
+
+def _exception_traceback_contains_callable(
+    exc: BaseException, fn: Callable[..., Any]
+) -> bool:
+    target = fn.__func__ if inspect.ismethod(fn) else fn
+    code = getattr(target, "__code__", None)
+    if code is None:
+        return False
+
+    traceback = exc.__traceback__
+    while traceback is not None:
+        if traceback.tb_frame.f_code is code:
+            return True
+        traceback = traceback.tb_next
+
+    return False
 
 
 @runtime_checkable
@@ -292,54 +311,62 @@ class FunctionTool(Tool):
         )
         type_adapter = get_cached_typeadapter(wrapper_fn)
 
-        # Apply timeout if configured. Combining timeout with
-        # run_in_thread=False on a sync function is rejected at
-        # registration (see FunctionTool.from_function), so the timeout
-        # path here only needs to handle async and threadpool-sync.
-        if self.timeout is not None:
-            try:
-                with anyio.fail_after(self.timeout):
-                    # Thread pool execution for sync functions, direct await for async
-                    if is_coroutine_function(wrapper_fn):
-                        result = await type_adapter.validate_python(arguments)
-                    else:
-                        # Sync function: run in threadpool to avoid blocking
-                        result = await call_sync_fn_in_threadpool(
-                            type_adapter.validate_python, arguments
-                        )
-                        # Handle sync wrappers that return awaitables
-                        if inspect.isawaitable(result):
-                            result = await result
-                    # Materialize generators inside timeout scope so slow
-                    # generators don't run past the configured timeout
-                    result = await self._materialize_generator(result)
-            except TimeoutError:
-                logger.warning(
-                    f"Tool '{self.name}' timed out after {self.timeout}s. "
-                    f"Consider using task=True for long-running operations. "
-                    f"See https://gofastmcp.com/servers/tasks"
-                )
-                raise McpError(
-                    ErrorData(
-                        code=-32000,
-                        message=f"Tool '{self.name}' execution timed out after {self.timeout}s",
+        try:
+            # Apply timeout if configured. Combining timeout with
+            # run_in_thread=False on a sync function is rejected at
+            # registration (see FunctionTool.from_function), so the timeout
+            # path here only needs to handle async and threadpool-sync.
+            if self.timeout is not None:
+                try:
+                    with anyio.fail_after(self.timeout):
+                        # Thread pool execution for sync functions, direct await for async
+                        if is_coroutine_function(wrapper_fn):
+                            result = await type_adapter.validate_python(arguments)
+                        else:
+                            # Sync function: run in threadpool to avoid blocking
+                            result = await call_sync_fn_in_threadpool(
+                                type_adapter.validate_python, arguments
+                            )
+                            # Handle sync wrappers that return awaitables
+                            if inspect.isawaitable(result):
+                                result = await result
+                        # Materialize generators inside timeout scope so slow
+                        # generators don't run past the configured timeout
+                        result = await self._materialize_generator(result)
+                except TimeoutError:
+                    logger.warning(
+                        f"Tool '{self.name}' timed out after {self.timeout}s. "
+                        f"Consider using task=True for long-running operations. "
+                        f"See https://gofastmcp.com/servers/tasks"
                     )
-                ) from None
-        else:
-            # No timeout: use existing execution path
-            if is_coroutine_function(wrapper_fn):
-                result = await type_adapter.validate_python(arguments)
-            elif self.run_in_thread:
-                result = await call_sync_fn_in_threadpool(
-                    type_adapter.validate_python, arguments
-                )
-                if inspect.isawaitable(result):
-                    result = await result
+                    raise McpError(
+                        ErrorData(
+                            code=-32000,
+                            message=f"Tool '{self.name}' execution timed out after {self.timeout}s",
+                        )
+                    ) from None
             else:
-                result = type_adapter.validate_python(arguments)
-                if inspect.isawaitable(result):
-                    result = await result
-            result = await self._materialize_generator(result)
+                # No timeout: use existing execution path
+                if is_coroutine_function(wrapper_fn):
+                    result = await type_adapter.validate_python(arguments)
+                elif self.run_in_thread:
+                    result = await call_sync_fn_in_threadpool(
+                        type_adapter.validate_python, arguments
+                    )
+                    if inspect.isawaitable(result):
+                        result = await result
+                else:
+                    result = type_adapter.validate_python(arguments)
+                    if inspect.isawaitable(result):
+                        result = await result
+                result = await self._materialize_generator(result)
+        except PydanticValidationError as e:
+            if _exception_traceback_contains_callable(e, self.fn):
+                raise
+            raise ValidationError(
+                f"Invalid arguments for tool {self.name!r}: {e.errors(include_url=False)}",
+                log_level=logging.WARNING,
+            ) from e
 
         return self.convert_result(result)
 
