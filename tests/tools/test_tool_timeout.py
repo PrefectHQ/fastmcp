@@ -178,6 +178,34 @@ class TestToolTimeout:
         assert result2.content[0].text == "long"
         assert result3.content[0].text == "none"
 
+    async def test_default_tool_timeout_is_inherited(self):
+        """Tools inherit server default timeout when none is specified."""
+        mcp = FastMCP(default_tool_timeout=30.0)
+
+        @mcp.tool
+        async def inherited_timeout_tool() -> str:
+            return "ok"
+
+        tools = await mcp.list_tools()
+        tool = next((t for t in tools if t.name == "inherited_timeout_tool"), None)
+
+        assert tool is not None
+        assert tool.timeout == 30.0
+
+    async def test_explicit_timeout_overrides_server_default(self):
+        """Explicit tool timeout overrides server default timeout."""
+        mcp = FastMCP(default_tool_timeout=30.0)
+
+        @mcp.tool(timeout=60.0)
+        async def override_timeout_tool() -> str:
+            return "ok"
+
+        tools = await mcp.list_tools()
+        tool = next((t for t in tools if t.name == "override_timeout_tool"), None)
+
+        assert tool is not None
+        assert tool.timeout == 60.0
+
     async def test_timeout_error_converted_to_tool_error(self):
         """Timeout errors are converted to ToolError by FastMCP."""
         mcp = FastMCP()

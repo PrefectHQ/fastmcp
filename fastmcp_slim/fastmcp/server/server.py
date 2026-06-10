@@ -310,6 +310,7 @@ class FastMCP(
         strict_input_validation: bool | None = None,
         list_page_size: int | None = None,
         tasks: bool | None = None,
+        default_tool_timeout: float | None = None,
         session_state_store: AsyncKeyValue | None = None,
         sampling_handler: SamplingHandler | None = None,
         sampling_handler_behavior: Literal["always", "fallback"] | None = None,
@@ -326,6 +327,7 @@ class FastMCP(
 
         # Resolve server default for background task support
         self._support_tasks_by_default: bool = tasks if tasks is not None else False
+        self._default_tool_timeout: float | None = default_tool_timeout
 
         # Docket and Worker instances (set during lifespan for cross-task access)
         self._docket = None
@@ -1777,7 +1779,7 @@ class FastMCP(
             exclude_args=exclude_args,
             meta=meta,
             task=task if task is not None else self._support_tasks_by_default,
-            timeout=timeout,
+            timeout=(timeout if timeout is not None else self._default_tool_timeout),
             auth=auth,
             run_in_thread=run_in_thread,
         )
