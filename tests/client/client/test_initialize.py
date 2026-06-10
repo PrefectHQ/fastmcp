@@ -1,5 +1,9 @@
 """Client initialization tests."""
 
+import pytest
+from mcp import McpError
+from mcp.types import INVALID_REQUEST
+
 from fastmcp.client import Client
 from fastmcp.server.server import FastMCP
 
@@ -32,6 +36,27 @@ class TestInitialize:
         async with client:
             # Should not be automatically initialized
             assert client.initialize_result is None
+
+    async def test_request_before_initialize_returns_invalid_request(
+        self, fastmcp_server
+    ):
+        """Requests sent before initialize should return INVALID_REQUEST."""
+        client = Client(fastmcp_server, auto_initialize=False)
+
+        async with client:
+            with pytest.raises(McpError) as exc_info:
+                await client.call_tool("greet", {"name": "World"})
+
+            assert exc_info.value.error.code == INVALID_REQUEST
+            assert (
+                exc_info.value.error.message
+                == "Received request before initialization was complete"
+            )
+
+            # Session should still be usable after explicit initialization.
+            await client.initialize()
+            result = await client.call_tool("greet", {"name": "World"})
+            assert "Hello, World!" in str(result.content)
 
     async def test_manual_initialize(self, fastmcp_server):
         """Test manual initialization when auto_initialize=False."""

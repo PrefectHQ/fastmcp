@@ -151,7 +151,36 @@ class MiddlewareServerSession(ServerSession):
                     return None
 
         # Fall through to default handling (task methods now handled via registered handlers)
-        return await super()._received_request(responder)
+        try:
+            return await super()._received_request(responder)
+        except RuntimeError as exc:
+            # If a client sends a request before initialize has completed
+            # (e.g. stale/reused session after restart), respond with a
+            # protocol error instead of relying on generic SDK fallback.
+            pre_init_error_message = (
+                "Received request before initialization was complete"
+            )
+
+            if str(exc) != pre_init_error_message:
+                raise
+
+            if not responder._completed:
+                with responder:
+                    await responder.respond(
+                        mcp.types.ErrorData(
+                            code=mcp.types.INVALID_REQUEST,
+                            message=pre_init_error_message,
+                        )
+                    )
+            else:
+                logger.warning(
+                    "Pre-initialization request error occurred after "
+                    "responder completion. Unable to send MCP error "
+                    "response.",
+                    exc_info=exc,
+                )
+
+            return None
 
 
 class LowLevelServer(_Server[LifespanResultT, RequestT]):
