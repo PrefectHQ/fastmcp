@@ -1,4 +1,4 @@
-"""Convert JSON Schema to Python types with validation.
+﻿"""Convert JSON Schema to Python types with validation.
 
 The json_schema_to_type function converts a JSON Schema into a Python type that can be used
 for validation with Pydantic. It supports:
@@ -231,11 +231,12 @@ def json_schema_to_type(
     schema = _normalize_yaml_types(schema)
 
     # Always use the top-level schema for references
+    seen_refs: set[str] = set()
     if schema.get("type") == "object":
-        return _object_schema_to_type(schema, schemas=schema, name=name)
+        return _object_schema_to_type(schema, schemas=schema, name=name, seen_refs=seen_refs)
     elif name:
         raise ValueError(f"Can not apply name to non-object schema: {name}")
-    result = _schema_to_type(schema, schemas=schema)
+    result = _schema_to_type(schema, schemas=schema, seen_refs=seen_refs)
     return result  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
 
 
@@ -349,18 +350,20 @@ def _create_enum(name: str, values: list[Any]) -> type:
 
 
 def _create_array_type(
-    schema: Mapping[str, Any], schemas: Mapping[str, Any]
+    schema: Mapping[str, Any],
+    schemas: Mapping[str, Any],
+    seen_refs: set[str] | None = None,
 ) -> type | Annotated[Any, ...]:
     """Create list/set type with optional constraints."""
     items = schema.get("items", {})
     if isinstance(items, list):
         # Handle positional item schemas
-        item_types = [_schema_to_type(s, schemas) for s in items]
+        item_types = [_schema_to_type(s, schemas, seen_refs) for s in items]
         combined = Union[tuple(item_types)]  # noqa: UP007
         base = list[combined]  # type: ignore[valid-type]  # ty:ignore[invalid-type-form]
     else:
         # Handle single item schema
-        item_type = _schema_to_type(items, schemas)
+        item_type = _schema_to_type(items, schemas, seen_refs)
         base_class = set if schema.get("uniqueItems") else list
         base = base_class[item_type]
 
@@ -384,6 +387,7 @@ def _object_schema_to_type(
     schema: Mapping[str, Any],
     schemas: Mapping[str, Any],
     name: str | None = None,
+    seen_refs: set[str] | None = None,
 ) -> type:
     """Convert an object schema to the appropriate Python type.
 
@@ -408,20 +412,22 @@ def _object_schema_to_type(
     if not has_properties and additional_props:
         if additional_props is True:
             return dict[str, Any]
-        value_type = _schema_to_type(additional_props, schemas)
+        value_type = _schema_to_type(additional_props, schemas, seen_refs)
         return cast(type[Any], dict[str, value_type])  # type: ignore[valid-type]  # ty:ignore[invalid-type-form]
 
     if not has_properties and not additional_props:
         return dict[str, Any]
 
     if has_properties and additional_props is True:
-        return _create_pydantic_model(schema, class_name, schemas)
+        return _create_pydantic_model(schema, class_name, schemas, seen_refs)
 
-    return _create_dataclass(schema, class_name, schemas)
+    return _create_dataclass(schema, class_name, schemas, seen_refs)
 
 
 def _get_from_type_handler(
-    schema: Mapping[str, Any], schemas: Mapping[str, Any]
+    schema: Mapping[str, Any],
+    schemas: Mapping[str, Any],
+    seen_refs: set[str] | None = None,
 ) -> Callable[..., Any]:
     """Get the appropriate type handler for the schema."""
 
@@ -431,8 +437,8 @@ def _get_from_type_handler(
         "number": lambda s: _create_numeric_type(float, s),
         "boolean": lambda _: bool,
         "null": lambda _: type(None),
-        "array": lambda s: _create_array_type(s, schemas),
-        "object": lambda s: _object_schema_to_type(s, schemas),
+        "array": lambda s: _create_array_type(s, schemas, seen_refs),
+        "object": lambda s: _object_schema_to_type(s, schemas, seen_refs=seen_refs),
     }
     return type_handlers.get(schema.get("type", None), _return_Any)
 
@@ -440,6 +446,7 @@ def _get_from_type_handler(
 def _schema_to_type(
     schema: Mapping[str, Any] | bool,
     schemas: Mapping[str, Any],
+    seen_refs: set[str] | None = None,
 ) -> type | ForwardRef:
     """Convert schema to appropriate Python type."""
     # Boolean schemas are valid in JSON Schema draft-06+:
@@ -453,8 +460,12 @@ def _schema_to_type(
     if not schema:
         return object
 
+    # Initialize cycle guard set on first call
+    if seen_refs is None:
+        seen_refs = set()
+
     if "type" not in schema and "properties" in schema:
-        return _create_dataclass(schema, schema.get("title", "<unknown>"), schemas)
+        return _create_dataclass(schema, schema.get("title", "<unknown>"), schemas, seen_refs)
 
     # Handle references first
     if "$ref" in schema:
@@ -462,7 +473,15 @@ def _schema_to_type(
         # Handle self-reference
         if ref == "#":
             return ForwardRef(schema.get("title", "Root"))
-        return _schema_to_type(_resolve_ref(ref, schemas), schemas)
+        # Cycle guard: if this ref is already being resolved, return ForwardRef
+        if ref in seen_refs:
+            name = ref.split("/")[-1]
+            return ForwardRef(name)
+        seen_refs.add(ref)
+        try:
+            return _schema_to_type(_resolve_ref(ref, schemas), schemas, seen_refs)
+        finally:
+            seen_refs.discard(ref)
 
     if "const" in schema:
         return Literal[schema["const"]]  # type: ignore
@@ -473,7 +492,7 @@ def _schema_to_type(
     # Handle anyOf unions
     if "anyOf" in schema:
         types: list[type | Any] = [
-            _schema_to_type(subschema, schemas) for subschema in schema["anyOf"]
+            _schema_to_type(subschema, schemas, seen_refs) for subschema in schema["anyOf"]
         ]
 
         # Check if one of the types is None (null)
@@ -503,7 +522,7 @@ def _schema_to_type(
         for t in schema_type:
             type_schema = dict(schema)
             type_schema["type"] = t
-            types.append(_schema_to_type(type_schema, schemas))
+            types.append(_schema_to_type(type_schema, schemas, seen_refs))
         has_null = type(None) in types
         types = [t for t in types if t is not type(None)]
         if has_null:
@@ -513,7 +532,7 @@ def _schema_to_type(
                 return Union[(*types, type(None))]  # type: ignore
         return Union[tuple(types)]  # type: ignore # noqa: UP007
 
-    return _get_from_type_handler(schema, schemas)(schema)
+    return _get_from_type_handler(schema, schemas, seen_refs)(schema)
 
 
 def _sanitize_name(name: str) -> str:
@@ -570,6 +589,7 @@ def _create_pydantic_model(
     schema: Mapping[str, Any],
     name: str | None = None,
     schemas: Mapping[str, Any] | None = None,
+    seen_refs: set[str] | None = None,
 ) -> type:
     """Create Pydantic BaseModel from object schema with additionalProperties."""
     name = name or schema.get("title", "Root")
@@ -600,10 +620,10 @@ def _create_pydantic_model(
         # Boolean schemas (JSON Schema draft-06+): resolve type directly,
         # then use an empty dict for .get() calls below.
         if isinstance(prop_schema, bool):
-            field_type = _schema_to_type(prop_schema, schemas or {})
+            field_type = _schema_to_type(prop_schema, schemas or {}, seen_refs)
             prop_schema = {}
         else:
-            field_type = _schema_to_type(prop_schema, schemas or {})
+            field_type = _schema_to_type(prop_schema, schemas or {}, seen_refs)
 
         # Handle defaults
         default_value = prop_schema.get("default", MISSING)
@@ -634,6 +654,7 @@ def _create_dataclass(
     schema: Mapping[str, Any],
     name: str | None = None,
     schemas: Mapping[str, Any] | None = None,
+    seen_refs: set[str] | None = None,
 ) -> type:
     """Create dataclass from object schema."""
     name = name or schema.get("title", "Root")
@@ -680,13 +701,13 @@ def _create_dataclass(
         # Boolean schemas (JSON Schema draft-06+): resolve type directly,
         # then use an empty dict for .get() calls below.
         if isinstance(prop_schema, bool):
-            field_type = _schema_to_type(prop_schema, schemas or {})
+            field_type = _schema_to_type(prop_schema, schemas or {}, seen_refs)
             prop_schema = {}
         elif prop_schema.get("$ref") == "#":
             # Check for self-reference in property
             field_type = ForwardRef(sanitized_name)
         else:
-            field_type = _schema_to_type(prop_schema, schemas or {})
+            field_type = _schema_to_type(prop_schema, schemas or {}, seen_refs)
 
         default_val = prop_schema.get("default", MISSING)
         is_required = prop_name in required
@@ -794,3 +815,4 @@ def _merge_defaults(
             )
 
     return result
+
