@@ -102,7 +102,7 @@ Set `FASTMCP_SSRF_TRUST_PROXY=true` when a trusted proxy is your mandated egress
 <Warning>
 This is a deliberate trust shift: the IP blocklist cannot be enforced through a proxy (the proxy does its own DNS, so an address FastMCP resolved is not the one the proxy dials). Only enable it when the proxy itself is trusted to mediate egress.
 
-FastMCP does not verify that a proxy is actually configured. If you set `FASTMCP_SSRF_TRUST_PROXY=true` but no `HTTPS_PROXY` / `HTTP_PROXY` is present in the server process's environment (or `NO_PROXY` excludes the target), httpx makes a **direct, unpinned request with the IP blocklist disabled** — there is no fallback to the default protection. Enable this setting only together with an active proxy.
+FastMCP does not refuse to run without a proxy. If you set `FASTMCP_SSRF_TRUST_PROXY=true` but no `HTTPS_PROXY` / `ALL_PROXY` is present in the server process's environment (or `NO_PROXY` excludes the target), httpx makes a **direct, unpinned request with the IP blocklist disabled** — there is no fallback to the default protection. FastMCP logs a warning on each such fetch when it finds no `HTTPS_PROXY` / `ALL_PROXY` configured (an `HTTP_PROXY` alone never routes these HTTPS-only fetches), but the request still proceeds. Enable this setting only together with an active proxy.
 </Warning>
 
 ## Advanced

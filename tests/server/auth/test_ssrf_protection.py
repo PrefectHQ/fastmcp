@@ -3,6 +3,7 @@
 This module tests the ssrf.py module which provides SSRF-protected HTTP fetching.
 """
 
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -527,6 +528,48 @@ class TestProxyMode:
         with temporary_settings(ssrf_trust_proxy=True):
             with pytest.raises(SSRFError, match="non-root path"):
                 await validate_url("https://example.com/", require_path=True)
+
+    async def test_warns_when_no_proxy_is_configured(self, caplog):
+        """No proxy in the environment → a loud warning, but the fetch proceeds."""
+        with (
+            temporary_settings(ssrf_trust_proxy=True),
+            patch("fastmcp.server.auth.ssrf.getproxies", return_value={}),
+            caplog.at_level(logging.WARNING, logger="FastMCP"),
+        ):
+            result = await validate_url("https://example.com/path")
+
+        assert result.resolved_ips == []
+        assert "FASTMCP_SSRF_TRUST_PROXY is enabled but no HTTPS_PROXY" in caplog.text
+
+    async def test_warns_when_only_http_proxy_is_configured(self, caplog):
+        """HTTP_PROXY alone never routes these HTTPS-only fetches — still warn."""
+        with (
+            temporary_settings(ssrf_trust_proxy=True),
+            patch(
+                "fastmcp.server.auth.ssrf.getproxies",
+                return_value={"http": "http://proxy.internal:3128"},
+            ),
+            caplog.at_level(logging.WARNING, logger="FastMCP"),
+        ):
+            await validate_url("https://example.com/path")
+
+        assert "FASTMCP_SSRF_TRUST_PROXY is enabled but no HTTPS_PROXY" in caplog.text
+
+    @pytest.mark.parametrize("scheme", ["https", "all"])
+    async def test_no_warning_when_proxy_is_configured(self, scheme, caplog):
+        """An https or all proxy entry routes the fetch — no warning."""
+        with (
+            temporary_settings(ssrf_trust_proxy=True),
+            patch(
+                "fastmcp.server.auth.ssrf.getproxies",
+                return_value={scheme: "http://proxy.internal:3128"},
+            ),
+            caplog.at_level(logging.WARNING, logger="FastMCP"),
+        ):
+            result = await validate_url("https://example.com/path")
+
+        assert result.resolved_ips == []
+        assert "FASTMCP_SSRF_TRUST_PROXY" not in caplog.text
 
     async def test_fetch_single_request_to_original_url(self):
         """Proxy mode issues one unpinned request to the hostname URL."""

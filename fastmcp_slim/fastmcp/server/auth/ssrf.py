@@ -19,6 +19,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from urllib.parse import urlparse
+from urllib.request import getproxies
 
 import httpx
 
@@ -231,6 +232,19 @@ async def validate_url(url: str, require_path: bool = False) -> ValidatedURL:
     # resolution and the blocklist entirely and signal proxy mode downstream with an
     # empty resolved_ips list. The scheme (HTTPS) and host checks above still run.
     if fastmcp.settings.ssrf_trust_proxy:
+        # Mirror httpx's trust_env lookup: an HTTPS request only routes through the
+        # https/all proxy entries. With neither configured, the fetch goes out as a
+        # direct, unpinned request with the blocklist already skipped — warn loudly,
+        # because that combination provides no SSRF protection at all.
+        proxies = getproxies()
+        if "https" not in proxies and "all" not in proxies:
+            logger.warning(
+                "FASTMCP_SSRF_TRUST_PROXY is enabled but no HTTPS_PROXY/ALL_PROXY "
+                "is configured, so the request to %s will be made directly with "
+                "SSRF protection disabled. Point HTTPS_PROXY at the trusted proxy "
+                "or unset FASTMCP_SSRF_TRUST_PROXY.",
+                hostname,
+            )
         return ValidatedURL(
             original_url=url,
             hostname=hostname,
