@@ -221,27 +221,6 @@ class TestRateLimitingMiddleware:
         with pytest.raises(RateLimitError, match="Rate limit exceeded"):
             await middleware.on_request(mock_context, mock_call_next)
 
-    async def test_on_request_async_get_client_id(self, mock_context, mock_call_next):
-        """Test per-client rate limiting with an async get_client_id."""
-
-        async def get_client_id(ctx):
-            return "async_client"
-
-        middleware = RateLimitingMiddleware(
-            max_requests_per_second=1.0,
-            burst_capacity=1,
-            get_client_id=get_client_id,
-        )
-
-        # First request should succeed
-        await middleware.on_request(mock_context, mock_call_next)
-
-        # Second request should be rate limited for the async-resolved client
-        with pytest.raises(
-            RateLimitError, match="Rate limit exceeded for client: async_client"
-        ):
-            await middleware.on_request(mock_context, mock_call_next)
-
     async def test_global_rate_limiting(self, mock_context, mock_call_next):
         """Test global rate limiting."""
         middleware = RateLimitingMiddleware(
@@ -253,6 +232,25 @@ class TestRateLimitingMiddleware:
 
         # Second request should be rate limited
         with pytest.raises(RateLimitError, match="Global rate limit exceeded"):
+            await middleware.on_request(mock_context, mock_call_next)
+
+    async def test_on_request_async_get_client_id(self, mock_context, mock_call_next):
+        """Test per-client rate limiting with an async get_client_id."""
+
+        async def get_client_id(ctx):
+            return "async_client"
+
+        middleware = RateLimitingMiddleware(
+            max_requests_per_second=1.0, burst_capacity=1, get_client_id=get_client_id
+        )
+
+        # First request should succeed
+        await middleware.on_request(mock_context, mock_call_next)
+
+        # Second request should be rate limited for the async-resolved client
+        with pytest.raises(
+            RateLimitError, match="Rate limit exceeded for client: async_client"
+        ):
             await middleware.on_request(mock_context, mock_call_next)
 
 

@@ -125,8 +125,8 @@ class RateLimitingMiddleware(Middleware):
         Args:
             max_requests_per_second: Sustained requests per second allowed
             burst_capacity: Maximum burst capacity. If None, defaults to 2x max_requests_per_second
-            get_client_id: Function to extract client ID from context. Can be sync
-                or async. If None, uses global limiting
+            get_client_id: Function to extract client ID from context. Can be sync or async.
+                If None, uses global limiting
             global_limit: If True, apply limit globally; if False, per-client
         """
         self.max_requests_per_second = max_requests_per_second
@@ -208,8 +208,7 @@ class SlidingWindowRateLimitingMiddleware(Middleware):
         Args:
             max_requests: Maximum requests allowed in the time window
             window_minutes: Time window in minutes
-            get_client_id: Function to extract client ID from context. Can be
-                sync or async
+            get_client_id: Function to extract client ID from context. Can be sync or async
         """
         self.max_requests = max_requests
         self.window_seconds = window_minutes * 60
