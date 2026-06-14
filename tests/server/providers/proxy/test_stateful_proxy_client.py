@@ -211,7 +211,7 @@ class TestStatefulProxyClient:
 
     async def test_stateful_proxy_clear_idempotent(self):
         """Test that clearing the cache doesn't break session teardown (fixes #1234).
-           Due to fallback registered casuing idempotent for session teardown , due to race condtion causing KeyError.
+        Due to fallback registered causing idempotent for session teardown , due to race condition causing KeyError.
         """
         backend = FastMCP("backend")
 
@@ -225,7 +225,7 @@ class TestStatefulProxyClient:
         async with Client(proxy) as client:
             await client.call_tool("ping", {})
             await stateful.clear()
-        
+
         # Test passes if no KeyError is raised during Client(proxy) exit
 
 

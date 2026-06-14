@@ -1230,7 +1230,7 @@ class StatefulProxyClient(ProxyClient[ClientTransportT]):
             self._caches[session] = proxy_client
 
             async def _on_session_exit():
-                if session not in self._caches :
+                if session not in self._caches:
                     return
                 self._caches.pop(session)
                 logger.debug(f"{proxy_client} will be disconnect")
