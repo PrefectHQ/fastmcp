@@ -324,6 +324,7 @@ class ResponseCachingMiddleware(Middleware):
                 annotations=tool.annotations,
                 meta=tool.meta,
                 tags=tool.tags,
+                capabilities=tool.capabilities,
             )
             for tool in tools
         ]

@@ -42,6 +42,7 @@ from fastmcp.server.middleware.caching import (
 )
 from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext
 from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.tools.capabilities import ToolCapability
 
 TEST_URI = AnyUrl("https://test_uri")
 
@@ -351,6 +352,38 @@ class TestResponseCachingMiddlewareIntegration:
             assert len(post_tool_list) == 5
 
             assert pre_tool_list == post_tool_list
+
+    async def test_list_tools_preserves_capabilities_and_security_meta(
+        self, caching_server: FastMCP
+    ):
+        """Test that cached list-tools preserves capability metadata."""
+
+        tool = Tool.from_function(
+            fn=lambda: 42,
+            name="shell_tool",
+            capabilities=[ToolCapability.SHELL_EXECUTE],
+        )
+        caching_server.add_tool(tool=tool)
+
+        async with Client(caching_server) as client:
+            pre_tool_list: list[mcp.types.Tool] = await client.list_tools()
+            cached_tool = next(
+                t for t in pre_tool_list if t.name == "shell_tool"
+            )
+            assert cached_tool.meta is not None
+            assert cached_tool.meta["fastmcp"]["security"]["capabilities"] == [
+                "shell:execute"
+            ]
+
+            post_tool_list: list[mcp.types.Tool] = await client.list_tools()
+            cached_tool = next(
+                t for t in post_tool_list if t.name == "shell_tool"
+            )
+            assert cached_tool.meta is not None
+            assert cached_tool.meta["fastmcp"]["security"]["capabilities"] == [
+                "shell:execute"
+            ]
+            assert cached_tool.meta["fastmcp"]["security"]["riskLevel"] == "critical"
 
     async def test_call_tool(
         self,
