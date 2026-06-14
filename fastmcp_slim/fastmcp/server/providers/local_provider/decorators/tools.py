@@ -9,7 +9,7 @@ from __future__ import annotations
 import inspect
 import types
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from functools import partial
 from typing import (
     TYPE_CHECKING,
@@ -31,6 +31,7 @@ from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.base import Tool
+from fastmcp.tools.capabilities import ToolCapabilityInput, normalize_tool_capabilities
 from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.utilities.types import NotSet, NotSetT
 
@@ -166,6 +167,7 @@ class ToolDecoratorMixin:
                     timeout=fmeta.timeout,
                     auth=fmeta.auth,
                     run_in_thread=fmeta.run_in_thread,
+                    capabilities=fmeta.capabilities,
                 )
             else:
                 tool = Tool.from_function(tool)
@@ -196,6 +198,7 @@ class ToolDecoratorMixin:
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         run_in_thread: bool = True,
+        capabilities: Sequence[ToolCapabilityInput] | None = None,
     ) -> F: ...
 
     @overload
@@ -219,6 +222,7 @@ class ToolDecoratorMixin:
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         run_in_thread: bool = True,
+        capabilities: Sequence[ToolCapabilityInput] | None = None,
     ) -> Callable[[F], F]: ...
 
     # NOTE: This method mirrors fastmcp.tools.tool() but adds registration,
@@ -245,6 +249,7 @@ class ToolDecoratorMixin:
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         run_in_thread: bool = True,
+        capabilities: Sequence[ToolCapabilityInput] | None = None,
     ) -> (
         Callable[[AnyFunction], FunctionTool]
         | FunctionTool
@@ -273,6 +278,7 @@ class ToolDecoratorMixin:
             enabled: Whether the tool is enabled (default True). If False, adds to blocklist.
             task: Optional task configuration for background execution
             serializer: Deprecated. Return ToolResult from your tools for full control over serialization.
+            capabilities: Security-sensitive capabilities exposed by this tool.
 
         Returns:
             The registered FunctionTool or a decorator function.
@@ -350,6 +356,7 @@ class ToolDecoratorMixin:
                     timeout=timeout,
                     auth=auth,
                     run_in_thread=run_in_thread,
+                    capabilities=capabilities,
                 )
                 self._add_component(tool_obj)
                 if not enabled:
@@ -376,6 +383,7 @@ class ToolDecoratorMixin:
                     auth=auth,
                     enabled=enabled,
                     run_in_thread=run_in_thread,
+                    capabilities=normalize_tool_capabilities(capabilities),
                 )
                 target = fn.__func__ if hasattr(fn, "__func__") else fn
                 target.__fastmcp__ = metadata  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
@@ -420,4 +428,5 @@ class ToolDecoratorMixin:
             timeout=timeout,
             auth=auth,
             run_in_thread=run_in_thread,
+            capabilities=capabilities,
         )

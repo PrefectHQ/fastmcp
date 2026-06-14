@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import inspect
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from types import MethodType
 from typing import (
@@ -32,6 +32,11 @@ from fastmcp.tools.base import (
     Tool,
     ToolResult,
     ToolResultSerializerType,
+)
+from fastmcp.tools.capabilities import (
+    ToolCapability,
+    ToolCapabilityInput,
+    normalize_tool_capabilities,
 )
 from fastmcp.tools.function_parsing import ParsedFunction, _is_object_schema
 from fastmcp.utilities.async_utils import (
@@ -87,6 +92,7 @@ class ToolMeta:
     auth: AuthCheck | list[AuthCheck] | None = None
     enabled: bool = True
     run_in_thread: bool = True
+    capabilities: list[ToolCapability] | None = None
 
 
 class FunctionTool(Tool):
@@ -130,6 +136,7 @@ class FunctionTool(Tool):
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         run_in_thread: bool | None = None,
+        capabilities: Sequence[ToolCapabilityInput] | None = None,
     ) -> FunctionTool:
         """Create a FunctionTool from a function.
 
@@ -153,6 +160,7 @@ class FunctionTool(Tool):
                     tags,
                     annotations,
                     meta,
+                    capabilities,
                     task,
                     serializer,
                     timeout,
@@ -193,6 +201,7 @@ class FunctionTool(Tool):
                 timeout=timeout,
                 auth=auth,
                 run_in_thread=True if run_in_thread is None else run_in_thread,
+                capabilities=normalize_tool_capabilities(capabilities),
             )
 
         if metadata.serializer is not None and fastmcp.settings.deprecation_warnings:
@@ -281,6 +290,7 @@ class FunctionTool(Tool):
             timeout=metadata.timeout,
             auth=metadata.auth,
             run_in_thread=metadata.run_in_thread,
+            capabilities=normalize_tool_capabilities(metadata.capabilities),
         )
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
@@ -414,6 +424,7 @@ def tool(
     timeout: float | None = None,
     auth: AuthCheck | list[AuthCheck] | None = None,
     run_in_thread: bool = True,
+    capabilities: Sequence[ToolCapabilityInput] | None = None,
 ) -> Callable[[F], F]: ...
 @overload
 def tool(
@@ -434,6 +445,7 @@ def tool(
     timeout: float | None = None,
     auth: AuthCheck | list[AuthCheck] | None = None,
     run_in_thread: bool = True,
+    capabilities: Sequence[ToolCapabilityInput] | None = None,
 ) -> Callable[[F], F]: ...
 
 
@@ -455,6 +467,7 @@ def tool(
     timeout: float | None = None,
     auth: AuthCheck | list[AuthCheck] | None = None,
     run_in_thread: bool = True,
+    capabilities: Sequence[ToolCapabilityInput] | None = None,
 ) -> Any:
     """Standalone decorator to mark a function as an MCP tool.
 
@@ -498,6 +511,7 @@ def tool(
             timeout=timeout,
             auth=auth,
             run_in_thread=run_in_thread,
+            capabilities=normalize_tool_capabilities(capabilities),
         )
         return FunctionTool.from_function(fn, metadata=tool_meta)
 
@@ -518,6 +532,7 @@ def tool(
             timeout=timeout,
             auth=auth,
             run_in_thread=run_in_thread,
+            capabilities=normalize_tool_capabilities(capabilities),
         )
         target = fn.__func__ if isinstance(fn, staticmethod | MethodType) else fn
         cast(Any, target).__fastmcp__ = metadata

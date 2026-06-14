@@ -15,6 +15,7 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.tools import tool
 from fastmcp.tools.base import Tool
+from fastmcp.tools.capabilities import ToolCapability
 from fastmcp.tools.function_tool import DecoratedTool, FunctionTool, ToolMeta
 
 
@@ -112,6 +113,25 @@ class TestToolDecorator:
         assert decorated.__fastmcp__.description == "Greets people"
         assert decorated.__fastmcp__.tags == {"greeting", "demo"}
         assert decorated.__fastmcp__.meta == {"custom": "value"}
+
+    def test_tool_with_capabilities(self):
+        """@tool should attach declared capabilities."""
+
+        @tool(capabilities=[ToolCapability.ENVIRONMENT_READ, "shell:execute"])
+        def read_secret() -> str:
+            return "secret"
+
+        decorated = cast(DecoratedTool, read_secret)
+        assert decorated.__fastmcp__.capabilities == [
+            ToolCapability.ENVIRONMENT_READ,
+            ToolCapability.SHELL_EXECUTE,
+        ]
+
+        created_tool = Tool.from_function(read_secret)
+        assert created_tool.capabilities == [
+            ToolCapability.ENVIRONMENT_READ,
+            ToolCapability.SHELL_EXECUTE,
+        ]
 
     @pytest.mark.parametrize(
         "factory", [Tool.from_function, FunctionTool.from_function]

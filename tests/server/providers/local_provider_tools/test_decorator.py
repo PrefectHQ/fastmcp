@@ -10,6 +10,7 @@ from typing_extensions import TypedDict
 from fastmcp import FastMCP
 from fastmcp.exceptions import NotFoundError
 from fastmcp.tools.base import Tool
+from fastmcp.tools.capabilities import ToolCapability
 
 
 def _normalize_anyof_order(schema):
@@ -339,3 +340,24 @@ class TestToolDecorator:
         tool = next(t for t in tools if t.name == "multiply")
 
         assert tool.meta == meta_data
+
+    async def test_tool_decorator_with_capabilities(self):
+        """Test that capabilities are passed through the tool decorator."""
+        mcp = FastMCP()
+
+        @mcp.tool(capabilities=[ToolCapability.SHELL_EXECUTE, "filesystem:delete"])
+        def run_command(command: str) -> str:
+            """Run a command."""
+            return command
+
+        tools = await mcp.list_tools()
+        tool = next(t for t in tools if t.name == "run_command")
+
+        assert tool.capabilities == [
+            ToolCapability.SHELL_EXECUTE,
+            ToolCapability.FILESYSTEM_DELETE,
+        ]
+        assert tool.to_mcp_tool().meta["fastmcp"]["security"] == {
+            "capabilities": ["shell:execute", "filesystem:delete"],
+            "riskLevel": "critical",
+        }

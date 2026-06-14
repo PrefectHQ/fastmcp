@@ -77,6 +77,7 @@ from fastmcp.server.transforms import (
 from fastmcp.server.transforms.visibility import apply_session_transforms, is_enabled
 from fastmcp.settings import DuplicateBehavior as DuplicateBehaviorSetting
 from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.tools.capabilities import ToolCapabilityInput
 from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.tools.tool_transform import ToolTransformConfig
 from fastmcp.utilities.components import FastMCPComponent, _coerce_version
@@ -1659,6 +1660,7 @@ class FastMCP(
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         run_in_thread: bool = True,
+        capabilities: Sequence[ToolCapabilityInput] | None = None,
     ) -> F: ...
 
     @overload
@@ -1681,6 +1683,7 @@ class FastMCP(
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         run_in_thread: bool = True,
+        capabilities: Sequence[ToolCapabilityInput] | None = None,
     ) -> Callable[[F], F]: ...
 
     def tool(
@@ -1702,6 +1705,7 @@ class FastMCP(
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         run_in_thread: bool = True,
+        capabilities: Sequence[ToolCapabilityInput] | None = None,
     ) -> (
         Callable[[AnyFunction], FunctionTool]
         | FunctionTool
@@ -1730,6 +1734,7 @@ class FastMCP(
             exclude_args: Optional list of argument names to exclude from the tool schema.
                 Deprecated: Use `Depends()` for dependency injection instead.
             meta: Optional meta information about the tool
+            capabilities: Security-sensitive capabilities exposed by this tool.
 
         Examples:
             Register a tool with a custom name:
@@ -1780,6 +1785,7 @@ class FastMCP(
             timeout=timeout,
             auth=auth,
             run_in_thread=run_in_thread,
+            capabilities=capabilities,
         )
 
         return result

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -27,6 +27,12 @@ from pydantic import BaseModel, Field, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
 from fastmcp.exceptions import FastMCPDeprecationWarning
+from fastmcp.tools.capabilities import (
+    ToolCapability,
+    ToolCapabilityInput,
+    build_security_metadata,
+    security_metadata_to_meta_dict,
+)
 from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
@@ -185,6 +191,13 @@ class Tool(FastMCPComponent):
             description="Execution timeout in seconds. If None, no timeout is applied."
         ),
     ] = None
+    capabilities: Annotated[
+        list[ToolCapability] | None,
+        Field(
+            default=None,
+            description="Security-sensitive capabilities declared by this tool.",
+        ),
+    ] = None
 
     @model_validator(mode="after")
     def _validate_tool_name(self) -> Tool:
@@ -227,6 +240,18 @@ class Tool(FastMCPComponent):
 
         return mcp_tool
 
+    def get_meta(self) -> dict[str, Any]:
+        """Get tool metadata, including FastMCP security capability metadata."""
+
+        meta = super().get_meta()
+        if self.capabilities:
+            fastmcp_meta = dict(meta.get("fastmcp", {}))
+            fastmcp_meta["security"] = security_metadata_to_meta_dict(
+                build_security_metadata(self.capabilities)
+            )
+            meta["fastmcp"] = fastmcp_meta
+        return meta
+
     @classmethod
     def from_function(
         cls,
@@ -247,6 +272,7 @@ class Tool(FastMCPComponent):
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         run_in_thread: bool | None = None,
+        capabilities: Sequence[ToolCapabilityInput] | None = None,
     ) -> FunctionTool:
         """Create a Tool from a function."""
         from fastmcp.tools.function_tool import FunctionTool
@@ -268,6 +294,7 @@ class Tool(FastMCPComponent):
             timeout=timeout,
             auth=auth,
             run_in_thread=run_in_thread,
+            capabilities=capabilities,
         )
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
@@ -435,6 +462,7 @@ class Tool(FastMCPComponent):
         meta: dict[str, Any] | NotSetT | None = NotSet,
         transform_args: dict[str, ArgTransform] | None = None,
         transform_fn: Callable[..., Any] | None = None,
+        capabilities: Sequence[ToolCapabilityInput] | NotSetT | None = NotSet,
     ) -> TransformedTool:
         from fastmcp.tools.tool_transform import TransformedTool
 
@@ -452,6 +480,7 @@ class Tool(FastMCPComponent):
             output_schema=output_schema,
             serializer=serializer,
             meta=meta,
+            capabilities=capabilities,
         )
 
     @classmethod

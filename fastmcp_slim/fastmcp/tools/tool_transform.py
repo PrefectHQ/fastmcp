@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import inspect
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass
@@ -18,6 +18,7 @@ from pydantic.json_schema import SkipJsonSchema
 import fastmcp
 from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.tools.base import Tool, ToolResult, _convert_to_content
+from fastmcp.tools.capabilities import ToolCapability, ToolCapabilityInput
 from fastmcp.tools.function_parsing import ParsedFunction
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
@@ -382,6 +383,7 @@ class TransformedTool(Tool):
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
         serializer: Callable[[Any], str] | NotSetT | None = NotSet,  # Deprecated
         meta: dict[str, Any] | NotSetT | None = NotSet,
+        capabilities: Sequence[ToolCapabilityInput] | NotSetT | None = NotSet,
     ) -> TransformedTool:
         """Create a transformed tool from a parent tool.
 
@@ -407,6 +409,7 @@ class TransformedTool(Tool):
                 - NotSet (default): Inherit from parent tool
                 - dict: Use custom meta information
                 - None: Remove meta information
+            capabilities: Security capabilities. Defaults to parent's capabilities.
 
         Returns:
             TransformedTool with the specified transformations.
@@ -591,6 +594,9 @@ class TransformedTool(Tool):
         final_serializer = (
             serializer if not isinstance(serializer, NotSetT) else tool.serializer
         )
+        final_capabilities = (
+            capabilities if not isinstance(capabilities, NotSetT) else tool.capabilities
+        )
 
         transformed_tool = cls(
             fn=final_fn,
@@ -606,6 +612,7 @@ class TransformedTool(Tool):
             annotations=final_annotations,
             serializer=final_serializer,
             meta=final_meta,
+            capabilities=final_capabilities,
             transform_args=transform_args,
             auth=tool.auth,
         )
@@ -971,6 +978,10 @@ class ToolTransformConfig(FastMCPBaseModel):
     meta: dict[str, Any] | None = Field(
         default=None,
         description="The new meta information for the tool.",
+    )
+    capabilities: list[ToolCapability] | None = Field(
+        default=None,
+        description="The new security-sensitive capabilities for the tool.",
     )
     enabled: bool = Field(
         default=True,

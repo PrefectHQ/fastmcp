@@ -4,6 +4,7 @@ import pytest
 from pydantic import Field
 
 from fastmcp.tools import Tool
+from fastmcp.tools.capabilities import ToolCapability
 from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.tools.tool_transform import (
     ToolTransformConfig,
@@ -144,6 +145,31 @@ def test_transform_adds_meta_to_none(sample_tool_no_title):
     sample_tool_no_title.meta = None
     transformed = Tool.from_tool(sample_tool_no_title, meta={"added": True})
     assert transformed.meta == {"added": True}
+
+
+def test_transform_inherits_capabilities(sample_tool):
+    """Test that transformed tools inherit security capabilities by default."""
+    sample_tool.capabilities = [ToolCapability.SHELL_EXECUTE]
+
+    transformed = Tool.from_tool(sample_tool, name="wrapped_tool")
+
+    assert transformed.capabilities == [ToolCapability.SHELL_EXECUTE]
+    assert transformed.to_mcp_tool().meta["fastmcp"]["security"] == {
+        "capabilities": ["shell:execute"],
+        "riskLevel": "critical",
+    }
+
+
+def test_transform_overrides_capabilities(sample_tool):
+    """Test that transformed tools can override inherited capabilities."""
+    sample_tool.capabilities = [ToolCapability.SHELL_EXECUTE]
+
+    transformed = Tool.from_tool(
+        sample_tool,
+        capabilities=[ToolCapability.FILESYSTEM_READ],
+    )
+
+    assert transformed.capabilities == [ToolCapability.FILESYSTEM_READ]
 
 
 def test_tool_transform_config_inherits_meta(sample_tool):

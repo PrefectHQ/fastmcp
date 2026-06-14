@@ -11,6 +11,7 @@ from mcp.types import (
 from pydantic import BaseModel
 
 from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.tools.capabilities import ToolCapability, ToolRiskLevel
 from fastmcp.utilities.types import Audio, File, Image
 
 
@@ -69,6 +70,43 @@ class TestToolFromFunction:
         # MCP tool includes fastmcp meta, so check that our meta is included
         assert mcp_tool.meta is not None
         assert meta_data.items() <= mcp_tool.meta.items()
+
+    def test_capabilities_parameter(self):
+        """Test that capabilities are stored and surfaced in MCP metadata."""
+
+        def delete_file(path: str) -> str:
+            """Delete a file."""
+            return path
+
+        tool = Tool.from_function(
+            delete_file,
+            capabilities=[
+                ToolCapability.FILESYSTEM_READ,
+                "filesystem:delete",
+                ToolCapability.FILESYSTEM_DELETE,
+            ],
+        )
+
+        assert tool.capabilities == [
+            ToolCapability.FILESYSTEM_READ,
+            ToolCapability.FILESYSTEM_DELETE,
+        ]
+
+        mcp_tool = tool.to_mcp_tool()
+        assert mcp_tool.meta is not None
+        assert mcp_tool.meta["fastmcp"]["security"] == {
+            "capabilities": ["filesystem:read", "filesystem:delete"],
+            "riskLevel": ToolRiskLevel.CRITICAL.value,
+        }
+
+    def test_invalid_capability_raises(self):
+        """Test that invalid capability strings fail during registration."""
+
+        def tool_fn() -> str:
+            return "ok"
+
+        with pytest.raises(ValueError):
+            Tool.from_function(tool_fn, capabilities=["invalid:capability"])
 
     async def test_async_function(self):
         """Test registering and running an async function."""
