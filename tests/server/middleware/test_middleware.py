@@ -619,3 +619,57 @@ class TestApplyMiddlewareParameter:
             "add", {"a": 5, "b": 3}, run_middleware=False
         )
         assert result_without.structured_content["result"] == 8  # type: ignore[union-attr,index]  # ty:ignore[not-subscriptable]
+
+
+class TestCallNextKeywordArgument:
+    """Regression tests for https://github.com/jlowin/fastmcp/issues/4300.
+
+    The wrapped closure in _run_middleware must use ``context`` as its
+    parameter name so that callers using ``call_next(context=context)``
+    (keyword argument) match the CallNext protocol signature.
+    """
+
+    async def test_call_next_with_keyword_context(self):
+        """Middleware using call_next(context=context) should not raise TypeError."""
+        call_order: list[str] = []
+
+        class FirstMiddleware(Middleware):
+            async def on_call_tool(
+                self,
+                context: MiddlewareContext,
+                call_next: CallNext,
+            ) -> ToolResult:
+                call_order.append("first_before")
+                # Use keyword argument — this is the pattern that triggers #4300
+                result = await call_next(context=context)
+                call_order.append("first_after")
+                return result
+
+        class SecondMiddleware(Middleware):
+            async def on_call_tool(
+                self,
+                context: MiddlewareContext,
+                call_next: CallNext,
+            ) -> ToolResult:
+                call_order.append("second_before")
+                result = await call_next(context)
+                call_order.append("second_after")
+                return result
+
+        server = FastMCP()
+
+        @server.tool
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        server.add_middleware(FirstMiddleware())
+        server.add_middleware(SecondMiddleware())
+
+        result = await server.call_tool("greet", {"name": "World"})
+        assert result.content is not None
+        assert call_order == [
+            "first_before",
+            "second_before",
+            "second_after",
+            "first_after",
+        ]
