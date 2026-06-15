@@ -104,6 +104,38 @@ class TestToolTimeout:
         with pytest.raises(ToolError):
             await mcp.call_tool("slow_tool")
 
+    async def test_custom_tool_timeout_error_factory(self):
+        """Custom tool timeout error factory is used to create timeout exceptions."""
+        mcp = FastMCP(
+            tool_timeout_error_factory=lambda name, timeout: ToolError(
+                f"custom timeout: {name} after {timeout}"
+            )
+        )
+
+        @mcp.tool(timeout=0.01)
+        async def slow_tool() -> str:
+            await anyio.sleep(1)
+            return "never"
+
+        with pytest.raises(ToolError, match="custom timeout: slow_tool after 0.01"):
+            await mcp.call_tool("slow_tool")
+
+    async def test_on_tool_timeout_handler(self):
+        """on_tool_timeout handler is called when a tool times out."""
+        mcp = FastMCP()
+
+        @mcp.on_tool_timeout
+        def timeout_error(name: str, timeout: float) -> Exception:
+            return ToolError(f"hook timeout: {name}")
+
+        @mcp.tool(timeout=0.01)
+        async def slow_tool() -> str:
+            await anyio.sleep(1)
+            return "never"
+
+        with pytest.raises(ToolError, match="hook timeout: slow_tool"):
+            await mcp.call_tool("slow_tool")
+
     async def test_timeout_from_tool_from_function(self):
         """Timeout works when using Tool.from_function()."""
         from fastmcp.tools import Tool

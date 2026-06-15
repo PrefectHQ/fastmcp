@@ -13,6 +13,7 @@ from typing import (
     Any,
     Literal,
     Protocol,
+    TypeAlias,
     TypeVar,
     cast,
     overload,
@@ -55,6 +56,7 @@ if TYPE_CHECKING:
 
 F = TypeVar("F", bound=Callable[..., Any])
 
+ToolTimeoutErrorFactory: TypeAlias = Callable[[str, float], Exception]
 
 @runtime_checkable
 class DecoratedTool(Protocol):
@@ -314,6 +316,21 @@ class FunctionTool(Tool):
                     # generators don't run past the configured timeout
                     result = await self._materialize_generator(result)
             except TimeoutError:
+                from fastmcp.server.dependencies import get_server
+
+                try:
+                    timeout_error_factory = get_server()._tool_timeout_error_factory
+                except RuntimeError:
+                    timeout_error_factory = None
+
+                if timeout_error_factory is not None:
+                    error = timeout_error_factory(self.name, self.timeout)
+                    if not isinstance(error, Exception):
+                        raise TypeError(
+                            "tool_timeout_error_factory must return an Exception"
+                        ) from None
+                    raise error from None
+
                 logger.warning(
                     f"Tool '{self.name}' timed out after {self.timeout}s. "
                     f"Consider using task=True for long-running operations. "

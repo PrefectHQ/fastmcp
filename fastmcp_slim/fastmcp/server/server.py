@@ -77,7 +77,7 @@ from fastmcp.server.transforms import (
 from fastmcp.server.transforms.visibility import apply_session_transforms, is_enabled
 from fastmcp.settings import DuplicateBehavior as DuplicateBehaviorSetting
 from fastmcp.tools.base import Tool, ToolResult
-from fastmcp.tools.function_tool import FunctionTool
+from fastmcp.tools.function_tool import FunctionTool, ToolTimeoutErrorFactory
 from fastmcp.tools.tool_transform import ToolTransformConfig
 from fastmcp.utilities.components import FastMCPComponent, _coerce_version
 from fastmcp.utilities.logging import get_logger
@@ -315,6 +315,7 @@ class FastMCP(
         sampling_handler_behavior: Literal["always", "fallback"] | None = None,
         client_log_level: mcp.types.LoggingLevel | None = None,
         experimental_capabilities: dict[str, dict[str, Any]] | None = None,
+        tool_timeout_error_factory: ToolTimeoutErrorFactory | None = None,
         **kwargs: Any,
     ):
         _check_removed_kwargs(kwargs)
@@ -432,6 +433,10 @@ class FastMCP(
         self.sampling_handler: SamplingHandler | None = sampling_handler
         self.sampling_handler_behavior: Literal["always", "fallback"] = (
             sampling_handler_behavior or "fallback"
+        )
+
+        self._tool_timeout_error_factory: ToolTimeoutErrorFactory | None = (
+            tool_timeout_error_factory
         )
 
     def __repr__(self) -> str:
@@ -1168,6 +1173,12 @@ class FastMCP(
         run_middleware: bool = True,
         task_meta: TaskMeta,
     ) -> mcp.types.CreateTaskResult: ...
+
+    def on_tool_timeout(
+        self, factory: ToolTimeoutErrorFactory
+    ) -> ToolTimeoutErrorFactory:
+        self._tool_timeout_error_factory = factory
+        return factory
 
     async def call_tool(
         self,
