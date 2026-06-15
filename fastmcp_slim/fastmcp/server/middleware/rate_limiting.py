@@ -1,6 +1,7 @@
 """Rate limiting middleware for protecting FastMCP servers from abuse."""
 
 import time
+import inspect
 from collections import defaultdict, deque
 from collections.abc import Callable
 from typing import Any
@@ -127,7 +128,11 @@ class RateLimitingMiddleware(Middleware):
         """
         self.max_requests_per_second = max_requests_per_second
         self.burst_capacity = burst_capacity or int(max_requests_per_second * 2)
-        self.get_client_id = get_client_id
+        self.get_client_id_result = get_client_id
+        if inspect.isawaitable(self.get_client_id_result):
+            self.get_client_id = await self.get_client_id_result
+        else:
+            self.get_client_id = self.get_client_id_result
         self.global_limit = global_limit
 
         # Storage for rate limiters per client
