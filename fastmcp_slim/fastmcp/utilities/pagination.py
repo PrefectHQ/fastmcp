@@ -36,7 +36,10 @@ class CursorState:
         """
         try:
             data = json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
-            return cls(offset=data["o"])
+            offset = data["o"]
+            if type(offset) is not int or offset < 0:
+                raise ValueError("cursor offset must be a non-negative integer")
+            return cls(offset=offset)
         except (
             json.JSONDecodeError,
             KeyError,
@@ -65,6 +68,9 @@ def paginate_sequence(
     Raises:
         ValueError: If the cursor is invalid.
     """
+    if page_size <= 0:
+        raise ValueError("page_size must be a positive integer")
+
     offset = 0
     if cursor:
         state = CursorState.decode(cursor)

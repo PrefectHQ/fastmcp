@@ -51,6 +51,24 @@ class TestCursorEncoding:
         with pytest.raises(ValueError, match="Invalid cursor"):
             CursorState.decode(invalid)
 
+    def test_decode_negative_offset_raises(self) -> None:
+        """Cursor offsets must not move backwards."""
+        import base64
+        import json
+
+        invalid = base64.urlsafe_b64encode(json.dumps({"o": -1}).encode()).decode()
+        with pytest.raises(ValueError, match="Invalid cursor"):
+            CursorState.decode(invalid)
+
+    def test_decode_non_integer_offset_raises(self) -> None:
+        """Cursor offsets must be integers."""
+        import base64
+        import json
+
+        invalid = base64.urlsafe_b64encode(json.dumps({"o": "1"}).encode()).decode()
+        with pytest.raises(ValueError, match="Invalid cursor"):
+            CursorState.decode(invalid)
+
 
 class TestPaginateSequence:
     """Tests for the paginate_sequence helper."""
@@ -103,6 +121,11 @@ class TestPaginateSequence:
         """Invalid cursor should raise ValueError."""
         with pytest.raises(ValueError, match="Invalid cursor"):
             paginate_sequence([1, 2, 3], "invalid!", 10)
+
+    def test_non_positive_page_size_raises(self) -> None:
+        """Page size must advance pagination."""
+        with pytest.raises(ValueError, match="page_size must be a positive integer"):
+            paginate_sequence([1, 2, 3], None, 0)
 
 
 class TestServerPagination:
