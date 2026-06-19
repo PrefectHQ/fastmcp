@@ -208,7 +208,8 @@ class SlidingWindowRateLimitingMiddleware(Middleware):
         Args:
             max_requests: Maximum requests allowed in the time window
             window_minutes: Time window in minutes
-            get_client_id: Function to extract client ID from context. Can be sync or async
+            get_client_id: Function to extract client ID from context. Can be sync or async.
+                If None, uses global limiting
         """
         self.max_requests = max_requests
         self.window_seconds = window_minutes * 60
