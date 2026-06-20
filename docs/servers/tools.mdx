@@ -865,6 +865,37 @@ async def fetch_data(url: str) -> dict:
 
 Timeouts are specified in seconds as a float. When a tool exceeds its timeout, FastMCP returns an MCP error with code `-32000` and a message indicating which tool timed out and how long it ran. Both sync and async tools support timeouts—sync functions run in thread pools, so the timeout applies to the entire operation regardless of execution model.
 
+Servers can customize the exception raised for tool timeouts with `FastMCP(tool_timeout_error_factory=...)` or the `@mcp.on_tool_timeout` decorator. The factory receives the tool name and timeout value, and must return an exception. This is useful when you want timeout failures to use your application's normal error type, message format, or observability path.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
+
+mcp = FastMCP()
+
+@mcp.on_tool_timeout
+def timeout_error(name: str, timeout: float) -> Exception:
+    return ToolError(f"{name} timed out after {timeout}s")
+
+@mcp.tool(timeout=30.0)
+async def fetch_data(url: str) -> dict:
+    ...
+```
+
+The same factory can be passed directly to the server constructor:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
+
+def timeout_error(name: str, timeout: float) -> Exception:
+    return ToolError(f"{name} timed out after {timeout}s")
+
+mcp = FastMCP(tool_timeout_error_factory=timeout_error)
+```
+
+When a custom timeout factory is configured, FastMCP raises the returned exception instead of creating the built-in MCP timeout error. Custom logging or metrics should be handled in the factory.
+
 <Note>
 Tools must explicitly opt-in to timeouts. There is no server-level default timeout setting.
 </Note>
