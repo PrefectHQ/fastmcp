@@ -864,11 +864,19 @@ def _redact(arguments: dict | None) -> dict:
     return {key: "<redacted>" for key in (arguments or {})}
 
 
+def _call_id(context: MiddlewareContext) -> str | None:
+    """Request id when an MCP session is active (see Session Availability above)."""
+    ctx = context.fastmcp_context
+    if ctx is not None and ctx.request_context:
+        return ctx.request_id
+    return None
+
+
 class AuditMiddleware(Middleware):
     async def on_call_tool(self, context: MiddlewareContext, call_next):
         record = {
             "tool": context.message.name,
-            "call_id": getattr(context.fastmcp_context, "request_id", None),
+            "call_id": _call_id(context),
             "schema_hash": _schema_hash(context.message.arguments),
             "arguments": _redact(context.message.arguments),
             "received_at": context.timestamp.isoformat(),
