@@ -101,3 +101,33 @@ async def test_forbidden_mode_tool_rejects_task_calls(tool_server):
         # New behavior: mode="forbidden" returns an error
         assert result.is_error
         assert "does not support task-augmented execution" in str(result)
+
+
+async def test_tool_task_validates_pydantic_model_arguments():
+    """Task tools receive Pydantic-model arguments as validated instances, not raw dicts."""
+    from pydantic import BaseModel
+
+    mcp = FastMCP("pydantic-task-server")
+
+    class Item(BaseModel):
+        value: str
+
+    @mcp.tool(task=True)
+    async def process_items(items: list[Item]) -> str:
+        """Process a list of items."""
+        # This should work because items are validated Pydantic models
+        return f"{type(items[0]).__name__}"
+
+    async with Client(mcp) as client:
+        # Synchronous call should validate
+        sync_result = await client.call_tool(
+            "process_items", {"items": [{"value": "x"}]}
+        )
+        assert sync_result.data == "Item"
+
+        # Task call should also validate (this was the bug in #4349)
+        task = await client.call_tool(
+            "process_items", {"items": [{"value": "x"}]}, task=True
+        )
+        task_result = await task.result()
+        assert task_result.data == "Item"

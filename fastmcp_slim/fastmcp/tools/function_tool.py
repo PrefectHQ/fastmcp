@@ -357,16 +357,83 @@ class FunctionTool(Tool):
             return list(result)
         return result
 
+    @staticmethod
+    def _validate_arguments(
+        fn: Callable[..., Any], arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Validate arguments against a function's signature without calling it.
+
+        Creates a Pydantic model from the function's parameters and validates
+        the arguments, returning the validated arguments as a dict with
+        Pydantic model instances preserved.
+        """
+        from typing import get_type_hints
+
+        from pydantic import create_model
+
+        sig = inspect.signature(fn)
+        try:
+            type_hints = get_type_hints(fn)
+        except Exception:
+            type_hints = fn.__annotations__ if hasattr(fn, "__annotations__") else {}
+
+        fields: dict[str, Any] = {}
+        for param_name, param in sig.parameters.items():
+            annotation = type_hints.get(param_name, Any)
+            if param.default is inspect.Parameter.empty:
+                fields[param_name] = (annotation, ...)
+            else:
+                fields[param_name] = (annotation, param.default)
+
+        if not fields:
+            return arguments
+
+        fn_name = getattr(fn, "__name__", "Function")
+        model = create_model(f"{fn_name}Args", **fields)
+        validated = model.model_validate(arguments)
+        return {field: getattr(validated, field) for field in model.model_fields}
+
     def register_with_docket(self, docket: Docket) -> None:
         """Register this tool with docket for background execution.
 
-        Registers the raw function so Docket sees and resolves ALL
-        dependencies — both FastMCP's (CurrentContext, Progress) and
-        Docket-native ones (Retry, Timeout, ConcurrencyLimit).
+        Registers a wrapper function that validates arguments before calling
+        the raw function. This preserves Docket's dependency resolution while
+        ensuring Pydantic models are properly validated.
         """
         if not self.task_config.supports_tasks():
             return
-        docket.register(self.fn, names=[self.key])
+
+        from fastmcp.server.dependencies import without_injected_parameters
+
+        wrapper_fn = without_injected_parameters(
+            self.fn, run_in_thread=self.run_in_thread
+        )
+
+        wrapper_sig = inspect.signature(wrapper_fn)
+        wrapper_params = set(wrapper_sig.parameters.keys())
+
+        if is_coroutine_function(self.fn):
+
+            async def validated_wrapper(**kwargs: Any) -> Any:
+                validated_args = self._validate_arguments(wrapper_fn, kwargs)
+                for key in kwargs:
+                    if key not in wrapper_params:
+                        validated_args[key] = kwargs[key]
+                return await self.fn(**validated_args)
+        else:
+
+            def validated_wrapper(**kwargs: Any) -> Any:
+                validated_args = self._validate_arguments(wrapper_fn, kwargs)
+                for key in kwargs:
+                    if key not in wrapper_params:
+                        validated_args[key] = kwargs[key]
+                return self.fn(**validated_args)
+
+        validated_wrapper.__signature__ = inspect.signature(self.fn)  # ty: ignore[invalid-assignment]
+        validated_wrapper.__name__ = getattr(self.fn, "__name__", "tool")
+        validated_wrapper.__qualname__ = getattr(self.fn, "__qualname__", "tool")
+
+        docket.register(validated_wrapper, names=[self.key])
 
     async def add_to_docket(
         self,
