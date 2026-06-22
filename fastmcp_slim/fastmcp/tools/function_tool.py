@@ -15,6 +15,7 @@ from typing import (
     Protocol,
     TypeVar,
     cast,
+    get_type_hints,
     overload,
     runtime_checkable,
 )
@@ -22,7 +23,7 @@ from typing import (
 import anyio
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, Icon, ToolAnnotations
-from pydantic import Field
+from pydantic import Field, create_model
 from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
@@ -87,6 +88,48 @@ class ToolMeta:
     auth: AuthCheck | list[AuthCheck] | None = None
     enabled: bool = True
     run_in_thread: bool = True
+
+
+def _validate_tool_arguments(
+    fn: Callable[..., Any], arguments: dict[str, Any]
+) -> dict[str, Any]:
+    """Validate arguments against a function's parameter types without calling it.
+
+    Builds a throwaway Pydantic model from the function signature, validates
+    the arguments dict against it, and returns a dict whose values are the
+    validated Python objects (e.g. Pydantic model instances instead of raw
+    dicts). Parameters that are absent from *arguments* are filled with their
+    defaults or omitted, mirroring what ``TypeAdapter.validate_python`` does
+    for the synchronous call path.
+    """
+    sig = inspect.signature(fn)
+    try:
+        hints = get_type_hints(fn, include_extras=True)
+    except Exception:
+        hints = {
+            name: param.annotation
+            for name, param in sig.parameters.items()
+            if param.annotation is not inspect.Parameter.empty
+        }
+
+    fields: dict[str, tuple[Any, Any]] = {}
+    for name, param in sig.parameters.items():
+        annotation = hints.get(name, Any)
+        if param.default is not inspect.Parameter.empty:
+            fields[name] = (annotation, param.default)
+        else:
+            fields[name] = (annotation, ...)
+
+    if not fields:
+        return arguments
+
+    arg_model = create_model(f"{getattr(fn, '__name__', 'Tool')}_Args", **fields)
+    validated = arg_model.model_validate(arguments)
+    return {
+        name: getattr(validated, name)
+        for name in fields
+        if name in arguments or fields[name][1] is not ...
+    }
 
 
 class FunctionTool(Tool):
@@ -380,6 +423,9 @@ class FunctionTool(Tool):
         """Schedule this tool for background execution via docket.
 
         FunctionTool splats the arguments dict since .fn expects **kwargs.
+        Arguments are validated against the function's type annotations so
+        that Pydantic-model parameters arrive as model instances, not raw
+        dicts — matching the synchronous run() path.
 
         Args:
             docket: The Docket instance
@@ -388,10 +434,17 @@ class FunctionTool(Tool):
             task_key: Redis storage key for the result
             **kwargs: Additional kwargs passed to docket.add()
         """
+        from fastmcp.server.dependencies import without_injected_parameters
+
+        wrapper_fn = without_injected_parameters(
+            self.fn, run_in_thread=self.run_in_thread
+        )
+        validated_arguments = _validate_tool_arguments(wrapper_fn, arguments)
+
         lookup_key = fn_key or self.key
         if task_key:
             kwargs["key"] = task_key
-        return await docket.add(lookup_key, **kwargs)(**arguments)
+        return await docket.add(lookup_key, **kwargs)(**validated_arguments)
 
 
 @overload
