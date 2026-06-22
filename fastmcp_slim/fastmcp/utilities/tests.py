@@ -127,7 +127,8 @@ def run_server_in_process(
     else:
         raise RuntimeError(f"Server failed to start after {max_attempts} attempts")
 
-    yield f"http://{host}:{port}"
+    host_str = f"[{host}]" if ":" in host else host
+    yield f"http://{host_str}:{port}"
 
     proc.terminate()
     proc.join(timeout=5)
@@ -213,8 +214,9 @@ async def run_server_async(
     # Give uvicorn a moment to bind the port after lifespan is ready
     await asyncio.sleep(0.1)
 
+    host_str = f"[{host}]" if ":" in host else host
     try:
-        yield f"http://{host}:{port}{path}"
+        yield f"http://{host_str}:{port}{path}"
     finally:
         # Cleanup: cancel the task with timeout to avoid hanging on Windows
         server_task.cancel()
