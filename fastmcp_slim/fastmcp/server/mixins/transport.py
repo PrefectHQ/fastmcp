@@ -301,8 +301,9 @@ class TransportMixin:
                 server = uvicorn.Server(config)
                 path = getattr(app.state, "path", "").lstrip("/")
                 mode = " (stateless)" if stateless_http else ""
+                formatted_host = f"[{host}]" if ":" in host else host
                 logger.info(
-                    f"Starting MCP server {self.name!r} with transport {transport!r}{mode} on http://{host}:{port}/{path}"
+                    f"Starting MCP server {self.name!r} with transport {transport!r}{mode} on http://{formatted_host}:{port}/{path}"
                 )
 
                 if sockets is not None:
