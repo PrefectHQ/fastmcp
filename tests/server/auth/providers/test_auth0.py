@@ -59,6 +59,7 @@ class TestAuth0Provider:
 
             call_args = mock_get.call_args
             assert str(call_args[0][0]) == TEST_CONFIG_URL
+            assert call_args[1]["timeout_seconds"] == 10
 
             assert provider._upstream_client_id == TEST_CLIENT_ID
             assert provider._upstream_client_secret is not None
@@ -97,3 +98,26 @@ class TestAuth0Provider:
             assert str(provider.base_url) == TEST_BASE_URL
             assert provider._redirect_path == "/auth/callback"
             assert provider._token_validator.required_scopes == ["openid"]
+
+    def test_init_with_custom_timeout(self, valid_oidc_configuration_dict):
+        """Test that timeout_seconds is passed to OIDC discovery."""
+        with patch(
+            "fastmcp.server.auth.oidc_proxy.OIDCConfiguration.get_oidc_configuration"
+        ) as mock_get:
+            oidc_config = OIDCConfiguration.model_validate(
+                valid_oidc_configuration_dict
+            )
+            mock_get.return_value = oidc_config
+
+            Auth0Provider(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                audience=TEST_AUDIENCE,
+                base_url=TEST_BASE_URL,
+                timeout_seconds=3,
+                jwt_signing_key="test-secret",
+            )
+
+            call_args = mock_get.call_args
+            assert call_args[1]["timeout_seconds"] == 3

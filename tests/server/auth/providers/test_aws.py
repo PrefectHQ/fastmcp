@@ -31,7 +31,7 @@ def mock_cognito_oidc_discovery():
         mock_response = mock_get.return_value
         mock_response.raise_for_status.return_value = None
         mock_response.json.return_value = mock_oidc_config
-        yield
+        yield mock_get
 
 
 class TestAWSCognitoProvider:
@@ -39,7 +39,7 @@ class TestAWSCognitoProvider:
 
     def test_init_with_explicit_params(self):
         """Test initialization with explicit parameters."""
-        with mock_cognito_oidc_discovery():
+        with mock_cognito_oidc_discovery() as mock_get:
             provider = AWSCognitoProvider(
                 user_pool_id="us-east-1_XXXXXXXXX",
                 aws_region="us-east-1",
@@ -68,6 +68,7 @@ class TestAWSCognitoProvider:
                 provider._upstream_token_endpoint
                 == "https://test.auth.us-east-1.amazoncognito.com/oauth2/token"
             )
+            assert mock_get.call_args[1]["timeout"] == 10
 
     def test_init_defaults(self):
         """Test that default values are applied correctly."""
@@ -118,6 +119,20 @@ class TestAWSCognitoProvider:
 
             assert verifier._expected_client_id == "test_client"
             assert verifier.audience is None
+
+    def test_init_with_custom_timeout(self):
+        """Test that timeout_seconds is passed to OIDC discovery."""
+        with mock_cognito_oidc_discovery() as mock_get:
+            AWSCognitoProvider(
+                user_pool_id="us-east-1_XXXXXXXXX",
+                client_id="test_client",
+                client_secret="test_secret",
+                base_url="https://example.com",
+                timeout_seconds=3,
+                jwt_signing_key="test-secret",
+            )
+
+            assert mock_get.call_args[1]["timeout"] == 3
 
     def test_token_verifier_supports_audience_override(self):
         """Audience param maps to client_id validation in Cognito verifier."""

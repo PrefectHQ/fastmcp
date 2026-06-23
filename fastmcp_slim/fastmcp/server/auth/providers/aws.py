@@ -128,6 +128,7 @@ class AWSCognitoProvider(OIDCProxy):
         resource_base_url: AnyHttpUrl | str | None = None,
         aws_region: str = "eu-central-1",
         issuer_url: AnyHttpUrl | str | None = None,
+        timeout_seconds: int | None = 10,
         redirect_path: str = "/auth/callback",
         required_scopes: list[str] | None = None,
         allowed_client_redirect_uris: list[str] | None = None,
@@ -152,6 +153,8 @@ class AWSCognitoProvider(OIDCProxy):
             aws_region: AWS region where your User Pool is located (defaults to "eu-central-1")
             issuer_url: Issuer URL for OAuth metadata (defaults to base_url). Use root-level URL
                 to avoid 404s during discovery when mounting under a path.
+            timeout_seconds: HTTP request timeout in seconds for fetching OIDC configuration.
+                Set to ``None`` to disable FastMCP's explicit discovery timeout.
             redirect_path: Redirect path configured in Cognito app (defaults to "/auth/callback")
             required_scopes: Required Cognito scopes (defaults to ["openid"])
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
@@ -200,6 +203,7 @@ class AWSCognitoProvider(OIDCProxy):
             client_secret=client_secret,
             algorithm="RS256",
             required_scopes=required_scopes_final,
+            timeout_seconds=timeout_seconds,
             base_url=base_url,
             resource_base_url=resource_base_url,
             issuer_url=issuer_url,

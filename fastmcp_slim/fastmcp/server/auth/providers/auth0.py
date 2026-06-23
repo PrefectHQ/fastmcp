@@ -67,6 +67,7 @@ class Auth0Provider(OIDCProxy):
         base_url: AnyHttpUrl | str,
         resource_base_url: AnyHttpUrl | str | None = None,
         issuer_url: AnyHttpUrl | str | None = None,
+        timeout_seconds: int | None = 10,
         required_scopes: list[str] | None = None,
         redirect_path: str | None = None,
         allowed_client_redirect_uris: list[str] | None = None,
@@ -91,6 +92,8 @@ class Auth0Provider(OIDCProxy):
                 and token audience. Defaults to ``base_url``.
             issuer_url: Issuer URL for OAuth metadata (defaults to base_url). Use root-level URL
                 to avoid 404s during discovery when mounting under a path.
+            timeout_seconds: HTTP request timeout in seconds for fetching OIDC configuration.
+                Set to ``None`` to disable FastMCP's explicit discovery timeout.
             required_scopes: Required Auth0 scopes (defaults to ["openid"])
             redirect_path: Redirect path configured in Auth0 application
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
@@ -129,6 +132,7 @@ class Auth0Provider(OIDCProxy):
             client_id=client_id,
             client_secret=client_secret,
             audience=audience,
+            timeout_seconds=timeout_seconds,
             base_url=base_url,
             resource_base_url=resource_base_url,
             issuer_url=issuer_url,
