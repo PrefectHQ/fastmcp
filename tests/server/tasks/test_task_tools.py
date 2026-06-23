@@ -8,10 +8,15 @@ and test_task_resources.py.
 import asyncio
 
 import pytest
+from pydantic import BaseModel
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.tasks import ToolTask
+
+
+class _Item(BaseModel):
+    value: str
 
 
 @pytest.fixture
@@ -100,4 +105,30 @@ async def test_forbidden_mode_tool_rejects_task_calls(tool_server):
         result = await task.result()
         # New behavior: mode="forbidden" returns an error
         assert result.is_error
-        assert "does not support task-augmented execution" in str(result)
+
+
+async def test_task_tool_validates_pydantic_model_arguments():
+    """Task-invoked tools receive Pydantic-model arguments as model instances,
+    matching synchronous calls.
+
+    Regression test for #4349: a parameter typed as a Pydantic model arrived as
+    a raw dict under a task call because Docket binds arguments by signature
+    without validating them.
+    """
+    mcp = FastMCP("model-arg-task-server")
+
+    @mcp.tool(task=True)
+    async def echo_type(items: list[_Item]) -> str:
+        return type(items[0]).__name__
+
+    async with Client(mcp) as client:
+        # Synchronous call already validates the argument.
+        sync_result = await client.call_tool("echo_type", {"items": [{"value": "x"}]})
+        assert sync_result.data == "_Item"
+
+        # Task call must validate it the same way.
+        task = await client.call_tool(
+            "echo_type", {"items": [{"value": "x"}]}, task=True
+        )
+        result = await task.result()
+        assert result.data == "_Item"

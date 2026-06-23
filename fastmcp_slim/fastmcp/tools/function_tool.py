@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import inspect
 import warnings
 from collections.abc import Callable
@@ -44,6 +45,7 @@ from fastmcp.utilities.tasks import TaskConfig
 from fastmcp.utilities.types import (
     NotSet,
     NotSetT,
+    find_kwarg_by_type,
     get_cached_typeadapter,
 )
 
@@ -360,13 +362,70 @@ class FunctionTool(Tool):
     def register_with_docket(self, docket: Docket) -> None:
         """Register this tool with docket for background execution.
 
-        Registers the raw function so Docket sees and resolves ALL
-        dependencies — both FastMCP's (CurrentContext, Progress) and
-        Docket-native ones (Retry, Timeout, ConcurrencyLimit).
+        Registers a thin wrapper around the raw function. The wrapper preserves
+        the raw function's signature (via ``functools.wraps``) so Docket still
+        sees and resolves ALL dependencies — both FastMCP's (CurrentContext,
+        Progress) and Docket-native ones (Retry, Timeout, ConcurrencyLimit).
+        Before invoking the function, it validates the client-supplied arguments
+        against their declared types, mirroring the validation that
+        :meth:`run` performs for synchronous calls. Docket binds task arguments
+        by signature without coercing them, so without this a parameter typed as
+        a Pydantic model would reach the function as a raw ``dict`` (see #4349).
         """
         if not self.task_config.supports_tasks():
             return
-        docket.register(self.fn, names=[self.key])
+
+        from typing import get_type_hints
+
+        from uncalled_for import get_dependency_parameters
+
+        from fastmcp.server.context import Context
+
+        fn = self.fn
+
+        # Client-facing parameters are everything except injected dependencies
+        # (Context and Depends()-style params), matching the set excluded by
+        # without_injected_parameters in the synchronous path.
+        exclude: set[str] = set(get_dependency_parameters(fn) or {})
+        context_kwarg = find_kwarg_by_type(fn, Context)
+        if context_kwarg:
+            exclude.add(context_kwarg)
+
+        hints = get_type_hints(fn, include_extras=True)
+        adapters = {
+            name: get_cached_typeadapter(hints[name])
+            for name in inspect.signature(fn).parameters
+            if name not in exclude and name in hints
+        }
+
+        if not adapters:
+            # No typed client parameters to coerce; register the raw function.
+            docket.register(fn, names=[self.key])
+            return
+
+        def _coerce(kwargs: dict[str, Any]) -> None:
+            for name, adapter in adapters.items():
+                if name in kwargs:
+                    kwargs[name] = adapter.validate_python(kwargs[name])
+
+        # Task tools are always async (sync functions are rejected at
+        # registration), so preserve the wrapped function's coroutine or
+        # async-generator nature to keep Docket's execution path unchanged.
+        if inspect.isasyncgenfunction(fn):
+
+            @functools.wraps(fn)
+            async def _validated(*args: Any, **kwargs: Any) -> Any:
+                _coerce(kwargs)
+                async for item in fn(*args, **kwargs):
+                    yield item
+        else:
+
+            @functools.wraps(fn)
+            async def _validated(*args: Any, **kwargs: Any) -> Any:
+                _coerce(kwargs)
+                return await fn(*args, **kwargs)
+
+        docket.register(_validated, names=[self.key])
 
     async def add_to_docket(
         self,
