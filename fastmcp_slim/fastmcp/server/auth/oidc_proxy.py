@@ -206,7 +206,7 @@ class OIDCProxy(OAuthProxy):
         client_id: str,
         client_secret: str | None = None,
         audience: str | None = None,
-        timeout_seconds: int | None = None,
+        timeout_seconds: int | None = 10,
         # Token verifier
         token_verifier: TokenVerifier | None = None,
         algorithm: str | None = None,

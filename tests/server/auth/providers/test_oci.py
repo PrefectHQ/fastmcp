@@ -62,6 +62,7 @@ class TestOCIProvider:
 
             call_args = mock_get.call_args
             assert str(call_args[0][0]) == TEST_CONFIG_URL
+            assert call_args[1]["timeout_seconds"] == 10
 
             assert provider._upstream_client_id == TEST_CLIENT_ID
             assert provider._upstream_client_secret is not None
@@ -85,3 +86,25 @@ class TestOCIProvider:
             assert str(provider.base_url) == TEST_BASE_URL
             assert provider._redirect_path == TEST_REDIRECT_PATH
             assert provider._token_validator.required_scopes == TEST_REQUIRED_SCOPES
+
+    def test_init_with_custom_timeout(self, valid_oidc_configuration_dict):
+        """Test that timeout_seconds is passed to OIDC discovery."""
+        with patch(
+            "fastmcp.server.auth.oidc_proxy.OIDCConfiguration.get_oidc_configuration"
+        ) as mock_get:
+            oidc_config = OIDCConfiguration.model_validate(
+                valid_oidc_configuration_dict
+            )
+            mock_get.return_value = oidc_config
+
+            OCIProvider(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+                timeout_seconds=3,
+                jwt_signing_key="test-secret-key",
+            )
+
+            call_args = mock_get.call_args
+            assert call_args[1]["timeout_seconds"] == 3

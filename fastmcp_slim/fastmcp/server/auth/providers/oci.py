@@ -126,6 +126,7 @@ class OCIProvider(OIDCProxy):
         resource_base_url: AnyHttpUrl | str | None = None,
         audience: str | None = None,
         issuer_url: AnyHttpUrl | str | None = None,
+        timeout_seconds: int | None = 10,
         required_scopes: list[str] | None = None,
         redirect_path: str | None = None,
         allowed_client_redirect_uris: list[str] | None = None,
@@ -149,6 +150,8 @@ class OCIProvider(OIDCProxy):
                 and token audience. Defaults to ``base_url``.
             audience: OCI API audience (optional)
             issuer_url: Issuer URL for OCI IAM Domain metadata. This will override issuer URL from the discovery URL.
+            timeout_seconds: HTTP request timeout in seconds for fetching OIDC configuration.
+                Set to ``None`` to disable FastMCP's explicit discovery timeout.
             required_scopes: Required OCI scopes (defaults to ["openid"])
             redirect_path: Redirect path configured in OCI IAM Domain Integrated Application. The default is "/auth/callback".
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
@@ -174,6 +177,7 @@ class OCIProvider(OIDCProxy):
             client_id=client_id,
             client_secret=client_secret,
             audience=audience,
+            timeout_seconds=timeout_seconds,
             base_url=base_url,
             resource_base_url=resource_base_url,
             issuer_url=issuer_url,

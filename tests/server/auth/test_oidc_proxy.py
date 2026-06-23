@@ -391,8 +391,10 @@ class TestGetOIDCConfiguration:
         )
         assert call_args[1]["timeout"] == 10
 
-    def test_get_oidc_configuration_no_timeout(self, valid_oidc_configuration_dict):
-        """Test with valid response and no timeout."""
+    def test_get_oidc_configuration_explicit_no_timeout(
+        self, valid_oidc_configuration_dict
+    ):
+        """Test with valid response and explicit no timeout."""
         call_args = validate_get_oidc_configuration(
             valid_oidc_configuration_dict, True, None
         )
@@ -488,6 +490,29 @@ class TestOIDCProxyInitialization:
 
             call_args = mock_get.call_args
             assert call_args[1]["timeout_seconds"] == 12
+
+    def test_default_timeout_seconds_initialization(
+        self, valid_oidc_configuration_dict
+    ):
+        """Test that OIDC discovery uses a bounded default timeout."""
+        with patch(
+            "fastmcp.server.auth.oidc_proxy.OIDCConfiguration.get_oidc_configuration"
+        ) as mock_get:
+            oidc_config = OIDCConfiguration.model_validate(
+                valid_oidc_configuration_dict
+            )
+            mock_get.return_value = oidc_config
+
+            OIDCProxy(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+                jwt_signing_key="test-secret",
+            )
+
+            call_args = mock_get.call_args
+            assert call_args[1]["timeout_seconds"] == 10
 
     def test_token_verifier_initialization(self, valid_oidc_configuration_dict):
         """Test token verifier initialization."""
