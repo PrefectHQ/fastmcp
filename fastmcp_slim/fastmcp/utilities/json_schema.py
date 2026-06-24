@@ -90,24 +90,7 @@ def _strip_discriminator(obj: Any) -> Any:
     if isinstance(obj, dict):
         skip = "discriminator" in obj and ("anyOf" in obj or "oneOf" in obj)
         if skip:
-            discriminator = obj.get("discriminator")
-            property_name = (
-                discriminator.get("propertyName")
-                if isinstance(discriminator, dict)
-                else None
-            )
-            if isinstance(property_name, str):
-                obj = obj.copy()
-                for key in ("anyOf", "oneOf"):
-                    variants = obj.get(key)
-                    if not isinstance(variants, list):
-                        continue
-                    obj[key] = [
-                        _require_property(variant, property_name)
-                        if isinstance(variant, dict)
-                        else variant
-                        for variant in variants
-                    ]
+            obj = require_discriminator_property(obj)
         # Keys that hold instance data, not sub-schemas — don't recurse.
         _DATA_KEYS = {"default", "const", "examples", "enum"}
         return {
@@ -128,6 +111,37 @@ def _require_property(schema: dict[str, Any], property_name: str) -> dict[str, A
     if isinstance(required, list) and property_name not in required:
         return {**schema, "required": [*required, property_name]}
     return schema
+
+
+def require_discriminator_property(schema: dict[str, Any]) -> dict[str, Any]:
+    """Keep an OpenAPI discriminator's tag mandatory after the keyword is dropped.
+
+    Returns a copy of *schema* with ``discriminator.propertyName`` added to each
+    ``anyOf``/``oneOf`` variant's ``required`` list. A Pydantic discriminated
+    union whose tag has a default omits that tag from ``required``; without this,
+    an untagged payload passes the generated schema but fails later in the source
+    model with ``union_tag_not_found``. No-op if there is no string
+    ``propertyName``.
+    """
+    discriminator = schema.get("discriminator")
+    if not isinstance(discriminator, dict):
+        return schema
+    property_name = discriminator.get("propertyName")
+    if not isinstance(property_name, str):
+        return schema
+
+    result = schema.copy()
+    for key in ("anyOf", "oneOf"):
+        variants = result.get(key)
+        if not isinstance(variants, list):
+            continue
+        result[key] = [
+            _require_property(variant, property_name)
+            if isinstance(variant, dict)
+            else variant
+            for variant in variants
+        ]
+    return result
 
 
 def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:

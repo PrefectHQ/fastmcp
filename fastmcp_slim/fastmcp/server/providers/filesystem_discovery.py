@@ -13,6 +13,7 @@ import hashlib
 import importlib.util
 import sys
 from dataclasses import dataclass, field
+from importlib.machinery import ModuleSpec
 from pathlib import Path
 from types import ModuleType
 
@@ -116,6 +117,26 @@ def _compute_module_name(file_path: Path, package_root: Path) -> str:
     return ".".join(parts)
 
 
+def _package_path_matches(module: ModuleType, package_root: Path) -> bool:
+    """Check whether a package module's __path__ points at package_root.
+
+    Used to tell whether a top-level package name already present in
+    sys.modules belongs to this provider (same directory) or to a different
+    provider that happens to share the package name.
+    """
+    module_paths = getattr(module, "__path__", None)
+    if not module_paths:
+        return False
+    package_root = package_root.resolve()
+    return any(Path(p).resolve() == package_root for p in module_paths)
+
+
+def _private_package_prefix(directory: Path) -> str:
+    """Compute a collision-safe synthetic package name anchored at a directory."""
+    digest = hashlib.sha1(str(directory.resolve()).encode()).hexdigest()[:12]
+    return f"_fastmcp_pkg_{digest}"
+
+
 def import_module_from_file(
     file_path: Path, provider_root: Path | None = None
 ) -> ModuleType:
@@ -149,6 +170,35 @@ def import_module_from_file(
     if package_root is not None:
         # Import as part of a package
         module_name = _compute_module_name(file_path, package_root)
+
+        # If another provider has already registered this top-level package name
+        # from a different directory, importing normally would resolve against
+        # that provider's directory (wrong file, or ModuleNotFoundError for a
+        # sibling that only exists here). Isolate this provider's tree under a
+        # private anchor package so both providers coexist. The anchor is a
+        # namespace package whose __path__ points at this provider's tree, so
+        # importlib resolves every intermediate package and relative import
+        # normally beneath it.
+        top_name = module_name.split(".")[0]
+        existing_top = sys.modules.get(top_name)
+        if existing_top is not None and not _package_path_matches(
+            existing_top, package_root
+        ):
+            anchor = _private_package_prefix(package_root.parent)
+            if anchor not in sys.modules:
+                spec = ModuleSpec(anchor, loader=None, is_package=True)
+                anchor_module = importlib.util.module_from_spec(spec)
+                anchor_module.__path__ = [str(package_root.parent)]
+                sys.modules[anchor] = anchor_module
+            private_name = f"{anchor}.{module_name}"
+            try:
+                if private_name in sys.modules:
+                    return importlib.reload(sys.modules[private_name])
+                return importlib.import_module(private_name)
+            except ImportError as e:
+                raise ImportError(
+                    f"Failed to import {module_name} from {file_path}: {e}"
+                ) from e
 
         # Temporarily add package root's parent to sys.path for the import
         package_parent = str(package_root.parent)

@@ -1230,9 +1230,15 @@ class StatefulProxyClient(ProxyClient[ClientTransportT]):
             self._caches[session] = proxy_client
 
             async def _on_session_exit():
-                self._caches.pop(session)
+                self._caches.pop(session, None)
                 logger.debug(f"{proxy_client} will be disconnect")
-                await proxy_client._disconnect(force=True)
+                # This callback runs while the server session's exit stack is
+                # unwinding, which usually happens because the owning task is
+                # being cancelled. Shield the disconnect so the forced cleanup
+                # actually runs to completion instead of aborting at the first
+                # cancellation checkpoint (e.g. acquiring the session lock).
+                with anyio.CancelScope(shield=True):
+                    await proxy_client._disconnect(force=True)
 
             session._exit_stack.push_async_callback(_on_session_exit)
 

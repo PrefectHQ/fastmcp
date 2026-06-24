@@ -1,5 +1,6 @@
 import asyncio
 import importlib
+import importlib.util
 import json
 from typing import Any
 
@@ -19,6 +20,30 @@ from fastmcp.experimental.transforms.code_mode import (
 )
 from fastmcp.server.context import Context
 from fastmcp.tools.base import Tool, ToolResult
+
+requires_monty = pytest.mark.skipif(
+    importlib.util.find_spec("pydantic_monty") is None,
+    reason="pydantic-monty is required for the real Monty sandbox provider",
+)
+
+# test_code_mode_monty_bare_call_returns_empty deliberately runs
+# `print(call_tool(...))` without awaiting, which orphans a `Provider.get_tool`
+# coroutine. CPython reports it as "never awaited" only when the coroutine is
+# garbage-collected, which happens asynchronously — often partway through a
+# *later* test — so a per-test filter can't reliably catch it. The suite
+# promotes that warning (and its unraisable-teardown variant) to an error via
+# `filterwarnings` in pyproject.toml, so scope the suppression to the module
+# but pin it to that exact coroutine; genuine "never awaited" leaks elsewhere
+# still surface as errors.
+pytestmark = [
+    pytest.mark.filterwarnings(
+        "ignore:coroutine 'Provider.get_tool' was never awaited:RuntimeWarning"
+    ),
+    pytest.mark.filterwarnings(
+        "ignore:Exception ignored in.*Provider.get_tool:"
+        "pytest.PytestUnraisableExceptionWarning"
+    ),
+]
 
 
 def _unwrap_result(result: ToolResult) -> Any:
@@ -682,6 +707,116 @@ async def test_code_mode_sandbox_error_surfaces_as_tool_error() -> None:
 
     with pytest.raises(ToolError):
         await _run_tool(mcp, "execute", {"code": "raise ValueError('boom')"})
+
+
+# ---------------------------------------------------------------------------
+# Real Monty sandbox end-to-end (issue #4263)
+#
+# Every execute test above runs through the exec-based
+# _UnsafeTestSandboxProvider, so the real MontySandboxProvider + call_tool
+# path is otherwise uncovered. These tests drive call_tool through the actual
+# pydantic-monty sandbox, the path #4263 reported as broken.
+# ---------------------------------------------------------------------------
+
+
+@requires_monty
+@pytest.mark.parametrize("async_tool", [False, True])
+async def test_code_mode_monty_execute_call_tool(async_tool: bool) -> None:
+    """call_tool resolves and returns through the real Monty sandbox.
+
+    The reported failure ("empty result") could not be reproduced on a
+    directly-registered tool: ``return await call_tool(...)`` returns the
+    value for both sync and async backend tools.
+    """
+    mcp = FastMCP("CodeMode Monty Execute")
+
+    if async_tool:
+
+        @mcp.tool
+        async def add(x: int, y: int) -> int:
+            return x + y
+    else:
+
+        @mcp.tool
+        def add(x: int, y: int) -> int:
+            return x + y
+
+    mcp.add_transform(CodeMode(sandbox_provider=MontySandboxProvider()))
+
+    result = await _run_tool(
+        mcp, "execute", {"code": "return await call_tool('add', {'x': 2, 'y': 3})"}
+    )
+    assert _unwrap_result(result) == {"result": 5}
+
+
+@requires_monty
+async def test_code_mode_monty_execute_string_result() -> None:
+    """A string-returning tool round-trips through the real Monty sandbox."""
+    mcp = FastMCP("CodeMode Monty String")
+
+    @mcp.tool
+    def greet(name: str) -> str:
+        return f"Hello, {name}!"
+
+    mcp.add_transform(CodeMode(sandbox_provider=MontySandboxProvider()))
+
+    result = await _run_tool(
+        mcp, "execute", {"code": "return await call_tool('greet', {'name': 'World'})"}
+    )
+    assert _unwrap_string_result(result) == "Hello, World!"
+
+
+@requires_monty
+async def test_code_mode_monty_execute_chaining() -> None:
+    """Multiple sequential call_tool() calls chain through the real sandbox."""
+    mcp = FastMCP("CodeMode Monty Chaining")
+
+    @mcp.tool
+    def add(x: int, y: int) -> int:
+        return x + y
+
+    mcp.add_transform(CodeMode(sandbox_provider=MontySandboxProvider()))
+
+    result = await _run_tool(
+        mcp,
+        "execute",
+        {
+            "code": (
+                "a = await call_tool('add', {'x': 1, 'y': 2})\n"
+                "b = await call_tool('add', {'x': a['result'], 'y': 10})\n"
+                "return b"
+            )
+        },
+    )
+    assert _unwrap_result(result) == {"result": 13}
+
+
+@requires_monty
+async def test_code_mode_monty_bare_call_returns_empty() -> None:
+    """Pins the reported #4263 symptom as a usage error, not a sandbox bug.
+
+    The report's code called ``call_tool`` bare — ``print(call_tool(...))``
+    without ``await`` or ``return``. ``call_tool`` is async, so a bare call
+    hands back an unawaited coroutine, and ``print`` returns ``None``; the
+    block therefore returns nothing and ``execute`` yields an empty result.
+    The accompanying "coroutine ... was never awaited" RuntimeWarning is a
+    cascading effect of that unawaited coroutine being garbage-collected, not
+    a separate defect (see the module-level ``filterwarnings`` note for why it
+    is suppressed rather than asserted).
+    """
+    mcp = FastMCP("CodeMode Monty Bare Call")
+
+    @mcp.tool
+    def greet(name: str) -> str:
+        return f"Hello, {name}!"
+
+    mcp.add_transform(CodeMode(sandbox_provider=MontySandboxProvider()))
+
+    result = await _run_tool(
+        mcp, "execute", {"code": "print(call_tool('greet', {'name': 'World'}))"}
+    )
+    assert result.content == []
+    assert result.structured_content is None
 
 
 # ---------------------------------------------------------------------------
