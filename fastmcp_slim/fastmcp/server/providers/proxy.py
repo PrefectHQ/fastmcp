@@ -1221,7 +1221,7 @@ class StatefulProxyClient(ProxyClient[ClientTransportT]):
             self._caches[session] = proxy_client
 
             async def _on_session_exit():
-                self._caches.pop(session)
+                self._caches.pop(session, None)
                 logger.debug(f"{proxy_client} will be disconnect")
                 # This callback runs while the server session's exit stack is
                 # unwinding, which usually happens because the owning task is
