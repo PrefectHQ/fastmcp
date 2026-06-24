@@ -22,7 +22,7 @@ from typing import (
 import anyio
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, Icon, ToolAnnotations
-from pydantic import Field
+from pydantic import Field, validate_call
 from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
@@ -360,13 +360,14 @@ class FunctionTool(Tool):
     def register_with_docket(self, docket: Docket) -> None:
         """Register this tool with docket for background execution.
 
-        Registers the raw function so Docket sees and resolves ALL
+        Registers a validated function so Docket sees and resolves ALL
         dependencies — both FastMCP's (CurrentContext, Progress) and
-        Docket-native ones (Retry, Timeout, ConcurrencyLimit).
+        Docket-native ones (Retry, Timeout, ConcurrencyLimit) — while matching
+        the synchronous tool path's Pydantic argument coercion.
         """
         if not self.task_config.supports_tasks():
             return
-        docket.register(self.fn, names=[self.key])
+        docket.register(validate_call(self.fn), names=[self.key])
 
     async def add_to_docket(
         self,

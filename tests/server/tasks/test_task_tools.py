@@ -8,6 +8,7 @@ and test_task_resources.py.
 import asyncio
 
 import pytest
+from pydantic import BaseModel
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -30,6 +31,41 @@ async def tool_server():
         return f"Sync: {message}"
 
     return mcp
+
+
+class Item(BaseModel):
+    name: str
+    count: int
+
+
+async def test_task_tool_coerces_model_and_list_arguments():
+    """Task tools receive the same Pydantic-coerced args as sync calls."""
+    mcp = FastMCP("tool-task-validation-server")
+
+    @mcp.tool(task=True)
+    async def inspect_items(item: Item, items: list[Item]) -> dict[str, object]:
+        return {
+            "item_is_model": isinstance(item, Item),
+            "items_are_models": [isinstance(value, Item) for value in items],
+            "total": item.count + sum(value.count for value in items),
+        }
+
+    async with Client(mcp) as client:
+        arguments = {
+            "item": {"name": "one", "count": "1"},
+            "items": [{"name": "two", "count": "2"}],
+        }
+
+        sync_result = await client.call_tool("inspect_items", arguments)
+        task = await client.call_tool("inspect_items", arguments, task=True)
+        task_result = await task.result()
+
+    assert sync_result.data == {
+        "item_is_model": True,
+        "items_are_models": [True],
+        "total": 3,
+    }
+    assert task_result.data == sync_result.data
 
 
 async def test_synchronous_tool_call_unchanged(tool_server):
