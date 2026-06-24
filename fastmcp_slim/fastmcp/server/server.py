@@ -54,6 +54,7 @@ from fastmcp.exceptions import (
     PromptError,
     ResourceError,
     ToolError,
+    ValidationError,
 )
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.prompts import Prompt
@@ -1280,13 +1281,29 @@ class FastMCP(
                     task_meta = replace(task_meta, fn_key=tool.key)
                 try:
                     return await tool._run(arguments or {}, task_meta=task_meta)
+                except ValidationError as e:
+                    # Argument-validation failure (a bad call). FunctionTool
+                    # converts pydantic's call-validation error into fastmcp's
+                    # ValidationError (see #4128) so it can be filtered as a
+                    # client error. Log the underlying detail without a URL or
+                    # traceback, matching the previous pydantic-error logging.
+                    cause = e.__cause__
+                    detail = (
+                        cause.errors(include_url=False)
+                        if isinstance(cause, PydanticValidationError)
+                        else str(e)
+                    )
+                    logger.warning("Invalid arguments for tool %r: %s", name, detail)
+                    raise
                 except FastMCPError as e:
                     logger.log(
                         e.log_level, f"Error calling tool {name!r}", exc_info=False
                     )
                     raise
                 except PydanticValidationError as e:
-                    # fastmcp's own ValidationError is a FastMCPError, already handled above.
+                    # A pydantic error that is NOT an argument-validation failure
+                    # (e.g. raised by a non-FunctionTool's own validation). Kept
+                    # for backward compatibility.
                     logger.warning(
                         "Invalid arguments for tool %r: %s",
                         name,
