@@ -15,6 +15,7 @@ from typing import (
     Protocol,
     TypeVar,
     cast,
+    get_type_hints,
     overload,
     runtime_checkable,
 )
@@ -391,7 +392,39 @@ class FunctionTool(Tool):
         lookup_key = fn_key or self.key
         if task_key:
             kwargs["key"] = task_key
-        return await docket.add(lookup_key, **kwargs)(**arguments)
+        coerced = self._coerce_arguments(arguments)
+        return await docket.add(lookup_key, **kwargs)(**coerced)
+
+    def _coerce_arguments(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Validate client arguments against their declared parameter types.
+
+        The synchronous ``run()`` path validates arguments through the
+        function's Pydantic TypeAdapter, so a parameter typed as a model
+        arrives as a model instance. The task path hands the raw arguments to
+        Docket, which binds them to the function signature without coercion —
+        so without this a model-typed parameter would reach the function as a
+        raw dict (#4349). Coerced values survive the trip to the worker because
+        Docket serializes task arguments with cloudpickle.
+
+        Injected dependency parameters (Context, Depends()) are excluded via
+        the same wrapper used by the synchronous path, so only client-supplied
+        arguments are coerced and Docket's dependency resolution is untouched.
+        """
+        from fastmcp.server.dependencies import without_injected_parameters
+
+        wrapper_fn = without_injected_parameters(
+            self.fn, run_in_thread=self.run_in_thread
+        )
+        hints = get_type_hints(wrapper_fn, include_extras=True)
+
+        coerced = dict(arguments)
+        for name, value in arguments.items():
+            annotation = hints.get(name)
+            if annotation is None:
+                continue
+            adapter = get_cached_typeadapter(annotation)
+            coerced[name] = adapter.validate_python(value)
+        return coerced
 
 
 @overload

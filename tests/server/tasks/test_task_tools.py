@@ -8,6 +8,7 @@ and test_task_resources.py.
 import asyncio
 
 import pytest
+from pydantic import BaseModel
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -30,6 +31,36 @@ async def tool_server():
         return f"Sync: {message}"
 
     return mcp
+
+
+class _Item(BaseModel):
+    value: str
+
+
+async def test_task_tool_validates_model_arguments():
+    """Model-typed args are coerced to model instances for task calls (#4349).
+
+    The synchronous path validates arguments through the function's
+    TypeAdapter, so a parameter typed as a Pydantic model arrives as a model
+    instance. The task path must coerce the same way rather than passing the
+    raw dict through to the function.
+    """
+    mcp = FastMCP("tool-task-validation-server")
+
+    @mcp.tool(task=True)
+    async def inspect_items(item: _Item, items: list[_Item]) -> dict[str, str]:
+        return {"item": type(item).__name__, "element": type(items[0]).__name__}
+
+    arguments = {"item": {"value": "a"}, "items": [{"value": "b"}]}
+    expected = {"item": "_Item", "element": "_Item"}
+
+    async with Client(mcp) as client:
+        sync_result = await client.call_tool("inspect_items", arguments)
+        task = await client.call_tool("inspect_items", arguments, task=True)
+        task_result = await task.result()
+
+    assert sync_result.data == expected
+    assert task_result.data == expected
 
 
 async def test_synchronous_tool_call_unchanged(tool_server):
