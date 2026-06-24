@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import inspect
 import warnings
 from collections.abc import Callable
@@ -88,6 +89,31 @@ class ToolMeta:
     auth: AuthCheck | list[AuthCheck] | None = None
     enabled: bool = True
     run_in_thread: bool = True
+
+
+def _resolve_param_hints(fn: Callable[..., Any]) -> dict[str, Any]:
+    """Resolve a callable's parameter type hints, tolerating partials.
+
+    ``get_type_hints`` rejects ``functools.partial`` objects (and other
+    non-function callables), which the synchronous TypeAdapter path handles
+    natively. For those, resolve hints against the underlying function and keep
+    only the parameters that remain in the partially-bound signature.
+    """
+    try:
+        return get_type_hints(fn, include_extras=True)
+    except TypeError:
+        target = fn
+        while isinstance(target, functools.partial):
+            target = target.func
+        try:
+            resolved = get_type_hints(target, include_extras=True)
+        except TypeError:
+            return {}
+        return {
+            name: resolved[name]
+            for name in inspect.signature(fn).parameters
+            if name in resolved
+        }
 
 
 class FunctionTool(Tool):
@@ -415,7 +441,7 @@ class FunctionTool(Tool):
         wrapper_fn = without_injected_parameters(
             self.fn, run_in_thread=self.run_in_thread
         )
-        hints = get_type_hints(wrapper_fn, include_extras=True)
+        hints = _resolve_param_hints(wrapper_fn)
 
         coerced = dict(arguments)
         for name, value in arguments.items():

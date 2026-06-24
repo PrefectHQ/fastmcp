@@ -6,6 +6,7 @@ and test_task_resources.py.
 """
 
 import asyncio
+import functools
 
 import pytest
 from pydantic import BaseModel
@@ -13,6 +14,7 @@ from pydantic import BaseModel
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.tasks import ToolTask
+from fastmcp.tools.function_tool import _resolve_param_hints
 
 
 @pytest.fixture
@@ -61,6 +63,22 @@ async def test_task_tool_validates_model_arguments():
 
     assert sync_result.data == expected
     assert task_result.data == expected
+
+
+def test_resolve_param_hints_handles_partials():
+    """Partials aren't introspectable by get_type_hints; resolve via the func.
+
+    Argument coercion must not raise for partial-wrapped callables — it should
+    resolve hints for the still-unbound parameters.
+    """
+
+    async def base(prefix: str, items: list[_Item]) -> str:
+        return prefix
+
+    partial_fn = functools.partial(base, "bound")
+    hints = _resolve_param_hints(partial_fn)
+
+    assert hints["items"] == list[_Item]
 
 
 async def test_synchronous_tool_call_unchanged(tool_server):
