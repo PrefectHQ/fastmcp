@@ -12,7 +12,6 @@ import inspect
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any, cast
-from urllib.parse import quote
 
 import anyio
 import httpx
@@ -43,7 +42,7 @@ from fastmcp.prompts import Message, Prompt, PromptResult
 from fastmcp.prompts.base import PromptArgument
 from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.resources.base import ResourceContent, ResourceResult
-from fastmcp.resources.template import expand_uri_template, extract_query_params
+from fastmcp.resources.template import expand_uri_template
 from fastmcp.server.context import Context
 from fastmcp.server.dependencies import get_context
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
@@ -393,18 +392,10 @@ class ProxyTemplate(ResourceTemplate):
     ) -> ProxyResource:
         """Create a resource from the template by calling the remote server."""
         # don't use the provided uri, because it may not be the same as the
-        # uri_template on the remote server.
-        # quote params to ensure they are valid for the uri_template
+        # uri_template on the remote server. expand_uri_template percent-encodes
+        # path and query values so the backend URI round-trips correctly.
         backend_template = self._backend_uri_template or self.uri_template
-        # Normalize to underscored keys to match how match_uri_template normalizes incoming params
-        query_param_names = {
-            p.replace("-", "_") for p in extract_query_params(backend_template)
-        }
-        quoted_params = {
-            k: (v if k in query_param_names else quote(str(v), safe=""))
-            for k, v in params.items()
-        }
-        parameterized_uri = expand_uri_template(backend_template, quoted_params)
+        parameterized_uri = expand_uri_template(backend_template, params)
         client = await self._get_client()
         async with client:
             result = await client.read_resource(parameterized_uri)
