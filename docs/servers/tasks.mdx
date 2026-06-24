@@ -144,7 +144,7 @@ If your server defines any synchronous tools, resources, or prompts, you will ne
 
 ### Graceful Degradation
 
-When a client requests background execution but the component has `mode="forbidden"`, FastMCP executes synchronously and returns the result inline. This follows the SEP-1686 specification for graceful degradation—clients can always request background execution without worrying about server capabilities.
+When a client requests background execution but the component has `mode="forbidden"`, FastMCP rejects the task-augmented request with a `METHOD_NOT_FOUND` error saying the component does not support task execution. The high-level FastMCP tool client can surface this as an immediate errored `ToolTask` when you call `client.call_tool(..., task=True, raise_on_error=False)`, but the server does not run the forbidden component synchronously for that task request.
 
 Conversely, when a component has `mode="required"` but the client doesn't request background execution, FastMCP returns an error indicating that task execution is required.
 

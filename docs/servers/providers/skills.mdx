@@ -38,10 +38,10 @@ Each subdirectory containing a `SKILL.md` file becomes a discoverable skill. Cli
 from fastmcp import Client
 
 async with Client(mcp) as client:
-    # List all skill resources
+    # List each skill's main file and manifest
     resources = await client.list_resources()
     for r in resources:
-        print(r.uri)  # skill://my-skill/SKILL.md, skill://my-skill/_manifest, ...
+        print(r.uri)  # skill://my-skill/SKILL.md, skill://my-skill/_manifest
 
     # Read a skill's main instruction file
     result = await client.read_resource("skill://my-skill/SKILL.md")
