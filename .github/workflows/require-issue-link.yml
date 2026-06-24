@@ -277,7 +277,17 @@ jobs:
 
             // ── The actual check: an auto-close keyword + issue number ─────
             const body = pr.body || '';
-            const pattern = /(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s*#(\d+)/gi;
+            // Match GitHub's auto-close keywords against any reference form
+            // that GitHub itself honors: bare `#123`, the `owner/repo#123`
+            // shorthand, and the full issue URL. Scope the qualified forms to
+            // THIS repo — GitHub only auto-closes same-repo issues, so a
+            // cross-repo reference must not be resolved against our numbering.
+            const repoRef = `${owner}/${repo}`.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const pattern = new RegExp(
+              '(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\\s*:?\\s*' +
+                `(?:${repoRef}#|#|https?://github\\.com/${repoRef}/issues/)(\\d+)`,
+              'gi',
+            );
             const matches = [...body.matchAll(pattern)];
 
             if (matches.length === 0) {
@@ -425,7 +435,17 @@ jobs:
             const enforce = process.env.ENFORCE_ISSUE_LINK === 'true';
             const LABEL = 'missing-issue-link';
             const MARKER = '<!-- require-issue-link -->';
-            const pattern = /(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s*#(\d+)/gi;
+            // Match GitHub's auto-close keywords against any reference form
+            // that GitHub itself honors: bare `#123`, the `owner/repo#123`
+            // shorthand, and the full issue URL. Scope the qualified forms to
+            // THIS repo — GitHub only auto-closes same-repo issues, so a
+            // cross-repo reference must not be resolved against our numbering.
+            const repoRef = `${owner}/${repo}`.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const pattern = new RegExp(
+              '(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\\s*:?\\s*' +
+                `(?:${repoRef}#|#|https?://github\\.com/${repoRef}/issues/)(\\d+)`,
+              'gi',
+            );
 
             async function mutate(description, fn) {
               if (!enforce) {

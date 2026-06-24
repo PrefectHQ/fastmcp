@@ -5,6 +5,23 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v3.4.1" description="2026-06-05">
+
+**[v3.4.1: Floor It](https://github.com/PrefectHQ/fastmcp/releases/tag/v3.4.1)**
+
+FastMCP 3.4.1 floors Starlette at `>=1.0.1` so installs can no longer resolve to a version affected by CVE-2026-48710, which was previously only constrained transitively through `mcp`. It also makes OAuthProxy log refresh-token cache misses instead of failing silently.
+
+### Enhancements ✨
+* Log refresh-token misses in OAuthProxy instead of failing silently by [@jlowin](https://github.com/jlowin) in [#4276](https://github.com/PrefectHQ/fastmcp/pull/4276)
+### Security 🔒
+* Add explicit starlette>=1.0.1 floor (CVE-2026-48710) by [@jlowin](https://github.com/jlowin) in [#4286](https://github.com/PrefectHQ/fastmcp/pull/4286)
+### Docs 📚
+* Document --notes-start-tag in release instructions by [@jlowin](https://github.com/jlowin) in [#4275](https://github.com/PrefectHQ/fastmcp/pull/4275)
+
+**Full Changelog**: [v3.4.0...v3.4.1](https://github.com/PrefectHQ/fastmcp/compare/v3.4.0...v3.4.1)
+
+</Update>
+
 <Update label="v3.4.0" description="2026-06-02">
 
 **[v3.4.0: Remote Control](https://github.com/PrefectHQ/fastmcp/releases/tag/v3.4.0)**

@@ -311,7 +311,7 @@ class ResponseCachingMiddleware(Middleware):
         if cached_value := await self._list_tools_cache.get(key=cache_key):
             return cached_value
 
-        tools: Sequence[Tool] = await call_next(context=context)
+        tools: Sequence[Tool] = await call_next(context)
 
         # Turn any subclass of Tool into a Tool
         cachable_tools: list[Tool] = [
@@ -352,7 +352,7 @@ class ResponseCachingMiddleware(Middleware):
         if cached_value := await self._list_resources_cache.get(key=cache_key):
             return cached_value
 
-        resources: Sequence[Resource] = await call_next(context=context)
+        resources: Sequence[Resource] = await call_next(context)
 
         # Turn any subclass of Resource into a Resource
         cachable_resources: list[Resource] = [
@@ -393,7 +393,7 @@ class ResponseCachingMiddleware(Middleware):
         if cached_value := await self._list_prompts_cache.get(key=cache_key):
             return cached_value
 
-        prompts: Sequence[Prompt] = await call_next(context=context)
+        prompts: Sequence[Prompt] = await call_next(context)
 
         # Turn any subclass of Prompt into a Prompt
         cachable_prompts: list[Prompt] = [
@@ -429,7 +429,7 @@ class ResponseCachingMiddleware(Middleware):
         if self._call_tool_settings.get(
             "enabled"
         ) is False or not self._matches_tool_cache_settings(tool_name=tool_name):
-            return await call_next(context=context)
+            return await call_next(context)
 
         cache_key: str = _make_call_tool_cache_key(
             msg=context.message, auth_key=_get_auth_partition_key()
@@ -438,7 +438,7 @@ class ResponseCachingMiddleware(Middleware):
         if cached_value := await self._call_tool_cache.get(key=cache_key):
             return cached_value.unwrap()
 
-        tool_result: ToolResult = await call_next(context=context)
+        tool_result: ToolResult = await call_next(context)
         cachable_tool_result: CachableToolResult = CachableToolResult.wrap(
             value=tool_result
         )
@@ -460,7 +460,7 @@ class ResponseCachingMiddleware(Middleware):
         """Read a resource from the cache, if caching is enabled, and the result is in the cache. Otherwise,
         otherwise call the next middleware and store the result in the cache if caching is enabled."""
         if self._read_resource_settings.get("enabled") is False:
-            return await call_next(context=context)
+            return await call_next(context)
 
         cache_key: str = _make_read_resource_cache_key(
             msg=context.message, auth_key=_get_auth_partition_key()
@@ -470,7 +470,7 @@ class ResponseCachingMiddleware(Middleware):
         if cached_value := await self._read_resource_cache.get(key=cache_key):
             return cached_value.unwrap()
 
-        value: ResourceResult = await call_next(context=context)
+        value: ResourceResult = await call_next(context)
         cached_value = CachableResourceResult.wrap(value)
 
         await self._read_resource_cache.put(
@@ -490,7 +490,7 @@ class ResponseCachingMiddleware(Middleware):
         """Get a prompt from the cache, if caching is enabled, and the result is in the cache. Otherwise,
         otherwise call the next middleware and store the result in the cache if caching is enabled."""
         if self._get_prompt_settings.get("enabled") is False:
-            return await call_next(context=context)
+            return await call_next(context)
 
         cache_key: str = _make_get_prompt_cache_key(
             msg=context.message, auth_key=_get_auth_partition_key()
@@ -499,7 +499,7 @@ class ResponseCachingMiddleware(Middleware):
         if cached_value := await self._get_prompt_cache.get(key=cache_key):
             return cached_value.unwrap()
 
-        value: PromptResult = await call_next(context=context)
+        value: PromptResult = await call_next(context)
         cached_value = CachablePromptResult.wrap(value)
 
         await self._get_prompt_cache.put(

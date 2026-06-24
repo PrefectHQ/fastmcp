@@ -24,7 +24,7 @@ jobs:
 
     steps:
       - name: Checkout PR head branch
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           # do not set to pull_request.head.ref, claude will pull the branch if needed
           fetch-depth: 0

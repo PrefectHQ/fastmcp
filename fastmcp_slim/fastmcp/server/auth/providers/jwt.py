@@ -13,6 +13,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from joserfc import jwk, jwt
 from joserfc.errors import JoseError
+from joserfc.jws import JWSRegistry
+from joserfc.registry import JWS_HEADER_REGISTRY
 from pydantic import AnyHttpUrl, SecretStr
 from typing_extensions import TypedDict
 
@@ -24,6 +26,7 @@ from fastmcp.utilities.logging import get_logger
 logger = get_logger(__name__)
 
 JWKKeyData: TypeAlias = dict[str, str | list[str]]
+SUPPORTED_JWS_HEADER_FIELDS = frozenset(JWS_HEADER_REGISTRY)
 
 
 def _import_key_for_algorithm(key: str | bytes | JWKKeyData, algorithm: str):
@@ -43,6 +46,21 @@ def _jwk_to_pem(key_data: JWKKeyData) -> str:
     if key_type == "EC":
         return jwk.import_key(key_data, "EC").as_pem().decode("utf-8")
     raise ValueError(f"Unsupported JWK key type: {key_type!r}")
+
+
+def _has_unsupported_critical_headers(header: dict[str, Any]) -> bool:
+    crit = header.get("crit")
+    if crit is None:
+        return False
+    if not isinstance(crit, list):
+        return True
+
+    return any(
+        not isinstance(header_name, str)
+        or header_name not in header
+        or header_name not in SUPPORTED_JWS_HEADER_FIELDS
+        for header_name in crit
+    )
 
 
 class JWKData(TypedDict, total=False):
@@ -429,7 +447,22 @@ class JWTVerifier(TokenVerifier):
 
             # Decode and verify the JWT token
             key = _import_key_for_algorithm(verification_key, self.algorithm)
-            claims = jwt.decode(token, key, algorithms=[self.algorithm]).claims
+            header = decode_jwt_header(token)
+            if _has_unsupported_critical_headers(header):
+                self.logger.debug(
+                    "Token validation failed: unsupported critical JWT header"
+                )
+                return None
+
+            claims = jwt.decode(
+                token,
+                key,
+                algorithms=[self.algorithm],
+                registry=JWSRegistry(
+                    algorithms=[self.algorithm],
+                    strict_check_header=False,
+                ),
+            ).claims
 
             # Extract client ID early for logging
             client_id = (

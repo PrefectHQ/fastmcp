@@ -5,6 +5,16 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 3.4.1" description="June 5, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v3.4.1: Floor It"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v3.4.1"
+cta="Read the release notes"
+>
+A security patch. FastMCP now floors Starlette at `>=1.0.1`, so installs can no longer resolve to a version affected by CVE-2026-48710 — previously the dependency was only constrained transitively through `mcp`. OAuthProxy also logs refresh-token cache misses instead of failing silently.
+</Card>
+</Update>
+
 <Update label="FastMCP 3.4.0" description="June 2, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v3.4.0: Remote Control"

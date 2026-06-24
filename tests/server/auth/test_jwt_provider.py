@@ -6,6 +6,8 @@ from unittest.mock import patch
 import pytest
 from joserfc import jwk as jose_jwk
 from joserfc import jwt
+from joserfc.jws import JWSRegistry
+from joserfc.registry import HeaderParameter
 from pytest_httpx import HTTPXMock
 
 from fastmcp import FastMCP
@@ -180,6 +182,73 @@ class TestRSAKeyPair:
 
         assert isinstance(token, str)
         # We'll validate the scopes in the BearerToken tests
+
+
+class TestJWTVerifierHeaders:
+    async def test_non_critical_private_header_is_allowed(
+        self, rsa_key_pair: RSAKeyPair
+    ):
+        signing_key = jose_jwk.import_key(
+            rsa_key_pair.private_key.get_secret_value(),
+            "RSA",
+        )
+        token = jwt.encode(
+            {
+                "alg": "RS256",
+                "cat": "cl_example",
+            },
+            {
+                "sub": "test-user",
+                "iss": "https://test.example.com",
+                "exp": int(time.time()) + 3600,
+            },
+            signing_key,
+            algorithms=["RS256"],
+            registry=JWSRegistry(strict_check_header=False),
+        )
+        verifier = JWTVerifier(
+            public_key=rsa_key_pair.public_key,
+            issuer="https://test.example.com",
+        )
+
+        access_token = await verifier.verify_token(token)
+
+        assert access_token is not None
+        assert access_token.client_id == "test-user"
+
+    async def test_critical_private_header_is_rejected(self, rsa_key_pair: RSAKeyPair):
+        signing_key = jose_jwk.import_key(
+            rsa_key_pair.private_key.get_secret_value(),
+            "RSA",
+        )
+        token = jwt.encode(
+            {
+                "alg": "RS256",
+                "crit": ["cat"],
+                "cat": "cl_example",
+            },
+            {
+                "sub": "test-user",
+                "iss": "https://test.example.com",
+                "exp": int(time.time()) + 3600,
+            },
+            signing_key,
+            algorithms=["RS256"],
+            registry=JWSRegistry(
+                header_registry={
+                    "cat": HeaderParameter("Custom private header", "str")
+                },
+                strict_check_header=False,
+            ),
+        )
+        verifier = JWTVerifier(
+            public_key=rsa_key_pair.public_key,
+            issuer="https://test.example.com",
+        )
+
+        access_token = await verifier.verify_token(token)
+
+        assert access_token is None
 
 
 class TestSymmetricKeyJWT:

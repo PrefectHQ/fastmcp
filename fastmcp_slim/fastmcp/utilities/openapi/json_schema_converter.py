@@ -96,17 +96,20 @@ def convert_openapi_schema_to_json_schema(
     if convert_one_of_to_any_of and "oneOf" in result:
         result["anyOf"] = result.pop("oneOf")
 
-    # Step 3: Remove OpenAPI-specific fields
+    # Step 3: Preserve discriminator tag presence before removing the keyword
+    result = _require_discriminator_property(result)
+
+    # Step 4: Remove OpenAPI-specific fields
     for field in OPENAPI_SPECIFIC_FIELDS:
         result.pop(field, None)
 
-    # Step 4: Handle readOnly/writeOnly property removal
+    # Step 5: Handle readOnly/writeOnly property removal
     if remove_read_only or remove_write_only:
         result = _filter_properties_by_access(
             result, remove_read_only, remove_write_only
         )
 
-    # Step 5: Recursively process nested schemas
+    # Step 6: Recursively process nested schemas
     for field_name, field_type in RECURSIVE_FIELDS.items():
         if field_name in result:
             if field_type is dict and isinstance(result[field_name], dict):
@@ -147,6 +150,38 @@ def convert_openapi_schema_to_json_schema(
                 ]
 
     return result
+
+
+def _require_discriminator_property(schema: dict[str, Any]) -> dict[str, Any]:
+    """Keep discriminator tags mandatory after dropping OpenAPI metadata."""
+    discriminator = schema.get("discriminator")
+    if not isinstance(discriminator, dict):
+        return schema
+    property_name = discriminator.get("propertyName")
+    if not isinstance(property_name, str):
+        return schema
+
+    result = schema.copy()
+    for key in ("anyOf", "oneOf"):
+        variants = result.get(key)
+        if not isinstance(variants, list):
+            continue
+        result[key] = [
+            _require_property(variant, property_name)
+            if isinstance(variant, dict)
+            else variant
+            for variant in variants
+        ]
+    return result
+
+
+def _require_property(schema: dict[str, Any], property_name: str) -> dict[str, Any]:
+    required = schema.get("required")
+    if required is None:
+        return {**schema, "required": [property_name]}
+    if isinstance(required, list) and property_name not in required:
+        return {**schema, "required": [*required, property_name]}
+    return schema
 
 
 def _convert_nullable_field(schema: dict[str, Any]) -> dict[str, Any]:
