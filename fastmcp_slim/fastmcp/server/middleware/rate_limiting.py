@@ -1,9 +1,10 @@
 """Rate limiting middleware for protecting FastMCP servers from abuse."""
 
+import inspect
 import time
 from collections import defaultdict, deque
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Awaitable, Callable
+from typing import Any, cast
 
 import anyio
 from mcp import McpError
@@ -114,7 +115,9 @@ class RateLimitingMiddleware(Middleware):
         self,
         max_requests_per_second: float = 10.0,
         burst_capacity: int | None = None,
-        get_client_id: Callable[[MiddlewareContext], str] | None = None,
+        get_client_id: Callable[[MiddlewareContext], str]
+        | Callable[[MiddlewareContext], Awaitable[str]]
+        | None = None,
         global_limit: bool = False,
     ):
         """Initialize rate limiting middleware.
@@ -122,7 +125,8 @@ class RateLimitingMiddleware(Middleware):
         Args:
             max_requests_per_second: Sustained requests per second allowed
             burst_capacity: Maximum burst capacity. If None, defaults to 2x max_requests_per_second
-            get_client_id: Function to extract client ID from context. If None, uses global limiting
+            get_client_id: Function to extract client ID from context. Can be sync or async.
+                If None, uses global limiting
             global_limit: If True, apply limit globally; if False, per-client
         """
         self.max_requests_per_second = max_requests_per_second
@@ -143,10 +147,13 @@ class RateLimitingMiddleware(Middleware):
                 self.burst_capacity, self.max_requests_per_second
             )
 
-    def _get_client_identifier(self, context: MiddlewareContext) -> str:
+    async def _get_client_identifier(self, context: MiddlewareContext) -> str:
         """Get client identifier for rate limiting."""
         if self.get_client_id:
-            return self.get_client_id(context)
+            client_id = self.get_client_id(context)
+            if inspect.isawaitable(client_id):
+                return cast(str, await client_id)
+            return client_id
         return "global"
 
     async def on_request(self, context: MiddlewareContext, call_next: CallNext) -> Any:
@@ -158,7 +165,7 @@ class RateLimitingMiddleware(Middleware):
                 raise RateLimitError("Global rate limit exceeded")
         else:
             # Per-client rate limiting
-            client_id = self._get_client_identifier(context)
+            client_id = await self._get_client_identifier(context)
             limiter = self.limiters[client_id]
             allowed = await limiter.consume()
             if not allowed:
@@ -192,14 +199,17 @@ class SlidingWindowRateLimitingMiddleware(Middleware):
         self,
         max_requests: int,
         window_minutes: int = 1,
-        get_client_id: Callable[[MiddlewareContext], str] | None = None,
+        get_client_id: Callable[[MiddlewareContext], str]
+        | Callable[[MiddlewareContext], Awaitable[str]]
+        | None = None,
     ):
         """Initialize sliding window rate limiting middleware.
 
         Args:
             max_requests: Maximum requests allowed in the time window
             window_minutes: Time window in minutes
-            get_client_id: Function to extract client ID from context
+            get_client_id: Function to extract client ID from context. Can be sync or async.
+                If None, uses global limiting
         """
         self.max_requests = max_requests
         self.window_seconds = window_minutes * 60
@@ -210,15 +220,18 @@ class SlidingWindowRateLimitingMiddleware(Middleware):
             lambda: SlidingWindowRateLimiter(self.max_requests, self.window_seconds)
         )
 
-    def _get_client_identifier(self, context: MiddlewareContext) -> str:
+    async def _get_client_identifier(self, context: MiddlewareContext) -> str:
         """Get client identifier for rate limiting."""
         if self.get_client_id:
-            return self.get_client_id(context)
+            client_id = self.get_client_id(context)
+            if inspect.isawaitable(client_id):
+                return cast(str, await client_id)
+            return client_id
         return "global"
 
     async def on_request(self, context: MiddlewareContext, call_next: CallNext) -> Any:
         """Apply sliding window rate limiting to requests."""
-        client_id = self._get_client_identifier(context)
+        client_id = await self._get_client_identifier(context)
         limiter = self.limiters[client_id]
 
         allowed = await limiter.is_allowed()
