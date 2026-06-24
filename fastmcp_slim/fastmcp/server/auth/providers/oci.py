@@ -82,7 +82,10 @@ from typing import Literal
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl
 
-from fastmcp.server.auth.oidc_proxy import OIDCProxy
+from fastmcp.server.auth.oidc_proxy import (
+    DEFAULT_OIDC_DISCOVERY_TIMEOUT_SECONDS,
+    OIDCProxy,
+)
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 
@@ -122,6 +125,7 @@ class OCIProvider(OIDCProxy):
         config_url: AnyHttpUrl | str,
         client_id: str,
         client_secret: str,
+        timeout_seconds: int | None = DEFAULT_OIDC_DISCOVERY_TIMEOUT_SECONDS,
         base_url: AnyHttpUrl | str,
         resource_base_url: AnyHttpUrl | str | None = None,
         audience: str | None = None,
@@ -144,6 +148,10 @@ class OCIProvider(OIDCProxy):
             config_url: OCI OIDC Discovery URL
             client_id: OCI IAM Domain Integrated Application client id
             client_secret: OCI Integrated Application client secret
+            timeout_seconds: Timeout, in seconds, for the OIDC discovery request
+                made during construction. Defaults to 10 seconds so a slow or
+                unreachable issuer cannot block server startup indefinitely. Pass
+                None to fall back to the HTTP client's own default timeout.
             base_url: Public URL where OIDC endpoints will be accessible (includes any mount path)
             resource_base_url: Optional public base URL for the protected resource metadata
                 and token audience. Defaults to ``base_url``.
@@ -174,6 +182,7 @@ class OCIProvider(OIDCProxy):
             client_id=client_id,
             client_secret=client_secret,
             audience=audience,
+            timeout_seconds=timeout_seconds,
             base_url=base_url,
             resource_base_url=resource_base_url,
             issuer_url=issuer_url,
