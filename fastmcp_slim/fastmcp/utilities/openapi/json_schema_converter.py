@@ -8,6 +8,7 @@ for our specific use case.
 
 from typing import Any
 
+from fastmcp.utilities.json_schema import require_discriminator_property
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -97,7 +98,7 @@ def convert_openapi_schema_to_json_schema(
         result["anyOf"] = result.pop("oneOf")
 
     # Step 3: Preserve discriminator tag presence before removing the keyword
-    result = _require_discriminator_property(result)
+    result = require_discriminator_property(result)
 
     # Step 4: Remove OpenAPI-specific fields
     for field in OPENAPI_SPECIFIC_FIELDS:
@@ -150,38 +151,6 @@ def convert_openapi_schema_to_json_schema(
                 ]
 
     return result
-
-
-def _require_discriminator_property(schema: dict[str, Any]) -> dict[str, Any]:
-    """Keep discriminator tags mandatory after dropping OpenAPI metadata."""
-    discriminator = schema.get("discriminator")
-    if not isinstance(discriminator, dict):
-        return schema
-    property_name = discriminator.get("propertyName")
-    if not isinstance(property_name, str):
-        return schema
-
-    result = schema.copy()
-    for key in ("anyOf", "oneOf"):
-        variants = result.get(key)
-        if not isinstance(variants, list):
-            continue
-        result[key] = [
-            _require_property(variant, property_name)
-            if isinstance(variant, dict)
-            else variant
-            for variant in variants
-        ]
-    return result
-
-
-def _require_property(schema: dict[str, Any], property_name: str) -> dict[str, Any]:
-    required = schema.get("required")
-    if required is None:
-        return {**schema, "required": [property_name]}
-    if isinstance(required, list) and property_name not in required:
-        return {**schema, "required": [*required, property_name]}
-    return schema
 
 
 def _convert_nullable_field(schema: dict[str, Any]) -> dict[str, Any]:
