@@ -144,6 +144,39 @@ class TestEventStore:
         result = await event_store.replay_events_after(event_ids[3], callback)
         assert result == "stream-1"
 
+    async def test_eviction_tolerates_lost_delete_race(self, event_store):
+        """Regression for #4143: a lost eviction race must not escape store_event.
+
+        The SSE writer and message router both store events on the same session,
+        so two concurrent store_event calls can evict the same event_id. The
+        loser's delete hits the entry the winner already removed; backends like
+        the file-tree store surface that as FileNotFoundError instead of a no-op.
+        store_event must treat the missing entry as success (idempotent eviction)
+        rather than letting the error escape as an ERROR traceback.
+        """
+        msg = JSONRPCMessage(root=JSONRPCRequest(jsonrpc="2.0", method="test", id=1))
+
+        # Fill exactly to the cap so the next store triggers an eviction.
+        for _ in range(event_store._max_events_per_stream):
+            await event_store.store_event("stream-1", msg)
+
+        # Simulate the lost race: the concurrent eviction already deleted the
+        # entry, so the underlying store raises FileNotFoundError on our delete.
+        async def raise_missing(*args, **kwargs):
+            raise FileNotFoundError(2, "No such file or directory")
+
+        event_store._event_store.delete = raise_missing  # type: ignore[method-assign]
+
+        # This store crosses the cap -> eviction runs -> delete raises. The error
+        # must be swallowed and the call must still return a valid event id.
+        event_id = await event_store.store_event("stream-1", msg)
+        assert isinstance(event_id, str) and event_id
+
+        # The stream list is still trimmed to the cap despite the failed delete.
+        stream_data = await event_store._stream_store.get(key="stream-1")
+        assert stream_data is not None
+        assert len(stream_data.event_ids) == event_store._max_events_per_stream
+
     async def test_multiple_streams_are_isolated(self, event_store):
         """Events from different streams should not interfere with each other."""
         msg1 = JSONRPCMessage(

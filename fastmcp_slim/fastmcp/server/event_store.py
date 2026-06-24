@@ -121,7 +121,17 @@ class EventStore(SDKEventStore):
         # Trim to max events (delete old events)
         if len(event_ids) > self._max_events_per_stream:
             for old_id in event_ids[: -self._max_events_per_stream]:
-                await self._event_store.delete(key=old_id)
+                try:
+                    await self._event_store.delete(key=old_id)
+                except FileNotFoundError:
+                    # Eviction is idempotent by intent: a concurrent store_event
+                    # (the SSE writer and message router both store events on the
+                    # same session) or an external removal already deleted this
+                    # entry. A missing key is the desired end state, not an error.
+                    # Some backends (e.g. the file-tree store) surface the lost
+                    # race as FileNotFoundError instead of a no-op, which would
+                    # otherwise escape as an ERROR traceback out of those tasks.
+                    logger.debug("event_store: %s already evicted", old_id)
             event_ids = event_ids[-self._max_events_per_stream :]
 
         await self._stream_store.put(
