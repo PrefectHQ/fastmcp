@@ -2171,7 +2171,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     error_details={"Error Code": error},
                 )
                 return HTMLResponse(content=html_content, status_code=400)
-            if not transaction_model:
+            if not txn_id or not transaction_model:
                 logger.error("IdP callback with invalid transaction ID: %s", txn_id)
                 html_content = create_error_html(
                     error_title="OAuth Error",
