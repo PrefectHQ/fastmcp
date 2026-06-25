@@ -473,7 +473,7 @@ mcp.add_middleware(RateLimitingMiddleware(
 |-----------|------|---------|-------------|
 | `max_requests_per_second` | `float` | `10.0` | Sustained request rate |
 | `burst_capacity` | `int` | `20` | Maximum burst size |
-| `client_id_func` | `Callable` | `None` | Custom client identification |
+| `get_client_id` | `Callable` | `None` | Custom client identification |
 
 For sliding window rate limiting:
 
@@ -837,6 +837,82 @@ class ErrorLogger(Middleware):
 ```
 
 Catching and not re-raising suppresses the error entirely. Usually you want to log and re-raise.
+
+### Audit and Event Records
+
+A common need is to emit one structured record per tool call — for audit logs, policy decisions, or offline analysis — without wrapping individual tools or storing raw payloads. `on_call_tool` is the right place: it sees the call start, the resolved `ToolResult` (so it can detect empty or error results), the duration, and can deny the call before it runs.
+
+Use [OpenTelemetry](/servers/telemetry) when the goal is to *export* spans to an observability backend. Reach for a record like this when you want a self-contained, redacted audit trail — or to drive runtime decisions from the result.
+
+```python
+import hashlib
+import json
+from datetime import datetime
+
+from fastmcp.server.middleware import Middleware, MiddlewareContext
+from fastmcp.exceptions import ToolError
+
+
+def _schema_hash(arguments: dict | None) -> str:
+    """Stable hash of the argument shape — detects schema drift without storing values."""
+    shape = sorted(arguments or {})
+    return hashlib.sha256(json.dumps(shape).encode()).hexdigest()[:12]
+
+
+def _redact(arguments: dict | None) -> dict:
+    """Keep keys, drop values — raw inputs stay out of the default path."""
+    return {key: "<redacted>" for key in (arguments or {})}
+
+
+def _call_id(context: MiddlewareContext) -> str | None:
+    """Request id when an MCP session is active (see Session Availability above)."""
+    ctx = context.fastmcp_context
+    if ctx is not None and ctx.request_context:
+        return ctx.request_id
+    return None
+
+
+class AuditMiddleware(Middleware):
+    async def on_call_tool(self, context: MiddlewareContext, call_next):
+        record = {
+            "tool": context.message.name,
+            "call_id": _call_id(context),
+            "schema_hash": _schema_hash(context.message.arguments),
+            "arguments": _redact(context.message.arguments),
+            "received_at": context.timestamp.isoformat(),
+        }
+
+        try:
+            result = await call_next(context)
+        except Exception as exc:
+            record["status"] = "failed"
+            record["error"] = type(exc).__name__
+            self.emit(record)
+            raise
+
+        empty = not result.content and result.structured_content is None
+        record["status"] = "error" if result.is_error else "empty" if empty else "completed"
+        now = datetime.now(context.timestamp.tzinfo)
+        record["duration_ms"] = round((now - context.timestamp).total_seconds() * 1000, 2)
+        self.emit(record)
+        return result
+
+    def emit(self, record: dict) -> None:
+        # Swap in your sink: structured logger, queue, audit store, etc.
+        print(json.dumps(record))
+```
+
+Each record carries the fields downstream tools tend to need — tool name, call id, input schema hash, redacted arguments, result class (`completed` / `empty` / `error` / `failed`), and duration — while raw inputs and outputs stay out by default.
+
+To make this a policy layer, deny inside the same hook before calling `call_next`:
+
+```python
+async def on_call_tool(self, context: MiddlewareContext, call_next):
+    if not self.is_allowed(context.message.name, context.message.arguments):
+        self.emit({"tool": context.message.name, "status": "denied", "reason": "policy"})
+        raise ToolError("Call blocked by policy")
+    return await call_next(context)
+```
 
 ### Complete Example
 

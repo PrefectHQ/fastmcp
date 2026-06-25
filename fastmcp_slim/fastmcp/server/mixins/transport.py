@@ -35,6 +35,19 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+def _format_host_for_url(host: str) -> str:
+    """Format a host for inclusion in a URL, bracketing IPv6 addresses.
+
+    A bare IPv6 address like ``::1`` must be wrapped in brackets when placed
+    before a ``:port`` suffix, otherwise the result (``http://::1:8000``) is an
+    invalid URL. Hostnames and IPv4 addresses are returned unchanged, as are
+    addresses that are already bracketed.
+    """
+    if ":" in host and not host.startswith("["):
+        return f"[{host}]"
+    return host
+
+
 class TransportMixin:
     """Mixin providing transport-related methods for FastMCP.
 
@@ -301,8 +314,9 @@ class TransportMixin:
                 server = uvicorn.Server(config)
                 path = getattr(app.state, "path", "").lstrip("/")
                 mode = " (stateless)" if stateless_http else ""
+                display_host = _format_host_for_url(host)
                 logger.info(
-                    f"Starting MCP server {self.name!r} with transport {transport!r}{mode} on http://{host}:{port}/{path}"
+                    f"Starting MCP server {self.name!r} with transport {transport!r}{mode} on http://{display_host}:{port}/{path}"
                 )
 
                 if sockets is not None:

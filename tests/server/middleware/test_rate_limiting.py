@@ -176,19 +176,28 @@ class TestRateLimitingMiddleware:
         assert middleware.get_client_id is get_client_id
         assert middleware.global_limit is True
 
-    def test_get_client_identifier_default(self, mock_context):
+    async def test_get_client_identifier_default(self, mock_context):
         """Test default client identifier."""
         middleware = RateLimitingMiddleware()
-        assert middleware._get_client_identifier(mock_context) == "global"
+        assert await middleware._get_client_identifier(mock_context) == "global"
 
-    def test_get_client_identifier_custom(self, mock_context):
+    async def test_get_client_identifier_custom(self, mock_context):
         """Test custom client identifier."""
 
         def get_client_id(ctx):
             return "custom_client"
 
         middleware = RateLimitingMiddleware(get_client_id=get_client_id)
-        assert middleware._get_client_identifier(mock_context) == "custom_client"
+        assert await middleware._get_client_identifier(mock_context) == "custom_client"
+
+    async def test_get_client_identifier_async_custom(self, mock_context):
+        """Test custom async client identifier."""
+
+        async def get_client_id(ctx):
+            return "async_client"
+
+        middleware = RateLimitingMiddleware(get_client_id=get_client_id)
+        assert await middleware._get_client_identifier(mock_context) == "async_client"
 
     async def test_on_request_success(self, mock_context, mock_call_next):
         """Test successful request within rate limit."""
@@ -223,6 +232,25 @@ class TestRateLimitingMiddleware:
 
         # Second request should be rate limited
         with pytest.raises(RateLimitError, match="Global rate limit exceeded"):
+            await middleware.on_request(mock_context, mock_call_next)
+
+    async def test_on_request_async_get_client_id(self, mock_context, mock_call_next):
+        """Test per-client rate limiting with an async get_client_id."""
+
+        async def get_client_id(ctx):
+            return "async_client"
+
+        middleware = RateLimitingMiddleware(
+            max_requests_per_second=1.0, burst_capacity=1, get_client_id=get_client_id
+        )
+
+        # First request should succeed
+        await middleware.on_request(mock_context, mock_call_next)
+
+        # Second request should be rate limited for the async-resolved client
+        with pytest.raises(
+            RateLimitError, match="Rate limit exceeded for client: async_client"
+        ):
             await middleware.on_request(mock_context, mock_call_next)
 
 
@@ -267,6 +295,23 @@ class TestSlidingWindowRateLimitingMiddleware:
 
         # Second request should be rate limited
         with pytest.raises(RateLimitError, match="Rate limit exceeded"):
+            await middleware.on_request(mock_context, mock_call_next)
+
+    async def test_on_request_async_get_client_id(self, mock_context, mock_call_next):
+        """Test sliding window rate limiting with an async get_client_id."""
+
+        async def get_client_id(ctx):
+            return "async_client"
+
+        middleware = SlidingWindowRateLimitingMiddleware(
+            max_requests=1, get_client_id=get_client_id
+        )
+
+        # First request should succeed
+        await middleware.on_request(mock_context, mock_call_next)
+
+        # Second request should be rate limited for the async-resolved client
+        with pytest.raises(RateLimitError, match="client: async_client"):
             await middleware.on_request(mock_context, mock_call_next)
 
 

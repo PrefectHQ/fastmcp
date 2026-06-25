@@ -125,17 +125,25 @@ def expand_uri_template(uri_template: str, params: dict[str, Any]) -> str:
     """
     result = uri_template
 
-    # Replace {name} and {name*} path placeholders.
+    # Replace {name} and {name*} path placeholders, percent-encoding the
+    # substituted values so the result round-trips through match_uri_template
+    # (which unquotes captured groups). Simple {name} placeholders match a
+    # single segment ([^/]+), so reserved characters including "/" are encoded;
+    # wildcard {name*} placeholders may span segments, so "/" is preserved.
+    #
     # Params use underscored keys (e.g. user_id) but templates may use
     # hyphens (e.g. {user-id}), so try both forms.
     for key, value in params.items():
         value_str = str(value)
-        result = result.replace(f"{{{key}}}", value_str)
-        result = result.replace(f"{{{key}*}}", value_str)
+        simple = quote(value_str, safe="")
+        wildcard = quote(value_str, safe="/")
+        forms = [key]
         hyphenated = key.replace("_", "-")
         if hyphenated != key:
-            result = result.replace(f"{{{hyphenated}}}", value_str)
-            result = result.replace(f"{{{hyphenated}*}}", value_str)
+            forms.append(hyphenated)
+        for form in forms:
+            result = result.replace(f"{{{form}}}", simple)
+            result = result.replace(f"{{{form}*}}", wildcard)
 
     # Expand {?param1,param2,...} query parameter blocks
     def _expand_query_block(match: re.Match[str]) -> str:

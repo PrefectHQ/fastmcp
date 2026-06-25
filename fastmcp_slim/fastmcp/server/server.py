@@ -487,11 +487,11 @@ class FastMCP(
             next_chain: CallNext[Any, Any] = chain
 
             async def wrapped(
-                ctx: MiddlewareContext[Any],
+                context: MiddlewareContext[Any],
                 mw: Middleware = mw,
                 call_next: CallNext[Any, Any] = next_chain,
             ) -> Any:
-                return await mw(ctx, call_next)
+                return await mw(context, call_next)
 
             chain = cast(CallNext[Any, Any], wrapped)
         return await chain(context)
