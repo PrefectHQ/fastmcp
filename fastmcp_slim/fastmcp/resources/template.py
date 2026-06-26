@@ -6,7 +6,15 @@ import functools
 import inspect
 import re
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, ClassVar, overload
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    ClassVar,
+    get_args,
+    get_origin,
+    overload,
+)
 from urllib.parse import parse_qs, quote, unquote
 
 import mcp.types
@@ -77,7 +85,51 @@ def build_regex(template: str) -> re.Pattern[str] | None:
         return None
 
 
-def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
+def _unwrap_annotation(annotation: Any) -> Any:
+    """Return the underlying type for coercion, stripping Annotated wrappers."""
+    if get_origin(annotation) is Annotated:
+        return get_args(annotation)[0]
+    return annotation
+
+
+def _coerce_query_param_value(
+    annotation: Any, value: Any, *, param_name: str | None = None
+) -> Any:
+    """Coerce a query parameter value to match the function parameter annotation."""
+    annotation = _unwrap_annotation(annotation)
+
+    if annotation is inspect.Parameter.empty or annotation is str:
+        return value
+
+    if get_origin(annotation) is list:
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            return [value]
+        return value
+
+    if not isinstance(value, str):
+        return value
+
+    if annotation is int:
+        return int(value)
+    if annotation is float:
+        return float(value)
+    if annotation is bool:
+        lower = value.lower()
+        if lower in ("true", "1", "yes"):
+            return True
+        if lower in ("false", "0", "no"):
+            return False
+        label = param_name or "parameter"
+        raise ValueError(f"Invalid boolean value for {label}: {value!r}")
+
+    return value
+
+
+def match_uri_template(
+    uri: str, uri_template: str
+) -> dict[str, str | list[str]] | None:
     """Match URI against template and extract both path and query parameters.
 
     Supports RFC 6570 URI templates:
@@ -95,7 +147,9 @@ def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
     if not match:
         return None
 
-    params = {k: unquote(v) for k, v in match.groupdict().items()}
+    params: dict[str, str | list[str]] = {
+        k: unquote(v) for k, v in match.groupdict().items()
+    }
 
     # Extract query parameters if present in URI and template
     if query_string:
@@ -106,12 +160,14 @@ def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
 
         for name in query_param_names:
             if name in parsed_query:
-                # Take first value if multiple provided.
+                values = parsed_query[name]
+                # Preserve repeated query keys as a list (e.g. ?tags=a&tags=b).
+                # Single values stay as strings for backward compatibility.
                 # Normalize hyphens to underscores to match Python param names.
                 # Don't overwrite path params that were already extracted.
                 key = name.replace("-", "_")
                 if key not in params:
-                    params[key] = parsed_query[name][0]
+                    params[key] = values if len(values) > 1 else values[0]
 
     return params
 
@@ -460,34 +516,28 @@ class FunctionResourceTemplate(ResourceTemplate):
 
     async def read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult:
         """Read the resource content."""
-        # Type coercion for query parameters (which arrive as strings)
+        # Type coercion for query parameters (which arrive as strings or lists)
         kwargs = arguments.copy()
         sig = inspect.signature(self.fn)
         for param_name, param_value in list(kwargs.items()):
-            if param_name in sig.parameters and isinstance(param_value, str):
-                param = sig.parameters[param_name]
-                annotation = param.annotation
+            if param_name not in sig.parameters:
+                continue
 
-                if annotation is inspect.Parameter.empty or annotation is str:
-                    continue
+            param = sig.parameters[param_name]
+            annotation = param.annotation
 
-                try:
-                    if annotation is int:
-                        kwargs[param_name] = int(param_value)
-                    elif annotation is float:
-                        kwargs[param_name] = float(param_value)
-                    elif annotation is bool:
-                        lower = param_value.lower()
-                        if lower in ("true", "1", "yes"):
-                            kwargs[param_name] = True
-                        elif lower in ("false", "0", "no"):
-                            kwargs[param_name] = False
-                        else:
-                            raise ValueError(
-                                f"Invalid boolean value for {param_name}: {param_value!r}"
-                            )
-                except (ValueError, AttributeError):
-                    raise
+            if annotation is inspect.Parameter.empty or annotation is str:
+                continue
+
+            if not isinstance(param_value, (str, list)):
+                continue
+
+            try:
+                kwargs[param_name] = _coerce_query_param_value(
+                    annotation, param_value, param_name=param_name
+                )
+            except (ValueError, AttributeError):
+                raise
 
         # self.fn is wrapped by without_injected_parameters which handles
         # dependency resolution internally, so we call it directly

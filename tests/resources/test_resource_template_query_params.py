@@ -408,3 +408,38 @@ class TestResourceTemplateFieldDefaults:
         assert result2["limit"] == 50  # overridden
         assert result2["offset"] == 0  # default
         assert result2["format"] == "xml"  # overridden
+
+
+class TestListQueryParameterCoercion:
+    """Regression tests for #4378: list[str] optional query parameters."""
+
+    async def test_list_query_params_end_to_end(self):
+        import json
+
+        from pydantic import Field
+
+        from fastmcp import Client, FastMCP
+
+        mcp = FastMCP("demo")
+
+        @mcp.resource("items://{category}{?tags}")
+        def search(category: str, tags: list[str] = Field(default_factory=list)) -> dict:
+            return {"category": category, "tags": tags}
+
+        cases = [
+            ("items://books", {"category": "books", "tags": []}),
+            ("items://books?tags=alpha", {"category": "books", "tags": ["alpha"]}),
+            (
+                "items://books?tags=alpha&tags=beta",
+                {"category": "books", "tags": ["alpha", "beta"]},
+            ),
+            (
+                "items://books?tags=alpha,beta",
+                {"category": "books", "tags": ["alpha,beta"]},
+            ),
+        ]
+
+        async with Client(mcp) as client:
+            for uri, expected in cases:
+                result = await client.read_resource(uri)
+                assert json.loads(result[0].text) == expected

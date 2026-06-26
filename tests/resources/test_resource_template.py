@@ -869,6 +869,48 @@ class TestMalformedURITemplates:
         assert result is not None
         assert result == {"id": "42", "format": "", "verbose": "true"}
 
+    def test_query_param_repeated_values_return_list(self):
+        """Repeated query keys should be preserved as a list."""
+        result = match_uri_template(
+            "items://books?tags=alpha&tags=beta",
+            "items://{category}{?tags}",
+        )
+        assert result == {"category": "books", "tags": ["alpha", "beta"]}
+
+    def test_query_param_single_value_stays_string(self):
+        """Single query values remain strings for backward compatibility."""
+        result = match_uri_template(
+            "items://books?tags=alpha",
+            "items://{category}{?tags}",
+        )
+        assert result == {"category": "books", "tags": "alpha"}
+
+    async def test_list_query_param_coercion(self):
+        """list[str] query params are coerced from strings and lists."""
+        from pydantic import Field
+
+        from fastmcp.resources.template import FunctionResourceTemplate
+
+        def search(
+            category: str, tags: list[str] = Field(default_factory=list)
+        ) -> dict:
+            return {"category": category, "tags": tags}
+
+        template = FunctionResourceTemplate.from_function(
+            fn=search,
+            uri_template="items://{category}{?tags}",
+            name="search",
+        )
+
+        result = await template.read({"category": "books"})
+        assert result == {"category": "books", "tags": []}
+
+        result = await template.read({"category": "books", "tags": "alpha"})
+        assert result == {"category": "books", "tags": ["alpha"]}
+
+        result = await template.read({"category": "books", "tags": ["alpha", "beta"]})
+        assert result == {"category": "books", "tags": ["alpha", "beta"]}
+
     def test_from_function_rejects_hyphen_underscore_collision(self):
         """Two raw param names that normalize to the same key are rejected."""
 
