@@ -6,7 +6,7 @@ import functools
 import inspect
 import re
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, ClassVar, overload
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, get_args, get_origin, overload
 from urllib.parse import parse_qs, quote, unquote
 
 import mcp.types
@@ -77,7 +77,7 @@ def build_regex(template: str) -> re.Pattern[str] | None:
         return None
 
 
-def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
+def match_uri_template(uri: str, uri_template: str) -> dict[str, Any] | None:
     """Match URI against template and extract both path and query parameters.
 
     Supports RFC 6570 URI templates:
@@ -106,14 +106,46 @@ def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
 
         for name in query_param_names:
             if name in parsed_query:
-                # Take first value if multiple provided.
+                values = parsed_query[name]
                 # Normalize hyphens to underscores to match Python param names.
                 # Don't overwrite path params that were already extracted.
                 key = name.replace("-", "_")
                 if key not in params:
-                    params[key] = parsed_query[name][0]
+                    # Preserve repeated keys as a list for list-typed parameters.
+                    params[key] = values[0] if len(values) == 1 else values
 
     return params
+
+
+def _unwrap_annotation(annotation: Any) -> Any:
+    """Return the underlying type for ``Annotated`` parameters."""
+    if get_origin(annotation) is Annotated:
+        args = get_args(annotation)
+        return args[0] if args else annotation
+    return annotation
+
+
+def _is_list_of_str_annotation(annotation: Any) -> bool:
+    """Return True when *annotation* is ``list[str]`` (or equivalent)."""
+    annotation = _unwrap_annotation(annotation)
+    if annotation is inspect.Parameter.empty:
+        return False
+    origin = get_origin(annotation)
+    if origin is list:
+        args = get_args(annotation)
+        return len(args) == 1 and args[0] is str
+    return False
+
+
+def _coerce_query_param_to_str_list(value: str | list[str]) -> list[str]:
+    """Coerce a query parameter value into ``list[str]``."""
+    if isinstance(value, list):
+        return [str(v) for v in value]
+    if value == "":
+        return []
+    if "," in value:
+        return [part for part in value.split(",") if part != ""]
+    return [value]
 
 
 def expand_uri_template(uri_template: str, params: dict[str, Any]) -> str:
@@ -486,8 +518,16 @@ class FunctionResourceTemplate(ResourceTemplate):
                             raise ValueError(
                                 f"Invalid boolean value for {param_name}: {param_value!r}"
                             )
+                    elif _is_list_of_str_annotation(annotation):
+                        kwargs[param_name] = _coerce_query_param_to_str_list(
+                            param_value
+                        )
                 except (ValueError, AttributeError):
                     raise
+            elif param_name in sig.parameters and _is_list_of_str_annotation(
+                sig.parameters[param_name].annotation
+            ):
+                kwargs[param_name] = _coerce_query_param_to_str_list(param_value)
 
         # self.fn is wrapped by without_injected_parameters which handles
         # dependency resolution internally, so we call it directly

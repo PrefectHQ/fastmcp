@@ -408,3 +408,87 @@ class TestResourceTemplateFieldDefaults:
         assert result2["limit"] == 50  # overridden
         assert result2["offset"] == 0  # default
         assert result2["format"] == "xml"  # overridden
+
+
+class TestListQueryParameterTypeCoercion:
+    """Test list[str] query parameters."""
+
+    async def _make_template(self):
+        from pydantic import Field
+
+        def search(
+            category: str, tags: list[str] = Field(default_factory=list)
+        ) -> dict:
+            return {"category": category, "tags": tags}
+
+        return ResourceTemplate.from_function(
+            fn=search,
+            uri_template="items://{category}{?tags}",
+            name="test",
+        )
+
+    async def test_missing_list_query_param_uses_default(self):
+        template = await self._make_template()
+
+        resource = await template.create_resource(
+            "items://books", {"category": "books"}
+        )
+        result = await resource.read()
+        assert result == {"category": "books", "tags": []}
+
+    async def test_single_list_query_param(self):
+        template = await self._make_template()
+
+        resource = await template.create_resource(
+            "items://books?tags=alpha",
+            {"category": "books", "tags": "alpha"},
+        )
+        result = await resource.read()
+        assert result == {"category": "books", "tags": ["alpha"]}
+
+    async def test_repeated_list_query_params(self):
+        template = await self._make_template()
+
+        params = template.matches("items://books?tags=alpha&tags=beta")
+        assert params == {"category": "books", "tags": ["alpha", "beta"]}
+
+        resource = await template.create_resource(
+            "items://books?tags=alpha&tags=beta",
+            params,
+        )
+        result = await resource.read()
+        assert result == {"category": "books", "tags": ["alpha", "beta"]}
+
+    async def test_comma_separated_list_query_param(self):
+        template = await self._make_template()
+
+        resource = await template.create_resource(
+            "items://books?tags=alpha,beta",
+            {"category": "books", "tags": "alpha,beta"},
+        )
+        result = await resource.read()
+        assert result == {"category": "books", "tags": ["alpha", "beta"]}
+
+    async def test_empty_list_query_param(self):
+        template = await self._make_template()
+
+        resource = await template.create_resource(
+            "items://books?tags=",
+            {"category": "books", "tags": ""},
+        )
+        result = await resource.read()
+        assert result == {"category": "books", "tags": []}
+
+    def test_list_str_annotation_helpers(self):
+        from typing import Annotated
+
+        from fastmcp.resources.template import (
+            _coerce_query_param_to_str_list,
+            _is_list_of_str_annotation,
+        )
+
+        assert _is_list_of_str_annotation(list[str])
+        assert _is_list_of_str_annotation(Annotated[list[str], "meta"])
+        assert not _is_list_of_str_annotation(str)
+        assert _coerce_query_param_to_str_list("") == []
+        assert _coerce_query_param_to_str_list(["a", "b"]) == ["a", "b"]
