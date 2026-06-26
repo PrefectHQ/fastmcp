@@ -17,6 +17,7 @@ from mcp.types import TextContent
 
 from fastmcp import Context, FastMCP
 from fastmcp.tools.base import Tool
+from fastmcp.tools.function_tool import FunctionTool
 
 
 async def _loop_thread_id() -> int:
@@ -295,7 +296,7 @@ class TestRunInThreadViaFileSystemProvider:
         discovered = [
             c
             for c in provider._components.values()
-            if isinstance(c, Tool) and c.name == "hooked"
+            if isinstance(c, FunctionTool) and c.name == "hooked"
         ]
 
         assert len(discovered) == 1

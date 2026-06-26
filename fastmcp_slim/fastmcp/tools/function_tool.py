@@ -547,6 +547,7 @@ class FunctionTool(Tool):
 @overload
 def tool(fn: F) -> F: ...
 
+
 @overload
 def tool(
     name_or_fn: str,
@@ -568,6 +569,7 @@ def tool(
     setup: Callable[..., Any] | None = None,
     teardown: Callable[..., Any] | None = None,
 ) -> Callable[[F], F]: ...
+
 
 @overload
 def tool(

@@ -261,7 +261,6 @@ class TestToolHooks:
         assert result.content[0].text == "ok"
         assert events == ["setup", "tool", "teardown"]
 
-
     async def test_teardown_failure_preserves_original_tool_exception(self):
         mcp = FastMCP()
 
