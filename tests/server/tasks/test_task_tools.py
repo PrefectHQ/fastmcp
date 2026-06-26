@@ -166,6 +166,38 @@ async def test_tool_task_uses_pydantic_argument_coercion(tool_server):
     assert result.data == 42
 
 
+async def test_tool_task_argument_model_is_cached(tool_server, monkeypatch):
+    """Task argument coercion reuses its generated Pydantic model."""
+    import fastmcp.tools.function_tool as function_tool
+
+    create_model_calls = 0
+    original_create_model = function_tool.create_model
+
+    def tracking_create_model(*args, **kwargs):
+        nonlocal create_model_calls
+        create_model_calls += 1
+        return original_create_model(*args, **kwargs)
+
+    monkeypatch.setattr(function_tool, "create_model", tracking_create_model)
+
+    @tool_server.tool(task=True)
+    async def increment(count: int) -> int:
+        return count + 1
+
+    async with Client(tool_server) as client:
+        first_task = await client.call_tool("increment", {"count": "1"}, task=True)
+        await first_task.wait(timeout=2.0)
+        first_result = await first_task.result()
+
+        second_task = await client.call_tool("increment", {"count": "2"}, task=True)
+        await second_task.wait(timeout=2.0)
+        second_result = await second_task.result()
+
+    assert first_result.data == 2
+    assert second_result.data == 3
+    assert create_model_calls == 1
+
+
 async def test_tool_task_hooks_preserve_current_docket_dependency(tool_server):
     """Task hooks do not break CurrentDocket dependency injection."""
     from fastmcp.server.dependencies import CurrentDocket

@@ -22,7 +22,7 @@ from typing import (
 import anyio
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, Icon, ToolAnnotations
-from pydantic import ConfigDict, Field, create_model
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, create_model
 from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
@@ -117,6 +117,9 @@ class FunctionTool(Tool):
             )
         ),
     ] = True
+    _task_user_fn: Callable[..., Any] | None = PrivateAttr(default=None)
+    _task_argument_model: type[BaseModel] | None = PrivateAttr(default=None)
+    _task_argument_model_ready: bool = PrivateAttr(default=False)
 
     @classmethod
     def from_function(
@@ -445,12 +448,23 @@ class FunctionTool(Tool):
         return await self._materialize_generator(raw_result)
 
     def _coerce_task_arguments(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        from fastmcp.server.dependencies import without_injected_parameters
+        model = self._get_task_argument_model()
+        if model is None:
+            return arguments
 
-        user_fn = without_injected_parameters(self.fn, run_in_thread=self.run_in_thread)
+        validation_input = {
+            name: arguments[name] for name in model.model_fields if name in arguments
+        }
+        validated = model.model_validate(validation_input).model_dump()
+        return {**arguments, **validated}
+
+    def _get_task_argument_model(self) -> type[BaseModel] | None:
+        if self._task_argument_model_ready:
+            return self._task_argument_model
+
+        user_fn = self._get_task_user_fn()
         signature = inspect.signature(user_fn)
         fields: dict[str, Any] = {}
-        validation_input: dict[str, Any] = {}
 
         for name, parameter in signature.parameters.items():
             if parameter.kind in {
@@ -470,19 +484,26 @@ class FunctionTool(Tool):
                 else parameter.default
             )
             fields[name] = (annotation, default)
-            if name in arguments:
-                validation_input[name] = arguments[name]
 
-        if not fields:
-            return arguments
+        if fields:
+            self._task_argument_model = create_model(
+                "TaskArguments",
+                __config__=ConfigDict(arbitrary_types_allowed=True),
+                **fields,
+            )
+        self._task_argument_model_ready = True
+        return self._task_argument_model
 
-        model = create_model(
-            "TaskArguments",
-            __config__=ConfigDict(arbitrary_types_allowed=True),
-            **fields,
+    def _get_task_user_fn(self) -> Callable[..., Any]:
+        if self._task_user_fn is not None:
+            return self._task_user_fn
+
+        from fastmcp.server.dependencies import without_injected_parameters
+
+        self._task_user_fn = without_injected_parameters(
+            self.fn, run_in_thread=self.run_in_thread
         )
-        validated = model.model_validate(validation_input).model_dump()
-        return {**arguments, **validated}
+        return self._task_user_fn
 
     async def _call_lifecycle_hook(
         self, hook: Callable[..., Any], **context: Any
