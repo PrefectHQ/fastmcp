@@ -869,6 +869,14 @@ class TestMalformedURITemplates:
         assert result is not None
         assert result == {"id": "42", "format": "", "verbose": "true"}
 
+    def test_query_param_repeated_keys_returns_list(self):
+        """Repeated query keys should be preserved as a list."""
+        result = match_uri_template(
+            "items://books?tags=alpha&tags=beta",
+            "items://{category}{?tags}",
+        )
+        assert result == {"category": "books", "tags": ["alpha", "beta"]}
+
     def test_from_function_rejects_hyphen_underscore_collision(self):
         """Two raw param names that normalize to the same key are rejected."""
 
