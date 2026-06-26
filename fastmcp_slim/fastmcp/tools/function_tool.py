@@ -22,7 +22,7 @@ from typing import (
 import anyio
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, Icon, ToolAnnotations
-from pydantic import Field
+from pydantic import ConfigDict, Field, create_model
 from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
@@ -308,11 +308,11 @@ class FunctionTool(Tool):
         wrapper_fn = without_injected_parameters(
             self.fn, run_in_thread=self.run_in_thread
         )
-        type_adapter = get_cached_typeadapter(wrapper_fn)
         setup_result: Any = None
         raw_result: Any = None
         has_result = False
         exception: BaseException | None = None
+        timed_out = False
         try:
             # Apply timeout if configured. Combining timeout with
             # run_in_thread=False on a sync function is rejected at
@@ -324,22 +324,12 @@ class FunctionTool(Tool):
                         if self.setup is not None:
                             setup_result = await self._call_lifecycle_hook(self.setup)
 
-                        # Thread pool execution for sync functions, direct await for async
-                        if is_coroutine_function(wrapper_fn):
-                            raw_result = await type_adapter.validate_python(arguments)
-                        else:
-                            # Sync function: run in threadpool to avoid blocking
-                            raw_result = await call_sync_fn_in_threadpool(
-                                type_adapter.validate_python, arguments
-                            )
-                            # Handle sync wrappers that return awaitables
-                            if inspect.isawaitable(raw_result):
-                                raw_result = await raw_result
-                        # Materialize generators inside timeout scope so slow
-                        # generators don't run past the configured timeout
-                        raw_result = await self._materialize_generator(raw_result)
+                        raw_result = await self._execute_with_type_adapter(
+                            wrapper_fn, arguments
+                        )
                         has_result = True
                 except TimeoutError:
+                    timed_out = True
                     logger.warning(
                         f"Tool '{self.name}' timed out after {self.timeout}s. "
                         f"Consider using task=True for long-running operations. "
@@ -355,20 +345,9 @@ class FunctionTool(Tool):
                 if self.setup is not None:
                     setup_result = await self._call_lifecycle_hook(self.setup)
 
-                # No timeout: use existing execution path
-                if is_coroutine_function(wrapper_fn):
-                    raw_result = await type_adapter.validate_python(arguments)
-                elif self.run_in_thread:
-                    raw_result = await call_sync_fn_in_threadpool(
-                        type_adapter.validate_python, arguments
-                    )
-                    if inspect.isawaitable(raw_result):
-                        raw_result = await raw_result
-                else:
-                    raw_result = type_adapter.validate_python(arguments)
-                    if inspect.isawaitable(raw_result):
-                        raw_result = await raw_result
-                raw_result = await self._materialize_generator(raw_result)
+                raw_result = await self._execute_with_type_adapter(
+                    wrapper_fn, arguments
+                )
                 has_result = True
 
             return self.convert_result(raw_result)
@@ -380,6 +359,7 @@ class FunctionTool(Tool):
                 result=raw_result if has_result else None,
                 exception=exception,
                 setup_result=setup_result,
+                timed_out=timed_out,
             )
 
     async def _run_raw_with_lifecycle(self, arguments: dict[str, Any]) -> Any:
@@ -391,16 +371,20 @@ class FunctionTool(Tool):
             if self.setup is not None:
                 setup_result = await self._call_lifecycle_hook(self.setup)
 
+            coerced_arguments = self._coerce_task_arguments(arguments)
             if is_coroutine_function(self.fn):
-                raw_result = await self.fn(**arguments)
+                raw_result = await self.fn(**coerced_arguments)
             elif self.run_in_thread:
-                raw_result = await call_sync_fn_in_threadpool(self.fn, **arguments)
+                raw_result = await call_sync_fn_in_threadpool(
+                    self.fn, **coerced_arguments
+                )
                 if inspect.isawaitable(raw_result):
                     raw_result = await raw_result
             else:
-                raw_result = self.fn(**arguments)
+                raw_result = self.fn(**coerced_arguments)
                 if inspect.isawaitable(raw_result):
                     raw_result = await raw_result
+            raw_result = await self._materialize_generator(raw_result)
             has_result = True
             return raw_result
         except BaseException as exc:
@@ -411,6 +395,7 @@ class FunctionTool(Tool):
                 result=raw_result if has_result else None,
                 exception=exception,
                 setup_result=setup_result,
+                timed_out=False,
             )
 
     async def _run_teardown(
@@ -419,6 +404,7 @@ class FunctionTool(Tool):
         result: Any,
         exception: BaseException | None,
         setup_result: Any,
+        timed_out: bool,
     ) -> None:
         if self.teardown is None:
             return
@@ -429,15 +415,74 @@ class FunctionTool(Tool):
                     result=result,
                     exception=exception,
                     setup_result=setup_result,
+                    timed_out=timed_out,
                 )
         except BaseException:
-            if exception is None:
-                raise
+            failure_context = "completed" if exception is None else "failed"
             logger.warning(
-                "Tool %r teardown failed after tool execution failed.",
+                "Tool %r teardown failed after invocation %s.",
                 self.name,
+                failure_context,
                 exc_info=True,
             )
+
+    async def _execute_with_type_adapter(
+        self, fn: Callable[..., Any], arguments: dict[str, Any]
+    ) -> Any:
+        type_adapter = get_cached_typeadapter(fn)
+        if is_coroutine_function(fn):
+            raw_result = await type_adapter.validate_python(arguments)
+        elif self.run_in_thread:
+            raw_result = await call_sync_fn_in_threadpool(
+                type_adapter.validate_python, arguments
+            )
+            if inspect.isawaitable(raw_result):
+                raw_result = await raw_result
+        else:
+            raw_result = type_adapter.validate_python(arguments)
+            if inspect.isawaitable(raw_result):
+                raw_result = await raw_result
+        return await self._materialize_generator(raw_result)
+
+    def _coerce_task_arguments(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        from fastmcp.server.dependencies import without_injected_parameters
+
+        user_fn = without_injected_parameters(self.fn, run_in_thread=self.run_in_thread)
+        signature = inspect.signature(user_fn)
+        fields: dict[str, Any] = {}
+        validation_input: dict[str, Any] = {}
+
+        for name, parameter in signature.parameters.items():
+            if parameter.kind in {
+                inspect.Parameter.VAR_POSITIONAL,
+                inspect.Parameter.VAR_KEYWORD,
+            }:
+                continue
+
+            annotation = (
+                Any
+                if parameter.annotation is inspect.Parameter.empty
+                else parameter.annotation
+            )
+            default = (
+                ...
+                if parameter.default is inspect.Parameter.empty
+                else parameter.default
+            )
+            fields[name] = (annotation, default)
+            if name in arguments:
+                validation_input[name] = arguments[name]
+
+        if not fields:
+            return arguments
+
+        model = create_model(
+            "TaskArguments",
+            __config__=ConfigDict(arbitrary_types_allowed=True),
+            **fields,
+        )
+        validated = model.model_validate(validation_input).model_dump()
+        return {**arguments, **validated}
 
     async def _call_lifecycle_hook(
         self, hook: Callable[..., Any], **context: Any

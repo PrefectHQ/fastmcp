@@ -885,7 +885,7 @@ async def update_record(record_id: str, value: str) -> str:
 
 `setup` runs before every invocation. If it returns a value, FastMCP passes that value to `teardown` as `setup_result`.
 
-`teardown` runs after `setup` has been attempted, including when setup or the tool succeeds, raises an exception, times out, or is cancelled. It runs in a shielded cancellation scope so cleanup has a chance to finish even if the tool call is being cancelled. If setup or the tool failed, FastMCP preserves the original exception even if teardown also fails.
+`teardown` runs after `setup` has been attempted, including when setup or the tool succeeds, raises an exception, times out, or is cancelled. It runs in a shielded cancellation scope so cleanup has a chance to finish even if the tool call is being cancelled. If teardown raises, FastMCP logs the teardown failure and preserves the original invocation outcome: successful tool results are still returned, and setup or tool exceptions are still raised.
 
 The `teardown` hook may accept any of these keyword arguments:
 
@@ -899,6 +899,10 @@ The `teardown` hook may accept any of these keyword arguments:
 
 <ParamField body="setup_result" type="Any | None">
   The value returned by `setup`, if any.
+</ParamField>
+
+<ParamField body="timed_out" type="bool">
+  Whether the foreground invocation exceeded the tool's FastMCP `timeout`.
 </ParamField>
 
 Hooks can be sync or async. For sync tools, sync hooks follow the tool's `run_in_thread` setting: by default they run in the worker thread pool, and with `run_in_thread=False` they run inline on the event loop thread.
@@ -922,7 +926,9 @@ async def fetch_data(url: str) -> dict:
     ...
 ```
 
-Timeouts are specified in seconds as a float. When a tool exceeds its timeout, FastMCP returns an MCP error with code `-32000` and a message indicating which tool timed out and how long it ran. Both sync and async tools support timeouts—sync functions run in thread pools, so the timeout applies to the entire operation regardless of execution model.
+Timeouts are specified in seconds as a float. The timeout budget covers the foreground invocation's `setup` hook, tool execution, and result materialization. The `teardown` hook runs afterward in a shielded cancellation scope, outside the timeout budget.
+
+When a tool exceeds its timeout, FastMCP returns an MCP error with code `-32000` and a message indicating which tool timed out and how long it ran. Both sync and async tools support timeouts—sync functions run in thread pools, so the timeout applies regardless of execution model.
 
 <Note>
 Tools must explicitly opt-in to timeouts. There is no server-level default timeout setting.

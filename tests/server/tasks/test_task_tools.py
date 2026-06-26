@@ -150,6 +150,22 @@ async def test_tool_task_teardown_receives_raw_result(tool_server):
     assert received_result == "raw-ok"
 
 
+async def test_tool_task_uses_pydantic_argument_coercion(tool_server):
+    """Task-enabled tools validate and coerce arguments like foreground calls."""
+
+    @tool_server.tool(task=True)
+    async def increment(count: int) -> int:
+        return count + 1
+
+    async with Client(tool_server) as client:
+        task = await client.call_tool("increment", {"count": "41"}, task=True)
+        await task.wait(timeout=2.0)
+
+        result = await task.result()
+
+    assert result.data == 42
+
+
 async def test_tool_task_hooks_preserve_current_docket_dependency(tool_server):
     """Task hooks do not break CurrentDocket dependency injection."""
     from fastmcp.server.dependencies import CurrentDocket

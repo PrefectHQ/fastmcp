@@ -85,10 +85,12 @@ class TestToolHooks:
     async def test_teardown_runs_on_timeout(self):
         mcp = FastMCP()
         teardown_called = False
+        received_timed_out: bool | None = None
 
-        def teardown_hook() -> None:
-            nonlocal teardown_called
+        def teardown_hook(timed_out: bool) -> None:
+            nonlocal teardown_called, received_timed_out
             teardown_called = True
+            received_timed_out = timed_out
 
         @mcp.tool(teardown=teardown_hook, timeout=0.1)
         async def my_tool() -> str:
@@ -99,6 +101,7 @@ class TestToolHooks:
             await mcp.call_tool("my_tool")
 
         assert teardown_called
+        assert received_timed_out is True
 
     async def test_teardown_runs_on_asyncio_cancelled_error(self):
         mcp = FastMCP()
@@ -275,6 +278,21 @@ class TestToolHooks:
             await mcp.call_tool("my_tool")
 
         assert isinstance(exc_info.value.__cause__, ValueError)
+
+    async def test_teardown_failure_after_success_preserves_tool_result(self):
+        mcp = FastMCP()
+
+        def teardown_hook() -> None:
+            raise RuntimeError("Teardown failed")
+
+        @mcp.tool(teardown=teardown_hook)
+        def my_tool() -> str:
+            return "ok"
+
+        result = await mcp.call_tool("my_tool")
+
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "ok"
 
     async def test_no_arg_teardown_works(self):
         mcp = FastMCP()
