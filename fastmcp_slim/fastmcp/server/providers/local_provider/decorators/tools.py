@@ -166,6 +166,8 @@ class ToolDecoratorMixin:
                     timeout=fmeta.timeout,
                     auth=fmeta.auth,
                     run_in_thread=fmeta.run_in_thread,
+                    setup=fmeta.setup,
+                    teardown=fmeta.teardown,
                 )
             else:
                 tool = Tool.from_function(tool)
@@ -196,6 +198,8 @@ class ToolDecoratorMixin:
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         run_in_thread: bool = True,
+        setup: Callable[..., Any] | None = None,
+        teardown: Callable[..., Any] | None = None,
     ) -> F: ...
 
     @overload
@@ -219,6 +223,8 @@ class ToolDecoratorMixin:
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         run_in_thread: bool = True,
+        setup: Callable[..., Any] | None = None,
+        teardown: Callable[..., Any] | None = None,
     ) -> Callable[[F], F]: ...
 
     # NOTE: This method mirrors fastmcp.tools.tool() but adds registration,
@@ -245,6 +251,8 @@ class ToolDecoratorMixin:
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         run_in_thread: bool = True,
+        setup: Callable[..., Any] | None = None,
+        teardown: Callable[..., Any] | None = None,
     ) -> (
         Callable[[AnyFunction], FunctionTool]
         | FunctionTool
@@ -350,6 +358,8 @@ class ToolDecoratorMixin:
                     timeout=timeout,
                     auth=auth,
                     run_in_thread=run_in_thread,
+                    setup=setup,
+                    teardown=teardown,
                 )
                 self._add_component(tool_obj)
                 if not enabled:
@@ -376,6 +386,8 @@ class ToolDecoratorMixin:
                     auth=auth,
                     enabled=enabled,
                     run_in_thread=run_in_thread,
+                    setup=setup,
+                    teardown=teardown,
                 )
                 target = fn.__func__ if hasattr(fn, "__func__") else fn
                 target.__fastmcp__ = metadata  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
@@ -420,4 +432,6 @@ class ToolDecoratorMixin:
             timeout=timeout,
             auth=auth,
             run_in_thread=run_in_thread,
+            setup=setup,
+            teardown=teardown,
         )

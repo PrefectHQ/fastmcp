@@ -121,6 +121,14 @@ def search_products_implementation(query: str, category: str | None = None) -> l
   Execution timeout in seconds. If the tool takes longer than this to complete, an MCP error is returned to the client. See [Timeouts](#timeouts) for details.
 </ParamField>
 
+<ParamField body="setup" type="Callable[..., Any] | None">
+  Optional hook that runs before each tool invocation. It can be sync or async. Any value it returns is passed to `teardown` as `setup_result`.
+</ParamField>
+
+<ParamField body="teardown" type="Callable[..., Any] | None">
+  Optional hook that runs after each tool invocation, including failures, timeouts, and cancellation. It can accept `result`, `exception`, and `setup_result` keyword arguments for conditional cleanup.
+</ParamField>
+
 <ParamField body="version" type="str | int | None">
   <VersionBadge version="3.0.0" />
 
@@ -843,6 +851,57 @@ def divide(a: float, b: float) -> float:
 ```
 
 When `mask_error_details=True`, only error messages from `ToolError` will include details, other exceptions will be converted to a generic message.
+
+## Lifecycle Hooks
+
+Tools can define `setup` and `teardown` hooks for per-call resource management. Use these hooks when a tool needs to acquire state before execution and reliably clean it up afterward, such as locks, temporary files, database sessions, or network clients.
+
+```python
+import asyncio
+
+from fastmcp import FastMCP
+
+mcp = FastMCP()
+resource_lock = asyncio.Lock()
+
+async def acquire_resource_lock() -> asyncio.Lock:
+    await resource_lock.acquire()
+    return resource_lock
+
+async def release_resource_lock(
+    result: str | None = None,
+    exception: BaseException | None = None,
+    setup_result: asyncio.Lock | None = None,
+) -> None:
+    if setup_result is not None and setup_result.locked():
+        setup_result.release()
+
+@mcp.tool(setup=acquire_resource_lock, teardown=release_resource_lock)
+async def update_record(record_id: str, value: str) -> str:
+    """Update a shared resource while holding a lock."""
+    ...
+    return f"Updated {record_id}"
+```
+
+`setup` runs before every invocation. If it returns a value, FastMCP passes that value to `teardown` as `setup_result`.
+
+`teardown` runs after `setup` has been attempted, including when setup or the tool succeeds, raises an exception, times out, or is cancelled. It runs in a shielded cancellation scope so cleanup has a chance to finish even if the tool call is being cancelled. If setup or the tool failed, FastMCP preserves the original exception even if teardown also fails.
+
+The `teardown` hook may accept any of these keyword arguments:
+
+<ParamField body="result" type="Any | None">
+  The raw value returned by the tool function before FastMCP converts it to a `ToolResult`. This is `None` when the tool did not produce a result.
+</ParamField>
+
+<ParamField body="exception" type="BaseException | None">
+  The exception raised during setup or tool execution, including cancellation and timeout errors. This is `None` when the invocation succeeds.
+</ParamField>
+
+<ParamField body="setup_result" type="Any | None">
+  The value returned by `setup`, if any.
+</ParamField>
+
+Hooks can be sync or async. For sync tools, sync hooks follow the tool's `run_in_thread` setting: by default they run in the worker thread pool, and with `run_in_thread=False` they run inline on the event loop thread.
 
 ## Timeouts
 

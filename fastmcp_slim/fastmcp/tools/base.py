@@ -247,6 +247,8 @@ class Tool(FastMCPComponent):
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         run_in_thread: bool | None = None,
+        setup: Callable[..., Any] | None = None,
+        teardown: Callable[..., Any] | None = None,
     ) -> FunctionTool:
         """Create a Tool from a function."""
         from fastmcp.tools.function_tool import FunctionTool
@@ -268,6 +270,8 @@ class Tool(FastMCPComponent):
             timeout=timeout,
             auth=auth,
             run_in_thread=run_in_thread,
+            setup=setup,
+            teardown=teardown,
         )
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:

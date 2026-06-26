@@ -266,3 +266,45 @@ class TestRunInThreadViaFileSystemProvider:
         ]
         assert len(discovered) == 1
         assert discovered[0].timeout == 5.0
+
+    async def test_filesystem_provider_forwards_setup_teardown(self, tmp_path):
+        """Filesystem discovery forwards setup/teardown from ToolMeta."""
+        from fastmcp.server.providers import FileSystemProvider
+
+        events_file = tmp_path / "events.txt"
+
+        (tmp_path / "hooked.py").write_text(
+            "from pathlib import Path\n"
+            "from fastmcp.tools import tool\n\n"
+            f"EVENTS_FILE = Path({str(events_file)!r})\n\n"
+            "def setup_hook() -> None:\n"
+            "    with EVENTS_FILE.open('a') as f:\n"
+            "        f.write('setup\\n')\n\n"
+            "def teardown_hook() -> None:\n"
+            "    with EVENTS_FILE.open('a') as f:\n"
+            "        f.write('teardown\\n')\n\n"
+            "@tool(setup=setup_hook, teardown=teardown_hook)\n"
+            "def hooked() -> str:\n"
+            "    with EVENTS_FILE.open('a') as f:\n"
+            "        f.write('tool\\n')\n"
+            "    return 'ok'\n"
+        )
+
+        provider = FileSystemProvider(tmp_path)
+
+        discovered = [
+            c
+            for c in provider._components.values()
+            if isinstance(c, Tool) and c.name == "hooked"
+        ]
+
+        assert len(discovered) == 1
+        assert discovered[0].setup is not None
+        assert discovered[0].teardown is not None
+
+        mcp = FastMCP(providers=[provider])
+        result = await mcp.call_tool("hooked")
+
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "ok"
+        assert events_file.read_text().splitlines() == ["setup", "tool", "teardown"]

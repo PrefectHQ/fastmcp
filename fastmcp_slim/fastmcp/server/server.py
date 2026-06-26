@@ -1659,6 +1659,8 @@ class FastMCP(
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         run_in_thread: bool = True,
+        setup: Callable[..., Any] | None = None,
+        teardown: Callable[..., Any] | None = None,
     ) -> F: ...
 
     @overload
@@ -1681,6 +1683,8 @@ class FastMCP(
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         run_in_thread: bool = True,
+        setup: Callable[..., Any] | None = None,
+        teardown: Callable[..., Any] | None = None,
     ) -> Callable[[F], F]: ...
 
     def tool(
@@ -1702,6 +1706,8 @@ class FastMCP(
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         run_in_thread: bool = True,
+        setup: Callable[..., Any] | None = None,
+        teardown: Callable[..., Any] | None = None,
     ) -> (
         Callable[[AnyFunction], FunctionTool]
         | FunctionTool
@@ -1780,6 +1786,8 @@ class FastMCP(
             timeout=timeout,
             auth=auth,
             run_in_thread=run_in_thread,
+            setup=setup,
+            teardown=teardown,
         )
 
         return result

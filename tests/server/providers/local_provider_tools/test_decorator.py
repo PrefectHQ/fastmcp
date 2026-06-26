@@ -339,3 +339,74 @@ class TestToolDecorator:
         tool = next(t for t in tools if t.name == "multiply")
 
         assert tool.meta == meta_data
+
+    async def test_mcp_tool_decorator_accepts_setup_teardown(self):
+        mcp = FastMCP()
+        events: list[str] = []
+
+        def setup_hook() -> None:
+            events.append("setup")
+
+        def teardown_hook() -> None:
+            events.append("teardown")
+
+        @mcp.tool(setup=setup_hook, teardown=teardown_hook)
+        def hooked_tool() -> str:
+            events.append("tool")
+            return "ok"
+
+        result = await mcp.call_tool("hooked_tool")
+
+        assert result.structured_content == {"result": "ok"}
+        assert events == ["setup", "tool", "teardown"]
+
+    async def test_standalone_tool_decorator_preserves_setup_teardown_on_add_tool(self):
+        from fastmcp.tools.function_tool import tool as tool_decorator
+
+        mcp = FastMCP()
+        events: list[str] = []
+
+        def setup_hook() -> None:
+            events.append("setup")
+
+        def teardown_hook() -> None:
+            events.append("teardown")
+
+        @tool_decorator(setup=setup_hook, teardown=teardown_hook)
+        def hooked_tool() -> str:
+            events.append("tool")
+            return "ok"
+
+        mcp.add_tool(hooked_tool)
+
+        result = await mcp.call_tool("hooked_tool")
+
+        assert result.structured_content == {"result": "ok"}
+        assert events == ["setup", "tool", "teardown"]
+
+    async def test_tool_from_function_accepts_setup_teardown(self):
+        mcp = FastMCP()
+        events: list[str] = []
+
+        def setup_hook() -> None:
+            events.append("setup")
+
+        def teardown_hook() -> None:
+            events.append("teardown")
+
+        def hooked_tool() -> str:
+            events.append("tool")
+            return "ok"
+
+        mcp.add_tool(
+            Tool.from_function(
+                hooked_tool,
+                setup=setup_hook,
+                teardown=teardown_hook,
+            )
+        )
+
+        result = await mcp.call_tool("hooked_tool")
+
+        assert result.structured_content == {"result": "ok"}
+        assert events == ["setup", "tool", "teardown"]

@@ -87,11 +87,21 @@ class ToolMeta:
     auth: AuthCheck | list[AuthCheck] | None = None
     enabled: bool = True
     run_in_thread: bool = True
+    setup: Callable[..., Any] | None = None
+    teardown: Callable[..., Any] | None = None
 
 
 class FunctionTool(Tool):
     fn: SkipJsonSchema[Callable[..., Any]]
     return_type: Annotated[SkipJsonSchema[Any], Field(exclude=True)] = None
+    setup: Annotated[
+        SkipJsonSchema[Callable[..., Any] | None],
+        Field(default=None, exclude=True),
+    ] = None
+    teardown: Annotated[
+        SkipJsonSchema[Callable[..., Any] | None],
+        Field(default=None, exclude=True),
+    ] = None
     run_in_thread: Annotated[
         bool,
         Field(
@@ -130,6 +140,8 @@ class FunctionTool(Tool):
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         run_in_thread: bool | None = None,
+        setup: Callable[..., Any] | None = None,
+        teardown: Callable[..., Any] | None = None,
     ) -> FunctionTool:
         """Create a FunctionTool from a function.
 
@@ -158,6 +170,8 @@ class FunctionTool(Tool):
                     timeout,
                     auth,
                     run_in_thread,
+                    setup,
+                    teardown,
                 ]
             )
             or output_schema is not NotSet
@@ -193,6 +207,8 @@ class FunctionTool(Tool):
                 timeout=timeout,
                 auth=auth,
                 run_in_thread=True if run_in_thread is None else run_in_thread,
+                setup=setup,
+                teardown=teardown,
             )
 
         if metadata.serializer is not None and fastmcp.settings.deprecation_warnings:
@@ -281,6 +297,8 @@ class FunctionTool(Tool):
             timeout=metadata.timeout,
             auth=metadata.auth,
             run_in_thread=metadata.run_in_thread,
+            setup=metadata.setup,
+            teardown=metadata.teardown,
         )
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
@@ -291,57 +309,176 @@ class FunctionTool(Tool):
             self.fn, run_in_thread=self.run_in_thread
         )
         type_adapter = get_cached_typeadapter(wrapper_fn)
+        setup_result: Any = None
+        raw_result: Any = None
+        has_result = False
+        exception: BaseException | None = None
+        try:
+            # Apply timeout if configured. Combining timeout with
+            # run_in_thread=False on a sync function is rejected at
+            # registration (see FunctionTool.from_function), so the timeout
+            # path here only needs to handle async and threadpool-sync.
+            if self.timeout is not None:
+                try:
+                    with anyio.fail_after(self.timeout):
+                        if self.setup is not None:
+                            setup_result = await self._call_lifecycle_hook(self.setup)
 
-        # Apply timeout if configured. Combining timeout with
-        # run_in_thread=False on a sync function is rejected at
-        # registration (see FunctionTool.from_function), so the timeout
-        # path here only needs to handle async and threadpool-sync.
-        if self.timeout is not None:
-            try:
-                with anyio.fail_after(self.timeout):
-                    # Thread pool execution for sync functions, direct await for async
-                    if is_coroutine_function(wrapper_fn):
-                        result = await type_adapter.validate_python(arguments)
-                    else:
-                        # Sync function: run in threadpool to avoid blocking
-                        result = await call_sync_fn_in_threadpool(
-                            type_adapter.validate_python, arguments
-                        )
-                        # Handle sync wrappers that return awaitables
-                        if inspect.isawaitable(result):
-                            result = await result
-                    # Materialize generators inside timeout scope so slow
-                    # generators don't run past the configured timeout
-                    result = await self._materialize_generator(result)
-            except TimeoutError:
-                logger.warning(
-                    f"Tool '{self.name}' timed out after {self.timeout}s. "
-                    f"Consider using task=True for long-running operations. "
-                    f"See https://gofastmcp.com/servers/tasks"
-                )
-                raise McpError(
-                    ErrorData(
-                        code=-32000,
-                        message=f"Tool '{self.name}' execution timed out after {self.timeout}s",
+                        # Thread pool execution for sync functions, direct await for async
+                        if is_coroutine_function(wrapper_fn):
+                            raw_result = await type_adapter.validate_python(arguments)
+                        else:
+                            # Sync function: run in threadpool to avoid blocking
+                            raw_result = await call_sync_fn_in_threadpool(
+                                type_adapter.validate_python, arguments
+                            )
+                            # Handle sync wrappers that return awaitables
+                            if inspect.isawaitable(raw_result):
+                                raw_result = await raw_result
+                        # Materialize generators inside timeout scope so slow
+                        # generators don't run past the configured timeout
+                        raw_result = await self._materialize_generator(raw_result)
+                        has_result = True
+                except TimeoutError:
+                    logger.warning(
+                        f"Tool '{self.name}' timed out after {self.timeout}s. "
+                        f"Consider using task=True for long-running operations. "
+                        f"See https://gofastmcp.com/servers/tasks"
                     )
-                ) from None
-        else:
-            # No timeout: use existing execution path
-            if is_coroutine_function(wrapper_fn):
-                result = await type_adapter.validate_python(arguments)
-            elif self.run_in_thread:
-                result = await call_sync_fn_in_threadpool(
-                    type_adapter.validate_python, arguments
-                )
-                if inspect.isawaitable(result):
-                    result = await result
+                    raise McpError(
+                        ErrorData(
+                            code=-32000,
+                            message=f"Tool '{self.name}' execution timed out after {self.timeout}s",
+                        )
+                    ) from None
             else:
-                result = type_adapter.validate_python(arguments)
-                if inspect.isawaitable(result):
-                    result = await result
-            result = await self._materialize_generator(result)
+                if self.setup is not None:
+                    setup_result = await self._call_lifecycle_hook(self.setup)
 
-        return self.convert_result(result)
+                # No timeout: use existing execution path
+                if is_coroutine_function(wrapper_fn):
+                    raw_result = await type_adapter.validate_python(arguments)
+                elif self.run_in_thread:
+                    raw_result = await call_sync_fn_in_threadpool(
+                        type_adapter.validate_python, arguments
+                    )
+                    if inspect.isawaitable(raw_result):
+                        raw_result = await raw_result
+                else:
+                    raw_result = type_adapter.validate_python(arguments)
+                    if inspect.isawaitable(raw_result):
+                        raw_result = await raw_result
+                raw_result = await self._materialize_generator(raw_result)
+                has_result = True
+
+            return self.convert_result(raw_result)
+        except BaseException as exc:
+            exception = exc
+            raise
+        finally:
+            await self._run_teardown(
+                result=raw_result if has_result else None,
+                exception=exception,
+                setup_result=setup_result,
+            )
+
+    async def _run_raw_with_lifecycle(self, arguments: dict[str, Any]) -> Any:
+        setup_result: Any = None
+        raw_result: Any = None
+        has_result = False
+        exception: BaseException | None = None
+        try:
+            if self.setup is not None:
+                setup_result = await self._call_lifecycle_hook(self.setup)
+
+            if is_coroutine_function(self.fn):
+                raw_result = await self.fn(**arguments)
+            elif self.run_in_thread:
+                raw_result = await call_sync_fn_in_threadpool(self.fn, **arguments)
+                if inspect.isawaitable(raw_result):
+                    raw_result = await raw_result
+            else:
+                raw_result = self.fn(**arguments)
+                if inspect.isawaitable(raw_result):
+                    raw_result = await raw_result
+            has_result = True
+            return raw_result
+        except BaseException as exc:
+            exception = exc
+            raise
+        finally:
+            await self._run_teardown(
+                result=raw_result if has_result else None,
+                exception=exception,
+                setup_result=setup_result,
+            )
+
+    async def _run_teardown(
+        self,
+        *,
+        result: Any,
+        exception: BaseException | None,
+        setup_result: Any,
+    ) -> None:
+        if self.teardown is None:
+            return
+        try:
+            with anyio.CancelScope(shield=True):
+                await self._call_lifecycle_hook(
+                    self.teardown,
+                    result=result,
+                    exception=exception,
+                    setup_result=setup_result,
+                )
+        except BaseException:
+            if exception is None:
+                raise
+            logger.warning(
+                "Tool %r teardown failed after tool execution failed.",
+                self.name,
+                exc_info=True,
+            )
+
+    async def _call_lifecycle_hook(
+        self, hook: Callable[..., Any], **context: Any
+    ) -> Any:
+        kwargs = self._lifecycle_hook_kwargs(hook, context)
+        if is_coroutine_function(hook):
+            return await hook(**kwargs)
+        if self.run_in_thread:
+            result = await call_sync_fn_in_threadpool(hook, **kwargs)
+        else:
+            result = hook(**kwargs)
+        if inspect.isawaitable(result):
+            return await result
+        return result
+
+    @staticmethod
+    def _lifecycle_hook_kwargs(
+        hook: Callable[..., Any], context: dict[str, Any]
+    ) -> dict[str, Any]:
+        try:
+            signature = inspect.signature(hook)
+        except (TypeError, ValueError):
+            return {}
+
+        parameters = signature.parameters
+        if any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters.values()
+        ):
+            return context
+
+        return {
+            name: value
+            for name, value in context.items()
+            if name in parameters
+            and parameters[name].kind
+            in {
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
+            }
+        }
 
     @staticmethod
     async def _materialize_generator(result: Any) -> Any:
@@ -360,13 +497,25 @@ class FunctionTool(Tool):
     def register_with_docket(self, docket: Docket) -> None:
         """Register this tool with docket for background execution.
 
-        Registers the raw function so Docket sees and resolves ALL
-        dependencies — both FastMCP's (CurrentContext, Progress) and
-        Docket-native ones (Retry, Timeout, ConcurrencyLimit).
+        Registers a lifecycle wrapper with the raw function's signature so
+        Docket can still see and resolve dependencies while setup and teardown
+        hooks run around background task execution.
         """
         if not self.task_config.supports_tasks():
             return
-        docket.register(self.fn, names=[self.key])
+        docket.register(self._docket_lifecycle_wrapper(), names=[self.key])
+
+    def _docket_lifecycle_wrapper(self) -> Callable[..., Any]:
+        async def wrapper(**arguments: Any) -> Any:
+            return await self._run_raw_with_lifecycle(arguments)
+
+        wrapper.__signature__ = inspect.signature(self.fn)  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        wrapper.__annotations__ = getattr(self.fn, "__annotations__", {}).copy()
+        wrapper.__name__ = getattr(self.fn, "__name__", "wrapper")
+        wrapper.__doc__ = getattr(self.fn, "__doc__", None)
+        wrapper.__module__ = self.fn.__module__
+        wrapper.__qualname__ = getattr(self.fn, "__qualname__", wrapper.__qualname__)
+        return wrapper
 
     async def add_to_docket(
         self,
@@ -379,7 +528,8 @@ class FunctionTool(Tool):
     ) -> Execution:
         """Schedule this tool for background execution via docket.
 
-        FunctionTool splats the arguments dict since .fn expects **kwargs.
+        FunctionTool splats the arguments dict so Docket can resolve dependencies
+        against the original function signature.
 
         Args:
             docket: The Docket instance
@@ -396,6 +546,7 @@ class FunctionTool(Tool):
 
 @overload
 def tool(fn: F) -> F: ...
+
 @overload
 def tool(
     name_or_fn: str,
@@ -414,7 +565,10 @@ def tool(
     timeout: float | None = None,
     auth: AuthCheck | list[AuthCheck] | None = None,
     run_in_thread: bool = True,
+    setup: Callable[..., Any] | None = None,
+    teardown: Callable[..., Any] | None = None,
 ) -> Callable[[F], F]: ...
+
 @overload
 def tool(
     name_or_fn: None = None,
@@ -434,6 +588,8 @@ def tool(
     timeout: float | None = None,
     auth: AuthCheck | list[AuthCheck] | None = None,
     run_in_thread: bool = True,
+    setup: Callable[..., Any] | None = None,
+    teardown: Callable[..., Any] | None = None,
 ) -> Callable[[F], F]: ...
 
 
@@ -455,6 +611,8 @@ def tool(
     timeout: float | None = None,
     auth: AuthCheck | list[AuthCheck] | None = None,
     run_in_thread: bool = True,
+    setup: Callable[..., Any] | None = None,
+    teardown: Callable[..., Any] | None = None,
 ) -> Any:
     """Standalone decorator to mark a function as an MCP tool.
 
@@ -498,6 +656,8 @@ def tool(
             timeout=timeout,
             auth=auth,
             run_in_thread=run_in_thread,
+            setup=setup,
+            teardown=teardown,
         )
         return FunctionTool.from_function(fn, metadata=tool_meta)
 
@@ -518,6 +678,8 @@ def tool(
             timeout=timeout,
             auth=auth,
             run_in_thread=run_in_thread,
+            setup=setup,
+            teardown=teardown,
         )
         target = fn.__func__ if isinstance(fn, staticmethod | MethodType) else fn
         cast(Any, target).__fastmcp__ = metadata

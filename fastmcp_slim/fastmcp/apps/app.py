@@ -174,6 +174,8 @@ class FastMCPApp(Provider):
         model: bool = False,
         auth: AuthCheck | list[AuthCheck] | None = None,
         timeout: float | None = None,
+        setup: Callable[..., Any] | None = None,
+        teardown: Callable[..., Any] | None = None,
     ) -> F: ...
 
     @overload
@@ -186,6 +188,8 @@ class FastMCPApp(Provider):
         model: bool = False,
         auth: AuthCheck | list[AuthCheck] | None = None,
         timeout: float | None = None,
+        setup: Callable[..., Any] | None = None,
+        teardown: Callable[..., Any] | None = None,
     ) -> Callable[[F], F]: ...
 
     def tool(
@@ -197,6 +201,8 @@ class FastMCPApp(Provider):
         model: bool = False,
         auth: AuthCheck | list[AuthCheck] | None = None,
         timeout: float | None = None,
+        setup: Callable[..., Any] | None = None,
+        teardown: Callable[..., Any] | None = None,
     ) -> Any:
         """Register a backend tool that the UI calls via CallTool.
 
@@ -244,6 +250,8 @@ class FastMCPApp(Provider):
                 meta=meta,
                 timeout=timeout,
                 auth=auth,
+                setup=setup,
+                teardown=teardown,
             )
             self._local._add_component(tool_obj)
             return fn
@@ -267,6 +275,8 @@ class FastMCPApp(Provider):
         annotations: ToolAnnotations | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         timeout: float | None = None,
+        setup: Callable[..., Any] | None = None,
+        teardown: Callable[..., Any] | None = None,
     ) -> F: ...
 
     @overload
@@ -282,6 +292,8 @@ class FastMCPApp(Provider):
         annotations: ToolAnnotations | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         timeout: float | None = None,
+        setup: Callable[..., Any] | None = None,
+        teardown: Callable[..., Any] | None = None,
     ) -> Callable[[F], F]: ...
 
     def ui(
@@ -296,6 +308,8 @@ class FastMCPApp(Provider):
         annotations: ToolAnnotations | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         timeout: float | None = None,
+        setup: Callable[..., Any] | None = None,
+        teardown: Callable[..., Any] | None = None,
     ) -> Any:
         """Register a UI entry-point tool that the model calls.
 
@@ -348,6 +362,8 @@ class FastMCPApp(Provider):
                 meta=meta,
                 timeout=timeout,
                 auth=auth,
+                setup=setup,
+                teardown=teardown,
             )
             self._local._add_component(tool_obj)
 

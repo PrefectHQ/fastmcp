@@ -101,3 +101,78 @@ async def test_forbidden_mode_tool_rejects_task_calls(tool_server):
         # New behavior: mode="forbidden" returns an error
         assert result.is_error
         assert "does not support task-augmented execution" in str(result)
+
+
+async def test_tool_task_runs_setup_and_teardown(tool_server):
+    """Task-enabled tools run setup before execution and teardown after."""
+    events: list[str] = []
+
+    def setup_hook() -> None:
+        events.append("setup")
+
+    def teardown_hook() -> None:
+        events.append("teardown")
+
+    @tool_server.tool(task=True, setup=setup_hook, teardown=teardown_hook)
+    async def hooked_task_tool() -> str:
+        events.append("tool")
+        return "ok"
+
+    async with Client(tool_server) as client:
+        task = await client.call_tool("hooked_task_tool", task=True)
+        await task.wait(timeout=2.0)
+
+        result = await task.result()
+
+    assert result.data == "ok"
+    assert events == ["setup", "tool", "teardown"]
+
+
+async def test_tool_task_teardown_receives_raw_result(tool_server):
+    """Task-enabled tool teardown receives the raw tool result."""
+    received_result = None
+
+    def teardown_hook(result: str) -> None:
+        nonlocal received_result
+        received_result = result
+
+    @tool_server.tool(task=True, teardown=teardown_hook)
+    async def hooked_task_tool() -> str:
+        return "raw-ok"
+
+    async with Client(tool_server) as client:
+        task = await client.call_tool("hooked_task_tool", task=True)
+        await task.wait(timeout=2.0)
+
+        result = await task.result()
+
+    assert result.data == "raw-ok"
+    assert received_result == "raw-ok"
+
+
+async def test_tool_task_hooks_preserve_current_docket_dependency(tool_server):
+    """Task hooks do not break CurrentDocket dependency injection."""
+    from fastmcp.server.dependencies import CurrentDocket
+
+    events: list[str] = []
+
+    def setup_hook() -> None:
+        events.append("setup")
+
+    def teardown_hook() -> None:
+        events.append("teardown")
+
+    @tool_server.tool(task=True, setup=setup_hook, teardown=teardown_hook)
+    async def docket_tool(docket=CurrentDocket()) -> str:
+        events.append("tool")
+        assert docket is not None
+        return "ok"
+
+    async with Client(tool_server) as client:
+        task = await client.call_tool("docket_tool", task=True)
+        await task.wait(timeout=2.0)
+
+        result = await task.result()
+
+    assert result.data == "ok"
+    assert events == ["setup", "tool", "teardown"]

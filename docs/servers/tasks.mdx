@@ -68,6 +68,8 @@ When a client requests background execution, the call returns immediately with a
 Background tasks require async functions. Attempting to use `task=True` with a sync function raises a `ValueError` at registration time.
 </Warning>
 
+Tool lifecycle hooks also run for background tasks. If a task-enabled tool defines `setup` or `teardown`, FastMCP runs those hooks in the Docket worker around the tool function. The `teardown` hook receives the raw task result or exception before the task result is stored for the client.
+
 ## Execution Modes
 
 For fine-grained control over task execution behavior, use `TaskConfig` instead of the boolean shorthand. The MCP task protocol defines three execution modes:

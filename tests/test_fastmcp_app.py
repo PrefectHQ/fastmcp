@@ -165,6 +165,27 @@ class TestAppTool:
         def slow_save(name: str) -> str:
             return name
 
+    async def test_tool_with_setup_teardown(self):
+        app = FastMCPApp("test")
+        events: list[str] = []
+
+        def setup_hook() -> None:
+            events.append("setup")
+
+        def teardown_hook() -> None:
+            events.append("teardown")
+
+        @app.tool(setup=setup_hook, teardown=teardown_hook)
+        def save(name: str) -> str:
+            events.append("tool")
+            return name
+
+        tools = await app._list_tools()
+        result = await tools[0].run({"name": "alice"})
+
+        assert result.structured_content == {"result": "alice"}
+        assert events == ["setup", "tool", "teardown"]
+
 
 # ---------------------------------------------------------------------------
 # @app.ui() decorator
@@ -279,6 +300,26 @@ class TestAppUI:
 
         tools = await app._list_tools()
         assert tools[0].tags == {"dashboard", "main"}
+
+    async def test_ui_with_setup_teardown(self):
+        app = FastMCPApp("test")
+        events: list[str] = []
+
+        def setup_hook() -> None:
+            events.append("setup")
+
+        def teardown_hook() -> None:
+            events.append("teardown")
+
+        @app.ui(setup=setup_hook, teardown=teardown_hook)
+        def dashboard() -> str:
+            events.append("ui")
+            return "dashboard"
+
+        tools = await app._list_tools()
+        await tools[0].run({})
+
+        assert events == ["setup", "ui", "teardown"]
 
 
 # ---------------------------------------------------------------------------

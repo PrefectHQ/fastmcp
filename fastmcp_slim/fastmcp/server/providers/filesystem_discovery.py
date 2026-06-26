@@ -348,6 +348,8 @@ def extract_components(module: ModuleType) -> list[FastMCPComponent]:
                     timeout=meta.timeout,
                     auth=meta.auth,
                     run_in_thread=meta.run_in_thread,
+                    setup=meta.setup,
+                    teardown=meta.teardown,
                 )
                 components.append(tool)
             elif isinstance(meta, ResourceMeta):
