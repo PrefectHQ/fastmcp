@@ -165,9 +165,7 @@ class HuggingFaceTokenVerifier(TokenVerifier):
             },
         )
         if response.status_code != 200:
-            logger.debug(
-                "Hugging Face whoami lookup failed: %d", response.status_code
-            )
+            logger.debug("Hugging Face whoami lookup failed: %d", response.status_code)
             return None
         return response.json()
 

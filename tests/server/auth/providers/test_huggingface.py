@@ -42,9 +42,7 @@ class TestHuggingFaceProvider:
 
         assert provider._upstream_client_id == "hf-client-id"
         assert provider._upstream_client_secret is not None
-        assert (
-            provider._upstream_client_secret.get_secret_value() == "hf-client-secret"
-        )
+        assert provider._upstream_client_secret.get_secret_value() == "hf-client-secret"
         assert str(provider.base_url) == "https://myserver.com/"
 
     def test_init_defaults(self, memory_storage: MemoryStore):
@@ -60,9 +58,7 @@ class TestHuggingFaceProvider:
         assert provider.required_scopes == DEFAULT_HUGGINGFACE_SCOPES
         assert provider._token_validator.required_scopes == []
 
-    def test_oauth_endpoints_configured_correctly(
-        self, memory_storage: MemoryStore
-    ):
+    def test_oauth_endpoints_configured_correctly(self, memory_storage: MemoryStore):
         provider = HuggingFaceProvider(
             client_id="hf-client-id",
             client_secret="hf-client-secret",
@@ -71,13 +67,14 @@ class TestHuggingFaceProvider:
             client_storage=memory_storage,
         )
 
-        assert provider._upstream_authorization_endpoint == HUGGINGFACE_AUTHORIZATION_ENDPOINT
+        assert (
+            provider._upstream_authorization_endpoint
+            == HUGGINGFACE_AUTHORIZATION_ENDPOINT
+        )
         assert provider._upstream_token_endpoint == HUGGINGFACE_TOKEN_ENDPOINT
         assert provider._upstream_revocation_endpoint is None
 
-    def test_public_pkce_app_uses_none_token_auth(
-        self, memory_storage: MemoryStore
-    ):
+    def test_public_pkce_app_uses_none_token_auth(self, memory_storage: MemoryStore):
         provider = HuggingFaceProvider(
             client_id="https://client.example.com/.well-known/oauth-cimd",
             base_url="https://myserver.com",
@@ -161,16 +158,12 @@ class TestHuggingFaceTokenVerifier:
             json={
                 "name": "alice",
                 "auth": {
-                    "accessToken": {
-                        "scopes": ["openid", "profile", "inference-api"]
-                    }
+                    "accessToken": {"scopes": ["openid", "profile", "inference-api"]}
                 },
             },
         )
 
-        verifier = HuggingFaceTokenVerifier(
-            required_scopes=["openid", "inference-api"]
-        )
+        verifier = HuggingFaceTokenVerifier(required_scopes=["openid", "inference-api"])
         result = await verifier.verify_token("hf_oauth_token")
 
         assert result is not None
