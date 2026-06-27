@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import inspect
 import logging
 import warnings
@@ -160,6 +161,31 @@ class ToolMeta:
     auth: AuthCheck | list[AuthCheck] | None = None
     enabled: bool = True
     run_in_thread: bool = True
+
+
+def _resolve_param_hints(fn: Callable[..., Any]) -> dict[str, Any]:
+    """Resolve a callable's parameter type hints, tolerating partials.
+
+    ``get_type_hints`` rejects ``functools.partial`` objects (and other
+    non-function callables), which the synchronous TypeAdapter path handles
+    natively. For those, resolve hints against the underlying function and keep
+    only the parameters that remain in the partially-bound signature.
+    """
+    try:
+        return get_type_hints(fn, include_extras=True)
+    except TypeError:
+        target = fn
+        while isinstance(target, functools.partial):
+            target = target.func
+        try:
+            resolved = get_type_hints(target, include_extras=True)
+        except TypeError:
+            return {}
+        return {
+            name: resolved[name]
+            for name in inspect.signature(fn).parameters
+            if name in resolved
+        }
 
 
 class FunctionTool(Tool):
@@ -494,6 +520,39 @@ class FunctionTool(Tool):
         if task_key:
             kwargs["key"] = task_key
         return await docket.add(lookup_key, **kwargs)(**arguments)
+
+    def coerce_task_arguments(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Validate client arguments against their declared parameter types.
+
+        The synchronous ``run()`` path validates arguments through the
+        function's Pydantic TypeAdapter, so a parameter typed as a model
+        arrives as a model instance. The task path hands the raw arguments to
+        Docket, which binds them to the function signature without coercion —
+        so without this a model-typed parameter would reach the function as a
+        raw dict (#4349). ``submit_to_docket`` calls this up front so coerced
+        values are what get queued, and validation errors surface before any
+        task state is created. Coerced values survive the trip to the worker
+        because Docket serializes task arguments with cloudpickle.
+
+        Injected dependency parameters (Context, Depends()) are excluded via
+        the same wrapper used by the synchronous path, so only client-supplied
+        arguments are coerced and Docket's dependency resolution is untouched.
+        """
+        from fastmcp.server.dependencies import without_injected_parameters
+
+        wrapper_fn = without_injected_parameters(
+            self.fn, run_in_thread=self.run_in_thread
+        )
+        hints = _resolve_param_hints(wrapper_fn)
+
+        coerced = dict(arguments)
+        for name, value in arguments.items():
+            annotation = hints.get(name)
+            if annotation is None:
+                continue
+            adapter = get_cached_typeadapter(annotation)
+            coerced[name] = adapter.validate_python(value)
+        return coerced
 
 
 @overload

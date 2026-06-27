@@ -2130,22 +2130,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             txn_id = request.query_params.get("state")
             error = request.query_params.get("error")
 
-            if error:
-                error_description = request.query_params.get("error_description")
-                logger.error(
-                    "IdP callback error: %s - %s",
-                    error,
-                    error_description,
-                )
-                # Show error page to user
-                html_content = create_error_html(
-                    error_title="OAuth Error",
-                    error_message=f"Authentication failed: {error_description or 'Unknown error'}",
-                    error_details={"Error Code": error} if error else None,
-                )
-                return HTMLResponse(content=html_content, status_code=400)
-
-            if not idp_code or not txn_id:
+            if not idp_code and not error:
                 logger.error("IdP callback missing code or transaction ID")
                 html_content = create_error_html(
                     error_title="OAuth Error",
@@ -2154,8 +2139,39 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 return HTMLResponse(content=html_content, status_code=400)
 
             # Look up transaction data
-            transaction_model = await self._transaction_store.get(key=txn_id)
-            if not transaction_model:
+            transaction_model = (
+                await self._transaction_store.get(key=txn_id) if txn_id else None
+            )
+
+            if error:
+                error_description = request.query_params.get("error_description")
+                logger.error(
+                    "IdP callback error: %s - %s",
+                    error,
+                    error_description,
+                )
+                if transaction_model:
+                    # Forward the error to the client's redirect_uri (RFC 6749 §4.1.2.1)
+                    error_params: dict[str, str] = {
+                        "error": error,
+                        "state": transaction_model.client_state,
+                    }
+                    if error_description:
+                        error_params["error_description"] = error_description
+                    client_redirect_uri = transaction_model.client_redirect_uri
+                    separator = "&" if "?" in client_redirect_uri else "?"
+                    return RedirectResponse(
+                        url=f"{client_redirect_uri}{separator}{urlencode(error_params)}",
+                        status_code=302,
+                    )
+                # No trusted redirect_uri available — show local error page
+                html_content = create_error_html(
+                    error_title="OAuth Error",
+                    error_message=f"Authentication failed: {error_description or 'Unknown error'}",
+                    error_details={"Error Code": error},
+                )
+                return HTMLResponse(content=html_content, status_code=400)
+            if not txn_id or not transaction_model:
                 logger.error("IdP callback with invalid transaction ID: %s", txn_id)
                 html_content = create_error_html(
                     error_title="OAuth Error",

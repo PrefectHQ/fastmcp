@@ -880,3 +880,105 @@ class TestOIDCProxyInitialization:
                 "audience": "original-audience",
                 "custom": "value",
             }
+
+
+class TestDiscoveryTimeout:
+    """Discovery timeout defaults and propagation (#4353, #4365)."""
+
+    def _construct_and_capture_timeout(self, valid_oidc_configuration_dict, construct):
+        """Construct a provider with mocked discovery, returning the timeout used."""
+        with patch(
+            "fastmcp.server.auth.oidc_proxy.OIDCConfiguration.get_oidc_configuration"
+        ) as mock_get:
+            mock_get.return_value = OIDCConfiguration.model_validate(
+                valid_oidc_configuration_dict
+            )
+            construct()
+            mock_get.assert_called_once()
+            return mock_get.call_args.kwargs["timeout_seconds"]
+
+    def test_oidc_proxy_defaults_to_bounded_timeout(
+        self, valid_oidc_configuration_dict
+    ):
+        """OIDCProxy applies a bounded discovery timeout when none is given."""
+        timeout = self._construct_and_capture_timeout(
+            valid_oidc_configuration_dict,
+            lambda: OIDCProxy(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+                jwt_signing_key="test-secret",
+            ),
+        )
+        assert timeout == 10
+
+    @pytest.mark.parametrize("timeout_seconds", [3, None])
+    def test_oidc_proxy_forwards_explicit_timeout(
+        self, valid_oidc_configuration_dict, timeout_seconds
+    ):
+        """An explicit timeout (including None as an escape hatch) is forwarded."""
+        timeout = self._construct_and_capture_timeout(
+            valid_oidc_configuration_dict,
+            lambda: OIDCProxy(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+                jwt_signing_key="test-secret",
+                timeout_seconds=timeout_seconds,
+            ),
+        )
+        assert timeout == timeout_seconds
+
+    def test_auth0_provider_defaults_to_bounded_timeout(
+        self, valid_oidc_configuration_dict
+    ):
+        """Auth0Provider exposes and defaults the discovery timeout."""
+        from fastmcp.server.auth.providers.auth0 import Auth0Provider
+
+        timeout = self._construct_and_capture_timeout(
+            valid_oidc_configuration_dict,
+            lambda: Auth0Provider(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                audience="test-audience",
+                base_url=TEST_BASE_URL,
+            ),
+        )
+        assert timeout == 10
+
+    def test_aws_cognito_provider_defaults_to_bounded_timeout(
+        self, valid_oidc_configuration_dict
+    ):
+        """AWSCognitoProvider exposes and defaults the discovery timeout."""
+        from fastmcp.server.auth.providers.aws import AWSCognitoProvider
+
+        timeout = self._construct_and_capture_timeout(
+            valid_oidc_configuration_dict,
+            lambda: AWSCognitoProvider(
+                user_pool_id="eu-central-1_XXXXXXXXX",
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+            ),
+        )
+        assert timeout == 10
+
+    def test_oci_provider_defaults_to_bounded_timeout(
+        self, valid_oidc_configuration_dict
+    ):
+        """OCIProvider exposes and defaults the discovery timeout."""
+        from fastmcp.server.auth.providers.oci import OCIProvider
+
+        timeout = self._construct_and_capture_timeout(
+            valid_oidc_configuration_dict,
+            lambda: OCIProvider(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+            ),
+        )
+        assert timeout == 10

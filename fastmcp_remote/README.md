@@ -73,6 +73,24 @@ Use `--auth none` for unauthenticated development servers:
 uvx fastmcp-remote http://localhost:8000/mcp --auth none
 ```
 
+For servers behind a self-signed certificate, point `--verify` at a CA bundle that trusts the certificate:
+
+```bash
+uvx fastmcp-remote https://internal.example.com/mcp --verify /path/to/ca-bundle.pem
+```
+
+To disable certificate verification entirely (insecure, only for trusted private networks), pass `--verify false`:
+
+```bash
+uvx fastmcp-remote https://internal.example.com/mcp --verify false
+```
+
+A CA bundle can also be supplied through the standard `SSL_CERT_FILE` environment variable, which OpenSSL reads automatically:
+
+```bash
+SSL_CERT_FILE=/path/to/ca-bundle.pem uvx fastmcp-remote https://internal.example.com/mcp
+```
+
 ## Options
 
 - `--transport`: Choose `http` or `sse`. Defaults to `http`.
@@ -82,5 +100,6 @@ uvx fastmcp-remote http://localhost:8000/mcp --auth none
 - `--auth-timeout`: Set how long to wait for the OAuth callback. Defaults to 300 seconds.
 - `--ignore-tool`: Hide tools whose names match a glob pattern.
 - `--auth`: Choose `oauth` or `none`. The default uses OAuth unless an `Authorization` header is provided.
+- `--verify`: Control TLS certificate verification. Pass a path to a CA bundle to trust a self-signed certificate, or `false` to disable verification (insecure). Defaults to verification enabled.
 
 OAuth tokens are stored under `~/.fastmcp/remote` by default. Set `FASTMCP_REMOTE_CONFIG_DIR` to use another directory.
