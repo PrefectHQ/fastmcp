@@ -85,6 +85,26 @@ class TestToolBodyErrors:
             await tool.run({"data": "valid"})
 
 
+class TestTaskArgumentValidation:
+    """The task-execution path (coerce_task_arguments) converts arg errors too."""
+
+    def test_coerce_task_arguments_wrong_type(self):
+        def tool_fn(n: int) -> int:
+            return n
+
+        tool = Tool.from_function(tool_fn)
+        with pytest.raises(ValidationError):
+            tool.coerce_task_arguments({"n": "not-an-int"})
+
+    def test_coerce_task_arguments_constraint_violation(self):
+        def tool_fn(n: Annotated[int, Field(le=10)]) -> int:
+            return n
+
+        tool = Tool.from_function(tool_fn)
+        with pytest.raises(ValidationError):
+            tool.coerce_task_arguments({"n": 20})
+
+
 class TestValidCallsStillWork:
     """Regression: the happy path is unaffected."""
 

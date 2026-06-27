@@ -551,7 +551,13 @@ class FunctionTool(Tool):
             if annotation is None:
                 continue
             adapter = get_cached_typeadapter(annotation)
-            coerced[name] = adapter.validate_python(value)
+            try:
+                coerced[name] = adapter.validate_python(value)
+            except PydanticValidationError as e:
+                # Argument coercion failure on the task path is a bad call, just
+                # like the synchronous path — surface it as fastmcp's
+                # ValidationError so it is classified consistently (see #4128).
+                raise ValidationError(str(e), log_level=logging.WARNING) from e
         return coerced
 
 
