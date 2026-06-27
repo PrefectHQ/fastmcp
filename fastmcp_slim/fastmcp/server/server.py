@@ -101,6 +101,17 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+def _version_request_meta(
+    version: VersionSpec | None,
+) -> mcp.types.RequestParams.Meta | None:
+    if version is None or version.eq is None:
+        return None
+
+    return mcp.types.RequestParams.Meta.model_validate(
+        {"fastmcp": {"version": version.eq}}
+    )
+
+
 # The MCP SDK warns "Tool X not listed, no validation will be performed"
 # for every call to app-only tools (hidden from list_tools by design).
 # This fires even when validate_input=False. Suppress it.
@@ -1222,7 +1233,9 @@ class FastMCP(
             if run_middleware:
                 mw_context = MiddlewareContext[CallToolRequestParams](
                     message=mcp.types.CallToolRequestParams(
-                        name=name, arguments=arguments or {}
+                        name=name,
+                        arguments=arguments or {},
+                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # pydantic alias
                     ),
                     source="client",
                     type="request",
@@ -1389,7 +1402,10 @@ class FastMCP(
             if run_middleware:
                 uri_param = AnyUrl(uri)
                 mw_context = MiddlewareContext(
-                    message=mcp.types.ReadResourceRequestParams(uri=uri_param),
+                    message=mcp.types.ReadResourceRequestParams(
+                        uri=uri_param,
+                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # pydantic alias
+                    ),
                     source="client",
                     type="request",
                     method="resources/read",
@@ -1563,7 +1579,9 @@ class FastMCP(
             if run_middleware:
                 mw_context = MiddlewareContext(
                     message=mcp.types.GetPromptRequestParams(
-                        name=name, arguments=arguments
+                        name=name,
+                        arguments=arguments,
+                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # pydantic alias
                     ),
                     source="client",
                     type="request",

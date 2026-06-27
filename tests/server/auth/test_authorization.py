@@ -812,6 +812,116 @@ class TestAuthMiddlewareCallTool:
             auth_context_var.reset(tok)
 
 
+class TestAuthMiddlewareVersionedRequests:
+    async def test_middleware_blocks_explicit_restricted_tool_version(self):
+        """AuthMiddleware should check the requested tool version."""
+        mcp = FastMCP(
+            middleware=[AuthMiddleware(auth=restrict_tag("admin", scopes=["admin"]))]
+        )
+
+        @mcp.tool(name="calc", version="1.0", tags={"admin"})
+        def calc_v1() -> str:
+            return "restricted"
+
+        @mcp.tool(name="calc", version="2.0")
+        def calc_v2() -> str:
+            return "public"
+
+        token = make_token(scopes=["read"])
+        tok = set_token(token)
+        try:
+            async with Client(mcp) as client:
+                with pytest.raises(Exception) as exc_info:
+                    await client.call_tool("calc", {}, version="1.0")
+                assert (
+                    "authorization" in str(exc_info.value).lower()
+                    or "insufficient" in str(exc_info.value).lower()
+                )
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_middleware_blocks_explicit_restricted_resource_version(self):
+        """AuthMiddleware should check the requested resource version."""
+        mcp = FastMCP(
+            middleware=[AuthMiddleware(auth=restrict_tag("admin", scopes=["admin"]))]
+        )
+
+        @mcp.resource("data://info", version="1.0", tags={"admin"})
+        def info_v1() -> str:
+            return "restricted"
+
+        @mcp.resource("data://info", version="2.0")
+        def info_v2() -> str:
+            return "public"
+
+        token = make_token(scopes=["read"])
+        tok = set_token(token)
+        try:
+            async with Client(mcp) as client:
+                with pytest.raises(Exception) as exc_info:
+                    await client.read_resource("data://info", version="1.0")
+                assert (
+                    "authorization" in str(exc_info.value).lower()
+                    or "insufficient" in str(exc_info.value).lower()
+                )
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_middleware_blocks_explicit_restricted_template_version(self):
+        """AuthMiddleware should check the requested resource template version."""
+        mcp = FastMCP(
+            middleware=[AuthMiddleware(auth=restrict_tag("admin", scopes=["admin"]))]
+        )
+
+        @mcp.resource("data://items/{item_id}", version="1.0", tags={"admin"})
+        def item_v1(item_id: str) -> str:
+            return f"restricted {item_id}"
+
+        @mcp.resource("data://items/{item_id}", version="2.0")
+        def item_v2(item_id: str) -> str:
+            return f"public {item_id}"
+
+        token = make_token(scopes=["read"])
+        tok = set_token(token)
+        try:
+            async with Client(mcp) as client:
+                with pytest.raises(Exception) as exc_info:
+                    await client.read_resource("data://items/123", version="1.0")
+                assert (
+                    "authorization" in str(exc_info.value).lower()
+                    or "insufficient" in str(exc_info.value).lower()
+                )
+        finally:
+            auth_context_var.reset(tok)
+
+    async def test_middleware_blocks_explicit_restricted_prompt_version(self):
+        """AuthMiddleware should check the requested prompt version."""
+        mcp = FastMCP(
+            middleware=[AuthMiddleware(auth=restrict_tag("admin", scopes=["admin"]))]
+        )
+
+        @mcp.prompt(name="greet", version="1.0", tags={"admin"})
+        def greet_v1() -> str:
+            return "restricted"
+
+        @mcp.prompt(name="greet", version="2.0")
+        def greet_v2() -> str:
+            return "public"
+
+        token = make_token(scopes=["read"])
+        tok = set_token(token)
+        try:
+            async with Client(mcp) as client:
+                with pytest.raises(Exception) as exc_info:
+                    await client.get_prompt("greet", version="1.0")
+                assert (
+                    "authorization" in str(exc_info.value).lower()
+                    or "insufficient" in str(exc_info.value).lower()
+                )
+        finally:
+            auth_context_var.reset(tok)
+
+
 # =============================================================================
 # Tests for component-level auth denial messaging (issue #4054 bug 1)
 # =============================================================================
