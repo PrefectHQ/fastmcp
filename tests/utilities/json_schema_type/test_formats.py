@@ -112,3 +112,55 @@ class TestFormatTypes:
         )
         assert isinstance(result.full_uri, AnyUrl)
         assert isinstance(result.ref_uri, str)
+
+    def test_unknown_format_with_max_length_enforced(self):
+        schema_type = json_schema_to_type(
+            {"type": "string", "format": "phone", "maxLength": 3}
+        )
+        validator = TypeAdapter(schema_type)
+        assert validator.validate_python("123") == "123"
+        with pytest.raises(ValidationError):
+            validator.validate_python("abcd")
+
+    def test_unknown_format_with_min_length_enforced(self):
+        schema_type = json_schema_to_type(
+            {"type": "string", "format": "phone", "minLength": 2}
+        )
+        validator = TypeAdapter(schema_type)
+        assert validator.validate_python("12") == "12"
+        with pytest.raises(ValidationError):
+            validator.validate_python("1")
+
+    def test_unknown_format_with_pattern_enforced(self):
+        schema_type = json_schema_to_type(
+            {"type": "string", "format": "phone", "pattern": "^[0-9]+$"}
+        )
+        validator = TypeAdapter(schema_type)
+        assert validator.validate_python("123") == "123"
+        with pytest.raises(ValidationError):
+            validator.validate_python("12a")
+
+    def test_uri_reference_with_max_length_enforced(self):
+        schema_type = json_schema_to_type(
+            {"type": "string", "format": "uri-reference", "maxLength": 5}
+        )
+        validator = TypeAdapter(schema_type)
+        assert validator.validate_python("/path") == "/path"
+        with pytest.raises(ValidationError):
+            validator.validate_python("/too/long/path")
+
+    def test_datetime_format_ignores_string_length_constraints(self):
+        schema_type = json_schema_to_type(
+            {"type": "string", "format": "date-time", "maxLength": 3}
+        )
+        validator = TypeAdapter(schema_type)
+        result = validator.validate_python("2024-01-17T12:34:56Z")
+        assert isinstance(result, datetime)
+
+    def test_json_format_ignores_string_length_constraints(self):
+        schema_type = json_schema_to_type(
+            {"type": "string", "format": "json", "maxLength": 3}
+        )
+        validator = TypeAdapter(schema_type)
+        result = validator.validate_python('{"key": "value"}')
+        assert isinstance(result, dict)
