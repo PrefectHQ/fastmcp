@@ -35,7 +35,6 @@ from mcp.types import (
     ToolAnnotations,
 )
 from pydantic import AnyUrl
-from pydantic import ValidationError as PydanticValidationError
 from starlette.routing import BaseRoute
 from typing_extensions import Self
 
@@ -54,6 +53,7 @@ from fastmcp.exceptions import (
     PromptError,
     ResourceError,
     ToolError,
+    ValidationError,
 )
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.prompts import Prompt
@@ -1280,17 +1280,12 @@ class FastMCP(
                     task_meta = replace(task_meta, fn_key=tool.key)
                 try:
                     return await tool._run(arguments or {}, task_meta=task_meta)
+                except ValidationError as e:
+                    logger.log(e.log_level, f"Invalid arguments for tool {name!r}: {e}")
+                    raise
                 except FastMCPError as e:
                     logger.log(
                         e.log_level, f"Error calling tool {name!r}", exc_info=False
-                    )
-                    raise
-                except PydanticValidationError as e:
-                    # fastmcp's own ValidationError is a FastMCPError, already handled above.
-                    logger.warning(
-                        "Invalid arguments for tool %r: %s",
-                        name,
-                        e.errors(include_url=False),
                     )
                     raise
                 except Exception as e:
