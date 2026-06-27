@@ -5,6 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from pydantic import ValidationError
@@ -1033,6 +1034,77 @@ class TestInspectorModuleMode:
 
 class TestRunDevApps:
     """Test running dev apps with the run command."""
+
+    def test_launch_escapes_tool_name_in_html_contexts(self):
+        """Test /launch escapes the tool query parameter in HTML sinks."""
+        starlette_app = _make_dev_app(
+            mcp_url="http://127.0.0.1:8000/mcp",
+            app_bridge_js="// js",
+            import_map_tag="",
+            message_log=_MessageLog(),
+            log_panel=False,
+        )
+        client = TestClient(starlette_app, raise_server_exceptions=False)
+
+        payload = "</title><script>alert(1)</script><img src=x onerror=alert(2)>"
+        response = client.get("/launch", params={"tool": payload, "args": "{}"})
+
+        assert response.status_code == 200
+        assert payload not in response.text
+        assert (
+            "&lt;/title&gt;&lt;script&gt;alert(1)&lt;/script&gt;"
+            "&lt;img src=x onerror=alert(2)&gt;"
+        ) in response.text
+        assert "\\u003c/script\\u003e" in response.text
+
+    def test_launch_serializes_args_safely_inside_script(self):
+        """Test /launch escapes argument values embedded in the script element."""
+        starlette_app = _make_dev_app(
+            mcp_url="http://127.0.0.1:8000/mcp",
+            app_bridge_js="// js",
+            import_map_tag="",
+            message_log=_MessageLog(),
+            log_panel=False,
+        )
+        client = TestClient(starlette_app, raise_server_exceptions=False)
+
+        payload = {"name": "</script><script>alert(1)</script>&"}
+        response = client.get(
+            "/launch",
+            params={"tool": "safe_tool", "args": json.dumps(payload)},
+        )
+
+        assert response.status_code == 200
+        assert json.dumps(payload) not in response.text
+        assert (
+            '"\\u003c/script\\u003e\\u003cscript\\u003ealert(1)'
+            '\\u003c/script\\u003e\\u0026"'
+        ) in response.text
+
+    def test_api_launch_encodes_generated_launch_url(self):
+        """Test /api/launch encodes query parameters in the returned URL."""
+        starlette_app = _make_dev_app(
+            mcp_url="http://127.0.0.1:8000/mcp",
+            app_bridge_js="// js",
+            import_map_tag="",
+            message_log=_MessageLog(),
+            log_panel=False,
+        )
+        client = TestClient(starlette_app, raise_server_exceptions=False)
+
+        response = client.post(
+            "/api/launch",
+            json={
+                "tool": "tool&name=<script>",
+                "__json_args__": '{"value": "</script>"}',
+            },
+        )
+
+        assert response.status_code == 200
+        url = response.json()
+        query = parse_qs(urlsplit(url).query)
+        assert query["tool"] == ["tool&name=<script>"]
+        assert json.loads(query["args"][0]) == {"value": "</script>"}
 
     @pytest.mark.parametrize(
         "host, expected_host",

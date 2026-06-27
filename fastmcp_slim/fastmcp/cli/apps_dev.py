@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import html
 import io
 import json
 import logging
@@ -39,7 +40,7 @@ import time
 import webbrowser
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import urlencode
 
 import httpcore
 import httpx
@@ -52,6 +53,18 @@ from starlette.routing import Route
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _json_for_script(value: Any) -> str:
+    """Serialize JSON for embedding inside an HTML script element."""
+    return (
+        json.dumps(value)
+        .replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1415,10 +1428,10 @@ def _make_dev_app(
         args_raw = request.query_params.get("args", "{}")
         tool_args = json.loads(args_raw)
         host_html = _HOST_HTML_TEMPLATE.format(
-            tool_name=tool,
+            tool_name=html.escape(tool, quote=True),
             import_map_tag=import_map_tag,
-            tool_name_json=json.dumps(tool),
-            tool_args_json=json.dumps(tool_args),
+            tool_name_json=_json_for_script(tool),
+            tool_args_json=_json_for_script(tool_args),
             mcp_sdk_version=_MCP_SDK_VERSION,
         )
         return (
@@ -1478,8 +1491,7 @@ def _make_dev_app(
                         except (json.JSONDecodeError, TypeError):
                             pass
                 tool_args[k] = v
-        args_json = quote(json.dumps(tool_args))
-        url = f"/launch?tool={tool}&args={args_json}"
+        url = "/launch?" + urlencode({"tool": tool, "args": json.dumps(tool_args)})
         return Response(
             content=json.dumps(url),
             media_type="application/json",
