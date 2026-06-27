@@ -7,6 +7,7 @@ from pydantic import AnyUrl
 from starlette.applications import Starlette
 
 from fastmcp.server.auth.oauth_proxy.models import InvalidRedirectUriError
+from fastmcp.server.auth.redirect_validation import DEFAULT_LOCALHOST_PATTERNS
 
 
 class TestOAuthProxyClientRegistration:
@@ -87,7 +88,7 @@ class TestOAuthProxyClientRegistration:
             response = await client.post(
                 "/register",
                 json={
-                    "redirect_uris": ["https://client.example.com/callback"],
+                    "redirect_uris": ["http://localhost:43210/callback"],
                     "client_name": "Test Client",
                 },
             )
@@ -99,6 +100,29 @@ class TestOAuthProxyClientRegistration:
         registered_client = await oauth_proxy.get_client(client_info["client_id"])
         assert registered_client is not None
         assert registered_client.scope == "read write calendar"
+
+    async def test_register_client_rejects_external_redirect_by_default(
+        self, oauth_proxy
+    ):
+        """DCR defaults to loopback redirects rather than arbitrary HTTPS targets."""
+        app = Starlette(routes=oauth_proxy.get_routes())
+        transport = httpx.ASGITransport(app=app)
+
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="https://myserver.com",
+        ) as client:
+            response = await client.post(
+                "/register",
+                json={
+                    "redirect_uris": ["https://attacker.example/callback"],
+                    "client_name": "Test Client",
+                },
+            )
+
+        assert response.status_code == 400
+        body = response.json()
+        assert body["error"] == "invalid_redirect_uri"
 
 
 class TestUpstreamClientIdFallback:
@@ -126,12 +150,40 @@ class TestUpstreamClientIdFallback:
         assert client is None
 
     async def test_redirect_uri_allowed_when_no_pattern_restriction(self, oauth_proxy):
-        """Any redirect URI is accepted when allowed_client_redirect_uris is None."""
-        assert oauth_proxy._allowed_client_redirect_uris is None
+        """Default redirect URI validation accepts loopback redirects."""
+        assert oauth_proxy._allowed_client_redirect_uris == DEFAULT_LOCALHOST_PATTERNS
         client = await oauth_proxy.get_client("test-client-id")
         assert client is not None
-        uri = client.validate_redirect_uri(AnyUrl("https://claude.ai/oauth/callback"))
-        assert str(uri) == "https://claude.ai/oauth/callback"
+        uri = client.validate_redirect_uri(AnyUrl("http://localhost:12345/callback"))
+        assert str(uri) == "http://localhost:12345/callback"
+
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(AnyUrl("https://attacker.example/callback"))
+
+    async def test_authorize_does_not_redirect_to_external_uri_by_default(
+        self, oauth_proxy
+    ):
+        """Synthetic upstream clients cannot turn /authorize into an open redirect."""
+        app = Starlette(routes=oauth_proxy.get_routes())
+        transport = httpx.ASGITransport(app=app)
+
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="https://myserver.com",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get(
+                "/authorize",
+                params={
+                    "response_type": "code",
+                    "client_id": "test-client-id",
+                    "redirect_uri": "https://attacker.example/callback",
+                    "state": "abc123",
+                },
+            )
+
+        assert response.status_code == 400
+        assert "location" not in response.headers
 
     async def test_redirect_uri_validated_against_patterns(self, oauth_proxy):
         """Redirect URI validation honours allowed_client_redirect_uris when set."""

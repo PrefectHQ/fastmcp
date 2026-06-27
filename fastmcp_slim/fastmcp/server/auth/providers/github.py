@@ -246,7 +246,7 @@ class GitHubProvider(OAuthProxy):
                 enable (e.g., 300 for 5 minutes).
             max_cache_size: Maximum number of tokens to cache.  Default: 10 000.
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
-                If None (default), all URIs are allowed. If empty list, no URIs are allowed.
+                If None (default), localhost and loopback redirect URIs are allowed. If empty list, no URIs are allowed.
             client_storage: Storage backend for OAuth state (client registrations, encrypted tokens).
                 If None, an encrypted file store will be created in the data directory
                 (derived from `platformdirs`).

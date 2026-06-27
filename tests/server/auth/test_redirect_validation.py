@@ -66,14 +66,16 @@ class TestValidateRedirectUri:
         assert validate_redirect_uri(None, [])
         assert validate_redirect_uri(None, ["http://localhost:*"])
 
-    def test_default_allows_all(self):
-        """Test that None (default) allows all URIs for DCR compatibility."""
-        # All URIs should be allowed when None is provided (DCR compatibility)
+    def test_default_allows_loopback_redirects(self):
+        """Test that None defaults to loopback redirect URI patterns."""
         assert validate_redirect_uri("http://localhost:3000", None)
         assert validate_redirect_uri("http://127.0.0.1:8080", None)
-        assert validate_redirect_uri("http://example.com", None)
-        assert validate_redirect_uri("https://app.example.com", None)
-        assert validate_redirect_uri("https://claude.ai/api/mcp/auth_callback", None)
+        assert validate_redirect_uri("http://[::1]:8080", None)
+        assert not validate_redirect_uri("http://example.com", None)
+        assert not validate_redirect_uri("https://app.example.com", None)
+        assert not validate_redirect_uri(
+            "https://claude.ai/api/mcp/auth_callback", None
+        )
 
     def test_empty_list_allows_none(self):
         """Test that empty list allows no redirect URIs."""
@@ -298,6 +300,7 @@ class TestDefaultPatterns:
         """Test that default patterns include localhost variations."""
         assert "http://localhost:*" in DEFAULT_LOCALHOST_PATTERNS
         assert "http://127.0.0.1:*" in DEFAULT_LOCALHOST_PATTERNS
+        assert "http://[::1]:*" in DEFAULT_LOCALHOST_PATTERNS
 
     def test_explicit_localhost_patterns(self):
         """Test that explicitly passing DEFAULT_LOCALHOST_PATTERNS restricts to localhost."""

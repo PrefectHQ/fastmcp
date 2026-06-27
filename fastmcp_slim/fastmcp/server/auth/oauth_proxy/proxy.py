@@ -48,6 +48,7 @@ from mcp.server.auth.provider import (
     AuthorizationParams,
     AuthorizeError,
     RefreshToken,
+    RegistrationError,
     TokenError,
 )
 from mcp.server.auth.routes import build_metadata, cors_middleware
@@ -91,6 +92,10 @@ from fastmcp.server.auth.oauth_proxy.models import (
     _hash_token,
 )
 from fastmcp.server.auth.oauth_proxy.ui import create_error_html
+from fastmcp.server.auth.redirect_validation import (
+    DEFAULT_LOCALHOST_PATTERNS,
+    validate_redirect_uri,
+)
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 
@@ -300,7 +305,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             service_documentation_url: Optional service documentation URL
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 Patterns support wildcards (e.g., "http://localhost:*", "https://*.example.com/*").
-                If None (default), all redirect URIs are allowed (for DCR compatibility).
+                If None (default), localhost and loopback redirect URIs are allowed.
                 If empty list, no redirect URIs are allowed.
                 These are for MCP clients performing loopback redirects, NOT for the upstream OAuth app.
             valid_scopes: List of all the possible valid scopes for a client.
@@ -428,8 +433,10 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 "allowed_client_redirect_uris is empty list; no redirect URIs will be accepted. "
                 "This will block all OAuth clients."
             )
-        self._allowed_client_redirect_uris: list[str] | None = (
-            allowed_client_redirect_uris
+        self._allowed_client_redirect_uris: list[str] = (
+            list(DEFAULT_LOCALHOST_PATTERNS)
+            if allowed_client_redirect_uris is None
+            else allowed_client_redirect_uris
         )
 
         # PKCE configuration
@@ -837,6 +844,18 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Create a ProxyDCRClient with configured redirect URI validation
         if client_info.client_id is None:
             raise ValueError("client_id is required for client registration")
+
+        redirect_uris = client_info.redirect_uris or [AnyUrl("http://localhost")]
+        for redirect_uri in redirect_uris:
+            if not validate_redirect_uri(
+                redirect_uri=redirect_uri,
+                allowed_patterns=self._allowed_client_redirect_uris,
+            ):
+                raise RegistrationError(
+                    "invalid_redirect_uri",
+                    f"Redirect URI '{redirect_uri}' does not match allowed patterns.",
+                )
+
         # We use token_endpoint_auth_method="none" because the proxy handles
         # all upstream authentication. The client_secret must also be None
         # because the SDK requires secrets to be provided if they're set,
@@ -844,7 +863,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         proxy_client: ProxyDCRClient = ProxyDCRClient(
             client_id=client_info.client_id,
             client_secret=None,
-            redirect_uris=client_info.redirect_uris or [AnyUrl("http://localhost")],
+            redirect_uris=redirect_uris,
             grant_types=client_info.grant_types
             or ["authorization_code", "refresh_token"],
             scope=client_info.scope or self._default_scope_str,
