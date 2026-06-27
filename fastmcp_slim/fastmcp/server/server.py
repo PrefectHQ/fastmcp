@@ -104,11 +104,27 @@ logger = get_logger(__name__)
 def _version_request_meta(
     version: VersionSpec | None,
 ) -> mcp.types.RequestParams.Meta | None:
-    if version is None or version.eq is None:
+    if version is None:
+        return None
+
+    if version.eq is not None and version.gte is None and version.lt is None:
+        version_value: str | dict[str, str] = version.eq
+    else:
+        version_value = {
+            key: value
+            for key, value in {
+                "gte": version.gte,
+                "lt": version.lt,
+                "eq": version.eq,
+            }.items()
+            if value is not None
+        }
+
+    if not version_value:
         return None
 
     return mcp.types.RequestParams.Meta.model_validate(
-        {"fastmcp": {"version": version.eq}}
+        {"fastmcp": {"version": version_value}}
     )
 
 

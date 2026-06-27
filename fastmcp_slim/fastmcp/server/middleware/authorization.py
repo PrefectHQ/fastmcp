@@ -59,10 +59,20 @@ def _requested_version(meta: mt.RequestParams.Meta | None) -> VersionSpec | None
         return None
 
     version = fastmcp_meta.get("version")
-    if not isinstance(version, str):
-        return None
+    if isinstance(version, str):
+        return VersionSpec(eq=version)
 
-    return VersionSpec(eq=version)
+    if isinstance(version, dict):
+        gte = version.get("gte")
+        lt = version.get("lt")
+        eq = version.get("eq")
+
+        if not all(value is None or isinstance(value, str) for value in (gte, lt, eq)):
+            return None
+
+        return VersionSpec(gte=gte, lt=lt, eq=eq)
+
+    return None
 
 
 class AuthMiddleware(Middleware):
