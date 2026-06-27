@@ -8,12 +8,15 @@ and test_task_resources.py.
 import asyncio
 import functools
 
+import mcp.types
 import pytest
 from pydantic import BaseModel
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.client.messages import MessageHandler
 from fastmcp.client.tasks import ToolTask
+from fastmcp.exceptions import ToolError
 from fastmcp.tools.function_tool import _resolve_param_hints
 
 
@@ -63,6 +66,40 @@ async def test_task_tool_validates_model_arguments():
 
     assert sync_result.data == expected
     assert task_result.data == expected
+
+
+async def test_task_tool_invalid_arguments_fail_before_task_state():
+    """Invalid task arguments are rejected before any task state is created.
+
+    Coercion runs up front in submit_to_docket, so a validation failure surfaces
+    before the task's Redis metadata and initial "working" status notification
+    are written. Otherwise an invalid input would orphan a task the client had
+    already observed via that notification.
+    """
+
+    class _Recorder(MessageHandler):
+        def __init__(self):
+            super().__init__()
+            self.methods: list[str] = []
+
+        async def on_notification(self, message: mcp.types.ServerNotification) -> None:
+            self.methods.append(message.root.method)
+
+    server = FastMCP("tool-task-invalid-args-server")
+
+    @server.tool(task=True)
+    async def needs_item(item: _Item) -> str:
+        return item.value
+
+    recorder = _Recorder()
+    async with Client(server, message_handler=recorder) as client:
+        # `item` is missing its required `value` field.
+        task = await client.call_tool("needs_item", {"item": {}}, task=True)
+        assert task.returned_immediately
+        with pytest.raises(ToolError):
+            await task.result()
+
+    assert "notifications/tasks/status" not in recorder.methods
 
 
 def test_resolve_param_hints_handles_partials():
