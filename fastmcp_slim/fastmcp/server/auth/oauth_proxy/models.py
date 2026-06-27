@@ -164,6 +164,7 @@ class ProxyDCRClient(OAuthClientInformationFull):
     client_name: str | None = Field(default=None)
     cimd_document: CIMDDocument | None = Field(default=None)
     cimd_fetched_at: float | None = Field(default=None)
+    allow_unregistered_redirect_uris: bool = Field(default=False, exclude=True)
 
     def validate_redirect_uri(self, redirect_uri: AnyUrl | None) -> AnyUrl:
         """Validate redirect URI against proxy patterns and optionally CIMD redirect_uris.
@@ -235,19 +236,20 @@ class ProxyDCRClient(OAuthClientInformationFull):
 
                 return redirect_uri
 
-            pattern_matches = validate_redirect_uri(
+            if self.allowed_redirect_uri_patterns is None:
+                if self.allow_unregistered_redirect_uris:
+                    return redirect_uri
+                return super().validate_redirect_uri(redirect_uri)
+
+            if validate_redirect_uri(
                 redirect_uri=redirect_uri,
                 allowed_patterns=self.allowed_redirect_uri_patterns,
-            )
-
-            if pattern_matches:
+            ):
                 return redirect_uri
 
-            # Patterns configured but didn't match (None means "allow all"; [] means "block all")
-            if self.allowed_redirect_uri_patterns is not None:
-                raise InvalidRedirectUriError(
-                    f"Redirect URI '{redirect_uri}' does not match allowed patterns."
-                )
+            raise InvalidRedirectUriError(
+                f"Redirect URI '{redirect_uri}' does not match allowed patterns."
+            )
 
         # redirect_uri is None with no CIMD document: let base class resolve the URI
         # (handles the single-registered-URI shortcut for DCR clients), then validate
