@@ -56,6 +56,15 @@ def _contains_prefab_type(tp: Any) -> bool:
     return False
 
 
+def _unwrap_model(tp: Any) -> type[BaseModel] | None:
+    """Unwrap ``Annotated`` and return the underlying Pydantic model, if any."""
+    if get_origin(tp) is Annotated:
+        return _unwrap_model(get_args(tp)[0])
+    if isinstance(tp, type) and issubclass(tp, BaseModel):
+        return tp
+    return None
+
+
 def _resolve_output_by_alias(tp: Any) -> bool:
     """Resolve ``by_alias`` for the output schema of return type *tp*.
 
@@ -71,8 +80,9 @@ def _resolve_output_by_alias(tp: Any) -> bool:
         return _resolve_output_by_alias(get_args(tp)[0])
     if origin is Union or origin is types.UnionType:
         for arg in get_args(tp):
-            if isinstance(arg, type) and issubclass(arg, BaseModel):
-                return resolve_serialize_by_alias(arg)
+            model = _unwrap_model(arg)
+            if model is not None:
+                return resolve_serialize_by_alias(model)
         return True
     return resolve_serialize_by_alias(tp)
 

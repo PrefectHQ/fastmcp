@@ -340,6 +340,34 @@ class TestSerializeByAlias:
 
         assert result.structured_content == {"id": "1", "inner": {"inner_id": "2"}}
 
+    async def test_annotated_optional_return_stays_consistent(self):
+        """Annotated[Model, ...] | None resolves the model inside the union arm.
+
+        Regression: the union arm is a typing.Annotated object, so a naive
+        isinstance check skipped the model and the schema fell back to aliases
+        while the runtime serialized field names, breaking client validation.
+        """
+
+        class Biofile(BaseModel):
+            model_config = ConfigDict(serialize_by_alias=False)
+            id: str = Field(alias="_id")
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def get_biofile() -> Annotated[Biofile, Field(description="x")] | None:
+            return Biofile(_id="1")
+
+        async with Client(mcp) as client:
+            tools = {t.name: t for t in await client.list_tools()}
+            # client-side validation of structured content against the schema
+            # raises if they disagree
+            result = await client.call_tool("get_biofile", {})
+
+        schema_props = set(tools["get_biofile"].outputSchema["properties"])  # type: ignore[index]
+        assert schema_props == set(result.structured_content)  # type: ignore[arg-type]
+        assert result.structured_content == {"result": {"id": "1"}}
+
     @pytest.mark.parametrize("serialize_by_alias", [True, False, None])
     async def test_schema_and_structured_content_agree(self, serialize_by_alias):
         """The output schema field names always match the structured content keys."""
