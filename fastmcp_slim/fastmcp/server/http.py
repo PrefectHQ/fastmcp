@@ -5,8 +5,9 @@ from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from fnmatch import fnmatchcase
 from ipaddress import ip_address
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 from mcp.server.auth.routes import build_resource_metadata_url
 from mcp.server.lowlevel.server import LifespanResultT
@@ -15,6 +16,7 @@ from mcp.server.streamable_http import (
     EventStore,
 )
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.datastructures import Headers
 from starlette.middleware import Middleware
@@ -25,6 +27,7 @@ from starlette.types import ASGIApp, Lifespan, Receive, Scope, Send
 
 from fastmcp.server.auth import AuthProvider
 from fastmcp.server.auth.middleware import RequireAuthMiddleware
+from fastmcp.server.event_store import SessionScopedEventStore
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -33,6 +36,41 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 DEFAULT_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+
+class FastMCPStreamableHTTPSessionManager(StreamableHTTPSessionManager):
+    """Session manager that scopes resumability storage per transport session."""
+
+    def __init__(
+        self,
+        app: Any,
+        event_store: EventStore | None = None,
+        json_response: bool = False,
+        stateless: bool = False,
+        security_settings: TransportSecuritySettings | None = None,
+        retry_interval: int | None = None,
+    ) -> None:
+        self._shared_event_store: EventStore | None = None
+        super().__init__(
+            app=app,
+            event_store=event_store,
+            json_response=json_response,
+            stateless=stateless,
+            security_settings=security_settings,
+            retry_interval=retry_interval,
+        )
+
+    @property
+    def event_store(self) -> EventStore | None:
+        if self._shared_event_store is None:
+            return None
+        # The SDK reads `self.event_store` once when constructing each transport.
+        # A fresh adapter gives that transport a private stream namespace.
+        return SessionScopedEventStore(self._shared_event_store, session_id=uuid4().hex)
+
+    @event_store.setter
+    def event_store(self, event_store: EventStore | None) -> None:
+        self._shared_event_store = event_store
 
 
 class StreamableHTTPASGIApp:
@@ -512,7 +550,7 @@ def create_streamable_http_app(
     # Create a lifespan manager to start and stop the session manager
     @asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncGenerator[None, None]:
-        streamable_http_app.session_manager = StreamableHTTPSessionManager(
+        streamable_http_app.session_manager = FastMCPStreamableHTTPSessionManager(
             app=server._mcp_server,
             event_store=event_store,
             retry_interval=retry_interval,
