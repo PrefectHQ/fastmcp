@@ -96,14 +96,29 @@ def _wrap_body_errors(fn: Callable[..., Any]) -> Callable[..., Any]:
                 raise _ToolBodyError from e
 
     # Mirror the original callable so TypeAdapter builds the identical schema and
-    # binds arguments the same way (resolve string annotations against fn's
-    # module, since the wrapper's __globals__ point here).
+    # binds arguments the same way. Annotations must cover every signature
+    # parameter or pydantic's call-schema generation raises KeyError — so prefer
+    # resolved type hints (handles string/forward refs) but fall back to the
+    # signature's own annotations, which is the only source for callables like
+    # functools.partial that carry no __annotations__.
     try:
         resolved_hints = get_type_hints(fn, include_extras=True)
     except Exception:
-        resolved_hints = getattr(fn, "__annotations__", {})
-    wrapper.__signature__ = inspect.signature(fn)  # type: ignore[attr-defined]  # ty: ignore[invalid-assignment]
-    wrapper.__annotations__ = dict(resolved_hints)
+        resolved_hints = {}
+    sig = inspect.signature(fn)
+    annotations: dict[str, Any] = {}
+    for param_name, param in sig.parameters.items():
+        if param_name in resolved_hints:
+            annotations[param_name] = resolved_hints[param_name]
+        elif param.annotation is not inspect.Parameter.empty:
+            annotations[param_name] = param.annotation
+    if "return" in resolved_hints:
+        annotations["return"] = resolved_hints["return"]
+    elif sig.return_annotation is not inspect.Signature.empty:
+        annotations["return"] = sig.return_annotation
+
+    wrapper.__signature__ = sig  # type: ignore[attr-defined]  # ty: ignore[invalid-assignment]
+    wrapper.__annotations__ = annotations
     wrapper.__name__ = getattr(fn, "__name__", "wrapper")
     wrapper.__doc__ = getattr(fn, "__doc__", None)
     wrapper.__module__ = getattr(fn, "__module__", wrapper.__module__)

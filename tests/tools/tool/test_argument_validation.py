@@ -7,14 +7,14 @@ taxonomy (middleware, Sentry filters) can treat it as a client error, while a
 and must propagate unchanged.
 """
 
-from typing import Annotated
+from typing import Annotated, Any
 
 import pytest
 from pydantic import BaseModel, Field
 from pydantic import ValidationError as PydanticValidationError
 
 from fastmcp.exceptions import ValidationError
-from fastmcp.tools.tool import Tool
+from fastmcp.tools.base import Tool
 
 
 class _Inner(BaseModel):
@@ -62,7 +62,8 @@ class TestToolBodyErrors:
 
     async def test_async_body_pydantic_error_propagates(self):
         async def tool_fn(data: str) -> int:
-            _Inner(x="not-an-int")  # type: ignore[arg-type]  # raises in the body
+            bad_value: Any = "not-an-int"
+            _Inner(x=bad_value)  # raises a pydantic ValidationError from the body
             return 1
 
         tool = Tool.from_function(tool_fn)
@@ -75,7 +76,8 @@ class TestToolBodyErrors:
 
     async def test_sync_body_pydantic_error_propagates(self):
         def tool_fn(data: str) -> int:
-            _Inner(x="not-an-int")  # type: ignore[arg-type]
+            bad_value: Any = "not-an-int"
+            _Inner(x=bad_value)  # raises a pydantic ValidationError from the body
             return 1
 
         tool = Tool.from_function(tool_fn)
