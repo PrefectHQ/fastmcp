@@ -520,6 +520,7 @@ def get_access_token() -> AccessToken | None:
             token=access_token_as_dict["token"],
             client_id=access_token_as_dict["client_id"],
             scopes=access_token_as_dict["scopes"],
+            subject=access_token_as_dict["subject"],
             # Optional fields
             expires_at=access_token_as_dict.get("expires_at"),
             resource=access_token_as_dict.get("resource"),
