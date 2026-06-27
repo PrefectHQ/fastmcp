@@ -4,11 +4,17 @@ from collections.abc import Generator
 from contextlib import contextmanager
 
 from mcp.server.lowlevel.server import request_ctx
+from opentelemetry import context as otel_context
 from opentelemetry.context import Context
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
 from fastmcp.exceptions import ToolError as _ToolError
-from fastmcp.telemetry import extract_trace_context, get_tracer
+from fastmcp.telemetry import (
+    extract_trace_context,
+    get_noop_span,
+    get_tracer,
+    native_telemetry_enabled,
+)
 
 
 def get_auth_span_attributes() -> dict[str, str]:
@@ -67,7 +73,21 @@ def server_span(
     """Create a SERVER span with standard MCP attributes and auth context.
 
     Automatically records any exception on the span and sets error status.
+    When native telemetry is suppressed, incoming trace context is still
+    propagated so downstream user spans inherit the correct parent.
     """
+    if not native_telemetry_enabled():
+        parent_context = _get_parent_trace_context()
+        if parent_context is not None:
+            token = otel_context.attach(parent_context)
+            try:
+                yield get_noop_span()
+            finally:
+                otel_context.detach(token)
+        else:
+            yield get_noop_span()
+        return
+
     tracer = get_tracer()
     with tracer.start_as_current_span(
         name,
@@ -117,6 +137,10 @@ def delegate_span(
     Used by FastMCPProvider when delegating to mounted servers.
     Automatically records any exception on the span and sets error status.
     """
+    if not native_telemetry_enabled():
+        yield get_noop_span()
+        return
+
     tracer = get_tracer()
     with tracer.start_as_current_span(f"delegate {name}") as span:
         if span.is_recording():
