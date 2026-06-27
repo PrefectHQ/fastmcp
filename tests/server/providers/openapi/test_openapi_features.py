@@ -1,5 +1,6 @@
 """Tests for OpenAPI feature support in OpenAPIProvider."""
 
+from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import httpx
@@ -703,6 +704,100 @@ class TestResourceTemplateMimeType:
                 templates = await mcp_client.list_resource_templates()
                 assert len(templates) == 1
                 assert templates[0].mimeType == "application/json"
+
+
+class TestResourceTemplateRequestBuilding:
+    @pytest.fixture
+    def path_param_spec(self) -> dict[str, Any]:
+        return {
+            "openapi": "3.0.0",
+            "info": {"title": "User API", "version": "1.0.0"},
+            "servers": [{"url": "https://api.example.com/api/v1"}],
+            "paths": {
+                "/users/{id}": {
+                    "get": {
+                        "operationId": "get_user",
+                        "summary": "Get user",
+                        "parameters": [
+                            {
+                                "name": "id",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            }
+                        ],
+                        "responses": {
+                            "200": {
+                                "description": "User data",
+                                "content": {
+                                    "application/json": {"schema": {"type": "object"}}
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+        }
+
+    async def test_resource_template_encodes_matched_path_params(
+        self, path_param_spec: dict[str, Any]
+    ):
+        seen_urls: list[httpx.URL] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            seen_urls.append(request.url)
+            return httpx.Response(200, json={"ok": True})
+
+        route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE_TEMPLATE)]
+        async with httpx.AsyncClient(
+            base_url="https://api.example.com/api/v1",
+            transport=httpx.MockTransport(handler),
+        ) as client:
+            provider = OpenAPIProvider(
+                openapi_spec=path_param_spec,
+                client=client,
+                route_maps=route_maps,
+            )
+            mcp = FastMCP("Test")
+            mcp.add_provider(provider)
+
+            async with Client(mcp) as mcp_client:
+                await mcp_client.read_resource(
+                    "resource://get_user/..%2F..%2Fadmin%2Fsecret"
+                )
+
+        assert seen_urls == [
+            httpx.URL(
+                "https://api.example.com/api/v1/users/%2E%2E%2F%2E%2E%2Fadmin%2Fsecret"
+            )
+        ]
+
+    async def test_resource_template_ignores_unmatched_query_string(
+        self, path_param_spec: dict[str, Any]
+    ):
+        seen_urls: list[httpx.URL] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            seen_urls.append(request.url)
+            return httpx.Response(200, json={"ok": True})
+
+        route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE_TEMPLATE)]
+        async with httpx.AsyncClient(
+            base_url="https://api.example.com/api/v1",
+            transport=httpx.MockTransport(handler),
+        ) as client:
+            provider = OpenAPIProvider(
+                openapi_spec=path_param_spec,
+                client=client,
+                route_maps=route_maps,
+            )
+            mcp = FastMCP("Test")
+            mcp.add_provider(provider)
+
+            async with Client(mcp) as mcp_client:
+                await mcp_client.read_resource("resource://get_user/alice?admin=true")
+
+        assert seen_urls == [httpx.URL("https://api.example.com/api/v1/users/alice")]
 
 
 class TestResourceMimeType:
