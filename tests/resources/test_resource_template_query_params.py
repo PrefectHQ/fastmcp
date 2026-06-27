@@ -330,6 +330,99 @@ class TestBooleanQueryParameterValidation:
             await resource.read()
 
 
+class TestListQueryParameterTypeCoercion:
+    """Test list-typed query parameters."""
+
+    async def test_list_str_single_value(self):
+        """Single query value should coerce to a one-item list."""
+        from pydantic import Field
+
+        def search(category: str, tags: list[str] = Field(default_factory=list)) -> dict:
+            return {"category": category, "tags": tags}
+
+        template = ResourceTemplate.from_function(
+            fn=search,
+            uri_template="items://{category}{?tags}",
+            name="test",
+        )
+
+        params = template.matches("items://books?tags=alpha")
+        assert params == {"category": "books", "tags": "alpha"}
+
+        resource = await template.create_resource(
+            "items://books?tags=alpha",
+            params,
+        )
+        result = await resource.read()
+        assert result == {"category": "books", "tags": ["alpha"]}
+
+    async def test_list_str_repeated_query_keys(self):
+        """Repeated query keys should preserve all values."""
+        from pydantic import Field
+
+        def search(category: str, tags: list[str] = Field(default_factory=list)) -> dict:
+            return {"category": category, "tags": tags}
+
+        template = ResourceTemplate.from_function(
+            fn=search,
+            uri_template="items://{category}{?tags}",
+            name="test",
+        )
+
+        params = template.matches("items://books?tags=alpha&tags=beta")
+        assert params == {"category": "books", "tags": ["alpha", "beta"]}
+
+        resource = await template.create_resource(
+            "items://books?tags=alpha&tags=beta",
+            params,
+        )
+        result = await resource.read()
+        assert result == {"category": "books", "tags": ["alpha", "beta"]}
+
+    async def test_list_str_comma_separated_value(self):
+        """Comma-separated values should split into a list."""
+        from pydantic import Field
+
+        def search(category: str, tags: list[str] = Field(default_factory=list)) -> dict:
+            return {"category": category, "tags": tags}
+
+        template = ResourceTemplate.from_function(
+            fn=search,
+            uri_template="items://{category}{?tags}",
+            name="test",
+        )
+
+        params = template.matches("items://books?tags=alpha,beta")
+        assert params == {"category": "books", "tags": "alpha,beta"}
+
+        resource = await template.create_resource(
+            "items://books?tags=alpha,beta",
+            params,
+        )
+        result = await resource.read()
+        assert result == {"category": "books", "tags": ["alpha", "beta"]}
+
+    async def test_list_str_missing_query_param_uses_default(self):
+        """Missing list query params should use the function default."""
+        from pydantic import Field
+
+        def search(category: str, tags: list[str] = Field(default_factory=list)) -> dict:
+            return {"category": category, "tags": tags}
+
+        template = ResourceTemplate.from_function(
+            fn=search,
+            uri_template="items://{category}{?tags}",
+            name="test",
+        )
+
+        resource = await template.create_resource(
+            "items://books",
+            {"category": "books"},
+        )
+        result = await resource.read()
+        assert result == {"category": "books", "tags": []}
+
+
 class TestResourceTemplateFieldDefaults:
     """Test resource templates with Field() defaults."""
 
