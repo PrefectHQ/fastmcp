@@ -205,7 +205,11 @@ class TestOAuthProxyStorage:
                 "client_secret": None,
                 "client_id_issued_at": None,
                 "client_secret_expires_at": None,
-                "allowed_redirect_uri_patterns": None,
+                "allowed_redirect_uri_patterns": [
+                    "http://localhost:*",
+                    "http://127.0.0.1:*",
+                    "http://[::1]:*",
+                ],
                 "cimd_document": None,
                 "cimd_fetched_at": None,
             }

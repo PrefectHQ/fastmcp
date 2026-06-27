@@ -102,7 +102,7 @@ class Auth0Provider(OIDCProxy):
             required_scopes: Required Auth0 scopes (defaults to ["openid"])
             redirect_path: Redirect path configured in Auth0 application
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
-                If None (default), all URIs are allowed. If empty list, no URIs are allowed.
+                If None (default), localhost and loopback redirect URIs are allowed. If empty list, no URIs are allowed.
             client_storage: Storage backend for OAuth state (client registrations, encrypted tokens).
                 If None, an encrypted file store will be created in the data directory
                 (derived from `platformdirs`).

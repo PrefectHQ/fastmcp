@@ -163,7 +163,7 @@ class AzureProvider(OAuthProxy):
                 upstream Azure token, but MCP clients are unaware of them.
                 Note: "offline_access" is automatically included to obtain refresh tokens.
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
-                If None (default), all URIs are allowed. If empty list, no URIs are allowed.
+                If None (default), localhost and loopback redirect URIs are allowed. If empty list, no URIs are allowed.
             client_storage: Storage backend for OAuth state (client registrations, encrypted tokens).
                 If None, an encrypted file store will be created in the data directory
                 (derived from `platformdirs`).

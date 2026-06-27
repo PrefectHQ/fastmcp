@@ -193,10 +193,11 @@ mcp = FastMCP(name="My Server", auth=auth)
 <ParamField body="allowed_client_redirect_uris" type="list[str] | None">
   List of allowed redirect URI patterns for MCP clients. Patterns support
   wildcards (e.g., `"http://localhost:*"`, `"https://*.example.com/*"`). -
-  `None` (default): All redirect URIs allowed (for MCP/DCR compatibility) -
-  Empty list `[]`: No redirect URIs allowed - Custom list: Only matching
-  patterns allowed These patterns apply to MCP client loopback redirects, NOT
-  the upstream OAuth app redirect URI.
+  `None` (default): Loopback redirect URIs allowed (`"http://localhost:*"`,
+  `"http://127.0.0.1:*"`, and `"http://[::1]:*"`) - Empty list `[]`: No
+  redirect URIs allowed - Custom list: Only matching patterns allowed These
+  patterns apply to MCP client redirects, NOT the upstream OAuth app redirect
+  URI.
 </ParamField>
 
 <ParamField body="valid_scopes" type="list[str] | None">
@@ -556,7 +557,7 @@ auth = OAuthProxy(
 
 ### Redirect URI Validation
 
-While the OAuth proxy accepts all redirect URIs by default (for DCR compatibility), you can restrict which clients can connect by specifying allowed patterns:
+The OAuth proxy accepts loopback redirect URIs by default. Specify allowed patterns when supporting known clients with fixed external callbacks:
 
 ```python
 # Allow only localhost clients (common for development)

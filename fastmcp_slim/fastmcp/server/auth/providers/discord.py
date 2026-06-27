@@ -230,7 +230,7 @@ class DiscordProvider(OAuthProxy):
                 - "guilds" for server membership info
             timeout_seconds: HTTP request timeout for Discord API calls (defaults to 10)
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
-                If None (default), all URIs are allowed. If empty list, no URIs are allowed.
+                If None (default), localhost and loopback redirect URIs are allowed. If empty list, no URIs are allowed.
             client_storage: Storage backend for OAuth state (client registrations, encrypted tokens).
                 If None, an encrypted file store will be created in the data directory
                 (derived from `platformdirs`).
