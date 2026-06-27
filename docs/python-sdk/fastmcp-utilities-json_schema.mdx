@@ -7,7 +7,24 @@ sidebarTitle: json_schema
 
 ## Functions
 
-### `dereference_refs` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L104" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `require_discriminator_property` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L116" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+require_discriminator_property(schema: dict[str, Any]) -> dict[str, Any]
+```
+
+
+Keep an OpenAPI discriminator's tag mandatory after the keyword is dropped.
+
+Returns a copy of *schema* with ``discriminator.propertyName`` added to each
+``anyOf``/``oneOf`` variant's ``required`` list. A Pydantic discriminated
+union whose tag has a default omits that tag from ``required``; without this,
+an untagged payload passes the generated schema but fails later in the source
+model with ``union_tag_not_found``. No-op if there is no string
+``propertyName``.
+
+
+### `dereference_refs` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L147" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 dereference_refs(schema: dict[str, Any]) -> dict[str, Any]
@@ -40,7 +57,7 @@ schemas from untrusted servers.
 - when no longer needed
 
 
-### `resolve_root_ref` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L251" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `resolve_root_ref` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L294" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 resolve_root_ref(schema: dict[str, Any]) -> dict[str, Any]
@@ -62,7 +79,7 @@ the referenced definition while preserving $defs for nested references.
 - if no resolution is needed
 
 
-### `compress_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L645" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `compress_schema` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/json_schema.py#L688" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 compress_schema(schema: dict[str, Any], prune_params: list[str] | None = None, prune_additional_properties: bool = False, prune_titles: bool = False, dereference: bool = False) -> dict[str, Any]
