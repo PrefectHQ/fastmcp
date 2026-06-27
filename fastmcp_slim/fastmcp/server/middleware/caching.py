@@ -439,17 +439,19 @@ class ResponseCachingMiddleware(Middleware):
             return cached_value.unwrap()
 
         tool_result: ToolResult = await call_next(context)
-        cachable_tool_result: CachableToolResult = CachableToolResult.wrap(
-            value=tool_result
-        )
 
-        await self._call_tool_cache.put(
-            key=cache_key,
-            value=cachable_tool_result,
-            ttl=self._call_tool_settings.get("ttl", ONE_HOUR_IN_SECONDS),
-        )
+        if not tool_result.is_error:
+            cachable_tool_result: CachableToolResult = CachableToolResult.wrap(
+                value=tool_result
+            )
 
-        return cachable_tool_result.unwrap()
+            await self._call_tool_cache.put(
+                key=cache_key,
+                value=cachable_tool_result,
+                ttl=self._call_tool_settings.get("ttl", ONE_HOUR_IN_SECONDS),
+            )
+
+        return tool_result
 
     @override
     async def on_read_resource(

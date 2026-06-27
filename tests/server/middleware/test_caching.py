@@ -283,6 +283,35 @@ class TestResponseCachingMiddleware:
         )
         assert middleware1._matches_tool_cache_settings(tool_name=tool_name) is result
 
+    async def test_call_tool_errors_are_not_cached(
+        self,
+        mock_context: MiddlewareContext[mcp.types.CallToolRequestParams],
+    ):
+        """Regression test for issue #4395: tool errors must not be cached."""
+        middleware = ResponseCachingMiddleware()
+        call_count = 0
+
+        async def flaky_call_next(
+            _context: MiddlewareContext[mcp.types.CallToolRequestParams],
+        ) -> ToolResult:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return ToolResult("error", is_error=True)
+            return ToolResult("ok")
+
+        first_result = await middleware.on_call_tool(mock_context, flaky_call_next)
+        second_result = await middleware.on_call_tool(mock_context, flaky_call_next)
+
+        assert first_result.is_error is True
+        assert second_result.is_error is False
+        assert second_result.content[0].text == "ok"
+        assert call_count == 2
+
+        third_result = await middleware.on_call_tool(mock_context, flaky_call_next)
+        assert third_result.content[0].text == "ok"
+        assert call_count == 2
+
 
 @pytest.mark.skipif(
     sys.platform == "win32",
