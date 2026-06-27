@@ -678,6 +678,33 @@ async def test_transform_fn_result_respects_serialize_by_alias():
     assert result.structured_content == {"id": "42"}
 
 
+async def test_transform_fn_wrapped_result_respects_serialize_by_alias():
+    """A wrapped transform result serializes the inner model before nesting.
+
+    Optional model returns get a wrap-result schema; the inner model must be
+    serialized with its own config before being placed under "result", or the
+    wrapped dict masks the config and the data no longer matches the schema.
+    """
+    from pydantic import ConfigDict
+
+    class Item(BaseModel):
+        model_config = ConfigDict(serialize_by_alias=False)
+        id: str = Field(alias="_id")
+
+    def base() -> None:
+        pass
+
+    async def transform() -> Item | None:
+        return Item(_id="42")
+
+    transformed = Tool.from_tool(base, transform_fn=transform)
+    assert transformed.output_schema is not None
+    assert transformed.output_schema.get("x-fastmcp-wrap-result")
+    result = await transformed.run({})
+
+    assert result.structured_content == {"result": {"id": "42"}}
+
+
 class TestProxy:
     @pytest.fixture
     def mcp_server(self) -> FastMCP:
