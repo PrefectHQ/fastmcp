@@ -312,7 +312,7 @@ class FastMCP(
         tasks: bool | None = None,
         session_state_store: AsyncKeyValue | None = None,
         sampling_handler: SamplingHandler | None = None,
-        sampling_handler_behavior: Literal["always", "fallback"] | None = None,
+        sampling_handler_behavior: Literal["always", "fallback", "fallback_on_error"] | None = None,
         client_log_level: mcp.types.LoggingLevel | None = None,
         experimental_capabilities: dict[str, dict[str, Any]] | None = None,
         **kwargs: Any,
@@ -430,7 +430,7 @@ class FastMCP(
         self._setup_handlers()
 
         self.sampling_handler: SamplingHandler | None = sampling_handler
-        self.sampling_handler_behavior: Literal["always", "fallback"] = (
+        self.sampling_handler_behavior: Literal["always", "fallback", "fallback_on_error"] = (
             sampling_handler_behavior or "fallback"
         )
 
