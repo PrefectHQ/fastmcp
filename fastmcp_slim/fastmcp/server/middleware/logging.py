@@ -7,14 +7,8 @@ from collections.abc import Callable
 from logging import Logger
 from typing import Any
 
-import pydantic_core
-
+from fastmcp.tools.base import default_serializer
 from .middleware import CallNext, Middleware, MiddlewareContext
-
-
-def default_serializer(data: Any) -> str:
-    """The default serializer for Payloads in the logging middleware."""
-    return pydantic_core.to_json(data, fallback=str).decode()
 
 
 class BaseLoggingMiddleware(Middleware):

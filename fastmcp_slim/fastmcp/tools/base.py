@@ -63,6 +63,8 @@ ToolResultSerializerType: TypeAlias = Callable[[Any], str]
 
 
 def default_serializer(data: Any) -> str:
+    if isinstance(data, BaseModel):
+        return data.model_dump_json()
     return pydantic_core.to_json(data, fallback=str).decode()
 
 

@@ -612,3 +612,25 @@ class TestToolExecutionField:
         mcp_tool = tool.to_mcp_tool()
         assert mcp_tool.execution is not None
         assert mcp_tool.execution.taskSupport == "forbidden"
+
+
+class TestDefaultSerializer:
+    async def test_respects_serialize_by_alias_false(self):
+        """Regression for #1197: honor Pydantic serialization config in tool output."""
+        from pydantic import ConfigDict, Field
+        from mcp.types import TextContent
+
+        class BiofileResponse(BaseModel):
+            model_config = ConfigDict(serialize_by_alias=False)
+
+            id: str = Field(alias="_id")
+            filepath: str
+
+        def get_biofile() -> BiofileResponse:
+            return BiofileResponse(_id="123", filepath="/path/to/file")
+
+        tool = Tool.from_function(get_biofile)
+        result = await tool.run({})
+
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == '{"id":"123","filepath":"/path/to/file"}'
