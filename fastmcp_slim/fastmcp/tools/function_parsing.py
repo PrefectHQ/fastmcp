@@ -76,13 +76,20 @@ def _resolve_output_by_alias(tp: Any) -> bool:
     special-cases a directly-returned model.
 
     Known limitation: a single schema is generated with one ``by_alias`` value,
-    so a union of distinct models with *conflicting* ``serialize_by_alias``
-    settings (e.g. ``A | B`` where ``A`` opts out but ``B`` opts in) can only
-    honor the first model arm. Pydantic's schema generator does not consult
-    per-model ``serialize_by_alias``, so representing each arm separately is not
-    possible here. The runtime still serializes each instance by its own config,
-    so the non-primary arm may not match the schema. This is an accepted edge;
-    single-model returns and unions whose arms agree are fully consistent.
+    while the runtime resolves the alias mode per returned value. They cannot
+    diverge for a plain single-model return, but a union return can produce more
+    than one runtime alias mode that no single schema can describe:
+
+    - distinct models with *conflicting* ``serialize_by_alias`` (e.g. ``A | B``
+      where ``A`` opts out but ``B`` opts in), and
+    - a model arm alongside a container arm (e.g. ``Model | list[Model]``):
+      a directly-returned model honors its config, but a returned ``list`` is
+      serialized with the default alias mode, so the two variants disagree.
+
+    Pydantic's schema generator does not consult per-model ``serialize_by_alias``
+    and the runtime does not recurse into containers, so honoring every variant
+    would require per-arm schema assembly. This is an accepted edge; single-model
+    returns and unions whose arms all resolve to the same mode are consistent.
     """
     origin = get_origin(tp)
     if origin is Annotated:
