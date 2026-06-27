@@ -658,6 +658,26 @@ async def test_from_tool_decorated_function_via_client():
         assert "Result 0 for hello" in result.content[0].text
 
 
+async def test_transform_fn_result_respects_serialize_by_alias():
+    """A model returned by a transform_fn honors serialize_by_alias when no schema."""
+    from pydantic import ConfigDict
+
+    class Item(BaseModel):
+        model_config = ConfigDict(serialize_by_alias=False)
+        id: str = Field(alias="_id")
+
+    def base() -> None:
+        pass
+
+    async def transform() -> Any:
+        return Item(_id="42")
+
+    transformed = Tool.from_tool(base, transform_fn=transform, output_schema=None)
+    result = await transformed.run({})
+
+    assert result.structured_content == {"id": "42"}
+
+
 class TestProxy:
     @pytest.fixture
     def mcp_server(self) -> FastMCP:

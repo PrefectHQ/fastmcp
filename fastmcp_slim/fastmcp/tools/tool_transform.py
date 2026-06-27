@@ -17,7 +17,12 @@ from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
 from fastmcp.exceptions import FastMCPDeprecationWarning
-from fastmcp.tools.base import Tool, ToolResult, _convert_to_content
+from fastmcp.tools.base import (
+    Tool,
+    ToolResult,
+    _convert_to_content,
+    resolve_serialize_by_alias,
+)
 from fastmcp.tools.function_parsing import ParsedFunction
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
@@ -354,7 +359,9 @@ class TransformedTool(Tool):
             # it as structured content. If it is not a dict, ignore it.
             if structured_output is None:
                 try:
-                    structured_output = pydantic_core.to_jsonable_python(result)
+                    structured_output = pydantic_core.to_jsonable_python(
+                        result, by_alias=resolve_serialize_by_alias(result)
+                    )
                     if not isinstance(structured_output, dict):
                         structured_output = None
                 except Exception:
