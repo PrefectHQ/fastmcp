@@ -820,6 +820,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 scope=self._default_scope_str,
                 token_endpoint_auth_method="none",
                 allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
+                allow_unregistered_redirect_uris=True,
             )
 
         return None
