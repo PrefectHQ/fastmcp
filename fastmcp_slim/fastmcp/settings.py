@@ -320,6 +320,9 @@ class Settings(BaseSettings):
     stateless_http: bool = (
         False  # If True, uses true stateless mode (new transport per request)
     )
+    http_host_origin_protection: bool = True
+    http_allowed_hosts: list[str] | None = None
+    http_allowed_origins: list[str] | None = None
 
     mounted_components_raise_on_load_error: Annotated[
         bool,
