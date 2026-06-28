@@ -8,7 +8,7 @@ import pytest
 from fastmcp import FastMCP
 from fastmcp.server.auth.oidc_proxy import OIDCConfiguration
 from fastmcp.server.auth.providers.auth0 import Auth0JWTVerifier, Auth0MCPProvider
-from fastmcp.server.auth.providers.jwt import JWTVerifier
+from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
 
 TEST_CONFIG_URL = "https://example.us.auth0.com/.well-known/openid-configuration"
 TEST_BASE_URL = "http://127.0.0.1:8000"
@@ -48,6 +48,39 @@ class TestAuth0JWTVerifier:
         )
         scopes = verifier._extract_scopes({"permissions": "tool:whoami tool:greet"})
         assert scopes == ["tool:whoami", "tool:greet"]
+
+    async def test_verify_token_accepts_permissions_as_required_scopes(self):
+        key_pair = RSAKeyPair.generate()
+        verifier = Auth0JWTVerifier(
+            public_key=key_pair.public_key,
+            issuer=TEST_ISSUER,
+            required_scopes=["tool:echo"],
+        )
+        token = key_pair.create_token(
+            subject="user_123",
+            issuer=TEST_ISSUER,
+            additional_claims={"permissions": ["tool:echo"]},
+        )
+
+        access_token = await verifier.load_access_token(token)
+        assert access_token is not None
+        assert access_token.client_id == "user_123"
+
+    async def test_verify_token_rejects_missing_permissions(self):
+        key_pair = RSAKeyPair.generate()
+        verifier = Auth0JWTVerifier(
+            public_key=key_pair.public_key,
+            issuer=TEST_ISSUER,
+            required_scopes=["tool:echo"],
+        )
+        token = key_pair.create_token(
+            subject="user_123",
+            issuer=TEST_ISSUER,
+            additional_claims={"permissions": ["tool:other"]},
+        )
+
+        access_token = await verifier.load_access_token(token)
+        assert access_token is None
 
 
 class TestAuth0MCPProviderInit:
@@ -271,6 +304,40 @@ class TestAuth0MCPMetadataForwarding:
 
 
 class TestAuth0MCPIntegration:
+    async def test_unauthenticated_mcp_request_returns_401(
+        self, valid_oidc_configuration_dict
+    ):
+        with patch(
+            "fastmcp.server.auth.providers.auth0.OIDCConfiguration.get_oidc_configuration"
+        ) as mock_get:
+            mock_get.return_value = OIDCConfiguration.model_validate(
+                valid_oidc_configuration_dict
+            )
+            provider = Auth0MCPProvider(
+                config_url=TEST_CONFIG_URL,
+                base_url=TEST_BASE_URL,
+            )
+
+        mcp = FastMCP("test-server", auth=provider)
+
+        @mcp.tool
+        def echo(message: str) -> str:
+            return message
+
+        app = mcp.http_app()
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url=TEST_BASE_URL,
+        ) as client:
+            response = await client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "tools/list", "id": 1},
+                headers={"Content-Type": "application/json"},
+            )
+
+        assert response.status_code == 401
+
     async def test_no_register_proxy_route(self, valid_oidc_configuration_dict):
         with patch(
             "fastmcp.server.auth.providers.auth0.OIDCConfiguration.get_oidc_configuration"
