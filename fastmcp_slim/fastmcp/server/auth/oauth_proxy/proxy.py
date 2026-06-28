@@ -2075,6 +2075,12 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     revocation_options,
                 )
                 metadata.client_id_metadata_document_supported = True
+                existing = metadata.token_endpoint_auth_methods_supported or []
+                metadata.token_endpoint_auth_methods_supported = [
+                    *existing,
+                    "private_key_jwt",
+                    "none",
+                ]
                 handler = MetadataHandler(metadata)
                 methods = route.methods or ["GET", "OPTIONS"]
 

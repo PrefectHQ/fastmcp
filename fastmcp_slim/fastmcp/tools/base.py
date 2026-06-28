@@ -62,8 +62,34 @@ logger = get_logger(__name__)
 ToolResultSerializerType: TypeAlias = Callable[[Any], str]
 
 
+def resolve_serialize_by_alias(value: Any) -> bool:
+    """Resolve the effective ``by_alias`` setting for serializing *value*.
+
+    Pydantic's low-level serialization helpers (``to_json``,
+    ``to_jsonable_python``) default ``by_alias`` to ``True``, which silently
+    ignores a model's ``serialize_by_alias`` config. When *value* is a Pydantic
+    model we consult that config instead, falling back to ``True`` to preserve
+    FastMCP's longstanding default of emitting aliases when no preference is
+    declared.
+    """
+    if isinstance(value, type):
+        model = value if issubclass(value, BaseModel) else None
+    elif isinstance(value, BaseModel):
+        model = type(value)
+    else:
+        model = None
+
+    if model is None:
+        return True
+
+    configured = model.model_config.get("serialize_by_alias")
+    return True if configured is None else configured
+
+
 def default_serializer(data: Any) -> str:
-    return pydantic_core.to_json(data, fallback=str).decode()
+    return pydantic_core.to_json(
+        data, fallback=str, by_alias=resolve_serialize_by_alias(data)
+    ).decode()
 
 
 class ToolResult(BaseModel):
@@ -110,7 +136,8 @@ class ToolResult(BaseModel):
 
             try:
                 structured_content = pydantic_core.to_jsonable_python(
-                    value=structured_content
+                    value=structured_content,
+                    by_alias=resolve_serialize_by_alias(structured_content),
                 )
             except pydantic_core.PydanticSerializationError as e:
                 logger.error(
@@ -321,7 +348,9 @@ class Tool(FastMCPComponent):
             return ToolResult(content=content)
 
         try:
-            structured = pydantic_core.to_jsonable_python(raw_value)
+            structured = pydantic_core.to_jsonable_python(
+                raw_value, by_alias=resolve_serialize_by_alias(raw_value)
+            )
         except (pydantic_core.PydanticSerializationError, UnicodeDecodeError):
             return ToolResult(content=content)
 

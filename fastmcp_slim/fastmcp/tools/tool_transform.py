@@ -17,7 +17,12 @@ from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
 from fastmcp.exceptions import FastMCPDeprecationWarning
-from fastmcp.tools.base import Tool, ToolResult, _convert_to_content
+from fastmcp.tools.base import (
+    Tool,
+    ToolResult,
+    _convert_to_content,
+    resolve_serialize_by_alias,
+)
 from fastmcp.tools.function_parsing import ParsedFunction
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
@@ -346,15 +351,23 @@ class TransformedTool(Tool):
             # First handle structured content based on output schema, if any
             if self.output_schema is not None:
                 if self.output_schema.get("x-fastmcp-wrap-result"):
-                    # Schema says wrap - always wrap in result key
-                    structured_output = {"result": result}
+                    # Schema says wrap - serialize the inner result first (so its
+                    # serialize_by_alias config is honored) before nesting, since
+                    # wrapping in a dict would otherwise mask the model's config.
+                    structured_output = {
+                        "result": pydantic_core.to_jsonable_python(
+                            result, by_alias=resolve_serialize_by_alias(result)
+                        )
+                    }
                 else:
                     structured_output = result
             # If no output schema, try to serialize the result. If it is a dict, use
             # it as structured content. If it is not a dict, ignore it.
             if structured_output is None:
                 try:
-                    structured_output = pydantic_core.to_jsonable_python(result)
+                    structured_output = pydantic_core.to_jsonable_python(
+                        result, by_alias=resolve_serialize_by_alias(result)
+                    )
                     if not isinstance(structured_output, dict):
                         structured_output = None
                 except Exception:

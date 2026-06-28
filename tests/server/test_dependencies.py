@@ -450,10 +450,11 @@ async def test_argument_validation_with_dependencies(mcp: FastMCP):
     assert result.structured_content is not None
     assert result.structured_content["result"] == "age=25"
 
-    # Invalid argument type should fail validation
-    import pydantic
+    # Invalid argument type should fail validation. Argument-validation errors
+    # surface as fastmcp's ValidationError (see #4128), not raw pydantic.
+    from fastmcp.exceptions import ValidationError
 
-    with pytest.raises(pydantic.ValidationError):
+    with pytest.raises(ValidationError):
         await mcp.call_tool("validated_tool", {"age": "not a number"})
 
 
@@ -598,10 +599,12 @@ async def test_external_user_cannot_override_dependency(mcp: FastMCP):
     assert result.structured_content is not None
     assert "admin=not_admin" in result.structured_content["result"]
 
-    # Try to override dependency - rejected (not in schema)
-    import pydantic
+    # Try to override dependency - rejected (not in schema). The rejection is an
+    # argument-validation error, so it surfaces as fastmcp's ValidationError
+    # (see #4128).
+    from fastmcp.exceptions import ValidationError
 
-    with pytest.raises(pydantic.ValidationError):
+    with pytest.raises(ValidationError):
         await mcp.call_tool("check_permission", {"action": "read", "admin": "hacker"})
 
 

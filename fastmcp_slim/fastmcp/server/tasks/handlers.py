@@ -66,6 +66,13 @@ async def submit_to_docket(
     Returns:
         CreateTaskResult: Task stub with proper Task object
     """
+    # Validate and coerce arguments before creating any task state. A failure
+    # here must surface before the Redis metadata and initial "working"
+    # notification below are written, otherwise an invalid input would orphan a
+    # task the client has already observed (#4349).
+    if arguments is not None:
+        arguments = component.coerce_task_arguments(arguments)
+
     # Generate server-side task ID per SEP-1686 final spec (line 375-377)
     # Server MUST generate task IDs, clients no longer provide them
     server_task_id = str(uuid.uuid4())

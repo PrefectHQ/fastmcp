@@ -60,7 +60,7 @@ When modifying MCP functionality, changes typically need to be applied across al
 
 - Prek hooks are required (run automatically on commits)
 - Never amend commits to fix prek failures
-- Apply PR labels: bugs/breaking/enhancements/features
+- Never apply labels manually or invent new ones — the GitHub API auto-creates any unknown label name, polluting the repo's label list. Note the appropriate label in the PR body and let the maintainer/automation apply it. Canonical names: `bugs`, `breaking change`, `enhancements`, `features` (it's `breaking change`, not `breaking`). See the review-pr skill.
 - Improvements = enhancements (not features) unless specified
 - **NEVER** force-push on collaborative repos
 - **ALWAYS** run prek before PRs

@@ -232,6 +232,19 @@ class FastMCPComponent(FastMCPBaseModel):
         """
         # Base implementation: no-op (subclasses override)
 
+    def coerce_task_arguments(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Validate and coerce task arguments before any task state is created.
+
+        Called by ``submit_to_docket`` up front, so invalid inputs raise before
+        the task's Redis metadata and initial status notification exist —
+        otherwise a coercion failure during queueing would orphan a task the
+        client has already observed. The base implementation is a no-op;
+        components that splat arguments into a typed Python callable (e.g.
+        ``FunctionTool``) override this to mirror the synchronous validation
+        path.
+        """
+        return arguments
+
     async def add_to_docket(
         self, docket: Docket, *args: Any, **kwargs: Any
     ) -> Execution:
