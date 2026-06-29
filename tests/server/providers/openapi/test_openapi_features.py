@@ -799,6 +799,92 @@ class TestResourceTemplateRequestBuilding:
 
         assert seen_urls == [httpx.URL("https://api.example.com/api/v1/users/alice")]
 
+    async def test_resource_template_preserves_hyphenated_path_params(self):
+        seen_urls: list[httpx.URL] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            seen_urls.append(request.url)
+            return httpx.Response(200, json={"ok": True})
+
+        spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "User API", "version": "1.0.0"},
+            "servers": [{"url": "https://api.example.com/api/v1"}],
+            "paths": {
+                "/users/{user-id}": {
+                    "get": {
+                        "operationId": "get_user",
+                        "parameters": [
+                            {
+                                "name": "user-id",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "string"},
+                            }
+                        ],
+                        "responses": {
+                            "200": {
+                                "description": "User data",
+                                "content": {
+                                    "application/json": {"schema": {"type": "object"}}
+                                },
+                            }
+                        },
+                    }
+                }
+            },
+        }
+
+        route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE_TEMPLATE)]
+        async with httpx.AsyncClient(
+            base_url="https://api.example.com/api/v1",
+            transport=httpx.MockTransport(handler),
+        ) as client:
+            provider = OpenAPIProvider(
+                openapi_spec=spec,
+                client=client,
+                route_maps=route_maps,
+            )
+            mcp = FastMCP("Test")
+            mcp.add_provider(provider)
+
+            async with Client(mcp) as mcp_client:
+                await mcp_client.read_resource("resource://get_user/abc")
+
+        assert seen_urls == [httpx.URL("https://api.example.com/api/v1/users/abc")]
+
+    async def test_resource_template_preserves_client_defaults(
+        self, path_param_spec: dict[str, Any]
+    ):
+        seen_requests: list[httpx.Request] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            seen_requests.append(request)
+            return httpx.Response(200, json={"ok": True})
+
+        route_maps = [RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE_TEMPLATE)]
+        async with httpx.AsyncClient(
+            base_url="https://api.example.com/api/v1",
+            params={"api-version": "2026-06-29"},
+            cookies={"session": "abc123"},
+            transport=httpx.MockTransport(handler),
+        ) as client:
+            provider = OpenAPIProvider(
+                openapi_spec=path_param_spec,
+                client=client,
+                route_maps=route_maps,
+            )
+            mcp = FastMCP("Test")
+            mcp.add_provider(provider)
+
+            async with Client(mcp) as mcp_client:
+                await mcp_client.read_resource("resource://get_user/alice")
+
+        assert seen_requests[0].url == httpx.URL(
+            "https://api.example.com/api/v1/users/alice?api-version=2026-06-29"
+        )
+        assert seen_requests[0].headers["cookie"] == "session=abc123"
+
 
 class TestResourceMimeType:
     """Test that OpenAPIResource uses inferred MIME types."""

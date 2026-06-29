@@ -290,10 +290,17 @@ class OpenAPIResource(Resource):
         """Fetch the resource data by making an HTTP request."""
         try:
             base_url = str(self._client.base_url) or "http://localhost"
-            request = self._director.build(self._route, self._arguments, base_url)
-
-            if self._client.headers:
-                request.headers.update(self._client.headers)
+            directed_request = self._director.build(
+                self._route, self._arguments, base_url
+            )
+            request = self._client.build_request(
+                method=directed_request.method,
+                url=directed_request.url.copy_with(query=None),
+                params=directed_request.url.params,
+                headers=directed_request.headers,
+                content=directed_request.content,
+                extensions=directed_request.extensions,
+            )
             mcp_headers = get_http_headers()
             if mcp_headers:
                 request.headers.update(mcp_headers)
@@ -386,6 +393,16 @@ class OpenAPIResourceTemplate(ResourceTemplate):
     ) -> Resource:
         """Create a resource with the given parameters."""
         uri_parts = [f"{key}={value}" for key, value in params.items()]
+        arguments = {}
+        for parameter in self._route.parameters:
+            if parameter.location != "path":
+                continue
+            if parameter.name in params:
+                arguments[parameter.name] = params[parameter.name]
+                continue
+            normalized_name = parameter.name.replace("-", "_")
+            if normalized_name in params:
+                arguments[parameter.name] = params[normalized_name]
 
         return OpenAPIResource(
             client=self._client,
@@ -396,5 +413,5 @@ class OpenAPIResourceTemplate(ResourceTemplate):
             description=self.description or f"Resource for {self._route.path}",
             mime_type=self.mime_type,
             tags=set(self._route.tags or []),
-            arguments=params,
+            arguments=arguments,
         )
