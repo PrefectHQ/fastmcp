@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, Literal, cast
 
 import anyio
+from mcp.shared.exceptions import McpError
 from mcp.types import (
     ClientCapabilities,
     CreateMessageResult,
@@ -170,7 +171,7 @@ def determine_handler_mode(context: Context, needs_tools: bool) -> bool:
                 "sampling_handler_behavior is 'always' but no handler configured"
             )
         return True
-    elif fastmcp.sampling_handler_behavior == "fallback":
+    elif fastmcp.sampling_handler_behavior in {"fallback", "fallback_on_error"}:
         client_sufficient = has_sampling and (not needs_tools or has_tools_capability)
         if not client_sufficient:
             if fastmcp.sampling_handler is None:
@@ -184,7 +185,7 @@ def determine_handler_mode(context: Context, needs_tools: bool) -> bool:
     elif fastmcp.sampling_handler_behavior is not None:
         raise ValueError(
             f"Invalid sampling_handler_behavior: {fastmcp.sampling_handler_behavior!r}. "
-            "Must be 'always', 'fallback', or None."
+            "Must be 'always', 'fallback', 'fallback_on_error', or None."
         )
     elif not has_sampling:
         raise ValueError("Client does not support sampling")
@@ -555,16 +556,33 @@ async def sample_step_impl(
                     tool_choice=effective_tool_choice,
                 )
             else:
-                response = await context.session.create_message(
-                    messages=current_messages,
-                    system_prompt=system_prompt,
-                    temperature=temperature,
-                    max_tokens=effective_max_tokens,
-                    model_preferences=_parse_model_preferences(model_preferences),
-                    tools=sdk_tools,
-                    tool_choice=effective_tool_choice,
-                    related_request_id=context.origin_request_id,
-                )
+                try:
+                    response = await context.session.create_message(
+                        messages=current_messages,
+                        system_prompt=system_prompt,
+                        temperature=temperature,
+                        max_tokens=effective_max_tokens,
+                        model_preferences=_parse_model_preferences(model_preferences),
+                        tools=sdk_tools,
+                        tool_choice=effective_tool_choice,
+                        related_request_id=context.origin_request_id,
+                    )
+                except McpError:
+                    if (
+                        context.fastmcp.sampling_handler_behavior != "fallback_on_error"
+                        or context.fastmcp.sampling_handler is None
+                    ):
+                        raise
+                    response = await call_sampling_handler(
+                        context,
+                        current_messages,
+                        system_prompt=system_prompt,
+                        temperature=temperature,
+                        max_tokens=effective_max_tokens,
+                        model_preferences=model_preferences,
+                        sdk_tools=sdk_tools,
+                        tool_choice=effective_tool_choice,
+                    )
         except Exception as e:
             if span.is_recording():
                 span.set_attribute("error.type", type(e).__qualname__)
