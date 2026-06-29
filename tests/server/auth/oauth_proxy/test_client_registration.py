@@ -62,11 +62,13 @@ class TestOAuthProxyClientRegistration:
 
         with pytest.raises(InvalidRedirectUriError):
             retrieved.validate_redirect_uri(AnyUrl("http://evil.com/anything"))
+        with pytest.raises(InvalidRedirectUriError):
+            retrieved.validate_redirect_uri(AnyUrl("http://localhost:6274/other"))
 
         uri = retrieved.validate_redirect_uri(
-            AnyUrl("http://localhost:6274/oauth/callback")
+            AnyUrl("http://localhost:51353/oauth/callback")
         )
-        assert str(uri) == "http://localhost:6274/oauth/callback"
+        assert str(uri) == "http://localhost:51353/oauth/callback"
 
     async def test_dcr_client_accepts_registered_external_redirect_uri(
         self, oauth_proxy
