@@ -171,6 +171,55 @@ class TestStreamableHTTPHostOriginProtection:
         assert response.status_code == 200
         assert "mcp-session-id" in response.headers
 
+    def test_allows_same_request_origin(self):
+        server = FastMCP(name="TestServer")
+        app = create_streamable_http_app(
+            server=server,
+            streamable_http_path="/mcp",
+            allowed_hosts=["mcp.example.com"],
+        )
+
+        with TestClient(app, base_url="https://mcp.example.com") as client:
+            response = client.post(
+                "/mcp",
+                headers={
+                    "accept": "application/json, text/event-stream",
+                    "origin": "https://mcp.example.com",
+                },
+                json=INITIALIZE_REQUEST,
+            )
+
+        assert response.status_code == 200
+        assert "mcp-session-id" in response.headers
+
+    @pytest.mark.parametrize(
+        "origin",
+        [
+            "http://mcp.example.com",
+            "https://mcp.example.com:3000",
+        ],
+    )
+    def test_rejects_same_host_different_origin(self, origin: str):
+        server = FastMCP(name="TestServer")
+        app = create_streamable_http_app(
+            server=server,
+            streamable_http_path="/mcp",
+            allowed_hosts=["mcp.example.com"],
+        )
+
+        with TestClient(app, base_url="https://mcp.example.com") as client:
+            response = client.post(
+                "/mcp",
+                headers={
+                    "accept": "application/json, text/event-stream",
+                    "origin": origin,
+                },
+                json=INITIALIZE_REQUEST,
+            )
+
+        assert response.status_code == 403
+        assert "mcp-session-id" not in response.headers
+
     def test_can_disable_host_origin_protection(self):
         server = FastMCP(name="TestServer")
         app = create_streamable_http_app(

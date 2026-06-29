@@ -167,10 +167,53 @@ def _origin_host(origin: str) -> str:
     return parsed.hostname or ""
 
 
+def _origin_port(scheme: str, port: int | None) -> int | None:
+    if port is not None:
+        return port
+    if scheme == "http":
+        return 80
+    if scheme == "https":
+        return 443
+    return None
+
+
+def _format_origin_host(host: str) -> str:
+    if ":" in host and not host.startswith("["):
+        return f"[{host}]"
+    return host
+
+
+def _normalize_origin(origin: str) -> str:
+    origin = origin.strip().rstrip("/")
+    try:
+        parsed = urlsplit(origin)
+        port = parsed.port
+    except ValueError:
+        return origin.lower()
+
+    if not parsed.scheme or not parsed.hostname:
+        return origin.lower()
+
+    if parsed.path or parsed.query or parsed.fragment:
+        return origin.lower()
+
+    scheme = parsed.scheme.lower()
+    host = _format_origin_host(_normalize_host(parsed.hostname))
+    normalized_port = _origin_port(scheme, port)
+    if normalized_port is None:
+        return f"{scheme}://{host}"
+
+    return f"{scheme}://{host}:{normalized_port}"
+
+
+def _request_origin(scope: Scope, host: str) -> str:
+    return _normalize_origin(f"{scope.get('scheme', 'http')}://{host}")
+
+
 def _origin_matches(origin: str, allowed_origins: Sequence[str]) -> bool:
-    origin = origin.strip().rstrip("/").lower()
+    origin = _normalize_origin(origin)
     for allowed_origin in allowed_origins:
-        pattern = allowed_origin.strip().rstrip("/").lower()
+        pattern = _normalize_origin(allowed_origin)
         if pattern == "*" or fnmatchcase(origin, pattern):
             return True
 
@@ -205,7 +248,8 @@ class HostOriginGuardMiddleware:
             return
 
         origin = headers.get("origin")
-        if origin and not self._origin_allowed(origin, allowed_hosts):
+        request_origin = _request_origin(scope, host)
+        if origin and not self._origin_allowed(origin, request_origin):
             response = Response("Forbidden Origin", status_code=403)
             await response(scope, receive, send)
             return
@@ -224,7 +268,7 @@ class HostOriginGuardMiddleware:
 
         return tuple(allowed_hosts)
 
-    def _origin_allowed(self, origin: str, allowed_hosts: Sequence[str]) -> bool:
+    def _origin_allowed(self, origin: str, request_origin: str) -> bool:
         if _origin_matches(origin, self.allowed_origins):
             return True
 
@@ -232,12 +276,7 @@ class HostOriginGuardMiddleware:
         if _is_loopback_host(origin_host):
             return True
 
-        non_wildcard_hosts = [
-            allowed_host
-            for allowed_host in allowed_hosts
-            if _normalize_host(allowed_host) != "*"
-        ]
-        return _host_matches(origin_host, non_wildcard_hosts)
+        return _normalize_origin(origin) == request_origin
 
 
 _current_http_request: ContextVar[Request | None] = ContextVar(
