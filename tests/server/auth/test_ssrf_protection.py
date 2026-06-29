@@ -564,12 +564,30 @@ class TestProxyMode:
                 "fastmcp.server.auth.ssrf.getproxies",
                 return_value={scheme: "http://proxy.internal:3128"},
             ),
+            patch("fastmcp.server.auth.ssrf.proxy_bypass", return_value=False),
             caplog.at_level(logging.WARNING, logger="FastMCP"),
         ):
             result = await validate_url("https://example.com/path")
 
         assert result.resolved_ips == []
         assert "FASTMCP_SSRF_TRUST_PROXY" not in caplog.text
+
+    async def test_warns_when_no_proxy_excludes_the_host(self, caplog):
+        """An https proxy is configured but NO_PROXY excludes this host, so the fetch
+        goes out direct — getproxies() alone would miss it, proxy_bypass() catches it."""
+        with (
+            temporary_settings(ssrf_trust_proxy=True),
+            patch(
+                "fastmcp.server.auth.ssrf.getproxies",
+                return_value={"https": "http://proxy.internal:3128"},
+            ),
+            patch("fastmcp.server.auth.ssrf.proxy_bypass", return_value=True),
+            caplog.at_level(logging.WARNING, logger="FastMCP"),
+        ):
+            result = await validate_url("https://example.com/path")
+
+        assert result.resolved_ips == []
+        assert "FASTMCP_SSRF_TRUST_PROXY is enabled but no HTTPS_PROXY" in caplog.text
 
     async def test_fetch_single_request_to_original_url(self):
         """Proxy mode issues one unpinned request to the hostname URL."""
