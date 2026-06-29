@@ -85,6 +85,26 @@ When setting Docket values in a `.env` file, use a **double** underscore: `FASTM
 | `FASTMCP_DOCKET_RECONNECTION_DELAY` | `timedelta` | `5s` | Delay between reconnection attempts when the worker loses its backend connection. |
 | `FASTMCP_DOCKET_MINIMUM_CHECK_INTERVAL` | `timedelta` | `50ms` | How frequently the worker polls for new tasks. Lower values reduce latency at the cost of more CPU usage. |
 
+## Security
+
+These control FastMCP's SSRF protection for the outbound fetches it makes during authentication (OAuth client metadata and JWKS).
+
+| Environment Variable | Type | Default | Description |
+|---|---|---|---|
+| `FASTMCP_SSRF_TRUST_PROXY` | `bool` | `false` | Trust an outbound HTTP proxy for SSRF-protected fetches. When `false`, FastMCP resolves the target hostname itself and refuses to connect if it maps to a private, loopback, link-local, or reserved IP. When `true`, FastMCP skips its own DNS resolution and IP blocklist and issues a single request to the hostname URL, letting the proxy own DNS and egress. |
+
+By default, FastMCP protects its OAuth and JWKS fetches against [SSRF](https://owasp.org/www-community/attacks/Server_Side_Request_Forgery) by resolving the target hostname, rejecting any address that maps to a private, loopback, link-local, or reserved IP, and then pinning the connection to that validated IP.
+
+This breaks when a corporate `CONNECT` proxy is the only egress path: the container often cannot resolve external DNS at all (only the proxy can), and even when it can, pinning to the IP makes TLS verification fail because public certificates list hostnames, not IP addresses.
+
+Set `FASTMCP_SSRF_TRUST_PROXY=true` when a trusted proxy is your mandated egress. FastMCP then skips DNS resolution and the IP blocklist and makes a single request to the hostname URL, which httpx routes through the proxy named by the standard `HTTPS_PROXY` / `HTTP_PROXY` environment variables. The HTTPS-only and hostname checks still apply.
+
+<Warning>
+This is a deliberate trust shift: the IP blocklist cannot be enforced through a proxy (the proxy does its own DNS, so an address FastMCP resolved is not the one the proxy dials). Only enable it when the proxy itself is trusted to mediate egress.
+
+FastMCP does not refuse to run without a proxy. If you set `FASTMCP_SSRF_TRUST_PROXY=true` but no `HTTPS_PROXY` / `ALL_PROXY` is present in the server process's environment (or `NO_PROXY` excludes the target), httpx makes a **direct, unpinned request with the IP blocklist disabled** — there is no fallback to the default protection. FastMCP logs a warning on each such fetch when it finds no `HTTPS_PROXY` / `ALL_PROXY` configured (an `HTTP_PROXY` alone never routes these HTTPS-only fetches), but the request still proceeds. Enable this setting only together with an active proxy.
+</Warning>
+
 ## Advanced
 
 | Environment Variable | Type | Default | Description |

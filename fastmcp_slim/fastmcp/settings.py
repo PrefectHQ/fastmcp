@@ -310,6 +310,26 @@ class Settings(BaseSettings):
         ),
     ] = False
 
+    ssrf_trust_proxy: Annotated[
+        bool,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Trust an outbound HTTP proxy for SSRF-protected fetches (OAuth client
+                metadata and JWKS). When False (default), FastMCP resolves the target
+                hostname itself and refuses to connect if it maps to a private,
+                loopback, link-local, or otherwise reserved IP. When True, FastMCP
+                skips its own DNS resolution and IP blocklist and issues a single
+                request to the hostname URL, letting the configured proxy (from the
+                standard HTTPS_PROXY/HTTP_PROXY environment variables) own DNS and
+                egress. Only enable this when a trusted corporate proxy is the
+                mandated egress path: it shifts SSRF trust to that proxy. Scheme
+                (HTTPS-only) and hostname checks still apply.
+                """
+            ),
+        ),
+    ] = False
+
     server_dependencies: list[str] = Field(
         default_factory=list,
         description="List of dependencies to install in the server environment",

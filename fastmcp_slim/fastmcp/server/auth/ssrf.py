@@ -4,6 +4,10 @@ This module provides SSRF-protected HTTP fetching with:
 - DNS resolution and IP validation before requests
 - DNS pinning to prevent rebinding TOCTOU attacks
 - Support for both CIMD and JWKS fetches
+
+When ``FASTMCP_SSRF_TRUST_PROXY`` is set, DNS resolution and the IP blocklist are
+skipped and a single request is made to the hostname URL, delegating DNS and egress
+to a trusted outbound proxy (the scheme and hostname checks still apply).
 """
 
 from __future__ import annotations
@@ -15,9 +19,11 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from urllib.parse import urlparse
+from urllib.request import getproxies, proxy_bypass
 
 import httpx
 
+import fastmcp
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -149,6 +155,51 @@ class SSRFFetchResponse:
     headers: dict[str, str]
 
 
+@dataclass
+class _FetchTarget:
+    """A single connection attempt for an SSRF-safe fetch.
+
+    In pinned (default) mode there is one target per resolved IP: the request goes to
+    an IP-literal URL with Host and SNI pinned to the validated hostname. In proxy
+    mode (FASTMCP_SSRF_TRUST_PROXY) there is a single target: the original hostname
+    URL with no pinning, so httpx and the trusted proxy own DNS and TLS.
+    """
+
+    url: str
+    host_header: str | None
+    sni_hostname: str | None
+
+
+def _build_fetch_targets(validated: ValidatedURL) -> list[_FetchTarget]:
+    """Build the ordered connection attempts for a validated URL.
+
+    An empty ``resolved_ips`` means proxy mode (see :func:`validate_url`): a single
+    unpinned request to the original hostname URL, which httpx routes through the
+    configured proxy. Otherwise, one pinned IP-literal request per resolved IP, tried
+    in order with fallback on connection error.
+    """
+    if not validated.resolved_ips:
+        # Proxy mode: dial the original hostname URL verbatim and let httpx + the proxy
+        # parse and resolve it. validated.hostname is informational here — it does not
+        # constrain what gets dialed — so do not pin Host or SNI from it.
+        return [
+            _FetchTarget(
+                url=validated.original_url,
+                host_header=None,
+                sni_hostname=None,
+            )
+        ]
+
+    return [
+        _FetchTarget(
+            url=f"https://{format_ip_for_url(ip)}:{validated.port}{validated.path}",
+            host_header=validated.hostname,
+            sni_hostname=validated.hostname,
+        )
+        for ip in validated.resolved_ips
+    ]
+
+
 async def validate_url(url: str, require_path: bool = False) -> ValidatedURL:
     """Validate URL for SSRF and resolve to IPs.
 
@@ -178,8 +229,41 @@ async def validate_url(url: str, require_path: bool = False) -> ValidatedURL:
 
     hostname = parsed.hostname or parsed.netloc
     port = parsed.port or 443
+    path = parsed.path + ("?" + parsed.query if parsed.query else "")
 
-    # Resolve and validate IPs
+    # Proxy mode (FASTMCP_SSRF_TRUST_PROXY): a trusted outbound proxy owns DNS and
+    # egress, so resolving the hostname here is pointless — the IP we'd pin is not
+    # the one the proxy dials, making the blocklist unenforceable theater. Skip
+    # resolution and the blocklist entirely and signal proxy mode downstream with an
+    # empty resolved_ips list. The scheme (HTTPS) and host checks above still run.
+    if fastmcp.settings.ssrf_trust_proxy:
+        # Mirror httpx's trust_env lookup: an HTTPS request only routes through the
+        # https/all proxy entries, and NO_PROXY can still exclude this host. With no
+        # routable proxy, the fetch goes out as a direct, unpinned request with the
+        # blocklist already skipped — warn loudly, because that combination provides no
+        # SSRF protection at all. getproxies() ignores NO_PROXY, so consult
+        # proxy_bypass() too (a "*" entry or a host match would otherwise warn-suppress
+        # a request that actually goes direct).
+        proxies = getproxies()
+        has_https_proxy = "https" in proxies or "all" in proxies
+        if not has_https_proxy or proxy_bypass(hostname):
+            logger.warning(
+                "FASTMCP_SSRF_TRUST_PROXY is enabled but no HTTPS_PROXY/ALL_PROXY "
+                "is configured, so the request to %s will be made directly with "
+                "SSRF protection disabled. Point HTTPS_PROXY at the trusted proxy "
+                "or unset FASTMCP_SSRF_TRUST_PROXY.",
+                hostname,
+            )
+        return ValidatedURL(
+            original_url=url,
+            hostname=hostname,
+            port=port,
+            path=path,
+            resolved_ips=[],
+        )
+
+    # Resolve and validate IPs (resolve_hostname raises rather than returning [], so a
+    # successful return here always yields a non-empty list — see ssrf_safe_fetch_response).
     resolved_ips = await resolve_hostname(hostname, port)
 
     blocked = [ip for ip in resolved_ips if not is_ip_allowed(ip)]
@@ -193,7 +277,7 @@ async def validate_url(url: str, require_path: bool = False) -> ValidatedURL:
         original_url=url,
         hostname=hostname,
         port=port,
-        path=parsed.path + ("?" + parsed.query if parsed.query else ""),
+        path=path,
         resolved_ips=resolved_ips,
     )
 
@@ -264,30 +348,33 @@ async def ssrf_safe_fetch_response(
     last_error: Exception | None = None
     expected_statuses = allowed_status_codes or {200}
 
-    for pinned_ip in validated.resolved_ips:
+    # One target per pinned IP in default mode; a single unpinned target in proxy mode.
+    targets = _build_fetch_targets(validated)
+
+    for target in targets:
         elapsed = time.monotonic() - start_time
         if elapsed > overall_timeout:
             raise SSRFFetchError(f"Overall timeout exceeded: {url}")
         remaining = max(1.0, overall_timeout - elapsed)
 
-        pinned_url = (
-            f"https://{format_ip_for_url(pinned_ip)}:{validated.port}{validated.path}"
-        )
+        logger.debug("SSRF-safe fetch: %s -> %s", url, target.url)
 
-        logger.debug(
-            "SSRF-safe fetch: %s -> %s (pinned to %s)",
-            url,
-            pinned_url,
-            pinned_ip,
-        )
-
-        headers = {"Host": validated.hostname}
+        # In pinned mode Host is forced to the validated hostname; in proxy mode httpx
+        # derives it from the hostname URL. Either way, never let a caller override it.
+        headers: dict[str, str] = {}
+        if target.host_header is not None:
+            headers["Host"] = target.host_header
         if request_headers:
             for key, value in request_headers.items():
-                # Host must remain pinned to the validated hostname.
                 if key.lower() == "host":
                     continue
                 headers[key] = value
+
+        # Pin SNI to the hostname when connecting to an IP literal; in proxy mode httpx
+        # derives SNI from the URL, so no override is sent.
+        extensions: dict[str, str] = {}
+        if target.sni_hostname is not None:
+            extensions["sni_hostname"] = target.sni_hostname
 
         try:
             # Use httpx with streaming to enforce size limit during download
@@ -301,12 +388,17 @@ async def ssrf_safe_fetch_response(
                     ),
                     follow_redirects=False,
                     verify=True,
+                    # Proxy mode relies on httpx reading HTTPS_PROXY/HTTP_PROXY from the
+                    # environment; keep trust_env on (the default) so that routing works.
+                    # Disabling it would silently turn proxy-mode fetches into direct,
+                    # unpinned requests.
+                    trust_env=True,
                 ) as client,
                 client.stream(
                     "GET",
-                    pinned_url,
+                    target.url,
                     headers=headers,
-                    extensions={"sni_hostname": validated.hostname},
+                    extensions=extensions,
                 ) as response,
             ):
                 if time.monotonic() - start_time > overall_timeout:
@@ -358,4 +450,4 @@ async def ssrf_safe_fetch_response(
             raise SSRFFetchError(f"Timeout fetching {url}") from last_error
         raise SSRFFetchError(f"Error fetching {url}: {last_error}") from last_error
 
-    raise SSRFFetchError(f"Error fetching {url}: no resolved IPs succeeded")
+    raise SSRFFetchError(f"Error fetching {url}: no fetch targets succeeded")
