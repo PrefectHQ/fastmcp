@@ -269,6 +269,7 @@ class OpenAPIResource(Resource):
         description: str,
         mime_type: str = "application/json",
         tags: set[str] | None = None,
+        arguments: dict[str, Any] | None = None,
     ):
         super().__init__(
             uri=AnyUrl(uri),
@@ -280,6 +281,7 @@ class OpenAPIResource(Resource):
         self._client = client
         self._route = route
         self._director = director
+        self._arguments = dict(arguments or {})
 
     def __repr__(self) -> str:
         return f"OpenAPIResource(name={self.name!r}, uri={self.uri!r}, path={self._route.path})"
@@ -287,40 +289,23 @@ class OpenAPIResource(Resource):
     async def read(self) -> ResourceResult:
         """Fetch the resource data by making an HTTP request."""
         try:
-            path = self._route.path
-            resource_uri = str(self.uri)
-
-            # If this is a templated resource, extract path parameters from the URI
-            if "{" in path and "}" in path:
-                parts = resource_uri.split("/")
-
-                if len(parts) > 1:
-                    path_params = {}
-                    param_matches = re.findall(r"\{([^}]+)\}", path)
-                    if param_matches:
-                        param_matches.sort(reverse=True)
-                        expected_param_count = len(parts) - 1
-                        for i, param_name in enumerate(param_matches):
-                            if i < expected_param_count:
-                                param_value = parts[-1 - i]
-                                path_params[param_name] = param_value
-
-                    for param_name, param_value in path_params.items():
-                        path = path.replace(f"{{{param_name}}}", str(param_value))
-
-            # Build headers with correct precedence
-            headers: dict[str, str] = {}
-            if self._client.headers:
-                headers.update(self._client.headers)
+            base_url = str(self._client.base_url) or "http://localhost"
+            directed_request = self._director.build(
+                self._route, self._arguments, base_url
+            )
+            request = self._client.build_request(
+                method=directed_request.method,
+                url=directed_request.url.copy_with(query=None),
+                params=directed_request.url.params,
+                headers=directed_request.headers,
+                content=directed_request.content,
+                extensions=directed_request.extensions,
+            )
             mcp_headers = get_http_headers()
             if mcp_headers:
-                headers.update(mcp_headers)
+                request.headers.update(mcp_headers)
 
-            response = await self._client.request(
-                method=self._route.method,
-                url=path,
-                headers=headers,
-            )
+            response = await self._client.send(request)
             response.raise_for_status()
 
             content_type = response.headers.get("content-type", "").lower()
@@ -368,6 +353,13 @@ class OpenAPIResource(Resource):
             raise ValueError(f"Request error ({type(e).__name__}): {e!s}") from e
 
 
+def _path_argument_name(route: HTTPRoute, parameter_name: str) -> str:
+    for argument_name, mapping in route.parameter_map.items():
+        if mapping["location"] == "path" and mapping["openapi_name"] == parameter_name:
+            return argument_name
+    return parameter_name
+
+
 class OpenAPIResourceTemplate(ResourceTemplate):
     """Resource template implementation for OpenAPI endpoints."""
 
@@ -408,6 +400,17 @@ class OpenAPIResourceTemplate(ResourceTemplate):
     ) -> Resource:
         """Create a resource with the given parameters."""
         uri_parts = [f"{key}={value}" for key, value in params.items()]
+        arguments = {}
+        for parameter in self._route.parameters:
+            if parameter.location != "path":
+                continue
+            argument_name = _path_argument_name(self._route, parameter.name)
+            if parameter.name in params:
+                arguments[argument_name] = params[parameter.name]
+                continue
+            normalized_name = parameter.name.replace("-", "_")
+            if normalized_name in params:
+                arguments[argument_name] = params[normalized_name]
 
         return OpenAPIResource(
             client=self._client,
@@ -418,4 +421,5 @@ class OpenAPIResourceTemplate(ResourceTemplate):
             description=self.description or f"Resource for {self._route.path}",
             mime_type=self.mime_type,
             tags=set(self._route.tags or []),
+            arguments=arguments,
         )
