@@ -51,6 +51,23 @@ class TestIsIPAllowed:
         assert is_ip_allowed("::ffff:127.0.0.1") is False
         assert is_ip_allowed("::ffff:192.168.1.1") is False
 
+    @pytest.mark.parametrize(
+        "address",
+        [
+            pytest.param("64:ff9b::7f00:1", id="loopback"),
+            pytest.param("64:ff9b::0a00:1", id="private"),
+            pytest.param("64:ff9b::a9fe:a9fe", id="link-local"),
+            pytest.param("64:ff9b::6440:1", id="cgnat"),
+        ],
+    )
+    def test_nat64_ipv6_blocked_if_embedded_ipv4_blocked(self, address: str):
+        """NAT64 IPv6 addresses should check the embedded IPv4."""
+        assert is_ip_allowed(address) is False
+
+    def test_nat64_ipv6_allowed_if_embedded_ipv4_allowed(self):
+        """NAT64 IPv6 addresses should stay allowed for public embedded IPv4."""
+        assert is_ip_allowed("64:ff9b::0808:0808") is True
+
 
 class TestValidateURL:
     """Tests for validate_url function."""
@@ -79,6 +96,15 @@ class TestValidateURL:
         with patch(
             "fastmcp.server.auth.ssrf.resolve_hostname",
             return_value=["192.168.1.1"],
+        ):
+            with pytest.raises(SSRFError, match="blocked IP"):
+                await validate_url("https://example.com/path")
+
+    async def test_nat64_private_ip_rejected(self):
+        """URLs resolving to NAT64-wrapped private IPs should be rejected."""
+        with patch(
+            "fastmcp.server.auth.ssrf.resolve_hostname",
+            return_value=["64:ff9b::0a00:1"],
         ):
             with pytest.raises(SSRFError, match="blocked IP"):
                 await validate_url("https://example.com/path")

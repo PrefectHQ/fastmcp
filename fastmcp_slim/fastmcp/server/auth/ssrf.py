@@ -22,6 +22,8 @@ from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
 
+NAT64_WELL_KNOWN_PREFIX = ipaddress.ip_network("64:ff9b::/96")
+
 
 def format_ip_for_url(ip_str: str) -> str:
     """Format IP address for use in URL (bracket IPv6 addresses).
@@ -61,6 +63,7 @@ def is_ip_allowed(ip_str: str) -> bool:
     - Link-local (169.254.x, fe80::) - includes AWS metadata!
     - Reserved, unspecified
     - RFC6598 Carrier-Grade NAT (100.64.0.0/10) - can point to internal networks
+    - NAT64 (64:ff9b::/96) - can point to internal networks
 
     Additionally blocks multicast addresses (not caught by is_global).
 
@@ -91,6 +94,8 @@ def is_ip_allowed(ip_str: str) -> bool:
         if ip.teredo:
             server, client = ip.teredo
             return is_ip_allowed(str(server)) and is_ip_allowed(str(client))
+        if ip in NAT64_WELL_KNOWN_PREFIX:
+            return is_ip_allowed(str(ipaddress.IPv4Address(ip.packed[-4:])))
 
     return True
 

@@ -207,7 +207,7 @@ class TestOAuthProxyInitialization:
         assert proxy._redirect_path == "/auth/callback"
 
     async def test_metadata_advertises_cimd_support(self, jwt_verifier):
-        """OAuth metadata should advertise CIMD support when enabled."""
+        """OAuth metadata should advertise CIMD and public-client auth support."""
         proxy = OAuthProxy(
             upstream_authorization_endpoint="https://auth.example.com/authorize",
             upstream_token_endpoint="https://auth.example.com/token",
@@ -231,6 +231,12 @@ class TestOAuthProxyInitialization:
         assert response.status_code == 200
         metadata = response.json()
         assert metadata.get("client_id_metadata_document_supported") is True
+        assert set(metadata.get("token_endpoint_auth_methods_supported")) == {
+            "client_secret_post",
+            "client_secret_basic",
+            "private_key_jwt",
+            "none",
+        }
 
 
 class TestOptionalClientSecret:

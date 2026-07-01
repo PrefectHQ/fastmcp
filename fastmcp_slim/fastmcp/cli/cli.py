@@ -66,6 +66,9 @@ def _parse_env_var(env_var: str) -> tuple[str, str]:
         logger.error("Invalid environment variable format. Must be KEY=VALUE")
         sys.exit(1)
     key, value = env_var.split("=", 1)
+    if not key.strip():
+        logger.error("Invalid environment variable format. KEY cannot be empty")
+        sys.exit(1)
     return key.strip(), value.strip()
 
 

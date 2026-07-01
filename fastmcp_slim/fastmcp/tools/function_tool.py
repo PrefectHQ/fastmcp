@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import functools
 import inspect
+import logging
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import lru_cache
 from types import MethodType
 from typing import (
     TYPE_CHECKING,
@@ -15,6 +18,7 @@ from typing import (
     Protocol,
     TypeVar,
     cast,
+    get_type_hints,
     overload,
     runtime_checkable,
 )
@@ -22,12 +26,13 @@ from typing import (
 import anyio
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData, Icon, ToolAnnotations
-from pydantic import Field
+from pydantic import Field, TypeAdapter
+from pydantic import ValidationError as PydanticValidationError
 from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp
 from fastmcp.decorators import get_fastmcp_meta, resolve_task_config
-from fastmcp.exceptions import FastMCPDeprecationWarning
+from fastmcp.exceptions import FastMCPDeprecationWarning, ValidationError
 from fastmcp.tools.base import (
     Tool,
     ToolResult,
@@ -52,6 +57,75 @@ logger = get_logger(__name__)
 if TYPE_CHECKING:
     from docket import Docket
     from docket.execution import Execution
+
+
+class _ToolBodyError(Exception):
+    """Marks a ``pydantic.ValidationError`` raised while executing a tool's body.
+
+    Pydantic validates a tool's arguments *before* invoking the body, so a bare
+    ``pydantic.ValidationError`` surfacing from the call adapter is unambiguously
+    an argument-validation failure (a bad call). Errors a tool raises from its
+    own body — e.g. constructing a model from upstream data — are a different
+    class of problem (a server-side bug) that must not be reclassified as a bad
+    call. We wrap the body so those are tagged and can be told apart. See #4128.
+    """
+
+
+@lru_cache(maxsize=5000)
+def _wrap_body_errors(fn: Callable[..., Any]) -> Callable[..., Any]:
+    """Wrap ``fn`` so a ``pydantic.ValidationError`` raised by its body is
+    re-raised as ``_ToolBodyError``.
+
+    The wrapper preserves ``fn``'s signature and annotations so the cached
+    ``TypeAdapter`` validates arguments identically — only body execution is
+    affected. Argument validation happens before the wrapper is called, so it
+    keeps raising a bare ``pydantic.ValidationError``.
+    """
+    if is_coroutine_function(fn):
+
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            try:
+                return await fn(*args, **kwargs)
+            except PydanticValidationError as e:
+                raise _ToolBodyError from e
+    else:
+
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            try:
+                return fn(*args, **kwargs)
+            except PydanticValidationError as e:
+                raise _ToolBodyError from e
+
+    # Mirror the original callable so TypeAdapter builds the identical schema and
+    # binds arguments the same way. Annotations must cover every signature
+    # parameter or pydantic's call-schema generation raises KeyError — so prefer
+    # resolved type hints (handles string/forward refs) but fall back to the
+    # signature's own annotations, which is the only source for callables like
+    # functools.partial that carry no __annotations__.
+    try:
+        resolved_hints = get_type_hints(fn, include_extras=True)
+    except Exception:
+        resolved_hints = {}
+    sig = inspect.signature(fn)
+    annotations: dict[str, Any] = {}
+    for param_name, param in sig.parameters.items():
+        if param_name in resolved_hints:
+            annotations[param_name] = resolved_hints[param_name]
+        elif param.annotation is not inspect.Parameter.empty:
+            annotations[param_name] = param.annotation
+    if "return" in resolved_hints:
+        annotations["return"] = resolved_hints["return"]
+    elif sig.return_annotation is not inspect.Signature.empty:
+        annotations["return"] = sig.return_annotation
+
+    wrapper.__signature__ = sig  # type: ignore[attr-defined]  # ty: ignore[invalid-assignment]
+    wrapper.__annotations__ = annotations
+    wrapper.__name__ = getattr(fn, "__name__", "wrapper")
+    wrapper.__doc__ = getattr(fn, "__doc__", None)
+    wrapper.__module__ = getattr(fn, "__module__", wrapper.__module__)
+    wrapper.__qualname__ = getattr(fn, "__qualname__", wrapper.__qualname__)
+    return wrapper
+
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -87,6 +161,31 @@ class ToolMeta:
     auth: AuthCheck | list[AuthCheck] | None = None
     enabled: bool = True
     run_in_thread: bool = True
+
+
+def _resolve_param_hints(fn: Callable[..., Any]) -> dict[str, Any]:
+    """Resolve a callable's parameter type hints, tolerating partials.
+
+    ``get_type_hints`` rejects ``functools.partial`` objects (and other
+    non-function callables), which the synchronous TypeAdapter path handles
+    natively. For those, resolve hints against the underlying function and keep
+    only the parameters that remain in the partially-bound signature.
+    """
+    try:
+        return get_type_hints(fn, include_extras=True)
+    except TypeError:
+        target = fn
+        while isinstance(target, functools.partial):
+            target = target.func
+        try:
+            resolved = get_type_hints(target, include_extras=True)
+        except TypeError:
+            return {}
+        return {
+            name: resolved[name]
+            for name in inspect.signature(fn).parameters
+            if name in resolved
+        }
 
 
 class FunctionTool(Tool):
@@ -290,58 +389,87 @@ class FunctionTool(Tool):
         wrapper_fn = without_injected_parameters(
             self.fn, run_in_thread=self.run_in_thread
         )
-        type_adapter = get_cached_typeadapter(wrapper_fn)
+        # Tag pydantic errors raised by the body so they can be distinguished
+        # from argument-validation errors (which pydantic raises first). See #4128.
+        exec_fn = _wrap_body_errors(wrapper_fn)
+        type_adapter = get_cached_typeadapter(exec_fn)
+        exec_is_async = is_coroutine_function(wrapper_fn)
 
-        # Apply timeout if configured. Combining timeout with
-        # run_in_thread=False on a sync function is rejected at
-        # registration (see FunctionTool.from_function), so the timeout
-        # path here only needs to handle async and threadpool-sync.
-        if self.timeout is not None:
-            try:
-                with anyio.fail_after(self.timeout):
-                    # Thread pool execution for sync functions, direct await for async
-                    if is_coroutine_function(wrapper_fn):
-                        result = await type_adapter.validate_python(arguments)
-                    else:
-                        # Sync function: run in threadpool to avoid blocking
-                        result = await call_sync_fn_in_threadpool(
-                            type_adapter.validate_python, arguments
+        try:
+            if self.timeout is not None:
+                try:
+                    with anyio.fail_after(self.timeout):
+                        result = await self._execute(
+                            type_adapter, exec_is_async, arguments
                         )
-                        # Handle sync wrappers that return awaitables
-                        if inspect.isawaitable(result):
-                            result = await result
-                    # Materialize generators inside timeout scope so slow
-                    # generators don't run past the configured timeout
-                    result = await self._materialize_generator(result)
-            except TimeoutError:
-                logger.warning(
-                    f"Tool '{self.name}' timed out after {self.timeout}s. "
-                    f"Consider using task=True for long-running operations. "
-                    f"See https://gofastmcp.com/servers/tasks"
-                )
-                raise McpError(
-                    ErrorData(
-                        code=-32000,
-                        message=f"Tool '{self.name}' execution timed out after {self.timeout}s",
+                except TimeoutError:
+                    logger.warning(
+                        f"Tool '{self.name}' timed out after {self.timeout}s. "
+                        f"Consider using task=True for long-running operations. "
+                        f"See https://gofastmcp.com/servers/tasks"
                     )
-                ) from None
-        else:
-            # No timeout: use existing execution path
-            if is_coroutine_function(wrapper_fn):
-                result = await type_adapter.validate_python(arguments)
-            elif self.run_in_thread:
-                result = await call_sync_fn_in_threadpool(
-                    type_adapter.validate_python, arguments
-                )
-                if inspect.isawaitable(result):
-                    result = await result
+                    raise McpError(
+                        ErrorData(
+                            code=-32000,
+                            message=f"Tool '{self.name}' execution timed out after {self.timeout}s",
+                        )
+                    ) from None
             else:
-                result = type_adapter.validate_python(arguments)
-                if inspect.isawaitable(result):
-                    result = await result
-            result = await self._materialize_generator(result)
+                result = await self._execute(type_adapter, exec_is_async, arguments)
+        except PydanticValidationError as e:
+            # Body errors are re-raised as _ToolBodyError, so a bare pydantic
+            # ValidationError here is an argument-validation failure (a bad call).
+            # Convert it to fastmcp's ValidationError so the middleware chain and
+            # downstream error taxonomy (e.g. Sentry filters) can treat it as a
+            # client error rather than a server bug.
+            raise ValidationError(str(e), log_level=logging.WARNING) from e
+        except _ToolBodyError as e:
+            # The tool's own body raised a pydantic ValidationError. Surface the
+            # original so it is treated as a server-side error, hiding the
+            # internal sentinel while preserving the error's own chained cause.
+            original = e.__cause__
+            assert original is not None
+            raise original from original.__cause__
 
         return self.convert_result(result)
+
+    async def _execute(
+        self,
+        type_adapter: TypeAdapter[Any],
+        exec_is_async: bool,
+        arguments: dict[str, Any],
+    ) -> Any:
+        """Validate arguments and execute the tool body.
+
+        Argument validation runs first and raises a bare
+        ``pydantic.ValidationError`` on bad input. Body execution (awaiting the
+        result and materializing generators) is wrapped so any pydantic error it
+        raises is tagged as ``_ToolBodyError``.
+        """
+        # Combining timeout with run_in_thread=False on a sync function is
+        # rejected at registration (see FunctionTool.from_function), so this only
+        # needs to handle async and threadpool-sync under a timeout.
+        if exec_is_async:
+            # Argument validation is synchronous; the body runs on await below.
+            result = type_adapter.validate_python(arguments)
+        elif self.run_in_thread:
+            # Sync function: run in threadpool to avoid blocking the event loop.
+            result = await call_sync_fn_in_threadpool(
+                type_adapter.validate_python, arguments
+            )
+        else:
+            result = type_adapter.validate_python(arguments)
+
+        try:
+            if inspect.isawaitable(result):
+                result = await result
+            # Materialize generators (here, so slow generators are still bound by
+            # any configured timeout scope).
+            return await self._materialize_generator(result)
+        except PydanticValidationError as e:
+            # A pydantic error from awaiting the result or materializing a
+            # generator is body execution, not argument validation.
+            raise _ToolBodyError from e
 
     @staticmethod
     async def _materialize_generator(result: Any) -> Any:
@@ -392,6 +520,45 @@ class FunctionTool(Tool):
         if task_key:
             kwargs["key"] = task_key
         return await docket.add(lookup_key, **kwargs)(**arguments)
+
+    def coerce_task_arguments(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Validate client arguments against their declared parameter types.
+
+        The synchronous ``run()`` path validates arguments through the
+        function's Pydantic TypeAdapter, so a parameter typed as a model
+        arrives as a model instance. The task path hands the raw arguments to
+        Docket, which binds them to the function signature without coercion —
+        so without this a model-typed parameter would reach the function as a
+        raw dict (#4349). ``submit_to_docket`` calls this up front so coerced
+        values are what get queued, and validation errors surface before any
+        task state is created. Coerced values survive the trip to the worker
+        because Docket serializes task arguments with cloudpickle.
+
+        Injected dependency parameters (Context, Depends()) are excluded via
+        the same wrapper used by the synchronous path, so only client-supplied
+        arguments are coerced and Docket's dependency resolution is untouched.
+        """
+        from fastmcp.server.dependencies import without_injected_parameters
+
+        wrapper_fn = without_injected_parameters(
+            self.fn, run_in_thread=self.run_in_thread
+        )
+        hints = _resolve_param_hints(wrapper_fn)
+
+        coerced = dict(arguments)
+        for name, value in arguments.items():
+            annotation = hints.get(name)
+            if annotation is None:
+                continue
+            adapter = get_cached_typeadapter(annotation)
+            try:
+                coerced[name] = adapter.validate_python(value)
+            except PydanticValidationError as e:
+                # Argument coercion failure on the task path is a bad call, just
+                # like the synchronous path — surface it as fastmcp's
+                # ValidationError so it is classified consistently (see #4128).
+                raise ValidationError(str(e), log_level=logging.WARNING) from e
+        return coerced
 
 
 @overload

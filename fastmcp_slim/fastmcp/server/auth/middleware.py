@@ -3,6 +3,9 @@
 This module provides enhanced versions of MCP SDK authentication middleware
 that return more helpful error messages for developers troubleshooting
 authentication issues.
+
+Implements RFC 6750 §3.1 compliance by distinguishing between missing
+authentication (no error attribute) and invalid authentication (with error).
 """
 
 from __future__ import annotations
@@ -12,7 +15,7 @@ import json
 from mcp.server.auth.middleware.bearer_auth import (
     RequireAuthMiddleware as SDKRequireAuthMiddleware,
 )
-from starlette.types import Send
+from starlette.types import Receive, Scope, Send
 
 from fastmcp.utilities.logging import get_logger
 
@@ -25,7 +28,87 @@ class RequireAuthMiddleware(SDKRequireAuthMiddleware):
     Extends the SDK's RequireAuthMiddleware to provide more actionable
     error messages when authentication fails. This helps developers
     understand what went wrong and how to fix it.
+
+    Also implements RFC 6750 §3.1 compliance by distinguishing between
+    missing authentication (initial discovery) and invalid authentication
+    (token validation failure).
     """
+
+    async def __call__(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
+        """Process ASGI scope, distinguishing missing vs invalid auth.
+
+        Per RFC 6750 §3.1:
+        - Missing auth (no Authorization header) → 401 without error attribute
+        - Invalid auth (Authorization header present) → 401 with error attribute
+
+        This ensures OAuth flow initialization works correctly in MCP clients
+        during initial discovery phase.
+
+        Args:
+            scope: ASGI scope
+            receive: ASGI receive callable
+            send: ASGI send callable
+        """
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        # Check if Authorization header is present
+        headers = scope.get("headers", [])
+        has_auth_header = any(
+            header[0].lower() == b"authorization" for header in headers
+        )
+
+        if not has_auth_header:
+            # Per RFC 6750 §3.1: missing auth should not include error attribute
+            await self._send_missing_auth(send)
+            return
+
+        # Authorization header is present - use parent's validation logic
+        # This will check token validity and call _send_auth_error if invalid
+        await super().__call__(scope, receive, send)
+
+    async def _send_missing_auth(self, send: Send) -> None:
+        """Send 401 response for missing authentication (RFC 6750 §3.1 compliant).
+
+        When a request lacks any authentication information, per RFC 6750 §3.1:
+        "If the request lacks any authentication information, the error
+        attribute SHOULD NOT be included."
+
+        This allows MCP clients to properly initiate OAuth flow during
+        initial discovery phase.
+
+        Args:
+            send: ASGI send callable
+        """
+        www_auth_parts = []
+        if self.resource_metadata_url:
+            www_auth_parts.append(f'resource_metadata="{self.resource_metadata_url}"')
+
+        www_authenticate = (
+            ("Bearer " + ", ".join(www_auth_parts)) if www_auth_parts else "Bearer"
+        )
+
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 401,
+                "headers": [
+                    (b"content-length", b"0"),
+                    (b"www-authenticate", www_authenticate.encode()),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": b""})
+
+        logger.debug(
+            "Missing auth: sent 401 without error attribute (RFC 6750 §3.1 compliant)"
+        )
 
     async def _send_auth_error(
         self, send: Send, status_code: int, error: str, description: str
