@@ -106,6 +106,44 @@ class TestBaseTransformBehavior:
         assert call is not None
         assert call.name == "call_tool"
 
+    async def test_synthetic_tools_include_title(self):
+        mcp = _make_server_with_tools()
+        mcp.add_transform(RegexSearchTransform())
+        tools = await mcp.list_tools()
+        titles = {
+            t.name: t.to_mcp_tool().title
+            for t in tools
+            if t.name in {"search_tools", "call_tool"}
+        }
+        assert titles == {
+            "search_tools": "Search Tools",
+            "call_tool": "Call Tool",
+        }
+
+    async def test_synthetic_tools_include_title_bm25(self):
+        mcp = _make_server_with_tools()
+        mcp.add_transform(BM25SearchTransform())
+        tools = await mcp.list_tools()
+        titles = {
+            t.name: t.to_mcp_tool().title
+            for t in tools
+            if t.name in {"search_tools", "call_tool"}
+        }
+        assert titles == {
+            "search_tools": "Search Tools",
+            "call_tool": "Call Tool",
+        }
+
+    async def test_synthetic_tool_title_supports_namespaced_names(self):
+        from fastmcp.server.transforms.search.base import synthetic_tool_title
+
+        assert synthetic_tool_title("ha_search_tools", default="Search Tools") == (
+            "Search Tools"
+        )
+        assert synthetic_tool_title("ha_call_read_tool", default="Call Tool") == (
+            "Call Read Tool"
+        )
+
     async def test_get_tool_passes_through_hidden(self):
         mcp = _make_server_with_tools()
         mcp.add_transform(RegexSearchTransform())

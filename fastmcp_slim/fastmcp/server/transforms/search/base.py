@@ -66,6 +66,26 @@ def serialize_tools_for_output_json(tools: Sequence[Tool]) -> list[dict[str, Any
 
 SearchResultSerializer = Callable[[Sequence[Tool]], Any | Awaitable[Any]]
 
+# Titles for well-known synthetic search/call proxy tool names (with or without
+# namespace prefixes, e.g. ``ha_search_tools``).
+_SYNTHETIC_TOOL_TITLES: dict[str, str] = {
+    "search_tools": "Search Tools",
+    "call_tool": "Call Tool",
+    "call_read_tool": "Call Read Tool",
+    "call_write_tool": "Call Write Tool",
+    "call_delete_tool": "Call Delete Tool",
+}
+
+
+def synthetic_tool_title(name: str, *, default: str) -> str:
+    """Return a human-readable MCP title for a synthetic search-transform tool."""
+    if name in _SYNTHETIC_TOOL_TITLES:
+        return _SYNTHETIC_TOOL_TITLES[name]
+    for suffix, title in _SYNTHETIC_TOOL_TITLES.items():
+        if name.endswith(f"_{suffix}"):
+            return title
+    return default
+
 
 async def _invoke_serializer(
     serializer: SearchResultSerializer, tools: Sequence[Tool]
@@ -241,7 +261,15 @@ class BaseSearchTransform(CatalogTransform):
                 )
             return await ctx.fastmcp.call_tool(name, arguments)
 
-        return Tool.from_function(fn=call_tool, name=self._call_tool_name)
+        return Tool.from_function(
+            fn=call_tool,
+            name=self._call_tool_name,
+            title=synthetic_tool_title(self._call_tool_name, default="Call Tool"),
+            description=(
+                "Call a tool by name with the given arguments. "
+                "Use this to execute tools discovered via search_tools."
+            ),
+        )
 
     # ------------------------------------------------------------------
     # Serialization
