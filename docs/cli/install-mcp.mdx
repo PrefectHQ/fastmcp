@@ -14,7 +14,7 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 ```bash
 fastmcp install claude-desktop server.py
 fastmcp install claude-code server.py --with pandas --with matplotlib
-fastmcp install cursor server.py -e .
+fastmcp install cursor server.py --with-editable .
 ```
 
 <Warning>
@@ -41,14 +41,13 @@ Because MCP clients run servers in isolation, you need to tell the install comma
 
 ```bash
 fastmcp install claude-desktop server.py --with pandas --with "sqlalchemy>=2.0"
-fastmcp install cursor server.py -e . --with-requirements requirements.txt
+fastmcp install cursor server.py --with-editable . --with-requirements requirements.txt
 ```
 
-**`fastmcp.json`** configuration files declare dependencies alongside the server definition. When you install from a config file, dependencies are picked up automatically:
+**`fastmcp.json`** configuration files declare dependencies alongside the server definition. When you install from a config file explicitly, dependencies are picked up automatically:
 
 ```bash
 fastmcp install claude-desktop fastmcp.json
-fastmcp install claude-desktop  # auto-detects fastmcp.json in current directory
 ```
 
 See [Server Configuration](/deployment/server-configuration) for the full config format.
@@ -57,11 +56,11 @@ See [Server Configuration](/deployment/server-configuration) for the full config
 
 | Option | Flag | Description |
 | ------ | ---- | ----------- |
-| Server Name | `--server-name`, `-n` | Custom name for the server |
-| Editable Package | `--with-editable`, `-e` | Install a directory in editable mode |
+| Server Name | `--name`, `-n` | Custom name for the server |
+| Editable Package | `--with-editable` | Install a directory in editable mode |
 | Extra Packages | `--with` | Additional packages (repeatable) |
 | Environment Variables | `--env` | `KEY=VALUE` pairs (repeatable) |
-| Environment File | `--env-file`, `-f` | Load env vars from a `.env` file |
+| Environment File | `--env-file` | Load env vars from a `.env` file |
 | Python | `--python` | Python version (e.g., `3.11`) |
 | Project | `--project` | Run within a uv project directory |
 | Requirements | `--with-requirements` | Install from a requirements file |
@@ -73,12 +72,12 @@ See [Server Configuration](/deployment/server-configuration) for the full config
 # Basic install with auto-detected server instance
 fastmcp install claude-desktop server.py
 
-# Install from fastmcp.json with auto-detection
-fastmcp install claude-desktop
+# Install from fastmcp.json
+fastmcp install claude-desktop fastmcp.json
 
 # Explicit entrypoint with dependencies
 fastmcp install claude-desktop server.py:my_server \
-  --server-name "My Analysis Server" \
+  --name "My Analysis Server" \
   --with pandas
 
 # With environment variables
