@@ -513,7 +513,9 @@ def create_streamable_http_app(
         host_origin_protection: Whether to validate Host and Origin headers
             before requests reach the MCP endpoint.
         allowed_hosts: Additional hostnames that may appear in the Host header.
-        allowed_origins: Additional browser origins that may call the MCP endpoint.
+        allowed_origins: Additional browser origins trusted by the request guard.
+            Configure CORS separately when browser JavaScript must read
+            cross-origin responses.
 
     Returns:
         A Starlette application with StreamableHTTP support
