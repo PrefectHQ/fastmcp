@@ -105,7 +105,7 @@ class TestProxyDCRClient:
         assert client.validate_redirect_uri(AnyUrl("http://localhost:3000"))
         assert client.validate_redirect_uri(AnyUrl("https://app.example.com/callback"))
 
-        # Not allowed by patterns - will fallback to base validation
+        # Not allowed by patterns
         with pytest.raises(InvalidRedirectUriError):
             client.validate_redirect_uri(AnyUrl("http://127.0.0.1:3000"))
         with pytest.raises(InvalidRedirectUriError):
