@@ -116,7 +116,7 @@ auth = RemoteAuthProvider(
     token_verifier=token_verifier,
     authorization_servers=[AnyHttpUrl("https://auth.yourcompany.com")],
     base_url="https://api.yourcompany.com",  # Your server base URL
-    # Optional: restrict allowed client redirect URIs (defaults to all for DCR compatibility)
+    # Optional: restrict allowed client redirect URIs
     allowed_client_redirect_uris=["http://localhost:*", "http://127.0.0.1:*"]
 )
 
@@ -218,7 +218,7 @@ WorkOS's support for Dynamic Client Registration makes it particularly well-suit
 <Note>
 `RemoteAuthProvider` also supports the `allowed_client_redirect_uris` parameter for controlling which redirect URIs are accepted from MCP clients during DCR:
 
-- `None` (default): All redirect URIs allowed (for DCR compatibility)
+- `None` (default): Broad DCR-compatible redirect support, while rejecting unsafe browser schemes such as `javascript:`, `data:`, `file:`, and `vbscript:`
 - Custom list: Specify allowed patterns with wildcard support
 - Empty list `[]`: No redirect URIs allowed
 

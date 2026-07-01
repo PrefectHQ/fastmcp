@@ -361,6 +361,40 @@ class TestIdpCallbackErrorForwarding:
         assert params["error_description"] == ["User denied access"]
         assert params["state"] == [client_state]
 
+    async def test_error_with_unsafe_transaction_redirect_returns_html_error(
+        self, oauth_proxy
+    ):
+        """IdP errors must not redirect to unsafe stored callback URIs."""
+        txn_id = "test-txn-unsafe"
+
+        transaction = OAuthTransaction(
+            txn_id=txn_id,
+            client_id="test-client",
+            client_redirect_uri="javascript:alert(document.cookie)//",
+            client_state="client-state-abc",
+            code_challenge=None,
+            code_challenge_method="S256",
+            scopes=["read"],
+            created_at=time.time(),
+        )
+        await oauth_proxy._transaction_store.put(key=txn_id, value=transaction)
+
+        app = Starlette(routes=oauth_proxy.get_routes())
+        transport = httpx.ASGITransport(app=app)
+
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="https://myserver.com",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get(
+                f"/auth/callback?error=access_denied&state={txn_id}"
+            )
+
+        assert response.status_code == 400
+        assert "location" not in response.headers
+        assert "Invalid redirect URI" in response.text
+
     async def test_error_with_missing_transaction_returns_html_error(self, oauth_proxy):
         """When the IdP returns an error but the transaction is missing or
         expired, the proxy must return a local HTML error page — there is no

@@ -124,7 +124,7 @@ mcp = FastMCP(name="My Server", auth=auth)
 
 <ParamField body="allowed_client_redirect_uris" type="list[str] | None">
   List of allowed redirect URI patterns for MCP clients. Patterns support wildcards (e.g., `"http://localhost:*"`, `"https://*.example.com/*"`).
-  - `None` (default): All redirect URIs allowed (for MCP/DCR compatibility)
+  - `None` (default): Broad MCP/DCR-compatible redirect support, while rejecting unsafe browser schemes such as `javascript:`, `data:`, `file:`, and `vbscript:`
   - Empty list `[]`: No redirect URIs allowed
   - Custom list: Only matching patterns allowed
 

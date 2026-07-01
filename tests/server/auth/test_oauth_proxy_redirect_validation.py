@@ -29,15 +29,14 @@ class MockTokenVerifier(TokenVerifier):
 class TestProxyDCRClient:
     """Test ProxyDCRClient redirect URI validation."""
 
-    def test_default_allows_all(self):
-        """Test that default configuration allows all URIs for DCR compatibility."""
+    def test_default_allows_dcr_compatible_redirects(self):
+        """Default configuration allows ordinary URIs for DCR compatibility."""
         client = ProxyDCRClient(
             client_id="test",
             client_secret="secret",
             redirect_uris=[AnyUrl("http://localhost:3000")],
         )
 
-        # All URIs should be allowed by default for DCR compatibility
         assert client.validate_redirect_uri(AnyUrl("http://localhost:3000")) == AnyUrl(
             "http://localhost:3000"
         )
@@ -53,6 +52,17 @@ class TestProxyDCRClient:
         assert client.validate_redirect_uri(
             AnyUrl("https://claude.ai/api/mcp/auth_callback")
         ) == AnyUrl("https://claude.ai/api/mcp/auth_callback")
+
+    def test_default_rejects_unsafe_registered_redirect_scheme(self):
+        """Stored DCR metadata cannot preserve unsafe browser schemes."""
+        client = ProxyDCRClient(
+            client_id="test",
+            client_secret="secret",
+            redirect_uris=[AnyUrl("javascript:alert(document.cookie)//")],
+        )
+
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(AnyUrl("javascript:alert(document.cookie)//"))
 
     def test_custom_patterns(self):
         """Test custom redirect URI patterns."""
@@ -256,8 +266,8 @@ class TestProxyDCRClient:
 class TestOAuthProxyRedirectValidation:
     """Test OAuth proxy with redirect URI validation."""
 
-    def test_proxy_default_allows_all(self):
-        """Test that OAuth proxy defaults to allowing all URIs for DCR compatibility."""
+    def test_proxy_default_preserves_dcr_compatible_redirects(self):
+        """OAuth proxy defaults to broad DCR-compatible redirect validation."""
         proxy = OAuthProxy(
             upstream_authorization_endpoint="https://auth.example.com/authorize",
             upstream_token_endpoint="https://auth.example.com/token",
@@ -269,7 +279,7 @@ class TestOAuthProxyRedirectValidation:
             client_storage=MemoryStore(),
         )
 
-        # The proxy should store None for default (allow all)
+        # None keeps the broad default, with unsafe schemes blocked by validation.
         assert proxy._allowed_client_redirect_uris is None
 
     def test_proxy_custom_patterns(self):
