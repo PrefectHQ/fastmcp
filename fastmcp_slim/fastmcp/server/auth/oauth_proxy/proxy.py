@@ -48,6 +48,7 @@ from mcp.server.auth.provider import (
     AuthorizationParams,
     AuthorizeError,
     RefreshToken,
+    RegistrationError,
     TokenError,
 )
 from mcp.server.auth.routes import build_metadata, cors_middleware
@@ -91,6 +92,7 @@ from fastmcp.server.auth.oauth_proxy.models import (
     _hash_token,
 )
 from fastmcp.server.auth.oauth_proxy.ui import create_error_html
+from fastmcp.server.auth.redirect_validation import validate_redirect_uri
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 
@@ -300,7 +302,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             service_documentation_url: Optional service documentation URL
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 Patterns support wildcards (e.g., "http://localhost:*", "https://*.example.com/*").
-                If None (default), all redirect URIs are allowed (for DCR compatibility).
+                If None (default), ordinary redirect URIs are allowed for DCR compatibility,
+                while unsafe browser schemes are rejected.
                 If empty list, no redirect URIs are allowed.
                 These are for MCP clients performing loopback redirects, NOT for the upstream OAuth app.
             valid_scopes: List of all the possible valid scopes for a client.
@@ -837,6 +840,17 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Create a ProxyDCRClient with configured redirect URI validation
         if client_info.client_id is None:
             raise ValueError("client_id is required for client registration")
+        redirect_uris = client_info.redirect_uris or [AnyUrl("http://localhost")]
+        for redirect_uri in redirect_uris:
+            if not validate_redirect_uri(
+                redirect_uri=redirect_uri,
+                allowed_patterns=self._allowed_client_redirect_uris,
+            ):
+                raise RegistrationError(
+                    "invalid_redirect_uri",
+                    f"Redirect URI '{redirect_uri}' is not allowed.",
+                )
+
         # We use token_endpoint_auth_method="none" because the proxy handles
         # all upstream authentication. The client_secret must also be None
         # because the SDK requires secrets to be provided if they're set,
@@ -844,7 +858,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         proxy_client: ProxyDCRClient = ProxyDCRClient(
             client_id=client_info.client_id,
             client_secret=None,
-            redirect_uris=client_info.redirect_uris or [AnyUrl("http://localhost")],
+            redirect_uris=redirect_uris,
             grant_types=client_info.grant_types
             or ["authorization_code", "refresh_token"],
             scope=client_info.scope or self._default_scope_str,
@@ -2158,13 +2172,25 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 )
                 if transaction_model:
                     # Forward the error to the client's redirect_uri (RFC 6749 §4.1.2.1)
+                    client_redirect_uri = transaction_model.client_redirect_uri
+                    if not self._validate_client_redirect_uri(client_redirect_uri):
+                        logger.warning(
+                            "Blocked IdP callback error redirect to disallowed URI "
+                            "for transaction %s",
+                            txn_id,
+                        )
+                        html_content = create_error_html(
+                            error_title="OAuth Error",
+                            error_message="Invalid redirect URI",
+                        )
+                        return HTMLResponse(content=html_content, status_code=400)
+
                     error_params: dict[str, str] = {
                         "error": error,
                         "state": transaction_model.client_state,
                     }
                     if error_description:
                         error_params["error_description"] = error_description
-                    client_redirect_uri = transaction_model.client_redirect_uri
                     separator = "&" if "?" in client_redirect_uri else "?"
                     return RedirectResponse(
                         url=f"{client_redirect_uri}{separator}{urlencode(error_params)}",
@@ -2184,6 +2210,20 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     error_message="Invalid or expired authorization transaction. Please try authenticating again.",
                 )
                 return HTMLResponse(content=html_content, status_code=400)
+
+            if not self._validate_client_redirect_uri(
+                transaction_model.client_redirect_uri
+            ):
+                logger.warning(
+                    "Blocked IdP callback redirect to disallowed URI for transaction %s",
+                    txn_id,
+                )
+                html_content = create_error_html(
+                    error_title="OAuth Error",
+                    error_message="Invalid redirect URI",
+                )
+                return HTMLResponse(content=html_content, status_code=400)
+
             # Verify consent binding cookie to prevent confused deputy attacks.
             # When consent is enabled, the browser that approved consent receives
             # a signed cookie. A different browser (e.g., a victim lured to the

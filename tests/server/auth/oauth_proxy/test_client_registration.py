@@ -2,6 +2,7 @@
 
 import httpx
 import pytest
+from mcp.server.auth.provider import RegistrationError
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 from starlette.applications import Starlette
@@ -28,6 +29,33 @@ class TestOAuthProxyClientRegistration:
         assert stored.client_id == "original-client"
         # Proxy uses token_endpoint_auth_method="none", so client_secret is not stored
         assert stored.client_secret is None
+
+    async def test_register_client_allows_external_https_by_default(self, oauth_proxy):
+        """Default DCR registration accepts ordinary external HTTPS callbacks."""
+        client_info = OAuthClientInformationFull(
+            client_id="https-client",
+            client_secret="original-secret",
+            redirect_uris=[AnyUrl("https://client.example.com/callback")],
+        )
+
+        await oauth_proxy.register_client(client_info)
+
+        stored = await oauth_proxy.get_client("https-client")
+        assert stored is not None
+        assert stored.redirect_uris == [AnyUrl("https://client.example.com/callback")]
+
+    async def test_register_client_rejects_unsafe_redirect_scheme_by_default(
+        self, oauth_proxy
+    ):
+        """Default DCR registration rejects active browser redirect schemes."""
+        client_info = OAuthClientInformationFull(
+            client_id="javascript-client",
+            client_secret="original-secret",
+            redirect_uris=[AnyUrl("javascript:alert(document.cookie)//")],
+        )
+
+        with pytest.raises(RegistrationError, match="invalid_redirect_uri"):
+            await oauth_proxy.register_client(client_info)
 
     async def test_get_registered_client(self, oauth_proxy):
         """Test retrieving a registered client."""
@@ -126,12 +154,19 @@ class TestUpstreamClientIdFallback:
         assert client is None
 
     async def test_redirect_uri_allowed_when_no_pattern_restriction(self, oauth_proxy):
-        """Any redirect URI is accepted when allowed_client_redirect_uris is None."""
+        """Ordinary redirect URIs are accepted when allowed_client_redirect_uris is None."""
         assert oauth_proxy._allowed_client_redirect_uris is None
         client = await oauth_proxy.get_client("test-client-id")
         assert client is not None
         uri = client.validate_redirect_uri(AnyUrl("https://claude.ai/oauth/callback"))
         assert str(uri) == "https://claude.ai/oauth/callback"
+        uri = client.validate_redirect_uri(
+            AnyUrl("cursor://anysphere.cursor-mcp/oauth/callback")
+        )
+        assert str(uri) == "cursor://anysphere.cursor-mcp/oauth/callback"
+
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(AnyUrl("javascript:alert(document.cookie)//"))
 
     async def test_redirect_uri_validated_against_patterns(self, oauth_proxy):
         """Redirect URI validation honours allowed_client_redirect_uris when set."""

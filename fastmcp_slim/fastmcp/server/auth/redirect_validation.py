@@ -9,6 +9,15 @@ from urllib.parse import unquote, urlparse
 
 from pydantic import AnyUrl
 
+UNSAFE_REDIRECT_URI_SCHEMES = frozenset(
+    {
+        "javascript",
+        "data",
+        "file",
+        "vbscript",
+    }
+)
+
 
 def _parse_host_port(netloc: str) -> tuple[str | None, str | None]:
     """Parse host and port from netloc, handling wildcards.
@@ -144,6 +153,15 @@ def _match_path(uri_path: str, pattern_path: str) -> bool:
     return fnmatch.fnmatch(uri_path, pattern_path)
 
 
+def _is_unsafe_redirect_uri(uri: str) -> bool:
+    try:
+        parsed = urlparse(uri)
+    except ValueError:
+        return True
+
+    return parsed.scheme.lower() in UNSAFE_REDIRECT_URI_SCHEMES
+
+
 def matches_allowed_pattern(uri: str, pattern: str) -> bool:
     """Securely check if a URI matches an allowed pattern with wildcard support.
 
@@ -170,6 +188,9 @@ def matches_allowed_pattern(uri: str, pattern: str) -> bool:
         uri_parsed = urlparse(uri)
         pattern_parsed = urlparse(pattern)
     except ValueError:
+        return False
+
+    if uri_parsed.scheme.lower() in UNSAFE_REDIRECT_URI_SCHEMES:
         return False
 
     # SECURITY: Reject URIs with userinfo (user:pass@host)
@@ -216,7 +237,8 @@ def validate_redirect_uri(
 
     Args:
         redirect_uri: The redirect URI to validate
-        allowed_patterns: List of allowed patterns. If None, all URIs are allowed (for DCR compatibility).
+        allowed_patterns: List of allowed patterns. If None, ordinary URIs are allowed
+                         for DCR compatibility, while unsafe browser schemes are rejected.
                          If empty list, no URIs are allowed.
                          To restrict to localhost only, explicitly pass DEFAULT_LOCALHOST_PATTERNS.
 
@@ -228,8 +250,11 @@ def validate_redirect_uri(
 
     uri_str = str(redirect_uri)
 
-    # If no patterns specified, allow all for DCR compatibility
-    # (clients need to dynamically register with their own redirect URIs)
+    if _is_unsafe_redirect_uri(uri_str):
+        return False
+
+    # If no patterns specified, preserve broad DCR compatibility after the
+    # unsafe browser-scheme check above.
     if allowed_patterns is None:
         return True
 

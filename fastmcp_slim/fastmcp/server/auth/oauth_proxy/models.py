@@ -189,14 +189,9 @@ class ProxyDCRClient(OAuthClientInformationFull):
                         f"Invalid CIMD redirect_uri: {e}"
                     ) from e
 
-                # Respect proxy-level redirect URI restrictions even when the
-                # client omits redirect_uri and we fall back to CIMD defaults.
-                if (
-                    self.allowed_redirect_uri_patterns is not None
-                    and not validate_redirect_uri(
-                        redirect_uri=resolved,
-                        allowed_patterns=self.allowed_redirect_uri_patterns,
-                    )
+                if not validate_redirect_uri(
+                    redirect_uri=resolved,
+                    allowed_patterns=self.allowed_redirect_uri_patterns,
                 ):
                     raise InvalidRedirectUriError(
                         f"Redirect URI '{resolved}' does not match allowed patterns."
@@ -209,6 +204,11 @@ class ProxyDCRClient(OAuthClientInformationFull):
             )
 
         if redirect_uri is not None:
+            if not validate_redirect_uri(redirect_uri, None):
+                raise InvalidRedirectUriError(
+                    f"Redirect URI '{redirect_uri}' uses an unsafe scheme."
+                )
+
             cimd_redirect_uris = (
                 self.cimd_document.redirect_uris if self.cimd_document else None
             )
@@ -243,7 +243,7 @@ class ProxyDCRClient(OAuthClientInformationFull):
             if pattern_matches:
                 return redirect_uri
 
-            # Patterns configured but didn't match (None means "allow all"; [] means "block all")
+            # Patterns configured but didn't match ([] means "block all").
             if self.allowed_redirect_uri_patterns is not None:
                 raise InvalidRedirectUriError(
                     f"Redirect URI '{redirect_uri}' does not match allowed patterns."
@@ -253,9 +253,8 @@ class ProxyDCRClient(OAuthClientInformationFull):
         # (handles the single-registered-URI shortcut for DCR clients), then validate
         # the resolved URI against patterns so [] and other restrictions are enforced.
         resolved = super().validate_redirect_uri(redirect_uri)
-        if self.allowed_redirect_uri_patterns is not None:
-            if not validate_redirect_uri(resolved, self.allowed_redirect_uri_patterns):
-                raise InvalidRedirectUriError(
-                    f"Redirect URI '{resolved}' does not match allowed patterns."
-                )
+        if not validate_redirect_uri(resolved, self.allowed_redirect_uri_patterns):
+            raise InvalidRedirectUriError(
+                f"Redirect URI '{resolved}' does not match allowed patterns."
+            )
         return resolved
