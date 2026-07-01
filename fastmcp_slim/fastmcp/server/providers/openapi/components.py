@@ -353,6 +353,13 @@ class OpenAPIResource(Resource):
             raise ValueError(f"Request error ({type(e).__name__}): {e!s}") from e
 
 
+def _path_argument_name(route: HTTPRoute, parameter_name: str) -> str:
+    for argument_name, mapping in route.parameter_map.items():
+        if mapping["location"] == "path" and mapping["openapi_name"] == parameter_name:
+            return argument_name
+    return parameter_name
+
+
 class OpenAPIResourceTemplate(ResourceTemplate):
     """Resource template implementation for OpenAPI endpoints."""
 
@@ -397,12 +404,13 @@ class OpenAPIResourceTemplate(ResourceTemplate):
         for parameter in self._route.parameters:
             if parameter.location != "path":
                 continue
+            argument_name = _path_argument_name(self._route, parameter.name)
             if parameter.name in params:
-                arguments[parameter.name] = params[parameter.name]
+                arguments[argument_name] = params[parameter.name]
                 continue
             normalized_name = parameter.name.replace("-", "_")
             if normalized_name in params:
-                arguments[parameter.name] = params[normalized_name]
+                arguments[argument_name] = params[normalized_name]
 
         return OpenAPIResource(
             client=self._client,
