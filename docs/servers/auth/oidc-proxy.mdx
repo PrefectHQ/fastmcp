@@ -124,11 +124,11 @@ mcp = FastMCP(name="My Server", auth=auth)
 
 <ParamField body="allowed_client_redirect_uris" type="list[str] | None">
   List of allowed redirect URI patterns for MCP clients. Patterns support wildcards (e.g., `"http://localhost:*"`, `"https://*.example.com/*"`).
-  - `None` (default): All redirect URIs allowed (for MCP/DCR compatibility)
+  - `None` (default): DCR clients use registered redirect URIs, with loopback ports allowed to vary for MCP compatibility
   - Empty list `[]`: No redirect URIs allowed
   - Custom list: Only matching patterns allowed
 
-These patterns apply to MCP client loopback redirects, NOT the upstream OAuth app redirect URI.
+These patterns apply to MCP client loopback redirects. Configure the upstream OAuth app redirect URI separately with `redirect_path`.
 
 </ParamField>
 

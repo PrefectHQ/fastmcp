@@ -47,6 +47,49 @@ class TestOAuthProxyClientRegistration:
         client = await oauth_proxy.get_client("unknown-client")
         assert client is None
 
+    async def test_dcr_client_rejects_unregistered_redirect_uri(self, oauth_proxy):
+        """DCR clients honor their registered redirect_uris by default."""
+        client_info = OAuthClientInformationFull(
+            client_id="original-client",
+            client_secret="original-secret",
+            redirect_uris=[AnyUrl("http://localhost:6274/oauth/callback")],
+        )
+
+        await oauth_proxy.register_client(client_info)
+
+        retrieved = await oauth_proxy.get_client("original-client")
+        assert retrieved is not None
+
+        with pytest.raises(InvalidRedirectUriError):
+            retrieved.validate_redirect_uri(AnyUrl("http://evil.com/anything"))
+        with pytest.raises(InvalidRedirectUriError):
+            retrieved.validate_redirect_uri(AnyUrl("http://localhost:6274/other"))
+
+        uri = retrieved.validate_redirect_uri(
+            AnyUrl("http://localhost:51353/oauth/callback")
+        )
+        assert str(uri) == "http://localhost:51353/oauth/callback"
+
+    async def test_dcr_client_accepts_registered_external_redirect_uri(
+        self, oauth_proxy
+    ):
+        """Open DCR still accepts arbitrary redirect URIs that clients register."""
+        client_info = OAuthClientInformationFull(
+            client_id="external-client",
+            client_secret="external-secret",
+            redirect_uris=[AnyUrl("https://client.example.com/oauth/callback")],
+        )
+
+        await oauth_proxy.register_client(client_info)
+
+        retrieved = await oauth_proxy.get_client("external-client")
+        assert retrieved is not None
+
+        uri = retrieved.validate_redirect_uri(
+            AnyUrl("https://client.example.com/oauth/callback")
+        )
+        assert str(uri) == "https://client.example.com/oauth/callback"
+
     async def test_enforcing_allowed_redirect_uris(self, oauth_proxy):
         """Test enforcing allowed redirect uris configuration."""
 

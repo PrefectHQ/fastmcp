@@ -29,26 +29,61 @@ class MockTokenVerifier(TokenVerifier):
 class TestProxyDCRClient:
     """Test ProxyDCRClient redirect URI validation."""
 
-    def test_default_allows_all(self):
-        """Test that default configuration allows all URIs for DCR compatibility."""
+    def test_default_uses_registered_redirect_uris_with_loopback_port_flexibility(self):
+        """Default DCR clients allow registered loopback callbacks to vary ports."""
         client = ProxyDCRClient(
             client_id="test",
             client_secret="secret",
-            redirect_uris=[AnyUrl("http://localhost:3000")],
+            redirect_uris=[AnyUrl("http://localhost:3000/callback")],
         )
 
-        # All URIs should be allowed by default for DCR compatibility
-        assert client.validate_redirect_uri(AnyUrl("http://localhost:3000")) == AnyUrl(
-            "http://localhost:3000"
+        assert client.validate_redirect_uri(
+            AnyUrl("http://localhost:3000/callback")
+        ) == AnyUrl("http://localhost:3000/callback")
+        assert client.validate_redirect_uri(
+            AnyUrl("http://localhost:8080/callback")
+        ) == AnyUrl("http://localhost:8080/callback")
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(AnyUrl("http://localhost:8080/other"))
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(AnyUrl("http://127.0.0.1:3000/callback"))
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(AnyUrl("http://example.com/callback"))
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(
+                AnyUrl("https://claude.ai/api/mcp/auth_callback")
+            )
+
+    def test_default_uses_exact_registered_external_redirect_uri(self):
+        """Default DCR clients require exact matches for non-loopback callbacks."""
+        client = ProxyDCRClient(
+            client_id="test",
+            client_secret="secret",
+            redirect_uris=[AnyUrl("https://client.example.com/oauth/callback")],
         )
+
+        assert client.validate_redirect_uri(
+            AnyUrl("https://client.example.com/oauth/callback")
+        ) == AnyUrl("https://client.example.com/oauth/callback")
+
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(
+                AnyUrl("https://client.example.com:8443/oauth/callback")
+            )
+        with pytest.raises(InvalidRedirectUriError):
+            client.validate_redirect_uri(AnyUrl("https://evil.example.com/callback"))
+
+    def test_synthetic_client_can_allow_unregistered_redirect_uris(self):
+        """Synthetic clients can opt in to broad redirect URI compatibility."""
+        client = ProxyDCRClient(
+            client_id="test",
+            client_secret="secret",
+            redirect_uris=[AnyUrl("http://localhost")],
+            allow_unregistered_redirect_uris=True,
+        )
+
         assert client.validate_redirect_uri(AnyUrl("http://localhost:8080")) == AnyUrl(
             "http://localhost:8080"
-        )
-        assert client.validate_redirect_uri(AnyUrl("http://127.0.0.1:3000")) == AnyUrl(
-            "http://127.0.0.1:3000"
-        )
-        assert client.validate_redirect_uri(AnyUrl("http://example.com")) == AnyUrl(
-            "http://example.com"
         )
         assert client.validate_redirect_uri(
             AnyUrl("https://claude.ai/api/mcp/auth_callback")
@@ -70,7 +105,7 @@ class TestProxyDCRClient:
         assert client.validate_redirect_uri(AnyUrl("http://localhost:3000"))
         assert client.validate_redirect_uri(AnyUrl("https://app.example.com/callback"))
 
-        # Not allowed by patterns - will fallback to base validation
+        # Not allowed by patterns
         with pytest.raises(InvalidRedirectUriError):
             client.validate_redirect_uri(AnyUrl("http://127.0.0.1:3000"))
         with pytest.raises(InvalidRedirectUriError):
@@ -256,8 +291,8 @@ class TestProxyDCRClient:
 class TestOAuthProxyRedirectValidation:
     """Test OAuth proxy with redirect URI validation."""
 
-    def test_proxy_default_allows_all(self):
-        """Test that OAuth proxy defaults to allowing all URIs for DCR compatibility."""
+    def test_proxy_default_has_no_server_redirect_pattern_restriction(self):
+        """OAuth proxy defaults to no server-level redirect URI pattern restriction."""
         proxy = OAuthProxy(
             upstream_authorization_endpoint="https://auth.example.com/authorize",
             upstream_token_endpoint="https://auth.example.com/token",
@@ -269,7 +304,7 @@ class TestOAuthProxyRedirectValidation:
             client_storage=MemoryStore(),
         )
 
-        # The proxy should store None for default (allow all)
+        # The proxy stores None when no server-level pattern restriction is configured.
         assert proxy._allowed_client_redirect_uris is None
 
     def test_proxy_custom_patterns(self):
