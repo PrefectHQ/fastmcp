@@ -644,6 +644,78 @@ class TestCachingWithImportedServerPrefixes:
             assert tracking_calculator.add_calls == 1
 
 
+class TestCachingPreservesIcons:
+    """Icons must survive the reconstruction that caching performs.
+
+    ResponseCachingMiddleware normalizes each listed component back to its base
+    type before caching. That reconstruction dropped the `icons` field, so any
+    server that set tool/resource/prompt icons lost them from the client-facing
+    catalog as soon as list caching was enabled, on both the cache-miss and the
+    cache-hit response.
+    """
+
+    TOOL_ICON = mcp.types.Icon(src="https://example.com/tool.png")
+    RESOURCE_ICON = mcp.types.Icon(src="https://example.com/resource.png")
+    PROMPT_ICON = mcp.types.Icon(src="https://example.com/prompt.png")
+
+    @pytest.fixture
+    async def icon_server(self):
+        """A server whose components declare icons, behind list caching."""
+        mcp_server = FastMCP("IconServer")
+        mcp_server.add_middleware(ResponseCachingMiddleware())
+
+        @mcp_server.tool(icons=[self.TOOL_ICON])
+        def greet() -> str:
+            return "hello"
+
+        @mcp_server.resource("resource://info", icons=[self.RESOURCE_ICON])
+        def info() -> str:
+            return "info"
+
+        @mcp_server.prompt(icons=[self.PROMPT_ICON])
+        def summarize() -> str:
+            return "summarize"
+
+        return mcp_server
+
+    async def test_tool_icons_preserved_after_cache_hit(self, icon_server: FastMCP):
+        async with Client(icon_server) as client:
+            tools_first = await client.list_tools()
+            tools_cached = await client.list_tools()
+
+            tool_first = next(t for t in tools_first if t.name == "greet")
+            tool_cached = next(t for t in tools_cached if t.name == "greet")
+
+            assert tool_first.icons == [self.TOOL_ICON]
+            assert tool_cached.icons == [self.TOOL_ICON]
+
+    async def test_resource_icons_preserved_after_cache_hit(self, icon_server: FastMCP):
+        async with Client(icon_server) as client:
+            resources_first = await client.list_resources()
+            resources_cached = await client.list_resources()
+
+            resource_first = next(
+                r for r in resources_first if str(r.uri) == "resource://info"
+            )
+            resource_cached = next(
+                r for r in resources_cached if str(r.uri) == "resource://info"
+            )
+
+            assert resource_first.icons == [self.RESOURCE_ICON]
+            assert resource_cached.icons == [self.RESOURCE_ICON]
+
+    async def test_prompt_icons_preserved_after_cache_hit(self, icon_server: FastMCP):
+        async with Client(icon_server) as client:
+            prompts_first = await client.list_prompts()
+            prompts_cached = await client.list_prompts()
+
+            prompt_first = next(p for p in prompts_first if p.name == "summarize")
+            prompt_cached = next(p for p in prompts_cached if p.name == "summarize")
+
+            assert prompt_first.icons == [self.PROMPT_ICON]
+            assert prompt_cached.icons == [self.PROMPT_ICON]
+
+
 class TestCacheKeyGeneration:
     def test_call_tool_key_is_hashed_and_does_not_include_raw_input(self):
         msg = mcp.types.CallToolRequestParams(
