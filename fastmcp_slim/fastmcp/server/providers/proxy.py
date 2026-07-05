@@ -20,7 +20,7 @@ from mcp import ServerSession
 from mcp.client.session import ClientSession
 from mcp.server.lowlevel.server import request_ctx
 from mcp.shared.context import LifespanContextT, RequestContext
-from mcp.shared.exceptions import McpError
+from mcp.shared.exceptions import MCPError
 from mcp_types import (
     METHOD_NOT_FOUND,
     BlobResourceContents,
@@ -66,12 +66,10 @@ logger = get_logger(__name__)
 ClientFactoryT = Callable[[], Client] | Callable[[], Awaitable[Client]]
 
 
-def _proxy_upstream_error(error: Exception) -> McpError:
-    return McpError(
-        mcp_types.ErrorData(
-            code=mcp_types.INTERNAL_ERROR,
-            message=str(error),
-        )
+def _proxy_upstream_error(error: Exception) -> MCPError:
+    return MCPError(
+        code=mcp_types.INTERNAL_ERROR,
+        message=str(error),
     )
 
 
@@ -98,7 +96,7 @@ class ProxyInitializeMiddleware(Middleware):
                     )
             async with client:
                 await client.initialize()
-        except McpError:
+        except MCPError:
             raise
         except (
             RuntimeError,
@@ -635,7 +633,7 @@ class ProxyProvider(Provider):
                 tools = [
                     ProxyTool.from_mcp_tool(self.client_factory, t) for t in mcp_tools
                 ]
-        except McpError as e:
+        except MCPError as e:
             if e.error.code == METHOD_NOT_FOUND:
                 tools = []
             else:
@@ -672,7 +670,7 @@ class ProxyProvider(Provider):
                     ProxyResource.from_mcp_resource(self.client_factory, r)
                     for r in mcp_resources
                 ]
-        except McpError as e:
+        except MCPError as e:
             if e.error.code == METHOD_NOT_FOUND:
                 resources = []
             else:
@@ -709,7 +707,7 @@ class ProxyProvider(Provider):
                     ProxyTemplate.from_mcp_template(self.client_factory, t)
                     for t in mcp_templates
                 ]
-        except McpError as e:
+        except MCPError as e:
             if e.error.code == METHOD_NOT_FOUND:
                 templates = []
             else:
@@ -746,7 +744,7 @@ class ProxyProvider(Provider):
                     ProxyPrompt.from_mcp_prompt(self.client_factory, p)
                     for p in mcp_prompts
                 ]
-        except McpError as e:
+        except MCPError as e:
             if e.error.code == METHOD_NOT_FOUND:
                 prompts = []
             else:

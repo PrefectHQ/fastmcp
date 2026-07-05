@@ -86,7 +86,7 @@ async def test_resource_template_with_task(resource_server):
 async def test_forbidden_mode_resource_rejects_task_calls(resource_server):
     """Resources with task=False (mode=forbidden) reject task-augmented calls."""
     import pytest
-    from mcp.shared.exceptions import McpError
+    from mcp.shared.exceptions import MCPError
     from mcp_types import METHOD_NOT_FOUND
 
     @resource_server.resource(
@@ -96,8 +96,8 @@ async def test_forbidden_mode_resource_rejects_task_calls(resource_server):
         return "Sync content"
 
     async with Client(resource_server) as client:
-        # Calling with task=True when task=False should raise McpError
-        with pytest.raises(McpError) as exc_info:
+        # Calling with task=True when task=False should raise MCPError
+        with pytest.raises(MCPError) as exc_info:
             await client.read_resource("file://sync.txt", task=True)
 
         # New behavior: mode="forbidden" returns METHOD_NOT_FOUND error

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import mcp_types
-from mcp import McpError
+from mcp import MCPError
 
 if TYPE_CHECKING:
     from fastmcp.client.client import Client
@@ -43,7 +43,7 @@ class ClientTaskManagementMixin:
 
         Raises:
             RuntimeError: If client not connected
-            McpError: If the request results in a TimeoutError | JSONRPCError
+            MCPError: If the request results in a TimeoutError | JSONRPCError
         """
         request = GetTaskRequest(params=GetTaskRequestParams(taskId=task_id))
         return await self._await_with_session_monitoring(
@@ -67,7 +67,7 @@ class ClientTaskManagementMixin:
 
         Raises:
             RuntimeError: If client not connected, task not found, or task failed
-            McpError: If the request results in a TimeoutError | JSONRPCError
+            MCPError: If the request results in a TimeoutError | JSONRPCError
         """
         request = GetTaskPayloadRequest(
             params=GetTaskPayloadRequestParams(taskId=task_id)
@@ -104,7 +104,7 @@ class ClientTaskManagementMixin:
 
         Raises:
             RuntimeError: If client not connected
-            McpError: If the request results in a TimeoutError | JSONRPCError
+            MCPError: If the request results in a TimeoutError | JSONRPCError
         """
         # Send protocol request
         params = PaginatedRequestParams(cursor=cursor, limit=limit)  # type: ignore[call-arg]  # Optional field in MCP SDK  # ty:ignore[unknown-argument]
@@ -126,7 +126,7 @@ class ClientTaskManagementMixin:
             try:
                 status = await self.get_task_status(task_id)
                 tasks.append(status.model_dump(by_alias=True))
-            except McpError:
+            except MCPError:
                 # Task may have expired or been deleted, skip it
                 continue
 
@@ -146,7 +146,7 @@ class ClientTaskManagementMixin:
 
         Raises:
             RuntimeError: If task doesn't exist
-            McpError: If the request results in a TimeoutError | JSONRPCError
+            MCPError: If the request results in a TimeoutError | JSONRPCError
         """
         request = CancelTaskRequest(params=CancelTaskRequestParams(taskId=task_id))
         return await self._await_with_session_monitoring(

@@ -11,8 +11,8 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Literal
 
 import mcp_types
-from mcp.shared.exceptions import McpError
-from mcp_types import INTERNAL_ERROR, ErrorData
+from mcp.shared.exceptions import MCPError
+from mcp_types import INTERNAL_ERROR
 
 from fastmcp.server.dependencies import (
     _current_docket,
@@ -95,11 +95,9 @@ async def submit_to_docket(
     # mounted children (whose parent server owns the Docket instance).
     docket = ctx.fastmcp._docket or _current_docket.get()
     if docket is None:
-        raise McpError(
-            ErrorData(
-                code=INTERNAL_ERROR,
-                message="Background tasks require a running FastMCP server context",
-            )
+        raise MCPError(
+            code=INTERNAL_ERROR,
+            message="Background tasks require a running FastMCP server context",
         )
 
     # Register the current server so background workers resolve

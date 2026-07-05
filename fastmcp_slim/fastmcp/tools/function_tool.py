@@ -24,8 +24,8 @@ from typing import (
 )
 
 import anyio
-from mcp.shared.exceptions import McpError
-from mcp_types import ErrorData, Icon, ToolAnnotations
+from mcp.shared.exceptions import MCPError
+from mcp_types import Icon, ToolAnnotations
 from pydantic import Field, TypeAdapter
 from pydantic import ValidationError as PydanticValidationError
 from pydantic.json_schema import SkipJsonSchema
@@ -408,11 +408,9 @@ class FunctionTool(Tool):
                         f"Consider using task=True for long-running operations. "
                         f"See https://gofastmcp.com/servers/tasks"
                     )
-                    raise McpError(
-                        ErrorData(
-                            code=-32000,
-                            message=f"Tool '{self.name}' execution timed out after {self.timeout}s",
-                        )
+                    raise MCPError(
+                        code=-32000,
+                        message=f"Tool '{self.name}' execution timed out after {self.timeout}s",
                     ) from None
             else:
                 result = await self._execute(type_adapter, exec_is_async, arguments)

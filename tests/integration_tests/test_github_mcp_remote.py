@@ -2,7 +2,7 @@ import json
 import os
 
 import pytest
-from mcp import McpError
+from mcp import MCPError
 from mcp_types import Resource, TextContent, Tool
 
 from fastmcp import Client
@@ -96,7 +96,7 @@ class TestGithubMCPRemote:
         """Test calling a non-existing tool"""
         async with streamable_http_client:
             assert streamable_http_client.is_connected()
-            with pytest.raises(McpError, match=r"unknown tool|tool not found"):
+            with pytest.raises(MCPError, match=r"unknown tool|tool not found"):
                 await streamable_http_client.call_tool("foo")
 
     async def test_call_tool_list_commits(

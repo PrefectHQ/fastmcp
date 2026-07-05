@@ -47,7 +47,7 @@ class ClientPromptsMixin:
 
         Raises:
             RuntimeError: If called while the client is not connected.
-            McpError: If the request results in a TimeoutError | JSONRPCError
+            MCPError: If the request results in a TimeoutError | JSONRPCError
         """
         with client_span(
             "prompts/list",
@@ -80,7 +80,7 @@ class ClientPromptsMixin:
 
         Raises:
             RuntimeError: If the page limit is reached before pagination completes.
-            McpError: If the request results in a TimeoutError | JSONRPCError
+            MCPError: If the request results in a TimeoutError | JSONRPCError
         """
         all_prompts: list[mcp_types.Prompt] = []
         cursor: str | None = None
@@ -129,7 +129,7 @@ class ClientPromptsMixin:
 
         Raises:
             RuntimeError: If called while the client is not connected.
-            McpError: If the request results in a TimeoutError | JSONRPCError
+            MCPError: If the request results in a TimeoutError | JSONRPCError
         """
         with client_span(
             f"prompts/get {name}",
@@ -232,7 +232,7 @@ class ClientPromptsMixin:
 
         Raises:
             RuntimeError: If called while the client is not connected.
-            McpError: If the request results in a TimeoutError | JSONRPCError
+            MCPError: If the request results in a TimeoutError | JSONRPCError
         """
         # Merge version into request-level meta (not arguments)
         request_meta = dict(meta) if meta else {}

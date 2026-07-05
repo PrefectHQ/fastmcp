@@ -8,8 +8,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Literal
 
 import mcp_types
-from mcp.shared.exceptions import McpError
-from mcp_types import METHOD_NOT_FOUND, ErrorData
+from mcp.shared.exceptions import MCPError
+from mcp_types import METHOD_NOT_FOUND
 
 from fastmcp.server.tasks.config import TaskMeta
 from fastmcp.server.tasks.handlers import submit_to_docket
@@ -41,7 +41,7 @@ async def check_background_task(
         CreateTaskResult if submitted to docket, None for sync execution
 
     Raises:
-        McpError: If mode="required" but no task metadata, or mode="forbidden"
+        MCPError: If mode="required" but no task metadata, or mode="forbidden"
                   but task metadata is present
     """
     task_config = component.task_config
@@ -51,20 +51,16 @@ async def check_background_task(
 
     # Enforce mode="required" - must have task metadata
     if task_config.mode == "required" and not task_meta:
-        raise McpError(
-            ErrorData(
-                code=METHOD_NOT_FOUND,
-                message=f"{entity_label} requires task-augmented execution",
-            )
+        raise MCPError(
+            code=METHOD_NOT_FOUND,
+            message=f"{entity_label} requires task-augmented execution",
         )
 
     # Enforce mode="forbidden" - cannot be called with task metadata
     if not task_config.supports_tasks() and task_meta:
-        raise McpError(
-            ErrorData(
-                code=METHOD_NOT_FOUND,
-                message=f"{entity_label} does not support task-augmented execution",
-            )
+        raise MCPError(
+            code=METHOD_NOT_FOUND,
+            message=f"{entity_label} does not support task-augmented execution",
         )
 
     # No task metadata - synchronous execution

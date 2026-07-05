@@ -56,7 +56,7 @@ class TestTaskMetaParameter:
         async def sync_only_tool(x: int) -> int:
             return x * 2
 
-        # Error is raised before docket is needed (McpError wrapped as ToolError)
+        # Error is raised before docket is needed (MCPError wrapped as ToolError)
         with pytest.raises(ToolError) as exc_info:
             await server.call_tool("sync_only_tool", {"x": 5}, task_meta=TaskMeta())
 

@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import mcp_types
 import pytest
-from mcp.shared.exceptions import McpError
+from mcp.shared.exceptions import MCPError
 
 from fastmcp import Client, FastMCP
 from fastmcp.utilities.pagination import CursorState, paginate_sequence
@@ -187,7 +187,7 @@ class TestServerPagination:
             return "ok"
 
         async with Client(server) as client:
-            with pytest.raises(McpError) as exc:
+            with pytest.raises(MCPError) as exc:
                 await client.list_tools_mcp(cursor="invalid!")
             assert exc.value.error.code == -32602
 

@@ -3,10 +3,10 @@
 import logging
 
 try:
-    from mcp import McpError
+    from mcp import MCPError
 except ImportError:
 
-    class McpError(Exception):  # type: ignore[no-redef]
+    class MCPError(Exception):  # type: ignore[no-redef]
         """Fallback used when MCP dependencies are not installed."""
 
 

@@ -51,7 +51,7 @@ class ClientToolsMixin:
 
         Raises:
             RuntimeError: If called while the client is not connected.
-            McpError: If the request results in a TimeoutError | JSONRPCError
+            MCPError: If the request results in a TimeoutError | JSONRPCError
         """
         with client_span(
             "tools/list",
@@ -84,7 +84,7 @@ class ClientToolsMixin:
 
         Raises:
             RuntimeError: If the page limit is reached before pagination completes.
-            McpError: If the request results in a TimeoutError | JSONRPCError
+            MCPError: If the request results in a TimeoutError | JSONRPCError
         """
         all_tools: list[mcp_types.Tool] = []
         cursor: str | None = None
@@ -144,7 +144,7 @@ class ClientToolsMixin:
 
         Raises:
             RuntimeError: If called while the client is not connected.
-            McpError: If the tool call requests results in a TimeoutError | JSONRPCError
+            MCPError: If the tool call requests results in a TimeoutError | JSONRPCError
         """
         with client_span(
             f"tools/call {name}",
@@ -281,7 +281,7 @@ class ClientToolsMixin:
 
         Raises:
             ToolError: If the tool call results in an error.
-            McpError: If the tool call request results in a TimeoutError | JSONRPCError
+            MCPError: If the tool call request results in a TimeoutError | JSONRPCError
             RuntimeError: If called while the client is not connected.
         """
         # Merge version into request-level meta (not arguments)

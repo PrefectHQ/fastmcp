@@ -4,7 +4,7 @@ import time
 
 import anyio
 import pytest
-from mcp.shared.exceptions import McpError
+from mcp.shared.exceptions import MCPError
 from mcp_types import TextContent
 
 from fastmcp import FastMCP
@@ -188,5 +188,5 @@ class TestToolTimeout:
             return "never"
 
         # TimeoutError should be caught and converted to ToolError
-        with pytest.raises((ToolError, McpError)):
+        with pytest.raises((ToolError, MCPError)):
             await mcp.call_tool("times_out")

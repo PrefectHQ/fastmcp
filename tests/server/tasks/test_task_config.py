@@ -8,7 +8,7 @@ Tests for TaskConfig:
 from datetime import timedelta
 
 import pytest
-from mcp.shared.exceptions import McpError
+from mcp.shared.exceptions import MCPError
 from mcp_types import TextContent, ToolExecution
 from mcp_types import Tool as MCPTool
 
@@ -189,7 +189,7 @@ class TestResourceModeEnforcement:
         from mcp_types import METHOD_NOT_FOUND
 
         async with Client(server) as client:
-            with pytest.raises(McpError) as exc_info:
+            with pytest.raises(MCPError) as exc_info:
                 await client.read_resource("resource://required")
 
             assert exc_info.value.error.code == METHOD_NOT_FOUND
@@ -241,7 +241,7 @@ class TestPromptModeEnforcement:
         from mcp_types import METHOD_NOT_FOUND
 
         async with Client(server) as client:
-            with pytest.raises(McpError) as exc_info:
+            with pytest.raises(MCPError) as exc_info:
                 await client.get_prompt("required_prompt")
 
             assert exc_info.value.error.code == METHOD_NOT_FOUND

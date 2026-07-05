@@ -16,7 +16,7 @@ import anyio
 import httpx
 import mcp_types
 from exceptiongroup import catch
-from mcp import ClientSession, McpError
+from mcp import ClientSession, MCPError
 from mcp_types import GetTaskResult, TaskStatusNotification
 from pydantic import AnyUrl
 
@@ -617,7 +617,7 @@ class Client(
                             "Session task completed without exception but connection failed"
                         )
                     # Preserve specific exception types that clients may want to handle
-                    if isinstance(exception, httpx.HTTPStatusError | McpError):
+                    if isinstance(exception, httpx.HTTPStatusError | MCPError):
                         raise exception
                     raise RuntimeError(
                         f"Client failed to connect: {exception}"
@@ -865,7 +865,7 @@ class Client(
 
         Raises:
             RuntimeError: If called while the client is not connected.
-            McpError: If the request results in a TimeoutError | JSONRPCError
+            MCPError: If the request results in a TimeoutError | JSONRPCError
         """
         logger.debug(f"[{self.name}] called complete: {ref}")
 
@@ -895,7 +895,7 @@ class Client(
 
         Raises:
             RuntimeError: If called while the client is not connected.
-            McpError: If the request results in a TimeoutError | JSONRPCError
+            MCPError: If the request results in a TimeoutError | JSONRPCError
         """
         result = await self.complete_mcp(
             ref=ref, argument=argument, context_arguments=context_arguments

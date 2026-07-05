@@ -68,7 +68,7 @@ async def elicit_for_task(
 
     Raises:
         RuntimeError: If Docket is not available
-        McpError: If the elicitation request fails
+        MCPError: If the elicitation request fails
     """
     docket = fastmcp._docket
     if docket is None:

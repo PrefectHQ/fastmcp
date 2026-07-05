@@ -13,12 +13,11 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import mcp_types
 from docket.execution import ExecutionState
-from mcp.shared.exceptions import McpError
+from mcp.shared.exceptions import MCPError
 from mcp_types import (
     INTERNAL_ERROR,
     INVALID_PARAMS,
     CancelTaskResult,
-    ErrorData,
     GetTaskResult,
     ListTasksResult,
 )
@@ -88,7 +87,7 @@ async def _lookup_task_execution(
         Tuple of (execution, created_at, poll_interval_ms)
 
     Raises:
-        McpError: If task not found or execution not found
+        MCPError: If task not found or execution not found
     """
     prefix = task_redis_prefix(task_scope)
     task_meta_key = docket.key(f"{prefix}:{client_task_id}")
@@ -104,18 +103,14 @@ async def _lookup_task_execution(
     # Decode and validate task_key
     task_key = task_key_bytes.decode("utf-8") if task_key_bytes else None
     if not task_key:
-        raise McpError(
-            ErrorData(code=INVALID_PARAMS, message=f"Task {client_task_id} not found")
-        )
+        raise MCPError(code=INVALID_PARAMS, message=f"Task {client_task_id} not found")
 
     # Get execution
     execution = await docket.get_execution(task_key)
     if not execution:
-        raise McpError(
-            ErrorData(
-                code=INVALID_PARAMS,
-                message=f"Task {client_task_id} execution not found",
-            )
+        raise MCPError(
+            code=INVALID_PARAMS,
+            message=f"Task {client_task_id} execution not found",
         )
 
     # Parse metadata with defaults
@@ -145,10 +140,8 @@ async def tasks_get_handler(server: FastMCP, params: dict[str, Any]) -> GetTaskR
     async with fastmcp.server.context.Context(fastmcp=server):
         client_task_id = params.get("taskId")
         if not client_task_id:
-            raise McpError(
-                ErrorData(
-                    code=INVALID_PARAMS, message="Missing required parameter: taskId"
-                )
+            raise MCPError(
+                code=INVALID_PARAMS, message="Missing required parameter: taskId"
             )
 
         # Get authorization scope for task lookup
@@ -157,11 +150,9 @@ async def tasks_get_handler(server: FastMCP, params: dict[str, Any]) -> GetTaskR
         # Get Docket instance
         docket = server._docket
         if docket is None:
-            raise McpError(
-                ErrorData(
-                    code=INTERNAL_ERROR,
-                    message="Background tasks require Docket",
-                )
+            raise MCPError(
+                code=INTERNAL_ERROR,
+                message="Background tasks require Docket",
             )
 
         # Look up task execution and metadata
@@ -232,10 +223,8 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
     async with fastmcp.server.context.Context(fastmcp=server):
         client_task_id = params.get("taskId")
         if not client_task_id:
-            raise McpError(
-                ErrorData(
-                    code=INVALID_PARAMS, message="Missing required parameter: taskId"
-                )
+            raise MCPError(
+                code=INVALID_PARAMS, message="Missing required parameter: taskId"
             )
 
         # Get authorization scope for task lookup
@@ -244,11 +233,9 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
         # Get execution from Docket (use instance attribute for cross-task access)
         docket = server._docket
         if docket is None:
-            raise McpError(
-                ErrorData(
-                    code=INTERNAL_ERROR,
-                    message="Background tasks require Docket",
-                )
+            raise MCPError(
+                code=INTERNAL_ERROR,
+                message="Background tasks require Docket",
             )
 
         # Look up full task key from Redis
@@ -259,20 +246,16 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
         task_key = None if task_key_bytes is None else task_key_bytes.decode("utf-8")
 
         if task_key is None:
-            raise McpError(
-                ErrorData(
-                    code=INVALID_PARAMS,
-                    message=f"Invalid taskId: {client_task_id} not found",
-                )
+            raise MCPError(
+                code=INVALID_PARAMS,
+                message=f"Invalid taskId: {client_task_id} not found",
             )
 
         execution = await docket.get_execution(task_key)
         if execution is None:
-            raise McpError(
-                ErrorData(
-                    code=INVALID_PARAMS,
-                    message=f"Invalid taskId: {client_task_id} not found",
-                )
+            raise MCPError(
+                code=INVALID_PARAMS,
+                message=f"Invalid taskId: {client_task_id} not found",
             )
 
         # Sync state from Redis
@@ -282,11 +265,9 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
         state_map = DOCKET_TO_MCP_STATE
         if execution.state not in (ExecutionState.COMPLETED, ExecutionState.FAILED):
             mcp_state = state_map.get(execution.state, "failed")
-            raise McpError(
-                ErrorData(
-                    code=INVALID_PARAMS,
-                    message=f"Task not completed yet (current state: {mcp_state})",
-                )
+            raise MCPError(
+                code=INVALID_PARAMS,
+                message=f"Task not completed yet (current state: {mcp_state})",
             )
 
         # Get result from Docket
@@ -331,11 +312,9 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
             component = None
 
         if component is None:
-            raise McpError(
-                ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f"Component not found for task: {component_key}",
-                )
+            raise MCPError(
+                code=INTERNAL_ERROR,
+                message=f"Component not found for task: {component_key}",
             )
 
         # Build related-task metadata
@@ -390,11 +369,9 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
             return mcp_result
 
         else:
-            raise McpError(
-                ErrorData(
-                    code=INTERNAL_ERROR,
-                    message=f"Internal error: Unknown component type: {type(component).__name__}",
-                )
+            raise MCPError(
+                code=INTERNAL_ERROR,
+                message=f"Internal error: Unknown component type: {type(component).__name__}",
             )
 
 
@@ -433,10 +410,8 @@ async def tasks_cancel_handler(
     async with fastmcp.server.context.Context(fastmcp=server):
         client_task_id = params.get("taskId")
         if not client_task_id:
-            raise McpError(
-                ErrorData(
-                    code=INVALID_PARAMS, message="Missing required parameter: taskId"
-                )
+            raise MCPError(
+                code=INVALID_PARAMS, message="Missing required parameter: taskId"
             )
 
         # Get authorization scope for task lookup
@@ -445,11 +420,9 @@ async def tasks_cancel_handler(
         # Get Docket instance
         docket = server._docket
         if docket is None:
-            raise McpError(
-                ErrorData(
-                    code=INTERNAL_ERROR,
-                    message="Background tasks require Docket",
-                )
+            raise MCPError(
+                code=INTERNAL_ERROR,
+                message="Background tasks require Docket",
             )
 
         # Look up task execution and metadata

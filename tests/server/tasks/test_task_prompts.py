@@ -70,7 +70,7 @@ async def test_prompt_task_executes_in_background(prompt_server):
 
 async def test_forbidden_mode_prompt_rejects_task_calls(prompt_server):
     """Prompts with task=False (mode=forbidden) reject task-augmented calls."""
-    from mcp.shared.exceptions import McpError
+    from mcp.shared.exceptions import MCPError
     from mcp_types import METHOD_NOT_FOUND
 
     @prompt_server.prompt(task=False)  # Explicitly disable task support
@@ -78,10 +78,10 @@ async def test_forbidden_mode_prompt_rejects_task_calls(prompt_server):
         return f"Sync prompt: {topic}"
 
     async with Client(prompt_server) as client:
-        # Calling with task=True when task=False should raise McpError
+        # Calling with task=True when task=False should raise MCPError
         import pytest
 
-        with pytest.raises(McpError) as exc_info:
+        with pytest.raises(MCPError) as exc_info:
             await client.get_prompt("sync_only_prompt", {"topic": "test"}, task=True)
 
         # New behavior: mode="forbidden" returns METHOD_NOT_FOUND error

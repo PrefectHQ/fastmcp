@@ -6,7 +6,6 @@ from collections.abc import Generator
 from typing import Any, Literal, TypeVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import mcp
 import mcp_types
 import pytest
 from inline_snapshot import snapshot

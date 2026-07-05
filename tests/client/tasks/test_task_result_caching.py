@@ -162,7 +162,7 @@ async def test_forbidden_mode_tool_caches_error_result():
 async def test_forbidden_mode_prompt_raises_error():
     """Prompts with task=False (mode=forbidden) raise error."""
     import pytest
-    from mcp.shared.exceptions import McpError
+    from mcp.shared.exceptions import MCPError
 
     mcp = FastMCP("test")
 
@@ -171,15 +171,15 @@ async def test_forbidden_mode_prompt_raises_error():
         return "Immediate"
 
     async with Client(mcp) as client:
-        # Prompts with mode="forbidden" raise McpError when called with task=True
-        with pytest.raises(McpError):
+        # Prompts with mode="forbidden" raise MCPError when called with task=True
+        with pytest.raises(MCPError):
             await client.get_prompt("non_task_prompt", task=True)
 
 
 async def test_forbidden_mode_resource_raises_error():
     """Resources with task=False (mode=forbidden) raise error."""
     import pytest
-    from mcp.shared.exceptions import McpError
+    from mcp.shared.exceptions import MCPError
 
     mcp = FastMCP("test")
 
@@ -188,8 +188,8 @@ async def test_forbidden_mode_resource_raises_error():
         return "Immediate"
 
     async with Client(mcp) as client:
-        # Resources with mode="forbidden" raise McpError when called with task=True
-        with pytest.raises(McpError):
+        # Resources with mode="forbidden" raise MCPError when called with task=True
+        with pytest.raises(MCPError):
             await client.read_resource("file://immediate.txt", task=True)
 
 

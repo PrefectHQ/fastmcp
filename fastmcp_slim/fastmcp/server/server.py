@@ -27,7 +27,7 @@ from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.stores.memory import MemoryStore
 from mcp.server.lowlevel.server import LifespanResultT
-from mcp.shared.exceptions import McpError
+from mcp.shared.exceptions import MCPError
 from mcp_types import (
     Annotations,
     AnyFunction,
@@ -1473,7 +1473,7 @@ class FastMCP(
                             exc_info=True,
                         )
                         raise
-                    except McpError:
+                    except MCPError:
                         logger.exception(f"Error reading resource {uri!r}")
                         raise
                     except Exception as e:
@@ -1517,7 +1517,7 @@ class FastMCP(
                         e.log_level, f"Error reading resource {uri!r}", exc_info=True
                     )
                     raise
-                except McpError:
+                except MCPError:
                     logger.exception(f"Error reading resource {uri!r}")
                     raise
                 except Exception as e:
@@ -1638,7 +1638,7 @@ class FastMCP(
                         e.log_level, f"Error rendering prompt {name!r}", exc_info=True
                     )
                     raise
-                except McpError:
+                except MCPError:
                     logger.exception(f"Error rendering prompt {name!r}")
                     raise
                 except Exception as e:

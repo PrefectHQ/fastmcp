@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, cast
 import anyio
 import mcp_types
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
-from mcp import LoggingLevel, McpError
+from mcp import LoggingLevel, MCPError
 from mcp.server.lowlevel.server import (
     LifespanResultT,
     NotificationOptions,
@@ -135,8 +135,8 @@ class MiddlewareServerSession(ServerSession):
                         mw_context,
                         cast("CallNext[Any, Any]", call_original_handler),
                     )
-                except McpError as e:
-                    # McpError can be thrown from middleware in `on_initialize`
+                except MCPError as e:
+                    # MCPError can be thrown from middleware in `on_initialize`
                     # send the error to responder.
                     if not responder._completed:
                         with responder:
@@ -144,7 +144,7 @@ class MiddlewareServerSession(ServerSession):
                     else:
                         # Don't re-raise: prevents responding to initialize request twice
                         logger.warning(
-                            "Received McpError but responder is already completed. "
+                            "Received MCPError but responder is already completed. "
                             "Cannot send error response as response was already sent.",
                             exc_info=e,
                         )

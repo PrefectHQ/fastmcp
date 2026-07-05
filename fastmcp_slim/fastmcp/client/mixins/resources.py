@@ -46,7 +46,7 @@ class ClientResourcesMixin:
 
         Raises:
             RuntimeError: If called while the client is not connected.
-            McpError: If the request results in a TimeoutError | JSONRPCError
+            MCPError: If the request results in a TimeoutError | JSONRPCError
         """
         with client_span(
             "resources/list",
@@ -79,7 +79,7 @@ class ClientResourcesMixin:
 
         Raises:
             RuntimeError: If the page limit is reached before pagination completes.
-            McpError: If the request results in a TimeoutError | JSONRPCError
+            MCPError: If the request results in a TimeoutError | JSONRPCError
         """
         all_resources: list[mcp_types.Resource] = []
         cursor: str | None = None
@@ -122,7 +122,7 @@ class ClientResourcesMixin:
 
         Raises:
             RuntimeError: If called while the client is not connected.
-            McpError: If the request results in a TimeoutError | JSONRPCError
+            MCPError: If the request results in a TimeoutError | JSONRPCError
         """
         with client_span(
             "resources/templates/list",
@@ -156,7 +156,7 @@ class ClientResourcesMixin:
 
         Raises:
             RuntimeError: If the page limit is reached before pagination completes.
-            McpError: If the request results in a TimeoutError | JSONRPCError
+            MCPError: If the request results in a TimeoutError | JSONRPCError
         """
         all_templates: list[mcp_types.ResourceTemplate] = []
         cursor: str | None = None
@@ -201,7 +201,7 @@ class ClientResourcesMixin:
 
         Raises:
             RuntimeError: If called while the client is not connected.
-            McpError: If the request results in a TimeoutError | JSONRPCError
+            MCPError: If the request results in a TimeoutError | JSONRPCError
         """
         uri_str = str(uri)
         with client_span(
@@ -293,7 +293,7 @@ class ClientResourcesMixin:
 
         Raises:
             RuntimeError: If called while the client is not connected.
-            McpError: If the request results in a TimeoutError | JSONRPCError
+            MCPError: If the request results in a TimeoutError | JSONRPCError
         """
         # Merge version into request-level meta (not arguments)
         request_meta = dict(meta) if meta else {}

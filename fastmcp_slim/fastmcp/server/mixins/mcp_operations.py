@@ -6,7 +6,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import mcp_types
-from mcp.shared.exceptions import McpError
+from mcp.shared.exceptions import MCPError
 from mcp_types import ContentBlock
 from pydantic import AnyUrl
 
@@ -29,7 +29,7 @@ def _apply_pagination(
     cursor: str | None,
     page_size: int | None,
 ) -> tuple[list[PaginateT], str | None]:
-    """Apply pagination to items, raising McpError for invalid cursors.
+    """Apply pagination to items, raising MCPError for invalid cursors.
 
     If page_size is None, returns all items without pagination.
     """
@@ -38,7 +38,7 @@ def _apply_pagination(
     try:
         return paginate_sequence(items, cursor, page_size)
     except ValueError as e:
-        raise McpError(mcp_types.ErrorData(code=-32602, message=str(e))) from e
+        raise MCPError(code=-32602, message=str(e)) from e
 
 
 class MCPOperationsMixin:
@@ -291,15 +291,11 @@ class MCPOperationsMixin:
                 return result
             return result.to_mcp_result(uri)
         except DisabledError as e:
-            raise McpError(
-                mcp_types.ErrorData(
-                    code=-32002, message=f"Resource not found: {str(uri)!r}"
-                )
+            raise MCPError(
+                code=-32002, message=f"Resource not found: {str(uri)!r}"
             ) from e
         except NotFoundError as e:
-            raise McpError(
-                mcp_types.ErrorData(code=-32002, message=f"Resource not found: {e}")
-            ) from e
+            raise MCPError(code=-32002, message=f"Resource not found: {e}") from e
 
     async def _get_prompt_mcp(
         self, name: str, arguments: dict[str, Any] | None

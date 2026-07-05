@@ -8,7 +8,7 @@ import mcp_types
 import pytest
 from anyio import create_task_group
 from dirty_equals import Contains
-from mcp import McpError
+from mcp import MCPError
 from mcp_types import Icon, TextContent, TextResourceContents
 from pydantic import AnyUrl
 
@@ -259,7 +259,7 @@ async def test_proxy_ping_surfaces_wrong_remote_path():
     async with run_server_async(remote, transport="http") as url:
         proxy = create_proxy(StreamableHttpTransport(url.removesuffix("/mcp")))
 
-        with pytest.raises(McpError, match="Session terminated"):
+        with pytest.raises(MCPError, match="Session terminated"):
             async with Client(proxy):
                 pass
 
@@ -271,7 +271,7 @@ async def test_proxy_initialize_forwards_remote_connection_error():
         provider_error_strategy="raise",
     )
 
-    with pytest.raises(McpError, match="Client failed to connect"):
+    with pytest.raises(MCPError, match="Client failed to connect"):
         async with Client(proxy):
             pass
 
@@ -294,7 +294,7 @@ async def test_proxy_list_tools_client_surfaces_remote_connection_error():
         provider_error_strategy="raise",
     )
 
-    with pytest.raises(McpError, match="Client failed to connect"):
+    with pytest.raises(MCPError, match="Client failed to connect"):
         async with Client(proxy) as client:
             await client.list_tools()
 
@@ -561,7 +561,7 @@ class TestResources:
 
     async def test_read_resource_returns_none_if_not_found(self, proxy_server):
         with pytest.raises(
-            McpError, match="Unknown resource: 'resource://nonexistent'"
+            MCPError, match="Unknown resource: 'resource://nonexistent'"
         ):
             async with Client(proxy_server) as client:
                 await client.read_resource("resource://nonexistent")

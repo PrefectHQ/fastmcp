@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 import cyclopts
 import mcp_types
 import pydantic_core
-from mcp import McpError
+from mcp import MCPError
 from rich.console import Console
 
 from fastmcp.cli.client import _build_client, resolve_server_spec
@@ -754,7 +754,7 @@ async def generate_cli_command(
                 f"[dim]Discovered {len(tools)} tool(s) from {server_spec}[/dim]"
             )
 
-    except (RuntimeError, TimeoutError, McpError, OSError) as exc:
+    except (RuntimeError, TimeoutError, MCPError, OSError) as exc:
         console.print(f"[bold red]Error:[/bold red] Could not connect: {exc}")
         sys.exit(1)
 
