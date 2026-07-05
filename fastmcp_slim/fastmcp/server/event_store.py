@@ -16,11 +16,16 @@ from key_value.aio.stores.memory import MemoryStore
 from mcp.server.streamable_http import EventCallback, EventId, EventMessage, StreamId
 from mcp.server.streamable_http import EventStore as SDKEventStore
 from mcp_types import JSONRPCMessage
+from pydantic import TypeAdapter
 
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import FastMCPBaseModel
 
 logger = get_logger(__name__)
+
+# In the v2 SDK `JSONRPCMessage` is a bare union (no `.model_validate`); use a
+# TypeAdapter to validate a stored dict back into the correct member.
+_jsonrpc_message_adapter: TypeAdapter[JSONRPCMessage] = TypeAdapter(JSONRPCMessage)
 
 
 class EventEntry(FastMCPBaseModel):
@@ -223,7 +228,7 @@ class EventStore(SDKEventStore):
         for event_id in event_ids[start_idx:]:
             event = await self._event_store.get(key=event_id)
             if event and event.message:
-                msg = JSONRPCMessage.model_validate(event.message)
+                msg = _jsonrpc_message_adapter.validate_python(event.message)
                 await send_callback(EventMessage(msg, event.event_id))
 
         return stream_id

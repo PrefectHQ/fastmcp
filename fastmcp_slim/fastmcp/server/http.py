@@ -49,6 +49,7 @@ class FastMCPStreamableHTTPSessionManager(StreamableHTTPSessionManager):
         stateless: bool = False,
         security_settings: TransportSecuritySettings | None = None,
         retry_interval: int | None = None,
+        session_idle_timeout: float | None = None,
     ) -> None:
         self._shared_event_store: EventStore | None = None
         super().__init__(
@@ -58,6 +59,7 @@ class FastMCPStreamableHTTPSessionManager(StreamableHTTPSessionManager):
             stateless=stateless,
             security_settings=security_settings,
             retry_interval=retry_interval,
+            session_idle_timeout=session_idle_timeout,
         )
 
     @property
@@ -597,6 +599,13 @@ def create_streamable_http_app(
             retry_interval=retry_interval,
             json_response=json_response,
             stateless=stateless_http,
+            # FastMCP owns DNS-rebinding protection via HostOriginGuardMiddleware,
+            # which is more expressive and already the documented surface. Always
+            # disable the SDK's own protection so the two layers don't
+            # double-block with confusing errors from two allowlists.
+            security_settings=TransportSecuritySettings(
+                enable_dns_rebinding_protection=False
+            ),
         )
         async with (
             server._lifespan_manager(),
