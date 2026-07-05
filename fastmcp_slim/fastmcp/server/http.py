@@ -249,7 +249,7 @@ class HostOriginGuardMiddleware:
 
         origin = headers.get("origin")
         request_origin = _request_origin(scope, host)
-        if origin and not self._origin_allowed(origin, request_origin):
+        if origin and not self._origin_allowed(origin, request_origin, host):
             response = Response("Forbidden Origin", status_code=403)
             await response(scope, receive, send)
             return
@@ -268,12 +268,12 @@ class HostOriginGuardMiddleware:
 
         return tuple(allowed_hosts)
 
-    def _origin_allowed(self, origin: str, request_origin: str) -> bool:
+    def _origin_allowed(self, origin: str, request_origin: str, host: str) -> bool:
         if _origin_matches(origin, self.allowed_origins):
             return True
 
         origin_host = _origin_host(origin)
-        if _is_loopback_host(origin_host):
+        if _is_loopback_host(origin_host) and _is_loopback_host(host):
             return True
 
         return _normalize_origin(origin) == request_origin

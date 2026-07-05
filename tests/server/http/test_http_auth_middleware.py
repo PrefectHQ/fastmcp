@@ -192,6 +192,69 @@ class TestStreamableHTTPHostOriginProtection:
         assert response.status_code == 200
         assert "mcp-session-id" in response.headers
 
+    def test_allows_loopback_origin_for_loopback_host(self):
+        server = FastMCP(name="TestServer")
+        app = create_streamable_http_app(
+            server=server,
+            streamable_http_path="/mcp",
+        )
+
+        with TestClient(app, base_url="http://127.0.0.1") as client:
+            response = client.post(
+                "/mcp",
+                headers={
+                    "accept": "application/json, text/event-stream",
+                    "origin": "http://localhost:3000",
+                },
+                json=INITIALIZE_REQUEST,
+            )
+
+        assert response.status_code == 200
+        assert "mcp-session-id" in response.headers
+
+    def test_rejects_loopback_origin_for_public_host(self):
+        server = FastMCP(name="TestServer")
+        app = create_streamable_http_app(
+            server=server,
+            streamable_http_path="/mcp",
+            allowed_hosts=["mcp.example.com"],
+        )
+
+        with TestClient(app, base_url="https://mcp.example.com") as client:
+            response = client.post(
+                "/mcp",
+                headers={
+                    "accept": "application/json, text/event-stream",
+                    "origin": "http://localhost:3000",
+                },
+                json=INITIALIZE_REQUEST,
+            )
+
+        assert response.status_code == 403
+        assert "mcp-session-id" not in response.headers
+
+    def test_allows_configured_loopback_origin_for_public_host(self):
+        server = FastMCP(name="TestServer")
+        app = create_streamable_http_app(
+            server=server,
+            streamable_http_path="/mcp",
+            allowed_hosts=["mcp.example.com"],
+            allowed_origins=["http://localhost:3000"],
+        )
+
+        with TestClient(app, base_url="https://mcp.example.com") as client:
+            response = client.post(
+                "/mcp",
+                headers={
+                    "accept": "application/json, text/event-stream",
+                    "origin": "http://localhost:3000",
+                },
+                json=INITIALIZE_REQUEST,
+            )
+
+        assert response.status_code == 200
+        assert "mcp-session-id" in response.headers
+
     @pytest.mark.parametrize(
         "origin",
         [
