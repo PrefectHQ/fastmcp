@@ -840,16 +840,18 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Create a ProxyDCRClient with configured redirect URI validation
         if client_info.client_id is None:
             raise ValueError("client_id is required for client registration")
+        if client_info.redirect_uris:
+            for redirect_uri in client_info.redirect_uris:
+                if not validate_redirect_uri(
+                    redirect_uri=redirect_uri,
+                    allowed_patterns=self._allowed_client_redirect_uris,
+                ):
+                    raise RegistrationError(
+                        "invalid_redirect_uri",
+                        f"Redirect URI '{redirect_uri}' is not allowed.",
+                    )
+
         redirect_uris = client_info.redirect_uris or [AnyUrl("http://localhost")]
-        for redirect_uri in redirect_uris:
-            if not validate_redirect_uri(
-                redirect_uri=redirect_uri,
-                allowed_patterns=self._allowed_client_redirect_uris,
-            ):
-                raise RegistrationError(
-                    "invalid_redirect_uri",
-                    f"Redirect URI '{redirect_uri}' is not allowed.",
-                )
 
         # We use token_endpoint_auth_method="none" because the proxy handles
         # all upstream authentication. The client_secret must also be None

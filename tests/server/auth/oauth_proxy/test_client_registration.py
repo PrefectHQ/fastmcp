@@ -57,6 +57,32 @@ class TestOAuthProxyClientRegistration:
         with pytest.raises(RegistrationError, match="invalid_redirect_uri"):
             await oauth_proxy.register_client(client_info)
 
+    async def test_register_client_without_redirect_uris_defers_allowlist_validation(
+        self, oauth_proxy
+    ):
+        """DCR clients may omit redirect_uris until the authorization request."""
+        oauth_proxy._allowed_client_redirect_uris = ["https://client.example/*"]
+        client_info = OAuthClientInformationFull(
+            client_id="deferred-client",
+            client_secret="original-secret",
+            redirect_uris=None,
+        )
+
+        await oauth_proxy.register_client(client_info)
+
+        stored = await oauth_proxy.get_client("deferred-client")
+        assert stored is not None
+        assert stored.redirect_uris is not None
+        assert str(stored.redirect_uris[0]).rstrip("/") == "http://localhost"
+
+        redirect_uri = stored.validate_redirect_uri(
+            AnyUrl("https://client.example/callback")
+        )
+        assert str(redirect_uri) == "https://client.example/callback"
+
+        with pytest.raises(InvalidRedirectUriError):
+            stored.validate_redirect_uri(None)
+
     async def test_get_registered_client(self, oauth_proxy):
         """Test retrieving a registered client."""
         client_info = OAuthClientInformationFull(
