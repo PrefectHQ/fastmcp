@@ -11,7 +11,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import mcp_types
-from mcp_types import Annotations, AnyFunction
+from mcp_types import Annotations
 
 import fastmcp
 from fastmcp.resources.base import Resource
@@ -19,6 +19,7 @@ from fastmcp.resources.function_resource import resource as standalone_resource
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig
+from fastmcp.utilities.types import AnyFunction
 
 if TYPE_CHECKING:
     from fastmcp.server.providers.local_provider import LocalProvider

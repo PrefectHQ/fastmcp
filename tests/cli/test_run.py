@@ -296,14 +296,14 @@ class TestV1ServerAsync:
         """Test that v1 server uses async stdio method."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as FastMCP1x
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 
@@ -329,14 +329,14 @@ async def async_echo(text: str) -> str:
         """Test that v1 server uses async http method."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as FastMCP1x
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 
@@ -362,14 +362,14 @@ async def async_echo(text: str) -> str:
         """Test that v1 server uses async streamable-http method."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as FastMCP1x
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 
@@ -395,14 +395,14 @@ async def async_echo(text: str) -> str:
         """Test that v1 server uses async sse method."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as FastMCP1x
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 
@@ -428,14 +428,14 @@ async def async_echo(text: str) -> str:
         """Test that v1 server uses streamable-http by default."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as FastMCP1x
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 
@@ -461,14 +461,14 @@ async def async_echo(text: str) -> str:
         """Test that v1 server receives host/port settings."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as FastMCP1x
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 

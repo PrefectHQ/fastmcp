@@ -5,7 +5,6 @@ from unittest.mock import MagicMock
 
 import pytest
 from anyio import create_task_group
-from mcp.server.lowlevel.server import request_ctx
 from mcp_types import LoggingLevel
 
 from fastmcp import Client, Context, FastMCP
@@ -14,7 +13,7 @@ from fastmcp.client.logging import LogMessage
 from fastmcp.client.transports import FastMCPTransport
 from fastmcp.exceptions import ToolError
 from fastmcp.server.context import _current_context
-from fastmcp.server.dependencies import get_server
+from fastmcp.server.dependencies import get_server, request_ctx
 from fastmcp.server.elicitation import AcceptedElicitation
 from fastmcp.server.providers.proxy import (
     FastMCPProxy,

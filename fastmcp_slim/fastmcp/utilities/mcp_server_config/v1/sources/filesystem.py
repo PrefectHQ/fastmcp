@@ -117,7 +117,7 @@ class FileSystemSource(Source):
             The server object (or result of calling a factory function)
         """
         # Avoid circular import by importing here
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as FastMCP1x
 
         from fastmcp.server.server import FastMCP
 
@@ -178,7 +178,7 @@ class FileSystemSource(Source):
             A server instance
         """
         # Avoid circular import by importing here
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as FastMCP1x
 
         from fastmcp.server.server import FastMCP
 

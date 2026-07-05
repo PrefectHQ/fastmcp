@@ -12,7 +12,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
-from mcp.server.fastmcp import FastMCP as FastMCP1x
+from mcp.server.mcpserver import MCPServer as FastMCP1x
 from watchfiles import Change, awatch
 
 import fastmcp

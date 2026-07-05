@@ -17,9 +17,7 @@ import anyio
 import httpx
 import mcp_types
 from mcp import ServerSession
-from mcp.client.session import ClientSession
-from mcp.server.lowlevel.server import request_ctx
-from mcp.shared.context import LifespanContextT, RequestContext
+from mcp.server.context import ServerRequestContext
 from mcp.shared.exceptions import MCPError
 from mcp_types import (
     METHOD_NOT_FOUND,
@@ -44,7 +42,7 @@ from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.resources.base import ResourceContent, ResourceResult
 from fastmcp.resources.template import expand_uri_template
 from fastmcp.server.context import Context
-from fastmcp.server.dependencies import get_context
+from fastmcp.server.dependencies import get_context, request_ctx
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.providers.aggregate import ProviderErrorStrategy
 from fastmcp.server.providers.base import Provider
@@ -935,7 +933,7 @@ class FastMCPProxy(FastMCP):
 
 
 async def default_proxy_roots_handler(
-    context: RequestContext[ClientSession, LifespanContextT],
+    context: ServerRequestContext[Any, Any],
 ) -> RootsList:
     """Forward list roots request from remote server to proxy's connected clients."""
     ctx = get_context()
@@ -945,7 +943,7 @@ async def default_proxy_roots_handler(
 async def default_proxy_sampling_handler(
     messages: list[mcp_types.SamplingMessage],
     params: mcp_types.CreateMessageRequestParams,
-    context: RequestContext[ClientSession, LifespanContextT],
+    context: ServerRequestContext[Any, Any],
 ) -> mcp_types.CreateMessageResult:
     """Forward sampling request from remote server to proxy's connected clients."""
     ctx = get_context()
@@ -969,7 +967,7 @@ async def default_proxy_elicitation_handler(
     message: str,
     response_type: type,
     params: mcp_types.ElicitRequestParams,
-    context: RequestContext[ClientSession, LifespanContextT],
+    context: ServerRequestContext[Any, Any],
 ) -> ElicitResult:
     """Forward elicitation request from remote server to proxy's connected clients."""
     ctx = get_context()

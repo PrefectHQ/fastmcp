@@ -6,7 +6,7 @@ import mcp_types
 from mcp import ClientSession, CreateMessageResult
 from mcp.client.session import SamplingFnT
 from mcp.server.session import ServerSession
-from mcp.shared.context import LifespanContextT, RequestContext
+from fastmcp.client._sdk_context_shim import LifespanContextT, RequestContext
 from mcp_types import CreateMessageRequestParams as SamplingParams
 from mcp_types import CreateMessageResultWithTools, SamplingMessage
 

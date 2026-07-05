@@ -24,7 +24,7 @@ from typing import (
 )
 
 import mcp_types
-from mcp_types import AnyFunction, ToolAnnotations
+from mcp_types import ToolAnnotations
 
 import fastmcp
 from fastmcp.exceptions import FastMCPDeprecationWarning
@@ -32,7 +32,7 @@ from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.base import Tool
 from fastmcp.tools.function_tool import FunctionTool
-from fastmcp.utilities.types import NotSet, NotSetT
+from fastmcp.utilities.types import AnyFunction, NotSet, NotSetT
 
 try:
     from prefab_ui.app import PrefabApp as _PrefabApp

@@ -8,7 +8,7 @@ from enum import Enum
 from typing import Any, Literal, cast
 
 import pydantic_core
-from mcp.server.fastmcp import FastMCP as FastMCP1x
+from mcp.server.mcpserver import MCPServer as FastMCP1x
 
 import fastmcp
 from fastmcp import Client

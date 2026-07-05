@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, overload
 
 import mcp_types
-from mcp_types import AnyUrl
+from pydantic import AnyUrl
 
 from fastmcp.prompts.base import Prompt, PromptResult
 from fastmcp.resources.base import Resource, ResourceResult

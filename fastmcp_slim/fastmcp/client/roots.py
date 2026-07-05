@@ -6,7 +6,8 @@ import mcp_types
 import pydantic
 from mcp import ClientSession
 from mcp.client.session import ListRootsFnT
-from mcp.shared.context import LifespanContextT, RequestContext
+
+from fastmcp.client._sdk_context_shim import LifespanContextT, RequestContext
 
 RootsList: TypeAlias = list[str] | list[mcp_types.Root] | list[str | mcp_types.Root]
 

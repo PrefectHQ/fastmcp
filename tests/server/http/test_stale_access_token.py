@@ -11,12 +11,11 @@ from unittest.mock import MagicMock
 
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
-from mcp.server.lowlevel.server import request_ctx
-from mcp.shared.context import RequestContext
+from mcp.server.context import ServerRequestContext as RequestContext
 from starlette.requests import Request
 
 from fastmcp.server.auth import AccessToken
-from fastmcp.server.dependencies import get_access_token
+from fastmcp.server.dependencies import get_access_token, request_ctx
 
 
 class TestStaleAccessToken:

@@ -12,13 +12,13 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 import mcp_types
-from mcp_types import AnyFunction
 
 import fastmcp
 from fastmcp.prompts.base import Prompt
 from fastmcp.prompts.function_prompt import FunctionPrompt
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig
+from fastmcp.utilities.types import AnyFunction
 
 if TYPE_CHECKING:
     from fastmcp.server.providers.local_provider import LocalProvider

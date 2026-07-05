@@ -11,7 +11,7 @@ from mcp_types import (
     TextContent,
     TextResourceContents,
 )
-from pydantic import AnyUrl, BaseModel
+from pydantic import BaseModel
 
 from fastmcp.tools.base import Tool, _convert_to_content
 from fastmcp.utilities.types import Audio, File, Image
@@ -110,14 +110,14 @@ class TestConvertResultToContent:
                 ResourceLink(
                     type="resource_link",
                     name="test resource",
-                    uri=AnyUrl("resource://test"),
+                    uri="resource://test",
                 )
             ),
             (
                 EmbeddedResource(
                     type="resource",
                     resource=TextResourceContents(
-                        uri=AnyUrl("resource://test"),
+                        uri="resource://test",
                         mime_type="text/plain",
                         text="resource content",
                     ),
@@ -158,7 +158,7 @@ class TestConvertResultToContent:
                     EmbeddedResource(
                         type="resource",
                         resource=BlobResourceContents(
-                            uri=AnyUrl("file:///resource.octet-stream"),
+                            uri="file:///resource.octet-stream",
                             blob="ZmlsZWRhdGE=",
                             mime_type="application/octet-stream",
                         ),
@@ -187,12 +187,12 @@ class TestConvertResultToContent:
             ResourceLink(
                 type="resource_link",
                 name="test resource",
-                uri=AnyUrl("resource://test"),
+                uri="resource://test",
             ),
             EmbeddedResource(
                 type="resource",
                 resource=TextResourceContents(
-                    uri=AnyUrl("resource://test"),
+                    uri="resource://test",
                     mime_type="text/plain",
                     text="resource content",
                 ),
@@ -216,13 +216,13 @@ class TestConvertResultToContent:
                 ),
                 ResourceLink(
                     name="test resource",
-                    uri=AnyUrl("resource://test"),
+                    uri="resource://test",
                     type="resource_link",
                 ),
                 EmbeddedResource(
                     type="resource",
                     resource=TextResourceContents(
-                        uri=AnyUrl("resource://test"),
+                        uri="resource://test",
                         mime_type="text/plain",
                         text="resource content",
                     ),

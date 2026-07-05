@@ -26,7 +26,7 @@ from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from mcp.server.auth.provider import (
     AccessToken as _SDKAccessToken,
 )
-from mcp.server.lowlevel.server import request_ctx
+from mcp.server.context import ServerRequestContext
 from packaging.version import Version
 from starlette.requests import Request
 from uncalled_for import Dependency, get_dependency_parameters
@@ -47,6 +47,15 @@ if TYPE_CHECKING:
 
     from fastmcp.server.context import Context
     from fastmcp.server.server import FastMCP
+
+
+# TODO(sdkv2): set by handler entry, Phase B.
+# The SDK removed `mcp.server.lowlevel.server.request_ctx`. FastMCP now owns the
+# per-request ContextVar carrying the active ServerRequestContext. Nothing sets
+# it yet — the low-level handler entry points that populate it are wired in the
+# Phase B server-core port. Until then it stays unset and `.get()` raises
+# LookupError, which existing callers already handle.
+request_ctx: ContextVar[ServerRequestContext] = ContextVar("request_ctx")
 
 
 __all__ = [

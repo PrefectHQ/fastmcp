@@ -5,7 +5,6 @@ from collections.abc import Iterator, Sequence
 from typing import Any, Literal, get_args
 
 from mcp import ClientSession, ServerSession
-from mcp.shared.context import LifespanContextT, RequestContext
 from mcp_types import (
     AudioContent,
     CreateMessageResult,
@@ -21,6 +20,8 @@ from mcp_types import (
     ToolUseContent,
 )
 from mcp_types import CreateMessageRequestParams as SamplingParams
+
+from fastmcp.client._sdk_context_shim import LifespanContextT, RequestContext
 
 try:
     from openai import AsyncOpenAI

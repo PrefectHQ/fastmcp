@@ -30,7 +30,6 @@ from mcp.server.lowlevel.server import LifespanResultT
 from mcp.shared.exceptions import MCPError
 from mcp_types import (
     Annotations,
-    AnyFunction,
     CallToolRequestParams,
     ToolAnnotations,
 )
@@ -82,7 +81,7 @@ from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.tools.tool_transform import ToolTransformConfig
 from fastmcp.utilities.components import FastMCPComponent, _coerce_version
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import FastMCPBaseModel, NotSet, NotSetT
+from fastmcp.utilities.types import AnyFunction, FastMCPBaseModel, NotSet, NotSetT
 from fastmcp.utilities.versions import (
     VersionSpec,
     version_sort_key,

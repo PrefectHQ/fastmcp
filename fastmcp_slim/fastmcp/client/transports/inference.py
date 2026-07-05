@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast, overload
 
-from mcp.server.fastmcp import FastMCP as FastMCP1Server
+from mcp.server.mcpserver import MCPServer as FastMCP1Server
 from pydantic import AnyUrl
 
 from fastmcp.client.transports.base import ClientTransport, ClientTransportT

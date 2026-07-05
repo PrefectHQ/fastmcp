@@ -43,8 +43,9 @@ class TestParseModelPreferences:
 class TestSessionId:
     def test_session_id_with_http_headers(self, context):
         """Test that session_id returns the value from mcp-session-id header."""
-        from mcp.server.lowlevel.server import request_ctx
-        from mcp.shared.context import RequestContext
+        from mcp.server.context import ServerRequestContext as RequestContext
+
+        from fastmcp.server.dependencies import request_ctx
 
         mock_headers = {"mcp-session-id": "test-session-123"}
 
@@ -71,8 +72,9 @@ class TestSessionId:
         """
         import uuid
 
-        from mcp.server.lowlevel.server import request_ctx
-        from mcp.shared.context import RequestContext
+        from mcp.server.context import ServerRequestContext as RequestContext
+
+        from fastmcp.server.dependencies import request_ctx
 
         mock_session = MagicMock(wraps={})
         token = request_ctx.set(
@@ -338,8 +340,9 @@ class TestContextMeta:
 
     def test_request_context_meta_access(self, context):
         """Test that meta can be accessed from request context."""
-        from mcp.server.lowlevel.server import request_ctx
-        from mcp.shared.context import RequestContext
+        from mcp.server.context import ServerRequestContext as RequestContext
+
+        from fastmcp.server.dependencies import request_ctx
 
         # Create a mock meta object with attributes
         class MockMeta:
@@ -370,8 +373,9 @@ class TestContextMeta:
 
     def test_request_context_meta_none(self, context):
         """Test that context handles None meta gracefully."""
-        from mcp.server.lowlevel.server import request_ctx
-        from mcp.shared.context import RequestContext
+        from mcp.server.context import ServerRequestContext as RequestContext
+
+        from fastmcp.server.dependencies import request_ctx
 
         token = request_ctx.set(
             RequestContext(

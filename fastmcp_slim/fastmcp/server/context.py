@@ -12,8 +12,7 @@ from typing import Any, Literal, overload
 
 import mcp_types
 from mcp import LoggingLevel, ServerSession
-from mcp.server.lowlevel.server import request_ctx
-from mcp.shared.context import RequestContext
+from mcp.server.context import ServerRequestContext
 from mcp_types import (
     GetPromptResult,
     ModelPreferences,
@@ -23,13 +22,13 @@ from mcp_types import (
 from mcp_types import Prompt as SDKPrompt
 from mcp_types import Resource as SDKResource
 from pydantic.networks import AnyUrl
-from starlette.requests import Request
 from typing_extensions import TypeVar
 from uncalled_for import SharedContext
 
 import fastmcp
 from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.resources.base import ResourceResult
+from fastmcp.server.dependencies import request_ctx
 from fastmcp.server.elicitation import (
     AcceptedElicitation,
     CancelledElicitation,
@@ -322,7 +321,7 @@ class Context:
             _current_context.reset(token)
 
     @property
-    def request_context(self) -> RequestContext[ServerSession, Any, Request] | None:
+    def request_context(self) -> ServerRequestContext[Any, Any] | None:
         """Access to the underlying request context.
 
         Returns None when the MCP session has not been established yet.

@@ -32,7 +32,6 @@ except ImportError as e:
     ) from e
 
 from mcp import ClientSession, ServerSession
-from mcp.shared.context import LifespanContextT, RequestContext
 from mcp_types import (
     AudioContent,
     CreateMessageResult,
@@ -49,6 +48,8 @@ from mcp_types import (
 )
 from mcp_types import CreateMessageRequestParams as SamplingParams
 from mcp_types import Tool as MCPTool
+
+from fastmcp.client._sdk_context_shim import LifespanContextT, RequestContext
 
 __all__ = ["GoogleGenaiSamplingHandler"]
 

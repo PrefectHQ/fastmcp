@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 import anyio
 from mcp import ClientSession
-from mcp.server.fastmcp import FastMCP as FastMCP1Server
+from mcp.server.mcpserver import MCPServer as FastMCP1Server
 from mcp.shared.memory import create_client_server_memory_streams
 from typing_extensions import Unpack
 

@@ -12,7 +12,6 @@ from mcp import LoggingLevel, MCPError
 from mcp.server.lowlevel.server import (
     LifespanResultT,
     NotificationOptions,
-    RequestT,
 )
 from mcp.server.lowlevel.server import (
     Server as _Server,
@@ -154,7 +153,9 @@ class MiddlewareServerSession(ServerSession):
         return await super()._received_request(responder)
 
 
-class LowLevelServer(_Server[LifespanResultT, RequestT]):
+# TODO(sdkv2): _Server is now single-param generic (RequestT removed); Phase B
+# should revisit whether LowLevelServer needs its own request-type parameter.
+class LowLevelServer(_Server[LifespanResultT]):
     def __init__(self, fastmcp: FastMCP, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
         # Store a weak reference to FastMCP to avoid circular references
