@@ -136,6 +136,7 @@ server = FastMCP(
 The `sampling_handler_behavior` parameter controls when the handler is used:
 
 - **`"fallback"`** (default): Use the handler only when the client doesn't support sampling. This lets capable clients use their own LLM while ensuring your tools still work with clients that lack sampling support.
+- **`"fallback_on_error"`**: Try client sampling first, then use the handler if the client sampling request fails. Use this when clients advertise sampling but may reject individual requests, while you still want a server-side handler as an opt-in fallback.
 - **`"always"`**: Always use the handler, bypassing the client entirely. Use this when you need guaranteed control over which LLM processes requests—for cost control, compliance requirements, or when specific model characteristics are essential.
 
 ## Structured Output
