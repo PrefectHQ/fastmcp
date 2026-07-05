@@ -553,7 +553,7 @@ class TestMountedTaskMetadata:
     """Test task metadata exposure for mounted tools."""
 
     async def test_mounted_tool_list_preserves_task_support_metadata(self):
-        """Mounted tools should preserve execution.taskSupport in tools/list."""
+        """Mounted tools should preserve execution.task_support in tools/list."""
         child = FastMCP("child")
 
         @child.tool(task=True)
@@ -574,11 +574,11 @@ class TestMountedTaskMetadata:
 
         assert child_mcp_tool.execution is not None
         assert parent_mcp_tool.execution is not None
-        assert child_mcp_tool.execution.taskSupport == "optional"
-        assert parent_mcp_tool.execution.taskSupport == "optional"
+        assert child_mcp_tool.execution.task_support == "optional"
+        assert parent_mcp_tool.execution.task_support == "optional"
 
     async def test_proxy_tool_preserves_execution_metadata(self):
-        """ProxyTool.from_mcp_tool should propagate execution.taskSupport (#3569)."""
+        """ProxyTool.from_mcp_tool should propagate execution.task_support (#3569)."""
         mcp_tool = MCPTool(
             name="remote_task_tool",
             description="A remote tool that supports tasks",
@@ -590,7 +590,7 @@ class TestMountedTaskMetadata:
         result = proxy.to_mcp_tool(name=proxy.name)
 
         assert result.execution is not None
-        assert result.execution.taskSupport == "optional"
+        assert result.execution.task_support == "optional"
 
 
 class TestMountedTaskConfigModes:
@@ -928,7 +928,7 @@ class TestMountedTasksWithTaskMetaParameter:
             result = await parent.call_tool(
                 "child_add", {"a": 2, "b": 3}, task_meta=TaskMeta(ttl=300)
             )
-            return f"task:{result.task.taskId}"
+            return f"task:{result.task.task_id}"
 
         async with Client(parent) as client:
             result = await client.call_tool("outer", {})
@@ -952,7 +952,7 @@ class TestMountedTasksWithTaskMetaParameter:
             result = await parent.read_resource(
                 "data://child/info", task_meta=TaskMeta(ttl=300)
             )
-            return f"task:{result.task.taskId}"
+            return f"task:{result.task.task_id}"
 
         async with Client(parent) as client:
             result = await client.call_tool("outer", {})
@@ -976,7 +976,7 @@ class TestMountedTasksWithTaskMetaParameter:
             result = await parent.read_resource(
                 "item://child/42", task_meta=TaskMeta(ttl=300)
             )
-            return f"task:{result.task.taskId}"
+            return f"task:{result.task.task_id}"
 
         async with Client(parent) as client:
             result = await client.call_tool("outer", {})
@@ -1003,7 +1003,7 @@ class TestMountedTasksWithTaskMetaParameter:
             result = await parent.call_tool(
                 "c_gc_compute", {"n": 7}, task_meta=TaskMeta(ttl=300)
             )
-            return f"task:{result.task.taskId}"
+            return f"task:{result.task.task_id}"
 
         async with Client(parent) as client:
             result = await client.call_tool("outer", {})
@@ -1030,7 +1030,7 @@ class TestMountedTasksWithTaskMetaParameter:
             result = await parent.read_resource(
                 "doc://c/gc/readme", task_meta=TaskMeta(ttl=300)
             )
-            return f"task:{result.task.taskId}"
+            return f"task:{result.task.task_id}"
 
         async with Client(parent) as client:
             result = await client.call_tool("outer", {})
@@ -1054,7 +1054,7 @@ class TestMountedTasksWithTaskMetaParameter:
             result = await parent.render_prompt(
                 "child_greet", {"name": "World"}, task_meta=TaskMeta(ttl=300)
             )
-            return f"task:{result.task.taskId}"
+            return f"task:{result.task.task_id}"
 
         async with Client(parent) as client:
             result = await client.call_tool("outer", {})
@@ -1081,7 +1081,7 @@ class TestMountedTasksWithTaskMetaParameter:
             result = await parent.render_prompt(
                 "c_gc_describe", {"topic": "FastMCP"}, task_meta=TaskMeta(ttl=300)
             )
-            return f"task:{result.task.taskId}"
+            return f"task:{result.task.task_id}"
 
         async with Client(parent) as client:
             result = await client.call_tool("outer", {})

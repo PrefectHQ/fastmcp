@@ -218,7 +218,7 @@ class TestSamplingResultType:
                 tool_result = msg.content
                 break
         assert tool_result is not None
-        assert tool_result.isError is True
+        assert tool_result.is_error is True
         assert isinstance(tool_result.content[0], TextContent)
         error_text = tool_result.content[0].text
         assert "Validation error" in error_text

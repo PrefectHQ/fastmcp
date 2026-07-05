@@ -85,8 +85,8 @@ async def test_sampling_with_system_prompt(fastmcp_server: FastMCP):
     def sampling_handler(
         messages: list[SamplingMessage], params: SamplingParams, ctx: RequestContext
     ) -> str:
-        assert params.systemPrompt is not None
-        return params.systemPrompt
+        assert params.system_prompt is not None
+        return params.system_prompt
 
     async with Client(fastmcp_server, sampling_handler=sampling_handler) as client:
         result = await client.call_tool(

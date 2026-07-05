@@ -27,7 +27,7 @@ class TestErrorHandling:
 
         async with client:
             result = await client.call_tool_mcp("error_tool", {})
-            assert result.isError
+            assert result.is_error
             assert isinstance(result.content[0], TextContent)
             assert "test error" in result.content[0].text
             assert "abc" in result.content[0].text
@@ -43,7 +43,7 @@ class TestErrorHandling:
 
         async with client:
             result = await client.call_tool_mcp("error_tool", {})
-            assert result.isError
+            assert result.is_error
             assert isinstance(result.content[0], TextContent)
             assert "test error" not in result.content[0].text
             assert "abc" not in result.content[0].text
@@ -57,7 +57,7 @@ class TestErrorHandling:
 
         async with Client(transport=FastMCPTransport(mcp)) as client:
             result = await client.call_tool_mcp("validated_tool", {"x": "abc"})
-            assert result.isError
+            assert result.is_error
             # Pydantic validation error message should NOT be masked
             assert isinstance(result.content[0], TextContent)
             assert "Input should be a valid integer" in result.content[0].text
@@ -73,7 +73,7 @@ class TestErrorHandling:
 
         async with client:
             result = await client.call_tool_mcp("custom_error_tool", {})
-            assert result.isError
+            assert result.is_error
             assert isinstance(result.content[0], TextContent)
             assert "test error" in result.content[0].text
             assert "abc" in result.content[0].text
@@ -283,7 +283,7 @@ class TestLogLevel:
             with caplog.at_level(logging.WARNING):
                 result = await client.call_tool_mcp("custom_level_tool", {})
 
-        assert result.isError
+        assert result.is_error
         assert isinstance(result.content[0], TextContent)
         assert "Missing required parameter" in result.content[0].text
         assert any(
@@ -307,7 +307,7 @@ class TestLogLevel:
             with caplog.at_level(logging.ERROR):
                 result = await client.call_tool_mcp("regular_error_tool", {})
 
-        assert result.isError
+        assert result.is_error
         assert isinstance(result.content[0], TextContent)
         assert "Something went wrong" in result.content[0].text
         assert any(
@@ -428,7 +428,7 @@ class TestLogLevel:
             )
 
         assert len(results) == 1
-        assert results[0].isError
+        assert results[0].is_error
         assert "Expected sampling error" in results[0].content[0].text  # type: ignore
         assert any(
             "Error calling sampling tool" in record.message

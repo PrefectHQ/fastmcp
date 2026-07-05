@@ -45,10 +45,10 @@ def create_elicitation_callback(
         try:
             # requestedSchema only exists on ElicitRequestFormParams, not ElicitRequestURLParams
             if isinstance(params, ElicitRequestFormParams):
-                if params.requestedSchema == {"type": "object", "properties": {}}:
+                if params.requested_schema == {"type": "object", "properties": {}}:
                     response_type = None
                 else:
-                    response_type = json_schema_to_type(params.requestedSchema)
+                    response_type = json_schema_to_type(params.requested_schema)
             else:
                 # URL-based elicitation doesn't have a schema
                 response_type = None
@@ -65,7 +65,7 @@ def create_elicitation_callback(
                 # (single "value" property). This lets handlers return T directly
                 # for ctx.elicit("msg", str/int/float/bool).
                 if isinstance(params, ElicitRequestFormParams) and set(
-                    params.requestedSchema.get("properties", {}).keys()
+                    params.requested_schema.get("properties", {}).keys()
                 ) == {"value"}:
                     content = {"value": content}
                 else:

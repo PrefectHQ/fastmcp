@@ -88,16 +88,16 @@ class ClientResourcesMixin:
         for _ in range(max_pages):
             result = await self.list_resources_mcp(cursor=cursor)
             all_resources.extend(result.resources)
-            if not result.nextCursor:
+            if not result.next_cursor:
                 break
-            if result.nextCursor in seen_cursors:
+            if result.next_cursor in seen_cursors:
                 logger.warning(
                     f"[{self.name}] Server returned duplicate pagination cursor"
-                    f" {result.nextCursor!r} for list_resources; stopping pagination"
+                    f" {result.next_cursor!r} for list_resources; stopping pagination"
                 )
                 break
-            seen_cursors.add(result.nextCursor)
-            cursor = result.nextCursor
+            seen_cursors.add(result.next_cursor)
+            cursor = result.next_cursor
         else:
             raise RuntimeError(
                 f"[{self.name}] Reached auto-pagination limit"
@@ -164,18 +164,18 @@ class ClientResourcesMixin:
 
         for _ in range(max_pages):
             result = await self.list_resource_templates_mcp(cursor=cursor)
-            all_templates.extend(result.resourceTemplates)
-            if not result.nextCursor:
+            all_templates.extend(result.resource_templates)
+            if not result.next_cursor:
                 break
-            if result.nextCursor in seen_cursors:
+            if result.next_cursor in seen_cursors:
                 logger.warning(
                     f"[{self.name}] Server returned duplicate pagination cursor"
-                    f" {result.nextCursor!r} for list_resource_templates;"
+                    f" {result.next_cursor!r} for list_resource_templates;"
                     " stopping pagination"
                 )
                 break
-            seen_cursors.add(result.nextCursor)
-            cursor = result.nextCursor
+            seen_cursors.add(result.next_cursor)
+            cursor = result.next_cursor
         else:
             raise RuntimeError(
                 f"[{self.name}] Reached auto-pagination limit"
@@ -365,7 +365,7 @@ class ClientResourcesMixin:
 
         if isinstance(raw_result, mcp_types.CreateTaskResult):
             # Task was accepted - extract task info from CreateTaskResult
-            server_task_id = raw_result.task.taskId
+            server_task_id = raw_result.task.task_id
             self._submitted_task_ids.add(server_task_id)
 
             task_obj = ResourceTask(

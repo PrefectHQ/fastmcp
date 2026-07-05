@@ -252,7 +252,7 @@ def test_message_to_result_with_tools():
 
     assert result.role == "assistant"
     assert result.model == "claude-3-5-sonnet-20241022"
-    assert result.stopReason == "toolUse"
+    assert result.stop_reason == "toolUse"
     content = result.content_as_list
     assert len(content) == 2
     assert content[0] == TextContent(type="text", text="I'll help you with that.")

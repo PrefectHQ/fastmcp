@@ -372,7 +372,7 @@ def test_response_to_result_with_tools_text_only():
 
     assert result.role == "assistant"
     assert result.model == "gemini-2.0-flash"
-    assert result.stopReason == "endTurn"
+    assert result.stop_reason == "endTurn"
     assert isinstance(result.content, list)
     assert len(result.content) == 1
     assert result.content[0].type == "text"
@@ -394,7 +394,7 @@ def test_response_to_result_with_tools_function_call():
 
     result = _response_to_result_with_tools(mock_response, model="gemini-2.0-flash")
 
-    assert result.stopReason == "toolUse"
+    assert result.stop_reason == "toolUse"
     assert isinstance(result.content, list)
     assert len(result.content) == 1
     tool_use = result.content[0]
@@ -421,7 +421,7 @@ def test_response_to_result_with_tools_mixed_content():
 
     result = _response_to_result_with_tools(mock_response, model="gemini-2.0-flash")
 
-    assert result.stopReason == "toolUse"
+    assert result.stop_reason == "toolUse"
     assert isinstance(result.content, list)
     assert len(result.content) == 2
     text_content = result.content[0]
@@ -576,7 +576,7 @@ def test_normal_response_text_and_function_call():
     assert isinstance(result.content[1], ToolUseContent)  # ty: ignore[not-subscriptable]
     assert result.content[1].name == "lookup"  # ty: ignore[not-subscriptable]
     assert result.content[1].input == {"q": "test"}  # ty: ignore[not-subscriptable]
-    assert result.stopReason == "toolUse"
+    assert result.stop_reason == "toolUse"
 
 
 def test_thought_with_function_call_keeps_function_call():
@@ -598,4 +598,4 @@ def test_thought_with_function_call_keeps_function_call():
     assert len(result.content) == 1  # ty: ignore[invalid-argument-type]
     assert isinstance(result.content[0], ToolUseContent)  # ty: ignore[not-subscriptable]
     assert result.content[0].name == "get_weather"  # ty: ignore[not-subscriptable]
-    assert result.stopReason == "toolUse"
+    assert result.stop_reason == "toolUse"

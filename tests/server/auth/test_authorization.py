@@ -521,7 +521,7 @@ class TestAuthMiddleware:
         result = await mcp._list_resource_templates_mcp(
             mcp_types.ListResourceTemplatesRequest()
         )
-        assert [template.uriTemplate for template in result.resourceTemplates] == [
+        assert [template.uri_template for template in result.resource_templates] == [
             "resource://allowed/{item}"
         ]
 

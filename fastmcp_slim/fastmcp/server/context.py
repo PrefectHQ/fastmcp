@@ -401,7 +401,7 @@ class Context:
         """
 
         progress_token = (
-            self.request_context.meta.progressToken
+            self.request_context.meta.progress_token
             if self.request_context and self.request_context.meta
             else None
         )
@@ -471,12 +471,12 @@ class Context:
             request = request_factory(cursor)
             result = await call_method(request)
             all_items.extend(extract_items(result))
-            if not result.nextCursor:
+            if not result.next_cursor:
                 break
-            if result.nextCursor in seen_cursors:
+            if result.next_cursor in seen_cursors:
                 break
-            seen_cursors.add(result.nextCursor)
-            cursor = result.nextCursor
+            seen_cursors.add(result.next_cursor)
+            cursor = result.next_cursor
         return all_items
 
     async def list_resources(self) -> list[SDKResource]:

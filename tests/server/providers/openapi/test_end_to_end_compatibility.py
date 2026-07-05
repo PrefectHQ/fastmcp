@@ -114,7 +114,7 @@ class TestEndToEndFunctionality:
                 assert tool.description
 
                 # Check schema structure
-                schema = tool.inputSchema
+                schema = tool.input_schema
                 assert schema["type"] == "object"
 
                 properties = schema.get("properties", {})
@@ -141,7 +141,7 @@ class TestEndToEndFunctionality:
                 assert len(tools) == 1
 
                 tool = tools[0]
-                schema = tool.inputSchema
+                schema = tool.input_schema
 
                 # Both should have collision-resolved parameters
                 properties = schema.get("properties", {})

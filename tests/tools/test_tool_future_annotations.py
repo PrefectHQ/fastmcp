@@ -107,7 +107,7 @@ class TestFutureAnnotations:
         async with Client(fastmcp_server) as client:
             result = await client.call_tool("returns_image", {})
             assert result.content[0].type == "image"
-            assert result.content[0].mimeType == "image/png"
+            assert result.content[0].mime_type == "image/png"
 
     async def test_async_with_context(self):
         async with Client(fastmcp_server) as client:

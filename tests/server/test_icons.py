@@ -36,8 +36,8 @@ class TestServerIcons:
 
         # Verify that icons and website_url are passed to the underlying server
         async with Client(mcp) as client:
-            server_info = client.initialize_result.serverInfo
-            assert server_info.websiteUrl == "https://example.com"
+            server_info = client.initialize_result.server_info
+            assert server_info.website_url == "https://example.com"
             assert server_info.icons == icons
 
     async def test_server_without_icons_and_website_url(self):
@@ -45,8 +45,8 @@ class TestServerIcons:
         mcp = FastMCP(name="TestServer")
 
         async with Client(mcp) as client:
-            server_info = client.initialize_result.serverInfo
-            assert server_info.websiteUrl is None
+            server_info = client.initialize_result.server_info
+            assert server_info.website_url is None
             assert server_info.icons is None
 
 
@@ -290,7 +290,7 @@ class TestIconTypes:
         mcp = FastMCP("TestServer", icons=icons)
 
         async with Client(mcp) as client:
-            server_info = client.initialize_result.serverInfo
+            server_info = client.initialize_result.server_info
             assert len(server_info.icons) == 3
             assert server_info.icons == icons
 
@@ -319,9 +319,9 @@ class TestIconTypes:
         mcp = FastMCP("TestServer", icons=icons)
 
         async with Client(mcp) as client:
-            server_info = client.initialize_result.serverInfo
+            server_info = client.initialize_result.server_info
             assert server_info.icons[0].src == "https://example.com/icon.png"
-            assert server_info.icons[0].mimeType is None
+            assert server_info.icons[0].mime_type is None
             assert server_info.icons[0].sizes is None
 
 

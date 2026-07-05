@@ -121,7 +121,7 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
                 key=tool.key,
                 name=tool.name or tool.key,
                 description=tool.description,
-                input_schema=mcp_tool.inputSchema if mcp_tool.inputSchema else {},
+                input_schema=mcp_tool.input_schema if mcp_tool.input_schema else {},
                 output_schema=tool.output_schema,
                 annotations=tool.annotations.model_dump() if tool.annotations else None,
                 tags=list(tool.tags) if tool.tags else None,
@@ -263,7 +263,7 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
                     key=mcp_tool.name,
                     name=mcp_tool.name,
                     description=mcp_tool.description,
-                    input_schema=mcp_tool.inputSchema if mcp_tool.inputSchema else {},
+                    input_schema=mcp_tool.input_schema if mcp_tool.input_schema else {},
                     output_schema=None,  # v1 doesn't have output_schema
                     annotations=None,  # v1 doesn't have annotations
                     tags=None,  # v1 doesn't have tags
@@ -307,7 +307,7 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
                     uri=str(mcp_resource.uri),
                     name=mcp_resource.name,
                     description=mcp_resource.description,
-                    mime_type=mcp_resource.mimeType,
+                    mime_type=mcp_resource.mime_type,
                     annotations=None,  # v1 doesn't have annotations
                     tags=None,  # v1 doesn't have tags
                     title=None,  # v1 doesn't have title
@@ -323,11 +323,11 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
         for mcp_template in mcp_templates:
             template_infos.append(  # noqa: PERF401
                 TemplateInfo(
-                    key=str(mcp_template.uriTemplate),
-                    uri_template=str(mcp_template.uriTemplate),
+                    key=str(mcp_template.uri_template),
+                    uri_template=str(mcp_template.uri_template),
                     name=mcp_template.name,
                     description=mcp_template.description,
-                    mime_type=mcp_template.mimeType,
+                    mime_type=mcp_template.mime_type,
                     parameters=None,  # v1 doesn't expose template parameters
                     annotations=None,  # v1 doesn't have annotations
                     tags=None,  # v1 doesn't have tags
@@ -348,14 +348,14 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
         }
 
         # Extract server-level icons and website_url from serverInfo
-        server_info = client.initialize_result.serverInfo
+        server_info = client.initialize_result.server_info
         server_icons = (
             [icon.model_dump() for icon in server_info.icons]
             if hasattr(server_info, "icons") and server_info.icons
             else None
         )
         server_website_url = (
-            server_info.websiteUrl if hasattr(server_info, "websiteUrl") else None
+            server_info.website_url if hasattr(server_info, "websiteUrl") else None
         )
 
         return FastMCPInfo(
@@ -443,7 +443,7 @@ async def format_mcp_info(mcp: FastMCP[Any] | FastMCP1x) -> bytes:
         templates_result = await client.list_resource_templates_mcp()
 
         # Get server info from the initialize result
-        server_info = client.initialize_result.serverInfo
+        server_info = client.initialize_result.server_info
 
         # Combine into MCP protocol structure with environment metadata
         result = {
@@ -456,7 +456,7 @@ async def format_mcp_info(mcp: FastMCP[Any] | FastMCP1x) -> bytes:
             "tools": tools_result.tools,
             "prompts": prompts_result.prompts,
             "resources": resources_result.resources,
-            "resourceTemplates": templates_result.resourceTemplates,
+            "resourceTemplates": templates_result.resource_templates,
         }
 
         return pydantic_core.to_json(result, indent=2)

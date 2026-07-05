@@ -479,7 +479,7 @@ class TestTools:
         async with Client(proxy_server) as client:
             tools = await client.list_tools()
             greet_tool = next(t for t in tools if t.name == "greet")
-            assert "extra" in greet_tool.inputSchema["properties"]
+            assert "extra" in greet_tool.input_schema["properties"]
 
 
 class TestResources:
@@ -546,18 +546,18 @@ class TestResources:
             assert isinstance(original, TextResourceContents)
             assert isinstance(proxied, TextResourceContents)
             assert original.text == proxied.text, f"Content {i} text mismatch"
-            assert original.mimeType == proxied.mimeType, (
+            assert original.mime_type == proxied.mime_type, (
                 f"Content {i} mimeType mismatch"
             )
             assert original.meta == proxied.meta, f"Content {i} meta mismatch"
 
         # Verify the contents are what we expect
         assert original_result[0].text == "First item"
-        assert original_result[0].mimeType == "text/plain"
+        assert original_result[0].mime_type == "text/plain"
         assert original_result[1].text == '{"key": "value"}'
-        assert original_result[1].mimeType == "application/json"
+        assert original_result[1].mime_type == "application/json"
         assert original_result[2].text == "# Markdown\nContent"
-        assert original_result[2].mimeType == "text/markdown"
+        assert original_result[2].mime_type == "text/markdown"
 
     async def test_read_resource_returns_none_if_not_found(self, proxy_server):
         with pytest.raises(
@@ -661,15 +661,15 @@ class TestResourceTemplates:
             assert isinstance(original, TextResourceContents)
             assert isinstance(proxied, TextResourceContents)
             assert original.text == proxied.text, f"Content {i} text mismatch"
-            assert original.mimeType == proxied.mimeType, (
+            assert original.mime_type == proxied.mime_type, (
                 f"Content {i} mimeType mismatch"
             )
 
         # Verify the contents are what we expect
         assert original_result[0].text == "Item test123 - First"
-        assert original_result[0].mimeType == "text/plain"
+        assert original_result[0].mime_type == "text/plain"
         assert original_result[1].text == '{"id": "test123", "status": "active"}'
-        assert original_result[1].mimeType == "application/json"
+        assert original_result[1].mime_type == "application/json"
 
     async def test_proxy_can_overwrite_proxied_resource_template(self, proxy_server):
         """
@@ -706,7 +706,7 @@ class TestResourceTemplates:
         async with Client(proxy_server) as client:
             templates = await client.list_resource_templates()
             user_template = next(
-                t for t in templates if t.uriTemplate == "data://user/{user_id}"
+                t for t in templates if t.uri_template == "data://user/{user_id}"
             )
             assert user_template.name == "overwritten_get_user"
 
@@ -888,7 +888,7 @@ class TestPrompts:
         # Verify the image content is preserved as ImageContent, not JSON text
         assert isinstance(proxy_result.messages[1].content, mcp_types.ImageContent)
         assert proxy_result.messages[1].content.data == "iVBORw0KGgoAAAANSUhEUg=="
-        assert proxy_result.messages[1].content.mimeType == "image/png"
+        assert proxy_result.messages[1].content.mime_type == "image/png"
 
 
 async def test_proxy_handles_multiple_concurrent_tasks_correctly(

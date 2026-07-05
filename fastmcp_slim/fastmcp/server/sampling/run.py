@@ -88,7 +88,7 @@ class SampleStep:
     def is_tool_use(self) -> bool:
         """True if the LLM is requesting tool execution."""
         if isinstance(self.response, CreateMessageResultWithTools):
-            return self.response.stopReason == "toolUse"
+            return self.response.stop_reason == "toolUse"
         return False
 
     @property
@@ -575,7 +575,7 @@ async def sample_step_impl(
     # Check if this is a tool use response
     is_tool_use_response = (
         isinstance(response, CreateMessageResultWithTools)
-        and response.stopReason == "toolUse"
+        and response.stop_reason == "toolUse"
     )
 
     # Always include the assistant response in history

@@ -176,7 +176,7 @@ class TestResourceContent:
         mcp_content = content.to_mcp_resource_contents("resource://test")
         assert isinstance(mcp_content, mcp_types.TextResourceContents)
         assert mcp_content.text == "hello"
-        assert mcp_content.mimeType == "text/plain"
+        assert mcp_content.mime_type == "text/plain"
         assert str(mcp_content.uri) == "resource://test"
         assert mcp_content.meta == {"k": "v"}
 
@@ -188,7 +188,7 @@ class TestResourceContent:
         mcp_content = content.to_mcp_resource_contents("resource://binary")
         assert isinstance(mcp_content, mcp_types.BlobResourceContents)
         assert mcp_content.blob == "AAEC"  # base64 of \x00\x01\x02
-        assert mcp_content.mimeType == "application/octet-stream"
+        assert mcp_content.mime_type == "application/octet-stream"
 
 
 class TestResourceResult:

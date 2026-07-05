@@ -632,7 +632,7 @@ class TestMessage:
         msg = Message(img, role="user")
         assert isinstance(msg.content, ImageContent)
         assert msg.content.data == "base64data"
-        assert msg.content.mimeType == "image/png"
+        assert msg.content.mime_type == "image/png"
 
     def test_message_passthrough_audio_content(self):
         """Test Message passes through AudioContent without JSON serialization."""
@@ -642,7 +642,7 @@ class TestMessage:
         msg = Message(audio, role="user")
         assert isinstance(msg.content, AudioContent)
         assert msg.content.data == "base64audio"
-        assert msg.content.mimeType == "audio/wav"
+        assert msg.content.mime_type == "audio/wav"
 
     def test_message_image_content_to_mcp_prompt_message(self):
         """Test that ImageContent round-trips through to_mcp_prompt_message."""

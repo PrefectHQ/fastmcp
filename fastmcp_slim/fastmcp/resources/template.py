@@ -340,10 +340,10 @@ class ResourceTemplate(FastMCPComponent):
         # Note: This creates a simple ResourceTemplate instance. For function-based templates,
         # the original function is lost, which is expected for remote templates.
         return cls(
-            uri_template=mcp_template.uriTemplate,
+            uri_template=mcp_template.uri_template,
             name=mcp_template.name,
             description=mcp_template.description,
-            mime_type=mcp_template.mimeType or "text/plain",
+            mime_type=mcp_template.mime_type or "text/plain",
             parameters={},  # Remote templates don't have local parameters
         )
 

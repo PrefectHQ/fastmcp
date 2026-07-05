@@ -216,8 +216,8 @@ class TestToolInjectionMiddleware:
 
         multiply_tool = next(t for t in tools if t.name == "multiply")
         assert multiply_tool.description == "Multiply two numbers."
-        assert "a" in multiply_tool.inputSchema["properties"]
-        assert "b" in multiply_tool.inputSchema["properties"]
+        assert "a" in multiply_tool.input_schema["properties"]
+        assert "b" in multiply_tool.input_schema["properties"]
 
     async def test_injected_tool_does_not_conflict_with_base_tool(
         self, base_server: FastMCP

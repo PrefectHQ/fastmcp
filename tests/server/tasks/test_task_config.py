@@ -265,7 +265,7 @@ class TestPromptModeEnforcement:
 
 
 class TestToolExecutionMetadata:
-    """Test that ToolExecution.taskSupport is set correctly in tool metadata."""
+    """Test that ToolExecution.task_support is set correctly in tool metadata."""
 
     async def test_optional_tool_exposes_task_support(self):
         """Tools with task enabled should expose taskSupport in metadata."""
@@ -280,7 +280,7 @@ class TestToolExecutionMetadata:
             tool = next(t for t in tools if t.name == "my_tool")
             assert isinstance(tool, MCPTool)
             assert isinstance(tool.execution, ToolExecution)
-            assert tool.execution.taskSupport == "optional"
+            assert tool.execution.task_support == "optional"
 
     async def test_required_tool_exposes_task_support(self):
         """Tools with mode=required should expose taskSupport='required'."""
@@ -295,7 +295,7 @@ class TestToolExecutionMetadata:
             tool = next(t for t in tools if t.name == "my_tool")
             assert isinstance(tool, MCPTool)
             assert isinstance(tool.execution, ToolExecution)
-            assert tool.execution.taskSupport == "required"
+            assert tool.execution.task_support == "required"
 
     async def test_forbidden_tool_has_no_execution(self):
         """Tools with mode=forbidden should not expose execution metadata."""

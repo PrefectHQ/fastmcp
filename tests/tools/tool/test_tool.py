@@ -547,7 +547,7 @@ class TestToolExecutionField:
 
         mcp_tool = tool.to_mcp_tool()
         assert mcp_tool.execution is not None
-        assert mcp_tool.execution.taskSupport == "optional"
+        assert mcp_tool.execution.task_support == "optional"
 
     def test_tool_without_execution_field(self):
         """Test that Tool without execution returns None."""
@@ -572,7 +572,7 @@ class TestToolExecutionField:
         override_execution = ToolExecution(taskSupport="required")
         mcp_tool = tool.to_mcp_tool(execution=override_execution)
         assert mcp_tool.execution is not None
-        assert mcp_tool.execution.taskSupport == "required"
+        assert mcp_tool.execution.task_support == "required"
 
     async def test_function_tool_task_config_still_works(self):
         """FunctionTool should still derive execution from task_config."""
@@ -585,7 +585,7 @@ class TestToolExecutionField:
 
         # FunctionTool sets execution from task_config
         assert mcp_tool.execution is not None
-        assert mcp_tool.execution.taskSupport == "optional"
+        assert mcp_tool.execution.task_support == "optional"
 
     def test_tool_execution_required_mode(self):
         """Test that Tool can store required execution mode."""
@@ -598,7 +598,7 @@ class TestToolExecutionField:
 
         mcp_tool = tool.to_mcp_tool()
         assert mcp_tool.execution is not None
-        assert mcp_tool.execution.taskSupport == "required"
+        assert mcp_tool.execution.task_support == "required"
 
     def test_tool_execution_forbidden_mode(self):
         """Test that Tool can store forbidden execution mode."""
@@ -611,4 +611,4 @@ class TestToolExecutionField:
 
         mcp_tool = tool.to_mcp_tool()
         assert mcp_tool.execution is not None
-        assert mcp_tool.execution.taskSupport == "forbidden"
+        assert mcp_tool.execution.task_support == "forbidden"

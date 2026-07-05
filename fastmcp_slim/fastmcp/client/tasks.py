@@ -162,7 +162,7 @@ class Task(abc.ABC, Generic[TaskResultT]):
             >>> task = await client.call_tool("slow_operation", {}, task=True)
             >>>
             >>> def on_update(status: GetTaskResult):
-            ...     print(f"Task {status.taskId} is now {status.status}")
+            ...     print(f"Task {status.task_id} is now {status.status}")
             >>>
             >>> task.on_status_change(on_update)
             >>> result = await task  # Callback fires when status changes

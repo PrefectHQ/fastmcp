@@ -511,7 +511,7 @@ class Client(
             client = Client(server, auto_initialize=False)
             async with client:
                 result = await client.initialize()
-                print(f"Server: {result.serverInfo.name}")
+                print(f"Server: {result.server_info.name}")
                 print(f"Instructions: {result.instructions}")
             ```
         """
@@ -782,7 +782,7 @@ class Client(
         Updates Task object's cache and triggers events/callbacks.
         """
         # Extract task ID from notification params
-        task_id = notification.params.taskId
+        task_id = notification.params.task_id
         if not task_id:
             return
 

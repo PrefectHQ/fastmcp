@@ -105,7 +105,7 @@ class ToolResult(BaseModel):
     is_error: bool = Field(
         default=False,
         description="Whether this result represents a tool execution error. "
-        "When True, it maps to CallToolResult.isError so the error is returned "
+        "When True, it maps to CallToolResult.is_error so the error is returned "
         "to the client rather than raised.",
     )
 

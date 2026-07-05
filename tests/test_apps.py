@@ -465,7 +465,7 @@ class TestIntegration:
             resources = await client.list_resources()
             assert len(resources) == 1
             assert str(resources[0].uri) == "ui://my-app/view.html"
-            assert resources[0].mimeType == UI_MIME_TYPE
+            assert resources[0].mime_type == UI_MIME_TYPE
 
     async def test_ui_resource_read_preserves_mime_type(self):
         """Reading a ui:// resource returns content with the correct MIME type."""
@@ -478,7 +478,7 @@ class TestIntegration:
         async with Client(server) as client:
             result = await client.read_resource_mcp("ui://my-app/view.html")
             assert len(result.contents) == 1
-            assert result.contents[0].mimeType == UI_MIME_TYPE
+            assert result.contents[0].mime_type == UI_MIME_TYPE
 
     async def test_app_tool_callable(self):
         """A tool registered with app= is still callable normally."""

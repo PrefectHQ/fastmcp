@@ -45,7 +45,7 @@ async def test_tasks_get_endpoint_returns_status(endpoint_server):
 
         # Check status immediately - should be submitted or working
         status = await task.status()
-        assert status.taskId == task.task_id
+        assert status.task_id == task.task_id
         assert status.status in ["working", "completed"]
 
         # Wait for completion
@@ -62,8 +62,8 @@ async def test_tasks_get_endpoint_includes_poll_interval(endpoint_server):
         task = await client.call_tool("quick_tool", {"value": 42}, task=True)
 
         status = await task.status()
-        assert status.pollInterval is not None
-        assert isinstance(status.pollInterval, int)
+        assert status.poll_interval is not None
+        assert isinstance(status.poll_interval, int)
 
 
 async def test_tasks_result_endpoint_returns_result_when_completed(endpoint_server):

@@ -39,7 +39,7 @@ class InitializationMiddleware(Middleware):
         if hasattr(context.message, "params") and hasattr(
             context.message.params, "clientInfo"
         ):
-            self.client_info = context.message.params.clientInfo
+            self.client_info = context.message.params.client_info
 
         # Store in instance for cross-request access
         # (session state is not available during on_initialize)
@@ -96,7 +96,7 @@ class ClientDetectionMiddleware(Middleware):
                 if tool.annotations is None:
                     tool.annotations = mt.ToolAnnotations()
                 # Mark as read-only for test clients
-                tool.annotations.readOnlyHint = True
+                tool.annotations.read_only_hint = True
             self.tools_modified = True
 
         return tools
@@ -173,7 +173,7 @@ async def test_client_detection_middleware():
         # Check that the tool has the modified annotation
         tool = tools[0]
         assert tool.annotations is not None
-        assert tool.annotations.readOnlyHint is True
+        assert tool.annotations.read_only_hint is True
 
 
 async def test_multiple_middleware_initialization():
@@ -293,8 +293,8 @@ async def test_middleware_can_access_initialize_result():
         assert isinstance(middleware.initialize_result, mt.InitializeResult)
 
         # Verify the result contains expected server info
-        assert middleware.initialize_result.serverInfo.name == "TestServer"
-        assert middleware.initialize_result.protocolVersion is not None
+        assert middleware.initialize_result.server_info.name == "TestServer"
+        assert middleware.initialize_result.protocol_version is not None
         assert middleware.initialize_result.capabilities is not None
 
 

@@ -201,7 +201,7 @@ class TestAutomaticToolLoop:
                 tool_result = msg.content
                 break
         assert tool_result is not None
-        assert tool_result.isError is True
+        assert tool_result.is_error is True
         # Content is list of TextContent objects
         assert isinstance(tool_result.content[0], TextContent)
         error_text = tool_result.content[0].text
@@ -275,7 +275,7 @@ class TestAutomaticToolLoop:
                 tool_result = msg.content
                 break
         assert tool_result is not None
-        assert tool_result.isError is True
+        assert tool_result.is_error is True
         # Content is list of TextContent objects
         assert isinstance(tool_result.content[0], TextContent)
         error_text = tool_result.content[0].text
@@ -682,8 +682,8 @@ class TestAutomaticToolLoop:
         tool_results = cast(list[ToolResultContent], tool_result_message.content)
         assert len(tool_results) == 2
         # One should be success, one should be error
-        assert any(not r.isError for r in tool_results)
-        assert any(r.isError for r in tool_results)
+        assert any(not r.is_error for r in tool_results)
+        assert any(r.is_error for r in tool_results)
 
     async def test_concurrent_tool_result_order_preserved(self):
         """Test that tool results maintain the same order as tool calls."""
@@ -761,9 +761,9 @@ class TestAutomaticToolLoop:
         tool_result_message = messages_received[1][-1]
         tool_results = cast(list[ToolResultContent], tool_result_message.content)
         assert len(tool_results) == 3
-        assert tool_results[0].toolUseId == "call_1"
-        assert tool_results[1].toolUseId == "call_2"
-        assert tool_results[2].toolUseId == "call_3"
+        assert tool_results[0].tool_use_id == "call_1"
+        assert tool_results[1].tool_use_id == "call_2"
+        assert tool_results[2].tool_use_id == "call_3"
         # Check values are correct
         result_texts = [cast(TextContent, r.content[0]).text for r in tool_results]
         assert result_texts == ["1", "2", "3"]

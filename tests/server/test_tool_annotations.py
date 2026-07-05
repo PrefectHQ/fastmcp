@@ -28,8 +28,8 @@ async def test_tool_annotations_in_tool_manager():
     assert len(tools) == 1
     assert tools[0].annotations is not None
     assert tools[0].annotations.title == "Echo Tool"
-    assert tools[0].annotations.readOnlyHint is True
-    assert tools[0].annotations.openWorldHint is False
+    assert tools[0].annotations.read_only_hint is True
+    assert tools[0].annotations.open_world_hint is False
 
 
 async def test_tool_annotations_in_mcp_protocol():
@@ -52,8 +52,8 @@ async def test_tool_annotations_in_mcp_protocol():
     assert len(result.tools) == 1
     assert result.tools[0].annotations is not None
     assert result.tools[0].annotations.title == "Echo Tool"
-    assert result.tools[0].annotations.readOnlyHint is True
-    assert result.tools[0].annotations.openWorldHint is False
+    assert result.tools[0].annotations.read_only_hint is True
+    assert result.tools[0].annotations.open_world_hint is False
 
 
 async def test_tool_annotations_in_client_api():
@@ -78,8 +78,8 @@ async def test_tool_annotations_in_client_api():
         assert tools_result[0].name == "echo"
         assert tools_result[0].annotations is not None
         assert tools_result[0].annotations.title == "Echo Tool"
-        assert tools_result[0].annotations.readOnlyHint is True
-        assert tools_result[0].annotations.openWorldHint is False
+        assert tools_result[0].annotations.read_only_hint is True
+        assert tools_result[0].annotations.open_world_hint is False
 
 
 async def test_provide_tool_annotations_as_dict_to_decorator():
@@ -104,8 +104,8 @@ async def test_provide_tool_annotations_as_dict_to_decorator():
         assert tools_result[0].name == "echo"
         assert tools_result[0].annotations is not None
         assert tools_result[0].annotations.title == "Echo Tool"
-        assert tools_result[0].annotations.readOnlyHint is True
-        assert tools_result[0].annotations.openWorldHint is False
+        assert tools_result[0].annotations.read_only_hint is True
+        assert tools_result[0].annotations.open_world_hint is False
 
 
 async def test_direct_tool_annotations_in_tool_manager():
@@ -130,10 +130,10 @@ async def test_direct_tool_annotations_in_tool_manager():
     assert len(tools) == 1
     assert tools[0].annotations is not None
     assert tools[0].annotations.title == "Direct Tool"
-    assert tools[0].annotations.readOnlyHint is False
-    assert tools[0].annotations.destructiveHint is True
-    assert tools[0].annotations.idempotentHint is False
-    assert tools[0].annotations.openWorldHint is True
+    assert tools[0].annotations.read_only_hint is False
+    assert tools[0].annotations.destructive_hint is True
+    assert tools[0].annotations.idempotent_hint is False
+    assert tools[0].annotations.open_world_hint is True
 
 
 async def test_direct_tool_annotations_in_client_api():
@@ -160,8 +160,8 @@ async def test_direct_tool_annotations_in_client_api():
         assert tools_result[0].name == "modify"
         assert tools_result[0].annotations is not None
         assert tools_result[0].annotations.title == "Direct Tool"
-        assert tools_result[0].annotations.readOnlyHint is False
-        assert tools_result[0].annotations.destructiveHint is True
+        assert tools_result[0].annotations.read_only_hint is False
+        assert tools_result[0].annotations.destructive_hint is True
 
 
 async def test_add_tool_method_annotations():
@@ -189,8 +189,8 @@ async def test_add_tool_method_annotations():
     assert len(tools) == 1
     assert tools[0].annotations is not None
     assert tools[0].annotations.title == "Create Item"
-    assert tools[0].annotations.readOnlyHint is False
-    assert tools[0].annotations.destructiveHint is False
+    assert tools[0].annotations.read_only_hint is False
+    assert tools[0].annotations.destructive_hint is False
 
 
 async def test_tool_functionality_with_annotations():
@@ -221,7 +221,7 @@ async def test_tool_functionality_with_annotations():
 
 
 async def test_task_execution_auto_populated_for_task_enabled_tool():
-    """Test that execution.taskSupport is automatically set when tool has task=True."""
+    """Test that execution.task_support is automatically set when tool has task=True."""
     mcp = FastMCP("Test Server")
 
     @mcp.tool(task=True)
@@ -235,7 +235,7 @@ async def test_task_execution_auto_populated_for_task_enabled_tool():
         assert tools_result[0].name == "background_tool"
         assert isinstance(tools_result[0], MCPTool)
         assert isinstance(tools_result[0].execution, ToolExecution)
-        assert tools_result[0].execution.taskSupport == "optional"
+        assert tools_result[0].execution.task_support == "optional"
 
 
 async def test_task_execution_omitted_for_task_disabled_tool():

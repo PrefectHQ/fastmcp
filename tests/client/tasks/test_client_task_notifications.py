@@ -206,7 +206,7 @@ async def test_notification_with_failed_task(task_notification_server):
         status = await task.status()
         assert status.status == "failed"
         assert (
-            status.statusMessage is not None
+            status.status_message is not None
         )  # Error details in statusMessage per spec
 
 

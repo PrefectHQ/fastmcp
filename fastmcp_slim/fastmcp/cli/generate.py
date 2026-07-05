@@ -165,7 +165,7 @@ def _to_python_identifier(name: str) -> str:
 
 def _tool_function_source(tool: mcp_types.Tool) -> str:
     """Generate the source for a single ``@call_tool_app.command`` function."""
-    schema = tool.inputSchema
+    schema = tool.input_schema
     properties: dict[str, Any] = schema.get("properties", {})
     required = set(schema.get("required", []))
 
@@ -361,10 +361,10 @@ def generate_cli_script(
                     console.print(block.text)
                 elif isinstance(block, mcp_types.ImageContent):
                     size = len(block.data) * 3 // 4
-                    console.print(f"[dim][Image: {block.mimeType}, ~{size} bytes][/dim]")
+                    console.print(f"[dim][Image: {block.mime_type}, ~{size} bytes][/dim]")
                 elif isinstance(block, mcp_types.AudioContent):
                     size = len(block.data) * 3 // 4
-                    console.print(f"[dim][Audio: {block.mimeType}, ~{size} bytes][/dim]")
+                    console.print(f"[dim][Audio: {block.mime_type}, ~{size} bytes][/dim]")
 
 
         async def _call_tool(tool_name: str, arguments: dict) -> None:
@@ -401,8 +401,8 @@ def generate_cli_script(
                     return
                 for tool in tools:
                     sig_parts = []
-                    props = tool.inputSchema.get("properties", {})
-                    required = set(tool.inputSchema.get("required", []))
+                    props = tool.input_schema.get("properties", {})
+                    required = set(tool.input_schema.get("required", []))
                     for pname, pschema in props.items():
                         ptype = pschema.get("type", "string")
                         if pname in required:
@@ -443,7 +443,7 @@ def generate_cli_script(
                         console.print(block.text)
                     elif isinstance(block, mcp_types.BlobResourceContents):
                         size = len(block.blob) * 3 // 4
-                        console.print(f"[dim][Blob: {block.mimeType}, ~{size} bytes][/dim]")
+                        console.print(f"[dim][Blob: {block.mime_type}, ~{size} bytes][/dim]")
 
 
         @app.command
@@ -487,7 +487,7 @@ def generate_cli_script(
                         console.print(f"  {msg.content.text}")
                     elif isinstance(msg.content, mcp_types.ImageContent):
                         size = len(msg.content.data) * 3 // 4
-                        console.print(f"  [dim][Image: {msg.content.mimeType}, ~{size} bytes][/dim]")
+                        console.print(f"  [dim][Image: {msg.content.mime_type}, ~{size} bytes][/dim]")
                     else:
                         console.print(f"  {msg.content}")
                     console.print()""")
@@ -566,7 +566,7 @@ def _schema_type_label(prop_schema: dict[str, Any]) -> str:
 
 def _tool_skill_section(tool: mcp_types.Tool, cli_filename: str) -> str:
     """Generate a SKILL.md section for a single tool."""
-    schema = tool.inputSchema
+    schema = tool.input_schema
     properties: dict[str, Any] = schema.get("properties", {})
     required = set(schema.get("required", []))
 

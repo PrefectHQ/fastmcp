@@ -105,7 +105,7 @@ class TestToolParameters:
         assert result.structured_content is None
         assert isinstance(result.content, list)
         assert isinstance(result.content[0], ImageContent)
-        assert result.content[0].mimeType == "image/png"
+        assert result.content[0].mime_type == "image/png"
         assert result.content[0].data == base64.b64encode(b"fake png data").decode()
 
     async def test_tool_with_invalid_input(self):

@@ -64,8 +64,8 @@ class TestGithubMCPRemote:
                 assert isinstance(tool, Tool)
                 assert len(tool.name) > 0
                 assert tool.description is not None and len(tool.description) > 0
-                assert isinstance(tool.inputSchema, dict)
-                assert len(tool.inputSchema) > 0
+                assert isinstance(tool.input_schema, dict)
+                assert len(tool.input_schema) > 0
 
     async def test_list_resources(
         self, streamable_http_client: Client[StreamableHttpTransport]

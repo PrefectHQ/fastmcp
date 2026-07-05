@@ -185,7 +185,7 @@ class TestResourceTaskMetaDirectServerCall:
             # Read inner resource as background task
             result = await server.read_resource("data://inner", task_meta=TaskMeta())
             # Should get CreateTaskResult since we provided task_meta
-            return f"Created task: {result.task.taskId}"
+            return f"Created task: {result.task.task_id}"
 
         async with Client(server) as client:
             result = await client.call_tool("outer_tool", {})
@@ -221,7 +221,7 @@ class TestResourceTaskMetaDirectServerCall:
         @server.tool
         async def outer_tool() -> str:
             result = await server.read_resource("item://99", task_meta=TaskMeta())
-            return f"Created task: {result.task.taskId}"
+            return f"Created task: {result.task.task_id}"
 
         async with Client(server) as client:
             result = await client.call_tool("outer_tool", {})

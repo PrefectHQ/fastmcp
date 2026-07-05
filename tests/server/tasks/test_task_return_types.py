@@ -407,7 +407,7 @@ async def media_server(tmp_path):
             lambda r: (
                 len(r.content) == 1
                 and r.content[0].type == "image"
-                and r.content[0].mimeType == "image/png"
+                and r.content[0].mime_type == "image/png"
             ),
         ),
         (
@@ -630,7 +630,7 @@ async def mcp_content_server(tmp_path):
             lambda r: (
                 len(r.content) == 1
                 and r.content[0].type == "image"
-                and r.content[0].mimeType == "image/png"
+                and r.content[0].mime_type == "image/png"
             ),
         ),
         (

@@ -100,10 +100,10 @@ class GoogleGenaiSamplingHandler:
             google_tools = [
                 _convert_tool_to_google_genai(tool) for tool in params.tools
             ]
-            tool_config = _convert_tool_choice_to_google_genai(params.toolChoice)
+            tool_config = _convert_tool_choice_to_google_genai(params.tool_choice)
 
         # Select the model based on preferences
-        selected_model = self._get_model(model_preferences=params.modelPreferences)
+        selected_model = self._get_model(model_preferences=params.model_preferences)
 
         # Configure thinking if a budget is specified
         thinking_config = (
@@ -117,10 +117,10 @@ class GoogleGenaiSamplingHandler:
                 model=selected_model,
                 contents=contents,
                 config=GenerateContentConfig(
-                    system_instruction=params.systemPrompt,
+                    system_instruction=params.system_prompt,
                     temperature=params.temperature,
-                    max_output_tokens=params.maxTokens,
-                    stop_sequences=params.stopSequences,
+                    max_output_tokens=params.max_tokens,
+                    stop_sequences=params.stop_sequences,
                     thinking_config=thinking_config,
                     tools=google_tools,  # ty: ignore[invalid-argument-type]
                     tool_config=tool_config,
@@ -150,7 +150,7 @@ def _convert_tool_to_google_genai(tool: MCPTool) -> GoogleTool:
     """
     from fastmcp.utilities.json_schema import compress_schema
 
-    schema = compress_schema(tool.inputSchema, prune_titles=True)
+    schema = compress_schema(tool.input_schema, prune_titles=True)
     return GoogleTool(
         function_declarations=[
             FunctionDeclaration(
@@ -207,7 +207,7 @@ def _sampling_content_to_google_genai_part(
         return Part(
             inline_data=Blob(
                 data=base64.b64decode(content.data),
-                mime_type=content.mimeType,
+                mime_type=content.mime_type,
             )
         )
 
@@ -215,7 +215,7 @@ def _sampling_content_to_google_genai_part(
         return Part(
             inline_data=Blob(
                 data=base64.b64decode(content.data),
-                mime_type=content.mimeType,
+                mime_type=content.mime_type,
             )
         )
 
@@ -249,7 +249,7 @@ def _sampling_content_to_google_genai_part(
         # Our IDs are formatted as "{function_name}_{uuid8}", so extract the name.
         # Note: This is a limitation of MCP's ToolResultContent which only carries
         # toolUseId, while Google's FunctionResponse requires the function name.
-        tool_use_id = content.toolUseId
+        tool_use_id = content.tool_use_id
         if "_" in tool_use_id:
             # Split and rejoin all but the last part (the UUID suffix)
             parts = tool_use_id.rsplit("_", 1)

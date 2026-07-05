@@ -93,16 +93,16 @@ class ClientToolsMixin:
         for _ in range(max_pages):
             result = await self.list_tools_mcp(cursor=cursor)
             all_tools.extend(result.tools)
-            if not result.nextCursor:
+            if not result.next_cursor:
                 break
-            if result.nextCursor in seen_cursors:
+            if result.next_cursor in seen_cursors:
                 logger.warning(
                     f"[{self.name}] Server returned duplicate pagination cursor"
-                    f" {result.nextCursor!r} for list_tools; stopping pagination"
+                    f" {result.next_cursor!r} for list_tools; stopping pagination"
                 )
                 break
-            seen_cursors.add(result.nextCursor)
-            cursor = result.nextCursor
+            seen_cursors.add(result.next_cursor)
+            cursor = result.next_cursor
         else:
             raise RuntimeError(
                 f"[{self.name}] Reached auto-pagination limit"
@@ -170,7 +170,7 @@ class ClientToolsMixin:
 
             # Reflect tool-level errors on the span so callers see ERROR
             # status even though the MCP protocol call itself succeeded.
-            if result.isError and span.is_recording():
+            if result.is_error and span.is_recording():
                 span.set_attribute("error.type", "tool_error")
                 description = ""
                 if result.content and isinstance(
@@ -366,7 +366,7 @@ class ClientToolsMixin:
 
         if isinstance(raw_result, mcp_types.CreateTaskResult):
             # Task was accepted - extract task info from CreateTaskResult
-            server_task_id = raw_result.task.taskId
+            server_task_id = raw_result.task.task_id
             self._submitted_task_ids.add(server_task_id)
 
             task_obj = ToolTask(
@@ -418,13 +418,13 @@ async def _parse_call_tool_result(
     from fastmcp.client.client import CallToolResult
 
     data = None
-    if result.isError and raise_on_error:
+    if result.is_error and raise_on_error:
         if result.content and isinstance(result.content[0], mcp_types.TextContent):
             msg = result.content[0].text
         else:
             msg = f"Tool '{name}' returned an error"
         raise ToolError(msg)
-    elif result.structuredContent and not result.isError:
+    elif result.structured_content and not result.is_error:
         try:
             raw_fastmcp_meta = (result.meta or {}).get("fastmcp")
             fastmcp_meta = (
@@ -441,15 +441,15 @@ async def _parse_call_tool_result(
 
             if wrap_from_meta:
                 # Meta tells us the result is wrapped — unwrap and validate.
-                structured_content = result.structuredContent.get("result")
+                structured_content = result.structured_content.get("result")
             elif name in tool_output_schemas:
                 output_schema = tool_output_schemas.get(name)
                 if output_schema and output_schema.get("x-fastmcp-wrap-result"):
-                    structured_content = result.structuredContent.get("result")
+                    structured_content = result.structured_content.get("result")
                 else:
-                    structured_content = result.structuredContent
+                    structured_content = result.structured_content
             else:
-                structured_content = result.structuredContent
+                structured_content = result.structured_content
 
             # Type-validate through the schema if available.
             output_schema = tool_output_schemas.get(name)
@@ -470,8 +470,8 @@ async def _parse_call_tool_result(
 
     return CallToolResult(
         content=result.content,
-        structured_content=result.structuredContent,
+        structured_content=result.structured_content,
         meta=result.meta,
         data=data,
-        is_error=result.isError,
+        is_error=result.is_error,
     )

@@ -152,9 +152,9 @@ class ProxyTool(Tool):
             name=mcp_tool.name,
             title=mcp_tool.title,
             description=mcp_tool.description,
-            parameters=mcp_tool.inputSchema,
+            parameters=mcp_tool.input_schema,
             annotations=mcp_tool.annotations,
-            output_schema=mcp_tool.outputSchema,
+            output_schema=mcp_tool.output_schema,
             icons=mcp_tool.icons,
             meta=mcp_tool.meta,
             tags=get_fastmcp_metadata(mcp_tool.meta).get("tags", []),
@@ -217,9 +217,9 @@ class ProxyTool(Tool):
             # Preserve backend's meta (includes task metadata for background tasks)
             return ToolResult(
                 content=result.content,
-                structured_content=result.structuredContent,
+                structured_content=result.structured_content,
                 meta=result.meta,
-                is_error=result.isError,
+                is_error=result.is_error,
             )
 
     def get_span_attributes(self) -> dict[str, Any]:
@@ -277,7 +277,7 @@ class ProxyResource(Resource):
             name=mcp_resource.name,
             title=mcp_resource.title,
             description=mcp_resource.description,
-            mime_type=mcp_resource.mimeType or "text/plain",
+            mime_type=mcp_resource.mime_type or "text/plain",
             icons=mcp_resource.icons,
             meta=mcp_resource.meta,
             tags=get_fastmcp_metadata(mcp_resource.meta).get("tags", []),
@@ -312,7 +312,7 @@ class ProxyResource(Resource):
                     contents.append(
                         ResourceContent(
                             content=item.text,
-                            mime_type=item.mimeType,
+                            mime_type=item.mime_type,
                             meta=item.meta,
                         )
                     )
@@ -320,7 +320,7 @@ class ProxyResource(Resource):
                     contents.append(
                         ResourceContent(
                             content=base64.b64decode(item.blob),
-                            mime_type=item.mimeType,
+                            mime_type=item.mime_type,
                             meta=item.meta,
                         )
                     )
@@ -370,11 +370,11 @@ class ProxyTemplate(ResourceTemplate):
 
         return cls(
             client_factory=client_factory,
-            uri_template=mcp_template.uriTemplate,
+            uri_template=mcp_template.uri_template,
             name=mcp_template.name,
             title=mcp_template.title,
             description=mcp_template.description,
-            mime_type=mcp_template.mimeType or "text/plain",
+            mime_type=mcp_template.mime_type or "text/plain",
             icons=mcp_template.icons,
             parameters={},  # Remote templates don't have local parameters
             meta=mcp_template.meta,
@@ -410,7 +410,7 @@ class ProxyTemplate(ResourceTemplate):
                 contents.append(
                     ResourceContent(
                         content=item.text,
-                        mime_type=item.mimeType,
+                        mime_type=item.mime_type,
                         meta=item.meta,
                     )
                 )
@@ -418,7 +418,7 @@ class ProxyTemplate(ResourceTemplate):
                 contents.append(
                     ResourceContent(
                         content=base64.b64decode(item.blob),
-                        mime_type=item.mimeType,
+                        mime_type=item.mime_type,
                         meta=item.meta,
                     )
                 )
@@ -435,7 +435,7 @@ class ProxyTemplate(ResourceTemplate):
             description=self.description,
             mime_type=result[
                 0
-            ].mimeType,  # Use first item's mimeType for backward compatibility
+            ].mime_type,  # Use first item's mimeType for backward compatibility
             icons=self.icons,
             meta=self.meta,
             tags=get_fastmcp_metadata(self.meta).get("tags", []),
@@ -949,10 +949,10 @@ async def default_proxy_sampling_handler(
     ctx = get_context()
     result = await ctx.sample(
         list(messages),
-        system_prompt=params.systemPrompt,
+        system_prompt=params.system_prompt,
         temperature=params.temperature,
-        max_tokens=params.maxTokens,
-        model_preferences=params.modelPreferences,
+        max_tokens=params.max_tokens,
+        model_preferences=params.model_preferences,
     )
     content = mcp_types.TextContent(type="text", text=result.text or "")
     return mcp_types.CreateMessageResult(
@@ -973,7 +973,7 @@ async def default_proxy_elicitation_handler(
     ctx = get_context()
     # requestedSchema only exists on ElicitRequestFormParams, not ElicitRequestURLParams
     requested_schema = (
-        params.requestedSchema
+        params.requested_schema
         if isinstance(params, ElicitRequestFormParams)
         else {"type": "object", "properties": {}}
     )

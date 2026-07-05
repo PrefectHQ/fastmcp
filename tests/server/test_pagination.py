@@ -166,17 +166,17 @@ class TestServerPagination:
             # First page
             result = await client.list_tools_mcp()
             assert len(result.tools) == 10
-            assert result.nextCursor is not None
+            assert result.next_cursor is not None
 
             # Second page
-            result2 = await client.list_tools_mcp(cursor=result.nextCursor)
+            result2 = await client.list_tools_mcp(cursor=result.next_cursor)
             assert len(result2.tools) == 10
-            assert result2.nextCursor is not None
+            assert result2.next_cursor is not None
 
             # Third (last) page
-            result3 = await client.list_tools_mcp(cursor=result2.nextCursor)
+            result3 = await client.list_tools_mcp(cursor=result2.next_cursor)
             assert len(result3.tools) == 5
-            assert result3.nextCursor is None
+            assert result3.next_cursor is None
 
     async def test_invalid_cursor_returns_error(self) -> None:
         """Server should return MCP error for invalid cursor."""
@@ -204,7 +204,7 @@ class TestServerPagination:
         async with Client(server) as client:
             result = await client.list_tools_mcp()
             assert len(result.tools) == 25
-            assert result.nextCursor is None
+            assert result.next_cursor is None
 
     async def test_pagination_exact_page_boundary(self) -> None:
         """Test pagination at exact page boundaries."""
@@ -220,12 +220,12 @@ class TestServerPagination:
             # First page
             result = await client.list_tools_mcp()
             assert len(result.tools) == 10
-            assert result.nextCursor is not None
+            assert result.next_cursor is not None
 
             # Second (last) page
-            result2 = await client.list_tools_mcp(cursor=result.nextCursor)
+            result2 = await client.list_tools_mcp(cursor=result.next_cursor)
             assert len(result2.tools) == 10
-            assert result2.nextCursor is None
+            assert result2.next_cursor is None
 
 
 class TestPageSizeValidation:
@@ -265,7 +265,7 @@ class TestPaginationCycleDetection:
                 cursor: str | None = None,
             ) -> mcp_types.ListToolsResult:
                 result = await original(cursor=cursor)
-                result.nextCursor = "stuck"
+                result.next_cursor = "stuck"
                 return result
 
             with patch.object(
@@ -294,7 +294,7 @@ class TestPaginationCycleDetection:
                 cursor: str | None = None,
             ) -> mcp_types.ListPromptsResult:
                 result = await original(cursor=cursor)
-                result.nextCursor = "stuck"
+                result.next_cursor = "stuck"
                 return result
 
             with patch.object(
@@ -321,7 +321,7 @@ class TestPaginationCycleDetection:
                 cursor: str | None = None,
             ) -> mcp_types.ListResourcesResult:
                 result = await original(cursor=cursor)
-                result.nextCursor = "stuck"
+                result.next_cursor = "stuck"
                 return result
 
             with patch.object(
@@ -348,7 +348,7 @@ class TestPaginationCycleDetection:
                 cursor: str | None = None,
             ) -> mcp_types.ListResourceTemplatesResult:
                 result = await original(cursor=cursor)
-                result.nextCursor = "stuck"
+                result.next_cursor = "stuck"
                 return result
 
             with patch.object(
@@ -380,7 +380,7 @@ class TestPaginationCycleDetection:
                 result = await original(cursor=cursor)
                 # Cycle through A -> B -> C -> A
                 cursors = ["A", "B", "C"]
-                result.nextCursor = cursors[call_count % 3]
+                result.next_cursor = cursors[call_count % 3]
                 call_count += 1
                 return result
 
@@ -409,7 +409,7 @@ class TestPaginationCycleDetection:
                 cursor: str | None = None,
             ) -> mcp_types.ListToolsResult:
                 result = await original(cursor=cursor)
-                result.nextCursor = ""
+                result.next_cursor = ""
                 return result
 
             with patch.object(
@@ -439,7 +439,7 @@ class TestPaginationCycleDetection:
                 nonlocal call_count
                 result = await original(cursor=cursor)
                 call_count += 1
-                result.nextCursor = f"cursor-{call_count}"
+                result.next_cursor = f"cursor-{call_count}"
                 return result
 
             with (
@@ -469,7 +469,7 @@ class TestPaginationCycleDetection:
                 nonlocal call_count
                 result = await original(cursor=cursor)
                 call_count += 1
-                result.nextCursor = f"cursor-{call_count}"
+                result.next_cursor = f"cursor-{call_count}"
                 return result
 
             with (
@@ -499,7 +499,7 @@ class TestPaginationCycleDetection:
                 nonlocal call_count
                 result = await original(cursor=cursor)
                 call_count += 1
-                result.nextCursor = f"cursor-{call_count}"
+                result.next_cursor = f"cursor-{call_count}"
                 return result
 
             with (

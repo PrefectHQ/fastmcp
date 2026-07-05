@@ -163,7 +163,7 @@ class TestParameterHandling:
                 assert search_tool is not None
 
                 # Check that parameters are included in the tool's input schema
-                params = search_tool.inputSchema
+                params = search_tool.input_schema
                 assert params["type"] == "object"
 
                 properties = params["properties"]
@@ -211,7 +211,7 @@ class TestParameterHandling:
                 assert user_post_tool is not None
 
                 # Check that path parameters are included
-                params = user_post_tool.inputSchema
+                params = user_post_tool.input_schema
                 properties = params["properties"]
 
                 # Check that path parameters are present
@@ -316,7 +316,7 @@ class TestRequestBodyHandling:
                 assert create_tool is not None
 
                 # Check that request body properties are included
-                params = create_tool.inputSchema
+                params = create_tool.input_schema
                 properties = params["properties"]
 
                 # Check that request body properties are present
@@ -637,7 +637,7 @@ class TestResourceTemplateMimeType:
             async with Client(mcp) as mcp_client:
                 templates = await mcp_client.list_resource_templates()
                 assert len(templates) == 1
-                assert templates[0].mimeType == "text/plain"
+                assert templates[0].mime_type == "text/plain"
 
     async def test_resource_template_html_mime_type(self, html_spec):
         """Resource template should reflect text/html from OpenAPI spec."""
@@ -651,7 +651,7 @@ class TestResourceTemplateMimeType:
             async with Client(mcp) as mcp_client:
                 templates = await mcp_client.list_resource_templates()
                 assert len(templates) == 1
-                assert templates[0].mimeType == "text/html"
+                assert templates[0].mime_type == "text/html"
 
     async def test_resource_template_defaults_json_mime_type(self):
         """Resource template defaults to application/json for JSON responses."""
@@ -702,7 +702,7 @@ class TestResourceTemplateMimeType:
             async with Client(mcp) as mcp_client:
                 templates = await mcp_client.list_resource_templates()
                 assert len(templates) == 1
-                assert templates[0].mimeType == "application/json"
+                assert templates[0].mime_type == "application/json"
 
 
 class TestResourceMimeType:
@@ -741,7 +741,7 @@ class TestResourceMimeType:
             async with Client(mcp) as mcp_client:
                 resources = await mcp_client.list_resources()
                 assert len(resources) == 1
-                assert resources[0].mimeType == "text/plain"
+                assert resources[0].mime_type == "text/plain"
 
     async def test_resource_mime_type_without_schema(self):
         """Resource with media type but no schema still infers MIME type."""
@@ -774,7 +774,7 @@ class TestResourceMimeType:
             async with Client(mcp) as mcp_client:
                 resources = await mcp_client.list_resources()
                 assert len(resources) == 1
-                assert resources[0].mimeType == "text/plain"
+                assert resources[0].mime_type == "text/plain"
 
 
 class TestValidateOutput:
@@ -981,10 +981,10 @@ class TestValidateOutput:
             tools = await mcp_client.list_tools()
             get_user = next(t for t in tools if t.name == "get_user")
             # With validate_output=False, the outputSchema should be permissive
-            assert get_user.outputSchema is not None
-            assert get_user.outputSchema.get("additionalProperties") is True
+            assert get_user.output_schema is not None
+            assert get_user.output_schema.get("additionalProperties") is True
             # Should NOT have specific properties from the original schema
-            assert "properties" not in get_user.outputSchema
+            assert "properties" not in get_user.output_schema
 
 
 class TestRedactHeaders:

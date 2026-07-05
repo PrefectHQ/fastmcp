@@ -152,10 +152,10 @@ class TestProxyClient:
                     content=TextContent(type="text", text="Hello, world!"),
                 )
             ]
-            assert params.systemPrompt == "You love FastMCP"
+            assert params.system_prompt == "You love FastMCP"
             assert params.temperature == 0.5
-            assert params.maxTokens == 100
-            assert params.modelPreferences == ModelPreferences(
+            assert params.max_tokens == 100
+            assert params.model_preferences == ModelPreferences(
                 hints=[ModelHint(name="gpt-4o")]
             )
             return ""
@@ -189,7 +189,7 @@ class TestProxyClient:
             assert message == "What is your name?"
             assert "Person" in str(response_type)
             assert isinstance(params, ElicitRequestFormParams)
-            assert params.requestedSchema == {
+            assert params.requested_schema == {
                 "title": "Person",
                 "type": "object",
                 "properties": {"name": {"title": "Name", "type": "string"}},
@@ -388,7 +388,7 @@ class TestProxyClient:
         ):
             # Verify the schema is correct - acknowledge should have default=False, not be nullable
             assert isinstance(params, ElicitRequestFormParams)
-            schema = params.requestedSchema
+            schema = params.requested_schema
             assert schema["properties"]["acknowledge"]["type"] == "boolean"
             assert schema["properties"]["acknowledge"]["default"] is False
 

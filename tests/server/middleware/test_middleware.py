@@ -391,7 +391,7 @@ class TestMiddlewareHooks:
             templates = await client.list_resource_templates()
 
         assert len(templates) == 1
-        assert str(templates[0].uriTemplate) == "resource://public/{x}"
+        assert str(templates[0].uri_template) == "resource://public/{x}"
 
     async def test_list_prompts_filtering_middleware(self):
         """Test that middleware can filter prompts."""

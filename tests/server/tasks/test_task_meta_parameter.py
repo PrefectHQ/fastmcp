@@ -263,7 +263,7 @@ class TestTaskMetaDirectServerCall:
                 "inner_tool", {"x": x}, task_meta=TaskMeta()
             )
             # Should get CreateTaskResult since we're in server context
-            return f"Created task: {result.task.taskId}"
+            return f"Created task: {result.task.task_id}"
 
         async with Client(server) as client:
             # Call outer_tool which internally calls inner_tool with task_meta
