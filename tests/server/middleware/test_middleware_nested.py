@@ -2,7 +2,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-import mcp.types
+import mcp_types
 import pytest
 
 from fastmcp import Client, FastMCP
@@ -17,7 +17,7 @@ class Recording:
     # the hook is the name of the hook that was called, e.g. "on_list_tools"
     hook: str
     context: MiddlewareContext
-    result: mcp.types.ServerResult | None
+    result: mcp_types.ServerResult | None
 
 
 class RecordingMiddleware(Middleware):
@@ -517,8 +517,8 @@ class TestToolCallDenial:
         class AuthMiddleware(Middleware):
             async def on_call_tool(
                 self,
-                context: MiddlewareContext[mcp.types.CallToolRequestParams],
-                call_next: CallNext[mcp.types.CallToolRequestParams, ToolResult],
+                context: MiddlewareContext[mcp_types.CallToolRequestParams],
+                call_next: CallNext[mcp_types.CallToolRequestParams, ToolResult],
             ) -> ToolResult:
                 tool_name = context.message.name
                 if tool_name.lower() == "restricted_tool":
@@ -560,8 +560,8 @@ class TestToolCallDenial:
         class SelectiveAuthMiddleware(Middleware):
             async def on_call_tool(
                 self,
-                context: MiddlewareContext[mcp.types.CallToolRequestParams],
-                call_next: CallNext[mcp.types.CallToolRequestParams, ToolResult],
+                context: MiddlewareContext[mcp_types.CallToolRequestParams],
+                call_next: CallNext[mcp_types.CallToolRequestParams, ToolResult],
             ) -> ToolResult:
                 tool_name = context.message.name
 

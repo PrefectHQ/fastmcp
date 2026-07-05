@@ -87,7 +87,7 @@ async def test_forbidden_mode_resource_rejects_task_calls(resource_server):
     """Resources with task=False (mode=forbidden) reject task-augmented calls."""
     import pytest
     from mcp.shared.exceptions import McpError
-    from mcp.types import METHOD_NOT_FOUND
+    from mcp_types import METHOD_NOT_FOUND
 
     @resource_server.resource(
         "file://sync.txt/", task=False

@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import cast
 
 import pytest
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 from fastmcp import FastMCP
 from fastmcp.tools import Tool

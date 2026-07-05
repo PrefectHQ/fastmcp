@@ -7,7 +7,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from mcp.types import (
+from mcp_types import (
     AudioContent,
     EmbeddedResource,
     ImageContent,

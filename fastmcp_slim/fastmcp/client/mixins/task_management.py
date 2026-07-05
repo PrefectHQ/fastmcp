@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-import mcp.types
+import mcp_types
 from mcp import McpError
 
 if TYPE_CHECKING:
     from fastmcp.client.client import Client
-from mcp.types import (
+from mcp_types import (
     CancelTaskRequest,
     CancelTaskRequestParams,
     GetTaskPayloadRequest,
@@ -112,7 +112,7 @@ class ClientTaskManagementMixin:
         server_response = await self._await_with_session_monitoring(
             self.session.send_request(
                 request=request,  # type: ignore[invalid-argument-type]  # ty:ignore[invalid-argument-type]
-                result_type=mcp.types.ListTasksResult,
+                result_type=mcp_types.ListTasksResult,
             )
         )
 
@@ -132,7 +132,7 @@ class ClientTaskManagementMixin:
 
         return {"tasks": tasks, "nextCursor": None}
 
-    async def cancel_task(self: Client, task_id: str) -> mcp.types.CancelTaskResult:
+    async def cancel_task(self: Client, task_id: str) -> mcp_types.CancelTaskResult:
         """Cancel a task, transitioning it to cancelled state.
 
         Sends a 'tasks/cancel' MCP protocol request. Task will halt execution
@@ -152,6 +152,6 @@ class ClientTaskManagementMixin:
         return await self._await_with_session_monitoring(
             self.session.send_request(
                 request=request,  # type: ignore[invalid-argument-type]  # ty:ignore[invalid-argument-type]
-                result_type=mcp.types.CancelTaskResult,
+                result_type=mcp_types.CancelTaskResult,
             )
         )

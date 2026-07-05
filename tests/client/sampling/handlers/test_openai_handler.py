@@ -2,7 +2,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from mcp.types import (
+from mcp_types import (
     AudioContent,
     CreateMessageRequestParams,
     CreateMessageResult,

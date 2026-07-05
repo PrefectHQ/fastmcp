@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import mcp.types
+import mcp_types
 import pytest
 from mcp.shared.exceptions import McpError
 
@@ -263,7 +263,7 @@ class TestPaginationCycleDetection:
             async def returning_constant_cursor(
                 *,
                 cursor: str | None = None,
-            ) -> mcp.types.ListToolsResult:
+            ) -> mcp_types.ListToolsResult:
                 result = await original(cursor=cursor)
                 result.nextCursor = "stuck"
                 return result
@@ -292,7 +292,7 @@ class TestPaginationCycleDetection:
             async def returning_constant_cursor(
                 *,
                 cursor: str | None = None,
-            ) -> mcp.types.ListPromptsResult:
+            ) -> mcp_types.ListPromptsResult:
                 result = await original(cursor=cursor)
                 result.nextCursor = "stuck"
                 return result
@@ -319,7 +319,7 @@ class TestPaginationCycleDetection:
             async def returning_constant_cursor(
                 *,
                 cursor: str | None = None,
-            ) -> mcp.types.ListResourcesResult:
+            ) -> mcp_types.ListResourcesResult:
                 result = await original(cursor=cursor)
                 result.nextCursor = "stuck"
                 return result
@@ -346,7 +346,7 @@ class TestPaginationCycleDetection:
             async def returning_constant_cursor(
                 *,
                 cursor: str | None = None,
-            ) -> mcp.types.ListResourceTemplatesResult:
+            ) -> mcp_types.ListResourceTemplatesResult:
                 result = await original(cursor=cursor)
                 result.nextCursor = "stuck"
                 return result
@@ -375,7 +375,7 @@ class TestPaginationCycleDetection:
             async def returning_cycling_cursor(
                 *,
                 cursor: str | None = None,
-            ) -> mcp.types.ListToolsResult:
+            ) -> mcp_types.ListToolsResult:
                 nonlocal call_count
                 result = await original(cursor=cursor)
                 # Cycle through A -> B -> C -> A
@@ -407,7 +407,7 @@ class TestPaginationCycleDetection:
             async def returning_empty_cursor(
                 *,
                 cursor: str | None = None,
-            ) -> mcp.types.ListToolsResult:
+            ) -> mcp_types.ListToolsResult:
                 result = await original(cursor=cursor)
                 result.nextCursor = ""
                 return result
@@ -435,7 +435,7 @@ class TestPaginationCycleDetection:
             async def returning_unique_cursor(
                 *,
                 cursor: str | None = None,
-            ) -> mcp.types.ListToolsResult:
+            ) -> mcp_types.ListToolsResult:
                 nonlocal call_count
                 result = await original(cursor=cursor)
                 call_count += 1
@@ -465,7 +465,7 @@ class TestPaginationCycleDetection:
             async def returning_unique_cursor(
                 *,
                 cursor: str | None = None,
-            ) -> mcp.types.ListResourcesResult:
+            ) -> mcp_types.ListResourcesResult:
                 nonlocal call_count
                 result = await original(cursor=cursor)
                 call_count += 1
@@ -495,7 +495,7 @@ class TestPaginationCycleDetection:
             async def returning_unique_cursor(
                 *,
                 cursor: str | None = None,
-            ) -> mcp.types.ListPromptsResult:
+            ) -> mcp_types.ListPromptsResult:
                 nonlocal call_count
                 result = await original(cursor=cursor)
                 call_count += 1

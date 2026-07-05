@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Annotated, Any
 
 import pytest
-from mcp.types import CallToolResult, TextContent
+from mcp_types import CallToolResult, TextContent
 from pydantic import BaseModel, ConfigDict, Field
 
 from fastmcp import Client, FastMCP

@@ -1,6 +1,6 @@
 """Tests for FastMCPProvider."""
 
-import mcp.types as mt
+import mcp_types as mt
 
 from fastmcp import FastMCP
 from fastmcp.client import Client

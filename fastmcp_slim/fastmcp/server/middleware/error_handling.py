@@ -8,7 +8,7 @@ from typing import Any
 
 import anyio
 from mcp import McpError
-from mcp.types import ErrorData
+from mcp_types import ErrorData
 
 from fastmcp.exceptions import NotFoundError
 

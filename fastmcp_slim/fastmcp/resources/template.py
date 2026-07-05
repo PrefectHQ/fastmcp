@@ -9,14 +9,14 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, ClassVar, overload
 from urllib.parse import parse_qs, quote, unquote
 
-import mcp.types
-from mcp.types import Annotations, Icon
+import mcp_types
+from mcp_types import Annotations, Icon
 from pydantic.json_schema import SkipJsonSchema
 
 if TYPE_CHECKING:
     from docket import Docket
     from docket.execution import Execution
-from mcp.types import ResourceTemplate as SDKResourceTemplate
+from mcp_types import ResourceTemplate as SDKResourceTemplate
 from pydantic import (
     Field,
     field_validator,
@@ -264,11 +264,11 @@ class ResourceTemplate(FastMCPComponent):
     @overload
     async def _read(
         self, uri: str, params: dict[str, Any], task_meta: TaskMeta
-    ) -> mcp.types.CreateTaskResult: ...
+    ) -> mcp_types.CreateTaskResult: ...
 
     async def _read(
         self, uri: str, params: dict[str, Any], task_meta: TaskMeta | None = None
-    ) -> ResourceResult | mcp.types.CreateTaskResult:
+    ) -> ResourceResult | mcp_types.CreateTaskResult:
         """Server entry point that handles task routing.
 
         This allows ANY ResourceTemplate subclass to support background execution
@@ -402,11 +402,11 @@ class FunctionResourceTemplate(ResourceTemplate):
     @overload
     async def _read(
         self, uri: str, params: dict[str, Any], task_meta: TaskMeta
-    ) -> mcp.types.CreateTaskResult: ...
+    ) -> mcp_types.CreateTaskResult: ...
 
     async def _read(
         self, uri: str, params: dict[str, Any], task_meta: TaskMeta | None = None
-    ) -> ResourceResult | mcp.types.CreateTaskResult:
+    ) -> ResourceResult | mcp_types.CreateTaskResult:
         """Optimized server entry point that skips ephemeral resource creation.
 
         For FunctionResourceTemplate, we can call read() directly instead of

@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
-import mcp.types
+import mcp_types
 from mcp.shared.exceptions import McpError
-from mcp.types import ContentBlock
+from mcp_types import ContentBlock
 from pydantic import AnyUrl
 
 from fastmcp.exceptions import DisabledError, NotFoundError
@@ -38,7 +38,7 @@ def _apply_pagination(
     try:
         return paginate_sequence(items, cursor, page_size)
     except ValueError as e:
-        raise McpError(mcp.types.ErrorData(code=-32602, message=str(e))) from e
+        raise McpError(mcp_types.ErrorData(code=-32602, message=str(e))) from e
 
 
 class MCPOperationsMixin:
@@ -70,7 +70,7 @@ class MCPOperationsMixin:
 
         # list_resource_templates SDK decorator doesn't pass the request to handlers,
         # so we register directly to get cursor access for pagination
-        self._mcp_server.request_handlers[mcp.types.ListResourceTemplatesRequest] = (
+        self._mcp_server.request_handlers[mcp_types.ListResourceTemplatesRequest] = (
             self._wrap_list_handler(self._list_resource_templates_mcp)
         )
 
@@ -86,18 +86,18 @@ class MCPOperationsMixin:
 
     def _wrap_list_handler(
         self: FastMCP, handler: Callable[..., Awaitable[Any]]
-    ) -> Callable[..., Awaitable[mcp.types.ServerResult]]:
+    ) -> Callable[..., Awaitable[mcp_types.ServerResult]]:
         """Wrap a list handler to pass the request and return ServerResult."""
 
-        async def wrapper(request: Any) -> mcp.types.ServerResult:
+        async def wrapper(request: Any) -> mcp_types.ServerResult:
             result = await handler(request)
-            return mcp.types.ServerResult(result)
+            return mcp_types.ServerResult(result)
 
         return wrapper
 
     async def _list_tools_mcp(
-        self, request: mcp.types.ListToolsRequest
-    ) -> mcp.types.ListToolsResult:
+        self, request: mcp_types.ListToolsRequest
+    ) -> mcp_types.ListToolsResult:
         """
         List all available tools, in the format expected by the low-level MCP
         server. Supports pagination when list_page_size is configured.
@@ -115,11 +115,11 @@ class MCPOperationsMixin:
             request.params.cursor if request is not None and request.params else None
         )
         page, next_cursor = _apply_pagination(sdk_tools, cursor, server._list_page_size)
-        return mcp.types.ListToolsResult(tools=page, nextCursor=next_cursor)
+        return mcp_types.ListToolsResult(tools=page, nextCursor=next_cursor)
 
     async def _list_resources_mcp(
-        self, request: mcp.types.ListResourcesRequest
-    ) -> mcp.types.ListResourcesResult:
+        self, request: mcp_types.ListResourcesRequest
+    ) -> mcp_types.ListResourcesResult:
         """
         List all available resources, in the format expected by the low-level MCP
         server. Supports pagination when list_page_size is configured.
@@ -138,11 +138,11 @@ class MCPOperationsMixin:
         page, next_cursor = _apply_pagination(
             sdk_resources, cursor, server._list_page_size
         )
-        return mcp.types.ListResourcesResult(resources=page, nextCursor=next_cursor)
+        return mcp_types.ListResourcesResult(resources=page, nextCursor=next_cursor)
 
     async def _list_resource_templates_mcp(
-        self, request: mcp.types.ListResourceTemplatesRequest
-    ) -> mcp.types.ListResourceTemplatesResult:
+        self, request: mcp_types.ListResourceTemplatesRequest
+    ) -> mcp_types.ListResourceTemplatesResult:
         """
         List all available resource templates, in the format expected by the low-level MCP
         server. Supports pagination when list_page_size is configured.
@@ -161,13 +161,13 @@ class MCPOperationsMixin:
         page, next_cursor = _apply_pagination(
             sdk_templates, cursor, server._list_page_size
         )
-        return mcp.types.ListResourceTemplatesResult(
+        return mcp_types.ListResourceTemplatesResult(
             resourceTemplates=page, nextCursor=next_cursor
         )
 
     async def _list_prompts_mcp(
-        self, request: mcp.types.ListPromptsRequest
-    ) -> mcp.types.ListPromptsResult:
+        self, request: mcp_types.ListPromptsRequest
+    ) -> mcp_types.ListPromptsResult:
         """
         List all available prompts, in the format expected by the low-level MCP
         server. Supports pagination when list_page_size is configured.
@@ -183,15 +183,15 @@ class MCPOperationsMixin:
         page, next_cursor = _apply_pagination(
             sdk_prompts, cursor, server._list_page_size
         )
-        return mcp.types.ListPromptsResult(prompts=page, nextCursor=next_cursor)
+        return mcp_types.ListPromptsResult(prompts=page, nextCursor=next_cursor)
 
     async def _call_tool_mcp(
         self, key: str, arguments: dict[str, Any]
     ) -> (
         list[ContentBlock]
         | tuple[list[ContentBlock], dict[str, Any]]
-        | mcp.types.CallToolResult
-        | mcp.types.CreateTaskResult
+        | mcp_types.CallToolResult
+        | mcp_types.CreateTaskResult
     ):
         """
         Handle MCP 'callTool' requests.
@@ -236,7 +236,7 @@ class MCPOperationsMixin:
                 key, arguments, version=version, task_meta=task_meta
             )
 
-            if isinstance(result, mcp.types.CreateTaskResult):
+            if isinstance(result, mcp_types.CreateTaskResult):
                 return result
             return result.to_mcp_result()
 
@@ -247,7 +247,7 @@ class MCPOperationsMixin:
 
     async def _read_resource_mcp(
         self, uri: AnyUrl | str
-    ) -> mcp.types.ReadResourceResult | mcp.types.CreateTaskResult:
+    ) -> mcp_types.ReadResourceResult | mcp_types.CreateTaskResult:
         """Handle MCP 'readResource' requests.
 
         Extracts task metadata from MCP request context and passes it explicitly
@@ -287,23 +287,23 @@ class MCPOperationsMixin:
                 str(uri), version=version, task_meta=task_meta
             )
 
-            if isinstance(result, mcp.types.CreateTaskResult):
+            if isinstance(result, mcp_types.CreateTaskResult):
                 return result
             return result.to_mcp_result(uri)
         except DisabledError as e:
             raise McpError(
-                mcp.types.ErrorData(
+                mcp_types.ErrorData(
                     code=-32002, message=f"Resource not found: {str(uri)!r}"
                 )
             ) from e
         except NotFoundError as e:
             raise McpError(
-                mcp.types.ErrorData(code=-32002, message=f"Resource not found: {e}")
+                mcp_types.ErrorData(code=-32002, message=f"Resource not found: {e}")
             ) from e
 
     async def _get_prompt_mcp(
         self, name: str, arguments: dict[str, Any] | None
-    ) -> mcp.types.GetPromptResult | mcp.types.CreateTaskResult:
+    ) -> mcp_types.GetPromptResult | mcp_types.CreateTaskResult:
         """Handle MCP 'getPrompt' requests.
 
         Extracts task metadata from MCP request context and passes it explicitly
@@ -346,7 +346,7 @@ class MCPOperationsMixin:
                 name, arguments, version=version, task_meta=task_meta
             )
 
-            if isinstance(result, mcp.types.CreateTaskResult):
+            if isinstance(result, mcp_types.CreateTaskResult):
                 return result
             return result.to_mcp_prompt_result()
         except DisabledError as e:
@@ -354,7 +354,7 @@ class MCPOperationsMixin:
         except NotFoundError:
             raise
 
-    async def _set_logging_level_mcp(self, level: mcp.types.LoggingLevel) -> None:
+    async def _set_logging_level_mcp(self, level: mcp_types.LoggingLevel) -> None:
         """Handle MCP 'logging/setLevel' requests.
 
         Stores the requested minimum log level on the session so that

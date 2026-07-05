@@ -3,7 +3,7 @@ from typing import Annotated, Any
 import pytest
 from dirty_equals import IsList
 from inline_snapshot import snapshot
-from mcp.types import TextContent
+from mcp_types import TextContent
 from pydantic import BaseModel, Field, TypeAdapter
 
 from fastmcp.tools import Tool, forward

@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal
 
-import mcp.types
+import mcp_types
 from mcp.shared.exceptions import McpError
-from mcp.types import METHOD_NOT_FOUND, ErrorData
+from mcp_types import METHOD_NOT_FOUND, ErrorData
 
 from fastmcp.server.tasks.config import TaskMeta
 from fastmcp.server.tasks.handlers import submit_to_docket
@@ -28,7 +28,7 @@ async def check_background_task(
     task_type: TaskType,
     arguments: dict[str, Any] | None = None,
     task_meta: TaskMeta | None = None,
-) -> mcp.types.CreateTaskResult | None:
+) -> mcp_types.CreateTaskResult | None:
     """Check task mode and submit to background if requested.
 
     Args:

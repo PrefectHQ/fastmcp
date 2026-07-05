@@ -25,7 +25,7 @@ import json
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Annotated, Any
 
-from mcp.types import ToolAnnotations
+from mcp_types import ToolAnnotations
 
 from fastmcp.server.dependencies import get_context
 from fastmcp.server.transforms import GetToolNext, Transform

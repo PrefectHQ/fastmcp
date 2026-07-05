@@ -9,7 +9,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import httpx
-from mcp.types import ToolAnnotations
+from mcp_types import ToolAnnotations
 from pydantic.networks import AnyUrl
 
 import fastmcp

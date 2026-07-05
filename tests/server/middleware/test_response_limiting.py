@@ -1,7 +1,7 @@
 """Tests for ResponseLimitingMiddleware."""
 
 import pytest
-from mcp.types import ImageContent, TextContent
+from mcp_types import ImageContent, TextContent
 from pydantic import BaseModel
 
 from fastmcp import Client, FastMCP

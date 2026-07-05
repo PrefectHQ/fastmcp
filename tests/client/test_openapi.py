@@ -2,7 +2,7 @@ import json
 
 import pytest
 from fastapi import FastAPI, Request
-from mcp.types import TextResourceContents
+from mcp_types import TextResourceContents
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import SSETransport, StreamableHttpTransport

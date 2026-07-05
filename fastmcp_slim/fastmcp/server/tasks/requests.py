@@ -11,10 +11,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Literal
 
-import mcp.types
+import mcp_types
 from docket.execution import ExecutionState
 from mcp.shared.exceptions import McpError
-from mcp.types import (
+from mcp_types import (
     INTERNAL_ERROR,
     INVALID_PARAMS,
     CancelTaskResult,
@@ -294,8 +294,8 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
             raw_value = await execution.get_result(timeout=timedelta(seconds=0))
         except Exception as error:
             # Task failed - return error result
-            return mcp.types.CallToolResult(
-                content=[mcp.types.TextContent(type="text", text=str(error))],
+            return mcp_types.CallToolResult(
+                content=[mcp_types.TextContent(type="text", text=str(error))],
                 isError=True,
                 _meta={  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                     "io.modelcontextprotocol/related-task": {
@@ -351,18 +351,18 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
         if isinstance(component, Tool):
             fastmcp_result = component.convert_result(raw_value)
             mcp_result = fastmcp_result.to_mcp_result()
-            if isinstance(mcp_result, mcp.types.CallToolResult):
+            if isinstance(mcp_result, mcp_types.CallToolResult):
                 merged = {**(mcp_result.meta or {}), **related_task_meta}
                 mcp_result._meta = merged  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
             elif isinstance(mcp_result, tuple):
                 content, structured_content = mcp_result
-                mcp_result = mcp.types.CallToolResult(
+                mcp_result = mcp_types.CallToolResult(
                     content=content,
                     structuredContent=structured_content,
                     _meta=related_task_meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                 )
             else:
-                mcp_result = mcp.types.CallToolResult(
+                mcp_result = mcp_types.CallToolResult(
                     content=mcp_result,
                     _meta=related_task_meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                 )

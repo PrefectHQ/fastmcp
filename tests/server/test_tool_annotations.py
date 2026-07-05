@@ -1,8 +1,8 @@
 from typing import Any
 
-import mcp.types as mcp_types
-from mcp.types import Tool as MCPTool
-from mcp.types import ToolAnnotations, ToolExecution
+import mcp_types
+from mcp_types import Tool as MCPTool
+from mcp_types import ToolAnnotations, ToolExecution
 
 from fastmcp import Client, FastMCP
 from fastmcp.tools.base import Tool

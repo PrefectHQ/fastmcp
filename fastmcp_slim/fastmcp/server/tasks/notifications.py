@@ -25,7 +25,7 @@ from contextlib import suppress
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-import mcp.types
+import mcp_types
 
 if TYPE_CHECKING:
     from docket import Docket
@@ -186,14 +186,14 @@ async def _send_mcp_notification(
     if method != "notifications/tasks/status":
         raise ValueError(f"Unsupported notification method for subscriber: {method}")
 
-    notification = mcp.types.TaskStatusNotification.model_validate(
+    notification = mcp_types.TaskStatusNotification.model_validate(
         {
             "method": "notifications/tasks/status",
             "params": notification_dict.get("params", {}),
             "_meta": notification_dict.get("_meta"),
         }
     )
-    server_notification = mcp.types.ServerNotification(notification)
+    server_notification = mcp_types.ServerNotification(notification)
 
     await session.send_notification(server_notification)
 

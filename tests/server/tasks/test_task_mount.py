@@ -7,11 +7,11 @@ on mounted child servers through a parent server.
 
 import asyncio
 
-import mcp.types as mt
+import mcp_types as mt
 import pytest
 from docket import Docket
-from mcp.types import Tool as MCPTool
-from mcp.types import ToolExecution
+from mcp_types import Tool as MCPTool
+from mcp_types import ToolExecution
 
 from fastmcp import FastMCP
 from fastmcp.client import Client

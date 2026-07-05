@@ -8,7 +8,7 @@ import warnings
 
 import pytest
 from inline_snapshot import snapshot
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 from fastmcp import FastMCP
 from fastmcp.contrib.mcp_mixin import mcp_tool

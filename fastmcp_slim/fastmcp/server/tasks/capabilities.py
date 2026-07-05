@@ -1,6 +1,6 @@
 """SEP-1686 task capabilities declaration."""
 
-from mcp.types import (
+from mcp_types import (
     ServerTasksCapability,
     ServerTasksRequestsCapability,
     TasksCallCapability,

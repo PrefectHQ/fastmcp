@@ -106,7 +106,7 @@ class TestErrorHandlingMiddleware:
     def test_transform_error_mcp_error(self, mock_context):
         """Test that MCP errors are not transformed."""
         middleware = ErrorHandlingMiddleware()
-        from mcp.types import ErrorData
+        from mcp_types import ErrorData
 
         error = McpError(ErrorData(code=-32001, message="test error"))
 

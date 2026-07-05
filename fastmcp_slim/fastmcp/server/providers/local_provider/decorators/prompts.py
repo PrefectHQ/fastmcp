@@ -11,8 +11,8 @@ from collections.abc import Callable
 from functools import partial
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
-import mcp.types
-from mcp.types import AnyFunction
+import mcp_types
+from mcp_types import AnyFunction
 
 import fastmcp
 from fastmcp.prompts.base import Prompt
@@ -79,7 +79,7 @@ class PromptDecoratorMixin:
         version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
-        icons: list[mcp.types.Icon] | None = None,
+        icons: list[mcp_types.Icon] | None = None,
         tags: set[str] | None = None,
         enabled: bool = True,
         meta: dict[str, Any] | None = None,
@@ -96,7 +96,7 @@ class PromptDecoratorMixin:
         version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
-        icons: list[mcp.types.Icon] | None = None,
+        icons: list[mcp_types.Icon] | None = None,
         tags: set[str] | None = None,
         enabled: bool = True,
         meta: dict[str, Any] | None = None,
@@ -112,7 +112,7 @@ class PromptDecoratorMixin:
         version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
-        icons: list[mcp.types.Icon] | None = None,
+        icons: list[mcp_types.Icon] | None = None,
         tags: set[str] | None = None,
         enabled: bool = True,
         meta: dict[str, Any] | None = None,

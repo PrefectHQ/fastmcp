@@ -2,7 +2,7 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 import httpx
-import mcp.types
+import mcp_types
 from exceptiongroup import BaseExceptionGroup
 from mcp import McpError
 
@@ -21,7 +21,7 @@ def _exception_handler(group: BaseExceptionGroup):
     for leaf in iter_exc(group):
         if isinstance(leaf, httpx.ConnectTimeout):
             raise McpError(
-                error=mcp.types.ErrorData(
+                error=mcp_types.ErrorData(
                     code=httpx.codes.REQUEST_TIMEOUT,
                     message="Timed out while waiting for response.",
                 )

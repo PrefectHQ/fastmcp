@@ -2,9 +2,9 @@
 
 from contextlib import asynccontextmanager, contextmanager
 
-import mcp.types as mcp_types
+import mcp_types
 import pytest
-from mcp.types import TextContent, TextResourceContents
+from mcp_types import TextContent, TextResourceContents
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -964,7 +964,7 @@ class TestAuthDependencies:
 
     async def test_current_access_token_excluded_from_tool_schema(self, mcp: FastMCP):
         """Test that CurrentAccessToken dependency is excluded from tool schema."""
-        import mcp.types as mcp_types
+        import mcp_types
 
         from fastmcp.server.auth import AccessToken
         from fastmcp.server.dependencies import CurrentAccessToken
@@ -984,7 +984,7 @@ class TestAuthDependencies:
 
     async def test_token_claim_excluded_from_tool_schema(self, mcp: FastMCP):
         """Test that TokenClaim dependency is excluded from tool schema."""
-        import mcp.types as mcp_types
+        import mcp_types
 
         from fastmcp.server.dependencies import TokenClaim
 

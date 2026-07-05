@@ -2,13 +2,13 @@ import inspect
 from collections.abc import Awaitable, Callable
 from typing import TypeAlias, cast
 
-import mcp.types
+import mcp_types
 import pydantic
 from mcp import ClientSession
 from mcp.client.session import ListRootsFnT
 from mcp.shared.context import LifespanContextT, RequestContext
 
-RootsList: TypeAlias = list[str] | list[mcp.types.Root] | list[str | mcp.types.Root]
+RootsList: TypeAlias = list[str] | list[mcp_types.Root] | list[str | mcp_types.Root]
 
 RootsHandler: TypeAlias = (
     Callable[[RequestContext[ClientSession, LifespanContextT]], RootsList]
@@ -16,15 +16,15 @@ RootsHandler: TypeAlias = (
 )
 
 
-def convert_roots_list(roots: RootsList) -> list[mcp.types.Root]:
+def convert_roots_list(roots: RootsList) -> list[mcp_types.Root]:
     roots_list = []
     for r in roots:
-        if isinstance(r, mcp.types.Root):
+        if isinstance(r, mcp_types.Root):
             roots_list.append(r)
         elif isinstance(r, pydantic.FileUrl):
-            roots_list.append(mcp.types.Root(uri=r))
+            roots_list.append(mcp_types.Root(uri=r))
         elif isinstance(r, str):
-            roots_list.append(mcp.types.Root(uri=pydantic.FileUrl(r)))
+            roots_list.append(mcp_types.Root(uri=pydantic.FileUrl(r)))
         else:
             raise ValueError(f"Invalid root: {r}")
     return roots_list
@@ -49,8 +49,8 @@ def _create_roots_callback_from_roots(
 
     async def _roots_callback(
         context: RequestContext[ClientSession, LifespanContextT],
-    ) -> mcp.types.ListRootsResult:
-        return mcp.types.ListRootsResult(roots=roots)
+    ) -> mcp_types.ListRootsResult:
+        return mcp_types.ListRootsResult(roots=roots)
 
     return _roots_callback
 
@@ -61,17 +61,17 @@ def _create_roots_callback_from_fn(
 ) -> ListRootsFnT:
     async def _roots_callback(
         context: RequestContext[ClientSession, LifespanContextT],
-    ) -> mcp.types.ListRootsResult | mcp.types.ErrorData:
+    ) -> mcp_types.ListRootsResult | mcp_types.ErrorData:
         try:
             roots = fn(context)
             if inspect.isawaitable(roots):
                 roots = await roots
-            return mcp.types.ListRootsResult(
+            return mcp_types.ListRootsResult(
                 roots=convert_roots_list(cast(RootsList, roots))
             )
         except Exception as e:
-            return mcp.types.ErrorData(
-                code=mcp.types.INTERNAL_ERROR,
+            return mcp_types.ErrorData(
+                code=mcp_types.INTERNAL_ERROR,
                 message=str(e),
             )
 

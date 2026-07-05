@@ -7,7 +7,7 @@ from typing import Any, Literal, TypeVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import mcp
-import mcp.types
+import mcp_types
 import pytest
 from inline_snapshot import snapshot
 from pydantic import AnyUrl
@@ -69,9 +69,9 @@ def mock_context():
     """Create a mock middleware context."""
 
     return new_mock_context(
-        message=mcp.types.CallToolRequest(
+        message=mcp_types.CallToolRequest(
             method="tools/call",
-            params=mcp.types.CallToolRequestParams(
+            params=mcp_types.CallToolRequestParams(
                 name="test_method",
                 arguments={"param": "value"},
             ),
@@ -282,9 +282,9 @@ class TestLoggingMiddleware:
         """Ensure Pydantic AnyUrl in payload serializes correctly when include_payloads=True."""
 
         mock_context = new_mock_context(
-            message=mcp.types.ReadResourceRequest(
+            message=mcp_types.ReadResourceRequest(
                 method="resources/read",
-                params=mcp.types.ReadResourceRequestParams(
+                params=mcp_types.ReadResourceRequestParams(
                     uri=AnyUrl("test://example/1"),
                 ),
             )
@@ -341,9 +341,9 @@ class TestLoggingMiddleware:
                 return "NON_SERIALIZABLE"
 
         mock_context = new_mock_context(
-            message=mcp.types.CallToolRequest(
+            message=mcp_types.CallToolRequest(
                 method="tools/call",
-                params=mcp.types.CallToolRequestParams(
+                params=mcp_types.CallToolRequestParams(
                     name="test_method",
                     arguments={"obj": NonSerializable()},
                 ),
@@ -373,9 +373,9 @@ class TestLoggingMiddleware:
             return "CUSTOM_PAYLOAD"
 
         mock_context = new_mock_context(
-            message=mcp.types.CallToolRequest(
+            message=mcp_types.CallToolRequest(
                 method="tools/call",
-                params=mcp.types.CallToolRequestParams(
+                params=mcp_types.CallToolRequestParams(
                     name="test_method",
                     arguments={"obj": "OBJECT"},
                 ),

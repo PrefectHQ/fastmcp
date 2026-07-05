@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import pytest
 from inline_snapshot import snapshot
-from mcp.types import (
+from mcp_types import (
     AudioContent,
     BlobResourceContents,
     EmbeddedResource,

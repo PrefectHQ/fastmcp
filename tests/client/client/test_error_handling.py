@@ -2,9 +2,9 @@
 
 import logging
 
-import mcp.types
+import mcp_types
 import pytest
-from mcp.types import TextContent, ToolUseContent
+from mcp_types import TextContent, ToolUseContent
 from pydantic import AnyUrl
 
 from fastmcp.client import Client
@@ -207,7 +207,7 @@ class TestParseToolResultEdgeCases:
     """
 
     async def test_error_with_empty_content_raises_with_fallback_message(self):
-        result = mcp.types.CallToolResult(content=[], isError=True)
+        result = mcp_types.CallToolResult(content=[], isError=True)
 
         with pytest.raises(ToolError, match="Tool 'my_tool' returned an error"):
             await _parse_call_tool_result(
@@ -219,9 +219,9 @@ class TestParseToolResultEdgeCases:
             )
 
     async def test_error_with_non_text_content_raises_with_fallback_message(self):
-        result = mcp.types.CallToolResult(
+        result = mcp_types.CallToolResult(
             content=[
-                mcp.types.ImageContent(type="image", data="abc", mimeType="image/png")
+                mcp_types.ImageContent(type="image", data="abc", mimeType="image/png")
             ],
             isError=True,
         )
@@ -236,8 +236,8 @@ class TestParseToolResultEdgeCases:
             )
 
     async def test_error_with_text_content_raises_with_message(self):
-        result = mcp.types.CallToolResult(
-            content=[mcp.types.TextContent(type="text", text="custom error msg")],
+        result = mcp_types.CallToolResult(
+            content=[mcp_types.TextContent(type="text", text="custom error msg")],
             isError=True,
         )
 
@@ -251,8 +251,8 @@ class TestParseToolResultEdgeCases:
             )
 
     async def test_error_with_structured_content_does_not_parse_data(self):
-        result = mcp.types.CallToolResult(
-            content=[mcp.types.TextContent(type="text", text="error happened")],
+        result = mcp_types.CallToolResult(
+            content=[mcp_types.TextContent(type="text", text="error happened")],
             isError=True,
             structuredContent={"key": "value"},
         )

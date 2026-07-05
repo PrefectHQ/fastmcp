@@ -5,7 +5,7 @@ import json
 from typing import Any
 
 import pytest
-from mcp.types import ImageContent, TextContent
+from mcp_types import ImageContent, TextContent
 
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError

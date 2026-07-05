@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 
 import httpx
 import pytest
-from mcp.types import TextResourceContents
+from mcp_types import TextResourceContents
 
 import fastmcp.client.auth.oauth as oauth_module
 import fastmcp.utilities.http as http_module

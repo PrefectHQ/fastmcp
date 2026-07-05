@@ -9,7 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Annotated, Any, Generic, Union, get_args, get_origin, get_type_hints
 
-import mcp.types
+import mcp_types
 from pydantic import BaseModel, PydanticSchemaGenerationError
 from typing_extensions import TypeVar as TypeVarExt
 
@@ -317,11 +317,11 @@ class ParsedFunction:
                         Audio,
                         File,
                         ToolResult,
-                        mcp.types.TextContent,
-                        mcp.types.ImageContent,
-                        mcp.types.AudioContent,
-                        mcp.types.ResourceLink,
-                        mcp.types.EmbeddedResource,
+                        mcp_types.TextContent,
+                        mcp_types.ImageContent,
+                        mcp_types.AudioContent,
+                        mcp_types.ResourceLink,
+                        mcp_types.EmbeddedResource,
                         *_PREFAB_TYPES,
                     ),
                     _UnserializableType,

@@ -15,7 +15,7 @@ from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.stores.memory import MemoryStore
 from mcp.server.streamable_http import EventCallback, EventId, EventMessage, StreamId
 from mcp.server.streamable_http import EventStore as SDKEventStore
-from mcp.types import JSONRPCMessage
+from mcp_types import JSONRPCMessage
 
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import FastMCPBaseModel

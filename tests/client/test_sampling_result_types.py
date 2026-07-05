@@ -1,5 +1,5 @@
 import pytest
-from mcp.types import CreateMessageResultWithTools, TextContent, ToolUseContent
+from mcp_types import CreateMessageResultWithTools, TextContent, ToolUseContent
 
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.sampling import RequestContext, SamplingMessage, SamplingParams
@@ -10,7 +10,7 @@ class TestSamplingResultType:
 
     async def test_result_type_creates_final_response_tool(self):
         """Test that result_type creates a synthetic final_response tool."""
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
         from pydantic import BaseModel
 
         class MathResult(BaseModel):
@@ -63,7 +63,7 @@ class TestSamplingResultType:
 
     async def test_result_type_with_user_tools(self):
         """Test result_type works alongside user-provided tools."""
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
         from pydantic import BaseModel
 
         class SearchResult(BaseModel):
@@ -138,7 +138,7 @@ class TestSamplingResultType:
 
     async def test_result_type_validation_error_retries(self):
         """Test that validation errors are sent back to LLM for retry."""
-        from mcp.types import (
+        from mcp_types import (
             CreateMessageResultWithTools,
             ToolResultContent,
             ToolUseContent,
@@ -228,7 +228,7 @@ class TestSamplingResultType:
 
     async def test_sampling_result_has_text_and_history(self):
         """Test that SamplingResult has text, result, and history attributes."""
-        from mcp.types import CreateMessageResultWithTools
+        from mcp_types import CreateMessageResultWithTools
 
         def sampling_handler(
             messages: list[SamplingMessage], params: SamplingParams, ctx: RequestContext
@@ -262,7 +262,7 @@ class TestSampleStep:
 
     async def test_sample_step_basic(self):
         """Test basic sample_step returns text response."""
-        from mcp.types import CreateMessageResultWithTools
+        from mcp_types import CreateMessageResultWithTools
 
         def sampling_handler(
             messages: list[SamplingMessage], params: SamplingParams, ctx: RequestContext
@@ -290,7 +290,7 @@ class TestSampleStep:
 
     async def test_sample_step_with_tool_execution(self):
         """Test sample_step executes tools by default."""
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
         call_count = 0
 
@@ -349,7 +349,7 @@ class TestSampleStep:
 
     async def test_sample_step_execute_tools_false(self):
         """Test sample_step with execute_tools=False doesn't execute tools."""
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
         tool_executed = False
 
@@ -400,7 +400,7 @@ class TestSampleStep:
 
     async def test_sample_step_history_includes_assistant_message(self):
         """Test that history includes assistant message when execute_tools=False."""
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
         def sampling_handler(
             messages: list[SamplingMessage], params: SamplingParams, ctx: RequestContext
@@ -448,7 +448,7 @@ class TestTextResponseRetry:
 
     @staticmethod
     def _text_reply(text: str = "some text"):
-        from mcp.types import CreateMessageResultWithTools
+        from mcp_types import CreateMessageResultWithTools
 
         return CreateMessageResultWithTools(
             role="assistant",
@@ -459,7 +459,7 @@ class TestTextResponseRetry:
 
     @staticmethod
     def _tool_reply(value: int):
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
         return CreateMessageResultWithTools(
             role="assistant",

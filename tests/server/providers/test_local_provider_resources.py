@@ -9,7 +9,7 @@ Tests cover:
 """
 
 import pytest
-from mcp.types import TextResourceContents
+from mcp_types import TextResourceContents
 from pydantic import AnyUrl
 
 from fastmcp import Client, Context, FastMCP

@@ -9,7 +9,7 @@ from typing import Annotated, Any
 from urllib.parse import urlparse
 
 import cyclopts
-import mcp.types
+import mcp_types
 import pydantic_core
 from mcp import McpError
 from rich.console import Console
@@ -163,7 +163,7 @@ def _to_python_identifier(name: str) -> str:
     return safe
 
 
-def _tool_function_source(tool: mcp.types.Tool) -> str:
+def _tool_function_source(tool: mcp_types.Tool) -> str:
     """Generate the source for a single ``@call_tool_app.command`` function."""
     schema = tool.inputSchema
     properties: dict[str, Any] = schema.get("properties", {})
@@ -285,7 +285,7 @@ def generate_cli_script(
     server_spec: str,
     transport_code: str,
     extra_imports: set[str],
-    tools: list[mcp.types.Tool],
+    tools: list[mcp_types.Tool],
 ) -> str:
     """Generate the full CLI script source code."""
 
@@ -309,7 +309,7 @@ def generate_cli_script(
     lines.append("from typing import Annotated")
     lines.append("")
     lines.append("import cyclopts")
-    lines.append("import mcp.types")
+    lines.append("import mcp_types")
     lines.append("from rich.console import Console")
     lines.append("")
     lines.append("from fastmcp import Client")
@@ -346,7 +346,7 @@ def generate_cli_script(
         def _print_tool_result(result):
             if result.is_error:
                 for block in result.content:
-                    if isinstance(block, mcp.types.TextContent):
+                    if isinstance(block, mcp_types.TextContent):
                         console.print(f"[bold red]Error:[/bold red] {block.text}")
                     else:
                         console.print(f"[bold red]Error:[/bold red] {block}")
@@ -357,12 +357,12 @@ def generate_cli_script(
                 return
 
             for block in result.content:
-                if isinstance(block, mcp.types.TextContent):
+                if isinstance(block, mcp_types.TextContent):
                     console.print(block.text)
-                elif isinstance(block, mcp.types.ImageContent):
+                elif isinstance(block, mcp_types.ImageContent):
                     size = len(block.data) * 3 // 4
                     console.print(f"[dim][Image: {block.mimeType}, ~{size} bytes][/dim]")
-                elif isinstance(block, mcp.types.AudioContent):
+                elif isinstance(block, mcp_types.AudioContent):
                     size = len(block.data) * 3 // 4
                     console.print(f"[dim][Audio: {block.mimeType}, ~{size} bytes][/dim]")
 
@@ -439,9 +439,9 @@ def generate_cli_script(
             async with Client(CLIENT_SPEC) as client:
                 contents = await client.read_resource(uri)
                 for block in contents:
-                    if isinstance(block, mcp.types.TextResourceContents):
+                    if isinstance(block, mcp_types.TextResourceContents):
                         console.print(block.text)
-                    elif isinstance(block, mcp.types.BlobResourceContents):
+                    elif isinstance(block, mcp_types.BlobResourceContents):
                         size = len(block.blob) * 3 // 4
                         console.print(f"[dim][Blob: {block.mimeType}, ~{size} bytes][/dim]")
 
@@ -483,9 +483,9 @@ def generate_cli_script(
                 result = await client.get_prompt(name, parsed or None)
                 for msg in result.messages:
                     console.print(f"[bold]{msg.role}:[/bold]")
-                    if isinstance(msg.content, mcp.types.TextContent):
+                    if isinstance(msg.content, mcp_types.TextContent):
                         console.print(f"  {msg.content.text}")
-                    elif isinstance(msg.content, mcp.types.ImageContent):
+                    elif isinstance(msg.content, mcp_types.ImageContent):
                         size = len(msg.content.data) * 3 // 4
                         console.print(f"  [dim][Image: {msg.content.mimeType}, ~{size} bytes][/dim]")
                     else:
@@ -564,7 +564,7 @@ def _schema_type_label(prop_schema: dict[str, Any]) -> str:
     return label
 
 
-def _tool_skill_section(tool: mcp.types.Tool, cli_filename: str) -> str:
+def _tool_skill_section(tool: mcp_types.Tool, cli_filename: str) -> str:
     """Generate a SKILL.md section for a single tool."""
     schema = tool.inputSchema
     properties: dict[str, Any] = schema.get("properties", {})
@@ -619,7 +619,7 @@ def _tool_skill_section(tool: mcp.types.Tool, cli_filename: str) -> str:
 def generate_skill_content(
     server_name: str,
     cli_filename: str,
-    tools: list[mcp.types.Tool],
+    tools: list[mcp_types.Tool],
 ) -> str:
     """Generate a SKILL.md file for a generated CLI script."""
     skill_name = (

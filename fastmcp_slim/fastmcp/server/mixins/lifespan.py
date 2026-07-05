@@ -248,7 +248,7 @@ class LifespanMixin:
         if not is_docket_available():
             return
 
-        from mcp.types import (
+        from mcp_types import (
             CancelTaskRequest,
             GetTaskPayloadRequest,
             GetTaskRequest,

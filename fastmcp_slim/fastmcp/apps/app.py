@@ -32,7 +32,7 @@ from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
 
-from mcp.types import AnyFunction, Icon, ToolAnnotations
+from mcp_types import AnyFunction, Icon, ToolAnnotations
 
 from fastmcp.server.providers.base import Provider
 from fastmcp.utilities.authorization import AuthCheck

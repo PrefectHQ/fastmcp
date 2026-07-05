@@ -10,7 +10,7 @@ import time
 from datetime import datetime, timezone
 
 import pytest
-from mcp.types import GetTaskResult
+from mcp_types import GetTaskResult
 
 from fastmcp import FastMCP
 from fastmcp.client import Client

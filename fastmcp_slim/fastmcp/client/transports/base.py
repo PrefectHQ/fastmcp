@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from typing import Literal, TypeVar
 
 import httpx
-import mcp.types
+import mcp_types
 from mcp import ClientSession
 from mcp.client.session import (
     ElicitationFnT,
@@ -25,12 +25,12 @@ class SessionKwargs(TypedDict, total=False):
 
     read_timeout_seconds: datetime.timedelta | None
     sampling_callback: SamplingFnT | None
-    sampling_capabilities: mcp.types.SamplingCapability | None
+    sampling_capabilities: mcp_types.SamplingCapability | None
     list_roots_callback: ListRootsFnT | None
     logging_callback: LoggingFnT | None
     elicitation_callback: ElicitationFnT | None
     message_handler: MessageHandlerFnT | None
-    client_info: mcp.types.Implementation | None
+    client_info: mcp_types.Implementation | None
 
 
 class ClientTransport(abc.ABC):

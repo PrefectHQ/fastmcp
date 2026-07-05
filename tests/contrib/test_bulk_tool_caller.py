@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 from inline_snapshot import snapshot
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 from fastmcp import FastMCP
 from fastmcp.contrib.bulk_tool_caller.bulk_tool_caller import (

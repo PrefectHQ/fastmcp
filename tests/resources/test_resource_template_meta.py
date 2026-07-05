@@ -1,4 +1,4 @@
-from mcp.types import Annotations, Icon
+from mcp_types import Annotations, Icon
 
 from fastmcp import FastMCP
 from fastmcp.resources import ResourceTemplate

@@ -71,7 +71,7 @@ async def test_prompt_task_executes_in_background(prompt_server):
 async def test_forbidden_mode_prompt_rejects_task_calls(prompt_server):
     """Prompts with task=False (mode=forbidden) reject task-augmented calls."""
     from mcp.shared.exceptions import McpError
-    from mcp.types import METHOD_NOT_FOUND
+    from mcp_types import METHOD_NOT_FOUND
 
     @prompt_server.prompt(task=False)  # Explicitly disable task support
     async def sync_only_prompt(topic: str) -> str:

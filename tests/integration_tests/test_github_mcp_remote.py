@@ -3,7 +3,7 @@ import os
 
 import pytest
 from mcp import McpError
-from mcp.types import Resource, TextContent, Tool
+from mcp_types import Resource, TextContent, Tool
 
 from fastmcp import Client
 from fastmcp.client import StreamableHttpTransport

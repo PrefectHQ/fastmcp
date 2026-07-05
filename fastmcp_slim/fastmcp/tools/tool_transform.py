@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Annotated, Any, Literal, cast
 
 import pydantic_core
-from mcp.types import ToolAnnotations
+from mcp_types import ToolAnnotations
 from pydantic import ConfigDict
 from pydantic.fields import Field
 from pydantic.functional_validators import BeforeValidator

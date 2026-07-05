@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, patch
 
 import psutil
 import pytest
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 from fastmcp import FastMCP
 from fastmcp.client.auth.bearer import BearerAuth

@@ -19,8 +19,8 @@ from typing import (
     get_type_hints,
 )
 
-import mcp.types
-from mcp.types import Annotations, ContentBlock, ModelPreferences, SamplingMessage
+import mcp_types
+from mcp_types import Annotations, ContentBlock, ModelPreferences, SamplingMessage
 from pydantic import AnyUrl, BaseModel, ConfigDict, Field, TypeAdapter, UrlConstraints
 from typing_extensions import TypeVar
 
@@ -290,11 +290,11 @@ class Image:
         self,
         mime_type: str | None = None,
         annotations: Annotations | None = None,
-    ) -> mcp.types.ImageContent:
+    ) -> mcp_types.ImageContent:
         """Convert to MCP ImageContent."""
         data = self._get_data()
 
-        return mcp.types.ImageContent(
+        return mcp_types.ImageContent(
             type="image",
             data=data,
             mimeType=mime_type or self._mime_type,
@@ -348,7 +348,7 @@ class Audio:
         self,
         mime_type: str | None = None,
         annotations: Annotations | None = None,
-    ) -> mcp.types.AudioContent:
+    ) -> mcp_types.AudioContent:
         if self.path:
             with open(self.path, "rb") as f:
                 data = base64.b64encode(f.read()).decode()
@@ -357,7 +357,7 @@ class Audio:
         else:
             raise ValueError("No audio data available")
 
-        return mcp.types.AudioContent(
+        return mcp_types.AudioContent(
             type="audio",
             data=data,
             mimeType=mime_type or self._mime_type,
@@ -408,7 +408,7 @@ class File:
         self,
         mime_type: str | None = None,
         annotations: Annotations | None = None,
-    ) -> mcp.types.EmbeddedResource:
+    ) -> mcp_types.EmbeddedResource:
         if self.path:
             with open(self.path, "rb") as f:
                 raw_data = f.read()
@@ -431,20 +431,20 @@ class File:
                 text = raw_data.decode("utf-8")
             except UnicodeDecodeError:
                 text = raw_data.decode("latin-1")
-            resource = mcp.types.TextResourceContents(
+            resource = mcp_types.TextResourceContents(
                 text=text,
                 mimeType=mime,
                 uri=uri,
             )
         else:
             data = base64.b64encode(raw_data).decode()
-            resource = mcp.types.BlobResourceContents(
+            resource = mcp_types.BlobResourceContents(
                 blob=data,
                 mimeType=mime,
                 uri=uri,
             )
 
-        return mcp.types.EmbeddedResource(
+        return mcp_types.EmbeddedResource(
             type="resource",
             resource=resource,
             annotations=annotations or self.annotations,

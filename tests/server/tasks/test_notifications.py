@@ -7,7 +7,7 @@ No mocking of Redis, sessions, or Docket internals.
 
 import asyncio
 
-import mcp.types as mcp_types
+import mcp_types
 
 from fastmcp import FastMCP
 from fastmcp.client import Client

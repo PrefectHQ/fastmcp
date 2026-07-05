@@ -4,7 +4,7 @@ import sys
 
 import pytest
 from mcp import McpError
-from mcp.types import TextResourceContents
+from mcp_types import TextResourceContents
 
 from fastmcp.client import Client
 from fastmcp.client.transports import SSETransport

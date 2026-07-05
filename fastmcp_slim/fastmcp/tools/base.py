@@ -11,10 +11,10 @@ from typing import (
     overload,
 )
 
-import mcp.types
+import mcp_types
 import pydantic_core
 from mcp.shared.tool_name_validation import validate_and_warn_tool_name
-from mcp.types import (
+from mcp_types import (
     CallToolResult,
     ContentBlock,
     Icon,
@@ -22,7 +22,7 @@ from mcp.types import (
     ToolAnnotations,
     ToolExecution,
 )
-from mcp.types import Tool as MCPTool
+from mcp_types import Tool as MCPTool
 from pydantic import BaseModel, Field, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
@@ -380,13 +380,13 @@ class Tool(FastMCPComponent):
         self,
         arguments: dict[str, Any],
         task_meta: TaskMeta,
-    ) -> mcp.types.CreateTaskResult: ...
+    ) -> mcp_types.CreateTaskResult: ...
 
     async def _run(
         self,
         arguments: dict[str, Any],
         task_meta: TaskMeta | None = None,
-    ) -> ToolResult | mcp.types.CreateTaskResult:
+    ) -> ToolResult | mcp_types.CreateTaskResult:
         """Server entry point that handles task routing.
 
         This allows ANY Tool subclass to support background execution by setting

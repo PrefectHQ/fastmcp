@@ -10,8 +10,8 @@ import inspect
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, TypeVar
 
-import mcp.types
-from mcp.types import Annotations, AnyFunction
+import mcp_types
+from mcp_types import Annotations, AnyFunction
 
 import fastmcp
 from fastmcp.resources.base import Resource
@@ -112,7 +112,7 @@ class ResourceDecoratorMixin:
         version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
-        icons: list[mcp.types.Icon] | None = None,
+        icons: list[mcp_types.Icon] | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
         enabled: bool = True,

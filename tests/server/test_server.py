@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 from textwrap import dedent
 from unittest import mock
 
-from mcp.types import TextContent, TextResourceContents
+from mcp_types import TextContent, TextResourceContents
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.providers import LocalProvider

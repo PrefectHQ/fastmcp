@@ -2,7 +2,7 @@
 
 from unittest.mock import Mock
 
-import mcp.types as mcp_types
+import mcp_types
 import pytest
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser

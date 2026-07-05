@@ -152,7 +152,7 @@ class TestEnhancedAuthorizationHandler:
 
     def test_html_error_includes_server_branding(self, oauth_proxy):
         """Test that HTML error page includes server branding from FastMCP instance."""
-        from mcp.types import Icon
+        from mcp_types import Icon
 
         # Create FastMCP server with custom branding
         mcp = FastMCP(

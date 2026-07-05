@@ -6,7 +6,7 @@ import uuid
 import weakref
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
-import mcp.types
+import mcp_types
 from opentelemetry.trace import Status, StatusCode
 from pydantic import RootModel
 
@@ -29,7 +29,7 @@ logger = get_logger(__name__)
 AUTO_PAGINATION_MAX_PAGES = 250
 
 # Type alias for task response union (SEP-1686 graceful degradation)
-ToolTaskResponseUnion = RootModel[mcp.types.CreateTaskResult | mcp.types.CallToolResult]
+ToolTaskResponseUnion = RootModel[mcp_types.CreateTaskResult | mcp_types.CallToolResult]
 
 
 class ClientToolsMixin:
@@ -39,14 +39,14 @@ class ClientToolsMixin:
 
     async def list_tools_mcp(
         self: Client, *, cursor: str | None = None
-    ) -> mcp.types.ListToolsResult:
+    ) -> mcp_types.ListToolsResult:
         """Send a tools/list request and return the complete MCP protocol result.
 
         Args:
             cursor: Optional pagination cursor from a previous request's nextCursor.
 
         Returns:
-            mcp.types.ListToolsResult: The complete response object from the protocol,
+            mcp_types.ListToolsResult: The complete response object from the protocol,
                 containing the list of tools and any additional metadata.
 
         Raises:
@@ -69,7 +69,7 @@ class ClientToolsMixin:
     async def list_tools(
         self: Client,
         max_pages: int = AUTO_PAGINATION_MAX_PAGES,
-    ) -> list[mcp.types.Tool]:
+    ) -> list[mcp_types.Tool]:
         """Retrieve all tools available on the server.
 
         This method automatically fetches all pages if the server paginates results,
@@ -80,13 +80,13 @@ class ClientToolsMixin:
             max_pages: Maximum number of pages to fetch before raising. Defaults to 250.
 
         Returns:
-            list[mcp.types.Tool]: A list of all Tool objects.
+            list[mcp_types.Tool]: A list of all Tool objects.
 
         Raises:
             RuntimeError: If the page limit is reached before pagination completes.
             McpError: If the request results in a TimeoutError | JSONRPCError
         """
-        all_tools: list[mcp.types.Tool] = []
+        all_tools: list[mcp_types.Tool] = []
         cursor: str | None = None
         seen_cursors: set[str] = set()
 
@@ -122,7 +122,7 @@ class ClientToolsMixin:
         progress_handler: ProgressHandler | None = None,
         timeout: datetime.timedelta | float | int | None = None,
         meta: dict[str, Any] | None = None,
-    ) -> mcp.types.CallToolResult:
+    ) -> mcp_types.CallToolResult:
         """Send a tools/call request and return the complete MCP protocol result.
 
         This method returns the raw CallToolResult object, which includes an isError flag
@@ -139,7 +139,7 @@ class ClientToolsMixin:
                 can access this via `context.request_context.meta`. Defaults to None.
 
         Returns:
-            mcp.types.CallToolResult: The complete response object from the protocol,
+            mcp_types.CallToolResult: The complete response object from the protocol,
                 containing the tool result and any additional metadata.
 
         Raises:
@@ -174,7 +174,7 @@ class ClientToolsMixin:
                 span.set_attribute("error.type", "tool_error")
                 description = ""
                 if result.content and isinstance(
-                    result.content[0], mcp.types.TextContent
+                    result.content[0], mcp_types.TextContent
                 ):
                     description = result.content[0].text
                 span.set_status(Status(StatusCode.ERROR, description))
@@ -184,10 +184,10 @@ class ClientToolsMixin:
     async def _parse_call_tool_result(
         self: Client,
         name: str,
-        result: mcp.types.CallToolResult,
+        result: mcp_types.CallToolResult,
         raise_on_error: bool = False,
     ) -> CallToolResult:
-        """Parse an mcp.types.CallToolResult into our CallToolResult dataclass.
+        """Parse an mcp_types.CallToolResult into our CallToolResult dataclass.
 
         Args:
             name: Tool name (for schema lookup)
@@ -342,14 +342,14 @@ class ClientToolsMixin:
         # Per SEP-1686 final spec: client sends only ttl, server generates taskId
         # Inject trace context into meta for propagation to server
         propagated_meta = inject_trace_context(meta)
-        request_meta = cast(mcp.types.RequestParams.Meta | None, propagated_meta)
+        request_meta = cast(mcp_types.RequestParams.Meta | None, propagated_meta)
 
         # Build request with task metadata
-        request = mcp.types.CallToolRequest(
-            params=mcp.types.CallToolRequestParams(
+        request = mcp_types.CallToolRequest(
+            params=mcp_types.CallToolRequestParams(
                 name=name,
                 arguments=arguments or {},
-                task=mcp.types.TaskMetadata(ttl=ttl),
+                task=mcp_types.TaskMetadata(ttl=ttl),
                 _meta=request_meta,  # type: ignore[unknown-argument]  # pydantic alias
             )
         )
@@ -364,7 +364,7 @@ class ClientToolsMixin:
         )
         raw_result = wrapped_result.root
 
-        if isinstance(raw_result, mcp.types.CreateTaskResult):
+        if isinstance(raw_result, mcp_types.CreateTaskResult):
             # Task was accepted - extract task info from CreateTaskResult
             server_task_id = raw_result.task.taskId
             self._submitted_task_ids.add(server_task_id)
@@ -393,13 +393,13 @@ class ClientToolsMixin:
 
 async def _parse_call_tool_result(
     name: str,
-    result: mcp.types.CallToolResult,
+    result: mcp_types.CallToolResult,
     tool_output_schemas: dict[str, dict[str, Any] | None],
     list_tools_fn: Any,  # Callable[[], Awaitable[None]]
     client_name: str | None = None,
     raise_on_error: bool = False,
 ) -> CallToolResult:
-    """Parse an mcp.types.CallToolResult into our CallToolResult dataclass.
+    """Parse an mcp_types.CallToolResult into our CallToolResult dataclass.
 
     Args:
         name: Tool name (for schema lookup)
@@ -419,7 +419,7 @@ async def _parse_call_tool_result(
 
     data = None
     if result.isError and raise_on_error:
-        if result.content and isinstance(result.content[0], mcp.types.TextContent):
+        if result.content and isinstance(result.content[0], mcp_types.TextContent):
             msg = result.content[0].text
         else:
             msg = f"Tool '{name}' returned an error"

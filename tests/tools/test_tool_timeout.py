@@ -5,7 +5,7 @@ import time
 import anyio
 import pytest
 from mcp.shared.exceptions import McpError
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError

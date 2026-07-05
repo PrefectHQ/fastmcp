@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Annotated, Any, ClassVar, TypedDict, cast
 
-from mcp.types import Icon
+from mcp_types import Icon
 from pydantic import BeforeValidator, Field
 from typing_extensions import Self, TypeVar
 

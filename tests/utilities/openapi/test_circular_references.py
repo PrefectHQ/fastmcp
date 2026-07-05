@@ -102,7 +102,7 @@ class TestCircularReferencesSerialization:
 
         # Build an MCP Tool with this schema and try to serialize it —
         # this is the exact path that crashes in the reported issue.
-        from mcp.types import Tool as MCPTool
+        from mcp_types import Tool as MCPTool
 
         tool = MCPTool(
             name="get_node",
@@ -148,7 +148,7 @@ class TestCircularReferencesSerialization:
         )
         assert output_schema is not None
 
-        from mcp.types import Tool as MCPTool
+        from mcp_types import Tool as MCPTool
 
         tool = MCPTool(
             name="get_pr",

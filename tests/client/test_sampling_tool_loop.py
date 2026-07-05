@@ -1,6 +1,6 @@
 from typing import cast
 
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.sampling import RequestContext, SamplingMessage, SamplingParams
@@ -12,7 +12,7 @@ class TestAutomaticToolLoop:
 
     async def test_automatic_tool_loop_executes_tools(self):
         """Test that ctx.sample() automatically executes tool calls."""
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
         call_count = 0
         tool_was_called = False
@@ -75,7 +75,7 @@ class TestAutomaticToolLoop:
 
     async def test_automatic_tool_loop_multiple_tools(self):
         """Test that multiple tool calls in one response are all executed."""
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
         executed_tools: list[str] = []
 
@@ -135,7 +135,7 @@ class TestAutomaticToolLoop:
 
     async def test_automatic_tool_loop_handles_unknown_tool(self):
         """Test that unknown tool names result in error being passed to LLM."""
-        from mcp.types import (
+        from mcp_types import (
             CreateMessageResultWithTools,
             ToolResultContent,
             ToolUseContent,
@@ -210,7 +210,7 @@ class TestAutomaticToolLoop:
 
     async def test_automatic_tool_loop_handles_tool_exception(self):
         """Test that tool exceptions are caught and passed to LLM as errors."""
-        from mcp.types import (
+        from mcp_types import (
             CreateMessageResultWithTools,
             ToolResultContent,
             ToolUseContent,
@@ -287,7 +287,7 @@ class TestAutomaticToolLoop:
         import asyncio
         import time
 
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
         execution_order: list[tuple[str, float]] = []
 
@@ -367,7 +367,7 @@ class TestAutomaticToolLoop:
         import asyncio
         import time
 
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
         execution_times: dict[str, dict[str, float]] = {}
 
@@ -447,7 +447,7 @@ class TestAutomaticToolLoop:
         import asyncio
         import time
 
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
         execution_order: list[tuple[str, float]] = []
 
@@ -533,7 +533,7 @@ class TestAutomaticToolLoop:
         import asyncio
         import time
 
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
         execution_order: list[tuple[str, float]] = []
 
@@ -620,7 +620,7 @@ class TestAutomaticToolLoop:
 
     async def test_concurrent_tool_execution_error_handling(self):
         """Test that errors are captured per-tool in parallel execution."""
-        from mcp.types import (
+        from mcp_types import (
             CreateMessageResultWithTools,
             ToolResultContent,
             ToolUseContent,
@@ -689,7 +689,7 @@ class TestAutomaticToolLoop:
         """Test that tool results maintain the same order as tool calls."""
         import asyncio
 
-        from mcp.types import (
+        from mcp_types import (
             CreateMessageResultWithTools,
             ToolResultContent,
             ToolUseContent,

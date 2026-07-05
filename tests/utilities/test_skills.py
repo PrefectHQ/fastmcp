@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from mcp.types import BlobResourceContents, TextResourceContents
+from mcp_types import BlobResourceContents, TextResourceContents
 from pydantic import AnyUrl
 
 from fastmcp import Client, FastMCP

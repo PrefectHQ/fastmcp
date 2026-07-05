@@ -4,7 +4,7 @@ import logging
 import sys
 
 import pytest
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 from fastmcp import FastMCP
 from fastmcp.client import Client

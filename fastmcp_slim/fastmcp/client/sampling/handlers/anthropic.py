@@ -3,7 +3,7 @@
 from collections.abc import Iterator, Sequence
 from typing import Any
 
-from mcp.types import (
+from mcp_types import (
     AudioContent,
     CreateMessageResult,
     CreateMessageResultWithTools,
@@ -18,7 +18,7 @@ from mcp.types import (
     ToolResultContent,
     ToolUseContent,
 )
-from mcp.types import CreateMessageRequestParams as SamplingParams
+from mcp_types import CreateMessageRequestParams as SamplingParams
 
 try:
     from anthropic import AsyncAnthropic

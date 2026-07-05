@@ -15,13 +15,13 @@ from typing import TYPE_CHECKING, Any, cast
 
 import anyio
 import httpx
-import mcp.types
+import mcp_types
 from mcp import ServerSession
 from mcp.client.session import ClientSession
 from mcp.server.lowlevel.server import request_ctx
 from mcp.shared.context import LifespanContextT, RequestContext
 from mcp.shared.exceptions import McpError
-from mcp.types import (
+from mcp_types import (
     METHOD_NOT_FOUND,
     BlobResourceContents,
     ElicitRequestFormParams,
@@ -68,8 +68,8 @@ ClientFactoryT = Callable[[], Client] | Callable[[], Awaitable[Client]]
 
 def _proxy_upstream_error(error: Exception) -> McpError:
     return McpError(
-        mcp.types.ErrorData(
-            code=mcp.types.INTERNAL_ERROR,
+        mcp_types.ErrorData(
+            code=mcp_types.INTERNAL_ERROR,
             message=str(error),
         )
     )
@@ -81,12 +81,12 @@ class ProxyInitializeMiddleware(Middleware):
 
     async def on_initialize(
         self,
-        context: MiddlewareContext[mcp.types.InitializeRequest],
+        context: MiddlewareContext[mcp_types.InitializeRequest],
         call_next: CallNext[
-            mcp.types.InitializeRequest,
-            mcp.types.InitializeResult | None,
+            mcp_types.InitializeRequest,
+            mcp_types.InitializeResult | None,
         ],
-    ) -> mcp.types.InitializeResult | None:
+    ) -> mcp_types.InitializeResult | None:
         client = await self.proxy._get_client()
         try:
             if isinstance(client, StatefulProxyClient):
@@ -146,7 +146,7 @@ class ProxyTool(Tool):
 
     @classmethod
     def from_mcp_tool(
-        cls, client_factory: ClientFactoryT, mcp_tool: mcp.types.Tool
+        cls, client_factory: ClientFactoryT, mcp_tool: mcp_types.Tool
     ) -> ProxyTool:
         """Factory method to create a ProxyTool from a raw MCP tool schema."""
         return cls(
@@ -269,7 +269,7 @@ class ProxyResource(Resource):
     def from_mcp_resource(
         cls,
         client_factory: ClientFactoryT,
-        mcp_resource: mcp.types.Resource,
+        mcp_resource: mcp_types.Resource,
     ) -> ProxyResource:
         """Factory method to create a ProxyResource from a raw MCP resource schema."""
 
@@ -366,7 +366,7 @@ class ProxyTemplate(ResourceTemplate):
 
     @classmethod
     def from_mcp_template(  # type: ignore[override]
-        cls, client_factory: ClientFactoryT, mcp_template: mcp.types.ResourceTemplate
+        cls, client_factory: ClientFactoryT, mcp_template: mcp_types.ResourceTemplate
     ) -> ProxyTemplate:  # ty:ignore[invalid-method-override]
         """Factory method to create a ProxyTemplate from a raw MCP template schema."""
 
@@ -481,7 +481,7 @@ class ProxyPrompt(Prompt):
 
     @classmethod
     def from_mcp_prompt(
-        cls, client_factory: ClientFactoryT, mcp_prompt: mcp.types.Prompt
+        cls, client_factory: ClientFactoryT, mcp_prompt: mcp_types.Prompt
     ) -> ProxyPrompt:
         """Factory method to create a ProxyPrompt from a raw MCP prompt schema."""
         arguments = [
@@ -919,14 +919,14 @@ class FastMCPProxy(FastMCP):
 
     def _setup_proxy_ping_handler(self) -> None:
         async def ping_remote(
-            _request: mcp.types.PingRequest,
-        ) -> mcp.types.ServerResult:
+            _request: mcp_types.PingRequest,
+        ) -> mcp_types.ServerResult:
             client = await self._get_client()
             async with client:
                 await client.ping()
-            return mcp.types.ServerResult(mcp.types.EmptyResult())
+            return mcp_types.ServerResult(mcp_types.EmptyResult())
 
-        self._mcp_server.request_handlers[mcp.types.PingRequest] = ping_remote
+        self._mcp_server.request_handlers[mcp_types.PingRequest] = ping_remote
 
 
 # -----------------------------------------------------------------------------
@@ -943,10 +943,10 @@ async def default_proxy_roots_handler(
 
 
 async def default_proxy_sampling_handler(
-    messages: list[mcp.types.SamplingMessage],
-    params: mcp.types.CreateMessageRequestParams,
+    messages: list[mcp_types.SamplingMessage],
+    params: mcp_types.CreateMessageRequestParams,
     context: RequestContext[ClientSession, LifespanContextT],
-) -> mcp.types.CreateMessageResult:
+) -> mcp_types.CreateMessageResult:
     """Forward sampling request from remote server to proxy's connected clients."""
     ctx = get_context()
     result = await ctx.sample(
@@ -956,8 +956,8 @@ async def default_proxy_sampling_handler(
         max_tokens=params.maxTokens,
         model_preferences=params.modelPreferences,
     )
-    content = mcp.types.TextContent(type="text", text=result.text or "")
-    return mcp.types.CreateMessageResult(
+    content = mcp_types.TextContent(type="text", text=result.text or "")
+    return mcp_types.CreateMessageResult(
         role="assistant",
         model="fastmcp-client",
         # TODO(ty): remove when ty supports isinstance exclusion narrowing
@@ -968,7 +968,7 @@ async def default_proxy_sampling_handler(
 async def default_proxy_elicitation_handler(
     message: str,
     response_type: type,
-    params: mcp.types.ElicitRequestParams,
+    params: mcp_types.ElicitRequestParams,
     context: RequestContext[ClientSession, LifespanContextT],
 ) -> ElicitResult:
     """Forward elicitation request from remote server to proxy's connected clients."""

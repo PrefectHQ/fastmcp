@@ -3,7 +3,7 @@ from datetime import timedelta
 import pytest
 from dirty_equals import HasName
 from inline_snapshot import snapshot
-from mcp.types import (
+from mcp_types import (
     AudioContent,
     ImageContent,
     ToolExecution,

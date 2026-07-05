@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 from anthropic import AsyncAnthropic
 from anthropic.types import Message, TextBlock, ToolUseBlock, Usage
-from mcp.types import (
+from mcp_types import (
     AudioContent,
     CreateMessageResult,
     CreateMessageResultWithTools,
@@ -296,7 +296,7 @@ def test_convert_tool_choice_unknown_raises():
 
 
 def test_convert_tools_to_anthropic():
-    from mcp.types import Tool
+    from mcp_types import Tool
 
     tools = [
         Tool(

@@ -33,7 +33,7 @@ except ImportError as e:
 
 from mcp import ClientSession, ServerSession
 from mcp.shared.context import LifespanContextT, RequestContext
-from mcp.types import (
+from mcp_types import (
     AudioContent,
     CreateMessageResult,
     CreateMessageResultWithTools,
@@ -47,8 +47,8 @@ from mcp.types import (
     ToolResultContent,
     ToolUseContent,
 )
-from mcp.types import CreateMessageRequestParams as SamplingParams
-from mcp.types import Tool as MCPTool
+from mcp_types import CreateMessageRequestParams as SamplingParams
+from mcp_types import Tool as MCPTool
 
 __all__ = ["GoogleGenaiSamplingHandler"]
 

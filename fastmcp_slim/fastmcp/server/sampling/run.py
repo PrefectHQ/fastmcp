@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, Literal, cast
 
 import anyio
-from mcp.types import (
+from mcp_types import (
     ClientCapabilities,
     CreateMessageResult,
     CreateMessageResultWithTools,
@@ -24,8 +24,8 @@ from mcp.types import (
     ToolResultContent,
     ToolUseContent,
 )
-from mcp.types import CreateMessageRequestParams as SamplingParams
-from mcp.types import Tool as SDKTool
+from mcp_types import CreateMessageRequestParams as SamplingParams
+from mcp_types import Tool as SDKTool
 from opentelemetry.trace import SpanKind, Status, StatusCode
 from pydantic import ValidationError
 from typing_extensions import TypeVar

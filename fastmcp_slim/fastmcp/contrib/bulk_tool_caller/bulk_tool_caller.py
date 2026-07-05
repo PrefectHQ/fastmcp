@@ -1,6 +1,6 @@
 from typing import Any
 
-from mcp.types import CallToolResult, TextContent
+from mcp_types import CallToolResult, TextContent
 from pydantic import BaseModel, Field
 
 from fastmcp import FastMCP

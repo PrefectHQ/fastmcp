@@ -10,18 +10,18 @@ from dataclasses import dataclass
 from logging import Logger
 from typing import Any, Literal, overload
 
-import mcp.types
+import mcp_types
 from mcp import LoggingLevel, ServerSession
 from mcp.server.lowlevel.server import request_ctx
 from mcp.shared.context import RequestContext
-from mcp.types import (
+from mcp_types import (
     GetPromptResult,
     ModelPreferences,
     Root,
     SamplingMessage,
 )
-from mcp.types import Prompt as SDKPrompt
-from mcp.types import Resource as SDKResource
+from mcp_types import Prompt as SDKPrompt
+from mcp_types import Resource as SDKResource
 from pydantic.networks import AnyUrl
 from starlette.requests import Request
 from typing_extensions import TypeVar
@@ -486,8 +486,8 @@ class Context:
             List of Resource objects available on the server
         """
         return await self._paginate_list(
-            request_factory=lambda cursor: mcp.types.ListResourcesRequest(
-                params=mcp.types.PaginatedRequestParams(cursor=cursor)
+            request_factory=lambda cursor: mcp_types.ListResourcesRequest(
+                params=mcp_types.PaginatedRequestParams(cursor=cursor)
                 if cursor
                 else None
             ),
@@ -502,8 +502,8 @@ class Context:
             List of Prompt objects available on the server
         """
         return await self._paginate_list(
-            request_factory=lambda cursor: mcp.types.ListPromptsRequest(
-                params=mcp.types.PaginatedRequestParams(cursor=cursor)
+            request_factory=lambda cursor: mcp_types.ListPromptsRequest(
+                params=mcp_types.PaginatedRequestParams(cursor=cursor)
                 if cursor
                 else None
             ),
@@ -524,7 +524,7 @@ class Context:
             The prompt result
         """
         result = await self.fastmcp.render_prompt(name, arguments)
-        if isinstance(result, mcp.types.CreateTaskResult):
+        if isinstance(result, mcp_types.CreateTaskResult):
             raise RuntimeError(
                 "Unexpected CreateTaskResult: Context calls should not have task metadata"
             )
@@ -540,7 +540,7 @@ class Context:
             ResourceResult with contents
         """
         result = await self.fastmcp.read_resource(str(uri))
-        if isinstance(result, mcp.types.CreateTaskResult):
+        if isinstance(result, mcp_types.CreateTaskResult):
             raise RuntimeError(
                 "Unexpected CreateTaskResult: Context calls should not have task metadata"
             )
@@ -787,14 +787,14 @@ class Context:
         return result.roots
 
     async def send_notification(
-        self, notification: mcp.types.ServerNotificationType
+        self, notification: mcp_types.ServerNotificationType
     ) -> None:
         """Send a notification to the client immediately.
 
         Args:
             notification: An MCP notification instance (e.g., ToolListChangedNotification())
         """
-        await self.session.send_notification(mcp.types.ServerNotification(notification))
+        await self.session.send_notification(mcp_types.ServerNotification(notification))
 
     async def close_sse_stream(self) -> None:
         """Close the current response stream to trigger client reconnection.
@@ -1206,7 +1206,7 @@ class Context:
         self,
         message: str,
         schema: dict[str, Any],
-    ) -> mcp.types.ElicitResult:
+    ) -> mcp_types.ElicitResult:
         """Send an elicitation request from a background task (SEP-1686).
 
         This method handles elicitation when running in a Docket worker context,

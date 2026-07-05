@@ -21,7 +21,7 @@ class TestIconExtraction:
 
     async def test_server_icons_and_website(self):
         """Test that server-level icons and website_url are extracted."""
-        from mcp.types import Icon
+        from mcp_types import Icon
 
         mcp = FastMCP(
             "IconServer",
@@ -55,7 +55,7 @@ class TestIconExtraction:
 
     async def test_tool_icons(self):
         """Test that tool icons are extracted."""
-        from mcp.types import Icon
+        from mcp_types import Icon
 
         mcp = FastMCP("ToolIconServer")
 
@@ -92,7 +92,7 @@ class TestIconExtraction:
 
     async def test_resource_icons(self):
         """Test that resource icons are extracted."""
-        from mcp.types import Icon
+        from mcp_types import Icon
 
         mcp = FastMCP("ResourceIconServer")
 
@@ -125,7 +125,7 @@ class TestIconExtraction:
 
     async def test_template_icons(self):
         """Test that resource template icons are extracted."""
-        from mcp.types import Icon
+        from mcp_types import Icon
 
         mcp = FastMCP("TemplateIconServer")
 
@@ -162,7 +162,7 @@ class TestIconExtraction:
 
     async def test_prompt_icons(self):
         """Test that prompt icons are extracted."""
-        from mcp.types import Icon
+        from mcp_types import Icon
 
         mcp = FastMCP("PromptIconServer")
 
@@ -194,7 +194,7 @@ class TestIconExtraction:
 
     async def test_multiple_icons(self):
         """Test that components with multiple icons extract all of them."""
-        from mcp.types import Icon
+        from mcp_types import Icon
 
         mcp = FastMCP(
             "MultiIconServer",
@@ -239,7 +239,7 @@ class TestIconExtraction:
 
     async def test_data_uri_icons(self):
         """Test that data URI icons are extracted correctly."""
-        from mcp.types import Icon
+        from mcp_types import Icon
 
         data_uri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
 
@@ -259,7 +259,7 @@ class TestIconExtraction:
 
     async def test_icons_in_fastmcp_v1(self):
         """Test that icons are extracted from FastMCP 1.x servers."""
-        from mcp.types import Icon
+        from mcp_types import Icon
 
         mcp = FastMCP1x("Icon1xServer")
 
@@ -279,7 +279,7 @@ class TestIconExtraction:
 
     async def test_icons_in_formatted_output(self):
         """Test that icons appear in formatted JSON output."""
-        from mcp.types import Icon
+        from mcp_types import Icon
 
         mcp = FastMCP(
             "FormattedIconServer",

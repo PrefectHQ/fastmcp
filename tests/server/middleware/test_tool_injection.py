@@ -4,7 +4,7 @@ import math
 
 import pytest
 from inline_snapshot import snapshot
-from mcp.types import Tool as SDKTool
+from mcp_types import Tool as SDKTool
 
 from fastmcp import FastMCP
 from fastmcp.client import Client

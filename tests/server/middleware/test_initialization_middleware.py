@@ -3,10 +3,10 @@
 from collections.abc import Sequence
 from typing import Any
 
-import mcp.types as mt
+import mcp_types as mt
 import pytest
 from mcp import McpError
-from mcp.types import ErrorData, TextContent
+from mcp_types import ErrorData, TextContent
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext

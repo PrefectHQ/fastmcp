@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
-from mcp.types import TextResourceContents
+from mcp_types import TextResourceContents
 from pydantic import AnyUrl
 
 from fastmcp import Client, FastMCP

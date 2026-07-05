@@ -5,8 +5,8 @@ from collections.abc import Sequence
 from logging import Logger
 from typing import Annotated, Any
 
-import mcp.types
-from mcp.types import Prompt
+import mcp_types
+from mcp_types import Prompt
 from pydantic import AnyUrl
 from typing_extensions import override
 
@@ -34,8 +34,8 @@ class ToolInjectionMiddleware(Middleware):
     @override
     async def on_list_tools(
         self,
-        context: MiddlewareContext[mcp.types.ListToolsRequest],
-        call_next: CallNext[mcp.types.ListToolsRequest, Sequence[Tool]],
+        context: MiddlewareContext[mcp_types.ListToolsRequest],
+        call_next: CallNext[mcp_types.ListToolsRequest, Sequence[Tool]],
     ) -> Sequence[Tool]:
         """Inject tools into the response."""
         return [*self._tools_to_inject, *await call_next(context)]
@@ -43,8 +43,8 @@ class ToolInjectionMiddleware(Middleware):
     @override
     async def on_call_tool(
         self,
-        context: MiddlewareContext[mcp.types.CallToolRequestParams],
-        call_next: CallNext[mcp.types.CallToolRequestParams, ToolResult],
+        context: MiddlewareContext[mcp_types.CallToolRequestParams],
+        call_next: CallNext[mcp_types.CallToolRequestParams, ToolResult],
     ) -> ToolResult:
         """Intercept tool calls to injected tools."""
         if context.message.name in self._tools_to_inject_by_name:
@@ -70,7 +70,7 @@ async def get_prompt(
     arguments: Annotated[
         dict[str, Any] | None, "The arguments to pass to the prompt."
     ] = None,
-) -> mcp.types.GetPromptResult:
+) -> mcp_types.GetPromptResult:
     """Render a prompt available on the server."""
     return await context.get_prompt(name=name, arguments=arguments)
 
@@ -99,7 +99,7 @@ class PromptToolMiddleware(ToolInjectionMiddleware):
         super().__init__(tools=tools)
 
 
-async def list_resources(context: Context) -> list[mcp.types.Resource]:
+async def list_resources(context: Context) -> list[mcp_types.Resource]:
     """List resources available on the server."""
     return await context.list_resources()
 

@@ -1,6 +1,6 @@
 """Tests for icon support across all MCP object types."""
 
-from mcp.types import Icon
+from mcp_types import Icon
 
 from fastmcp import Client, FastMCP
 from fastmcp.prompts import Message, Prompt
@@ -326,7 +326,7 @@ class TestIconTypes:
 
 
 class TestIconImport:
-    """Test that Icon must be imported from mcp.types."""
+    """Test that Icon must be imported from mcp_types."""
 
     def test_icon_import(self):
         """Test that Icon must be imported from mcp.types, not fastmcp."""
@@ -336,7 +336,7 @@ class TestIconImport:
         assert not hasattr(fastmcp, "Icon")
 
         # Icon should be imported from mcp.types
-        from mcp.types import Icon as MCPIcon
+        from mcp_types import Icon as MCPIcon
 
         icon = MCPIcon(src="https://example.com/icon.png")
         assert icon.src == "https://example.com/icon.png"

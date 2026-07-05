@@ -2,7 +2,7 @@ from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
-from mcp.types import ModelPreferences
+from mcp_types import ModelPreferences
 
 from fastmcp.server.context import (
     Context,

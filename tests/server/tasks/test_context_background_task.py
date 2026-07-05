@@ -15,7 +15,7 @@ import pytest
 from mcp import ServerSession
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
-from mcp.types import CreateMessageResult, TextContent
+from mcp_types import CreateMessageResult, TextContent
 from pydantic import BaseModel
 
 from fastmcp import FastMCP

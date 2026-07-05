@@ -18,7 +18,7 @@ from typing import (
     runtime_checkable,
 )
 
-from mcp.types import Annotations, Icon
+from mcp_types import Annotations, Icon
 from pydantic import AnyUrl
 from pydantic.json_schema import SkipJsonSchema
 

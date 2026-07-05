@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 import pytest
-from mcp.types import (
+from mcp_types import (
     ImageContent,
 )
 from pydantic import BaseModel, Field

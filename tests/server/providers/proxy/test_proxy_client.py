@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import pytest
 from anyio import create_task_group
-from mcp.types import (
+from mcp_types import (
     ElicitRequestFormParams,
     LoggingLevel,
     ModelHint,

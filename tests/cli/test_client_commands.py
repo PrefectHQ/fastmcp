@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-import mcp.types
+import mcp_types
 import pytest
 
 from fastmcp import FastMCP
@@ -161,13 +161,13 @@ class TestFormatToolSignature:
         required: list[str] | None = None,
         output_schema: dict[str, Any] | None = None,
         description: str | None = None,
-    ) -> mcp.types.Tool:
+    ) -> mcp_types.Tool:
         input_schema: dict[str, Any] = {"type": "object"}
         if properties is not None:
             input_schema["properties"] = properties
         if required is not None:
             input_schema["required"] = required
-        return mcp.types.Tool(
+        return mcp_types.Tool(
             name=name,
             description=description,
             inputSchema=input_schema,
@@ -546,7 +546,7 @@ class TestFormatCallResult:
         """structured_content (raw dict) is used for display, not data (which may
         be a non-serializable dataclass)."""
         result = CallToolResult(
-            content=[mcp.types.TextContent(type="text", text="ok")],
+            content=[mcp_types.TextContent(type="text", text="ok")],
             structured_content={"key": "value"},
             meta=None,
             data=object(),  # non-serializable on purpose
@@ -561,7 +561,7 @@ class TestFormatCallResult:
         self, capsys: pytest.CaptureFixture[str]
     ):
         result = CallToolResult(
-            content=[mcp.types.TextContent(type="text", text="[red]x[/red]\x1b[2J")],
+            content=[mcp_types.TextContent(type="text", text="[red]x[/red]\x1b[2J")],
             structured_content=None,
             meta=None,
             data=None,

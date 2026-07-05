@@ -198,7 +198,7 @@ def tool_server():
     """Fixture that creates a FastMCP server with comprehensive tool set for provider tests."""
     import base64
 
-    from mcp.types import (
+    from mcp_types import (
         BlobResourceContents,
         EmbeddedResource,
         ImageContent,

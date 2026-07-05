@@ -3,7 +3,7 @@ import os
 from typing import Annotated, Any, cast
 
 import pytest
-from mcp.types import BlobResourceContents, TextResourceContents
+from mcp_types import BlobResourceContents, TextResourceContents
 from pydantic import Field
 
 from fastmcp.utilities.types import (

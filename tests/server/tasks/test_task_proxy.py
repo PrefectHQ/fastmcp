@@ -12,7 +12,7 @@ Clients connecting through proxies can:
 
 import pytest
 from mcp.shared.exceptions import McpError
-from mcp.types import TextContent, TextResourceContents
+from mcp_types import TextContent, TextResourceContents
 
 from fastmcp import FastMCP
 from fastmcp.client import Client

@@ -2,7 +2,7 @@ import logging
 
 import pytest
 from mcp import LoggingLevel
-from mcp.types import LoggingMessageNotificationParams
+from mcp_types import LoggingMessageNotificationParams
 
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.logging import LogMessage, create_log_callback
@@ -191,7 +191,7 @@ class TestDefaultLogHandler:
         """Test that default_log_handler routes server logs to appropriate Python log levels."""
         from unittest.mock import MagicMock, patch
 
-        from mcp.types import LoggingMessageNotificationParams
+        from mcp_types import LoggingMessageNotificationParams
 
         from fastmcp.client.logging import default_log_handler
 
@@ -242,7 +242,7 @@ class TestDefaultLogHandler:
         """Test that default_log_handler works when logger name is None."""
         from unittest.mock import MagicMock, patch
 
-        from mcp.types import LoggingMessageNotificationParams
+        from mcp_types import LoggingMessageNotificationParams
 
         from fastmcp.client.logging import default_log_handler
 
@@ -265,7 +265,7 @@ class TestDefaultLogHandler:
         """Test that default_log_handler handles dict data correctly."""
         from unittest.mock import MagicMock, patch
 
-        from mcp.types import LoggingMessageNotificationParams
+        from mcp_types import LoggingMessageNotificationParams
 
         from fastmcp.client.logging import default_log_handler
 
@@ -291,7 +291,7 @@ class TestDefaultLogHandler:
         """Test that default_log_handler handles list data correctly."""
         from unittest.mock import MagicMock, patch
 
-        from mcp.types import LoggingMessageNotificationParams
+        from mcp_types import LoggingMessageNotificationParams
 
         from fastmcp.client.logging import default_log_handler
 
@@ -316,7 +316,7 @@ class TestDefaultLogHandler:
         """Test that default_log_handler handles numeric data correctly."""
         from unittest.mock import MagicMock, patch
 
-        from mcp.types import LoggingMessageNotificationParams
+        from mcp_types import LoggingMessageNotificationParams
 
         from fastmcp.client.logging import default_log_handler
 

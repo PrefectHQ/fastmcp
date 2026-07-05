@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, call
 
 import pytest
 from mcp import McpError
-from mcp.types import TextResourceContents
+from mcp_types import TextResourceContents
 
 from fastmcp import Context
 from fastmcp.client import Client

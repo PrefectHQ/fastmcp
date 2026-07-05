@@ -3,12 +3,12 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any, Generic, TypeAlias
 
-import mcp.types
+import mcp_types
 from mcp import ClientSession
 from mcp.client.session import ElicitationFnT
 from mcp.shared.context import LifespanContextT, RequestContext
-from mcp.types import ElicitRequestFormParams, ElicitRequestParams
-from mcp.types import ElicitResult as MCPElicitResult
+from mcp_types import ElicitRequestFormParams, ElicitRequestParams
+from mcp_types import ElicitResult as MCPElicitResult
 from pydantic_core import to_jsonable_python
 from typing_extensions import TypeVar
 
@@ -41,7 +41,7 @@ def create_elicitation_callback(
     async def _elicitation_handler(
         context: RequestContext[ClientSession, LifespanContextT],
         params: ElicitRequestParams,
-    ) -> MCPElicitResult | mcp.types.ErrorData:
+    ) -> MCPElicitResult | mcp_types.ErrorData:
         try:
             # requestedSchema only exists on ElicitRequestFormParams, not ElicitRequestURLParams
             if isinstance(params, ElicitRequestFormParams):
@@ -80,8 +80,8 @@ def create_elicitation_callback(
             )
 
         except Exception as e:
-            return mcp.types.ErrorData(
-                code=mcp.types.INTERNAL_ERROR,
+            return mcp_types.ErrorData(
+                code=mcp_types.INTERNAL_ERROR,
                 message=str(e),
             )
 

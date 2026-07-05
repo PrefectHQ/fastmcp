@@ -6,7 +6,7 @@ import uuid
 import weakref
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
-import mcp.types
+import mcp_types
 from pydantic import AnyUrl, RootModel
 
 if TYPE_CHECKING:
@@ -23,7 +23,7 @@ AUTO_PAGINATION_MAX_PAGES = 250
 
 # Type alias for task response union (SEP-1686 graceful degradation)
 ResourceTaskResponseUnion = RootModel[
-    mcp.types.CreateTaskResult | mcp.types.ReadResourceResult
+    mcp_types.CreateTaskResult | mcp_types.ReadResourceResult
 ]
 
 
@@ -34,14 +34,14 @@ class ClientResourcesMixin:
 
     async def list_resources_mcp(
         self: Client, *, cursor: str | None = None
-    ) -> mcp.types.ListResourcesResult:
+    ) -> mcp_types.ListResourcesResult:
         """Send a resources/list request and return the complete MCP protocol result.
 
         Args:
             cursor: Optional pagination cursor from a previous request's nextCursor.
 
         Returns:
-            mcp.types.ListResourcesResult: The complete response object from the protocol,
+            mcp_types.ListResourcesResult: The complete response object from the protocol,
                 containing the list of resources and any additional metadata.
 
         Raises:
@@ -64,7 +64,7 @@ class ClientResourcesMixin:
     async def list_resources(
         self: Client,
         max_pages: int = AUTO_PAGINATION_MAX_PAGES,
-    ) -> list[mcp.types.Resource]:
+    ) -> list[mcp_types.Resource]:
         """Retrieve all resources available on the server.
 
         This method automatically fetches all pages if the server paginates results,
@@ -75,13 +75,13 @@ class ClientResourcesMixin:
             max_pages: Maximum number of pages to fetch before raising. Defaults to 250.
 
         Returns:
-            list[mcp.types.Resource]: A list of all Resource objects.
+            list[mcp_types.Resource]: A list of all Resource objects.
 
         Raises:
             RuntimeError: If the page limit is reached before pagination completes.
             McpError: If the request results in a TimeoutError | JSONRPCError
         """
-        all_resources: list[mcp.types.Resource] = []
+        all_resources: list[mcp_types.Resource] = []
         cursor: str | None = None
         seen_cursors: set[str] = set()
 
@@ -110,14 +110,14 @@ class ClientResourcesMixin:
 
     async def list_resource_templates_mcp(
         self: Client, *, cursor: str | None = None
-    ) -> mcp.types.ListResourceTemplatesResult:
+    ) -> mcp_types.ListResourceTemplatesResult:
         """Send a resources/listResourceTemplates request and return the complete MCP protocol result.
 
         Args:
             cursor: Optional pagination cursor from a previous request's nextCursor.
 
         Returns:
-            mcp.types.ListResourceTemplatesResult: The complete response object from the protocol,
+            mcp_types.ListResourceTemplatesResult: The complete response object from the protocol,
                 containing the list of resource templates and any additional metadata.
 
         Raises:
@@ -140,7 +140,7 @@ class ClientResourcesMixin:
     async def list_resource_templates(
         self: Client,
         max_pages: int = AUTO_PAGINATION_MAX_PAGES,
-    ) -> list[mcp.types.ResourceTemplate]:
+    ) -> list[mcp_types.ResourceTemplate]:
         """Retrieve all resource templates available on the server.
 
         This method automatically fetches all pages if the server paginates results,
@@ -152,13 +152,13 @@ class ClientResourcesMixin:
             max_pages: Maximum number of pages to fetch before raising. Defaults to 250.
 
         Returns:
-            list[mcp.types.ResourceTemplate]: A list of all ResourceTemplate objects.
+            list[mcp_types.ResourceTemplate]: A list of all ResourceTemplate objects.
 
         Raises:
             RuntimeError: If the page limit is reached before pagination completes.
             McpError: If the request results in a TimeoutError | JSONRPCError
         """
-        all_templates: list[mcp.types.ResourceTemplate] = []
+        all_templates: list[mcp_types.ResourceTemplate] = []
         cursor: str | None = None
         seen_cursors: set[str] = set()
 
@@ -188,7 +188,7 @@ class ClientResourcesMixin:
 
     async def read_resource_mcp(
         self: Client, uri: AnyUrl | str, meta: dict[str, Any] | None = None
-    ) -> mcp.types.ReadResourceResult:
+    ) -> mcp_types.ReadResourceResult:
         """Send a resources/read request and return the complete MCP protocol result.
 
         Args:
@@ -196,7 +196,7 @@ class ClientResourcesMixin:
             meta (dict[str, Any] | None, optional): Request metadata (e.g., for SEP-1686 tasks). Defaults to None.
 
         Returns:
-            mcp.types.ReadResourceResult: The complete response object from the protocol,
+            mcp_types.ReadResourceResult: The complete response object from the protocol,
                 containing the resource contents and any additional metadata.
 
         Raises:
@@ -218,22 +218,22 @@ class ClientResourcesMixin:
 
             # Inject trace context into meta for propagation to server
             propagated_meta = inject_trace_context(meta)
-            request_meta = cast(mcp.types.RequestParams.Meta | None, propagated_meta)
+            request_meta = cast(mcp_types.RequestParams.Meta | None, propagated_meta)
 
             # If meta provided, use send_request for SEP-1686 task support
             if propagated_meta:
                 task_dict = propagated_meta.get("modelcontextprotocol.io/task")
-                request = mcp.types.ReadResourceRequest(
-                    params=mcp.types.ReadResourceRequestParams(
+                request = mcp_types.ReadResourceRequest(
+                    params=mcp_types.ReadResourceRequestParams(
                         uri=uri,
-                        task=mcp.types.TaskMetadata(**task_dict) if task_dict else None,
+                        task=mcp_types.TaskMetadata(**task_dict) if task_dict else None,
                         _meta=request_meta,  # type: ignore[unknown-argument]  # pydantic alias
                     )
                 )
                 result = await self._await_with_session_monitoring(
                     self.session.send_request(
                         request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
-                        result_type=mcp.types.ReadResourceResult,
+                        result_type=mcp_types.ReadResourceResult,
                     )
                 )
             else:
@@ -250,7 +250,7 @@ class ClientResourcesMixin:
         version: str | None = None,
         meta: dict[str, Any] | None = None,
         task: Literal[False] = False,
-    ) -> list[mcp.types.TextResourceContents | mcp.types.BlobResourceContents]: ...
+    ) -> list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents]: ...
 
     @overload
     async def read_resource(
@@ -274,7 +274,7 @@ class ClientResourcesMixin:
         task_id: str | None = None,
         ttl: int = 60000,
     ) -> (
-        list[mcp.types.TextResourceContents | mcp.types.BlobResourceContents]
+        list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents]
         | ResourceTask
     ):
         """Read the contents of a resource or resolved template.
@@ -288,7 +288,7 @@ class ClientResourcesMixin:
             ttl (int): Time to keep results available in milliseconds (default 60s).
 
         Returns:
-            list[mcp.types.TextResourceContents | mcp.types.BlobResourceContents] | ResourceTask:
+            list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents] | ResourceTask:
                 A list of content objects if task=False, or a ResourceTask object if task=True.
 
         Raises:
@@ -341,15 +341,15 @@ class ClientResourcesMixin:
         # Per SEP-1686 final spec: client sends only ttl, server generates taskId
         # Inject trace context into meta for propagation to server
         propagated_meta = inject_trace_context(meta)
-        request_meta = cast(mcp.types.RequestParams.Meta | None, propagated_meta)
+        request_meta = cast(mcp_types.RequestParams.Meta | None, propagated_meta)
 
         if isinstance(uri, str):
             uri = AnyUrl(uri)
 
-        request = mcp.types.ReadResourceRequest(
-            params=mcp.types.ReadResourceRequestParams(
+        request = mcp_types.ReadResourceRequest(
+            params=mcp_types.ReadResourceRequestParams(
                 uri=uri,
-                task=mcp.types.TaskMetadata(ttl=ttl),
+                task=mcp_types.TaskMetadata(ttl=ttl),
                 _meta=request_meta,  # type: ignore[unknown-argument]  # pydantic alias
             )
         )
@@ -363,7 +363,7 @@ class ClientResourcesMixin:
         )
         raw_result = wrapped_result.root
 
-        if isinstance(raw_result, mcp.types.CreateTaskResult):
+        if isinstance(raw_result, mcp_types.CreateTaskResult):
             # Task was accepted - extract task info from CreateTaskResult
             server_task_id = raw_result.task.taskId
             self._submitted_task_ids.add(server_task_id)

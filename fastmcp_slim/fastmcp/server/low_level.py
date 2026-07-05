@@ -6,7 +6,7 @@ from contextlib import AsyncExitStack
 from typing import TYPE_CHECKING, Any, cast
 
 import anyio
-import mcp.types
+import mcp_types
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 from mcp import LoggingLevel, McpError
 from mcp.server.lowlevel.server import (
@@ -74,7 +74,7 @@ class MiddlewareServerSession(ServerSession):
 
     async def _received_request(
         self,
-        responder: RequestResponder[mcp.types.ClientRequest, mcp.types.ServerResult],
+        responder: RequestResponder[mcp_types.ClientRequest, mcp_types.ServerResult],
     ):
         """
         Override the _received_request method to route special requests
@@ -85,7 +85,7 @@ class MiddlewareServerSession(ServerSession):
         import fastmcp.server.context
         from fastmcp.server.middleware.middleware import MiddlewareContext
 
-        if isinstance(responder.request.root, mcp.types.InitializeRequest):
+        if isinstance(responder.request.root, mcp_types.InitializeRequest):
             # The MCP SDK's ServerSession._received_request() handles the
             # initialize request internally by calling responder.respond()
             # to send the InitializeResult directly to the write stream, then
@@ -96,11 +96,11 @@ class MiddlewareServerSession(ServerSession):
             # capabilities), we wrap responder.respond() to capture the
             # InitializeResult before it's sent, then return it from
             # call_original_handler so it flows back through the middleware chain.
-            captured_response: mcp.types.ServerResult | None = None
+            captured_response: mcp_types.ServerResult | None = None
             original_respond = responder.respond
 
             async def capturing_respond(
-                response: mcp.types.ServerResult,
+                response: mcp_types.ServerResult,
             ) -> None:
                 nonlocal captured_response
                 captured_response = response
@@ -110,10 +110,10 @@ class MiddlewareServerSession(ServerSession):
 
             async def call_original_handler(
                 ctx: MiddlewareContext,
-            ) -> mcp.types.InitializeResult | None:
+            ) -> mcp_types.InitializeResult | None:
                 await super(MiddlewareServerSession, self)._received_request(responder)
                 if captured_response is not None and isinstance(
-                    captured_response.root, mcp.types.InitializeResult
+                    captured_response.root, mcp_types.InitializeResult
                 ):
                     return captured_response.root
                 return None
@@ -198,7 +198,7 @@ class LowLevelServer(_Server[LifespanResultT, RequestT]):
         self,
         notification_options: NotificationOptions,
         experimental_capabilities: dict[str, dict[str, Any]],
-    ) -> mcp.types.ServerCapabilities:
+    ) -> mcp_types.ServerCapabilities:
         """Override to set capabilities.tasks as a first-class field per SEP-1686.
 
         This ensures task capabilities appear in capabilities.tasks instead of
@@ -273,12 +273,12 @@ class LowLevelServer(_Server[LifespanResultT, RequestT]):
         [
             Callable[
                 [AnyUrl],
-                Awaitable[mcp.types.ReadResourceResult | mcp.types.CreateTaskResult],
+                Awaitable[mcp_types.ReadResourceResult | mcp_types.CreateTaskResult],
             ]
         ],
         Callable[
             [AnyUrl],
-            Awaitable[mcp.types.ReadResourceResult | mcp.types.CreateTaskResult],
+            Awaitable[mcp_types.ReadResourceResult | mcp_types.CreateTaskResult],
         ],
     ]:
         """
@@ -294,19 +294,19 @@ class LowLevelServer(_Server[LifespanResultT, RequestT]):
         def decorator(
             func: Callable[
                 [AnyUrl],
-                Awaitable[mcp.types.ReadResourceResult | mcp.types.CreateTaskResult],
+                Awaitable[mcp_types.ReadResourceResult | mcp_types.CreateTaskResult],
             ],
         ) -> Callable[
             [AnyUrl],
-            Awaitable[mcp.types.ReadResourceResult | mcp.types.CreateTaskResult],
+            Awaitable[mcp_types.ReadResourceResult | mcp_types.CreateTaskResult],
         ]:
             async def handler(
-                req: mcp.types.ReadResourceRequest,
-            ) -> mcp.types.ServerResult:
+                req: mcp_types.ReadResourceRequest,
+            ) -> mcp_types.ServerResult:
                 result = await func(req.params.uri)
-                return mcp.types.ServerResult(result)
+                return mcp_types.ServerResult(result)
 
-            self.request_handlers[mcp.types.ReadResourceRequest] = handler
+            self.request_handlers[mcp_types.ReadResourceRequest] = handler
             return func
 
         return decorator
@@ -317,12 +317,12 @@ class LowLevelServer(_Server[LifespanResultT, RequestT]):
         [
             Callable[
                 [str, dict[str, Any] | None],
-                Awaitable[mcp.types.GetPromptResult | mcp.types.CreateTaskResult],
+                Awaitable[mcp_types.GetPromptResult | mcp_types.CreateTaskResult],
             ]
         ],
         Callable[
             [str, dict[str, Any] | None],
-            Awaitable[mcp.types.GetPromptResult | mcp.types.CreateTaskResult],
+            Awaitable[mcp_types.GetPromptResult | mcp_types.CreateTaskResult],
         ],
     ]:
         """
@@ -338,19 +338,19 @@ class LowLevelServer(_Server[LifespanResultT, RequestT]):
         def decorator(
             func: Callable[
                 [str, dict[str, Any] | None],
-                Awaitable[mcp.types.GetPromptResult | mcp.types.CreateTaskResult],
+                Awaitable[mcp_types.GetPromptResult | mcp_types.CreateTaskResult],
             ],
         ) -> Callable[
             [str, dict[str, Any] | None],
-            Awaitable[mcp.types.GetPromptResult | mcp.types.CreateTaskResult],
+            Awaitable[mcp_types.GetPromptResult | mcp_types.CreateTaskResult],
         ]:
             async def handler(
-                req: mcp.types.GetPromptRequest,
-            ) -> mcp.types.ServerResult:
+                req: mcp_types.GetPromptRequest,
+            ) -> mcp_types.ServerResult:
                 result = await func(req.params.name, req.params.arguments)
-                return mcp.types.ServerResult(result)
+                return mcp_types.ServerResult(result)
 
-            self.request_handlers[mcp.types.GetPromptRequest] = handler
+            self.request_handlers[mcp_types.GetPromptRequest] = handler
             return func
 
         return decorator

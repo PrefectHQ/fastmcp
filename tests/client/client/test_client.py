@@ -8,7 +8,7 @@ from typing import Any, cast
 import anyio
 import pytest
 from mcp import ClientSession, McpError
-from mcp.types import TextContent
+from mcp_types import TextContent
 from pydantic import AnyUrl
 
 import fastmcp

@@ -2,7 +2,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-import mcp.types
+import mcp_types
 import pytest
 
 from fastmcp import Client, FastMCP
@@ -16,7 +16,7 @@ class Recording:
     # the hook is the name of the hook that was called, e.g. "on_list_tools"
     hook: str
     context: MiddlewareContext
-    result: mcp.types.ServerResult | None
+    result: mcp_types.ServerResult | None
 
 
 class RecordingMiddleware(Middleware):
@@ -433,8 +433,8 @@ class TestMiddlewareHooks:
         class CallToolMiddleware(Middleware):
             async def on_call_tool(
                 self,
-                context: MiddlewareContext[mcp.types.CallToolRequestParams],
-                call_next: CallNext[mcp.types.CallToolRequestParams, ToolResult],
+                context: MiddlewareContext[mcp_types.CallToolRequestParams],
+                call_next: CallNext[mcp_types.CallToolRequestParams, ToolResult],
             ):
                 # modify argument
                 if context.message.name == "add":
@@ -566,7 +566,7 @@ class TestApplyMiddlewareParameter:
 
         assert len(result.messages) == 1
         # content is TextContent | EmbeddedResource, but we know it's TextContent from the test
-        assert isinstance(result.messages[0].content, mcp.types.TextContent)
+        assert isinstance(result.messages[0].content, mcp_types.TextContent)
         assert result.messages[0].content.text == "Hello, World!"
         assert recording.assert_called(hook="on_get_prompt", times=1)
 
@@ -587,7 +587,7 @@ class TestApplyMiddlewareParameter:
 
         assert len(result.messages) == 1
         # content is TextContent | EmbeddedResource, but we know it's TextContent from the test
-        assert isinstance(result.messages[0].content, mcp.types.TextContent)
+        assert isinstance(result.messages[0].content, mcp_types.TextContent)
         assert result.messages[0].content.text == "Hello, World!"
         # Middleware should not have been called
         assert len(recording.calls) == 0

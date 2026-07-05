@@ -10,9 +10,9 @@ from contextlib import suppress
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Literal
 
-import mcp.types
+import mcp_types
 from mcp.shared.exceptions import McpError
-from mcp.types import INTERNAL_ERROR, ErrorData
+from mcp_types import INTERNAL_ERROR, ErrorData
 
 from fastmcp.server.dependencies import (
     _current_docket,
@@ -46,7 +46,7 @@ async def submit_to_docket(
     component: Tool | Resource | ResourceTemplate | Prompt,
     arguments: dict[str, Any] | None = None,
     task_meta: TaskMeta | None = None,
-) -> mcp.types.CreateTaskResult:
+) -> mcp_types.CreateTaskResult:
     """Submit any component to Docket for background execution (SEP-1686).
 
     Unified handler for all component types. Called by component's internal
@@ -144,7 +144,7 @@ async def submit_to_docket(
 
     # Send an initial tasks/status notification before queueing.
     # This guarantees clients can observe task creation immediately.
-    notification = mcp.types.TaskStatusNotification.model_validate(
+    notification = mcp_types.TaskStatusNotification.model_validate(
         {
             "method": "notifications/tasks/status",
             "params": {
@@ -163,7 +163,7 @@ async def submit_to_docket(
             },
         }
     )
-    server_notification = mcp.types.ServerNotification(notification)
+    server_notification = mcp_types.ServerNotification(notification)
     with suppress(Exception):
         # Don't let notification failures break task creation
         await ctx.session.send_notification(server_notification)
@@ -226,8 +226,8 @@ async def submit_to_docket(
 
     # Return CreateTaskResult with proper Task object
     # Tasks MUST begin in "working" status per SEP-1686 final spec (line 381)
-    return mcp.types.CreateTaskResult(
-        task=mcp.types.Task(
+    return mcp_types.CreateTaskResult(
+        task=mcp_types.Task(
             taskId=server_task_id,
             status="working",
             createdAt=created_at,

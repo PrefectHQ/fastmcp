@@ -2,7 +2,7 @@
 
 import pytest
 from mcp.server.streamable_http import EventMessage
-from mcp.types import JSONRPCMessage, JSONRPCRequest
+from mcp_types import JSONRPCMessage, JSONRPCRequest
 
 from fastmcp.server.event_store import (
     EventEntry,

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-import mcp.types as mcp_types
+import mcp_types
 import pytest
 
 from fastmcp import FastMCP

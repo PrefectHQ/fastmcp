@@ -558,7 +558,7 @@ async def mcp_content_server(tmp_path):
     """Server with tools returning MCP content blocks."""
     import base64
 
-    from mcp.types import (
+    from mcp_types import (
         AnyUrl,
         EmbeddedResource,
         ImageContent,

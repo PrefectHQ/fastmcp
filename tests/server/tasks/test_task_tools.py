@@ -8,7 +8,7 @@ and test_task_resources.py.
 import asyncio
 import functools
 
-import mcp.types
+import mcp_types
 import pytest
 from pydantic import BaseModel
 
@@ -82,7 +82,7 @@ async def test_task_tool_invalid_arguments_fail_before_task_state():
             super().__init__()
             self.methods: list[str] = []
 
-        async def on_notification(self, message: mcp.types.ServerNotification) -> None:
+        async def on_notification(self, message: mcp_types.ServerNotification) -> None:
             self.methods.append(message.root.method)
 
     server = FastMCP("tool-task-invalid-args-server")

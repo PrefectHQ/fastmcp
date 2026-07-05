@@ -21,7 +21,7 @@ from typing import (
 )
 
 import pydantic_core
-from mcp.types import Icon
+from mcp_types import Icon
 from pydantic.json_schema import SkipJsonSchema
 
 import fastmcp

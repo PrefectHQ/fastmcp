@@ -1,7 +1,7 @@
 import json
 from urllib.parse import quote
 
-from mcp.types import TextContent, TextResourceContents
+from mcp_types import TextContent, TextResourceContents
 
 from fastmcp.client.client import Client
 from fastmcp.server.server import FastMCP

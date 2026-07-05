@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 
-import mcp.types as mt
+import mcp_types as mt
 
 from fastmcp.exceptions import AuthorizationError
 from fastmcp.prompts.base import Prompt, PromptResult

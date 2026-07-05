@@ -4,12 +4,12 @@ import time
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
-import mcp.types as mcp_types
+import mcp_types
 import pytest
 from anyio import create_task_group
 from dirty_equals import Contains
 from mcp import McpError
-from mcp.types import Icon, TextContent, TextResourceContents
+from mcp_types import Icon, TextContent, TextResourceContents
 from pydantic import AnyUrl
 
 from fastmcp import FastMCP

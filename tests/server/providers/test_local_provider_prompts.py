@@ -6,7 +6,7 @@ Tests cover:
 """
 
 import pytest
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 from fastmcp import Client, Context, FastMCP
 from fastmcp.prompts.base import Prompt, PromptResult

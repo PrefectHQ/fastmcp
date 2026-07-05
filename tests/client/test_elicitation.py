@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Any, Literal, cast
 
 import pytest
-from mcp.types import ElicitRequestFormParams, ElicitRequestParams
+from mcp_types import ElicitRequestFormParams, ElicitRequestParams
 from pydantic import BaseModel
 from typing_extensions import TypedDict
 

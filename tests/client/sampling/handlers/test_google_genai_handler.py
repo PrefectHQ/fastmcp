@@ -14,7 +14,7 @@ try:
         Part,
         UserContent,
     )
-    from mcp.types import (
+    from mcp_types import (
         AudioContent,
         CreateMessageResult,
         ImageContent,

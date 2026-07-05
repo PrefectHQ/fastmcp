@@ -25,7 +25,7 @@ from typing import (
 
 import anyio
 from mcp.shared.exceptions import McpError
-from mcp.types import ErrorData, Icon, ToolAnnotations
+from mcp_types import ErrorData, Icon, ToolAnnotations
 from pydantic import Field, TypeAdapter
 from pydantic import ValidationError as PydanticValidationError
 from pydantic.json_schema import SkipJsonSchema
