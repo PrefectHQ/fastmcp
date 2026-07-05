@@ -42,7 +42,7 @@ from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.resources.base import ResourceContent, ResourceResult
 from fastmcp.resources.template import expand_uri_template
 from fastmcp.server.context import Context
-from fastmcp.server.dependencies import get_context, request_ctx
+from fastmcp.server.dependencies import fastmcp_request_ctx, get_context
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.providers.aggregate import ProviderErrorStrategy
 from fastmcp.server.providers.base import Provider
@@ -917,14 +917,17 @@ class FastMCPProxy(FastMCP):
 
     def _setup_proxy_ping_handler(self) -> None:
         async def ping_remote(
-            _request: mcp_types.PingRequest,
-        ) -> mcp_types.ServerResult:
+            _ctx: ServerRequestContext[Any, Any],
+            _params: mcp_types.RequestParams | None,
+        ) -> mcp_types.EmptyResult:
             client = await self._get_client()
             async with client:
                 await client.ping()
-            return mcp_types.ServerResult(mcp_types.EmptyResult())
+            return mcp_types.EmptyResult()
 
-        self._mcp_server.request_handlers[mcp_types.PingRequest] = ping_remote
+        self._mcp_server.add_request_handler(
+            "ping", mcp_types.RequestParams, ping_remote
+        )
 
 
 # -----------------------------------------------------------------------------
@@ -1039,17 +1042,16 @@ def _restore_request_context(
         return
 
     rc, fastmcp_ref = stashed
-    try:
-        current_rc = request_ctx.get()
-    except LookupError:
-        request_ctx.set(rc)
+    current_rc = fastmcp_request_ctx.get()
+    if current_rc is None:
+        fastmcp_request_ctx.set(rc)
         fastmcp = fastmcp_ref()
         if fastmcp is not None:
             _current_context.set(Context(fastmcp))
             _current_server.set(weakref.ref(fastmcp))
         return
     if current_rc.session is rc.session and current_rc.request_id != rc.request_id:
-        request_ctx.set(rc)
+        fastmcp_request_ctx.set(rc)
         fastmcp = fastmcp_ref()
         if fastmcp is not None:
             _current_context.set(Context(fastmcp))

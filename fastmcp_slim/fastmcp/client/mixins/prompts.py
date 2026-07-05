@@ -57,8 +57,13 @@ class ClientPromptsMixin:
         ):
             logger.debug(f"[{self.name}] called list_prompts")
 
+            params = (
+                mcp_types.PaginatedRequestParams(cursor=cursor)
+                if cursor is not None
+                else None
+            )
             result = await self._await_with_session_monitoring(
-                self.session.list_prompts(cursor=cursor)
+                self.session.list_prompts(params=params)
             )
             return result
 
@@ -155,7 +160,7 @@ class ClientPromptsMixin:
 
             # Inject trace context into meta for propagation to server
             propagated_meta = inject_trace_context(meta)
-            request_meta = cast(mcp_types.RequestParams.Meta | None, propagated_meta)
+            request_meta = cast("mcp_types.RequestParamsMeta | None", propagated_meta)
 
             # If meta provided, use send_request for SEP-1686 task support
             if propagated_meta:

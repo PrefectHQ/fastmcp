@@ -61,8 +61,13 @@ class ClientToolsMixin:
         ):
             logger.debug(f"[{self.name}] called list_tools")
 
+            params = (
+                mcp_types.PaginatedRequestParams(cursor=cursor)
+                if cursor is not None
+                else None
+            )
             result = await self._await_with_session_monitoring(
-                self.session.list_tools(cursor=cursor)
+                self.session.list_tools(params=params)
             )
             return result
 

@@ -1,11 +1,11 @@
 from typing import Any
 
-import mcp_types
 from mcp_types import Tool as MCPTool
 from mcp_types import ToolAnnotations, ToolExecution
 
 from fastmcp import Client, FastMCP
 from fastmcp.tools.base import Tool
+from tests.conftest import make_server_request_context
 
 
 async def test_tool_annotations_in_tool_manager():
@@ -48,7 +48,7 @@ async def test_tool_annotations_in_mcp_protocol():
         return message
 
     # Check via MCP protocol
-    result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
+    result = await mcp._on_list_tools(make_server_request_context(), None)
     assert len(result.tools) == 1
     assert result.tools[0].annotations is not None
     assert result.tools[0].annotations.title == "Echo Tool"

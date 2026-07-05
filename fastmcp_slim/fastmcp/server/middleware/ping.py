@@ -52,8 +52,11 @@ class PingMiddleware(Middleware):
 
         async with self._lock:
             if session_id not in self._active_sessions:
-                # _subscription_task_group is added by MiddlewareServerSession
-                tg = session._subscription_task_group  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+                # SDK v2 constructs sessions per-request and no longer owns a
+                # per-connection task group FastMCP can borrow, so the keepalive
+                # ping loop cannot be spawned here. See Phase B report; this is a
+                # known regression pending a FastMCP-owned connection nursery.
+                tg = getattr(session, "_subscription_task_group", None)
                 if tg is not None:
                     self._active_sessions.add(session_id)
                     tg.start_soon(self._ping_loop, session, session_id)

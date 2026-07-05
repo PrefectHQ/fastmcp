@@ -232,7 +232,6 @@ class TransportMixin:
                                     tools_changed=True
                                 ),
                             ),
-                            stateless=stateless,
                         )
         finally:
             reset_transport(token)

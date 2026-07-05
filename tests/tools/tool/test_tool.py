@@ -251,8 +251,6 @@ class TestToolFromFunction:
         assert isinstance(result.content[0], AudioContent)
 
     async def test_tool_with_file_return(self):
-        from pydantic import AnyUrl
-
         def file_tool(data: bytes) -> File:
             return File(data=data, format="octet-stream")
 
@@ -265,8 +263,8 @@ class TestToolFromFunction:
             {
                 "type": "resource",
                 "resource": {
-                    "uri": AnyUrl("file:///resource.octet-stream"),
-                    "mimeType": "application/octet-stream",
+                    "uri": "file:///resource.octet-stream",
+                    "mime_type": "application/octet-stream",
                     "blob": "dGVzdC5iaW4=",
                 },
             }

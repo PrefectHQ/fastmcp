@@ -22,6 +22,33 @@ if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
+def make_server_request_context(
+    *,
+    method: str = "tools/list",
+    params: dict[str, Any] | None = None,
+) -> Any:
+    """Build a minimal SDK ServerRequestContext for direct handler unit tests.
+
+    The v2 SDK hands handlers a ``ServerRequestContext`` argument. Tests that
+    invoke FastMCP's ``_on_*`` handlers directly (without a live session) use
+    this to construct a stand-in context that ``bind_request_context`` accepts.
+    """
+    from unittest.mock import MagicMock
+
+    from mcp.server.context import ServerRequestContext
+
+    return ServerRequestContext(
+        session=MagicMock(),
+        lifespan_context={},
+        protocol_version="2025-06-18",
+        method=method,
+        params=params,
+        request_id=0,
+        meta=None,
+        request=None,
+    )
+
+
 def pytest_collection_modifyitems(items):
     """Automatically mark tests in integration_tests folder with 'integration' marker."""
     for item in items:

@@ -428,8 +428,10 @@ class File:
             raise ValueError("No resource data available")
 
         mime = mime_type or self._mime_type
+        # Validate the URI shape, then pass the string form to the SDK types
+        # (their `uri` fields are plain `str` in the v2 SDK).
         UriType = Annotated[AnyUrl, UrlConstraints(host_required=False)]
-        uri = TypeAdapter(UriType).validate_python(uri_str)
+        uri = str(TypeAdapter(UriType).validate_python(uri_str))
 
         if mime.startswith("text/"):
             try:

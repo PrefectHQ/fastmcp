@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import weakref
-from collections.abc import Awaitable, Callable
-from contextlib import AsyncExitStack
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, cast
 
-import anyio
 import mcp_types
-from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
-from mcp import LoggingLevel, MCPError
+from mcp.server.context import (
+    CallNext,
+    HandlerResult,
+    ServerMiddleware,
+    ServerRequestContext,
+)
 from mcp.server.lowlevel.server import (
     LifespanResultT,
     NotificationOptions,
@@ -19,153 +22,149 @@ from mcp.server.lowlevel.server import (
 from mcp.server.models import InitializationOptions
 from mcp.server.session import ServerSession
 from mcp.server.stdio import stdio_server as stdio_server
-from mcp.shared.message import SessionMessage
-from mcp.shared.session import RequestResponder
-from pydantic import AnyUrl
 
 from fastmcp.apps.config import UI_EXTENSION_ID
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
-    from fastmcp.server.middleware import CallNext
+    from fastmcp.server.middleware import CallNext as FastMCPCallNext
     from fastmcp.server.server import FastMCP
 
 logger = get_logger(__name__)
 
 
-class MiddlewareServerSession(ServerSession):
-    """ServerSession that routes initialization requests through FastMCP middleware."""
+def client_supports_extension(session: ServerSession, extension_id: str) -> bool:
+    """Check whether the connected client supports a given MCP extension.
 
-    def __init__(self, fastmcp: FastMCP, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._fastmcp_ref: weakref.ref[FastMCP] = weakref.ref(fastmcp)
-        # Task group for subscription tasks (set during session run)
-        self._subscription_task_group: anyio.TaskGroup | None = None  # type: ignore[valid-type]  # ty:ignore[invalid-type-form]
-        # Minimum logging level requested by the client via logging/setLevel
-        self._minimum_logging_level: LoggingLevel | None = None
+    Inspects the ``extensions`` extra field on ``ClientCapabilities`` sent by
+    the client during initialization. In v2 the client's initialize params are
+    reachable via ``session.client_params``.
+    """
+    client_params = session.client_params
+    if client_params is None:
+        return False
+    caps = client_params.capabilities
+    if caps is None:
+        return False
+    # ClientCapabilities uses extra="allow" — extensions is an extra field
+    extras = caps.model_extra or {}
+    extensions: dict[str, Any] | None = extras.get("extensions")
+    if not extensions:
+        return False
+    return extension_id in extensions
 
-    @property
-    def fastmcp(self) -> FastMCP:
-        """Get the FastMCP instance."""
-        fastmcp = self._fastmcp_ref()
-        if fastmcp is None:
-            raise RuntimeError("FastMCP instance is no longer available")
-        return fastmcp
 
-    def client_supports_extension(self, extension_id: str) -> bool:
-        """Check if the connected client supports a given MCP extension.
+class FastMCPServerMiddleware:
+    """SDK v2 server middleware that routes ``initialize`` through FastMCP middleware.
 
-        Inspects the ``extensions`` extra field on ``ClientCapabilities``
-        sent by the client during initialization.
+    v2 no longer lets FastMCP subclass ``ServerSession`` (the runner constructs
+    it per request), so the old ``MiddlewareServerSession._received_request``
+    override is replaced by a ``ServerMiddleware``. This middleware binds the
+    FastMCP request-context ContextVar for the whole chain (covering
+    ``initialize``, where no handler adapter runs) and routes the initialize
+    request through the FastMCP middleware chain so ``on_initialize`` hooks fire
+    and can observe the ``InitializeResult`` or veto with ``MCPError``.
+    """
+
+    def __init__(self, fastmcp: FastMCP):
+        self._ref: weakref.ref[FastMCP] = weakref.ref(fastmcp)
+
+    async def __call__(
+        self, ctx: ServerRequestContext, call_next: CallNext
+    ) -> HandlerResult:
+        from fastmcp.server.dependencies import bind_request_context
+
+        fastmcp = self._ref()
+        with self._apply_shared_context(fastmcp), bind_request_context(ctx):
+            # Only initialize requests (request_id present) go through FastMCP
+            # middleware here; every other request already binds the context in
+            # its own adapter, so we just pass through.
+            if ctx.method == "initialize" and ctx.request_id is not None:
+                if fastmcp is not None:
+                    return await self._run_initialize_mw(fastmcp, ctx, call_next)
+            return await call_next(ctx)
+
+    @contextmanager
+    def _apply_shared_context(self, fastmcp: FastMCP | None) -> Iterator[None]:
+        """Re-establish app-scoped SharedContext ContextVars for this request.
+
+        The SDK v2 dispatcher runs handlers in the message sender's context, so
+        the ``SharedContext`` ContextVars set during the server lifespan are not
+        visible here. Re-apply the lifespan's captured snapshot so ``Shared()``
+        dependencies resolve (and stay shared) across requests.
         """
-        client_params = self._client_params
-        if client_params is None:
-            return False
-        caps = client_params.capabilities
-        if caps is None:
-            return False
-        # ClientCapabilities uses extra="allow" — extensions is an extra field
-        extras = caps.model_extra or {}
-        extensions: dict[str, Any] | None = extras.get("extensions")
-        if not extensions:
-            return False
-        return extension_id in extensions
+        snapshot = fastmcp._shared_context_snapshot if fastmcp is not None else None
+        if not snapshot:
+            yield
+            return
+        tokens = [(var, var.set(value)) for var, value in snapshot.items()]
+        try:
+            yield
+        finally:
+            for var, token in reversed(tokens):
+                var.reset(token)
 
-    async def _received_request(
+    async def _run_initialize_mw(
         self,
-        responder: RequestResponder[mcp_types.ClientRequest, mcp_types.ServerResult],
-    ):
-        """
-        Override the _received_request method to route special requests
-        through FastMCP middleware.
-
-        Handles initialization requests and SEP-1686 task methods.
-        """
-        import fastmcp.server.context
+        fastmcp: FastMCP,
+        ctx: ServerRequestContext,
+        call_next: CallNext,
+    ) -> HandlerResult:
+        from fastmcp.server.context import Context
         from fastmcp.server.middleware.middleware import MiddlewareContext
 
-        if isinstance(responder.request.root, mcp_types.InitializeRequest):
-            # The MCP SDK's ServerSession._received_request() handles the
-            # initialize request internally by calling responder.respond()
-            # to send the InitializeResult directly to the write stream, then
-            # returning None. This bypasses the middleware return path entirely,
-            # so middleware would only see the request, never the response.
-            #
-            # To expose the response to middleware (e.g., for logging server
-            # capabilities), we wrap responder.respond() to capture the
-            # InitializeResult before it's sent, then return it from
-            # call_original_handler so it flows back through the middleware chain.
-            captured_response: mcp_types.ServerResult | None = None
-            original_respond = responder.respond
+        # Reconstruct the InitializeRequest from the raw params so FastMCP
+        # middleware `on_initialize` hooks that inspect the message still work.
+        init_message: mcp_types.InitializeRequest | None = None
+        try:
+            params = ctx.params if isinstance(ctx.params, dict) else {}
+            init_message = mcp_types.InitializeRequest.model_validate(
+                {"method": "initialize", "params": params}, by_name=False
+            )
+        except Exception:
+            init_message = None
 
-            async def capturing_respond(
-                response: mcp_types.ServerResult,
-            ) -> None:
-                nonlocal captured_response
-                captured_response = response
-                return await original_respond(response)
+        async def call_original_handler(
+            _mw_ctx: MiddlewareContext,
+        ) -> HandlerResult:
+            # call_next(ctx) runs the rest of the SDK chain, which for
+            # initialize returns the serialized InitializeResult dict.
+            return await call_next(ctx)
 
-            responder.respond = capturing_respond  # type: ignore[method-assign]  # ty:ignore[invalid-assignment]
-
-            async def call_original_handler(
-                ctx: MiddlewareContext,
-            ) -> mcp_types.InitializeResult | None:
-                await super(MiddlewareServerSession, self)._received_request(responder)
-                if captured_response is not None and isinstance(
-                    captured_response.root, mcp_types.InitializeResult
-                ):
-                    return captured_response.root
-                return None
-
-            async with fastmcp.server.context.Context(
-                fastmcp=self.fastmcp, session=self
-            ) as fastmcp_ctx:
-                # Create the middleware context.
-                mw_context = MiddlewareContext(
-                    message=responder.request.root,
-                    source="client",
-                    type="request",
-                    method="initialize",
-                    fastmcp_context=fastmcp_ctx,
-                )
-
-                try:
-                    return await self.fastmcp._run_middleware(
-                        mw_context,
-                        cast("CallNext[Any, Any]", call_original_handler),
-                    )
-                except MCPError as e:
-                    # MCPError can be thrown from middleware in `on_initialize`
-                    # send the error to responder.
-                    if not responder._completed:
-                        with responder:
-                            await responder.respond(e.error)
-                    else:
-                        # Don't re-raise: prevents responding to initialize request twice
-                        logger.warning(
-                            "Received MCPError but responder is already completed. "
-                            "Cannot send error response as response was already sent.",
-                            exc_info=e,
-                        )
-                    return None
-
-        # Fall through to default handling (task methods now handled via registered handlers)
-        return await super()._received_request(responder)
+        async with Context(fastmcp=fastmcp, session=ctx.session) as fastmcp_ctx:
+            mw_context = MiddlewareContext(
+                message=init_message,
+                source="client",
+                type="request",
+                method="initialize",
+                fastmcp_context=fastmcp_ctx,
+            )
+            return await fastmcp._run_middleware(
+                mw_context,
+                cast("FastMCPCallNext[Any, Any]", call_original_handler),
+            )
 
 
-# TODO(sdkv2): _Server is now single-param generic (RequestT removed); Phase B
-# should revisit whether LowLevelServer needs its own request-type parameter.
 class LowLevelServer(_Server[LifespanResultT]):
     def __init__(self, fastmcp: FastMCP, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
         # Store a weak reference to FastMCP to avoid circular references
         self._fastmcp_ref: weakref.ref[FastMCP] = weakref.ref(fastmcp)
 
-        # FastMCP servers support notifications for all components
+        # FastMCP servers support notifications for all components. v2 derives
+        # capabilities from registered handlers + protocol_version, but legacy
+        # clients still read NotificationOptions at create_initialization_options
+        # time, so keep a default here and pass it through.
         self.notification_options = NotificationOptions(
             prompts_changed=True,
             resources_changed=True,
             tools_changed=True,
+        )
+
+        # Route initialize through FastMCP middleware. Append so the SDK's
+        # seeded OpenTelemetryMiddleware stays outermost and keeps emitting spans.
+        self.middleware.append(
+            cast("ServerMiddleware[LifespanResultT]", FastMCPServerMiddleware(fastmcp))
         )
 
     @property
@@ -180,7 +179,7 @@ class LowLevelServer(_Server[LifespanResultT]):
         self,
         notification_options: NotificationOptions | None = None,
         experimental_capabilities: dict[str, dict[str, Any]] | None = None,
-        **kwargs: Any,
+        extensions: dict[str, dict[str, Any]] | None = None,
     ) -> InitializationOptions:
         # ensure we use the FastMCP notification options
         if notification_options is None:
@@ -192,166 +191,36 @@ class LowLevelServer(_Server[LifespanResultT]):
         return super().create_initialization_options(
             notification_options=notification_options,
             experimental_capabilities=merged or None,
-            **kwargs,
+            extensions=extensions,
         )
 
     def get_capabilities(
         self,
-        notification_options: NotificationOptions,
-        experimental_capabilities: dict[str, dict[str, Any]],
+        notification_options: NotificationOptions | None = None,
+        experimental_capabilities: dict[str, dict[str, Any]] | None = None,
+        extensions: dict[str, dict[str, Any]] | None = None,
+        *,
+        protocol_version: str | None = None,
     ) -> mcp_types.ServerCapabilities:
-        """Override to set capabilities.tasks as a first-class field per SEP-1686.
+        """Override to set capabilities.tasks as a first-class field per SEP-1686
+        and advertise the MCP Apps UI extension.
 
-        This ensures task capabilities appear in capabilities.tasks instead of
-        capabilities.experimental.tasks, which is required by the MCP spec and
-        enables proper task detection by clients like VS Code Copilot 1.107+.
+        ``ServerCapabilities.tasks`` and ``ServerCapabilities.extensions`` are
+        real declared fields in v2, so we update them directly.
         """
         from fastmcp.server.tasks.capabilities import get_task_capabilities
 
-        # Get base capabilities from SDK (pass empty dict for experimental)
-        # since we'll set tasks as a first-class field instead
         capabilities = super().get_capabilities(
             notification_options,
-            experimental_capabilities or {},
+            experimental_capabilities,
+            extensions,
+            protocol_version=protocol_version,
         )
 
-        # Advertise MCP Apps extension support (io.modelcontextprotocol/ui)
-        # Uses the same extra-field pattern as tasks above - ServerCapabilities
-        # has extra="allow" so this survives serialization.
-        # Merge with any existing extensions to avoid clobbering other features.
-        existing_extensions_value = (capabilities.model_extra or {}).get("extensions")
-        existing_extensions = (
-            existing_extensions_value
-            if isinstance(existing_extensions_value, dict)
-            else {}
-        )
+        existing_extensions = capabilities.extensions or {}
         return capabilities.model_copy(
             update={
                 "tasks": get_task_capabilities(),
                 "extensions": {**existing_extensions, UI_EXTENSION_ID: {}},
             }
         )
-
-    async def run(
-        self,
-        read_stream: MemoryObjectReceiveStream[SessionMessage | Exception],
-        write_stream: MemoryObjectSendStream[SessionMessage],
-        initialization_options: InitializationOptions,
-        raise_exceptions: bool = False,
-        stateless: bool = False,
-    ):
-        """
-        Overrides the run method to use the MiddlewareServerSession.
-        """
-        async with AsyncExitStack() as stack:
-            lifespan_context = await stack.enter_async_context(self.lifespan(self))
-            session = await stack.enter_async_context(
-                MiddlewareServerSession(
-                    self.fastmcp,
-                    read_stream,
-                    write_stream,
-                    initialization_options,
-                    stateless=stateless,
-                )
-            )
-
-            async with anyio.create_task_group() as tg:
-                # Store task group on session for subscription tasks (SEP-1686)
-                session._subscription_task_group = tg
-
-                async for message in session.incoming_messages:
-                    tg.start_soon(
-                        self._handle_message,
-                        message,
-                        session,
-                        lifespan_context,
-                        raise_exceptions,
-                    )
-
-    def read_resource(
-        self,
-    ) -> Callable[
-        [
-            Callable[
-                [AnyUrl],
-                Awaitable[mcp_types.ReadResourceResult | mcp_types.CreateTaskResult],
-            ]
-        ],
-        Callable[
-            [AnyUrl],
-            Awaitable[mcp_types.ReadResourceResult | mcp_types.CreateTaskResult],
-        ],
-    ]:
-        """
-        Decorator for registering a read_resource handler with CreateTaskResult support.
-
-        The MCP SDK's read_resource decorator does not support returning CreateTaskResult
-        for background task execution. This decorator wraps the result in ServerResult.
-
-        This decorator can be removed once the MCP SDK adds native CreateTaskResult support
-        for resources.
-        """
-
-        def decorator(
-            func: Callable[
-                [AnyUrl],
-                Awaitable[mcp_types.ReadResourceResult | mcp_types.CreateTaskResult],
-            ],
-        ) -> Callable[
-            [AnyUrl],
-            Awaitable[mcp_types.ReadResourceResult | mcp_types.CreateTaskResult],
-        ]:
-            async def handler(
-                req: mcp_types.ReadResourceRequest,
-            ) -> mcp_types.ServerResult:
-                result = await func(req.params.uri)
-                return mcp_types.ServerResult(result)
-
-            self.request_handlers[mcp_types.ReadResourceRequest] = handler
-            return func
-
-        return decorator
-
-    def get_prompt(
-        self,
-    ) -> Callable[
-        [
-            Callable[
-                [str, dict[str, Any] | None],
-                Awaitable[mcp_types.GetPromptResult | mcp_types.CreateTaskResult],
-            ]
-        ],
-        Callable[
-            [str, dict[str, Any] | None],
-            Awaitable[mcp_types.GetPromptResult | mcp_types.CreateTaskResult],
-        ],
-    ]:
-        """
-        Decorator for registering a get_prompt handler with CreateTaskResult support.
-
-        The MCP SDK's get_prompt decorator does not support returning CreateTaskResult
-        for background task execution. This decorator wraps the result in ServerResult.
-
-        This decorator can be removed once the MCP SDK adds native CreateTaskResult support
-        for prompts.
-        """
-
-        def decorator(
-            func: Callable[
-                [str, dict[str, Any] | None],
-                Awaitable[mcp_types.GetPromptResult | mcp_types.CreateTaskResult],
-            ],
-        ) -> Callable[
-            [str, dict[str, Any] | None],
-            Awaitable[mcp_types.GetPromptResult | mcp_types.CreateTaskResult],
-        ]:
-            async def handler(
-                req: mcp_types.GetPromptRequest,
-            ) -> mcp_types.ServerResult:
-                result = await func(req.params.name, req.params.arguments)
-                return mcp_types.ServerResult(result)
-
-            self.request_handlers[mcp_types.GetPromptRequest] = handler
-            return func
-
-        return decorator

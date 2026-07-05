@@ -56,8 +56,13 @@ class ClientResourcesMixin:
         ):
             logger.debug(f"[{self.name}] called list_resources")
 
+            params = (
+                mcp_types.PaginatedRequestParams(cursor=cursor)
+                if cursor is not None
+                else None
+            )
             result = await self._await_with_session_monitoring(
-                self.session.list_resources(cursor=cursor)
+                self.session.list_resources(params=params)
             )
             return result
 
@@ -132,8 +137,13 @@ class ClientResourcesMixin:
         ):
             logger.debug(f"[{self.name}] called list_resource_templates")
 
+            params = (
+                mcp_types.PaginatedRequestParams(cursor=cursor)
+                if cursor is not None
+                else None
+            )
             result = await self._await_with_session_monitoring(
-                self.session.list_resource_templates(cursor=cursor)
+                self.session.list_resource_templates(params=params)
             )
             return result
 
@@ -218,7 +228,7 @@ class ClientResourcesMixin:
 
             # Inject trace context into meta for propagation to server
             propagated_meta = inject_trace_context(meta)
-            request_meta = cast(mcp_types.RequestParams.Meta | None, propagated_meta)
+            request_meta = cast("mcp_types.RequestParamsMeta | None", propagated_meta)
 
             # If meta provided, use send_request for SEP-1686 task support
             if propagated_meta:
@@ -238,7 +248,7 @@ class ClientResourcesMixin:
                 )
             else:
                 result = await self._await_with_session_monitoring(
-                    self.session.read_resource(uri)
+                    self.session.read_resource(str(uri))
                 )
             return result
 

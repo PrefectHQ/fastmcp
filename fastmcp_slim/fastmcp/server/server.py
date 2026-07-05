@@ -403,6 +403,10 @@ class FastMCP(
             self._lifespan = cast(LifespanCallable[LifespanResultT], default_lifespan)
         self._lifespan_result: LifespanResultT | None = None
         self._lifespan_result_set: bool = False
+        # Snapshot of SharedContext ContextVar values captured during the
+        # lifespan, re-applied per request by FastMCPServerMiddleware because
+        # the SDK v2 dispatcher runs handlers in the sender's context.
+        self._shared_context_snapshot: dict[Any, Any] | None = None
         self._lifespan_ref_count: int = 0
         self._lifespan_lock: asyncio.Lock = asyncio.Lock()
         self._started: asyncio.Event = asyncio.Event()
@@ -439,6 +443,12 @@ class FastMCP(
             if client_log_level is not None
             else fastmcp.settings.client_log_level
         )
+
+        # Per-session minimum log level requested by clients via logging/setLevel.
+        # Keyed by session id (a sentinel for stdio where session_id is None).
+        # v2 sessions are per-request so this state lives on the server, not the
+        # session object.
+        self._client_log_levels: dict[str, mcp_types.LoggingLevel] = {}
 
         self.experimental_capabilities: dict[str, dict[str, Any]] = (
             experimental_capabilities or {}
@@ -1415,10 +1425,9 @@ class FastMCP(
 
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
-                uri_param = AnyUrl(uri)
                 mw_context = MiddlewareContext(
                     message=mcp_types.ReadResourceRequestParams(
-                        uri=uri_param,
+                        uri=str(uri),
                         _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # pydantic alias
                     ),
                     source="client",

@@ -1,4 +1,3 @@
-from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -43,26 +42,30 @@ class TestParseModelPreferences:
 class TestSessionId:
     def test_session_id_with_http_headers(self, context):
         """Test that session_id returns the value from mcp-session-id header."""
-        from mcp.server.context import ServerRequestContext as RequestContext
-
-        from fastmcp.server.dependencies import request_ctx
+        from fastmcp.server.dependencies import (
+            FastMCPRequestContext,
+            fastmcp_request_ctx,
+        )
 
         mock_headers = {"mcp-session-id": "test-session-123"}
 
-        token = request_ctx.set(
-            RequestContext(
-                request_id=0,
-                meta=None,
+        token = fastmcp_request_ctx.set(
+            FastMCPRequestContext(
                 session=MagicMock(wraps={}),
-                lifespan_context=MagicMock(),
+                request_id="0",
+                meta=None,
                 request=MagicMock(headers=mock_headers),
+                protocol_version="2025-06-18",
+                close_sse_stream=None,
+                lifespan_context=MagicMock(),
+                _srctx=MagicMock(meta=None),
             )
         )
 
         try:
             assert context.session_id == "test-session-123"
         finally:
-            request_ctx.reset(token)
+            fastmcp_request_ctx.reset(token)
 
     def test_session_id_without_http_headers(self, context):
         """Test that session_id returns a UUID when no HTTP headers are available.
@@ -72,17 +75,22 @@ class TestSessionId:
         """
         import uuid
 
-        from mcp.server.context import ServerRequestContext as RequestContext
-
-        from fastmcp.server.dependencies import request_ctx
+        from fastmcp.server.dependencies import (
+            FastMCPRequestContext,
+            fastmcp_request_ctx,
+        )
 
         mock_session = MagicMock(wraps={})
-        token = request_ctx.set(
-            RequestContext(
-                request_id=0,
-                meta=None,
+        token = fastmcp_request_ctx.set(
+            FastMCPRequestContext(
                 session=mock_session,
+                request_id="0",
+                meta=None,
+                request=None,
+                protocol_version="2025-06-18",
+                close_sse_stream=None,
                 lifespan_context=MagicMock(),
+                _srctx=MagicMock(meta=None),
             )
         )
 
@@ -93,7 +101,7 @@ class TestSessionId:
             # Should be cached on session
             assert mock_session._fastmcp_state_prefix == session_id
         finally:
-            request_ctx.reset(token)
+            fastmcp_request_ctx.reset(token)
 
 
 class TestContextState:
@@ -339,58 +347,67 @@ class TestContextMeta:
     """Test suite for Context meta functionality."""
 
     def test_request_context_meta_access(self, context):
-        """Test that meta can be accessed from request context."""
-        from mcp.server.context import ServerRequestContext as RequestContext
+        """Test that the lifted _meta dict is accessible from request context.
 
-        from fastmcp.server.dependencies import request_ctx
+        In the v2 SDK port the wrapper's ``meta`` is the raw ``_meta`` block
+        lifted from the request params (a dict), not a typed object.
+        """
+        from fastmcp.server.dependencies import (
+            FastMCPRequestContext,
+            fastmcp_request_ctx,
+        )
 
-        # Create a mock meta object with attributes
-        class MockMeta:
-            def __init__(self):
-                self.user_id = "user-123"
-                self.trace_id = "trace-456"
-                self.custom_field = "custom-value"
+        meta_dict = {
+            "user_id": "user-123",
+            "trace_id": "trace-456",
+            "custom_field": "custom-value",
+        }
 
-        mock_meta = MockMeta()
-
-        token = request_ctx.set(
-            RequestContext(
-                request_id=0,
-                meta=cast(Any, mock_meta),  # Mock object for testing
+        token = fastmcp_request_ctx.set(
+            FastMCPRequestContext(
                 session=MagicMock(wraps={}),
+                request_id="0",
+                meta=meta_dict,
+                request=None,
+                protocol_version="2025-06-18",
+                close_sse_stream=None,
                 lifespan_context=MagicMock(),
+                _srctx=MagicMock(meta=None),
             )
         )
 
-        # Access meta through context
         retrieved_meta = context.request_context.meta
         assert retrieved_meta is not None
-        assert retrieved_meta.user_id == "user-123"
-        assert retrieved_meta.trace_id == "trace-456"
-        assert retrieved_meta.custom_field == "custom-value"
+        assert retrieved_meta["user_id"] == "user-123"
+        assert retrieved_meta["trace_id"] == "trace-456"
+        assert retrieved_meta["custom_field"] == "custom-value"
 
-        request_ctx.reset(token)
+        fastmcp_request_ctx.reset(token)
 
     def test_request_context_meta_none(self, context):
         """Test that context handles None meta gracefully."""
-        from mcp.server.context import ServerRequestContext as RequestContext
+        from fastmcp.server.dependencies import (
+            FastMCPRequestContext,
+            fastmcp_request_ctx,
+        )
 
-        from fastmcp.server.dependencies import request_ctx
-
-        token = request_ctx.set(
-            RequestContext(
-                request_id=0,
-                meta=None,
+        token = fastmcp_request_ctx.set(
+            FastMCPRequestContext(
                 session=MagicMock(wraps={}),
+                request_id="0",
+                meta=None,
+                request=None,
+                protocol_version="2025-06-18",
+                close_sse_stream=None,
                 lifespan_context=MagicMock(),
+                _srctx=MagicMock(meta=None),
             )
         )
 
-        # Access meta through context
         retrieved_meta = context.request_context.meta
         assert retrieved_meta is None
 
-        request_ctx.reset(token)
+        fastmcp_request_ctx.reset(token)
 
 
 class TestTransport:
