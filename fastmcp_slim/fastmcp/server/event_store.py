@@ -161,7 +161,7 @@ class EventStore(SDKEventStore):
         entry = EventEntry(
             event_id=event_id,
             stream_id=stream_id,
-            message=message.model_dump(mode="json") if message else None,
+            message=message.model_dump(mode="json", by_alias=True) if message else None,
         )
         await self._event_store.put(key=event_id, value=entry, ttl=self._ttl)
 

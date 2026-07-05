@@ -204,7 +204,9 @@ class ProxyTool(Tool):
                         if task_metadata:
                             meta = meta or {}
                             meta["modelcontextprotocol.io/task"] = (
-                                task_metadata.model_dump(exclude_none=True)
+                                task_metadata.model_dump(
+                                    by_alias=True, exclude_none=True
+                                )
                             )
 
                 result = await client.call_tool_mcp(

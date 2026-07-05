@@ -1221,7 +1221,7 @@ async def _list_tools(mcp_url: str) -> list[dict[str, Any]]:
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.list_tools()
-                return [t.model_dump() for t in result.tools]
+                return [t.model_dump(by_alias=True) for t in result.tools]
     except Exception as exc:
         logger.debug(f"Could not list tools from {mcp_url}: {exc}")
         return []
