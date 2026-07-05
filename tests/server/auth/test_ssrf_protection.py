@@ -60,6 +60,10 @@ class TestIsIPAllowed:
             pytest.param("64:ff9b::6440:1", id="nat64-cgnat"),
             pytest.param("64:ff9b:1::a9fe:a9fe", id="nat64-local-use-low32"),
             pytest.param("64:ff9b:1:a9fe:a9:fe00::", id="nat64-local-use-48"),
+            pytest.param("::ffff:0:7f00:1", id="ipv4-translated-loopback"),
+            pytest.param("::ffff:0:0a00:1", id="ipv4-translated-private"),
+            pytest.param("::ffff:0:a9fe:a9fe", id="ipv4-translated-link-local"),
+            pytest.param("::ffff:0:6440:1", id="ipv4-translated-cgnat"),
             pytest.param("::7f00:1", id="ipv4-compatible-loopback"),
             pytest.param("::0a00:1", id="ipv4-compatible-private"),
             pytest.param("::a9fe:a9fe", id="ipv4-compatible-link-local"),
@@ -80,6 +84,7 @@ class TestIsIPAllowed:
         "address",
         [
             pytest.param("64:ff9b::0808:0808", id="nat64"),
+            pytest.param("::ffff:0:0808:0808", id="ipv4-translated"),
             pytest.param("::0808:0808", id="ipv4-compatible"),
             pytest.param("2606:4700::5efe:8.8.8.8", id="isatap"),
         ],
@@ -125,6 +130,7 @@ class TestValidateURL:
         [
             pytest.param("64:ff9b::0a00:1", id="nat64"),
             pytest.param("64:ff9b:1:a9fe:a9:fe00::", id="nat64-local-use"),
+            pytest.param("::ffff:0:a9fe:a9fe", id="ipv4-translated"),
             pytest.param("::a9fe:a9fe", id="ipv4-compatible"),
             pytest.param("2606:4700::5efe:169.254.169.254", id="isatap"),
         ],

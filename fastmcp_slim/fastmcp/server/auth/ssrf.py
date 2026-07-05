@@ -37,6 +37,7 @@ NAT64_PREFIXES: tuple[
     ),
 )
 LOW32_OFFSETS = (12, 13, 14, 15)
+IPV4_TRANSLATED_PREFIX = ipaddress.IPv6Network("0:0:0:0:ffff:0:0:0/96")
 ISATAP_INTERFACE_IDS = (b"\x00\x00\x5e\xfe", b"\x02\x00\x5e\xfe")
 
 
@@ -86,6 +87,8 @@ def _embedded_ipv4_addresses(
     if ip.teredo:
         server, client = ip.teredo
         candidates.update((server, client))
+    if ip in IPV4_TRANSLATED_PREFIX:
+        candidates.add(from_offsets(LOW32_OFFSETS))
 
     for prefix, offset_options in NAT64_PREFIXES:
         if ip in prefix:
