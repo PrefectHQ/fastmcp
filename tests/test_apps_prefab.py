@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from mcp.types import TextContent
-from prefab_ui.app import PrefabApp
+from prefab_ui.app import PROTOCOL_VERSION, PrefabApp
 from prefab_ui.components import Column, Heading, Text
 from prefab_ui.components.base import Component
 
@@ -39,7 +39,7 @@ class TestConvertResult:
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "[Rendered Prefab UI]"
         assert result.structured_content is not None
-        assert result.structured_content["$prefab"]["version"] == "0.2"
+        assert result.structured_content["$prefab"]["version"] == PROTOCOL_VERSION
         assert result.structured_content["state"] == {"name": "Alice"}
         # PrefabApp wraps view in a pf-app-root Div
         root = result.structured_content["view"]
@@ -55,7 +55,7 @@ class TestConvertResult:
 
         assert isinstance(result, ToolResult)
         assert result.structured_content is not None
-        assert result.structured_content["$prefab"]["version"] == "0.2"
+        assert result.structured_content["$prefab"]["version"] == PROTOCOL_VERSION
         assert result.structured_content["view"]["type"] == "Div"
         assert result.structured_content["view"]["children"][0]["type"] == "Heading"
 
@@ -71,7 +71,7 @@ class TestConvertResult:
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "Custom fallback text"
         assert result.structured_content is not None
-        assert result.structured_content["$prefab"]["version"] == "0.2"
+        assert result.structured_content["$prefab"]["version"] == PROTOCOL_VERSION
         assert result.structured_content["view"]["type"] == "Div"
         assert result.structured_content["view"]["children"][0]["type"] == "Heading"
 
@@ -85,7 +85,7 @@ class TestConvertResult:
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "My text"
         assert result.structured_content is not None
-        assert result.structured_content["$prefab"]["version"] == "0.2"
+        assert result.structured_content["$prefab"]["version"] == PROTOCOL_VERSION
         assert result.structured_content["view"]["type"] == "Div"
         assert result.structured_content["view"]["children"][0]["type"] == "Heading"
 
@@ -391,7 +391,7 @@ class TestIntegration:
             result = await client.call_tool("greet", {"name": "Alice"})
 
         assert result.structured_content is not None
-        assert result.structured_content["$prefab"]["version"] == "0.2"
+        assert result.structured_content["$prefab"]["version"] == PROTOCOL_VERSION
         assert result.structured_content["state"] == {"name": "Alice"}
 
     async def test_tool_call_with_custom_text(self):
@@ -412,7 +412,7 @@ class TestIntegration:
             "Greeting for Alice" in c.text for c in result.content if hasattr(c, "text")
         )
         assert result.structured_content is not None
-        assert result.structured_content["$prefab"]["version"] == "0.2"
+        assert result.structured_content["$prefab"]["version"] == PROTOCOL_VERSION
 
     async def test_tools_list_includes_app_meta(self):
         mcp = FastMCP("test")

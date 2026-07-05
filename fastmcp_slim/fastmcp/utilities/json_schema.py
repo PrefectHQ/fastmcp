@@ -531,7 +531,7 @@ def _single_pass_optimize(
             # this regardless of `in_schema` — a $ref in a user extension
             # still pins the referenced $def as "used".
             if prune_defs:
-                ref = node.get("$ref")  # type: ignore
+                ref = node.get("$ref")
                 if isinstance(ref, str) and ref.startswith("#/$defs/"):
                     referenced_def = ref.split("/")[-1]
                     if current_def_name:
@@ -565,7 +565,7 @@ def _single_pass_optimize(
 
                 if (
                     prune_additional_properties
-                    and node.get("additionalProperties") is False  # type: ignore
+                    and node.get("additionalProperties") is False
                 ):
                     node.pop("additionalProperties")  # type: ignore
 
