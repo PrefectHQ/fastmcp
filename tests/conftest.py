@@ -239,12 +239,14 @@ def tool_server():
     def mixed_content_tool() -> list[TextContent | ImageContent | EmbeddedResource]:
         return [
             TextContent(type="text", text="Hello"),
-            ImageContent(type="image", data="abc", mimeType="application/octet-stream"),
+            ImageContent(
+                type="image", data="abc", mime_type="application/octet-stream"
+            ),
             EmbeddedResource(
                 type="resource",
                 resource=BlobResourceContents(
                     blob=base64.b64encode(b"abc").decode(),
-                    mimeType="application/octet-stream",
+                    mime_type="application/octet-stream",
                     uri=AnyUrl("file:///test.bin"),
                 ),
             ),

@@ -32,7 +32,7 @@ from fastmcp.server.transforms import GetToolNext, Transform
 from fastmcp.tools.base import Tool
 from fastmcp.utilities.versions import VersionSpec
 
-_DEFAULT_ANNOTATIONS = ToolAnnotations(readOnlyHint=True)
+_DEFAULT_ANNOTATIONS = ToolAnnotations(read_only_hint=True)
 
 if TYPE_CHECKING:
     from fastmcp.server.providers.base import Provider

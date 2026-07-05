@@ -257,7 +257,7 @@ async def relay_elicitation(
     try:
         result = await session.elicit(
             message=elicitation["message"],
-            requestedSchema=elicitation["requestedSchema"],
+            requested_schema=elicitation["requestedSchema"],
         )
         await handle_task_input(
             task_id=task_id,

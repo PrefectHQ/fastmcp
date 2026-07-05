@@ -15,8 +15,8 @@ async def test_tool_annotations_in_tool_manager():
     @mcp.tool(
         annotations=ToolAnnotations(
             title="Echo Tool",
-            readOnlyHint=True,
-            openWorldHint=False,
+            read_only_hint=True,
+            open_world_hint=False,
         )
     )
     def echo(message: str) -> str:
@@ -39,8 +39,8 @@ async def test_tool_annotations_in_mcp_protocol():
     @mcp.tool(
         annotations=ToolAnnotations(
             title="Echo Tool",
-            readOnlyHint=True,
-            openWorldHint=False,
+            read_only_hint=True,
+            open_world_hint=False,
         )
     )
     def echo(message: str) -> str:
@@ -63,8 +63,8 @@ async def test_tool_annotations_in_client_api():
     @mcp.tool(
         annotations=ToolAnnotations(
             title="Echo Tool",
-            readOnlyHint=True,
-            openWorldHint=False,
+            read_only_hint=True,
+            open_world_hint=False,
         )
     )
     def echo(message: str) -> str:
@@ -114,10 +114,10 @@ async def test_direct_tool_annotations_in_tool_manager():
 
     annotations = ToolAnnotations(
         title="Direct Tool",
-        readOnlyHint=False,
-        destructiveHint=True,
-        idempotentHint=False,
-        openWorldHint=True,
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=False,
+        open_world_hint=True,
     )
 
     @mcp.tool(annotations=annotations)
@@ -142,10 +142,10 @@ async def test_direct_tool_annotations_in_client_api():
 
     annotations = ToolAnnotations(
         title="Direct Tool",
-        readOnlyHint=False,
-        destructiveHint=True,
-        idempotentHint=False,
-        openWorldHint=True,
+        read_only_hint=False,
+        destructive_hint=True,
+        idempotent_hint=False,
+        open_world_hint=True,
     )
 
     @mcp.tool(annotations=annotations)
@@ -177,8 +177,8 @@ async def test_add_tool_method_annotations():
         name="create_item",
         annotations=ToolAnnotations(
             title="Create Item",
-            readOnlyHint=False,
-            destructiveHint=False,
+            read_only_hint=False,
+            destructive_hint=False,
         ),
     )
 
@@ -206,8 +206,8 @@ async def test_tool_functionality_with_annotations():
         name="create_item",
         annotations=ToolAnnotations(
             title="Create Item",
-            readOnlyHint=False,
-            destructiveHint=False,
+            read_only_hint=False,
+            destructive_hint=False,
         ),
     )
     mcp.add_tool(tool)

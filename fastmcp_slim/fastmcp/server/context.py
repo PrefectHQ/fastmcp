@@ -1189,7 +1189,7 @@ class Context:
             # Standard request mode: use session.elicit directly
             result = await self.session.elicit(
                 message=message,
-                requestedSchema=config.schema,
+                requested_schema=config.schema,
                 related_request_id=self.request_id,
             )
 

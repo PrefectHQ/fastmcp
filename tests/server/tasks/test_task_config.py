@@ -283,7 +283,7 @@ class TestToolExecutionMetadata:
             assert tool.execution.task_support == "optional"
 
     async def test_required_tool_exposes_task_support(self):
-        """Tools with mode=required should expose taskSupport='required'."""
+        """Tools with mode=required should expose task_support='required'."""
         mcp = FastMCP("test", tasks=False)
 
         @mcp.tool(task=TaskConfig(mode="required"))

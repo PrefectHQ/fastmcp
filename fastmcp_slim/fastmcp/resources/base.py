@@ -106,14 +106,14 @@ class ResourceContent(pydantic.BaseModel):
             return mcp_types.TextResourceContents(
                 uri=AnyUrl(uri) if isinstance(uri, str) else uri,
                 text=self.content,
-                mimeType=self.mime_type or "text/plain",
+                mime_type=self.mime_type or "text/plain",
                 _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
             )
         else:
             return mcp_types.BlobResourceContents(
                 uri=AnyUrl(uri) if isinstance(uri, str) else uri,
                 blob=base64.b64encode(self.content).decode(),
-                mimeType=self.mime_type or "application/octet-stream",
+                mime_type=self.mime_type or "application/octet-stream",
                 _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
             )
 
@@ -412,7 +412,7 @@ class Resource(FastMCPComponent):
             name=overrides.get("name", self.name),
             uri=overrides.get("uri", self.uri),
             description=overrides.get("description", self.description),
-            mimeType=overrides.get("mimeType", self.mime_type),
+            mime_type=overrides.get("mimeType", self.mime_type),
             title=overrides.get("title", self.title),
             icons=overrides.get("icons", self.icons),
             annotations=overrides.get("annotations", self.annotations),

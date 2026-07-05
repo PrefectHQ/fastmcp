@@ -226,11 +226,11 @@ async def submit_to_docket(
     # Tasks MUST begin in "working" status per SEP-1686 final spec (line 381)
     return mcp_types.CreateTaskResult(
         task=mcp_types.Task(
-            taskId=server_task_id,
+            task_id=server_task_id,
             status="working",
-            createdAt=created_at,
-            lastUpdatedAt=created_at,
+            created_at=created_at,
+            last_updated_at=created_at,
             ttl=ttl_ms,
-            pollInterval=poll_interval_ms,
+            poll_interval=poll_interval_ms,
         )
     )

@@ -198,13 +198,13 @@ async def tasks_get_handler(server: FastMCP, params: dict[str, Any]) -> GetTaskR
             created_at_dt = datetime.now(timezone.utc)
 
         return GetTaskResult(
-            taskId=client_task_id,
+            task_id=client_task_id,
             status=mcp_state,
-            createdAt=created_at_dt,
-            lastUpdatedAt=datetime.now(timezone.utc),
+            created_at=created_at_dt,
+            last_updated_at=datetime.now(timezone.utc),
             ttl=DEFAULT_TTL_MS,
-            pollInterval=poll_interval_ms,
-            statusMessage=status_message,
+            poll_interval=poll_interval_ms,
+            status_message=status_message,
         )
 
 
@@ -277,7 +277,7 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
             # Task failed - return error result
             return mcp_types.CallToolResult(
                 content=[mcp_types.TextContent(type="text", text=str(error))],
-                isError=True,
+                is_error=True,
                 _meta={  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                     "io.modelcontextprotocol/related-task": {
                         "taskId": client_task_id,
@@ -337,7 +337,7 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
                 content, structured_content = mcp_result
                 mcp_result = mcp_types.CallToolResult(
                     content=content,
-                    structuredContent=structured_content,
+                    structured_content=structured_content,
                     _meta=related_task_meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                 )
             else:
@@ -390,7 +390,7 @@ async def tasks_list_handler(
         ListTasksResult: Response with tasks list and pagination
     """
     # Return empty list - client tracks tasks locally
-    return ListTasksResult(tasks=[], nextCursor=None)
+    return ListTasksResult(tasks=[], next_cursor=None)
 
 
 async def tasks_cancel_handler(
@@ -438,13 +438,13 @@ async def tasks_cancel_handler(
         # createdAt is REQUIRED per SEP-1686 final spec (line 430)
         # Per spec lines 447-448: SHOULD NOT include related-task metadata in tasks/cancel
         return CancelTaskResult(
-            taskId=client_task_id,
+            task_id=client_task_id,
             status="cancelled",
-            createdAt=datetime.fromisoformat(created_at)
+            created_at=datetime.fromisoformat(created_at)
             if created_at
             else datetime.now(timezone.utc),
-            lastUpdatedAt=datetime.now(timezone.utc),
+            last_updated_at=datetime.now(timezone.utc),
             ttl=DEFAULT_TTL_MS,
-            pollInterval=poll_interval_ms,
-            statusMessage="Task cancelled",
+            poll_interval=poll_interval_ms,
+            status_message="Task cancelled",
         )

@@ -816,7 +816,7 @@ class Client(
             root=mcp_types.CancelledNotification(
                 method="notifications/cancelled",
                 params=mcp_types.CancelledNotificationParams(
-                    requestId=request_id,
+                    request_id=request_id,
                     reason=reason,
                 ),
             )

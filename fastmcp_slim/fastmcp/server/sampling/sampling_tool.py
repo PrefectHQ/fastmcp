@@ -77,7 +77,7 @@ class SamplingTool(FastMCPBaseModel):
         return SDKTool(
             name=self.name,
             description=self.description,
-            inputSchema=self.parameters,
+            input_schema=self.parameters,
         )
 
     @classmethod

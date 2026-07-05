@@ -104,8 +104,8 @@ class TestConvertResultToContent:
         argnames="content_block",
         argvalues=[
             (TextContent(type="text", text="hello")),
-            (ImageContent(type="image", data="fakeimagedata", mimeType="image/png")),
-            (AudioContent(type="audio", data="fakeaudiodata", mimeType="audio/mpeg")),
+            (ImageContent(type="image", data="fakeimagedata", mime_type="image/png")),
+            (AudioContent(type="audio", data="fakeaudiodata", mime_type="audio/mpeg")),
             (
                 ResourceLink(
                     type="resource_link",
@@ -118,7 +118,7 @@ class TestConvertResultToContent:
                     type="resource",
                     resource=TextResourceContents(
                         uri=AnyUrl("resource://test"),
-                        mimeType="text/plain",
+                        mime_type="text/plain",
                         text="resource content",
                     ),
                 )
@@ -140,7 +140,7 @@ class TestConvertResultToContent:
                 Image(data=b"fakeimagedata"),
                 [
                     ImageContent(
-                        type="image", data="ZmFrZWltYWdlZGF0YQ==", mimeType="image/png"
+                        type="image", data="ZmFrZWltYWdlZGF0YQ==", mime_type="image/png"
                     )
                 ],
             ),
@@ -148,7 +148,7 @@ class TestConvertResultToContent:
                 Audio(data=b"fakeaudiodata"),
                 [
                     AudioContent(
-                        type="audio", data="ZmFrZWF1ZGlvZGF0YQ==", mimeType="audio/wav"
+                        type="audio", data="ZmFrZWF1ZGlvZGF0YQ==", mime_type="audio/wav"
                     )
                 ],
             ),
@@ -160,7 +160,7 @@ class TestConvertResultToContent:
                         resource=BlobResourceContents(
                             uri=AnyUrl("file:///resource.octet-stream"),
                             blob="ZmlsZWRhdGE=",
-                            mimeType="application/octet-stream",
+                            mime_type="application/octet-stream",
                         ),
                     )
                 ],
@@ -193,7 +193,7 @@ class TestConvertResultToContent:
                 type="resource",
                 resource=TextResourceContents(
                     uri=AnyUrl("resource://test"),
-                    mimeType="text/plain",
+                    mime_type="text/plain",
                     text="resource content",
                 ),
             ),
@@ -209,10 +209,10 @@ class TestConvertResultToContent:
                 TextContent(type="text", text='{"key":"value"}'),
                 TextContent(type="text", text='{"x":1,"y":"hello"}'),
                 ImageContent(
-                    type="image", data="ZmFrZWltYWdlZGF0YQ==", mimeType="image/png"
+                    type="image", data="ZmFrZWltYWdlZGF0YQ==", mime_type="image/png"
                 ),
                 AudioContent(
-                    type="audio", data="ZmFrZWF1ZGlvZGF0YQ==", mimeType="audio/wav"
+                    type="audio", data="ZmFrZWF1ZGlvZGF0YQ==", mime_type="audio/wav"
                 ),
                 ResourceLink(
                     name="test resource",
@@ -223,7 +223,7 @@ class TestConvertResultToContent:
                     type="resource",
                     resource=TextResourceContents(
                         uri=AnyUrl("resource://test"),
-                        mimeType="text/plain",
+                        mime_type="text/plain",
                         text="resource content",
                     ),
                 ),
@@ -475,7 +475,7 @@ class TestAutomaticStructuredContent:
         assert result.content == snapshot(
             [
                 AudioContent(
-                    type="audio", data="ZmFrZWF1ZGlvZGF0YQ==", mimeType="audio/wav"
+                    type="audio", data="ZmFrZWF1ZGlvZGF0YQ==", mime_type="audio/wav"
                 )
             ]
         )

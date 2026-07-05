@@ -222,13 +222,13 @@ async def call_sampling_handler(
     result = context.fastmcp.sampling_handler(
         messages,
         SamplingParams(
-            systemPrompt=system_prompt,
+            system_prompt=system_prompt,
             messages=messages,
             temperature=temperature,
-            maxTokens=max_tokens,
-            modelPreferences=_parse_model_preferences(model_preferences),
+            max_tokens=max_tokens,
+            model_preferences=_parse_model_preferences(model_preferences),
             tools=sdk_tools,
-            toolChoice=tool_choice,
+            tool_choice=tool_choice,
         ),
         context.request_context,
     )
@@ -244,7 +244,7 @@ async def call_sampling_handler(
             role="assistant",
             content=TextContent(type="text", text=result),
             model="unknown",
-            stopReason="endTurn",
+            stop_reason="endTurn",
         )
 
     return result
@@ -287,14 +287,14 @@ async def execute_tools(
         if tool is None:
             return ToolResultContent(
                 type="tool_result",
-                toolUseId=tool_use.id,
+                tool_use_id=tool_use.id,
                 content=[
                     TextContent(
                         type="text",
                         text=f"Error: Unknown tool '{tool_use.name}'",
                     )
                 ],
-                isError=True,
+                is_error=True,
             )
 
         tracer = get_tracer()
@@ -309,7 +309,7 @@ async def execute_tools(
                 result_value = await tool.run(tool_use.input)
                 return ToolResultContent(
                     type="tool_result",
-                    toolUseId=tool_use.id,
+                    tool_use_id=tool_use.id,
                     content=[TextContent(type="text", text=str(result_value))],
                 )
             except ToolError as e:
@@ -324,9 +324,9 @@ async def execute_tools(
                 )
                 return ToolResultContent(
                     type="tool_result",
-                    toolUseId=tool_use.id,
+                    tool_use_id=tool_use.id,
                     content=[TextContent(type="text", text=str(e))],
-                    isError=True,
+                    is_error=True,
                 )
             except Exception as e:
                 if span.is_recording():
@@ -340,9 +340,9 @@ async def execute_tools(
                     error_text = f"Error executing tool '{tool_use.name}': {e}"
                 return ToolResultContent(
                     type="tool_result",
-                    toolUseId=tool_use.id,
+                    tool_use_id=tool_use.id,
                     content=[TextContent(type="text", text=error_text)],
-                    isError=True,
+                    is_error=True,
                 )
 
     # Check if any tool requires sequential execution
@@ -718,7 +718,7 @@ async def sample_impl(
                                 content=[
                                     ToolResultContent(
                                         type="tool_result",
-                                        toolUseId=tool_call.id,
+                                        tool_use_id=tool_call.id,
                                         content=[
                                             TextContent(
                                                 type="text",
@@ -728,7 +728,7 @@ async def sample_impl(
                                                 ),
                                             )
                                         ],
-                                        isError=True,
+                                        is_error=True,
                                     )
                                 ],
                             )

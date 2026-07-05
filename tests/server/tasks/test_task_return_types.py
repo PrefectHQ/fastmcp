@@ -581,7 +581,7 @@ async def mcp_content_server(tmp_path):
         return ImageContent(
             type="image",
             data=base64.b64encode(test_image.read_bytes()).decode(),
-            mimeType="image/png",
+            mime_type="image/png",
         )
 
     @mcp.tool(task=True)
@@ -606,7 +606,7 @@ async def mcp_content_server(tmp_path):
             ImageContent(
                 type="image",
                 data=base64.b64encode(test_image.read_bytes()).decode(),
-                mimeType="image/png",
+                mime_type="image/png",
             ),
             TextContent(type="text", text="Third block"),
         ]

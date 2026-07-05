@@ -207,7 +207,7 @@ class TestParseToolResultEdgeCases:
     """
 
     async def test_error_with_empty_content_raises_with_fallback_message(self):
-        result = mcp_types.CallToolResult(content=[], isError=True)
+        result = mcp_types.CallToolResult(content=[], is_error=True)
 
         with pytest.raises(ToolError, match="Tool 'my_tool' returned an error"):
             await _parse_call_tool_result(
@@ -221,9 +221,9 @@ class TestParseToolResultEdgeCases:
     async def test_error_with_non_text_content_raises_with_fallback_message(self):
         result = mcp_types.CallToolResult(
             content=[
-                mcp_types.ImageContent(type="image", data="abc", mimeType="image/png")
+                mcp_types.ImageContent(type="image", data="abc", mime_type="image/png")
             ],
-            isError=True,
+            is_error=True,
         )
 
         with pytest.raises(ToolError, match="Tool 'my_tool' returned an error"):
@@ -238,7 +238,7 @@ class TestParseToolResultEdgeCases:
     async def test_error_with_text_content_raises_with_message(self):
         result = mcp_types.CallToolResult(
             content=[mcp_types.TextContent(type="text", text="custom error msg")],
-            isError=True,
+            is_error=True,
         )
 
         with pytest.raises(ToolError, match="custom error msg"):
@@ -253,8 +253,8 @@ class TestParseToolResultEdgeCases:
     async def test_error_with_structured_content_does_not_parse_data(self):
         result = mcp_types.CallToolResult(
             content=[mcp_types.TextContent(type="text", text="error happened")],
-            isError=True,
-            structuredContent={"key": "value"},
+            is_error=True,
+            structured_content={"key": "value"},
         )
 
         parsed = await _parse_call_tool_result(

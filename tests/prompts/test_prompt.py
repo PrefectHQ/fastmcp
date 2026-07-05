@@ -114,7 +114,7 @@ class TestRenderPrompt:
                         resource=TextResourceContents(
                             uri=FileUrl("file://file.txt"),
                             text="File contents",
-                            mimeType="text/plain",
+                            mime_type="text/plain",
                         ),
                     ),
                     role="user",
@@ -130,7 +130,7 @@ class TestRenderPrompt:
                     resource=TextResourceContents(
                         uri=FileUrl("file://file.txt"),
                         text="File contents",
-                        mimeType="text/plain",
+                        mime_type="text/plain",
                     ),
                 ),
                 role="user",
@@ -149,7 +149,7 @@ class TestRenderPrompt:
                         resource=TextResourceContents(
                             uri=FileUrl("file://file.txt"),
                             text="File contents",
-                            mimeType="text/plain",
+                            mime_type="text/plain",
                         ),
                     ),
                     role="user",
@@ -167,7 +167,7 @@ class TestRenderPrompt:
                     resource=TextResourceContents(
                         uri=FileUrl("file://file.txt"),
                         text="File contents",
-                        mimeType="text/plain",
+                        mime_type="text/plain",
                     ),
                 ),
                 role="user",
@@ -186,7 +186,7 @@ class TestRenderPrompt:
                         resource=TextResourceContents(
                             uri=FileUrl("file://file.txt"),
                             text="File contents",
-                            mimeType="text/plain",
+                            mime_type="text/plain",
                         ),
                     ),
                     role="user",
@@ -202,7 +202,7 @@ class TestRenderPrompt:
                     resource=TextResourceContents(
                         uri=FileUrl("file://file.txt"),
                         text="File contents",
-                        mimeType="text/plain",
+                        mime_type="text/plain",
                     ),
                 ),
                 role="user",
@@ -628,7 +628,7 @@ class TestMessage:
         """Test Message passes through ImageContent without JSON serialization."""
         from mcp_types import ImageContent
 
-        img = ImageContent(type="image", data="base64data", mimeType="image/png")
+        img = ImageContent(type="image", data="base64data", mime_type="image/png")
         msg = Message(img, role="user")
         assert isinstance(msg.content, ImageContent)
         assert msg.content.data == "base64data"
@@ -638,7 +638,7 @@ class TestMessage:
         """Test Message passes through AudioContent without JSON serialization."""
         from mcp_types import AudioContent
 
-        audio = AudioContent(type="audio", data="base64audio", mimeType="audio/wav")
+        audio = AudioContent(type="audio", data="base64audio", mime_type="audio/wav")
         msg = Message(audio, role="user")
         assert isinstance(msg.content, AudioContent)
         assert msg.content.data == "base64audio"
@@ -648,7 +648,7 @@ class TestMessage:
         """Test that ImageContent round-trips through to_mcp_prompt_message."""
         from mcp_types import ImageContent
 
-        img = ImageContent(type="image", data="base64data", mimeType="image/png")
+        img = ImageContent(type="image", data="base64data", mime_type="image/png")
         msg = Message(img, role="user")
         mcp_msg = msg.to_mcp_prompt_message()
         assert isinstance(mcp_msg.content, ImageContent)

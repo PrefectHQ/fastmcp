@@ -297,7 +297,7 @@ class Image:
         return mcp_types.ImageContent(
             type="image",
             data=data,
-            mimeType=mime_type or self._mime_type,
+            mime_type=mime_type or self._mime_type,
             annotations=annotations or self.annotations,
         )
 
@@ -360,7 +360,7 @@ class Audio:
         return mcp_types.AudioContent(
             type="audio",
             data=data,
-            mimeType=mime_type or self._mime_type,
+            mime_type=mime_type or self._mime_type,
             annotations=annotations or self.annotations,
         )
 
@@ -433,14 +433,14 @@ class File:
                 text = raw_data.decode("latin-1")
             resource = mcp_types.TextResourceContents(
                 text=text,
-                mimeType=mime,
+                mime_type=mime,
                 uri=uri,
             )
         else:
             data = base64.b64encode(raw_data).decode()
             resource = mcp_types.BlobResourceContents(
                 blob=data,
-                mimeType=mime,
+                mime_type=mime,
                 uri=uri,
             )
 

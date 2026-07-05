@@ -78,7 +78,7 @@ async def test_embedded_resource() -> list:
             type="resource",
             resource=mcp_types.TextResourceContents(
                 uri=AnyUrl("test://embedded-resource"),
-                mimeType="text/plain",
+                mime_type="text/plain",
                 text="This is an embedded resource content.",
             ),
         )
@@ -93,13 +93,13 @@ async def test_multiple_content_types() -> list:
         ImageContent(
             type="image",
             data=base64.b64encode(_1X1_PNG).decode(),
-            mimeType="image/png",
+            mime_type="image/png",
         ),
         EmbeddedResource(
             type="resource",
             resource=mcp_types.TextResourceContents(
                 uri=AnyUrl("test://mixed-content-resource"),
-                mimeType="application/json",
+                mime_type="application/json",
                 text='{"test":"data","value":123}',
             ),
         ),
@@ -185,7 +185,7 @@ async def test_elicitation_sep1330_enums(ctx: Context) -> str:
     """Tests elicitation with enum schema improvements per SEP-1330."""
     result = await ctx.session.elicit(
         message="Please select options from the enum fields",
-        requestedSchema={
+        requested_schema={
             "type": "object",
             "properties": {
                 "untitledSingle": {
@@ -349,7 +349,7 @@ async def test_prompt_with_embedded_resource(resourceUri: str) -> list:
                 type="resource",
                 resource=mcp_types.TextResourceContents(
                     uri=AnyUrl(resourceUri),
-                    mimeType="text/plain",
+                    mime_type="text/plain",
                     text=f"Content of resource {resourceUri}",
                 ),
             )
@@ -365,7 +365,7 @@ async def test_prompt_with_image() -> list:
             ImageContent(
                 type="image",
                 data=base64.b64encode(_1X1_PNG).decode(),
-                mimeType="image/png",
+                mime_type="image/png",
             )
         ),
         Message("Please analyze the image above."),

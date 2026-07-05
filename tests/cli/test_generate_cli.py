@@ -150,7 +150,7 @@ class TestToolFunctionSource:
     def test_required_param(self):
         tool = mcp_types.Tool(
             name="greet",
-            inputSchema={
+            input_schema={
                 "properties": {"name": {"type": "string", "description": "Who"}},
                 "required": ["name"],
             },
@@ -164,7 +164,7 @@ class TestToolFunctionSource:
     def test_optional_param(self):
         tool = mcp_types.Tool(
             name="search",
-            inputSchema={
+            input_schema={
                 "properties": {
                     "query": {"type": "string", "description": "Search query"},
                     "limit": {"type": "integer", "description": "Max results"},
@@ -180,7 +180,7 @@ class TestToolFunctionSource:
     def test_param_with_default(self):
         tool = mcp_types.Tool(
             name="fetch",
-            inputSchema={
+            input_schema={
                 "properties": {
                     "url": {"type": "string", "description": "URL"},
                     "timeout": {
@@ -199,7 +199,7 @@ class TestToolFunctionSource:
     def test_no_params(self):
         tool = mcp_types.Tool(
             name="ping",
-            inputSchema={"properties": {}},
+            input_schema={"properties": {}},
         )
         source = _tool_function_source(tool)
         assert "async def ping(" in source
@@ -208,7 +208,7 @@ class TestToolFunctionSource:
     def test_preserves_underscores(self):
         tool = mcp_types.Tool(
             name="get_forecast",
-            inputSchema={
+            input_schema={
                 "properties": {"city": {"type": "string"}},
                 "required": ["city"],
             },
@@ -219,7 +219,7 @@ class TestToolFunctionSource:
     def test_sanitizes_tool_name(self):
         tool = mcp_types.Tool(
             name="my.tool/v2",
-            inputSchema={"properties": {}},
+            input_schema={"properties": {}},
         )
         source = _tool_function_source(tool)
         assert "async def my_tool_v2(" in source
@@ -228,7 +228,7 @@ class TestToolFunctionSource:
     def test_sanitizes_param_name(self):
         tool = mcp_types.Tool(
             name="fetch",
-            inputSchema={
+            input_schema={
                 "properties": {"content-type": {"type": "string", "description": "CT"}},
                 "required": ["content-type"],
             },
@@ -241,7 +241,7 @@ class TestToolFunctionSource:
         tool = mcp_types.Tool(
             name="greet",
             description="Say hello to someone.",
-            inputSchema={
+            input_schema={
                 "properties": {"name": {"type": "string"}},
                 "required": ["name"],
             },
@@ -253,7 +253,7 @@ class TestToolFunctionSource:
         tool = mcp_types.Tool(
             name="fetch",
             description="Fetch data from 'source' API.",
-            inputSchema={
+            input_schema={
                 "properties": {"url": {"type": "string"}},
                 "required": ["url"],
             },
@@ -268,7 +268,7 @@ class TestToolFunctionSource:
         tool = mcp_types.Tool(
             name="tag_items",
             description="Tag multiple items.",
-            inputSchema={
+            input_schema={
                 "properties": {
                     "item_id": {"type": "string"},
                     "tags": {"type": "array", "items": {"type": "string"}},
@@ -288,7 +288,7 @@ class TestToolFunctionSource:
         tool = mcp_types.Tool(
             name="create_user",
             description="Create a user.",
-            inputSchema={
+            input_schema={
                 "properties": {
                     "name": {"type": "string"},
                     "metadata": {
@@ -321,7 +321,7 @@ class TestToolFunctionSource:
         tool = mcp_types.Tool(
             name="batch_process",
             description="Process batches.",
-            inputSchema={
+            input_schema={
                 "properties": {
                     "batches": {
                         "type": "array",
@@ -348,7 +348,7 @@ class TestToolFunctionSource:
         """Test that complex types with defaults are JSON-serialized."""
         tool = mcp_types.Tool(
             name="configure",
-            inputSchema={
+            input_schema={
                 "properties": {
                     "options": {
                         "type": "object",
@@ -369,7 +369,7 @@ class TestToolFunctionSource:
         """Test that parameter name collisions are detected."""
         tool = mcp_types.Tool(
             name="test",
-            inputSchema={
+            input_schema={
                 "properties": {
                     "content-type": {"type": "string"},
                     "content_type": {"type": "string"},
@@ -414,7 +414,7 @@ class TestGenerateCliScript:
             mcp_types.Tool(
                 name="greet",
                 description="Say hello",
-                inputSchema={
+                input_schema={
                     "properties": {
                         "name": {"type": "string", "description": "Who to greet"},
                     },
@@ -424,7 +424,7 @@ class TestGenerateCliScript:
             mcp_types.Tool(
                 name="add_numbers",
                 description="Add two numbers",
-                inputSchema={
+                input_schema={
                     "properties": {
                         "a": {"type": "integer", "description": "First number"},
                         "b": {"type": "integer", "description": "Second number"},
@@ -510,7 +510,7 @@ class TestGenerateCliScript:
             mcp_types.Tool(
                 name="my.tool/v2",
                 description="A tool with dots and slashes",
-                inputSchema={
+                input_schema={
                     "properties": {
                         "content-type": {"type": "string", "description": "CT"},
                     },
@@ -774,7 +774,7 @@ class TestGenerateSkillContent:
             mcp_types.Tool(
                 name="greet",
                 description="Say hello",
-                inputSchema={
+                input_schema={
                     "type": "object",
                     "properties": {
                         "name": {"type": "string", "description": "Who to greet"}
@@ -796,7 +796,7 @@ class TestGenerateSkillContent:
         tools = [
             mcp_types.Tool(
                 name="greet",
-                inputSchema={"type": "object", "properties": {}},
+                input_schema={"type": "object", "properties": {}},
             ),
         ]
         content = generate_skill_content("weather", "cli.py", tools)
@@ -807,7 +807,7 @@ class TestGenerateSkillContent:
             mcp_types.Tool(
                 name="search",
                 description="Search things",
-                inputSchema={
+                input_schema={
                     "type": "object",
                     "properties": {
                         "query": {"type": "string"},
@@ -827,7 +827,7 @@ class TestGenerateSkillContent:
             mcp_types.Tool(
                 name="create",
                 description="Create item",
-                inputSchema={
+                input_schema={
                     "type": "object",
                     "properties": {
                         "data": {
@@ -847,7 +847,7 @@ class TestGenerateSkillContent:
             mcp_types.Tool(
                 name="ping",
                 description="Ping the server",
-                inputSchema={"type": "object", "properties": {}},
+                input_schema={"type": "object", "properties": {}},
             ),
         ]
         content = generate_skill_content("test", "cli.py", tools)
@@ -866,7 +866,7 @@ class TestGenerateSkillContent:
             mcp_types.Tool(
                 name="test",
                 description="Test",
-                inputSchema={
+                input_schema={
                     "type": "object",
                     "properties": {
                         "mode": {"type": "string", "description": "a|b|c"},
@@ -882,7 +882,7 @@ class TestGenerateSkillContent:
             mcp_types.Tool(
                 name="test",
                 description="Test",
-                inputSchema={
+                input_schema={
                     "type": "object",
                     "properties": {
                         "val": {"type": ["string", "null"]},
@@ -899,7 +899,7 @@ class TestGenerateSkillContent:
             mcp_types.Tool(
                 name="run",
                 description="Run something",
-                inputSchema={
+                input_schema={
                     "type": "object",
                     "properties": {
                         "verbose": {"type": "boolean", "description": "Verbose output"},

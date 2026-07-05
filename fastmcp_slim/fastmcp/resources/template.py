@@ -323,9 +323,9 @@ class ResourceTemplate(FastMCPComponent):
 
         return SDKResourceTemplate(
             name=overrides.get("name", self.name),
-            uriTemplate=overrides.get("uriTemplate", self.uri_template),
+            uri_template=overrides.get("uriTemplate", self.uri_template),
             description=overrides.get("description", self.description),
-            mimeType=overrides.get("mimeType", self.mime_type),
+            mime_type=overrides.get("mimeType", self.mime_type),
             title=overrides.get("title", self.title),
             icons=overrides.get("icons", self.icons),
             annotations=overrides.get("annotations", self.annotations),

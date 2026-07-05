@@ -542,7 +542,7 @@ class TestToolExecutionField:
             name="my_tool",
             description="A tool with execution",
             parameters={"type": "object", "properties": {}},
-            execution=ToolExecution(taskSupport="optional"),
+            execution=ToolExecution(task_support="optional"),
         )
 
         mcp_tool = tool.to_mcp_tool()
@@ -566,10 +566,10 @@ class TestToolExecutionField:
             name="my_tool",
             description="A tool",
             parameters={"type": "object", "properties": {}},
-            execution=ToolExecution(taskSupport="optional"),
+            execution=ToolExecution(task_support="optional"),
         )
 
-        override_execution = ToolExecution(taskSupport="required")
+        override_execution = ToolExecution(task_support="required")
         mcp_tool = tool.to_mcp_tool(execution=override_execution)
         assert mcp_tool.execution is not None
         assert mcp_tool.execution.task_support == "required"
@@ -593,7 +593,7 @@ class TestToolExecutionField:
             name="my_tool",
             description="A tool with required execution",
             parameters={"type": "object", "properties": {}},
-            execution=ToolExecution(taskSupport="required"),
+            execution=ToolExecution(task_support="required"),
         )
 
         mcp_tool = tool.to_mcp_tool()
@@ -606,7 +606,7 @@ class TestToolExecutionField:
             name="my_tool",
             description="A tool with forbidden execution",
             parameters={"type": "object", "properties": {}},
-            execution=ToolExecution(taskSupport="forbidden"),
+            execution=ToolExecution(task_support="forbidden"),
         )
 
         mcp_tool = tool.to_mcp_tool()

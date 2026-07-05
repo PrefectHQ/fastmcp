@@ -29,7 +29,7 @@ class TestIconExtraction:
             icons=[
                 Icon(
                     src="https://example.com/icon.png",
-                    mimeType="image/png",
+                    mime_type="image/png",
                     sizes=["48x48"],
                 )
             ],
@@ -63,7 +63,7 @@ class TestIconExtraction:
             icons=[
                 Icon(
                     src="https://example.com/calculator.png",
-                    mimeType="image/png",
+                    mime_type="image/png",
                 )
             ]
         )
@@ -98,7 +98,7 @@ class TestIconExtraction:
 
         @mcp.resource(
             "resource://data",
-            icons=[Icon(src="https://example.com/data.png", mimeType="image/png")],
+            icons=[Icon(src="https://example.com/data.png", mime_type="image/png")],
         )
         def get_data() -> str:
             """Get data."""
@@ -131,7 +131,7 @@ class TestIconExtraction:
 
         @mcp.resource(
             "resource://user/{id}",
-            icons=[Icon(src="https://example.com/user.png", mimeType="image/png")],
+            icons=[Icon(src="https://example.com/user.png", mime_type="image/png")],
         )
         def get_user(id: str) -> str:
             """Get user by ID."""
@@ -167,7 +167,7 @@ class TestIconExtraction:
         mcp = FastMCP("PromptIconServer")
 
         @mcp.prompt(
-            icons=[Icon(src="https://example.com/analyze.png", mimeType="image/png")]
+            icons=[Icon(src="https://example.com/analyze.png", mime_type="image/png")]
         )
         def analyze(data: str) -> list:
             """Analyze data."""
@@ -201,12 +201,12 @@ class TestIconExtraction:
             icons=[
                 Icon(
                     src="https://example.com/icon-48.png",
-                    mimeType="image/png",
+                    mime_type="image/png",
                     sizes=["48x48"],
                 ),
                 Icon(
                     src="https://example.com/icon-96.png",
-                    mimeType="image/png",
+                    mime_type="image/png",
                     sizes=["96x96"],
                 ),
             ],
@@ -245,7 +245,7 @@ class TestIconExtraction:
 
         mcp = FastMCP("DataURIServer")
 
-        @mcp.tool(icons=[Icon(src=data_uri, mimeType="image/png")])
+        @mcp.tool(icons=[Icon(src=data_uri, mime_type="image/png")])
         def data_uri_tool() -> str:
             """Tool with data URI icon."""
             return "data"
@@ -264,7 +264,7 @@ class TestIconExtraction:
         mcp = FastMCP1x("Icon1xServer")
 
         @mcp.tool(
-            icons=[Icon(src="https://example.com/v1-tool.png", mimeType="image/png")]
+            icons=[Icon(src="https://example.com/v1-tool.png", mime_type="image/png")]
         )
         def v1_tool() -> str:
             """Tool in v1 server."""
@@ -284,11 +284,11 @@ class TestIconExtraction:
         mcp = FastMCP(
             "FormattedIconServer",
             website_url="https://example.com",
-            icons=[Icon(src="https://example.com/server.png", mimeType="image/png")],
+            icons=[Icon(src="https://example.com/server.png", mime_type="image/png")],
         )
 
         @mcp.tool(
-            icons=[Icon(src="https://example.com/tool.png", mimeType="image/png")]
+            icons=[Icon(src="https://example.com/tool.png", mime_type="image/png")]
         )
         def icon_tool() -> str:
             """Tool with icon."""

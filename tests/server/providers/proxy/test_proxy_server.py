@@ -147,7 +147,7 @@ def fastmcp_server():
                     content=mcp_types.ImageContent(
                         type="image",
                         data="iVBORw0KGgoAAAANSUhEUg==",
-                        mimeType="image/png",
+                        mime_type="image/png",
                     ),
                     role="user",
                 ),
@@ -389,10 +389,10 @@ class TestTools:
         error_result = mcp_types.CallToolResult(
             content=[
                 mcp_types.ImageContent(
-                    type="image", data="abc123", mimeType="image/png"
+                    type="image", data="abc123", mime_type="image/png"
                 )
             ],
-            isError=True,
+            is_error=True,
         )
         with patch.object(
             Client, "call_tool_mcp", new_callable=AsyncMock, return_value=error_result
@@ -405,7 +405,7 @@ class TestTools:
         """Error responses with empty content should not crash."""
         error_result = mcp_types.CallToolResult(
             content=[],
-            isError=True,
+            is_error=True,
         )
         with patch.object(
             Client, "call_tool_mcp", new_callable=AsyncMock, return_value=error_result
@@ -419,11 +419,11 @@ class TestTools:
         error_result = mcp_types.CallToolResult(
             content=[
                 mcp_types.ImageContent(
-                    type="image", data="abc123", mimeType="image/png"
+                    type="image", data="abc123", mime_type="image/png"
                 )
             ],
-            structuredContent={"detail": "boom"},
-            isError=True,
+            structured_content={"detail": "boom"},
+            is_error=True,
         )
         with patch.object(
             Client, "call_tool_mcp", new_callable=AsyncMock, return_value=error_result

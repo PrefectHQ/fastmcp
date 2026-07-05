@@ -399,5 +399,5 @@ def _response_to_result_with_tools(
         content=content,
         role="assistant",
         model=model,
-        stopReason=stop_reason,
+        stop_reason=stop_reason,
     )

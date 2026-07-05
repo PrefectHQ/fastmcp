@@ -45,7 +45,7 @@ class ClientTaskManagementMixin:
             RuntimeError: If client not connected
             MCPError: If the request results in a TimeoutError | JSONRPCError
         """
-        request = GetTaskRequest(params=GetTaskRequestParams(taskId=task_id))
+        request = GetTaskRequest(params=GetTaskRequestParams(task_id=task_id))
         return await self._await_with_session_monitoring(
             self.session.send_request(
                 request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
@@ -70,7 +70,7 @@ class ClientTaskManagementMixin:
             MCPError: If the request results in a TimeoutError | JSONRPCError
         """
         request = GetTaskPayloadRequest(
-            params=GetTaskPayloadRequestParams(taskId=task_id)
+            params=GetTaskPayloadRequestParams(task_id=task_id)
         )
         # Return raw result - Task classes handle type-specific parsing
         result = await self._await_with_session_monitoring(
@@ -148,7 +148,7 @@ class ClientTaskManagementMixin:
             RuntimeError: If task doesn't exist
             MCPError: If the request results in a TimeoutError | JSONRPCError
         """
-        request = CancelTaskRequest(params=CancelTaskRequestParams(taskId=task_id))
+        request = CancelTaskRequest(params=CancelTaskRequestParams(task_id=task_id))
         return await self._await_with_session_monitoring(
             self.session.send_request(
                 request=request,  # type: ignore[invalid-argument-type]  # ty:ignore[invalid-argument-type]

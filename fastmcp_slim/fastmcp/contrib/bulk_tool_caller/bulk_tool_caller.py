@@ -43,7 +43,7 @@ class CallToolRequestResult(CallToolResult):
         return cls(
             tool=tool,
             arguments=arguments,
-            isError=result.is_error,
+            is_error=result.is_error,
             content=result.content,
         )
 
@@ -128,7 +128,7 @@ class BulkToolCaller(MCPMixin):
             return CallToolRequestResult(
                 tool=tool,
                 arguments=arguments,
-                isError=True,
+                is_error=True,
                 content=[
                     TextContent(
                         type="text",
@@ -146,6 +146,6 @@ class BulkToolCaller(MCPMixin):
             return CallToolRequestResult(
                 tool=tool,
                 arguments=arguments,
-                isError=result.is_error,
+                is_error=result.is_error,
                 content=result.content,
             )

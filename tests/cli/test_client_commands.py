@@ -170,8 +170,8 @@ class TestFormatToolSignature:
         return mcp_types.Tool(
             name=name,
             description=description,
-            inputSchema=input_schema,
-            outputSchema=output_schema,
+            input_schema=input_schema,
+            output_schema=output_schema,
         )
 
     def test_no_params(self):

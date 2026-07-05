@@ -582,8 +582,8 @@ class TestMountedTaskMetadata:
         mcp_tool = MCPTool(
             name="remote_task_tool",
             description="A remote tool that supports tasks",
-            inputSchema={"type": "object", "properties": {}},
-            execution=ToolExecution(taskSupport="optional"),
+            input_schema={"type": "object", "properties": {}},
+            execution=ToolExecution(task_support="optional"),
         )
 
         proxy = ProxyTool.from_mcp_tool(lambda: None, mcp_tool)  # ty: ignore[invalid-argument-type]

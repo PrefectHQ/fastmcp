@@ -167,9 +167,9 @@ class ToolResult(BaseModel):
         # reaches the client; the plain content/tuple returns can't carry it.
         if self.meta is not None or self.is_error:
             return CallToolResult(
-                structuredContent=self.structured_content,
+                structured_content=self.structured_content,
                 content=self.content,
-                isError=self.is_error,
+                is_error=self.is_error,
                 _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
             )
         if self.structured_content is None:
@@ -235,8 +235,8 @@ class Tool(FastMCPComponent):
             name=overrides.get("name", self.name),
             title=overrides.get("title", title),
             description=overrides.get("description", self.description),
-            inputSchema=overrides.get("inputSchema", self.parameters),
-            outputSchema=overrides.get("outputSchema", self.output_schema),
+            input_schema=overrides.get("inputSchema", self.parameters),
+            output_schema=overrides.get("outputSchema", self.output_schema),
             icons=overrides.get("icons", self.icons),
             annotations=overrides.get("annotations", self.annotations),
             execution=overrides.get("execution", self.execution),
@@ -250,7 +250,7 @@ class Tool(FastMCPComponent):
             and "execution" not in overrides
             and not self.execution
         ):
-            mcp_tool.execution = ToolExecution(taskSupport=self.task_config.mode)
+            mcp_tool.execution = ToolExecution(task_support=self.task_config.mode)
 
         return mcp_tool
 

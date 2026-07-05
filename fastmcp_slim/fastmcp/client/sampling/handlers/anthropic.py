@@ -449,5 +449,5 @@ class AnthropicSamplingHandler:
             content=content,
             role="assistant",
             model=message.model,
-            stopReason=stop_reason,
+            stop_reason=stop_reason,
         )

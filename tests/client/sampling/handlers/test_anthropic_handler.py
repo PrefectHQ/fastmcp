@@ -46,7 +46,7 @@ def test_convert_sampling_messages_to_anthropic_messages():
 
 def test_image_content_to_anthropic_block():
     block = _image_content_to_anthropic_block(
-        ImageContent(type="image", data="YWJj", mimeType="image/png")
+        ImageContent(type="image", data="YWJj", mime_type="image/png")
     )
 
     assert block == {
@@ -62,7 +62,7 @@ def test_image_content_to_anthropic_block():
 def test_image_content_unsupported_mime_type_raises():
     with pytest.raises(ValueError, match="Unsupported image MIME type"):
         _image_content_to_anthropic_block(
-            ImageContent(type="image", data="YWJj", mimeType="image/bmp")
+            ImageContent(type="image", data="YWJj", mime_type="image/bmp")
         )
 
 
@@ -71,7 +71,7 @@ def test_convert_single_image_content_to_anthropic_message():
         messages=[
             SamplingMessage(
                 role="user",
-                content=ImageContent(type="image", data="YWJj", mimeType="image/png"),
+                content=ImageContent(type="image", data="YWJj", mime_type="image/png"),
             )
         ],
     )
@@ -99,7 +99,7 @@ def test_convert_single_audio_content_raises():
                 SamplingMessage(
                     role="user",
                     content=AudioContent(
-                        type="audio", data="YWJj", mimeType="audio/wav"
+                        type="audio", data="YWJj", mime_type="audio/wav"
                     ),
                 )
             ],
@@ -113,7 +113,7 @@ def test_convert_list_content_with_image_and_text():
                 role="user",
                 content=[
                     TextContent(type="text", text="Describe this image"),
-                    ImageContent(type="image", data="YWJj", mimeType="image/jpeg"),
+                    ImageContent(type="image", data="YWJj", mime_type="image/jpeg"),
                 ],
             )
         ],
@@ -144,7 +144,7 @@ def test_convert_list_content_with_audio_raises():
                     role="user",
                     content=[
                         TextContent(type="text", text="Listen to this"),
-                        AudioContent(type="audio", data="YWJj", mimeType="audio/wav"),
+                        AudioContent(type="audio", data="YWJj", mime_type="audio/wav"),
                     ],
                 )
             ],
@@ -158,7 +158,7 @@ def test_convert_image_in_assistant_message_raises():
                 SamplingMessage(
                     role="assistant",
                     content=ImageContent(
-                        type="image", data="YWJj", mimeType="image/png"
+                        type="image", data="YWJj", mime_type="image/png"
                     ),
                 )
             ],
@@ -173,7 +173,7 @@ def test_convert_list_image_in_assistant_message_raises():
                     role="assistant",
                     content=[
                         TextContent(type="text", text="Here's the image"),
-                        ImageContent(type="image", data="YWJj", mimeType="image/png"),
+                        ImageContent(type="image", data="YWJj", mime_type="image/png"),
                     ],
                 )
             ],
@@ -302,7 +302,7 @@ def test_convert_tools_to_anthropic():
         Tool(
             name="get_weather",
             description="Get the current weather",
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {"location": {"type": "string"}},
                 "required": ["location"],
@@ -358,7 +358,7 @@ def test_convert_messages_with_tool_result_content():
                 role="user",
                 content=ToolResultContent(
                     type="tool_result",
-                    toolUseId="toolu_123",
+                    tool_use_id="toolu_123",
                     content=[TextContent(type="text", text="72F and sunny")],
                 ),
             ),
@@ -387,7 +387,7 @@ def test_convert_messages_raises_on_unsupported_content_type():
     embedded = EmbeddedResource(
         type="resource",
         resource=TextResourceContents(
-            uri=AnyUrl("file:///test.txt"), text="hello", mimeType="text/plain"
+            uri=AnyUrl("file:///test.txt"), text="hello", mime_type="text/plain"
         ),
     )
     # Must be inside a list content — single-content messages hit a

@@ -157,7 +157,7 @@ class TestEnhancedAuthorizationHandler:
         # Create FastMCP server with custom branding
         mcp = FastMCP(
             "My Custom Server",
-            icons=[Icon(src="https://example.com/icon.png", mimeType="image/png")],
+            icons=[Icon(src="https://example.com/icon.png", mime_type="image/png")],
         )
 
         # Create app with OAuth routes

@@ -791,7 +791,7 @@ _LOG_PANEL_HTML = """\
 
   function renderEntry(entry) {
     var div = document.createElement("div");
-    var isError = entry.direction === "response" && entry.body
+    var is_error = entry.direction === "response" && entry.body
       && (entry.body.error || (entry.body.result && entry.body.result.is_error));
     div.className = "log-entry" + (isError ? " error" : "");
     var dirClass = isError ? "error" : entry.direction;

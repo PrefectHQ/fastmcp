@@ -303,7 +303,7 @@ class TestBackgroundTaskIntegration:
                 role="assistant",
                 content=TextContent(type="text", text="hello from background"),
                 model="test-model",
-                stopReason="endTurn",
+                stop_reason="endTurn",
             )
 
         async with Client(mcp, sampling_handler=sampling_handler) as client:

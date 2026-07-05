@@ -218,11 +218,11 @@ async def test_wait_returns_on_input_required(task_notification_server):
         # Directly inject an input_required status into the cache and signal the event
         now = datetime.now(timezone.utc)
         input_required_status = GetTaskResult(
-            taskId=task._task_id,
+            task_id=task._task_id,
             status="input_required",
-            statusMessage="Waiting for user input",
-            createdAt=now,
-            lastUpdatedAt=now,
+            status_message="Waiting for user input",
+            created_at=now,
+            last_updated_at=now,
             ttl=None,
         )
         task._status_cache = input_required_status

@@ -127,7 +127,7 @@ class TestResponseLimitingMiddleware:
         def binary_tool() -> ToolResult:
             return ToolResult(
                 content=[
-                    ImageContent(type="image", data="x" * 10_000, mimeType="image/png")
+                    ImageContent(type="image", data="x" * 10_000, mime_type="image/png")
                 ]
             )
 

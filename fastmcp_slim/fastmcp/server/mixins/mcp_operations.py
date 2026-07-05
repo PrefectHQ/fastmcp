@@ -115,7 +115,7 @@ class MCPOperationsMixin:
             request.params.cursor if request is not None and request.params else None
         )
         page, next_cursor = _apply_pagination(sdk_tools, cursor, server._list_page_size)
-        return mcp_types.ListToolsResult(tools=page, nextCursor=next_cursor)
+        return mcp_types.ListToolsResult(tools=page, next_cursor=next_cursor)
 
     async def _list_resources_mcp(
         self, request: mcp_types.ListResourcesRequest
@@ -138,7 +138,7 @@ class MCPOperationsMixin:
         page, next_cursor = _apply_pagination(
             sdk_resources, cursor, server._list_page_size
         )
-        return mcp_types.ListResourcesResult(resources=page, nextCursor=next_cursor)
+        return mcp_types.ListResourcesResult(resources=page, next_cursor=next_cursor)
 
     async def _list_resource_templates_mcp(
         self, request: mcp_types.ListResourceTemplatesRequest
@@ -154,7 +154,7 @@ class MCPOperationsMixin:
             list(await server.list_resource_templates()), lambda t: t.uri_template
         )
         sdk_templates = [
-            template.to_mcp_template(uriTemplate=template.uri_template)
+            template.to_mcp_template(uri_template=template.uri_template)
             for template in templates
         ]
         cursor = request.params.cursor if request.params else None
@@ -162,7 +162,7 @@ class MCPOperationsMixin:
             sdk_templates, cursor, server._list_page_size
         )
         return mcp_types.ListResourceTemplatesResult(
-            resourceTemplates=page, nextCursor=next_cursor
+            resource_templates=page, next_cursor=next_cursor
         )
 
     async def _list_prompts_mcp(
@@ -183,7 +183,7 @@ class MCPOperationsMixin:
         page, next_cursor = _apply_pagination(
             sdk_prompts, cursor, server._list_page_size
         )
-        return mcp_types.ListPromptsResult(prompts=page, nextCursor=next_cursor)
+        return mcp_types.ListPromptsResult(prompts=page, next_cursor=next_cursor)
 
     async def _call_tool_mcp(
         self, key: str, arguments: dict[str, Any]

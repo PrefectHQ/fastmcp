@@ -979,7 +979,7 @@ async def default_proxy_elicitation_handler(
     )
     result = await ctx.session.elicit(
         message=message,
-        requestedSchema=requested_schema,
+        requested_schema=requested_schema,
         related_request_id=ctx.request_id,
     )
     return ElicitResult(action=result.action, content=result.content)

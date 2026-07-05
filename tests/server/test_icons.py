@@ -17,12 +17,12 @@ class TestServerIcons:
         icons = [
             Icon(
                 src="https://example.com/icon.png",
-                mimeType="image/png",
+                mime_type="image/png",
                 sizes=["48x48"],
             ),
             Icon(
                 src="data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=",
-                mimeType="image/svg+xml",
+                mime_type="image/svg+xml",
                 sizes=["any"],
             ),
         ]
@@ -58,7 +58,7 @@ class TestToolIcons:
         mcp = FastMCP("TestServer")
 
         icons = [
-            Icon(src="https://example.com/tool-icon.png", mimeType="image/png"),
+            Icon(src="https://example.com/tool-icon.png", mime_type="image/png"),
         ]
 
         @mcp.tool(icons=icons)
@@ -272,17 +272,17 @@ class TestIconTypes:
         icons = [
             Icon(
                 src="https://example.com/icon-48.png",
-                mimeType="image/png",
+                mime_type="image/png",
                 sizes=["48x48"],
             ),
             Icon(
                 src="https://example.com/icon-96.png",
-                mimeType="image/png",
+                mime_type="image/png",
                 sizes=["96x96"],
             ),
             Icon(
                 src="https://example.com/icon.svg",
-                mimeType="image/svg+xml",
+                mime_type="image/svg+xml",
                 sizes=["any"],
             ),
         ]
@@ -299,7 +299,7 @@ class TestIconTypes:
         # Simple SVG data URI
         data_uri = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCI+PHBhdGggZD0iTTEyIDJDNi40OCAyIDIgNi40OCAyIDEyczQuNDggMTAgMTAgMTAgMTAtNC40OCAxMC0xMFMxNy41MiAyIDEyIDJ6Ii8+PC9zdmc+"
 
-        icons = [Icon(src=data_uri, mimeType="image/svg+xml")]
+        icons = [Icon(src=data_uri, mime_type="image/svg+xml")]
 
         mcp = FastMCP("TestServer")
 

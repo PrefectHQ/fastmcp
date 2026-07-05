@@ -36,7 +36,7 @@ class TestSamplingResultType:
                     )
                 ],
                 model="test-model",
-                stopReason="toolUse",
+                stop_reason="toolUse",
             )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -96,7 +96,7 @@ class TestSamplingResultType:
                         )
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 # Second call: call final_response
@@ -115,7 +115,7 @@ class TestSamplingResultType:
                         )
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -168,7 +168,7 @@ class TestSamplingResultType:
                         )
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 # Second call: valid type after seeing error
@@ -183,7 +183,7 @@ class TestSamplingResultType:
                         )
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -237,7 +237,7 @@ class TestSamplingResultType:
                 role="assistant",
                 content=[TextContent(type="text", text="Hello world")],
                 model="test-model",
-                stopReason="endTurn",
+                stop_reason="endTurn",
             )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -271,7 +271,7 @@ class TestSampleStep:
                 role="assistant",
                 content=[TextContent(type="text", text="Hello from step")],
                 model="test-model",
-                stopReason="endTurn",
+                stop_reason="endTurn",
             )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -316,14 +316,14 @@ class TestSampleStep:
                         )
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Done")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -373,7 +373,7 @@ class TestSampleStep:
                     )
                 ],
                 model="test-model",
-                stopReason="toolUse",
+                stop_reason="toolUse",
             )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -416,7 +416,7 @@ class TestSampleStep:
                     )
                 ],
                 model="test-model",
-                stopReason="toolUse",
+                stop_reason="toolUse",
             )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -454,7 +454,7 @@ class TestTextResponseRetry:
             role="assistant",
             content=[TextContent(type="text", text=text)],
             model="m",
-            stopReason="endTurn",
+            stop_reason="endTurn",
         )
 
     @staticmethod
@@ -472,7 +472,7 @@ class TestTextResponseRetry:
                 )
             ],
             model="m",
-            stopReason="toolUse",
+            stop_reason="toolUse",
         )
 
     async def test_text_response_then_success(self):
@@ -562,7 +562,7 @@ def _final_response(call_id: str, input_data: dict) -> CreateMessageResultWithTo
             )
         ],
         model="test-model",
-        stopReason="toolUse",
+        stop_reason="toolUse",
     )
 
 
@@ -576,7 +576,7 @@ def _tool_call(
             ToolUseContent(type="tool_use", id=call_id, name=name, input=input_data)
         ],
         model="test-model",
-        stopReason="toolUse",
+        stop_reason="toolUse",
     )
 
 

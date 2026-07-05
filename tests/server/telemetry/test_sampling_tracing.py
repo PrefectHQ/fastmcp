@@ -121,13 +121,13 @@ class TestSamplingToolSpan:
                         )
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             return CreateMessageResultWithTools(
                 role="assistant",
                 content=[TextContent(type="text", text="done")],
                 model="test-model",
-                stopReason="endTurn",
+                stop_reason="endTurn",
             )
 
         mcp = FastMCP(sampling_handler=sampling_handler)

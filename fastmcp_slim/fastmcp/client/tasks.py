@@ -181,12 +181,12 @@ class Task(abc.ABC, Generic[TaskResultT]):
             # Return synthetic completed status
             now = datetime.now(timezone.utc)
             return GetTaskResult(
-                taskId=self._task_id,
+                task_id=self._task_id,
                 status="completed",
-                createdAt=now,
-                lastUpdatedAt=now,
+                created_at=now,
+                last_updated_at=now,
                 ttl=None,
-                pollInterval=1000,
+                poll_interval=1000,
             )
 
         # Return cached status if available (from notification)
@@ -409,7 +409,7 @@ class ToolTask(Task["CallToolResult"]):
                 ):
                     mcp_result = mcp_types.CallToolResult(
                         content=raw_result.content,
-                        structuredContent=raw_result.structured_content,
+                        structured_content=raw_result.structured_content,
                         _meta=raw_result.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                     )
                     result = await self._client._parse_call_tool_result(

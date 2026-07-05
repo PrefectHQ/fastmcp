@@ -509,5 +509,5 @@ class OpenAISamplingHandler:
             content=content,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
             role="assistant",
             model=chat_completion.model,
-            stopReason=stop_reason,
+            stop_reason=stop_reason,
         )

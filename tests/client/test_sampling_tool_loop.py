@@ -42,7 +42,7 @@ class TestAutomaticToolLoop:
                         )
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 # Second call: return final response
@@ -50,7 +50,7 @@ class TestAutomaticToolLoop:
                     role="assistant",
                     content=[TextContent(type="text", text="The weather is sunny!")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -110,14 +110,14 @@ class TestAutomaticToolLoop:
                         ),
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Done!")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -165,14 +165,14 @@ class TestAutomaticToolLoop:
                         )
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Handled error")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -239,14 +239,14 @@ class TestAutomaticToolLoop:
                         )
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Handled error")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -333,14 +333,14 @@ class TestAutomaticToolLoop:
                         ),
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Done!")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -411,14 +411,14 @@ class TestAutomaticToolLoop:
                         ),
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Done!")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -491,14 +491,14 @@ class TestAutomaticToolLoop:
                         ),
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Done!")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -577,14 +577,14 @@ class TestAutomaticToolLoop:
                         ),
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Done!")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -651,14 +651,14 @@ class TestAutomaticToolLoop:
                         ),
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Handled errors")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -732,14 +732,14 @@ class TestAutomaticToolLoop:
                         ),
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Done!")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
