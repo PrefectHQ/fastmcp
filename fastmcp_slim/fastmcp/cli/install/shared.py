@@ -47,6 +47,11 @@ def parse_env_var(env_var: str) -> tuple[str, str]:
         )
         sys.exit(1)
     key, value = env_var.split("=", 1)
+    if not key.strip():
+        print(
+            f"[red]Invalid environment variable format: '[bold]{env_var}[/bold]'. KEY cannot be empty[/red]"
+        )
+        sys.exit(1)
     return key.strip(), value.strip()
 
 
