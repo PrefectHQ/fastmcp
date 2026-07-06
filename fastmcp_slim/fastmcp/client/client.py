@@ -17,7 +17,12 @@ import httpx
 import mcp_types
 from exceptiongroup import catch
 from mcp import ClientSession, MCPError
-from mcp_types import GetTaskResult, TaskStatusNotification
+from mcp.client.extension import NotificationBinding
+from mcp_types import (
+    GetTaskResult,
+    TaskStatusNotification,
+    TaskStatusNotificationParams,
+)
 from pydantic import AnyUrl
 
 import fastmcp as fastmcp
@@ -319,6 +324,10 @@ class Client(
             "message_handler": message_handler or TaskNotificationHandler(self),
             "read_timeout_seconds": read_timeout_seconds,
             "client_info": client_info,
+            # SDK v2 does not carry `notifications/tasks/status` in any protocol
+            # version's core notification tables, so it is never tee'd to the
+            # message_handler; a binding routes it to Task objects instead.
+            "notification_bindings": [self._task_status_binding()],
         }
 
         if roots is not None:
@@ -455,6 +464,10 @@ class Client(
             new_client._session_kwargs["message_handler"] = TaskNotificationHandler(
                 new_client
             )
+        # Rebind the task-status notification binding so it routes to the clone.
+        new_client._session_kwargs["notification_bindings"] = [
+            new_client._task_status_binding()
+        ]
 
         new_client.name += f":{secrets.token_hex(2)}"
 
@@ -778,8 +791,11 @@ class Client(
         Called when notifications/tasks/status is received from server.
         Updates Task object's cache and triggers events/callbacks.
         """
-        # Extract task ID from notification params
-        task_id = notification.params.task_id
+        self._handle_task_status_params(notification.params)
+
+    def _handle_task_status_params(self, params: TaskStatusNotificationParams) -> None:
+        """Route task status notification params to the matching Task object."""
+        task_id = params.task_id
         if not task_id:
             return
 
@@ -789,8 +805,28 @@ class Client(
             task = task_ref()  # Dereference weakref
             if task:
                 # Convert notification params to GetTaskResult (they share the same fields via Task)
-                status = GetTaskResult.model_validate(notification.params.model_dump())
+                status = GetTaskResult.model_validate(params.model_dump())
                 task._handle_status_notification(status)
+
+    def _task_status_binding(self) -> NotificationBinding[TaskStatusNotificationParams]:
+        """Build a binding routing `notifications/tasks/status` to Task objects.
+
+        SDK v2 drops notifications whose method is absent from the negotiated
+        version's core tables before they reach the message_handler; a binding is
+        the supported channel for observing such vendor notifications.
+        """
+        client_ref = weakref.ref(self)
+
+        async def _handler(params: TaskStatusNotificationParams) -> None:
+            client = client_ref()
+            if client is not None:
+                client._handle_task_status_params(params)
+
+        return NotificationBinding(
+            method="notifications/tasks/status",
+            params_type=TaskStatusNotificationParams,
+            handler=_handler,
+        )
 
     async def close(self):
         await self._disconnect(force=True)

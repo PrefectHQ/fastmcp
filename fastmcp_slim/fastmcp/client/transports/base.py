@@ -1,11 +1,12 @@
 import abc
 import contextlib
-from collections.abc import AsyncIterator
-from typing import Literal, TypeVar
+from collections.abc import AsyncIterator, Sequence
+from typing import Any, Literal, TypeVar
 
 import httpx
 import mcp_types
 from mcp import ClientSession
+from mcp.client.extension import NotificationBinding
 from mcp.client.session import (
     ElicitationFnT,
     ListRootsFnT,
@@ -30,6 +31,7 @@ class SessionKwargs(TypedDict, total=False):
     elicitation_callback: ElicitationFnT | None
     message_handler: MessageHandlerFnT | None
     client_info: mcp_types.Implementation | None
+    notification_bindings: Sequence[NotificationBinding[Any]] | None
 
 
 class ClientTransport(abc.ABC):
