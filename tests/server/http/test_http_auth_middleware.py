@@ -194,6 +194,28 @@ class TestStreamableHTTPHostOriginProtection:
 
         assert status == 421
 
+    async def test_auto_rejects_same_origin_fallback_without_trusted_host_boundary(
+        self,
+    ):
+        status = await _guard_status(
+            host="attacker.example",
+            origin="https://attacker.example",
+            server=None,
+            allowed_origins=["https://app.example.com"],
+        )
+
+        assert status == 403
+
+    async def test_auto_allows_configured_origin_without_trusted_host_boundary(self):
+        status = await _guard_status(
+            host="mcp.example.com",
+            origin="https://app.example.com",
+            server=None,
+            allowed_origins=["https://app.example.com"],
+        )
+
+        assert status == 200
+
     def test_rejects_untrusted_host_before_session_initialization(self):
         server = FastMCP(name="TestServer")
         app = create_streamable_http_app(

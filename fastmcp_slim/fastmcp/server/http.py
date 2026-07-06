@@ -260,7 +260,15 @@ class HostOriginGuardMiddleware:
         if (
             origin
             and self._should_validate_origin(scope, host)
-            and not self._origin_allowed(origin, request_origin, host)
+            and not self._origin_allowed(
+                origin,
+                request_origin,
+                host,
+                allow_same_origin_fallback=self._allow_same_origin_fallback(
+                    scope,
+                    host,
+                ),
+            )
         ):
             response = Response("Forbidden Origin", status_code=403)
             await response(scope, receive, send)
@@ -287,6 +295,16 @@ class HostOriginGuardMiddleware:
         server = scope.get("server")
         return bool(server and _is_loopback_host(server[0]))
 
+    def _allow_same_origin_fallback(self, scope: Scope, host: str) -> bool:
+        if not self.has_explicit_allowed_origins:
+            return True
+
+        if self.mode == "strict" or self.has_explicit_allowed_hosts:
+            return True
+
+        server = scope.get("server")
+        return _is_loopback_host(host) or bool(server and _is_loopback_host(server[0]))
+
     def _allowed_hosts_for_scope(self, scope: Scope) -> tuple[str, ...]:
         allowed_hosts = list(DEFAULT_HOSTS)
         allowed_hosts.extend(self.allowed_hosts)
@@ -299,9 +317,18 @@ class HostOriginGuardMiddleware:
 
         return tuple(allowed_hosts)
 
-    def _origin_allowed(self, origin: str, request_origin: str, host: str) -> bool:
+    def _origin_allowed(
+        self,
+        origin: str,
+        request_origin: str,
+        host: str,
+        allow_same_origin_fallback: bool,
+    ) -> bool:
         if _origin_matches(origin, self.allowed_origins):
             return True
+
+        if not allow_same_origin_fallback:
+            return False
 
         origin_host = _origin_host(origin)
         if _is_loopback_host(origin_host) and _is_loopback_host(host):

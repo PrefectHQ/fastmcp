@@ -50,6 +50,22 @@ def _format_host_for_url(host: str) -> str:
     return host
 
 
+def _resolve_allowed_hosts_for_run(
+    *,
+    host: str,
+    host_origin_protection: HostOriginProtection,
+    allowed_hosts: list[str] | None,
+    configured_allowed_hosts: list[str] | None,
+) -> list[str] | None:
+    if allowed_hosts is not None:
+        return allowed_hosts
+
+    if host_origin_protection == "auto" and _is_loopback_host(host):
+        return [*(configured_allowed_hosts or []), host]
+
+    return configured_allowed_hosts
+
+
 class TransportMixin:
     """Mixin providing transport-related methods for FastMCP.
 
@@ -298,13 +314,12 @@ class TransportMixin:
             if host_origin_protection is not None
             else fastmcp.settings.http_host_origin_protection
         )
-        resolved_allowed_hosts = allowed_hosts
-        if (
-            resolved_host_origin_protection == "auto"
-            and resolved_allowed_hosts is None
-            and _is_loopback_host(host)
-        ):
-            resolved_allowed_hosts = [host]
+        resolved_allowed_hosts = _resolve_allowed_hosts_for_run(
+            host=host,
+            host_origin_protection=resolved_host_origin_protection,
+            allowed_hosts=allowed_hosts,
+            configured_allowed_hosts=fastmcp.settings.http_allowed_hosts,
+        )
         default_log_level_to_use = (
             log_level if log_level is not None else fastmcp.settings.log_level
         ).lower()
