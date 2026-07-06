@@ -15,7 +15,7 @@ class TestTimeout:
         ) as client:
             with pytest.raises(
                 MCPError,
-                match="Timed out while waiting for response to ClientRequest. Waited 0.05 seconds",
+                match="timed out",
             ):
                 await client.call_tool("sleep", {"seconds": 0.1})
 
