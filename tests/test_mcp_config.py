@@ -8,7 +8,6 @@ import sys
 import tempfile
 import time
 from collections.abc import AsyncGenerator
-from datetime import timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -961,7 +960,8 @@ async def test_multi_server_timeout_propagation():
     )
 
     transport = MCPConfigTransport(config)
-    timeout = timedelta(seconds=42)
+    # SDK v2: read_timeout_seconds is a plain number of seconds, not a timedelta.
+    timeout = 42.0
 
     # Mock _create_proxy to avoid real stdio connections and verify timeout
     mock_create_proxy = AsyncMock(

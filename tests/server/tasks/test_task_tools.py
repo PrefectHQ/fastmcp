@@ -83,7 +83,7 @@ async def test_task_tool_invalid_arguments_fail_before_task_state():
             self.methods: list[str] = []
 
         async def on_notification(self, message: mcp_types.ServerNotification) -> None:
-            self.methods.append(message.root.method)
+            self.methods.append(message.method)
 
     server = FastMCP("tool-task-invalid-args-server")
 

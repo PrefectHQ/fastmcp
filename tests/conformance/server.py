@@ -12,7 +12,7 @@ from enum import Enum as PyEnum
 
 import mcp_types
 from mcp_types import EmbeddedResource, ImageContent, TextContent
-from pydantic import AnyUrl, BaseModel, Field
+from pydantic import BaseModel, Field
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
@@ -77,7 +77,7 @@ async def test_embedded_resource() -> list:
         EmbeddedResource(
             type="resource",
             resource=mcp_types.TextResourceContents(
-                uri=AnyUrl("test://embedded-resource"),
+                uri="test://embedded-resource",
                 mime_type="text/plain",
                 text="This is an embedded resource content.",
             ),
@@ -98,7 +98,7 @@ async def test_multiple_content_types() -> list:
         EmbeddedResource(
             type="resource",
             resource=mcp_types.TextResourceContents(
-                uri=AnyUrl("test://mixed-content-resource"),
+                uri="test://mixed-content-resource",
                 mime_type="application/json",
                 text='{"test":"data","value":123}',
             ),
@@ -348,7 +348,7 @@ async def test_prompt_with_embedded_resource(resourceUri: str) -> list:
             EmbeddedResource(
                 type="resource",
                 resource=mcp_types.TextResourceContents(
-                    uri=AnyUrl(resourceUri),
+                    uri=resourceUri,
                     mime_type="text/plain",
                     text=f"Content of resource {resourceUri}",
                 ),
