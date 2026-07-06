@@ -358,10 +358,12 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
             server_info.website_url if hasattr(server_info, "websiteUrl") else None
         )
 
+        # SDK v2's MCPServer (FastMCP 1.x) exposes name/instructions/version
+        # directly; the v1 `_mcp_server` low-level wrapper attribute is gone.
         return FastMCPInfo(
-            name=mcp._mcp_server.name,
-            instructions=mcp._mcp_server.instructions,
-            version=mcp._mcp_server.version,
+            name=mcp.name,
+            instructions=mcp.instructions,
+            version=mcp.version,
             website_url=server_website_url,
             icons=server_icons,
             fastmcp_version=fastmcp.__version__,  # Version generating this manifest
