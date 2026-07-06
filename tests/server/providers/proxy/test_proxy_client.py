@@ -436,3 +436,91 @@ class TestProxyClient:
             assert client_a is not client_b
             assert not client_a.is_connected()
             assert not client_b.is_connected()
+
+
+@pytest.fixture
+def roots_backend_server():
+    """A backend server whose resource, template, and prompt all issue a
+    server-initiated `list_roots` request via the request context."""
+    mcp = FastMCP("RootsBackend")
+
+    @mcp.resource("data://roots")
+    async def roots_resource(context: Context) -> list[str]:
+        roots = await context.list_roots()
+        return [str(r.uri) for r in roots]
+
+    @mcp.resource("data://roots/{key}")
+    async def roots_template(key: str, context: Context) -> str:
+        roots = await context.list_roots()
+        return ", ".join(f"{key}:{r.uri}" for r in roots)
+
+    @mcp.prompt
+    async def roots_prompt(context: Context) -> str:
+        roots = await context.list_roots()
+        return ", ".join(str(r.uri) for r in roots)
+
+    return mcp
+
+
+@pytest.fixture
+async def roots_proxy_server(roots_backend_server: FastMCP):
+    return FastMCP.as_proxy(ProxyClient(roots_backend_server))
+
+
+class TestProxyServerInitiatedForwardingNonTool:
+    """Regression tests: a proxied resource/template/prompt whose backend issues
+    a server-initiated request (list_roots) must reach the proxy client's roots
+    handler instead of hanging until the test timeout.
+
+    Before the fix, only ProxyTool.run stashed the proxy's request context, so
+    resources/templates/prompts forwarded the request into the backend's own
+    context and deadlocked.
+    """
+
+    async def test_proxied_resource_forwards_list_roots(
+        self, roots_proxy_server: FastMCP
+    ):
+        roots_handler_called = False
+
+        async def roots_handler(ctx: RequestContext):
+            nonlocal roots_handler_called
+            roots_handler_called = True
+            return ["file://from/client"]
+
+        async with Client(roots_proxy_server, roots=roots_handler) as client:
+            result = await client.read_resource("data://roots")
+
+        assert roots_handler_called
+        assert result[0].text == '["file://from/client"]'
+
+    async def test_proxied_template_forwards_list_roots(
+        self, roots_proxy_server: FastMCP
+    ):
+        roots_handler_called = False
+
+        async def roots_handler(ctx: RequestContext):
+            nonlocal roots_handler_called
+            roots_handler_called = True
+            return ["file://from/client"]
+
+        async with Client(roots_proxy_server, roots=roots_handler) as client:
+            result = await client.read_resource("data://roots/abc")
+
+        assert roots_handler_called
+        assert result[0].text == "abc:file://from/client"
+
+    async def test_proxied_prompt_forwards_list_roots(
+        self, roots_proxy_server: FastMCP
+    ):
+        roots_handler_called = False
+
+        async def roots_handler(ctx: RequestContext):
+            nonlocal roots_handler_called
+            roots_handler_called = True
+            return ["file://from/client"]
+
+        async with Client(roots_proxy_server, roots=roots_handler) as client:
+            result = await client.get_prompt("roots_prompt")
+
+        assert roots_handler_called
+        assert result.messages[0].content.text == "file://from/client"

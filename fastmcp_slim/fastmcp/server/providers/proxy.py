@@ -71,6 +71,28 @@ def _proxy_upstream_error(error: Exception) -> MCPError:
     )
 
 
+def _stash_proxy_request_context(client: Client, ctx: Context) -> None:
+    """Stash the proxy's ``RequestContext`` on a ``ProxyClient`` before a backend call.
+
+    Every proxy component (tool, resource, template, prompt) must call this
+    before relaying to its backend so the forwarding handlers can restore the
+    proxy's request context before relaying a server-initiated request
+    (roots/sampling/elicitation) back to the proxy's client. Required for every
+    proxy client: under SDK v2 an in-memory backend shares this event loop, so a
+    handler's ``get_context()`` would otherwise resolve to the backend context
+    and the server-initiated request would hang until timeout.
+
+    We stash a ``(RequestContext, weakref[FastMCP])`` tuple — never a ``Context``
+    instance — because ``Context`` properties are themselves ContextVar-dependent
+    and would resolve stale values in the receive loop.
+    """
+    if isinstance(client, ProxyClient):
+        client._proxy_rc_ref[0] = (
+            ctx.request_context,
+            ctx._fastmcp,  # weakref to FastMCP, not the Context
+        )
+
+
 class ProxyInitializeMiddleware(Middleware):
     def __init__(self, proxy: FastMCPProxy) -> None:
         self.proxy = proxy
@@ -176,16 +198,7 @@ class ProxyTool(Tool):
             client = await self._get_client()
             async with client:
                 ctx = context or get_context()
-                # Stash the proxy's RequestContext so the forwarding handlers can
-                # restore it before relaying a server-initiated request back to
-                # the proxy's client. Required for every proxy client: under SDK
-                # v2 an in-memory backend shares this event loop, so a handler's
-                # `get_context()` would otherwise resolve to the backend context.
-                if isinstance(client, ProxyClient):
-                    client._proxy_rc_ref[0] = (
-                        ctx.request_context,
-                        ctx._fastmcp,  # weakref to FastMCP, not the Context
-                    )
+                _stash_proxy_request_context(client, ctx)
                 # Forward the inbound request's `_meta` block (trace context,
                 # version, etc.) to the backend. In SDK v2 the request context
                 # exposes the lifted `_meta` dict directly; task submission is a
@@ -288,6 +301,7 @@ class ProxyResource(Resource):
             span.set_attribute("fastmcp.provider.type", "ProxyProvider")
             client = await self._get_client()
             async with client:
+                _stash_proxy_request_context(client, get_context())
                 result = await client.read_resource(backend_uri)
             if not result:
                 raise ResourceError(
@@ -385,6 +399,7 @@ class ProxyTemplate(ResourceTemplate):
         parameterized_uri = expand_uri_template(backend_template, params)
         client = await self._get_client()
         async with client:
+            _stash_proxy_request_context(client, context or get_context())
             result = await client.read_resource(parameterized_uri)
 
         if not result:
@@ -503,6 +518,7 @@ class ProxyPrompt(Prompt):
             span.set_attribute("fastmcp.provider.type", "ProxyProvider")
             client = await self._get_client()
             async with client:
+                _stash_proxy_request_context(client, get_context())
                 result = await client.get_prompt(backend_name, arguments)
             # Convert GetPromptResult to PromptResult, preserving meta from result
             # (not the static prompt meta which includes fastmcp tags)
