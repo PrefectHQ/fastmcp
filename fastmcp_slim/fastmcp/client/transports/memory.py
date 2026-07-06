@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 import anyio
 from mcp import ClientSession
+from mcp.server import Server
 from mcp.server.mcpserver import MCPServer as FastMCP1Server
 from mcp.shared.memory import create_client_server_memory_streams
 from typing_extensions import Unpack
@@ -14,6 +15,19 @@ from fastmcp.client.transports.base import ClientTransport, SessionKwargs
 
 if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
+
+
+def _lowlevel_of(server: "FastMCP[Any] | FastMCP1Server") -> Server:
+    """Resolve the underlying lowlevel MCP `Server` for either server type.
+
+    SDK v2's `MCPServer` (FastMCP 1.0) exposes its lowlevel server as
+    `_lowlevel_server` and its own `run()` is synchronous, so we always drive
+    the async lowlevel `Server.run` here. FastMCP 2.x servers expose the same
+    lowlevel server as `_mcp_server`.
+    """
+    if isinstance(server, FastMCP1Server):
+        return server._lowlevel_server
+    return server._mcp_server
 
 
 class FastMCPTransport(ClientTransport):
@@ -30,9 +44,10 @@ class FastMCPTransport(ClientTransport):
     ):
         """Initialize a FastMCPTransport from a FastMCP server instance."""
 
-        # Accept both FastMCP 2.x and FastMCP 1.0 servers. Both expose a
-        # ``_mcp_server`` attribute pointing to the underlying MCP server
-        # implementation, so we can treat them identically.
+        # Accept both FastMCP 2.x and FastMCP 1.0 servers. Their underlying
+        # lowlevel MCP ``Server`` lives on different attributes
+        # (``_mcp_server`` vs ``_lowlevel_server``); ``_lowlevel_of`` resolves
+        # it uniformly so we can drive the async ``Server.run`` for both.
         self.server = mcp
         self.raise_exceptions = raise_exceptions
 
@@ -61,13 +76,14 @@ class FastMCPTransport(ClientTransport):
             # shutdown to hang for 5 seconds per test because fakeredis
             # blocking operations hold references that prevent clean
             # cancellation.
+            lowlevel = _lowlevel_of(self.server)
             async with _enter_server_lifespan(server=self.server):  # noqa: SIM117
                 async with anyio.create_task_group() as tg:
                     tg.start_soon(
-                        lambda: self.server._mcp_server.run(
+                        lambda: lowlevel.run(
                             server_read,
                             server_write,
-                            self.server._mcp_server.create_initialization_options(),
+                            lowlevel.create_initialization_options(),
                             raise_exceptions=self.raise_exceptions,
                         )
                     )
