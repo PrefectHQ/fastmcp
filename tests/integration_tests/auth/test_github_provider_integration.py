@@ -337,8 +337,12 @@ async def test_github_oauth_server_metadata(github_server: str):
 
 
 async def test_github_oauth_unauthorized_access(github_server: str):
-    """Test that unauthenticated requests are rejected."""
-    import httpx
+    """Test that unauthenticated requests are rejected.
+
+    SDK v2 surfaces the server's 401 as an MCPError ("Server returned an error
+    response") rather than re-raising the raw httpx.HTTPStatusError.
+    """
+    from mcp.shared.exceptions import MCPError
 
     from fastmcp.client.transports import StreamableHttpTransport
 
@@ -346,7 +350,7 @@ async def test_github_oauth_unauthorized_access(github_server: str):
     unauthorized_client = Client(transport=StreamableHttpTransport(github_server))
 
     # Attempt to connect without authentication should fail
-    with pytest.raises(httpx.HTTPStatusError, match="401 Unauthorized"):
+    with pytest.raises(MCPError, match="error response"):
         async with unauthorized_client:
             pass
 
