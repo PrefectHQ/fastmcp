@@ -1,6 +1,5 @@
 import abc
 import contextlib
-import datetime
 from collections.abc import AsyncIterator
 from typing import Literal, TypeVar
 
@@ -23,7 +22,7 @@ ClientTransportT = TypeVar("ClientTransportT", bound="ClientTransport")
 class SessionKwargs(TypedDict, total=False):
     """Keyword arguments for the MCP ClientSession constructor."""
 
-    read_timeout_seconds: datetime.timedelta | None
+    read_timeout_seconds: float | None
     sampling_callback: SamplingFnT | None
     sampling_capabilities: mcp_types.SamplingCapability | None
     list_roots_callback: ListRootsFnT | None

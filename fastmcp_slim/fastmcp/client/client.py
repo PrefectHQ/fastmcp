@@ -57,10 +57,7 @@ from fastmcp.client.tasks import (
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.utilities.exceptions import get_catch_handlers
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.timeout import (
-    normalize_timeout_to_seconds,
-    normalize_timeout_to_timedelta,
-)
+from fastmcp.utilities.timeout import normalize_timeout_to_seconds
 
 if TYPE_CHECKING:
     from fastmcp.server import FastMCP
@@ -305,8 +302,8 @@ class Client(
 
         self._progress_handler = progress_handler
 
-        # Convert timeout to timedelta if needed
-        timeout = normalize_timeout_to_timedelta(timeout)
+        # Convert request timeout to float seconds (0 means disabled -> None)
+        read_timeout_seconds = normalize_timeout_to_seconds(timeout)
 
         # handle init handshake timeout (0 means disabled)
         if init_timeout is None:
@@ -320,7 +317,7 @@ class Client(
             "list_roots_callback": None,
             "logging_callback": create_log_callback(log_handler),
             "message_handler": message_handler or TaskNotificationHandler(self),
-            "read_timeout_seconds": timeout,
+            "read_timeout_seconds": read_timeout_seconds,
             "client_info": client_info,
         }
 
