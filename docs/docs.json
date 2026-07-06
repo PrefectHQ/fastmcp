@@ -363,7 +363,17 @@
                       "development/contributing",
                       "development/tests",
                       "development/releases",
-                      "patterns/contrib"
+                      "patterns/contrib",
+                      {
+                        "collapsed": true,
+                        "group": "v4 Notes",
+                        "pages": [
+                          "development/v4-notes/index",
+                          "development/v4-notes/change-register",
+                          "development/v4-notes/feature-program",
+                          "development/v4-notes/known-gaps"
+                        ]
+                      }
                     ]
                   },
                   {
