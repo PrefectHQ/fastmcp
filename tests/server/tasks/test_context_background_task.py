@@ -8,14 +8,20 @@ no mocking of Redis, Docket, or session internals.
 import asyncio
 import json
 from datetime import datetime, timezone
-from typing import cast
+from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from mcp import ServerSession
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
-from mcp_types import CreateMessageResult, TextContent
+from mcp_types import (
+    ClientCapabilities,
+    CreateMessageResult,
+    Implementation,
+    InitializeRequestParams,
+    TextContent,
+)
 from pydantic import BaseModel
 
 from fastmcp import FastMCP
@@ -159,6 +165,63 @@ class TestContextBackgroundTaskLogging:
 
         await ctx.info("info msg")
         send_log_message.assert_called_once()
+
+
+class TestContextClientExtensionBackgroundTask:
+    """Tests for Context.client_supports_extension() in background task mode.
+
+    A background task has a live snapshot session but no request context. The
+    client's advertised capabilities are preserved on the snapshot session's
+    ``client_params``, so extension detection must read from the session rather
+    than gating on ``request_context``.
+    """
+
+    def _make_task_context(
+        self, mcp: FastMCP, extensions: dict[str, dict[str, Any]] | None
+    ) -> Context:
+        capabilities = ClientCapabilities(extensions=extensions)
+        client_params = InitializeRequestParams(
+            protocol_version="2025-06-18",
+            capabilities=capabilities,
+            client_info=Implementation(name="test-client", version="1.0"),
+        )
+
+        class MockSession:
+            _fastmcp_state_prefix = "session-ext"
+
+            def __init__(self) -> None:
+                self.client_params = client_params
+
+        session = MockSession()
+        return Context(
+            mcp, session=cast(ServerSession, session), task_id="test-task-ext"
+        )
+
+    def test_background_task_detects_advertised_extension(self):
+        """The snapshot session preserves the client's initialize params, so an
+        advertised extension is detected even with no request context."""
+        mcp = FastMCP("test")
+        ctx = self._make_task_context(mcp, {"ext-abc": {}})
+
+        assert ctx.is_background_task is True
+        assert ctx.request_context is None
+        assert ctx.client_supports_extension("ext-abc") is True
+        assert ctx.client_supports_extension("ext-missing") is False
+
+    def test_background_task_no_extensions_returns_false(self):
+        """When the client advertised no extensions, detection returns False."""
+        mcp = FastMCP("test")
+        ctx = self._make_task_context(mcp, None)
+
+        assert ctx.client_supports_extension("ext-abc") is False
+
+    def test_no_session_returns_false(self):
+        """With no session available at all (e.g. distributed worker), the
+        method degrades to False rather than raising."""
+        mcp = FastMCP("test")
+        ctx = Context(mcp, task_id="test-task-ext")
+
+        assert ctx.client_supports_extension("ext-abc") is False
 
 
 class TestContextElicitBackgroundTask:

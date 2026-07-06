@@ -593,8 +593,12 @@ class Context:
         Inspects the ``extensions`` extra field on ``ClientCapabilities``
         sent by the client during initialization.
 
-        Returns ``False`` when no session is available (e.g., outside a
-        request context) or when the client did not advertise the extension.
+        Reads the client's advertised capabilities from the session, which is
+        available in request mode and in background-task mode (where the
+        snapshot session preserves the client's initialize params). Returns
+        ``False`` when no session is available (e.g., a distributed worker with
+        no live session, or outside any context) or when the client did not
+        advertise the extension.
 
         Example::
 
@@ -606,10 +610,11 @@ class Context:
                     return "UI-capable client"
                 return "text-only client"
         """
-        rc = self.request_context
-        if rc is None:
+        try:
+            session = self.session
+        except RuntimeError:
             return False
-        return client_supports_extension(rc.session, extension_id)
+        return client_supports_extension(session, extension_id)
 
     @property
     def client_id(self) -> str | None:
