@@ -22,8 +22,8 @@ from fastmcp import Client
 
 async def message_handler(message):
     """Handle MCP notifications from the server."""
-    if hasattr(message, 'root'):
-        method = message.root.method
+    if hasattr(message, 'method'):
+        method = message.method
 
         if method == "notifications/tools/list_changed":
             print("Tools have changed - refresh tool cache")
