@@ -27,9 +27,11 @@ from mcp.client import Client as SDKClient
 from mcp.client.session import ClientRequestContext
 from mcp.server import Server as LowLevelServer
 from mcp.shared.exceptions import MCPError
+from pydantic import FileUrl
 
 from fastmcp import Client as FastMCPClient
 from fastmcp import Context, FastMCP
+from fastmcp.server.elicitation import AcceptedElicitation
 from fastmcp.server.middleware import Middleware
 
 # Modes that reach the modern (2026-07-28) era via the SDK client.
@@ -73,7 +75,13 @@ def _server(mcp: FastMCP) -> LowLevelServer:
 
 
 def _texts(blocks) -> list[str]:
+    """Text from CallToolResult.content blocks (TextContent)."""
     return [b.text for b in blocks if isinstance(b, types.TextContent)]
+
+
+def _resource_texts(blocks) -> list[str]:
+    """Text from ReadResourceResult.contents blocks (TextResourceContents)."""
+    return [b.text for b in blocks if isinstance(b, types.TextResourceContents)]
 
 
 # ---------------------------------------------------------------------------
@@ -108,14 +116,14 @@ async def test_list_resources_both_eras(dual_era_server, mode):
 async def test_read_resource_both_eras(dual_era_server, mode):
     async with SDKClient(_server(dual_era_server), mode=mode) as client:
         result = await client.read_resource("data://config")
-    assert _texts(result.contents) == ['{"version": 1}']
+    assert _resource_texts(result.contents) == ['{"version": 1}']
 
 
 @pytest.mark.parametrize("mode", ALL_MODES)
 async def test_read_resource_template_both_eras(dual_era_server, mode):
     async with SDKClient(_server(dual_era_server), mode=mode) as client:
         result = await client.read_resource("data://item/42")
-    assert _texts(result.contents) == ["item-42"]
+    assert _resource_texts(result.contents) == ["item-42"]
 
 
 @pytest.mark.parametrize("mode", ALL_MODES)
@@ -130,7 +138,9 @@ async def test_get_prompt_both_eras(dual_era_server, mode):
     async with SDKClient(_server(dual_era_server), mode=mode) as client:
         result = await client.get_prompt("summarize", {"topic": "cats"})
     rendered = [
-        m.content.text for m in result.messages if isinstance(m.content, types.TextContent)
+        m.content.text
+        for m in result.messages
+        if isinstance(m.content, types.TextContent)
     ]
     assert rendered == ["Summarize cats"]
 
@@ -201,7 +211,8 @@ def push_server() -> FastMCP:
     @mcp.tool
     async def do_elicit(ctx: Context) -> str:
         result = await ctx.elicit("pick a value", response_type=int)
-        return f"elicited {result}"
+        assert isinstance(result, AcceptedElicitation)
+        return f"elicited {result.data}"
 
     @mcp.tool
     async def do_sample(ctx: Context) -> str:
@@ -238,7 +249,9 @@ async def _sampling_cb(
 
 
 async def _roots_cb(context: ClientRequestContext) -> types.ListRootsResult:
-    return types.ListRootsResult(roots=[types.Root(uri="file:///tmp", name="tmp")])
+    return types.ListRootsResult(
+        roots=[types.Root(uri=FileUrl("file:///tmp"), name="tmp")]
+    )
 
 
 async def test_elicit_works_on_legacy(push_server):
@@ -284,10 +297,11 @@ async def test_push_features_degrade_on_modern(push_server, mode, tool):
         list_roots_callback=_roots_cb,
     ) as client:
         result = await client.call_tool(tool, {})
-    assert result.is_error is True
-    # A subsequent normal call still works: the connection survived the failure.
-    log_result = await client.call_tool("do_log", {})
-    assert log_result.is_error is False
+        assert result.is_error is True
+        # A subsequent normal call still works: the connection survived the
+        # per-request failure rather than tearing down the whole session.
+        log_result = await client.call_tool("do_log", {})
+        assert log_result.is_error is False
 
 
 async def test_list_roots_degradation_message_is_clear_on_modern(push_server):
@@ -445,7 +459,7 @@ async def test_set_logging_level_does_not_crash_on_modern(sessionless_server, mo
     async with SDKClient(_server(sessionless_server), mode=mode) as client:
         outcome: str
         try:
-            await client.set_logging_level("debug")
+            await client.set_logging_level("debug")  # ty: ignore[deprecated]
             outcome = "ok"
         except MCPError:
             outcome = "mcperror"
