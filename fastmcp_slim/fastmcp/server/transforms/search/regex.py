@@ -8,6 +8,7 @@ from fastmcp.server.context import Context
 from fastmcp.server.transforms.search.base import (
     BaseSearchTransform,
     _extract_searchable_text,
+    _title_from_tool_name,
 )
 from fastmcp.tools.base import Tool
 
@@ -37,7 +38,12 @@ class RegexSearchTransform(BaseSearchTransform):
             results = await transform._search(hidden, pattern)
             return await transform._render_results(results)
 
-        return Tool.from_function(fn=search_tools, name=self._search_tool_name)
+        return Tool.from_function(
+            fn=search_tools,
+            name=self._search_tool_name,
+            title=_title_from_tool_name(self._search_tool_name),
+            description="Search for tools matching a regex pattern.",
+        )
 
     async def _search(self, tools: Sequence[Tool], query: str) -> Sequence[Tool]:
         try:

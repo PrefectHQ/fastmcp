@@ -137,6 +137,55 @@ class TestBaseTransformBehavior:
         assert await mcp.get_tool("find_tools") is not None
         assert await mcp.get_tool("run_tool") is not None
 
+    @pytest.mark.parametrize(
+        ("transform", "search_description"),
+        [
+            (
+                RegexSearchTransform(
+                    search_tool_name="find_tools",
+                    call_tool_name="call_read_tool",
+                ),
+                "Search for tools matching a regex pattern.",
+            ),
+            (
+                BM25SearchTransform(
+                    search_tool_name="find_tools",
+                    call_tool_name="call_read_tool",
+                ),
+                "Search for tools using natural language.",
+            ),
+        ],
+    )
+    async def test_synthetic_tools_have_titles_and_descriptions(
+        self,
+        transform: RegexSearchTransform | BM25SearchTransform,
+        search_description: str,
+    ):
+        mcp = _make_server_with_tools()
+        mcp.add_transform(transform)
+
+        tools = {tool.name: tool for tool in await mcp.list_tools()}
+        assert tools["find_tools"].title == "Find Tools"
+        assert tools["find_tools"].description == search_description
+        assert tools["call_read_tool"].title == "Call Read Tool"
+        assert tools["call_read_tool"].description == (
+            "Call a tool by name with the given arguments. "
+            "Use this to execute tools discovered via find_tools."
+        )
+
+        wire_tools = {
+            name: tool.to_mcp_tool()
+            for name, tool in tools.items()
+            if name in {"find_tools", "call_read_tool"}
+        }
+        assert wire_tools["find_tools"].title == "Find Tools"
+        assert wire_tools["find_tools"].description == search_description
+        assert wire_tools["call_read_tool"].title == "Call Read Tool"
+        assert wire_tools["call_read_tool"].description == (
+            "Call a tool by name with the given arguments. "
+            "Use this to execute tools discovered via find_tools."
+        )
+
     async def test_search_respects_visibility_filtering(self):
         """Tools disabled via Visibility transform should not appear in search."""
         mcp = _make_server_with_tools()

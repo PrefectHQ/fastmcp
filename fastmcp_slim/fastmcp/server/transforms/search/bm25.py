@@ -11,6 +11,7 @@ from fastmcp.server.transforms.search.base import (
     BaseSearchTransform,
     SearchResultSerializer,
     _extract_searchable_text,
+    _title_from_tool_name,
 )
 from fastmcp.tools.base import Tool
 
@@ -126,7 +127,12 @@ class BM25SearchTransform(BaseSearchTransform):
             results = await transform._search(hidden, query)
             return await transform._render_results(results)
 
-        return Tool.from_function(fn=search_tools, name=self._search_tool_name)
+        return Tool.from_function(
+            fn=search_tools,
+            name=self._search_tool_name,
+            title=_title_from_tool_name(self._search_tool_name),
+            description="Search for tools using natural language.",
+        )
 
     async def _search(self, tools: Sequence[Tool], query: str) -> Sequence[Tool]:
         current_hash = _catalog_hash(tools)

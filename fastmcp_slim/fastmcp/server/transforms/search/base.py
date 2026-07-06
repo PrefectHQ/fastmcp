@@ -151,6 +151,10 @@ def serialize_tools_for_output_markdown(tools: Sequence[Tool]) -> str:
     return "\n\n".join(blocks)
 
 
+def _title_from_tool_name(name: str) -> str:
+    return name.replace("_", " ").title()
+
+
 class BaseSearchTransform(CatalogTransform):
     """Replace the tool listing with a search interface.
 
@@ -241,7 +245,15 @@ class BaseSearchTransform(CatalogTransform):
                 )
             return await ctx.fastmcp.call_tool(name, arguments)
 
-        return Tool.from_function(fn=call_tool, name=self._call_tool_name)
+        return Tool.from_function(
+            fn=call_tool,
+            name=self._call_tool_name,
+            title=_title_from_tool_name(self._call_tool_name),
+            description=(
+                "Call a tool by name with the given arguments. "
+                f"Use this to execute tools discovered via {self._search_tool_name}."
+            ),
+        )
 
     # ------------------------------------------------------------------
     # Serialization
