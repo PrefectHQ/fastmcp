@@ -209,19 +209,22 @@ async def submit_to_docket(
                 session_id, ctx.session, docket, ctx.fastmcp
             )
 
-            # Register cleanup callback on session exit (once per session)
-            # This ensures subscriber is stopped when the session disconnects
-            if (
-                hasattr(ctx.session, "_exit_stack")
-                and ctx.session._exit_stack is not None
-                and not getattr(ctx.session, "_notification_cleanup_registered", False)
+            # Register cleanup callback on connection exit (once per session).
+            # SDK v2 constructs ServerSession per request, so the stable
+            # per-connection lifecycle hook lives on the underlying Connection
+            # (`connection.exit_stack`), not the session. The registration flag
+            # is likewise stashed on the connection's `state` so it survives
+            # across requests.
+            connection = getattr(ctx.session, "_connection", None)
+            if connection is not None and not connection.state.get(
+                "_notification_cleanup_registered"
             ):
 
                 async def _cleanup_subscriber() -> None:
                     await stop_subscriber(session_id)  # type: ignore[arg-type]
 
-                ctx.session._exit_stack.push_async_callback(_cleanup_subscriber)
-                ctx.session._notification_cleanup_registered = True  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+                connection.exit_stack.push_async_callback(_cleanup_subscriber)
+                connection.state["_notification_cleanup_registered"] = True
         except Exception as e:
             # Non-fatal: elicitation will still work via polling fallback
             logger.debug("Failed to start notification subscriber: %s", e)
