@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 import uvicorn
+from mcp.shared.auth import AuthorizationCodeResult
 
 from fastmcp import settings
 from fastmcp.client.auth.oauth import OAuth
@@ -241,8 +242,8 @@ class HeadlessOAuth(OAuth):
             response = await client.get(authorization_url, follow_redirects=False)
             self._stored_response = response
 
-    async def callback_handler(self) -> tuple[str, str | None]:
-        """Parse stored response and return (auth_code, state)."""
+    async def callback_handler(self) -> AuthorizationCodeResult:
+        """Parse stored response and return the authorization code result."""
         if not self._stored_response:
             raise RuntimeError(
                 "No authorization response stored. redirect_handler must be called first."
@@ -269,6 +270,6 @@ class HeadlessOAuth(OAuth):
 
             auth_code = query_params["code"][0]
             state = query_params.get("state", [None])[0]
-            return auth_code, state
+            return AuthorizationCodeResult(code=auth_code, state=state)
         else:
             raise RuntimeError(f"Authorization failed: {response.status_code}")
