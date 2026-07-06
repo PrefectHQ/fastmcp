@@ -37,7 +37,21 @@ class RegexSearchTransform(BaseSearchTransform):
             results = await transform._search(hidden, pattern)
             return await transform._render_results(results)
 
-        return Tool.from_function(fn=search_tools, name=self._search_tool_name)
+        title = " ".join(
+            word.capitalize()
+            for word in self._search_tool_name.replace("-", "_").split("_")
+        )
+        description = (
+            "Search for tools matching a regex pattern. "
+            "Returns matching tool definitions in the same format as list_tools."
+        )
+
+        return Tool.from_function(
+            fn=search_tools,
+            name=self._search_tool_name,
+            title=title,
+            description=description,
+        )
 
     async def _search(self, tools: Sequence[Tool], query: str) -> Sequence[Tool]:
         try:

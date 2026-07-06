@@ -126,7 +126,22 @@ class BM25SearchTransform(BaseSearchTransform):
             results = await transform._search(hidden, query)
             return await transform._render_results(results)
 
-        return Tool.from_function(fn=search_tools, name=self._search_tool_name)
+        title = " ".join(
+            word.capitalize()
+            for word in self._search_tool_name.replace("-", "_").split("_")
+        )
+        description = (
+            "Search for tools using natural language. "
+            "Returns matching tool definitions ranked by relevance, "
+            "in the same format as list_tools."
+        )
+
+        return Tool.from_function(
+            fn=search_tools,
+            name=self._search_tool_name,
+            title=title,
+            description=description,
+        )
 
     async def _search(self, tools: Sequence[Tool], query: str) -> Sequence[Tool]:
         current_hash = _catalog_hash(tools)

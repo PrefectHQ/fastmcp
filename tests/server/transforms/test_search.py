@@ -137,6 +137,37 @@ class TestBaseTransformBehavior:
         assert await mcp.get_tool("find_tools") is not None
         assert await mcp.get_tool("run_tool") is not None
 
+    async def test_synthetic_tools_have_titles_and_descriptions(self):
+        mcp = _make_server_with_tools()
+        mcp.add_transform(RegexSearchTransform())
+        tools = await mcp.list_tools()
+
+        search_tool = next(t for t in tools if t.name == "search_tools")
+        assert search_tool.title == "Search Tools"
+        assert search_tool.description is not None
+        assert "Search for tools matching a regex pattern" in search_tool.description
+
+        call_tool = next(t for t in tools if t.name == "call_tool")
+        assert call_tool.title == "Call Tool"
+        assert call_tool.description is not None
+        assert "Call a tool by name with the given arguments" in call_tool.description
+
+    async def test_custom_synthetic_tool_names_have_correct_titles(self):
+        mcp = _make_server_with_tools()
+        mcp.add_transform(
+            RegexSearchTransform(
+                search_tool_name="find_records_tools",
+                call_tool_name="execute_custom_tool",
+            )
+        )
+        tools = await mcp.list_tools()
+
+        search_tool = next(t for t in tools if t.name == "find_records_tools")
+        assert search_tool.title == "Find Records Tools"
+
+        call_tool = next(t for t in tools if t.name == "execute_custom_tool")
+        assert call_tool.title == "Execute Custom Tool"
+
     async def test_search_respects_visibility_filtering(self):
         """Tools disabled via Visibility transform should not appear in search."""
         mcp = _make_server_with_tools()

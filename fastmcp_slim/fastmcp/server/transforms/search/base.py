@@ -241,7 +241,21 @@ class BaseSearchTransform(CatalogTransform):
                 )
             return await ctx.fastmcp.call_tool(name, arguments)
 
-        return Tool.from_function(fn=call_tool, name=self._call_tool_name)
+        title = " ".join(
+            word.capitalize()
+            for word in self._call_tool_name.replace("-", "_").split("_")
+        )
+        description = (
+            f"Call a tool by name with the given arguments. "
+            f"Use this to execute tools discovered via {self._search_tool_name}."
+        )
+
+        return Tool.from_function(
+            fn=call_tool,
+            name=self._call_tool_name,
+            title=title,
+            description=description,
+        )
 
     # ------------------------------------------------------------------
     # Serialization
