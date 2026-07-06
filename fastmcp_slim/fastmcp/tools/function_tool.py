@@ -127,6 +127,21 @@ def _wrap_body_errors(fn: Callable[..., Any]) -> Callable[..., Any]:
     return wrapper
 
 
+def _strict_input_validation() -> bool:
+    """Whether the running server enforces strict argument validation.
+
+    Reads ``strict_input_validation`` off the active request's ``FastMCP``
+    instance. Returns ``False`` outside a request context (e.g. a tool invoked
+    directly in tests), preserving the default coercing behavior.
+    """
+    from fastmcp.server.context import _current_context
+
+    context = _current_context.get(None)
+    if context is None:
+        return False
+    return context.fastmcp.strict_input_validation
+
+
 F = TypeVar("F", bound=Callable[..., Any])
 
 
@@ -394,13 +409,14 @@ class FunctionTool(Tool):
         exec_fn = _wrap_body_errors(wrapper_fn)
         type_adapter = get_cached_typeadapter(exec_fn)
         exec_is_async = is_coroutine_function(wrapper_fn)
+        strict = _strict_input_validation()
 
         try:
             if self.timeout is not None:
                 try:
                     with anyio.fail_after(self.timeout):
                         result = await self._execute(
-                            type_adapter, exec_is_async, arguments
+                            type_adapter, exec_is_async, arguments, strict=strict
                         )
                 except TimeoutError:
                     logger.warning(
@@ -413,7 +429,9 @@ class FunctionTool(Tool):
                         message=f"Tool '{self.name}' execution timed out after {self.timeout}s",
                     ) from None
             else:
-                result = await self._execute(type_adapter, exec_is_async, arguments)
+                result = await self._execute(
+                    type_adapter, exec_is_async, arguments, strict=strict
+                )
         except PydanticValidationError as e:
             # Body errors are re-raised as _ToolBodyError, so a bare pydantic
             # ValidationError here is an argument-validation failure (a bad call).
@@ -436,6 +454,8 @@ class FunctionTool(Tool):
         type_adapter: TypeAdapter[Any],
         exec_is_async: bool,
         arguments: dict[str, Any],
+        *,
+        strict: bool = False,
     ) -> Any:
         """Validate arguments and execute the tool body.
 
@@ -443,20 +463,24 @@ class FunctionTool(Tool):
         ``pydantic.ValidationError`` on bad input. Body execution (awaiting the
         result and materializing generators) is wrapped so any pydantic error it
         raises is tagged as ``_ToolBodyError``.
+
+        When ``strict`` is set (server-level ``strict_input_validation``),
+        pydantic validates in strict mode, so lax coercions such as the JSON
+        string ``"10"`` into an ``int`` are rejected rather than coerced.
         """
         # Combining timeout with run_in_thread=False on a sync function is
         # rejected at registration (see FunctionTool.from_function), so this only
         # needs to handle async and threadpool-sync under a timeout.
         if exec_is_async:
             # Argument validation is synchronous; the body runs on await below.
-            result = type_adapter.validate_python(arguments)
+            result = type_adapter.validate_python(arguments, strict=strict)
         elif self.run_in_thread:
             # Sync function: run in threadpool to avoid blocking the event loop.
             result = await call_sync_fn_in_threadpool(
-                type_adapter.validate_python, arguments
+                type_adapter.validate_python, arguments, strict=strict
             )
         else:
-            result = type_adapter.validate_python(arguments)
+            result = type_adapter.validate_python(arguments, strict=strict)
 
         try:
             if inspect.isawaitable(result):
