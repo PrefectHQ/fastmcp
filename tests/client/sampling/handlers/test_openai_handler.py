@@ -27,7 +27,6 @@ from openai.types.chat import (
     ChatCompletionUserMessageParam,
 )
 from openai.types.chat.chat_completion import Choice
-from pydantic import AnyUrl
 
 from fastmcp.client.sampling.handlers.openai import (
     OpenAISamplingHandler,
@@ -331,7 +330,7 @@ def test_convert_messages_raises_on_unsupported_content_type():
     embedded = EmbeddedResource(
         type="resource",
         resource=TextResourceContents(
-            uri=AnyUrl("file:///test.txt"), text="hello", mime_type="text/plain"
+            uri="file:///test.txt", text="hello", mime_type="text/plain"
         ),
     )
     msg = SamplingMessage.model_construct(

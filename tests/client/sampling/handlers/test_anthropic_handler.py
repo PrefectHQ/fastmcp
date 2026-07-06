@@ -18,7 +18,6 @@ from mcp_types import (
     ToolResultContent,
     ToolUseContent,
 )
-from pydantic import AnyUrl
 
 from fastmcp.client.sampling.handlers.anthropic import (
     AnthropicSamplingHandler,
@@ -387,7 +386,7 @@ def test_convert_messages_raises_on_unsupported_content_type():
     embedded = EmbeddedResource(
         type="resource",
         resource=TextResourceContents(
-            uri=AnyUrl("file:///test.txt"), text="hello", mime_type="text/plain"
+            uri="file:///test.txt", text="hello", mime_type="text/plain"
         ),
     )
     # Must be inside a list content — single-content messages hit a

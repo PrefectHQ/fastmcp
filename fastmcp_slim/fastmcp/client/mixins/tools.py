@@ -160,8 +160,14 @@ class ClientToolsMixin:
         ) as span:
             logger.debug(f"[{self.name}] called call_tool: {name}")
 
-            # Inject trace context into meta for propagation to server
+            # Inject trace context into meta for propagation to server.
+            # SDK v2: request `_meta` is `RequestParamsMeta` (a TypedDict), not
+            # the old `RequestParams.Meta` nested model.
             propagated_meta = inject_trace_context(meta)
+            request_meta = cast(
+                "mcp_types.RequestParamsMeta | None",
+                propagated_meta if propagated_meta else None,
+            )
 
             result = await self._await_with_session_monitoring(
                 self.session.call_tool(
@@ -169,7 +175,7 @@ class ClientToolsMixin:
                     arguments=arguments,
                     read_timeout_seconds=normalize_timeout_to_seconds(timeout),
                     progress_callback=progress_handler or self._progress_handler,
-                    meta=propagated_meta if propagated_meta else None,
+                    meta=request_meta,
                 )
             )
 
@@ -365,7 +371,7 @@ class ClientToolsMixin:
         # Use RootModel with Union to handle both response types (SDK calls model_validate)
         wrapped_result = await self._await_with_session_monitoring(
             self.session.send_request(
-                request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+                request=request,  # type: ignore[arg-type]
                 result_type=ToolTaskResponseUnion,
             )
         )

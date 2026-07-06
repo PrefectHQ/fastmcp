@@ -94,12 +94,13 @@ async def test_call_tool_with_meta():
         assert context.request_context is not None
         meta = context.request_context.meta
 
-        # Return the metadata as a dict
+        # Return the metadata as a dict. Under SDK v2 the lifted request meta
+        # is a plain dict, so custom fields are read by key.
         if meta is not None:
             return {
                 "has_meta": True,
-                "user_id": getattr(meta, "user_id", None),
-                "trace_id": getattr(meta, "trace_id", None),
+                "user_id": meta.get("user_id"),
+                "trace_id": meta.get("trace_id"),
             }
         return {"has_meta": False}
 

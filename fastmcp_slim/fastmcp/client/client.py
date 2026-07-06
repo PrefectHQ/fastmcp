@@ -809,14 +809,12 @@ class Client(
         reason: str | None = None,
     ) -> None:
         """Send a cancellation notification for an in-progress request."""
-        notification = mcp_types.ClientNotification(
-            root=mcp_types.CancelledNotification(
-                method="notifications/cancelled",
-                params=mcp_types.CancelledNotificationParams(
-                    request_id=request_id,
-                    reason=reason,
-                ),
-            )
+        notification = mcp_types.CancelledNotification(
+            method="notifications/cancelled",
+            params=mcp_types.CancelledNotificationParams(
+                request_id=request_id,
+                reason=reason,
+            ),
         )
         await self.session.send_notification(notification)
 

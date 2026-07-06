@@ -1,5 +1,6 @@
 """Tests for the MCP SDK v2 camelCase compatibility bridge (fastmcp._compat)."""
 
+import datetime
 import warnings
 
 import mcp_types
@@ -7,6 +8,8 @@ import pytest
 from mcp import MCPError as SDKMCPError
 
 import fastmcp._compat as _compat
+from fastmcp import Client, FastMCP
+from fastmcp.client.transports import FastMCPTransport
 from fastmcp.exceptions import FastMCPDeprecationWarning, MCPError, McpError
 
 
@@ -184,3 +187,39 @@ class TestExceptionAlias:
     def test_except_mcp_error_catches_sdk_raised(self):
         with pytest.raises(McpError):
             raise SDKMCPError(code=-32000, message="boom")
+
+
+class TestClientBehaviorCompat:
+    """Behavior compat checklist (design decision D)."""
+
+    @pytest.fixture
+    def server(self):
+        srv = FastMCP("BehaviorServer")
+
+        @srv.tool
+        def echo(x: str) -> str:
+            return x
+
+        return srv
+
+    @pytest.mark.parametrize(
+        "timeout",
+        [5, 5.0, datetime.timedelta(seconds=5), None],
+    )
+    async def test_client_accepts_timedelta_or_float_timeout(self, server, timeout):
+        client = Client(transport=FastMCPTransport(server), timeout=timeout)
+        async with client:
+            result = await client.call_tool("echo", {"x": "hi"})
+        assert result.data == "hi"
+
+    async def test_ping_returns_bool(self, server):
+        client = Client(transport=FastMCPTransport(server))
+        async with client:
+            result = await client.ping()
+        assert result is True
+
+    async def test_session_id_none_safe(self, server):
+        # In-memory transport has no HTTP session id; must return None, not raise.
+        client = Client(transport=FastMCPTransport(server))
+        async with client:
+            assert client.transport.get_session_id() is None
