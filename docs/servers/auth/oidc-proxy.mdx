@@ -11,10 +11,6 @@ import { VersionBadge } from "/snippets/version-badge.mdx";
 
 The OIDC proxy enables FastMCP servers to authenticate with OIDC providers that **don't support Dynamic Client Registration (DCR)** out of the box. This includes OAuth providers like: Auth0, Google, Azure, AWS, etc. For providers that do support DCR (like WorkOS AuthKit), use [`RemoteAuthProvider`](/servers/auth/remote-oauth) instead.
 
-<Note>
-For Auth0 [Auth for MCP](/integrations/auth0#auth-for-mcp-dcr) with tenant-level DCR, use [`Auth0MCPProvider`](/integrations/auth0) with [`RemoteAuthProvider`](/servers/auth/remote-oauth) instead of `Auth0Provider`.
-</Note>
-
 The OIDC proxy is built upon [`OAuthProxy`](/servers/auth/oauth-proxy) so it has all the same functionality under the covers.
 
 ## Implementation

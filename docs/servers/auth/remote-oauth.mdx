@@ -213,26 +213,6 @@ WorkOS's support for Dynamic Client Registration makes it particularly well-suit
 
 → **Complete WorkOS tutorial**: [AuthKit Integration Guide](/integrations/authkit)
 
-## Auth0 Auth for MCP Integration
-
-Auth0's [Auth for MCP](https://auth0.com/ai/docs/mcp/intro/overview) uses the same resource-server pattern. The `Auth0MCPProvider` discovers your tenant via OIDC, validates JWTs (including Auth0 `permissions` claims), and forwards authorization server metadata.
-
-```python
-from fastmcp import FastMCP
-from fastmcp.server.auth.providers.auth0 import Auth0MCPProvider
-
-auth = Auth0MCPProvider(
-    config_url="https://YOUR_TENANT.auth0.com/.well-known/openid-configuration",
-    base_url="http://127.0.0.1:8000",
-)
-
-mcp = FastMCP(name="Protected Application", auth=auth)
-```
-
-Enable Auth0's Resource Parameter Compatibility Profile and set your API identifier to the resource URL the server logs at startup.
-
-→ **Complete Auth0 tutorial**: [Auth0 Integration Guide](/integrations/auth0#auth-for-mcp-dcr)
-
 ## Client Redirect URI Security
 
 <Note>
