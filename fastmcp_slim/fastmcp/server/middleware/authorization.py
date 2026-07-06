@@ -24,7 +24,8 @@ Example:
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import mcp_types as mt
 
@@ -49,12 +50,13 @@ from fastmcp.utilities.versions import VersionSpec
 logger = logging.getLogger(__name__)
 
 
-def _requested_version(meta: mt.RequestParams.Meta | None) -> VersionSpec | None:
-    if meta is None:
+def _requested_version(meta: Mapping[str, Any] | None) -> VersionSpec | None:
+    # SDK v2: request `_meta` is a plain dict (the `Meta` type alias), not the
+    # old `RequestParams.Meta` nested model.
+    if not meta:
         return None
 
-    meta_dict = meta.model_dump(exclude_none=True)
-    fastmcp_meta = meta_dict.get("fastmcp")
+    fastmcp_meta = meta.get("fastmcp")
     if not isinstance(fastmcp_meta, dict):
         return None
 

@@ -213,7 +213,10 @@ class ClientResourcesMixin:
             RuntimeError: If called while the client is not connected.
             MCPError: If the request results in a TimeoutError | JSONRPCError
         """
-        uri_str = str(uri)
+        # SDK v2: the wire `uri` is a plain string, but resources are stored
+        # under the AnyUrl-normalized form (e.g. a trailing slash for authority
+        # URIs), so normalize through AnyUrl to keep server-side lookups aligned.
+        uri_str = str(AnyUrl(uri)) if isinstance(uri, str) else str(uri)
         with client_span(
             "resources/read",
             "resources/read",
@@ -223,9 +226,6 @@ class ClientResourcesMixin:
         ):
             logger.debug(f"[{self.name}] called read_resource: {uri}")
 
-            if isinstance(uri, str):
-                uri = AnyUrl(uri)  # Ensure AnyUrl
-
             # Inject trace context into meta for propagation to server
             propagated_meta = inject_trace_context(meta)
             request_meta = cast("mcp_types.RequestParamsMeta | None", propagated_meta)
@@ -233,9 +233,10 @@ class ClientResourcesMixin:
             # If meta provided, use send_request for SEP-1686 task support
             if propagated_meta:
                 task_dict = propagated_meta.get("modelcontextprotocol.io/task")
+                # SDK v2: ReadResourceRequestParams.uri is a plain string.
                 request = mcp_types.ReadResourceRequest(
                     params=mcp_types.ReadResourceRequestParams(
-                        uri=uri,
+                        uri=uri_str,
                         task=mcp_types.TaskMetadata(**task_dict) if task_dict else None,
                         _meta=request_meta,  # type: ignore[unknown-argument]  # pydantic alias
                     )
@@ -248,7 +249,7 @@ class ClientResourcesMixin:
                 )
             else:
                 result = await self._await_with_session_monitoring(
-                    self.session.read_resource(str(uri))
+                    self.session.read_resource(uri_str)
                 )
             return result
 
@@ -349,16 +350,22 @@ class ClientResourcesMixin:
             ResourceTask: Future-like object for accessing task status and results
         """
         # Per SEP-1686 final spec: client sends only ttl, server generates taskId
-        # Inject trace context into meta for propagation to server
+        # Inject trace context into meta for propagation to server.
+        # SDK v2: request `_meta` is `RequestParamsMeta` (a TypedDict), not
+        # the old `RequestParams.Meta` nested model.
         propagated_meta = inject_trace_context(meta)
-        request_meta = cast(mcp_types.RequestParams.Meta | None, propagated_meta)
+        request_meta = cast(
+            "mcp_types.RequestParamsMeta | None",
+            propagated_meta if propagated_meta else None,
+        )
 
-        if isinstance(uri, str):
-            uri = AnyUrl(uri)
+        # SDK v2: ReadResourceRequestParams.uri is a plain string, but resources
+        # are stored under the AnyUrl-normalized form, so normalize to match.
+        uri_str = str(AnyUrl(uri)) if isinstance(uri, str) else str(uri)
 
         request = mcp_types.ReadResourceRequest(
             params=mcp_types.ReadResourceRequestParams(
-                uri=uri,
+                uri=uri_str,
                 task=mcp_types.TaskMetadata(ttl=ttl),
                 _meta=request_meta,  # type: ignore[unknown-argument]  # pydantic alias
             )

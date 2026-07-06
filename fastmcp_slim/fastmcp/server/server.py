@@ -102,7 +102,7 @@ logger = get_logger(__name__)
 
 def _version_request_meta(
     version: VersionSpec | None,
-) -> mcp_types.RequestParams.Meta | None:
+) -> dict[str, Any] | None:
     if version is None:
         return None
 
@@ -122,9 +122,9 @@ def _version_request_meta(
     if not version_value:
         return None
 
-    return mcp_types.RequestParams.Meta.model_validate(
-        {"fastmcp": {"version": version_value}}
-    )
+    # SDK v2: request `_meta` is a plain dict (the `Meta` type alias), not the
+    # old `RequestParams.Meta` nested model.
+    return {"fastmcp": {"version": version_value}}
 
 
 # The MCP SDK warns "Tool X not listed, no validation will be performed"

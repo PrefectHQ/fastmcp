@@ -280,9 +280,14 @@ class ClientPromptsMixin:
             PromptTask: Future-like object for accessing task status and results
         """
         # Per SEP-1686 final spec: client sends only ttl, server generates taskId
-        # Inject trace context into meta for propagation to server
+        # Inject trace context into meta for propagation to server.
+        # SDK v2: request `_meta` is `RequestParamsMeta` (a TypedDict), not
+        # the old `RequestParams.Meta` nested model.
         propagated_meta = inject_trace_context(meta)
-        request_meta = cast(mcp_types.RequestParams.Meta | None, propagated_meta)
+        request_meta = cast(
+            "mcp_types.RequestParamsMeta | None",
+            propagated_meta if propagated_meta else None,
+        )
 
         # Serialize arguments for MCP protocol
         serialized_arguments: dict[str, str] | None = None
