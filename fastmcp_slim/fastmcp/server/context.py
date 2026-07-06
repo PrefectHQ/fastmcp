@@ -562,18 +562,16 @@ class Context:
         # Resolve the client-requested minimum level (set via logging/setLevel),
         # keyed by session id, falling back to the server's configured default.
         min_level = self.fastmcp.client_log_level
-        rc = self.request_context
-        session_min = (
-            self.fastmcp._client_log_levels.get(_log_level_session_key(rc.session))
-            if rc is not None
-            else None
+        session = self.session
+        session_min = self.fastmcp._client_log_levels.get(
+            _log_level_session_key(session)
         )
         if session_min is not None:
             min_level = session_min
 
         await _log_to_server_and_client(
             data=data,
-            session=self.session,
+            session=session,
             level=level or "info",
             logger_name=logger_name,
             related_request_id=related_request_id,
