@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 import datetime
 import ssl
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from typing import Any, Literal, cast
 
 import httpx
@@ -96,7 +96,22 @@ class StreamableHttpTransport(ClientTransport):
 
         self.forward_incoming_headers: bool = False
 
-        self._get_session_id_cb: Callable[[], str | None] | None = None
+        # SDK v2's streamable_http_client no longer exposes a get_session_id
+        # callback. We recover the session id ourselves by capturing the
+        # `mcp-session-id` response header via an httpx event hook on the
+        # client we own (see connect_session / _capture_session_id).
+        self._session_id: str | None = None
+
+    async def _capture_session_id(self, response: httpx.Response) -> None:
+        """httpx response event hook: record the server's `mcp-session-id`.
+
+        The streamable HTTP server assigns the session id in the response to
+        the initialize request and echoes it on subsequent responses; we keep
+        the latest non-empty value.
+        """
+        sid = response.headers.get("mcp-session-id")
+        if sid:
+            self._session_id = sid
 
     def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
         resolved: httpx.Auth | None
@@ -159,13 +174,12 @@ class StreamableHttpTransport(ClientTransport):
         else:
             headers = dict(self.headers)
 
-        # Configure timeout if provided, preserving MCP's 30s connect default
+        # Configure timeout if provided, preserving MCP's 30s connect default.
+        # SDK v2 session read timeouts are float seconds (see SessionKwargs).
         timeout: httpx.Timeout | None = None
-        if session_kwargs.get("read_timeout_seconds") is not None:
-            read_timeout_seconds = cast(
-                datetime.timedelta, session_kwargs.get("read_timeout_seconds")
-            )
-            timeout = httpx.Timeout(30.0, read=read_timeout_seconds.total_seconds())
+        read_timeout_seconds = session_kwargs.get("read_timeout_seconds")
+        if read_timeout_seconds is not None:
+            timeout = httpx.Timeout(30.0, read=read_timeout_seconds)
 
         # Create httpx client from factory or use default with MCP-appropriate
         # timeouts. Note: create_mcp_http_client enables follow_redirects, but
@@ -192,32 +206,32 @@ class StreamableHttpTransport(ClientTransport):
                 auth=self.auth,
             )
 
-        # Ensure httpx client is closed after use
+        # SDK v2's streamable_http_client no longer surfaces the session id, so
+        # capture it off the `mcp-session-id` response header on the client we
+        # own. Register on whichever instance is actually used (factory paths).
+        self._session_id = None
+        http_client.event_hooks.setdefault("response", []).append(
+            self._capture_session_id
+        )
+
+        # Ensure httpx client is closed after use. SDK v2 streamable_http_client
+        # yields a 2-tuple (read, write); get_session_id is gone from the transport.
         async with (
             http_client,
-            streamable_http_client(self.url, http_client=http_client) as transport,
+            streamable_http_client(self.url, http_client=http_client) as (
+                read_stream,
+                write_stream,
+            ),
+            ClientSession(read_stream, write_stream, **session_kwargs) as session,
         ):
-            # SDK v2 streamable_http_client yields a 2-tuple (read, write);
-            # the get_session_id callback is no longer part of the transport.
-            # Phase C: source the session id from the session/transport itself.
-            read_stream, write_stream = transport
-            self._get_session_id_cb = None
-            async with ClientSession(
-                read_stream, write_stream, **session_kwargs
-            ) as session:
-                yield session
+            yield session
 
     def get_session_id(self) -> str | None:
-        if self._get_session_id_cb:
-            try:
-                return self._get_session_id_cb()
-            except Exception:
-                return None
-        return None
+        return self._session_id
 
     async def close(self):
-        # Reset the session id callback
-        self._get_session_id_cb = None
+        # Reset the captured session id
+        self._session_id = None
 
     def __repr__(self) -> str:
         return f"<StreamableHttpTransport(url='{self.url}')>"
