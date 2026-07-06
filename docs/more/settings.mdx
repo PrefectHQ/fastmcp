@@ -42,6 +42,9 @@ These control how the server listens when running with an HTTP transport.
 | `FASTMCP_STREAMABLE_HTTP_PATH` | `str` | `/mcp` | Path for Streamable HTTP endpoint. |
 | `FASTMCP_STATELESS_HTTP` | `bool` | `false` | Enable stateless HTTP mode (new transport per request). Useful for multi-worker deployments. |
 | `FASTMCP_JSON_RESPONSE` | `bool` | `false` | Use JSON responses instead of SSE for Streamable HTTP. |
+| `FASTMCP_HTTP_HOST_ORIGIN_PROTECTION` | `bool` | `true` | Validate `Host` and browser `Origin` headers for Streamable HTTP requests. |
+| `FASTMCP_HTTP_ALLOWED_HOSTS` | `list[str] \| null` | `null` | Additional trusted hostnames for Streamable HTTP requests. Use a JSON array, such as `["mcp.example.com"]`. |
+| `FASTMCP_HTTP_ALLOWED_ORIGINS` | `list[str] \| null` | `null` | Browser origins trusted by the Streamable HTTP request guard. Configure CORS separately for cross-origin browser reads. Use a JSON array, such as `["https://app.example.com"]`. |
 | `FASTMCP_DEBUG` | `bool` | `false` | Enable debug mode. |
 
 ## Error Handling

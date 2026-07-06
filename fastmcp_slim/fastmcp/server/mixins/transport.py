@@ -250,6 +250,9 @@ class TransportMixin:
         json_response: bool | None = None,
         stateless_http: bool | None = None,
         stateless: bool | None = None,
+        host_origin_protection: bool | None = None,
+        allowed_hosts: list[str] | None = None,
+        allowed_origins: list[str] | None = None,
         sockets: list[socket.socket] | None = None,
     ) -> None:
         """Run the server using HTTP transport.
@@ -265,6 +268,12 @@ class TransportMixin:
             json_response: Whether to use JSON response format (defaults to settings.json_response)
             stateless_http: Whether to use stateless HTTP (defaults to settings.stateless_http)
             stateless: Alias for stateless_http for CLI consistency
+            host_origin_protection: Whether to validate Host and Origin headers
+                before requests reach the MCP endpoint.
+            allowed_hosts: Additional hostnames that may appear in the Host header.
+            allowed_origins: Additional browser origins trusted by the request guard.
+                Configure CORS separately when browser JavaScript must read
+                cross-origin responses.
             sockets: Pre-bound sockets to pass to Uvicorn
         """
         # Allow stateless as alias for stateless_http
@@ -291,6 +300,9 @@ class TransportMixin:
             middleware=middleware,
             json_response=json_response,
             stateless_http=stateless_http,
+            host_origin_protection=host_origin_protection,
+            allowed_hosts=allowed_hosts,
+            allowed_origins=allowed_origins,
         )
 
         # Display server banner
@@ -333,6 +345,9 @@ class TransportMixin:
         transport: Literal["http", "streamable-http", "sse"] = "http",
         event_store: EventStore | None = None,
         retry_interval: int | None = None,
+        host_origin_protection: bool | None = None,
+        allowed_hosts: list[str] | None = None,
+        allowed_origins: list[str] | None = None,
     ) -> StarletteWithLifespan:
         """Create a Starlette app using the specified HTTP transport.
 
@@ -349,6 +364,12 @@ class TransportMixin:
                 Controls how quickly clients should reconnect after server-initiated
                 disconnections. Requires event_store to be set. Only used with
                 streamable-http transport.
+            host_origin_protection: Whether to validate Host and Origin headers
+                before requests reach the MCP endpoint.
+            allowed_hosts: Additional hostnames that may appear in the Host header.
+            allowed_origins: Additional browser origins trusted by the request guard.
+                Configure CORS separately when browser JavaScript must read
+                cross-origin responses.
 
         Returns:
             A Starlette application configured with the specified transport
@@ -375,6 +396,21 @@ class TransportMixin:
                 ),
                 debug=fastmcp.settings.debug,
                 middleware=middleware,
+                host_origin_protection=(
+                    host_origin_protection
+                    if host_origin_protection is not None
+                    else fastmcp.settings.http_host_origin_protection
+                ),
+                allowed_hosts=(
+                    allowed_hosts
+                    if allowed_hosts is not None
+                    else fastmcp.settings.http_allowed_hosts
+                ),
+                allowed_origins=(
+                    allowed_origins
+                    if allowed_origins is not None
+                    else fastmcp.settings.http_allowed_origins
+                ),
             )
         elif transport == "sse":
             return create_sse_app(

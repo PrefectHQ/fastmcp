@@ -471,6 +471,39 @@ class TestConsentBindingCookie:
     and send it to a victim whose browser completes the flow.
     """
 
+    async def test_deny_does_not_redirect_to_unsafe_stored_uri(self, oauth_proxy_https):
+        """Consent denial must not redirect to an unsafe stored callback URI."""
+        txn_id = "test-deny-javascript"
+        transaction = OAuthTransaction(
+            txn_id=txn_id,
+            client_id="test-client",
+            client_redirect_uri="javascript:alert(document.cookie)//",
+            client_state="client-state",
+            code_challenge="challenge",
+            code_challenge_method="S256",
+            scopes=["read"],
+            created_at=time.time(),
+        )
+        await oauth_proxy_https._transaction_store.put(key=txn_id, value=transaction)
+
+        app = Starlette(routes=oauth_proxy_https.get_routes())
+        with TestClient(app) as c:
+            consent = c.get(f"/consent?txn_id={txn_id}")
+            csrf = _extract_csrf(consent.text)
+            assert csrf
+            for k, v in consent.cookies.items():
+                c.cookies.set(k, v)
+
+            response = c.post(
+                "/consent",
+                data={"action": "deny", "txn_id": txn_id, "csrf_token": csrf},
+                follow_redirects=False,
+            )
+
+        assert response.status_code == 400
+        assert "location" not in response.headers
+        assert "Invalid redirect URI" in response.text
+
     async def test_approve_sets_consent_binding_cookie(self, oauth_proxy_https):
         """Approving consent must set a signed consent binding cookie."""
         txn_id, _ = await _start_flow(

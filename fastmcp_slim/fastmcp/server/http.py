@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Callable, Generator
+from collections.abc import AsyncGenerator, Callable, Generator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
+from fnmatch import fnmatchcase
+from ipaddress import ip_address
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from mcp.server.auth.routes import build_resource_metadata_url
@@ -15,11 +18,12 @@ from mcp.server.streamable_http import (
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
+from starlette.datastructures import Headers
 from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import BaseRoute, Mount, Route
-from starlette.types import Lifespan, Receive, Scope, Send
+from starlette.types import ASGIApp, Lifespan, Receive, Scope, Send
 
 from fastmcp.server.auth import AuthProvider
 from fastmcp.server.auth.middleware import RequireAuthMiddleware
@@ -30,6 +34,8 @@ if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
 
 logger = get_logger(__name__)
+
+DEFAULT_HOSTS = ("127.0.0.1", "localhost", "::1")
 
 
 class FastMCPStreamableHTTPSessionManager(StreamableHTTPSessionManager):
@@ -101,6 +107,176 @@ class StreamableHTTPASGIApp:
             else:
                 # Re-raise other RuntimeErrors if they don't match the specific message
                 raise
+
+
+def _normalize_host(host: str) -> str:
+    host = host.strip().lower()
+    if not host:
+        return ""
+
+    if host.startswith("["):
+        end = host.find("]")
+        if end == -1:
+            return host
+        return host[1:end]
+
+    if host.count(":") == 1:
+        return host.rsplit(":", 1)[0]
+
+    return host
+
+
+def _is_loopback_host(host: str) -> bool:
+    host = _normalize_host(host)
+    if host == "localhost":
+        return True
+
+    try:
+        return ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_unspecified_host(host: str) -> bool:
+    host = _normalize_host(host)
+    if not host:
+        return True
+
+    try:
+        return ip_address(host).is_unspecified
+    except ValueError:
+        return False
+
+
+def _host_matches(host: str, allowed_hosts: Sequence[str]) -> bool:
+    host = _normalize_host(host)
+    for allowed_host in allowed_hosts:
+        pattern = _normalize_host(allowed_host)
+        if pattern == "*" or fnmatchcase(host, pattern):
+            return True
+
+    return False
+
+
+def _origin_host(origin: str) -> str:
+    try:
+        parsed = urlsplit(origin)
+    except ValueError:
+        return ""
+
+    return parsed.hostname or ""
+
+
+def _origin_port(scheme: str, port: int | None) -> int | None:
+    if port is not None:
+        return port
+    if scheme == "http":
+        return 80
+    if scheme == "https":
+        return 443
+    return None
+
+
+def _format_origin_host(host: str) -> str:
+    if ":" in host and not host.startswith("["):
+        return f"[{host}]"
+    return host
+
+
+def _normalize_origin(origin: str) -> str:
+    origin = origin.strip().rstrip("/")
+    try:
+        parsed = urlsplit(origin)
+        port = parsed.port
+    except ValueError:
+        return origin.lower()
+
+    if not parsed.scheme or not parsed.hostname:
+        return origin.lower()
+
+    if parsed.path or parsed.query or parsed.fragment:
+        return origin.lower()
+
+    scheme = parsed.scheme.lower()
+    host = _format_origin_host(_normalize_host(parsed.hostname))
+    normalized_port = _origin_port(scheme, port)
+    if normalized_port is None:
+        return f"{scheme}://{host}"
+
+    return f"{scheme}://{host}:{normalized_port}"
+
+
+def _request_origin(scope: Scope, host: str) -> str:
+    return _normalize_origin(f"{scope.get('scheme', 'http')}://{host}")
+
+
+def _origin_matches(origin: str, allowed_origins: Sequence[str]) -> bool:
+    origin = _normalize_origin(origin)
+    for allowed_origin in allowed_origins:
+        pattern = _normalize_origin(allowed_origin)
+        if pattern == "*" or fnmatchcase(origin, pattern):
+            return True
+
+    return False
+
+
+class HostOriginGuardMiddleware:
+    """Validate Host and Origin headers before requests reach MCP sessions."""
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        allowed_hosts: Sequence[str] | None = None,
+        allowed_origins: Sequence[str] | None = None,
+    ) -> None:
+        self.app = app
+        self.allowed_hosts = tuple(allowed_hosts or ())
+        self.allowed_origins = tuple(allowed_origins or ())
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        allowed_hosts = self._allowed_hosts_for_scope(scope)
+        headers = Headers(scope=scope)
+        host = headers.get("host", "")
+
+        if not _host_matches(host, allowed_hosts):
+            response = Response("Misdirected Request", status_code=421)
+            await response(scope, receive, send)
+            return
+
+        origin = headers.get("origin")
+        request_origin = _request_origin(scope, host)
+        if origin and not self._origin_allowed(origin, request_origin, host):
+            response = Response("Forbidden Origin", status_code=403)
+            await response(scope, receive, send)
+            return
+
+        await self.app(scope, receive, send)
+
+    def _allowed_hosts_for_scope(self, scope: Scope) -> tuple[str, ...]:
+        allowed_hosts = list(DEFAULT_HOSTS)
+        allowed_hosts.extend(self.allowed_hosts)
+
+        server = scope.get("server")
+        if server:
+            server_host = server[0]
+            if not _is_unspecified_host(server_host):
+                allowed_hosts.append(server_host)
+
+        return tuple(allowed_hosts)
+
+    def _origin_allowed(self, origin: str, request_origin: str, host: str) -> bool:
+        if _origin_matches(origin, self.allowed_origins):
+            return True
+
+        origin_host = _origin_host(origin)
+        if _is_loopback_host(origin_host) and _is_loopback_host(host):
+            return True
+
+        return _normalize_origin(origin) == request_origin
 
 
 _current_http_request: ContextVar[Request | None] = ContextVar(
@@ -315,6 +491,9 @@ def create_streamable_http_app(
     debug: bool = False,
     routes: list[BaseRoute] | None = None,
     middleware: list[Middleware] | None = None,
+    host_origin_protection: bool = True,
+    allowed_hosts: Sequence[str] | None = None,
+    allowed_origins: Sequence[str] | None = None,
 ) -> StarletteWithLifespan:
     """Return an instance of the StreamableHTTP server app.
 
@@ -331,6 +510,12 @@ def create_streamable_http_app(
         debug: Whether to enable debug mode
         routes: Optional list of custom routes
         middleware: Optional list of middleware
+        host_origin_protection: Whether to validate Host and Origin headers
+            before requests reach the MCP endpoint.
+        allowed_hosts: Additional hostnames that may appear in the Host header.
+        allowed_origins: Additional browser origins trusted by the request guard.
+            Configure CORS separately when browser JavaScript must read
+            cross-origin responses.
 
     Returns:
         A Starlette application with StreamableHTTP support
@@ -391,6 +576,15 @@ def create_streamable_http_app(
     server_routes.extend(server._get_additional_http_routes())
 
     # Add middleware
+    if host_origin_protection:
+        server_middleware.insert(
+            0,
+            Middleware(
+                HostOriginGuardMiddleware,
+                allowed_hosts=allowed_hosts,
+                allowed_origins=allowed_origins,
+            ),
+        )
     if middleware:
         server_middleware.extend(middleware)
 
