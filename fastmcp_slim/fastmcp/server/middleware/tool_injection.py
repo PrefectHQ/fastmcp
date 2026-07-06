@@ -111,9 +111,13 @@ list_resources_tool = Tool.from_function(
 
 async def read_resource(
     context: Context,
-    uri: Annotated[AnyUrl | str, "The URI of the resource to read."],
+    uri: Annotated[AnyUrl, "The URI of the resource to read."],
 ) -> ResourceResult:
     """Read a resource available on the server."""
+    # Typed as AnyUrl (not `AnyUrl | str`) so pydantic normalizes the incoming
+    # URI the same way the MCP protocol boundary does (e.g. `file://config.txt`
+    # -> `file://config.txt/`). A bare `str` branch would skip normalization and
+    # miss resources whose stored key carries the canonical trailing slash.
     return await context.read_resource(uri=uri)
 
 
