@@ -134,11 +134,11 @@ class SSETransport(ClientTransport):
         # instead we simply leave the kwarg out if it's not provided
         if self.sse_read_timeout is not None:
             client_kwargs["sse_read_timeout"] = self.sse_read_timeout.total_seconds()
-        if session_kwargs.get("read_timeout_seconds") is not None:
-            read_timeout_seconds = cast(
-                datetime.timedelta, session_kwargs.get("read_timeout_seconds")
-            )
-            client_kwargs["timeout"] = read_timeout_seconds.total_seconds()
+        # SDK v2 session read timeouts are float seconds (see SessionKwargs);
+        # sse_client's `timeout` param is likewise float seconds.
+        read_timeout_seconds = session_kwargs.get("read_timeout_seconds")
+        if read_timeout_seconds is not None:
+            client_kwargs["timeout"] = read_timeout_seconds
 
         if self.httpx_client_factory is not None:
             client_kwargs["httpx_client_factory"] = self.httpx_client_factory

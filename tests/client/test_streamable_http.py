@@ -266,7 +266,7 @@ class TestTimeout:
     async def test_timeout(self, streamable_http_server: str):
         # note this transport behaves differently than others and raises
         # MCPError from the *client* context
-        with pytest.raises(MCPError, match="Timed out"):
+        with pytest.raises(MCPError, match="timed out"):
             async with Client(
                 transport=StreamableHttpTransport(streamable_http_server),
                 timeout=0.02,
