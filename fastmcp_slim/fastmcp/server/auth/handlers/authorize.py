@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 from typing import TYPE_CHECKING
+from urllib.parse import parse_qs, urlparse
 
 from mcp.server.auth.handlers.authorize import (
     AuthorizationHandler as SDKAuthorizationHandler,
@@ -23,6 +24,7 @@ from pydantic import AnyHttpUrl
 from starlette.requests import Request
 from starlette.responses import Response
 
+from fastmcp.server.auth.redirect_validation import add_query_params
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.ui import (
     INFO_BOX_STYLES,
@@ -208,6 +210,13 @@ class AuthorizationHandler(SDKAuthorizationHandler):
         """
         # Call the SDK handler
         response = await super().handle(request)
+
+        if 300 <= response.status_code < 400 and "location" in response.headers:
+            redirect_url = response.headers["location"]
+            if "error" in parse_qs(urlparse(redirect_url).query):
+                response.headers["location"] = add_query_params(
+                    redirect_url, {"iss": f"{self._base_url}/"}
+                )
 
         # Check if this is a client not found error
         if response.status_code == 400:

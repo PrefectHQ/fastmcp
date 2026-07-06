@@ -26,7 +26,7 @@ from collections import OrderedDict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, Literal
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import urlparse, urlunparse
 
 import anyio
 import httpx
@@ -91,7 +91,10 @@ from fastmcp.server.auth.oauth_proxy.models import (
     _hash_token,
 )
 from fastmcp.server.auth.oauth_proxy.ui import create_error_html
-from fastmcp.server.auth.redirect_validation import validate_redirect_uri
+from fastmcp.server.auth.redirect_validation import (
+    add_query_params,
+    validate_redirect_uri,
+)
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 
@@ -114,15 +117,6 @@ class OAuthProxyMetadataHandler:
             content=content,
             headers={"Cache-Control": "public, max-age=3600"},
         )
-
-
-def _add_query_params(url: str, params: dict[str, str]) -> str:
-    parsed = urlparse(url)
-    query_items = [
-        *parse_qsl(parsed.query, keep_blank_values=True),
-        *params.items(),
-    ]
-    return urlunparse(parsed._replace(query=urlencode(query_items)))
 
 
 def _normalize_resource_url(url: str) -> str:
@@ -2219,7 +2213,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     if error_description:
                         error_params["error_description"] = error_description
                     return RedirectResponse(
-                        url=_add_query_params(client_redirect_uri, error_params),
+                        url=add_query_params(client_redirect_uri, error_params),
                         status_code=302,
                     )
                 # No trusted redirect_uri available — show local error page
@@ -2383,9 +2377,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 "iss": str(self.base_url),
             }
 
-            client_callback_url = _add_query_params(
-                client_redirect_uri, callback_params
-            )
+            client_callback_url = add_query_params(client_redirect_uri, callback_params)
 
             logger.debug(f"Forwarding to client callback for transaction {txn_id}")
 

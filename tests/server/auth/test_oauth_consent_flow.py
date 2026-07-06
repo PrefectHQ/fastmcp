@@ -631,10 +631,54 @@ class TestConsentSecurity:
             q = parse_qs(parsed.query)
             assert q.get("error") == ["access_denied"]
             assert q.get("state") == ["client-state-xyz"]
+            assert q.get("iss") == ["https://myserver.example/"]
             # Signed denied cookie should be set
             assert "MCP_DENIED_CLIENTS" in ";\n".join(
                 r.headers.get("set-cookie", "").splitlines()
             )
+
+    async def test_remembered_denial_redirects_with_issuer(
+        self, oauth_proxy_https_remember
+    ):
+        """Remembered consent denial redirects with RFC 9207 issuer."""
+        client_id = "client-denied"
+        redirect = "http://localhost:5007/callback"
+        txn_id, _ = await _start_flow(oauth_proxy_https_remember, client_id, redirect)
+        app = Starlette(routes=oauth_proxy_https_remember.get_routes())
+        with TestClient(app) as c:
+            consent = c.get(f"/consent?txn_id={txn_id}")
+            csrf = _extract_csrf(consent.text)
+            assert csrf
+            for k, v in consent.cookies.items():
+                c.cookies.set(k, v)
+            r = c.post(
+                "/consent",
+                data={"action": "deny", "txn_id": txn_id, "csrf_token": csrf},
+                follow_redirects=False,
+            )
+            set_cookie = ";\n".join(r.headers.get("set-cookie", "").splitlines())
+            m = re.search(r"__Host-MCP_DENIED_CLIENTS=([^;]+)", set_cookie)
+            assert m
+            denied_cookie = m.group(1)
+
+            new_txn, _ = await _start_flow(
+                oauth_proxy_https_remember, client_id, redirect
+            )
+            c.cookies.set("__Host-MCP_DENIED_CLIENTS", denied_cookie)
+            r2 = c.get(
+                f"/consent?txn_id={new_txn}",
+                headers={"Sec-Fetch-Site": "none"},
+                follow_redirects=False,
+            )
+
+            assert r2.status_code in (302, 303)
+            loc = r2.headers.get("location", "")
+            parsed = urlparse(loc)
+            assert parsed.scheme == "http" and parsed.netloc.startswith("localhost")
+            q = parse_qs(parsed.query)
+            assert q.get("error") == ["access_denied"]
+            assert q.get("state") == ["client-state-xyz"]
+            assert q.get("iss") == ["https://myserver.example/"]
 
     async def test_approve_sets_cookie_and_redirects_to_upstream(
         self, oauth_proxy_https_remember

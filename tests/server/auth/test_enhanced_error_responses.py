@@ -7,8 +7,13 @@ This test suite covers:
 4. Server branding in error pages
 """
 
+import asyncio
+from urllib.parse import parse_qs, urlparse
+
 import pytest
+from key_value.aio.stores.memory import MemoryStore
 from mcp.shared.auth import OAuthClientInformationFull
+from mcp.types import Icon
 from pydantic import AnyUrl
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
@@ -16,6 +21,7 @@ from starlette.testclient import TestClient
 from fastmcp import FastMCP
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
+from fastmcp.server.http import create_streamable_http_app
 
 
 class TestEnhancedAuthorizationHandler:
@@ -29,8 +35,6 @@ class TestEnhancedAuthorizationHandler:
     @pytest.fixture
     def oauth_proxy(self, rsa_key_pair):
         """Create OAuth proxy for testing."""
-        from key_value.aio.stores.memory import MemoryStore
-
         return OAuthProxy(
             upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
             upstream_token_endpoint="https://github.com/login/oauth/access_token",
@@ -128,8 +132,6 @@ class TestEnhancedAuthorizationHandler:
         )
 
         # Need to register synchronously
-        import asyncio
-
         asyncio.run(oauth_proxy.register_client(client_info))
 
         with TestClient(app) as client:
@@ -150,10 +152,42 @@ class TestEnhancedAuthorizationHandler:
             assert response.status_code == 302
             assert "/consent" in response.headers["location"]
 
+    def test_redirect_error_includes_proxy_issuer(self, oauth_proxy):
+        """Authorization error redirects should include RFC 9207 issuer."""
+        app = Starlette(routes=oauth_proxy.get_routes())
+
+        client_info = OAuthClientInformationFull(
+            client_id="valid-client",
+            client_secret="valid-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+            scope="read",
+        )
+
+        asyncio.run(oauth_proxy.register_client(client_info))
+
+        with TestClient(app) as client:
+            response = client.get(
+                "/authorize",
+                params={
+                    "client_id": "valid-client",
+                    "redirect_uri": "http://localhost:12345/callback",
+                    "response_type": "code",
+                    "code_challenge": "test-challenge",
+                    "state": "test-state",
+                    "scope": "admin",
+                },
+                headers={"Accept": "text/html"},
+                follow_redirects=False,
+            )
+
+            assert response.status_code == 302
+            query_params = parse_qs(urlparse(response.headers["location"]).query)
+            assert query_params["error"] == ["invalid_scope"]
+            assert query_params["state"] == ["test-state"]
+            assert query_params["iss"] == ["https://myserver.com/"]
+
     def test_html_error_includes_server_branding(self, oauth_proxy):
         """Test that HTML error page includes server branding from FastMCP instance."""
-        from mcp.types import Icon
-
         # Create FastMCP server with custom branding
         mcp = FastMCP(
             "My Custom Server",
@@ -204,8 +238,6 @@ class TestEnhancedRequireAuthMiddleware:
 
     def test_missing_auth_no_error_attribute(self, jwt_verifier):
         """Test that missing auth returns 401 without error attribute (RFC 6750 §3.1)."""
-        from fastmcp.server.http import create_streamable_http_app
-
         server = FastMCP("Test Server")
 
         @server.tool
@@ -232,8 +264,6 @@ class TestEnhancedRequireAuthMiddleware:
 
     def test_invalid_token_enhanced_error_message(self, jwt_verifier):
         """Test that invalid_token errors have enhanced error messages."""
-        from fastmcp.server.http import create_streamable_http_app
-
         server = FastMCP("Test Server")
 
         @server.tool
@@ -264,8 +294,6 @@ class TestEnhancedRequireAuthMiddleware:
 
     def test_invalid_token_www_authenticate_header_format(self, jwt_verifier):
         """Test that invalid token WWW-Authenticate header includes error attribute."""
-        from fastmcp.server.http import create_streamable_http_app
-
         server = FastMCP("Test Server")
         app = create_streamable_http_app(
             server=server,
@@ -290,8 +318,6 @@ class TestEnhancedRequireAuthMiddleware:
     def test_insufficient_scope_not_enhanced(self, rsa_key_pair):
         """Test that insufficient_scope errors are not modified."""
         # Create a valid token with wrong scopes
-        from fastmcp.server.http import create_streamable_http_app
-
         jwt_verifier = JWTVerifier(
             public_key=rsa_key_pair.public_key,
             issuer="https://test.com",
@@ -326,8 +352,6 @@ class TestContentNegotiation:
     @pytest.fixture
     def oauth_proxy(self):
         """Create OAuth proxy for testing."""
-        from key_value.aio.stores.memory import MemoryStore
-
         return OAuthProxy(
             upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
             upstream_token_endpoint="https://github.com/login/oauth/access_token",

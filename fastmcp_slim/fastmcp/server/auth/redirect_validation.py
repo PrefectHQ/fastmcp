@@ -5,7 +5,7 @@ protecting against userinfo-based bypass attacks like http://localhost@evil.com.
 """
 
 import fnmatch
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlunparse
 
 from pydantic import AnyUrl
 
@@ -17,6 +17,16 @@ UNSAFE_REDIRECT_URI_SCHEMES = frozenset(
         "vbscript",
     }
 )
+
+
+def add_query_params(url: str, params: dict[str, str]) -> str:
+    """Append query parameters to a URL while preserving existing parameters."""
+    parsed = urlparse(url)
+    query_items = [
+        *parse_qsl(parsed.query, keep_blank_values=True),
+        *params.items(),
+    ]
+    return urlunparse(parsed._replace(query=urlencode(query_items)))
 
 
 def _parse_host_port(netloc: str) -> tuple[str | None, str | None]:
