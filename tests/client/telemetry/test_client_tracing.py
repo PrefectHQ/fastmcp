@@ -571,13 +571,16 @@ class TestSessionIdOnSpans:
 
         spans = trace_exporter.get_finished_spans()
 
-        # Find client-side span
+        # Find the FastMCP client-side span. SDK v2 emits its own native OTel
+        # spans (also lacking `fastmcp.server.name`), so select on the
+        # `fastmcp.component.key` attribute that only our client_span sets.
         client_span = next(
             (
                 s
                 for s in spans
                 if s.name == "tools/call echo"
                 and s.attributes is not None
+                and "fastmcp.component.key" in s.attributes
                 and "fastmcp.server.name" not in s.attributes
             ),
             None,
@@ -635,13 +638,15 @@ class TestSessionIdOnSpans:
 
         spans = trace_exporter.get_finished_spans()
 
-        # Find both spans
+        # Find both spans. Select the FastMCP client span on
+        # `fastmcp.component.key` to avoid matching SDK v2's native OTel span.
         client_span = next(
             (
                 s
                 for s in spans
                 if s.name == "tools/call echo"
                 and s.attributes is not None
+                and "fastmcp.component.key" in s.attributes
                 and "fastmcp.server.name" not in s.attributes
             ),
             None,
