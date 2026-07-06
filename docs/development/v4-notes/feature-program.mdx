@@ -106,6 +106,8 @@ The migration already routes `initialize` interception through the SDK's new `Se
 
 The migration keeps `fastmcp.Client` as a wrapper around `mcp.ClientSession` in legacy/handshake mode. The v4 client work adopts the SDK's first-class `mcp.client.Client`: a `mode='auto'` that negotiates the era, `discover()` for sessionless capability discovery, and the MRTR input-required driver so the client can answer multi-round elicitation and sampling input-requests. This is the client-side half of full `2026-07-28` support.
 
+This workstream also owns the server-side statelessness design holes — `ctx.session_id` / `set_state` round-tripping, task push and background elicitation, and stateful-proxy affinity — since all three turn on the same "what is a session without a session?" question. See [Statelessness on 2026-07-28](/development/v4-notes/known-gaps#statelessness-on-2026-07-28) for the full accounting.
+
 ## Subscriptions, cache hints, extensions, OTel
 
 **Status: Not started.**

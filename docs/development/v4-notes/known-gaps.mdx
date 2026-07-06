@@ -35,6 +35,38 @@ Every shim in the migration is temporary and carries a documented removal trigge
 
 The `TaskNotificationHandler` binding (sdk-feedback #8) is the client-side equivalent: it registers a `NotificationBinding` for `notifications/tasks/status` because the SDK no longer tees custom server notifications to the message handler.
 
+## Statelessness on 2026-07-28
+
+The `2026-07-28` era is stateless by protocol construction, and the recurring maintainer question is whether that statelessness has to be woven through FastMCP everywhere. It does not — but the honest accounting has three parts: features that are legacy-only because the protocol removed the mechanism, features that already work because they never relied on a session, and a short list of design holes where the current code *doesn't error* but also *doesn't work*. Everything below concerns `2026-07-28` connections only. Every client in the field today negotiates a handshake era, where all of this behaves exactly as it always has.
+
+**The SDK ground truth.** On the modern paths the SDK's `Connection` is strictly per-request: a fresh `Connection` is built from each POST's envelope, its `exit_stack` unwinds when the request returns, `connection.session_id` is always `None`, and `connection.state` is a fresh dict per request. The manager's `stateless` flag never enters the picture — modern routing short-circuits ahead of it. There is no standing server→client stream: notifications emitted *during* a request ride that POST's own SSE sink, and anything emitted after the POST returns is dropped (`_NO_CHANNEL`); server→client *requests* raise `NoBackChannelError`. The only replacement is `subscriptions/listen`, which carries four list-changed / resource-updated event kinds and nothing else — no logging, progress, or task-status events, no resumability, and it is not yet wired into FastMCP. There is no `EventStore` or `Last-Event-ID` on modern paths at all; both belong to the legacy transport.
+
+### Legacy-only by construction — document, don't build
+
+These are not bugs. The protocol removed the mechanism they depend on, so they are simply out of scope on `2026-07-28`:
+
+- **Per-session log levels.** `logging/setLevel` is absent from the 2026 method registry, so the `_client_log_levels` handler is unreachable. There is no per-session log-level state because there is no session.
+- **`EventStore` / resumability.** `EventStore`, `SessionScopedEventStore`, and Last-Event-ID resumption are never constructed on the modern paths. Resumability presupposes a durable stream, which the era does not have.
+- **Ping keepalive.** Server-initiated ping is a server→client request and is therefore structurally a no-op on modern connections; the SDK owns SSE-level pings on this transport.
+
+### Already stateless by construction — works on 2026
+
+These work on `2026-07-28` today because they never leaned on a protocol session:
+
+- **`tasks/get` polling.** Task result retrieval is keyed by `task_id` and backed by Docket/Redis, so a client polls across independent requests without any session affinity.
+- **OAuth bearer validation.** Auth is per-request bearer validation — every POST carries and re-validates its own credential.
+- **In-request progress and logging notifications.** Notifications emitted while a request is still streaming ride that POST's SSE sink and are delivered normally.
+
+### Design holes deferred to the multi-protocol workstream
+
+The remaining items are real holes, deferred to the [first-class 2026 client](/development/v4-notes/feature-program#first-class-2026-client) workstream because they all reduce to one unanswered question — *what is a session when the protocol has none?* The danger in each is that the code currently returns without erroring, which reads as "works" but is actually silent degradation. Again: these affect `2026-07-28` connections only; on the handshake eras every one of them behaves correctly.
+
+- **`ctx.session_id` and `ctx.set_state` / `ctx.get_state` (broken even single-replica).** On a modern request `ctx.session_id` mints a fresh `uuid4`, cached on the per-request `connection.state` that is discarded when the request returns. So `ctx.set_state` and `ctx.get_state` silently never round-trip across requests — no error, just lost data. The open design decision is whether `session_id` should become `None` with `set_state` documented as session-era-only, or be re-based on an app-level key (the auth subject, or a client-supplied header).
+- **Task push and background elicitation (broken even single-replica).** The initial task-status notification is delivered only while the submitting POST is still streaming; the standalone subscription task pushes into a dead sink and its cleanup fires at request end, and the Redis relay is keyed by the throwaway per-request session id. Elicitation from a background task is impossible on 2026 by protocol construction — it needs an explicit era-gate that raises a clear error rather than hanging. Task-status push on 2026 would require adopting `subscriptions/listen` (which does not carry task events) or declaring the era poll-only.
+- **Stateful proxy affinity (degraded).** The stateful proxy's `_caches` are keyed by the per-request `Connection`, so on modern connections the proxy collapses to stateless proxying: results stay correct, but the per-session affinity guarantee is lost. This is decided alongside the `session_id` question — same root — or gated to the legacy/stdio transports.
+
+Multi-replica concerns (per-process rate-limiter buckets, shared Redis backends for state and tasks, a Redis `SubscriptionBus`) are deployment configuration rather than protocol gaps and are out of scope for this section.
+
 ## Upstream advisory dossier
 
 FastMCP acts as an advisor to the SDK team. The migration produced a dossier of ten findings (`sdk-feedback.md`) — verified bugs and hard edges to report upstream, plus questions to bundle into a feedback thread. The highest-priority items:
