@@ -9,6 +9,14 @@ FastMCP now builds on the MCP Python SDK v2. The SDK v2 makes two sweeping chang
 
 FastMCP absorbs almost all of this. Field access is bridged so your existing reads keep working, and the imports you were taught have a stable home in FastMCP itself. The sections below describe what FastMCP handles for you, the small number of changes you must make in your own code, and the deprecation timeline for the compatibility shims.
 
+## Environment requirements
+
+The SDK v2 raises FastMCP's dependency floors, which matters before any of your code runs.
+
+**pydantic >= 2.12 is now the floor.** If your project pins an older pydantic (for example `pydantic==2.11.*`), installing this FastMCP release fails with an unsatisfiable-resolution error from your installer — bump your pin to `>=2.12` first. If you don't pin pydantic at all, installers upgrade it silently as part of the FastMCP upgrade.
+
+**The server extra floors Starlette >= 1.0.** Modern FastAPI (0.11x and later) already runs on Starlette 1.x, so mounting a FastMCP server inside a FastAPI app coexists cleanly — verified with FastAPI 0.138.2. Only very old FastAPI versions pinned below Starlette 1.0 conflict; upgrade FastAPI if your resolver complains about Starlette.
+
 ## What FastMCP absorbs
 
 ### Legacy camelCase field access keeps working
@@ -70,15 +78,27 @@ A few client behaviors that touch the SDK are preserved so you don't have to cha
 
 - `Client(timeout=...)` accepts both a `timedelta` and a plain float number of seconds, as before.
 - `client.ping()` returns a `bool`.
-- `client.get_session_id()` and `client.session_id` return `None` on protocol eras that have no session, rather than raising.
+- `client.transport.get_session_id()` returns `None` on protocol eras that have no session, rather than raising. (The SDK v2 removed session-id access from its streamable HTTP transport; FastMCP reconstructs it on the transport object.)
 
 ## What you must change
 
 Three things are on you.
 
-**Your own `mcp.types` imports.** FastMCP can re-export types, but it can't rewrite imports in your code. Any `from mcp.types import X` or `import mcp.types` in your server or client will fail with an `ImportError`. Switch to `from fastmcp.types import X` for the common types, or `import mcp_types` for the rest.
+**Your own `mcp.types` imports.** FastMCP can re-export types, but it can't rewrite imports in your code. Any `from mcp.types import X` or `import mcp.types` in your server or client fails at import time with:
 
-**`McpError` construction.** The v1 pattern of wrapping an `ErrorData` and passing it positionally raises a `TypeError` under SDK v2. Construct the error with keyword arguments instead:
+```
+ModuleNotFoundError: No module named 'mcp.types'
+```
+
+The raw message gives no hint toward the fix, so if you see it after upgrading, this is why. Switch to `from fastmcp.types import X` for the common types, or `import mcp_types` for the rest.
+
+**`McpError` construction.** The v1 pattern of wrapping an `ErrorData` and passing it positionally fails under SDK v2 with:
+
+```
+TypeError: MCPError.__init__() missing 1 required positional argument: 'message'
+```
+
+Note the message prints the class as `MCPError` (uppercase) even though your code wrote `McpError` — the old name is an alias for the SDK's renamed class. Construct the error with keyword arguments instead:
 
 ```python
 from fastmcp.exceptions import McpError
@@ -97,6 +117,16 @@ Catching and `err.error.code` are unchanged — only construction moved.
 ## Deprecation timeline
 
 The camelCase bridge is a migration aid, not a permanent fixture. It works today and warns on every bridged read so you can find and update the affected call sites. Plan to migrate your reads to snake_case: the shims will be removed in a future release, after which only the snake_case names resolve — the same state you get today by setting `mcp_camelcase_compat = False`. Turning the setting off is a good way to surface every remaining camelCase read in your code as a hard `AttributeError` before the shims go away.
+
+## SDK deprecation warnings you may see
+
+Ordinary use of `ctx.info` (client logging) and `ctx.sample` now emits an SDK-level `MCPDeprecationWarning`:
+
+```
+The logging/sampling capability is deprecated as of 2026-07-28 (SEP-2577)
+```
+
+These warnings come from the MCP SDK, not from FastMCP, and they are benign: the features keep working on session-based (handshake-era) connections exactly as the protocol table below describes. The SDK is signaling that the `2026-07-28` protocol era removed these capabilities from the wire — the warning is about the protocol's direction, not about your code being broken today.
 
 ## Protocol version support
 
