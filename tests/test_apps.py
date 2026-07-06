@@ -6,9 +6,15 @@ extension negotiation, and the ``Context.client_supports_extension`` method.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from mcp_types import (
+    ClientCapabilities,
+    Implementation,
+    InitializeRequestParams,
+)
 
 from fastmcp import Client, FastMCP
 from fastmcp.apps import (
@@ -20,6 +26,7 @@ from fastmcp.apps import (
     app_config_to_meta_dict,
 )
 from fastmcp.server.context import Context
+from fastmcp.server.low_level import client_supports_extension
 
 # ---------------------------------------------------------------------------
 # Model serialization
@@ -432,6 +439,69 @@ class TestContextClientSupportsExtension:
         server = FastMCP("test")
         async with Context(fastmcp=server) as ctx:
             assert ctx.client_supports_extension(UI_EXTENSION_ID) is False
+
+
+class TestClientSupportsExtension:
+    """Tests for the low-level ``client_supports_extension`` helper.
+
+    SDK v2 declares ``extensions`` as a real field on ``ClientCapabilities``, so
+    a client sending ``ClientCapabilities(extensions={...})`` populates the field
+    directly (``model_extra`` stays ``None``). The helper must read the real
+    field, not only ``model_extra``.
+    """
+
+    @staticmethod
+    def _session_with_capabilities(
+        capabilities: ClientCapabilities | None,
+    ) -> Any:
+        params: InitializeRequestParams | None = None
+        if capabilities is not None:
+            params = InitializeRequestParams(
+                protocol_version="2026-07-28",
+                capabilities=capabilities,
+                client_info=Implementation(name="test-client", version="1.0"),
+            )
+        return SimpleNamespace(client_params=params)
+
+    def test_real_extensions_field(self):
+        """A client that sets the real `extensions` field is detected."""
+        caps = ClientCapabilities(extensions={UI_EXTENSION_ID: {}})
+        # Guard: the regression this covers is the field being populated while
+        # model_extra stays empty.
+        assert caps.model_extra in (None, {})
+        session = self._session_with_capabilities(caps)
+        assert client_supports_extension(session, UI_EXTENSION_ID) is True
+
+    def test_real_extensions_field_without_target_extension(self):
+        caps = ClientCapabilities(extensions={"other/extension": {}})
+        session = self._session_with_capabilities(caps)
+        assert client_supports_extension(session, UI_EXTENSION_ID) is False
+
+    def test_legacy_model_extra_fallback(self):
+        """Defensive fallback: capabilities whose real `extensions` field is None
+        but which carry `extensions` in `model_extra` are still detected.
+
+        SDK v2 always routes `extensions` to the real field, so this branch is
+        only reachable by a capabilities object serialized under an older schema;
+        we exercise it with a stand-in that mimics that shape.
+        """
+        fake_caps = SimpleNamespace(
+            extensions=None,
+            model_extra={"extensions": {UI_EXTENSION_ID: {}}},
+        )
+        session: Any = SimpleNamespace(
+            client_params=SimpleNamespace(capabilities=fake_caps)
+        )
+        assert client_supports_extension(session, UI_EXTENSION_ID) is True
+
+    def test_no_extensions(self):
+        caps = ClientCapabilities()
+        session = self._session_with_capabilities(caps)
+        assert client_supports_extension(session, UI_EXTENSION_ID) is False
+
+    def test_no_capabilities(self):
+        session = self._session_with_capabilities(None)
+        assert client_supports_extension(session, UI_EXTENSION_ID) is False
 
 
 # ---------------------------------------------------------------------------

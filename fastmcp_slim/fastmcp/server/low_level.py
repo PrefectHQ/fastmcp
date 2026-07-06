@@ -38,9 +38,14 @@ logger = get_logger(__name__)
 def client_supports_extension(session: ServerSession, extension_id: str) -> bool:
     """Check whether the connected client supports a given MCP extension.
 
-    Inspects the ``extensions`` extra field on ``ClientCapabilities`` sent by
-    the client during initialization. In v2 the client's initialize params are
+    Inspects the ``extensions`` capability on ``ClientCapabilities`` sent by the
+    client during initialization. In v2 the client's initialize params are
     reachable via ``session.client_params``.
+
+    SDK v2 declares ``extensions`` as a real field on ``ClientCapabilities``, so
+    a client sending ``ClientCapabilities(extensions={...})`` populates the field
+    directly. We read that field first and fall back to ``model_extra`` only for
+    legacy-serialized clients that carried ``extensions`` as an extra key.
     """
     client_params = session.client_params
     if client_params is None:
@@ -48,9 +53,12 @@ def client_supports_extension(session: ServerSession, extension_id: str) -> bool
     caps = client_params.capabilities
     if caps is None:
         return False
-    # ClientCapabilities uses extra="allow" — extensions is an extra field
-    extras = caps.model_extra or {}
-    extensions: dict[str, Any] | None = extras.get("extensions")
+    extensions: dict[str, Any] | None = caps.extensions
+    if extensions is None:
+        # Legacy fallback: clients that serialized `extensions` as an extra key
+        # (ClientCapabilities uses extra="allow") rather than the real field.
+        extras = caps.model_extra or {}
+        extensions = extras.get("extensions")
     if not extensions:
         return False
     return extension_id in extensions
