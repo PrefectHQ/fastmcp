@@ -10,7 +10,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-06-28T22:01:54.610739Z"
+exclude-newer = "2026-06-29T14:57:29.757967Z"
 exclude-newer-span = "P1W"
 
 [options.exclude-newer-package]
@@ -955,6 +955,7 @@ requires-dist = [{ name = "fastmcp-slim", extras = ["client", "server"], editabl
 name = "fastmcp-slim"
 source = { editable = "fastmcp_slim" }
 dependencies = [
+    { name = "mcp-types" },
     { name = "platformdirs" },
     { name = "pydantic", extra = ["email"] },
     { name = "pydantic-settings" },
@@ -979,7 +980,6 @@ client = [
     { name = "exceptiongroup" },
     { name = "httpx" },
     { name = "mcp" },
-    { name = "mcp-types" },
     { name = "opentelemetry-api" },
     { name = "py-key-value-aio", extra = ["filetree", "keyring", "memory"] },
     { name = "starlette" },
@@ -995,7 +995,6 @@ mcp = [
     { name = "exceptiongroup" },
     { name = "httpx" },
     { name = "mcp" },
-    { name = "mcp-types" },
     { name = "opentelemetry-api" },
     { name = "starlette" },
 ]
@@ -1012,7 +1011,6 @@ server = [
     { name = "jsonref" },
     { name = "jsonschema-path" },
     { name = "mcp" },
-    { name = "mcp-types" },
     { name = "openapi-pydantic" },
     { name = "opentelemetry-api" },
     { name = "packaging" },
@@ -1052,9 +1050,7 @@ requires-dist = [
     { name = "mcp", marker = "extra == 'client'", specifier = "==2.0.0b1" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = "==2.0.0b1" },
     { name = "mcp", marker = "extra == 'server'", specifier = "==2.0.0b1" },
-    { name = "mcp-types", marker = "extra == 'client'", specifier = "==2.0.0b1" },
-    { name = "mcp-types", marker = "extra == 'mcp'", specifier = "==2.0.0b1" },
-    { name = "mcp-types", marker = "extra == 'server'", specifier = "==2.0.0b1" },
+    { name = "mcp-types", specifier = "==2.0.0b1" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.102.0" },
     { name = "openapi-pydantic", marker = "extra == 'server'", specifier = ">=0.5.1" },
     { name = "opentelemetry-api", marker = "extra == 'client'", specifier = ">=1.28.0" },
