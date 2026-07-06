@@ -789,7 +789,7 @@ class FastMCP(
 
         if not authorized:
             return None
-        return cast(Tool, max(authorized, key=version_sort_key))
+        return max(authorized, key=version_sort_key)
 
     async def list_resources(
         self, *, run_middleware: bool = True
@@ -924,7 +924,7 @@ class FastMCP(
 
         if not authorized:
             return None
-        return cast(Resource, max(authorized, key=version_sort_key))
+        return max(authorized, key=version_sort_key)
 
     async def list_resource_templates(
         self, *, run_middleware: bool = True
@@ -1060,7 +1060,7 @@ class FastMCP(
 
         if not authorized:
             return None
-        return cast(ResourceTemplate, max(authorized, key=version_sort_key))
+        return max(authorized, key=version_sort_key)
 
     async def list_prompts(self, *, run_middleware: bool = True) -> Sequence[Prompt]:
         """List all enabled prompts from providers.
@@ -1182,7 +1182,7 @@ class FastMCP(
 
         if not authorized:
             return None
-        return cast(Prompt, max(authorized, key=version_sort_key))
+        return max(authorized, key=version_sort_key)
 
     @overload
     async def call_tool(

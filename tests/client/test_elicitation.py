@@ -319,7 +319,7 @@ class TestScalarResponseTypes:
             result = await context.elicit(message="", response_type=None)
             assert result.action == "accept"
             assert isinstance(result, AcceptedElicitation)
-            accepted = cast(AcceptedElicitation[dict[str, Any]], result)
+            accepted = result
             assert isinstance(accepted.data, dict)
             return accepted.data
 
@@ -341,7 +341,7 @@ class TestScalarResponseTypes:
             result = await context.elicit(message="", response_type=None)
             assert result.action == "accept"
             assert isinstance(result, AcceptedElicitation)
-            accepted = cast(AcceptedElicitation[dict[str, Any]], result)
+            accepted = result
             assert isinstance(accepted.data, dict)
             return accepted.data
 

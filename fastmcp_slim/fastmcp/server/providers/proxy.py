@@ -643,7 +643,7 @@ class ProxyProvider(Provider):
             matching = [t for t in matching if version.matches(t.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
+        return max(matching, key=version_sort_key)
 
     # -------------------------------------------------------------------------
     # Resource methods
@@ -680,7 +680,7 @@ class ProxyProvider(Provider):
             matching = [r for r in matching if version.matches(r.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
+        return max(matching, key=version_sort_key)
 
     # -------------------------------------------------------------------------
     # Resource template methods
@@ -717,7 +717,7 @@ class ProxyProvider(Provider):
             matching = [t for t in matching if version.matches(t.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
+        return max(matching, key=version_sort_key)
 
     # -------------------------------------------------------------------------
     # Prompt methods
@@ -754,7 +754,7 @@ class ProxyProvider(Provider):
             matching = [p for p in matching if version.matches(p.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
+        return max(matching, key=version_sort_key)
 
     # -------------------------------------------------------------------------
     # Task methods
@@ -1114,7 +1114,7 @@ class ProxyClient(Client[ClientTransportT]):
             if key not in kwargs:
                 kwargs[key] = _make_restoring_handler(default_fn, self._proxy_rc_ref)
                 self._proxy_restoring_handler_keys.add(key)
-        super().__init__(transport=transport, **kwargs)
+        super().__init__(transport=transport, **kwargs)  # ty: ignore[no-matching-overload]
 
         # Enable forwarding of inbound HTTP headers (e.g. authorization) to
         # the upstream server. This is only appropriate for proxy clients,

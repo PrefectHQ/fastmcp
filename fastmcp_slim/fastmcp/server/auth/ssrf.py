@@ -22,7 +22,23 @@ from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
 
-NAT64_WELL_KNOWN_PREFIX = ipaddress.ip_network("64:ff9b::/96")
+NAT64_PREFIXES: tuple[
+    tuple[ipaddress.IPv6Network, tuple[tuple[int, int, int, int], ...]], ...
+] = (
+    (ipaddress.IPv6Network("64:ff9b::/96"), ((12, 13, 14, 15),)),
+    (
+        ipaddress.IPv6Network("64:ff9b:1::/48"),
+        (
+            (6, 7, 9, 10),
+            (7, 9, 10, 11),
+            (9, 10, 11, 12),
+            (12, 13, 14, 15),
+        ),
+    ),
+)
+LOW32_OFFSETS = (12, 13, 14, 15)
+IPV4_TRANSLATED_PREFIX = ipaddress.IPv6Network("0:0:0:0:ffff:0:0:0/96")
+ISATAP_INTERFACE_IDS = (b"\x00\x00\x5e\xfe", b"\x02\x00\x5e\xfe")
 
 
 def format_ip_for_url(ip_str: str) -> str:
@@ -54,6 +70,39 @@ class SSRFFetchError(Exception):
     """Raised when SSRF-safe fetch fails."""
 
 
+def _embedded_ipv4_addresses(
+    ip: ipaddress.IPv6Address,
+) -> set[ipaddress.IPv4Address]:
+    """Return IPv4 addresses embedded in known IPv6 transition forms."""
+    candidates: set[ipaddress.IPv4Address] = set()
+    packed = ip.packed
+
+    def from_offsets(offsets: tuple[int, int, int, int]) -> ipaddress.IPv4Address:
+        return ipaddress.IPv4Address(bytes(packed[i] for i in offsets))
+
+    if ip.ipv4_mapped:
+        candidates.add(ip.ipv4_mapped)
+    if ip.sixtofour:
+        candidates.add(ip.sixtofour)
+    if ip.teredo:
+        server, client = ip.teredo
+        candidates.update((server, client))
+    if ip in IPV4_TRANSLATED_PREFIX:
+        candidates.add(from_offsets(LOW32_OFFSETS))
+
+    for prefix, offset_options in NAT64_PREFIXES:
+        if ip in prefix:
+            candidates.update(from_offsets(offsets) for offsets in offset_options)
+
+    if int(ip) >> 32 == 0 and not ip.is_loopback and not ip.is_unspecified:
+        candidates.add(from_offsets(LOW32_OFFSETS))
+
+    if packed[8:12] in ISATAP_INTERFACE_IDS:
+        candidates.add(from_offsets(LOW32_OFFSETS))
+
+    return candidates
+
+
 def is_ip_allowed(ip_str: str) -> bool:
     """Check if an IP address is allowed (must be globally routable unicast).
 
@@ -63,7 +112,7 @@ def is_ip_allowed(ip_str: str) -> bool:
     - Link-local (169.254.x, fe80::) - includes AWS metadata!
     - Reserved, unspecified
     - RFC6598 Carrier-Grade NAT (100.64.0.0/10) - can point to internal networks
-    - NAT64 (64:ff9b::/96) - can point to internal networks
+    - IPv6 transition forms that embed blocked IPv4 targets
 
     Additionally blocks multicast addresses (not caught by is_global).
 
@@ -78,26 +127,18 @@ def is_ip_allowed(ip_str: str) -> bool:
     except ValueError:
         return False
 
+    if isinstance(ip, ipaddress.IPv6Address):
+        if any(
+            not is_ip_allowed(str(embedded_ip))
+            for embedded_ip in _embedded_ipv4_addresses(ip)
+        ):
+            return False
+
     if not ip.is_global:
         return False
 
     # Block multicast (not caught by is_global for some ranges)
-    if ip.is_multicast:
-        return False
-
-    # IPv6-specific checks for embedded IPv4 addresses
-    if isinstance(ip, ipaddress.IPv6Address):
-        if ip.ipv4_mapped:
-            return is_ip_allowed(str(ip.ipv4_mapped))
-        if ip.sixtofour:
-            return is_ip_allowed(str(ip.sixtofour))
-        if ip.teredo:
-            server, client = ip.teredo
-            return is_ip_allowed(str(server)) and is_ip_allowed(str(client))
-        if ip in NAT64_WELL_KNOWN_PREFIX:
-            return is_ip_allowed(str(ipaddress.IPv4Address(ip.packed[-4:])))
-
-    return True
+    return not ip.is_multicast
 
 
 async def resolve_hostname(hostname: str, port: int = 443) -> list[str]:
