@@ -164,18 +164,19 @@ class ClientPromptsMixin:
 
             # If meta provided, use send_request for SEP-1686 task support
             if propagated_meta:
-                task_dict = propagated_meta.get("modelcontextprotocol.io/task")
+                # SDK v2: GetPromptRequestParams has no `task` field, so prompt
+                # gets cannot be submitted as background tasks over the wire and
+                # always graceful-degrade to immediate execution (sdk-feedback #3).
                 request = mcp_types.GetPromptRequest(
                     params=mcp_types.GetPromptRequestParams(
                         name=name,
                         arguments=serialized_arguments,
-                        task=mcp_types.TaskMetadata(**task_dict) if task_dict else None,
                         _meta=request_meta,  # type: ignore[unknown-argument]  # pydantic alias
                     )
                 )
                 result = await self._await_with_session_monitoring(
                     self.session.send_request(
-                        request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+                        request=request,  # type: ignore[arg-type]
                         result_type=mcp_types.GetPromptResult,
                     )
                 )
@@ -301,11 +302,14 @@ class ClientPromptsMixin:
                         "utf-8"
                     )
 
+        # SDK v2: GetPromptRequestParams has no `task` field, so this request
+        # cannot carry task metadata over the wire and the server graceful-
+        # degrades to immediate execution (sdk-feedback #3). `ttl` is retained on
+        # the public API but has no wire representation here.
         request = mcp_types.GetPromptRequest(
             params=mcp_types.GetPromptRequestParams(
                 name=name,
                 arguments=serialized_arguments,
-                task=mcp_types.TaskMetadata(ttl=ttl),
                 _meta=request_meta,  # type: ignore[unknown-argument]  # pydantic alias
             )
         )
@@ -313,7 +317,7 @@ class ClientPromptsMixin:
         # Server returns CreateTaskResult (task accepted) or GetPromptResult (graceful degradation)
         wrapped_result = await self._await_with_session_monitoring(
             self.session.send_request(
-                request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+                request=request,  # type: ignore[arg-type]
                 result_type=PromptTaskResponseUnion,
             )
         )

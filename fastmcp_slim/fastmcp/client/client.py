@@ -862,17 +862,25 @@ class Client(
         message: str | None = None,
     ) -> None:
         """Send a progress notification."""
-        await self.session.send_progress_notification(
+        # Deprecated upstream in SDK v2 but deliberately kept per compat directive;
+        # removed with the multi-round-trip follow-up.
+        await self.session.send_progress_notification(  # ty: ignore[deprecated]
             progress_token, progress, total, message
         )
 
     async def set_logging_level(self, level: mcp_types.LoggingLevel) -> None:
         """Send a logging/setLevel request."""
-        await self._await_with_session_monitoring(self.session.set_logging_level(level))
+        # Deprecated upstream in SDK v2 but deliberately kept per compat directive;
+        # removed with the multi-round-trip follow-up.
+        await self._await_with_session_monitoring(
+            self.session.set_logging_level(level)  # ty: ignore[deprecated]
+        )
 
     async def send_roots_list_changed(self) -> None:
         """Send a roots/list_changed notification."""
-        await self.session.send_roots_list_changed()
+        # Deprecated upstream in SDK v2 but deliberately kept per compat directive;
+        # removed with the multi-round-trip follow-up.
+        await self.session.send_roots_list_changed()  # ty: ignore[deprecated]
 
     # --- Completion ---
 

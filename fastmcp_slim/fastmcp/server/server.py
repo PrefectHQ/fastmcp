@@ -412,7 +412,7 @@ class FastMCP(
         self._started: asyncio.Event = asyncio.Event()
 
         # Generate random ID if no name provided
-        self._mcp_server: LowLevelServer[LifespanResultT, Any] = LowLevelServer[
+        self._mcp_server: LowLevelServer[LifespanResultT] = LowLevelServer[
             LifespanResultT
         ](
             fastmcp=self,
@@ -1260,7 +1260,9 @@ class FastMCP(
                     message=mcp_types.CallToolRequestParams(
                         name=name,
                         arguments=arguments or {},
-                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # pydantic alias
+                        # `_meta` carries the app-level `fastmcp` version key, which the
+                        # reserved-key RequestParamsMeta TypedDict can't express statically.
+                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # ty: ignore[invalid-argument-type]
                     ),
                     source="client",
                     type="request",
@@ -1428,7 +1430,9 @@ class FastMCP(
                 mw_context = MiddlewareContext(
                     message=mcp_types.ReadResourceRequestParams(
                         uri=str(uri),
-                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # pydantic alias
+                        # `_meta` carries the app-level `fastmcp` version key, which the
+                        # reserved-key RequestParamsMeta TypedDict can't express statically.
+                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # ty: ignore[invalid-argument-type]
                     ),
                     source="client",
                     type="request",
@@ -1605,7 +1609,9 @@ class FastMCP(
                     message=mcp_types.GetPromptRequestParams(
                         name=name,
                         arguments=arguments,
-                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # pydantic alias
+                        # `_meta` carries the app-level `fastmcp` version key, which the
+                        # reserved-key RequestParamsMeta TypedDict can't express statically.
+                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # ty: ignore[invalid-argument-type]
                     ),
                     source="client",
                     type="request",

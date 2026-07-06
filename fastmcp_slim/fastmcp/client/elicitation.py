@@ -5,7 +5,7 @@ from typing import Any, Generic, TypeAlias
 
 import mcp_types
 from mcp import ClientSession
-from mcp.client.session import ElicitationFnT
+from mcp.client.session import ClientRequestContext, ElicitationFnT
 from mcp_types import ElicitRequestFormParams, ElicitRequestParams
 from mcp_types import ElicitResult as MCPElicitResult
 from pydantic_core import to_jsonable_python
@@ -39,7 +39,7 @@ def create_elicitation_callback(
     elicitation_handler: ElicitationHandler,
 ) -> ElicitationFnT:
     async def _elicitation_handler(
-        context: RequestContext[ClientSession, LifespanContextT],
+        context: ClientRequestContext,
         params: ElicitRequestParams,
     ) -> MCPElicitResult | mcp_types.ErrorData:
         try:
@@ -53,8 +53,14 @@ def create_elicitation_callback(
                 # URL-based elicitation doesn't have a schema
                 response_type = None
 
+            # The public ElicitationHandler alias is typed against the
+            # subscriptable RequestContext shim; the runtime object is the SDK's
+            # ClientRequestContext, passed through opaquely.
             result = await elicitation_handler(
-                params.message, response_type, params, context
+                params.message,
+                response_type,
+                params,
+                context,  # ty: ignore[invalid-argument-type]
             )
             # if the user returns data, we assume they've accepted the elicitation
             if not isinstance(result, ElicitResult):

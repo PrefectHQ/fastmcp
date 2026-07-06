@@ -232,18 +232,19 @@ class ClientResourcesMixin:
 
             # If meta provided, use send_request for SEP-1686 task support
             if propagated_meta:
-                task_dict = propagated_meta.get("modelcontextprotocol.io/task")
-                # SDK v2: ReadResourceRequestParams.uri is a plain string.
+                # SDK v2: ReadResourceRequestParams has no `task` field, so
+                # resource reads cannot be submitted as background tasks over the
+                # wire and always graceful-degrade to immediate execution
+                # (sdk-feedback #3). The uri is a plain string on the wire.
                 request = mcp_types.ReadResourceRequest(
                     params=mcp_types.ReadResourceRequestParams(
                         uri=uri_str,
-                        task=mcp_types.TaskMetadata(**task_dict) if task_dict else None,
                         _meta=request_meta,  # type: ignore[unknown-argument]  # pydantic alias
                     )
                 )
                 result = await self._await_with_session_monitoring(
                     self.session.send_request(
-                        request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+                        request=request,  # type: ignore[arg-type]
                         result_type=mcp_types.ReadResourceResult,
                     )
                 )
@@ -363,10 +364,13 @@ class ClientResourcesMixin:
         # are stored under the AnyUrl-normalized form, so normalize to match.
         uri_str = str(AnyUrl(uri)) if isinstance(uri, str) else str(uri)
 
+        # SDK v2: ReadResourceRequestParams has no `task` field, so this request
+        # cannot carry task metadata over the wire and the server graceful-
+        # degrades to immediate execution (sdk-feedback #3). `ttl` is retained on
+        # the public API but has no wire representation here.
         request = mcp_types.ReadResourceRequest(
             params=mcp_types.ReadResourceRequestParams(
                 uri=uri_str,
-                task=mcp_types.TaskMetadata(ttl=ttl),
                 _meta=request_meta,  # type: ignore[unknown-argument]  # pydantic alias
             )
         )
@@ -374,7 +378,7 @@ class ClientResourcesMixin:
         # Server returns CreateTaskResult (task accepted) or ReadResourceResult (graceful degradation)
         wrapped_result = await self._await_with_session_monitoring(
             self.session.send_request(
-                request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+                request=request,  # type: ignore[arg-type]
                 result_type=ResourceTaskResponseUnion,
             )
         )

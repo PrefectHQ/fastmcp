@@ -67,7 +67,7 @@ class ClientTaskManagementMixin:
         request = GetTaskRequest(params=GetTaskRequestParams(task_id=task_id))
         return await self._await_with_session_monitoring(
             self.session.send_request(
-                request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+                request=request,  # type: ignore[arg-type]
                 result_type=GetTaskResult,
             )
         )
@@ -94,7 +94,7 @@ class ClientTaskManagementMixin:
         # Return raw result - Task classes handle type-specific parsing
         result = await self._await_with_session_monitoring(
             self.session.send_request(
-                request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+                request=request,  # type: ignore[arg-type]
                 result_type=_RawTaskPayloadResult,
             )
         )
@@ -132,7 +132,7 @@ class ClientTaskManagementMixin:
         request = ListTasksRequest(params=params)
         server_response = await self._await_with_session_monitoring(
             self.session.send_request(
-                request=request,  # type: ignore[invalid-argument-type]  # ty:ignore[invalid-argument-type]
+                request=request,  # type: ignore[invalid-argument-type]
                 result_type=mcp_types.ListTasksResult,
             )
         )
@@ -172,7 +172,7 @@ class ClientTaskManagementMixin:
         request = CancelTaskRequest(params=CancelTaskRequestParams(task_id=task_id))
         return await self._await_with_session_monitoring(
             self.session.send_request(
-                request=request,  # type: ignore[invalid-argument-type]  # ty:ignore[invalid-argument-type]
+                request=request,  # type: ignore[invalid-argument-type]
                 result_type=mcp_types.CancelTaskResult,
             )
         )

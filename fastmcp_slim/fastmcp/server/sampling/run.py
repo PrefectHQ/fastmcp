@@ -230,7 +230,10 @@ async def call_sampling_handler(
             tools=sdk_tools,
             tool_choice=tool_choice,
         ),
-        context.request_context,
+        # SamplingHandler is typed against the SDK's RequestContext placeholder,
+        # but FastMCP hands handlers its own FastMCPRequestContext wrapper at
+        # runtime; the two aren't structurally related in the type system.
+        context.request_context,  # ty: ignore[invalid-argument-type]
     )
 
     if inspect.isawaitable(result):
@@ -555,7 +558,9 @@ async def sample_step_impl(
                     tool_choice=effective_tool_choice,
                 )
             else:
-                response = await context.session.create_message(
+                # Deprecated upstream in SDK v2 but deliberately kept per compat
+                # directive; removed with the multi-round-trip follow-up.
+                response = await context.session.create_message(  # ty: ignore[deprecated]
                     messages=current_messages,
                     system_prompt=system_prompt,
                     temperature=temperature,

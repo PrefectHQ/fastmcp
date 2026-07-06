@@ -947,7 +947,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     self._resource_url,
                 )
                 raise AuthorizeError(
-                    error="invalid_target",  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+                    error="invalid_target",  # type: ignore[arg-type]
                     error_description="Resource does not match this server",
                 )
 

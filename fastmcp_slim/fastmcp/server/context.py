@@ -803,7 +803,9 @@ class Context:
 
     async def list_roots(self) -> list[Root]:
         """List the roots available to the server, as indicated by the client."""
-        result = await self.session.list_roots()
+        # Deprecated upstream in SDK v2 but deliberately kept per compat directive;
+        # removed with the multi-round-trip follow-up.
+        result = await self.session.list_roots()  # ty: ignore[deprecated]
         return result.roots
 
     async def send_notification(
@@ -1501,7 +1503,9 @@ async def _log_to_server_and_client(
         extra=data.extra,
     )
 
-    await session.send_log_message(
+    # Deprecated upstream in SDK v2 but deliberately kept per compat directive;
+    # removed with the multi-round-trip follow-up.
+    await session.send_log_message(  # ty: ignore[deprecated]
         level=level,
         data=data,
         logger=logger_name,

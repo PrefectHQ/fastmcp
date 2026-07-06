@@ -5,7 +5,7 @@ from typing import TypeAlias, cast
 import mcp_types
 import pydantic
 from mcp import ClientSession
-from mcp.client.session import ListRootsFnT
+from mcp.client.session import ClientRequestContext, ListRootsFnT
 
 from fastmcp.client._sdk_context_shim import LifespanContextT, RequestContext
 
@@ -49,7 +49,7 @@ def _create_roots_callback_from_roots(
     roots = convert_roots_list(roots)
 
     async def _roots_callback(
-        context: RequestContext[ClientSession, LifespanContextT],
+        context: ClientRequestContext,
     ) -> mcp_types.ListRootsResult:
         return mcp_types.ListRootsResult(roots=roots)
 
@@ -61,10 +61,13 @@ def _create_roots_callback_from_fn(
     | Callable[[RequestContext[ClientSession, LifespanContextT]], Awaitable[RootsList]],
 ) -> ListRootsFnT:
     async def _roots_callback(
-        context: RequestContext[ClientSession, LifespanContextT],
+        context: ClientRequestContext,
     ) -> mcp_types.ListRootsResult | mcp_types.ErrorData:
         try:
-            roots = fn(context)
+            # The public RootsHandler alias is typed against the subscriptable
+            # RequestContext shim; the runtime object is the SDK's
+            # ClientRequestContext, passed through opaquely.
+            roots = fn(context)  # ty: ignore[invalid-argument-type]
             if inspect.isawaitable(roots):
                 roots = await roots
             return mcp_types.ListRootsResult(
