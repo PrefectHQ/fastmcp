@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, cast
 import anyio
 import httpx
 import mcp_types
-from mcp import ServerSession
+from mcp.server.connection import Connection
 from mcp.server.context import ServerRequestContext
 from mcp.shared.exceptions import MCPError
 from mcp_types import (
@@ -1149,7 +1149,10 @@ class StatefulProxyClient(ProxyClient[ClientTransportT]):
                 self._proxy_restoring_handler_keys.add(key)
 
         super().__init__(*args, **kwargs)
-        self._caches: dict[ServerSession, Client[ClientTransportT]] = {}
+        # SDK v2 constructs a ServerSession per request, so per-session keying
+        # would build a fresh proxy client for every request. Key by the stable
+        # per-connection `Connection` instead, and tie cleanup to its exit stack.
+        self._caches: dict[Connection, Client[ClientTransportT]] = {}
 
     def _bind_restoring_handlers(self) -> None:
         if "roots" in self._proxy_restoring_handler_keys:
@@ -1201,17 +1204,27 @@ class StatefulProxyClient(ProxyClient[ClientTransportT]):
         Use this method as the client factory for stateful proxy server.
         """
         session = get_context().session
-        proxy_client = self._caches.get(session, None)
+        # SDK v2: the ServerSession is per-request; the Connection is the stable
+        # per-connection object that owns the exit stack. Key the cache and the
+        # cleanup callback off it so one proxy client is reused for the whole
+        # connection instead of one per request.
+        connection = getattr(session, "_connection", None)
+        if connection is None:
+            raise RuntimeError(
+                "Stateful proxy requires a per-connection server session; "
+                "no connection is available on the current context."
+            )
+        proxy_client = self._caches.get(connection, None)
 
         if proxy_client is None:
             proxy_client = self.new()
-            logger.debug(f"{proxy_client} created for {session}")
-            self._caches[session] = proxy_client
+            logger.debug(f"{proxy_client} created for {connection}")
+            self._caches[connection] = proxy_client
 
-            async def _on_session_exit():
-                self._caches.pop(session, None)
+            async def _on_connection_exit():
+                self._caches.pop(connection, None)
                 logger.debug(f"{proxy_client} will be disconnect")
-                # This callback runs while the server session's exit stack is
+                # This callback runs while the connection's exit stack is
                 # unwinding, which usually happens because the owning task is
                 # being cancelled. Shield the disconnect so the forced cleanup
                 # actually runs to completion instead of aborting at the first
@@ -1219,6 +1232,6 @@ class StatefulProxyClient(ProxyClient[ClientTransportT]):
                 with anyio.CancelScope(shield=True):
                     await proxy_client._disconnect(force=True)
 
-            session._exit_stack.push_async_callback(_on_session_exit)
+            connection.exit_stack.push_async_callback(_on_connection_exit)
 
         return proxy_client

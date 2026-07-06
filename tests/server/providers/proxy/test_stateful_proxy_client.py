@@ -27,7 +27,7 @@ from fastmcp.utilities.tests import find_available_port, run_server_async
 def fastmcp_server():
     mcp = FastMCP("TestServer")
 
-    states: dict[int, int] = {}
+    states: dict[str, int] = {}
 
     @mcp.tool
     async def log(
@@ -38,13 +38,16 @@ def fastmcp_server():
     @mcp.tool
     async def stateful_put(value: int, context: Context) -> None:
         """put a value associated with the server session"""
-        key = id(context.session)
+        # SDK v2 constructs a ServerSession per request, so `id(context.session)`
+        # is not a stable per-connection key. Use the connection-scoped
+        # `session_id` to share state across calls on the same client session.
+        key = context.session_id
         states[key] = value
 
     @mcp.tool
     async def stateful_get(context: Context) -> int:
         """get the value associated with the server session"""
-        key = id(context.session)
+        key = context.session_id
         try:
             return states[key]
         except KeyError:
