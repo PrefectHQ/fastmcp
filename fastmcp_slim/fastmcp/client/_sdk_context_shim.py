@@ -1,14 +1,16 @@
-"""SDK context survival shims pending the Phase C client port.
+"""Subscriptable request-context alias for FastMCP client handler signatures.
 
-The MCP SDK v2 removed ``mcp.shared.context.RequestContext`` and
-``mcp.shared.context.LifespanContextT``. Client-side handler signatures in
-FastMCP still reference them as type annotations. These shims keep those
-modules importable at collection time; the annotations they feed are not
-semantically load-bearing yet.
+FastMCP exposes public generic handler type aliases (``SamplingHandler``,
+``RootsHandler``, ``ElicitationHandler``) parameterized over a session and a
+lifespan-context type. The MCP SDK v2 request context (
+``mcp.client.ClientRequestContext``) is a plain ``kw_only`` dataclass and is
+NOT subscriptable, so it cannot back those two-parameter aliases directly.
 
-TODO(sdkv2): replace with the real SDK client request-context type in Phase C
-(client port). Handler wiring that populates/consumes the request context is
-reworked there.
+This module keeps a subscriptable ``RequestContext[SessionT, LifespanContextT]``
+generic so the public alias surface is preserved unchanged. It is a permanent
+part of the client type surface, not a migration placeholder. The concrete
+context object handlers receive at runtime is the SDK's ``ClientRequestContext``;
+our ``create_*_callback`` wrappers pass it through opaquely.
 """
 
 from __future__ import annotations
