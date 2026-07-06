@@ -40,9 +40,7 @@ class FastMCPTransport(ClientTransport):
     runtime.
     """
 
-    def __init__(
-        self, mcp: "FastMCP[Any] | SDKServer", raise_exceptions: bool = False
-    ):
+    def __init__(self, mcp: "FastMCP[Any] | SDKServer", raise_exceptions: bool = False):
         """Initialize a FastMCPTransport from a FastMCP server instance."""
 
         # Accept both FastMCP 2.x and FastMCP 1.0 servers. Their underlying
