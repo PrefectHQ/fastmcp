@@ -385,6 +385,12 @@ class TestResourceWithApp:
 
 
 class TestExtensionAdvertisement:
+    @pytest.mark.xfail(
+        reason="SDK v2 strips capabilities.extensions at the negotiated "
+        "(pre-2026) handshake version, so the SEP-2133 UI extension is not "
+        "advertised to the client (sdk-feedback #2).",
+        strict=True,
+    )
     async def test_capabilities_include_ui_extension(self):
         server = FastMCP("test")
 
@@ -504,6 +510,12 @@ class TestIntegration:
             result = await client.call_tool("backend_greet", {"name": "Alice"})
             assert any("Hello, Alice!" in str(c) for c in result.content)
 
+    @pytest.mark.xfail(
+        reason="SDK v2 strips capabilities.extensions at the negotiated "
+        "(pre-2026) handshake version, so the SEP-2133 UI extension is not "
+        "advertised to the client (sdk-feedback #2).",
+        strict=True,
+    )
     async def test_extension_and_tool_together(self):
         """Server advertises extension AND tool has app meta."""
         server = FastMCP("test")
