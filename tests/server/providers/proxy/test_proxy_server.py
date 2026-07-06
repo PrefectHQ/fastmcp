@@ -259,7 +259,9 @@ async def test_proxy_ping_surfaces_wrong_remote_path():
     async with run_server_async(remote, transport="http") as url:
         proxy = create_proxy(StreamableHttpTransport(url.removesuffix("/mcp")))
 
-        with pytest.raises(MCPError, match="Session terminated"):
+        # SDK v2 surfaces a wrong remote path as an HTTP "Not Found" rather than
+        # the v1 "Session terminated" message.
+        with pytest.raises(MCPError, match="Not Found"):
             async with Client(proxy):
                 pass
 
@@ -362,17 +364,22 @@ class TestTools:
         assert tool.description is None
 
     async def test_list_tools_same_as_original(self, fastmcp_server, proxy_server):
-        assert await proxy_server._list_tools_mcp(
-            mcp_types.ListToolsRequest()
-        ) == await fastmcp_server._list_tools_mcp(mcp_types.ListToolsRequest())
+        async with Client(fastmcp_server) as original_client:
+            original = await original_client.list_tools()
+        async with Client(proxy_server) as proxy_client:
+            proxied = await proxy_client.list_tools()
+        assert proxied == original
 
     async def test_call_tool_result_same_as_original(
         self, fastmcp_server: FastMCP, proxy_server: FastMCPProxy
     ):
-        result = await fastmcp_server._call_tool_mcp("greet", {"name": "Alice"})
-        proxy_result = await proxy_server._call_tool_mcp("greet", {"name": "Alice"})
+        async with Client(fastmcp_server) as original_client:
+            result = await original_client.call_tool("greet", {"name": "Alice"})
+        async with Client(proxy_server) as proxy_client:
+            proxy_result = await proxy_client.call_tool("greet", {"name": "Alice"})
 
-        assert result == proxy_result
+        assert result.content == proxy_result.content
+        assert result.data == proxy_result.data
 
     async def test_call_tool_calls_tool(self, proxy_server):
         async with Client(proxy_server) as client:
@@ -499,9 +506,11 @@ class TestResources:
         assert wave_resource.icons == [Icon(src="https://example.com/wave-icon.png")]
 
     async def test_list_resources_same_as_original(self, fastmcp_server, proxy_server):
-        assert await proxy_server._list_resources_mcp(
-            mcp_types.ListResourcesRequest()
-        ) == await fastmcp_server._list_resources_mcp(mcp_types.ListResourcesRequest())
+        async with Client(fastmcp_server) as original_client:
+            original = await original_client.list_resources()
+        async with Client(proxy_server) as proxy_client:
+            proxied = await proxy_client.list_resources()
+        assert proxied == original
 
     async def test_read_resource(self, proxy_server: FastMCPProxy):
         async with Client(proxy_server) as client:
@@ -561,7 +570,7 @@ class TestResources:
 
     async def test_read_resource_returns_none_if_not_found(self, proxy_server):
         with pytest.raises(
-            MCPError, match="Unknown resource: 'resource://nonexistent'"
+            MCPError, match="Resource not found: 'resource://nonexistent'"
         ):
             async with Client(proxy_server) as client:
                 await client.read_resource("resource://nonexistent")
@@ -616,12 +625,10 @@ class TestResourceTemplates:
     async def test_list_resource_templates_same_as_original(
         self, fastmcp_server, proxy_server
     ):
-        result = await fastmcp_server._list_resource_templates_mcp(
-            mcp_types.ListResourceTemplatesRequest()
-        )
-        proxy_result = await proxy_server._list_resource_templates_mcp(
-            mcp_types.ListResourceTemplatesRequest()
-        )
+        async with Client(fastmcp_server) as original_client:
+            result = await original_client.list_resource_templates()
+        async with Client(proxy_server) as proxy_client:
+            proxy_result = await proxy_client.list_resource_templates()
         assert proxy_result == result
 
     @pytest.mark.parametrize("id", [1, 2, 3])
