@@ -27,6 +27,11 @@ from mcp.client import Client as SDKClient
 from mcp.client.session import ClientRequestContext
 from mcp.server import Server as LowLevelServer
 from mcp.shared.exceptions import MCPError
+from mcp_types import methods
+from mcp_types.version import (
+    HANDSHAKE_PROTOCOL_VERSIONS,
+    MODERN_PROTOCOL_VERSIONS,
+)
 from pydantic import FileUrl
 
 from fastmcp import Client as FastMCPClient
@@ -403,10 +408,12 @@ async def test_task_submission_and_get_on_legacy_latest(task_server):
         "The v2 SDK high-level client (mcp.client.Client) and ClientSession "
         "expose no `task=` parameter on call_tool, so a task-augmented "
         "tools/call cannot be submitted through it at any era; a hand-built "
-        "raw CallToolRequest does not drive FastMCP's task path either. The "
-        "_sdk_patches shim widens the 2026-07-28 tools/call result union "
-        "(sdk-feedback.md #1), but there is no client-side surface to reach it. "
-        "Remove once the SDK client supports task submission."
+        "raw CallToolRequest does not drive FastMCP's task path either. On "
+        "2026-07-28 tasks moved to the io.modelcontextprotocol/tasks extension "
+        "and CreateTaskResult is not part of the tools/call union, so the "
+        "_sdk_patches shim intentionally does not widen the modern row "
+        "(sdk-feedback.md #1). Remove once the SDK client supports task "
+        "submission."
     ),
 )
 async def test_task_submission_on_modern(task_server):
@@ -420,6 +427,52 @@ async def test_task_submission_on_modern(task_server):
             types.CallToolRequest(params=params), types.CreateTaskResult
         )
         assert isinstance(result, types.CreateTaskResult)
+
+
+# ---------------------------------------------------------------------------
+# 4b. _sdk_patches registry gating: the SEP-1686 task shim widens ONLY the
+# handshake-era rows and leaves the 2026-07-28 (extension-era) rows untouched.
+# ---------------------------------------------------------------------------
+
+
+def test_task_shim_widens_handshake_tools_call_rows():
+    """Every handshake-era tools/call row gains a CreateTaskResult arm."""
+    from fastmcp._sdk_patches import get_union_arms
+
+    for version in HANDSHAKE_PROTOCOL_VERSIONS:
+        row = methods.SERVER_RESULTS[("tools/call", version)]
+        assert types.CreateTaskResult in get_union_arms(row), version
+
+
+def test_task_shim_does_not_touch_modern_tools_call_row():
+    """The 2026-07-28 tools/call row stays the unpatched MRTR union: tasks are
+    the io.modelcontextprotocol/tasks extension there, so CreateTaskResult must
+    not be injected."""
+    from fastmcp._sdk_patches import get_union_arms
+
+    row = methods.SERVER_RESULTS[("tools/call", "2026-07-28")]
+    arms = get_union_arms(row)
+    assert types.CreateTaskResult not in arms
+    # Unchanged from the SDK default: the 2026 mutually-recursive tool result
+    # (CallToolResult | InputRequiredResult), keyed by the version-specific types.
+    arm_names = {arm.__name__ for arm in arms}
+    assert arm_names == {"CallToolResult", "InputRequiredResult"}
+
+
+@pytest.mark.parametrize(
+    "task_method",
+    ["tasks/get", "tasks/result", "tasks/list", "tasks/cancel"],
+)
+def test_task_shim_registers_tasks_rows_only_for_handshake_eras(task_method):
+    """tasks/* result rows exist for handshake-era versions and are absent for
+    the modern (extension) era."""
+    for version in HANDSHAKE_PROTOCOL_VERSIONS:
+        assert (task_method, version) in methods.SERVER_RESULTS, (task_method, version)
+    for version in MODERN_PROTOCOL_VERSIONS:
+        assert (task_method, version) not in methods.SERVER_RESULTS, (
+            task_method,
+            version,
+        )
 
 
 # ---------------------------------------------------------------------------

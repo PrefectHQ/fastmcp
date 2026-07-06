@@ -1,12 +1,16 @@
 """Temporary in-place patches for gaps in the pinned MCP SDK.
 
-## SEP-1686 task methods missing from the SDK method registries
+## SEP-1686 task methods missing from the handshake-era method registries
 
-`mcp==2.0.0b1` ships the task types (`CreateTaskResult`, `GetTaskResult`,
-`GetTaskPayloadResult`, `ListTasksResult`, `CancelTaskResult`) but its
-`mcp_types.methods` registries have no `tasks/*` rows, and every `tools/call`
-result row is a plain `CallToolResult` (2025 eras) or `CallToolResult |
-InputRequiredResult` (2026) with no `CreateTaskResult` arm.
+This shim compensates for a genuine gap in the SDK's *handshake-era*
+(2025-11-25 and earlier) task registry. In the 2025-11-25 SEP-1686 model, tasks
+are a first-class part of the core protocol: `CallToolRequestParams` carries a
+`task: TaskMetadata` field and a task-augmented `tools/call` returns a
+`CreateTaskResult`. `mcp==2.0.0b1` ships those task types (`CreateTaskResult`,
+`GetTaskResult`, `GetTaskPayloadResult`, `ListTasksResult`, `CancelTaskResult`)
+and the `task` request field, but its `mcp_types.methods` registries were never
+wired for them: there are no `tasks/*` rows, and the handshake-era `tools/call`
+result rows are a plain `CallToolResult` with no `CreateTaskResult` arm.
 
 The lowlevel server runner (`mcp.server.runner`) serializes a handler's result
 through `serialize_server_result(method, version, ...)` for any method in
@@ -19,12 +23,28 @@ their handler results already bypass serialization and reach the wire
 unvalidated; we still register their result rows here for symmetry and so the
 maps are consistent if a future SDK adds them to the spec method set.
 
+## Scope: handshake-era versions only
+
+The widening + `tasks/*` registration is gated to
+`HANDSHAKE_PROTOCOL_VERSIONS` (2025-11-25 and earlier) because those are the
+versions where the 2025 SEP-1686 task model actually applies and where the
+SDK's registry has the genuine gap we compensate for.
+
+The 2026-07-28 protocol is intentionally NOT patched here. Tasks left the core
+protocol in 2026-07-28 and became the separate `io.modelcontextprotocol/tasks`
+extension; `CreateTaskResult` and the `task` field on `CallToolRequestParams`
+do not exist in that schema (a task-augmented `tools/call` was replaced by the
+mutually-recursive `CallToolResult | InputRequiredResult` result). Injecting the
+2025-era `CreateTaskResult` into the 2026 `tools/call` union would assert the
+wrong task model onto that protocol, so we leave its rows untouched.
+
 This module widens the registries IN PLACE (the maps are `MappingProxyType`
 views over private dicts, so we reach the backing dict via `gc.get_referents`
 and mutate it, which the already-bound default-argument references in
 `mcp_types.methods` observe). `install()` is idempotent.
 
-# TODO(sdk-upstream): remove when mcp>=2.0.0bX includes SEP-1686 in method registries
+# TODO(sdk-upstream): remove when mcp>=2.0.0bX wires SEP-1686 into the
+# handshake-era method registries.
 """
 
 from __future__ import annotations
@@ -34,6 +54,7 @@ from types import MappingProxyType, UnionType
 
 import mcp_types
 from mcp_types import methods as _methods
+from mcp_types.version import HANDSHAKE_PROTOCOL_VERSIONS
 
 # Result type for each task method, keyed by the client request method name.
 _TASK_RESULT_TYPES: dict[str, type] = {
@@ -78,8 +99,13 @@ def install() -> None:
 
     server_results = _backing_dict(_methods.SERVER_RESULTS)
 
+    # Gate to handshake-era versions only: the 2025 SEP-1686 task model applies
+    # there, and 2026-07-28 tasks are the separate io.modelcontextprotocol/tasks
+    # extension (see module docstring) — its rows must stay untouched.
     versions_with_tools_call = {
-        version for (method, version) in server_results if method == "tools/call"
+        version
+        for (method, version) in server_results
+        if method == "tools/call" and version in HANDSHAKE_PROTOCOL_VERSIONS
     }
 
     for version in versions_with_tools_call:
