@@ -77,8 +77,11 @@ async def submit_to_docket(
     # Server MUST generate task IDs, clients no longer provide them
     server_task_id = str(uuid.uuid4())
 
-    # Record creation timestamp per SEP-1686 final spec (line 430)
+    # Record creation timestamp per SEP-1686 final spec (line 430). SDK v2
+    # types `Task.created_at` / `TaskStatusNotificationParams.created_at` as ISO
+    # strings, so carry a serialized copy for wire-crossing models.
     created_at = datetime.now(timezone.utc)
+    created_at_iso = created_at.isoformat()
 
     ctx = get_context()
 
@@ -149,8 +152,8 @@ async def submit_to_docket(
                 "taskId": server_task_id,
                 "status": "working",
                 "statusMessage": "Task submitted",
-                "createdAt": created_at,
-                "lastUpdatedAt": created_at,
+                "createdAt": created_at_iso,
+                "lastUpdatedAt": created_at_iso,
                 "ttl": ttl_ms,
                 "pollInterval": poll_interval_ms,
             },
@@ -161,10 +164,11 @@ async def submit_to_docket(
             },
         }
     )
-    server_notification = mcp_types.ServerNotification(notification)
+    # SDK v2: `ServerNotification` is a union type, not a wrapper class;
+    # `send_notification` takes the bare notification model directly.
     with suppress(Exception):
         # Don't let notification failures break task creation
-        await ctx.session.send_notification(server_notification)
+        await ctx.session.send_notification(notification)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
 
     # Queue function to Docket by key (result storage via execution_ttl)
     # Use component.add_to_docket() which handles calling conventions
@@ -228,8 +232,8 @@ async def submit_to_docket(
         task=mcp_types.Task(
             task_id=server_task_id,
             status="working",
-            created_at=created_at,
-            last_updated_at=created_at,
+            created_at=created_at_iso,
+            last_updated_at=created_at_iso,
             ttl=ttl_ms,
             poll_interval=poll_interval_ms,
         )

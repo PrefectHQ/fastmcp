@@ -347,7 +347,9 @@ class ClientToolsMixin:
         # Per SEP-1686 final spec: client sends only ttl, server generates taskId
         # Inject trace context into meta for propagation to server
         propagated_meta = inject_trace_context(meta)
-        request_meta = cast(mcp_types.RequestParams.Meta | None, propagated_meta)
+        # SDK v2: request `_meta` is `RequestParamsMeta` (a TypedDict), not the
+        # old `RequestParams.Meta` nested model.
+        request_meta = cast(mcp_types.RequestParamsMeta | None, propagated_meta)
 
         # Build request with task metadata
         request = mcp_types.CallToolRequest(

@@ -193,9 +193,8 @@ async def _send_mcp_notification(
             "_meta": notification_dict.get("_meta"),
         }
     )
-    server_notification = mcp_types.ServerNotification(notification)
-
-    await session.send_notification(server_notification)
+    # SDK v2: `ServerNotification` is a union type; send the bare model.
+    await session.send_notification(notification)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
 
     # If this is an input_required notification with elicitation metadata,
     # relay the elicitation to the client via standard elicitation/create
