@@ -21,7 +21,7 @@ Request a rendered prompt with `get_prompt()`:
 async with client:
     # Simple prompt without arguments
     result = await client.get_prompt("welcome_message")
-    # result -> mcp.types.GetPromptResult
+    # result -> fastmcp.types.GetPromptResult
 
     # Access the generated messages
     for message in result.messages:
@@ -143,5 +143,5 @@ For complete control, use `get_prompt_mcp()` which returns the full MCP protocol
 ```python
 async with client:
     result = await client.get_prompt_mcp("example_prompt", {"arg": "value"})
-    # result -> mcp.types.GetPromptResult
+    # result -> fastmcp.types.GetPromptResult
 ```

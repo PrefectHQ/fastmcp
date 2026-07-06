@@ -212,11 +212,11 @@ import base64
 import io
 
 import qrcode
-from mcp import types
 
 from fastmcp import FastMCP
 from fastmcp.apps import AppConfig, ResourceCSP
 from fastmcp.tools import ToolResult
+from fastmcp.types import ImageContent
 
 mcp = FastMCP("QR Code Server")
 
@@ -236,7 +236,7 @@ def generate_qr(text: str = "https://gofastmcp.com") -> ToolResult:
     b64 = base64.b64encode(buffer.getvalue()).decode()
 
     return ToolResult(
-        content=[types.ImageContent(type="image", data=b64, mimeType="image/png")]
+        content=[ImageContent(type="image", data=b64, mime_type="image/png")]
     )
 
 

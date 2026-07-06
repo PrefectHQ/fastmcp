@@ -15,7 +15,7 @@ Icons provide visual representations for your MCP servers and components, helpin
 Icons use the standard MCP Icon type from the MCP protocol specification. Each icon specifies a source URL or data URI, and optionally includes MIME type and size information.
 
 ```python
-from mcp.types import Icon
+from fastmcp.types import Icon
 
 icon = Icon(
     src="https://example.com/icon.png",
@@ -36,7 +36,7 @@ Add icons and a website URL to your server for display in client applications. M
 
 ```python
 from fastmcp import FastMCP
-from mcp.types import Icon
+from fastmcp.types import Icon
 
 mcp = FastMCP(
     name="WeatherService",
@@ -65,7 +65,7 @@ Icons can be added to individual tools, resources, resource templates, and promp
 ### Tool Icons
 
 ```python
-from mcp.types import Icon
+from fastmcp.types import Icon
 
 @mcp.tool(
     icons=[Icon(src="https://example.com/calculator-icon.png")]
@@ -115,7 +115,7 @@ def analyze_code(code: str):
 For small icons or when you want to embed the icon directly without external dependencies, use data URIs. This approach eliminates the need for hosting and ensures the icon is always available.
 
 ```python
-from mcp.types import Icon
+from fastmcp.types import Icon
 from fastmcp.utilities.types import Image
 
 # SVG icon as data URI
@@ -135,7 +135,7 @@ def my_tool() -> str:
 FastMCP provides the `Image` utility class to convert local image files into data URIs.
 
 ```python
-from mcp.types import Icon
+from fastmcp.types import Icon
 from fastmcp.utilities.types import Image
 
 # Generate a data URI from a local image file

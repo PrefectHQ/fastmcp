@@ -265,8 +265,7 @@ async def on_list_prompts(self, context: MiddlewareContext, call_next):
 Called when a client connects and initializes the session. This hook cannot modify the initialization response.
 
 ```python
-from mcp import McpError
-from mcp.types import ErrorData
+from fastmcp.exceptions import McpError
 
 async def on_initialize(self, context: MiddlewareContext, call_next):
     client_info = context.message.params.get("clientInfo", {})
@@ -274,7 +273,7 @@ async def on_initialize(self, context: MiddlewareContext, call_next):
 
     # Reject before call_next to send error to client
     if client_name == "blocked-client":
-        raise McpError(ErrorData(code=-32000, message="Client not supported"))
+        raise McpError(code=-32000, message="Client not supported")
 
     await call_next(context)
     print(f"Client {client_name} initialized")

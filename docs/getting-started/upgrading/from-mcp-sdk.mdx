@@ -51,9 +51,9 @@ Also: if prompts return raw dicts like `{"role": "user", "content": "..."}`, the
 The MCP SDK's FastMCP 1.0 silently coerced dicts; standalone FastMCP requires typed returns.
 
 STEP 4 — OTHER MCP IMPORTS (only if importing from mcp.* directly):
-Direct imports from the `mcp` package (e.g., `import mcp.types`, `from mcp.server.stdio import stdio_server`) still work because FastMCP includes `mcp` as a dependency. However, prefer FastMCP's own APIs where equivalents exist:
-- mcp.types.TextContent for tool returns → just return plain Python values (str, int, dict, etc.)
-- mcp.types.ImageContent → fastmcp.utilities.types.Image
+FastMCP now builds on MCP SDK v2, which removed the `mcp.types` module — protocol types live in the standalone `mcp_types` package. FastMCP re-exports the common ones from `fastmcp.types`. Update any `from mcp.types import X` to `from fastmcp.types import X` (or `import mcp_types`). Prefer FastMCP's own APIs where equivalents exist:
+- fastmcp.types.TextContent for tool returns → just return plain Python values (str, int, dict, etc.)
+- fastmcp.types.ImageContent → fastmcp.utilities.types.Image
 - from mcp.server.stdio import stdio_server → not needed, mcp.run() handles transport
 
 STEP 5 — DECORATORS (only if treating decorated functions as objects):
@@ -113,7 +113,7 @@ def debug(error: str) -> list[Message]:
 
 ### Other `mcp.*` Imports
 
-If your server imports directly from the `mcp` package — like `import mcp.types` or `from mcp.server.stdio import stdio_server` — those still work. FastMCP includes `mcp` as a dependency, so nothing breaks.
+FastMCP now builds on MCP SDK v2. The `mcp.types` module no longer exists — protocol types moved to a standalone `mcp_types` package, and the field names were renamed from camelCase to snake_case (`inputSchema` → `input_schema`, `mimeType` → `mime_type`, and so on). FastMCP re-exports the types you're most likely to use from `fastmcp.types`, so update `from mcp.types import X` to `from fastmcp.types import X`. For the full picture, see [Upgrading to FastMCP on MCP SDK v2](/development/upgrading-to-mcp-sdk-v2).
 
 Where FastMCP provides its own API for the same thing, it's worth switching over:
 
@@ -124,7 +124,7 @@ Where FastMCP provides its own API for the same thing, it's worth switching over
 | `mcp.types.PromptMessage(...)` | `from fastmcp.prompts import Message` |
 | `from mcp.server.stdio import stdio_server` | Not needed — `mcp.run()` handles transport |
 
-For anything without a FastMCP equivalent (e.g., specific protocol types you use directly), the `mcp.*` import is fine to keep.
+For protocol types without a FastMCP equivalent, import them from `fastmcp.types` when re-exported there, otherwise from `mcp_types` directly.
 
 ### Decorated Functions
 
