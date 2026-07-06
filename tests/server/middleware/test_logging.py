@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import mcp_types
 import pytest
 from inline_snapshot import snapshot
-from pydantic import AnyUrl
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -142,7 +141,7 @@ class TestStructuredLoggingMiddleware:
                     "event": "request_start",
                     "source": "client",
                     "method": "test_method",
-                    "payload": '{"method":"tools/call","params":{"task":null,"_meta":null,"name":"test_method","arguments":{"param":"value"}}}',
+                    "payload": '{"method":"tools/call","params":{"_meta":null,"inputResponses":null,"requestState":null,"name":"test_method","arguments":{"param":"value"},"task":null}}',
                     "payload_type": "CallToolRequest",
                 }
             )
@@ -157,7 +156,7 @@ class TestStructuredLoggingMiddleware:
                     "event": "request_start",
                     "source": "client",
                     "method": "test_method",
-                    "payload_length": 110,
+                    "payload_length": 152,
                 }
             )
 
@@ -175,8 +174,8 @@ class TestStructuredLoggingMiddleware:
                     "event": "request_start",
                     "source": "client",
                     "method": "test_method",
-                    "payload_tokens": 27,
-                    "payload_length": 110,
+                    "payload_tokens": 38,
+                    "payload_length": 152,
                 }
             )
 
@@ -284,7 +283,7 @@ class TestLoggingMiddleware:
             message=mcp_types.ReadResourceRequest(
                 method="resources/read",
                 params=mcp_types.ReadResourceRequestParams(
-                    uri=AnyUrl("test://example/1"),
+                    uri="test://example/1",
                 ),
             )
         )
@@ -297,7 +296,7 @@ class TestLoggingMiddleware:
 
         assert get_log_lines(caplog) == snapshot(
             [
-                '{"event": "request_start", "method": "test_method", "source": "client", "payload": "{\\"method\\":\\"resources/read\\",\\"params\\":{\\"task\\":null,\\"_meta\\":null,\\"uri\\":\\"test://example/1\\"}}", "payload_type": "ReadResourceRequest"}',
+                '{"event": "request_start", "method": "test_method", "source": "client", "payload": "{\\"method\\":\\"resources/read\\",\\"params\\":{\\"_meta\\":null,\\"inputResponses\\":null,\\"requestState\\":null,\\"uri\\":\\"test://example/1\\"}}", "payload_type": "ReadResourceRequest"}',
                 '{"event": "request_success", "method": "test_method", "source": "client", "duration_ms": 0.02}',
             ]
         )
@@ -357,7 +356,7 @@ class TestLoggingMiddleware:
 
         assert get_log_lines(caplog) == snapshot(
             [
-                '{"event": "request_start", "method": "test_method", "source": "client", "payload": "{\\"method\\":\\"tools/call\\",\\"params\\":{\\"task\\":null,\\"_meta\\":null,\\"name\\":\\"test_method\\",\\"arguments\\":{\\"obj\\":\\"NON_SERIALIZABLE\\"}}}", "payload_type": "CallToolRequest"}',
+                '{"event": "request_start", "method": "test_method", "source": "client", "payload": "{\\"method\\":\\"tools/call\\",\\"params\\":{\\"_meta\\":null,\\"inputResponses\\":null,\\"requestState\\":null,\\"name\\":\\"test_method\\",\\"arguments\\":{\\"obj\\":\\"NON_SERIALIZABLE\\"},\\"task\\":null}}", "payload_type": "CallToolRequest"}',
                 '{"event": "request_success", "method": "test_method", "source": "client", "duration_ms": 0.02}',
             ]
         )
@@ -532,7 +531,7 @@ class TestLoggingMiddlewareIntegration:
 
         assert get_log_lines(caplog) == snapshot(
             [
-                'event=request_start method=tools/call source=client payload={"task":null,"_meta":null,"name":"simple_operation","arguments":{"data":"payload_test"}} payload_type=CallToolRequestParams',
+                'event=request_start method=tools/call source=client payload={"_meta":null,"inputResponses":null,"requestState":null,"name":"simple_operation","arguments":{"data":"payload_test"},"task":null} payload_type=CallToolRequestParams',
                 "event=request_success method=tools/call source=client duration_ms=0.02",
             ]
         )
@@ -555,7 +554,7 @@ class TestLoggingMiddlewareIntegration:
 
         assert get_log_lines(caplog) == snapshot(
             [
-                '{"event": "request_start", "method": "tools/call", "source": "client", "payload": "{\\"task\\":null,\\"_meta\\":null,\\"name\\":\\"simple_operation\\",\\"arguments\\":{\\"data\\":\\"json_test\\"}}", "payload_type": "CallToolRequestParams"}',
+                '{"event": "request_start", "method": "tools/call", "source": "client", "payload": "{\\"_meta\\":null,\\"inputResponses\\":null,\\"requestState\\":null,\\"name\\":\\"simple_operation\\",\\"arguments\\":{\\"data\\":\\"json_test\\"},\\"task\\":null}", "payload_type": "CallToolRequestParams"}',
                 '{"event": "request_success", "method": "tools/call", "source": "client", "duration_ms": 0.02}',
             ]
         )
@@ -648,6 +647,6 @@ class TestLoggingMiddlewareIntegration:
         # Check that our custom logger captured the logs
         log_output = log_buffer.getvalue()
         assert log_output == snapshot("""\
-event=request_start method=tools/call source=client payload={"task":null,"_meta":null,"name":"simple_operation","arguments":{"data":"custom_test"}} payload_type=CallToolRequestParams
+event=request_start method=tools/call source=client payload={"_meta":null,"inputResponses":null,"requestState":null,"name":"simple_operation","arguments":{"data":"custom_test"},"task":null} payload_type=CallToolRequestParams
 event=request_success method=tools/call source=client duration_ms=0.02
 """)
