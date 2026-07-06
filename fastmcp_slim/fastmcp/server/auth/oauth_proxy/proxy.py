@@ -26,7 +26,7 @@ from collections import OrderedDict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, Literal
-from urllib.parse import urlencode, urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import anyio
 import httpx
@@ -41,7 +41,6 @@ from key_value.aio.stores.filetree import (
     FileTreeV1KeySanitizationStrategy,
 )
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
-from mcp.server.auth.handlers.metadata import MetadataHandler
 from mcp.server.auth.provider import (
     AccessToken,
     AuthorizationCode,
@@ -59,7 +58,7 @@ from mcp.server.auth.settings import (
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from pydantic import AnyHttpUrl, AnyUrl, SecretStr
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, RedirectResponse
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.routing import Route
 from typing_extensions import override
 
@@ -99,6 +98,31 @@ from fastmcp.utilities.logging import get_logger
 logger = get_logger(__name__)
 
 _REFRESH_LOCK_CACHE_SIZE = 10_000
+_AUTHORIZATION_RESPONSE_ISS_SUPPORTED = "authorization_response_iss_parameter_supported"
+
+
+class OAuthProxyMetadataHandler:
+    """Metadata handler that advertises OAuthProxy-specific metadata extensions."""
+
+    def __init__(self, metadata: Any):
+        self.metadata = metadata
+
+    async def handle(self, request: Request) -> JSONResponse:
+        content = self.metadata.model_dump(mode="json", exclude_none=True)
+        content[_AUTHORIZATION_RESPONSE_ISS_SUPPORTED] = True
+        return JSONResponse(
+            content=content,
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
+
+def _add_query_params(url: str, params: dict[str, str]) -> str:
+    parsed = urlparse(url)
+    query_items = [
+        *parse_qsl(parsed.query, keep_blank_values=True),
+        *params.items(),
+    ]
+    return urlunparse(parsed._replace(query=urlencode(query_items)))
 
 
 def _normalize_resource_url(url: str) -> str:
@@ -2076,10 +2100,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         methods=["POST", "OPTIONS"],
                     )
                 )
-            elif (
-                self._cimd_manager is not None
-                and isinstance(route, Route)
-                and route.path.startswith("/.well-known/oauth-authorization-server")
+            elif isinstance(route, Route) and route.path.startswith(
+                "/.well-known/oauth-authorization-server"
             ):
                 client_registration_options = (
                     self.client_registration_options or ClientRegistrationOptions()
@@ -2091,14 +2113,15 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     client_registration_options,
                     revocation_options,
                 )
-                metadata.client_id_metadata_document_supported = True
-                existing = metadata.token_endpoint_auth_methods_supported or []
-                metadata.token_endpoint_auth_methods_supported = [
-                    *existing,
-                    "private_key_jwt",
-                    "none",
-                ]
-                handler = MetadataHandler(metadata)
+                if self._cimd_manager is not None:
+                    metadata.client_id_metadata_document_supported = True
+                    existing = metadata.token_endpoint_auth_methods_supported or []
+                    metadata.token_endpoint_auth_methods_supported = [
+                        *existing,
+                        "private_key_jwt",
+                        "none",
+                    ]
+                handler = OAuthProxyMetadataHandler(metadata)
                 methods = route.methods or ["GET", "OPTIONS"]
 
                 custom_routes.append(
@@ -2191,12 +2214,12 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     error_params: dict[str, str] = {
                         "error": error,
                         "state": transaction_model.client_state,
+                        "iss": str(self.base_url),
                     }
                     if error_description:
                         error_params["error_description"] = error_description
-                    separator = "&" if "?" in client_redirect_uri else "?"
                     return RedirectResponse(
-                        url=f"{client_redirect_uri}{separator}{urlencode(error_params)}",
+                        url=_add_query_params(client_redirect_uri, error_params),
                         status_code=302,
                     )
                 # No trusted redirect_uri available — show local error page
@@ -2357,12 +2380,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             callback_params = {
                 "code": client_code,
                 "state": client_state,
+                "iss": str(self.base_url),
             }
 
-            # Add query parameters to client redirect URI
-            separator = "&" if "?" in client_redirect_uri else "?"
-            client_callback_url = (
-                f"{client_redirect_uri}{separator}{urlencode(callback_params)}"
+            client_callback_url = _add_query_params(
+                client_redirect_uri, callback_params
             )
 
             logger.debug(f"Forwarding to client callback for transaction {txn_id}")

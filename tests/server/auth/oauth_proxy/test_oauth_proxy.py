@@ -238,6 +238,34 @@ class TestOAuthProxyInitialization:
             "none",
         }
 
+    async def test_metadata_advertises_authorization_response_issuer_parameter(
+        self, jwt_verifier
+    ):
+        """OAuth metadata should advertise RFC 9207 authorization response issuers."""
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://auth.example.com/authorize",
+            upstream_token_endpoint="https://auth.example.com/token",
+            upstream_client_id="client-123",
+            upstream_client_secret="secret-456",
+            token_verifier=jwt_verifier,
+            base_url="https://api.example.com",
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+        )
+
+        app = Starlette(routes=proxy.get_routes())
+        transport = httpx.ASGITransport(app=app)
+
+        async with httpx.AsyncClient(
+            transport=transport, base_url="https://api.example.com"
+        ) as client:
+            response = await client.get("/.well-known/oauth-authorization-server")
+
+        assert response.status_code == 200
+        metadata = response.json()
+        assert metadata["issuer"] == "https://api.example.com/"
+        assert metadata["authorization_response_iss_parameter_supported"] is True
+
 
 class TestOptionalClientSecret:
     """Tests for OAuthProxy without upstream_client_secret."""
@@ -360,6 +388,7 @@ class TestIdpCallbackErrorForwarding:
         assert params["error"] == ["access_denied"]
         assert params["error_description"] == ["User denied access"]
         assert params["state"] == [client_state]
+        assert params["iss"] == ["https://myserver.com/"]
 
     async def test_error_with_unsafe_transaction_redirect_returns_html_error(
         self, oauth_proxy

@@ -3,6 +3,7 @@
 import logging
 import time
 from unittest.mock import AsyncMock, Mock, patch
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from key_value.aio.stores.memory import MemoryStore
@@ -247,6 +248,60 @@ class TestOAuthProxyTokenEndpointAuth:
 
         assert response.status_code == 302
         mock_client.fetch_token.assert_awaited_once()
+        mock_client.aclose.assert_awaited_once()
+
+    async def test_callback_redirect_includes_proxy_issuer(self, jwt_verifier):
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://oauth.example.com/authorize",
+            upstream_token_endpoint="https://oauth.example.com/token",
+            upstream_client_id="client-id",
+            upstream_client_secret="client-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+            require_authorization_consent=False,
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+        )
+
+        await proxy._transaction_store.put(
+            key="txn-id",
+            value=OAuthTransaction(
+                txn_id="txn-id",
+                client_id="test-client",
+                client_redirect_uri="http://localhost:12345/callback",
+                client_state="client-state",
+                code_challenge="",
+                code_challenge_method="S256",
+                scopes=["read"],
+                created_at=time.time(),
+            ),
+        )
+
+        mock_request = Mock()
+        mock_request.query_params = {"code": "idp-code", "state": "txn-id"}
+        mock_request.cookies = {}
+
+        mock_client = AsyncMock()
+        mock_client.fetch_token = AsyncMock(
+            return_value={
+                "access_token": "upstream-access-token",
+                "refresh_token": "upstream-refresh-token",
+                "expires_in": 3600,
+                "token_type": "Bearer",
+            }
+        )
+
+        with patch.object(
+            proxy, "_create_upstream_oauth_client", return_value=mock_client
+        ):
+            response = await proxy._handle_idp_callback(mock_request)
+
+        assert response.status_code == 302
+        location = response.headers["location"]
+        query_params = parse_qs(urlparse(location).query)
+        assert "code" in query_params
+        assert query_params["state"] == ["client-state"]
+        assert query_params["iss"] == ["https://proxy.example.com/"]
         mock_client.aclose.assert_awaited_once()
 
     async def test_callback_rejects_unsafe_transaction_redirect(self, jwt_verifier):
