@@ -224,6 +224,22 @@ class Settings(BaseSettings):
         ),
     ] = True
 
+    mcp_camelcase_compat: Annotated[
+        bool,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Whether to install compatibility shims that let legacy
+                camelCase reads on MCP SDK objects (e.g. `tool.inputSchema`,
+                `result.isError`) keep working after the SDK v2 rename to
+                snake_case. Each bridged read emits a
+                `FastMCPDeprecationWarning`. Set to False to disable the shims
+                entirely, in which case only the snake_case names resolve.
+                """
+            ),
+        ),
+    ] = True
+
     client_raise_first_exceptiongroup_error: Annotated[
         bool,
         Field(

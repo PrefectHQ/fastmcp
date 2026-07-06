@@ -29,6 +29,13 @@ if settings.log_enabled:
         enable_rich_tracebacks=settings.enable_rich_tracebacks,
     )
 
+# Install camelCase compatibility shims for MCP SDK v2's snake_case rename.
+# Gated by the setting; patches only mcp_types model classes, no client chain.
+if settings.mcp_camelcase_compat:
+    from fastmcp import _compat
+
+    _compat.install()
+
 try:
     __version__ = _version("fastmcp-slim")
 except PackageNotFoundError:

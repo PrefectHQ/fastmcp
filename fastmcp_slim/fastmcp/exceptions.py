@@ -10,6 +10,13 @@ except ImportError:
         """Fallback used when MCP dependencies are not installed."""
 
 
+# Catch-compatibility alias for the pre-v2 SDK name. `except McpError` must
+# catch SDK-raised `MCPError`, so this is a plain alias (a subclass would not
+# catch the base). Construction differs in v2 (`MCPError(code=, message=)`);
+# see the migration notes.
+McpError = MCPError
+
+
 class FastMCPDeprecationWarning(DeprecationWarning):
     """Deprecation warning for FastMCP APIs.
 
