@@ -175,7 +175,7 @@ __all__ = [
 
 # Task context lives in fastmcp.server.tasks.context; public symbols are
 # re-exported here so existing imports from dependencies continue to work.
-from fastmcp.server.tasks.context import (
+from fastmcp.server.tasks.context import (  # noqa: E402
     TaskContextInfo,
     TaskContextSnapshot,
     _recall_snapshot,
