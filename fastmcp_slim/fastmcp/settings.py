@@ -321,8 +321,12 @@ class Settings(BaseSettings):
                 loopback, link-local, or otherwise reserved IP. When True, FastMCP
                 skips its own DNS resolution and IP blocklist and issues a single
                 request to the hostname URL, letting the configured proxy (from the
-                standard HTTPS_PROXY/HTTP_PROXY environment variables) own DNS and
-                egress. Only enable this when a trusted corporate proxy is the
+                standard HTTPS_PROXY/ALL_PROXY environment variables) own DNS and
+                egress. Because that delegation is only safe if the request is
+                actually proxied, FastMCP refuses the fetch (raising SSRFError) when no
+                such proxy would route the target — none configured, or NO_PROXY
+                excludes the host — rather than sending it direct with the blocklist
+                disabled. Only enable this when a trusted corporate proxy is the
                 mandated egress path: it shifts SSRF trust to that proxy. Scheme
                 (HTTPS-only) and hostname checks still apply.
                 """

@@ -3,7 +3,6 @@
 This module tests the ssrf.py module which provides SSRF-protected HTTP fetching.
 """
 
-import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -492,11 +491,28 @@ class TestProxyMode:
     The scheme (HTTPS) and host checks still apply.
     """
 
+    @pytest.fixture
+    def proxy_routed(self):
+        """An environment where a configured HTTPS proxy actually routes the fetch.
+
+        Proxy mode now refuses to proceed unless a proxy will route the target, so the
+        happy-path tests must simulate one: an https entry from getproxies() and a
+        proxy_bypass() that does not exclude the host.
+        """
+        with (
+            patch(
+                "fastmcp.server.auth.ssrf.getproxies",
+                return_value={"https": "http://proxy.internal:3128"},
+            ),
+            patch("fastmcp.server.auth.ssrf.proxy_bypass", return_value=False),
+        ):
+            yield
+
     def test_flag_defaults_to_false(self):
         """The trust-proxy flag must be off by default (no silent weakening)."""
         assert fastmcp.settings.ssrf_trust_proxy is False
 
-    async def test_validate_url_skips_resolution_and_blocklist(self):
+    async def test_validate_url_skips_resolution_and_blocklist(self, proxy_routed):
         """Proxy mode returns resolved_ips=[] without resolving or blocklisting."""
         with (
             temporary_settings(ssrf_trust_proxy=True),
@@ -529,35 +545,30 @@ class TestProxyMode:
             with pytest.raises(SSRFError, match="non-root path"):
                 await validate_url("https://example.com/", require_path=True)
 
-    async def test_warns_when_no_proxy_is_configured(self, caplog):
-        """No proxy in the environment → a loud warning, but the fetch proceeds."""
+    async def test_raises_when_no_proxy_is_configured(self):
+        """No proxy in the environment → refuse rather than fetch unprotected."""
         with (
             temporary_settings(ssrf_trust_proxy=True),
             patch("fastmcp.server.auth.ssrf.getproxies", return_value={}),
-            caplog.at_level(logging.WARNING, logger="FastMCP"),
         ):
-            result = await validate_url("https://example.com/path")
+            with pytest.raises(SSRFError, match="no HTTPS_PROXY/ALL_PROXY"):
+                await validate_url("https://example.com/path")
 
-        assert result.resolved_ips == []
-        assert "FASTMCP_SSRF_TRUST_PROXY is enabled but no HTTPS_PROXY" in caplog.text
-
-    async def test_warns_when_only_http_proxy_is_configured(self, caplog):
-        """HTTP_PROXY alone never routes these HTTPS-only fetches — still warn."""
+    async def test_raises_when_only_http_proxy_is_configured(self):
+        """HTTP_PROXY alone never routes these HTTPS-only fetches — refuse."""
         with (
             temporary_settings(ssrf_trust_proxy=True),
             patch(
                 "fastmcp.server.auth.ssrf.getproxies",
                 return_value={"http": "http://proxy.internal:3128"},
             ),
-            caplog.at_level(logging.WARNING, logger="FastMCP"),
         ):
-            await validate_url("https://example.com/path")
-
-        assert "FASTMCP_SSRF_TRUST_PROXY is enabled but no HTTPS_PROXY" in caplog.text
+            with pytest.raises(SSRFError, match="no HTTPS_PROXY/ALL_PROXY"):
+                await validate_url("https://example.com/path")
 
     @pytest.mark.parametrize("scheme", ["https", "all"])
-    async def test_no_warning_when_proxy_is_configured(self, scheme, caplog):
-        """An https or all proxy entry routes the fetch — no warning."""
+    async def test_proceeds_when_proxy_is_configured(self, scheme):
+        """An https or all proxy entry routes the fetch — proxy mode proceeds."""
         with (
             temporary_settings(ssrf_trust_proxy=True),
             patch(
@@ -565,16 +576,15 @@ class TestProxyMode:
                 return_value={scheme: "http://proxy.internal:3128"},
             ),
             patch("fastmcp.server.auth.ssrf.proxy_bypass", return_value=False),
-            caplog.at_level(logging.WARNING, logger="FastMCP"),
         ):
             result = await validate_url("https://example.com/path")
 
         assert result.resolved_ips == []
-        assert "FASTMCP_SSRF_TRUST_PROXY" not in caplog.text
 
-    async def test_warns_when_no_proxy_excludes_the_host(self, caplog):
-        """An https proxy is configured but NO_PROXY excludes this host, so the fetch
-        goes out direct — getproxies() alone would miss it, proxy_bypass() catches it."""
+    async def test_raises_when_no_proxy_excludes_the_host(self):
+        """A proxy is configured but NO_PROXY excludes this host, so the fetch would go
+        direct — getproxies() alone would miss it, proxy_bypass() catches it and the
+        fetch is refused."""
         with (
             temporary_settings(ssrf_trust_proxy=True),
             patch(
@@ -582,14 +592,28 @@ class TestProxyMode:
                 return_value={"https": "http://proxy.internal:3128"},
             ),
             patch("fastmcp.server.auth.ssrf.proxy_bypass", return_value=True),
-            caplog.at_level(logging.WARNING, logger="FastMCP"),
         ):
-            result = await validate_url("https://example.com/path")
+            with pytest.raises(SSRFError, match="NO_PROXY"):
+                await validate_url("https://example.com/path")
 
-        assert result.resolved_ips == []
-        assert "FASTMCP_SSRF_TRUST_PROXY is enabled but no HTTPS_PROXY" in caplog.text
+    async def test_fetch_refuses_end_to_end_when_nothing_would_proxy(self):
+        """The refusal surfaces through ssrf_safe_fetch: no direct request is made.
 
-    async def test_fetch_single_request_to_original_url(self):
+        The whole point of the hard failure is that the *fetch* cannot proceed, so this
+        drives it through the public entrypoint and asserts no httpx client is ever
+        constructed — the request never leaves the process with the blocklist disabled.
+        """
+        with (
+            temporary_settings(ssrf_trust_proxy=True),
+            patch("fastmcp.server.auth.ssrf.getproxies", return_value={}),
+            patch("httpx.AsyncClient") as mock_client_class,
+        ):
+            with pytest.raises(SSRFError, match="no HTTPS_PROXY/ALL_PROXY"):
+                await ssrf_safe_fetch("https://example.com/api")
+
+        mock_client_class.assert_not_called()
+
+    async def test_fetch_single_request_to_original_url(self, proxy_routed):
         """Proxy mode issues one unpinned request to the hostname URL."""
         mock_client = _mock_httpx_client()
         with (
@@ -617,7 +641,7 @@ class TestProxyMode:
         assert client_kwargs["follow_redirects"] is False
         assert client_kwargs["verify"] is True
 
-    async def test_fetch_preserves_request_headers_but_drops_host(self):
+    async def test_fetch_preserves_request_headers_but_drops_host(self, proxy_routed):
         """Caller headers pass through, but a caller-supplied Host is dropped."""
         from fastmcp.server.auth.ssrf import ssrf_safe_fetch_response
 
@@ -636,7 +660,7 @@ class TestProxyMode:
         assert sent_headers["If-None-Match"] == "etag"
         assert "Host" not in sent_headers
 
-    async def test_fetch_size_limit_preserved(self):
+    async def test_fetch_size_limit_preserved(self, proxy_routed):
         """Proxy mode still enforces the response size limit during streaming."""
         big_chunks = [b"x" * 1024 for _ in range(10)]
         mock_client = _mock_httpx_client(headers={}, body_chunks=big_chunks)
@@ -648,7 +672,7 @@ class TestProxyMode:
             with pytest.raises(SSRFFetchError, match="too large"):
                 await ssrf_safe_fetch("https://example.com/api", max_size=5120)
 
-    async def test_fetch_status_check_preserved(self):
+    async def test_fetch_status_check_preserved(self, proxy_routed):
         """Proxy mode still rejects non-allowed status codes."""
         mock_client = _mock_httpx_client(status_code=404, body_chunks=[b"no"])
         with (

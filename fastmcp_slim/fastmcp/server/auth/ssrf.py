@@ -7,7 +7,9 @@ This module provides SSRF-protected HTTP fetching with:
 
 When ``FASTMCP_SSRF_TRUST_PROXY`` is set, DNS resolution and the IP blocklist are
 skipped and a single request is made to the hostname URL, delegating DNS and egress
-to a trusted outbound proxy (the scheme and hostname checks still apply).
+to a trusted outbound proxy (the scheme and hostname checks still apply). If no
+configured proxy would route the request — no HTTPS/ALL proxy, or NO_PROXY excludes
+the host — the fetch is refused rather than sent direct with the blocklist disabled.
 """
 
 from __future__ import annotations
@@ -206,7 +208,8 @@ async def validate_url(url: str, require_path: bool = False) -> ValidatedURL:
         ValidatedURL with resolved IPs
 
     Raises:
-        SSRFError: If URL is invalid or resolves to blocked IPs
+        SSRFError: If the URL is invalid, resolves to blocked IPs, or proxy-trust
+            mode is enabled but no configured proxy will route the request.
     """
     try:
         parsed = urlparse(url)
@@ -232,22 +235,34 @@ async def validate_url(url: str, require_path: bool = False) -> ValidatedURL:
     # resolution and the blocklist entirely and signal proxy mode downstream with an
     # empty resolved_ips list. The scheme (HTTPS) and host checks above still run.
     if fastmcp.settings.ssrf_trust_proxy:
-        # Mirror httpx's trust_env lookup: an HTTPS request only routes through the
-        # https/all proxy entries, and NO_PROXY can still exclude this host. With no
-        # routable proxy, the fetch goes out as a direct, unpinned request with the
-        # blocklist already skipped — warn loudly, because that combination provides no
-        # SSRF protection at all. getproxies() ignores NO_PROXY, so consult
-        # proxy_bypass() too (a "*" entry or a host match would otherwise warn-suppress
-        # a request that actually goes direct).
+        # Skipping the blocklist is only safe if the request is *actually* routed
+        # through the trusted proxy, so confirm it will be before proceeding: an HTTPS
+        # request routes only through the https/all proxy entries, and NO_PROXY can
+        # still exclude this host. getproxies() ignores NO_PROXY, so consult
+        # proxy_bypass() too. This approximates httpx's own trust_env routing
+        # conservatively — proxy_bypass() does not match NO_PROXY identically to httpx,
+        # but every divergence errs closed (we refuse a fetch httpx would have proxied,
+        # never the reverse), which is the safe direction. If nothing will proxy this
+        # target the fetch would otherwise go out direct with the blocklist already
+        # disabled — no SSRF protection at all — so refuse rather than make an
+        # unprotected request. The setting's contract is crisp: proxy-trust mode
+        # delegates SSRF protection to the proxy, and with no proxy for this target the
+        # fetch cannot proceed.
         proxies = getproxies()
-        has_https_proxy = "https" in proxies or "all" in proxies
-        if not has_https_proxy or proxy_bypass(hostname):
-            logger.warning(
-                "FASTMCP_SSRF_TRUST_PROXY is enabled but no HTTPS_PROXY/ALL_PROXY "
-                "is configured, so the request to %s will be made directly with "
-                "SSRF protection disabled. Point HTTPS_PROXY at the trusted proxy "
-                "or unset FASTMCP_SSRF_TRUST_PROXY.",
-                hostname,
+        if "https" not in proxies and "all" not in proxies:
+            raise SSRFError(
+                f"FASTMCP_SSRF_TRUST_PROXY is enabled but no HTTPS_PROXY/ALL_PROXY is "
+                f"configured, so the request to {hostname} would go direct with SSRF "
+                f"protection disabled. Point HTTPS_PROXY at the trusted proxy, or "
+                f"unset FASTMCP_SSRF_TRUST_PROXY to restore DNS/IP validation."
+            )
+        if proxy_bypass(hostname):
+            raise SSRFError(
+                f"FASTMCP_SSRF_TRUST_PROXY is enabled and a proxy is configured, but "
+                f"NO_PROXY (or a proxy-bypass rule) excludes {hostname}, so the "
+                f"request would go direct with SSRF protection disabled. Remove "
+                f"{hostname} from NO_PROXY to route it through the proxy, or unset "
+                f"FASTMCP_SSRF_TRUST_PROXY to restore DNS/IP validation."
             )
         return ValidatedURL(
             original_url=url,

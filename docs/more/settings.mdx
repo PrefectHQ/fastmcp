@@ -97,12 +97,12 @@ By default, FastMCP protects its OAuth and JWKS fetches against [SSRF](https://o
 
 This breaks when a corporate `CONNECT` proxy is the only egress path: the container often cannot resolve external DNS at all (only the proxy can), and even when it can, pinning to the IP makes TLS verification fail because public certificates list hostnames, not IP addresses.
 
-Set `FASTMCP_SSRF_TRUST_PROXY=true` when a trusted proxy is your mandated egress. FastMCP then skips DNS resolution and the IP blocklist and makes a single request to the hostname URL, which httpx routes through the proxy named by the standard `HTTPS_PROXY` / `HTTP_PROXY` environment variables. The HTTPS-only and hostname checks still apply.
+Set `FASTMCP_SSRF_TRUST_PROXY=true` when a trusted proxy is your mandated egress. FastMCP then skips DNS resolution and the IP blocklist and makes a single request to the hostname URL, which httpx routes through the proxy named by the standard `HTTPS_PROXY` / `ALL_PROXY` environment variables. The HTTPS-only and hostname checks still apply.
 
 <Warning>
 This is a deliberate trust shift: the IP blocklist cannot be enforced through a proxy (the proxy does its own DNS, so an address FastMCP resolved is not the one the proxy dials). Only enable it when the proxy itself is trusted to mediate egress.
 
-FastMCP does not refuse to run without a proxy. If you set `FASTMCP_SSRF_TRUST_PROXY=true` but no `HTTPS_PROXY` / `ALL_PROXY` is present in the server process's environment (or `NO_PROXY` excludes the target), httpx makes a **direct, unpinned request with the IP blocklist disabled** — there is no fallback to the default protection. FastMCP logs a warning on each such fetch when it finds no `HTTPS_PROXY` / `ALL_PROXY` configured (an `HTTP_PROXY` alone never routes these HTTPS-only fetches), but the request still proceeds. Enable this setting only together with an active proxy.
+Skipping the blocklist is only safe if the request is *actually* routed through the proxy, so FastMCP verifies that before proceeding. If you set `FASTMCP_SSRF_TRUST_PROXY=true` but no `HTTPS_PROXY` / `ALL_PROXY` is present in the server process's environment (an `HTTP_PROXY` alone never routes these HTTPS-only fetches), or `NO_PROXY` excludes the target host, the request would otherwise go out **direct with the IP blocklist disabled** — no SSRF protection at all. Rather than send it, FastMCP refuses the fetch and raises `SSRFError` with an actionable message. The contract is crisp: proxy-trust mode delegates SSRF protection to the proxy, and with no proxy for a given target the fetch cannot proceed. Enable this setting only together with an active proxy that routes your auth endpoints.
 </Warning>
 
 ## Advanced
