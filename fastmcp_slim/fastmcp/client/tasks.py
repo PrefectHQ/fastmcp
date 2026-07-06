@@ -33,11 +33,11 @@ class TaskNotificationHandler(MessageHandler):
 
     async def dispatch(self, message: Message) -> None:
         """Dispatch messages, including task status notifications."""
-        if isinstance(message, mcp_types.ServerNotification):
-            if isinstance(message.root, TaskStatusNotification):
-                client = self._client_ref()
-                if client:
-                    client._handle_task_status_notification(message.root)
+        # SDK v2 delivers notifications unwrapped (no `.root` wrapper).
+        if isinstance(message, TaskStatusNotification):
+            client = self._client_ref()
+            if client:
+                client._handle_task_status_notification(message)
 
         await super().dispatch(message)
 
@@ -178,8 +178,9 @@ class Task(abc.ABC, Generic[TaskResultT]):
         self._check_client_connected()
 
         if self._is_immediate:
-            # Return synthetic completed status
-            now = datetime.now(timezone.utc)
+            # Return synthetic completed status. SDK v2 types the task
+            # timestamps as ISO 8601 strings.
+            now = datetime.now(timezone.utc).isoformat()
             return GetTaskResult(
                 task_id=self._task_id,
                 status="completed",
