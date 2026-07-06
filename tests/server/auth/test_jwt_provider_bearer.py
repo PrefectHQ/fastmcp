@@ -1,8 +1,8 @@
 from collections.abc import AsyncGenerator
 from typing import Any
 
-import httpx
 import pytest
+from mcp import MCPError
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.auth.bearer import BearerAuth
@@ -486,11 +486,11 @@ class TestFastMCPBearerAuth:
         assert isinstance(mcp.auth, JWTVerifier)
 
     async def test_unauthorized_access(self, mcp_server_url: str):
-        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+        # SDK v2 masks the server's 401 behind a generic MCPError at the client
+        # boundary rather than re-raising httpx.HTTPStatusError.
+        with pytest.raises(MCPError):
             async with Client(mcp_server_url) as client:
                 tools = await client.list_tools()  # noqa: F841
-        assert isinstance(exc_info.value, httpx.HTTPStatusError)
-        assert exc_info.value.response.status_code == 401
         assert "tools" not in locals()
 
     async def test_authorized_access(self, mcp_server_url: str, bearer_token):
@@ -499,11 +499,9 @@ class TestFastMCPBearerAuth:
         assert tools
 
     async def test_invalid_token_raises_401(self, mcp_server_url: str):
-        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+        with pytest.raises(MCPError):
             async with Client(mcp_server_url, auth=BearerAuth("invalid")) as client:
                 tools = await client.list_tools()  # noqa: F841
-        assert isinstance(exc_info.value, httpx.HTTPStatusError)
-        assert exc_info.value.response.status_code == 401
         assert "tools" not in locals()
 
     async def test_expired_token(self, mcp_server_url: str, rsa_key_pair: RSAKeyPair):
@@ -514,22 +512,18 @@ class TestFastMCPBearerAuth:
             expires_in_seconds=-3600,
         )
 
-        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+        with pytest.raises(MCPError):
             async with Client(mcp_server_url, auth=BearerAuth(token)) as client:
                 tools = await client.list_tools()  # noqa: F841
-        assert isinstance(exc_info.value, httpx.HTTPStatusError)
-        assert exc_info.value.response.status_code == 401
         assert "tools" not in locals()
 
     async def test_token_with_bad_signature(self, mcp_server_url: str):
         rsa_key_pair = RSAKeyPair.generate()
         token = rsa_key_pair.create_token()
 
-        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+        with pytest.raises(MCPError):
             async with Client(mcp_server_url, auth=BearerAuth(token)) as client:
                 tools = await client.list_tools()  # noqa: F841
-        assert isinstance(exc_info.value, httpx.HTTPStatusError)
-        assert exc_info.value.response.status_code == 401
         assert "tools" not in locals()
 
     async def test_token_with_insufficient_scopes(self, rsa_key_pair: RSAKeyPair):
@@ -546,14 +540,11 @@ class TestFastMCPBearerAuth:
         )
 
         async with run_server_async(server, transport="http") as mcp_server_url:
-            with pytest.raises(httpx.HTTPStatusError) as exc_info:
+            # JWTVerifier rejects the token (verify_token returns None); SDK v2
+            # surfaces the resulting 401 as a generic MCPError at the client.
+            with pytest.raises(MCPError):
                 async with Client(mcp_server_url, auth=BearerAuth(token)) as client:
                     tools = await client.list_tools()  # noqa: F841
-            # JWTVerifier returns 401 when verify_token returns None (invalid token)
-            # This is correct behavior - when TokenVerifier.verify_token returns None,
-            # it indicates the token is invalid (not just insufficient permissions)
-            assert isinstance(exc_info.value, httpx.HTTPStatusError)
-            assert exc_info.value.response.status_code == 401
             assert "tools" not in locals()
 
     async def test_token_with_sufficient_scopes(self, rsa_key_pair: RSAKeyPair):

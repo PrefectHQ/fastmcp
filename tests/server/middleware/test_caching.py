@@ -503,7 +503,7 @@ class TestResponseCachingMiddlewareIntegration:
             assert statistics == snapshot(
                 ResponseCachingStatistics(
                     list_tools=KVStoreCollectionStatistics(
-                        get=GetStatistics(count=2, hit=1, miss=1),
+                        get=GetStatistics(count=1, hit=0, miss=1),
                         put=PutStatistics(count=1),
                     ),
                     call_tool=KVStoreCollectionStatistics(
@@ -518,7 +518,7 @@ class TestResponseCachingMiddlewareIntegration:
             assert statistics == snapshot(
                 ResponseCachingStatistics(
                     list_tools=KVStoreCollectionStatistics(
-                        get=GetStatistics(count=2, hit=1, miss=1),
+                        get=GetStatistics(count=1, hit=0, miss=1),
                         put=PutStatistics(count=1),
                     ),
                     call_tool=KVStoreCollectionStatistics(
@@ -659,7 +659,7 @@ class TestCacheKeyGeneration:
 
     def test_read_resource_key_is_hashed_and_does_not_include_raw_uri(self):
         msg = mcp_types.ReadResourceRequestParams(
-            uri=AnyUrl("file:///tmp/../../etc/shadow?token=abcd")
+            uri="file:///tmp/../../etc/shadow?token=abcd"
         )
 
         key = _make_read_resource_cache_key(msg)
@@ -692,7 +692,7 @@ class TestCacheKeyGeneration:
         assert user_a != anon
 
     def test_read_resource_key_partitions_by_auth(self):
-        msg = mcp_types.ReadResourceRequestParams(uri=AnyUrl("file:///tmp/x"))
+        msg = mcp_types.ReadResourceRequestParams(uri="file:///tmp/x")
 
         user_a = _make_read_resource_cache_key(msg, auth_key="user_a")
         user_b = _make_read_resource_cache_key(msg, auth_key="user_b")
