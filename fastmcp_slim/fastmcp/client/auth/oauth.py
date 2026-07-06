@@ -14,6 +14,7 @@ from key_value.aio.stores.memory import MemoryStore
 from mcp.client.auth import OAuthClientProvider, TokenStorage
 from mcp.shared._httpx_utils import McpHttpClientFactory
 from mcp.shared.auth import (
+    AuthorizationCodeResult,
     OAuthClientInformationFull,
     OAuthClientMetadata,
     OAuthToken,
@@ -360,8 +361,8 @@ class OAuth(OAuthClientProvider):
         logger.info(f"OAuth authorization URL: {authorization_url}")
         webbrowser.open(authorization_url)
 
-    async def callback_handler(self) -> tuple[str, str | None]:
-        """Handle OAuth callback and return (auth_code, state)."""
+    async def callback_handler(self) -> AuthorizationCodeResult:
+        """Handle OAuth callback and return the authorization code result."""
         # Create result container and event to capture the OAuth response
         result = OAuthCallbackResult()
         result_ready = anyio.Event()
@@ -387,7 +388,11 @@ class OAuth(OAuthClientProvider):
                     await result_ready.wait()
                     if result.error:
                         raise result.error
-                    return result.code, result.state  # type: ignore
+                    # `result.code` is set once `result_ready` fires without error.
+                    return AuthorizationCodeResult(
+                        code=result.code,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+                        state=result.state,
+                    )
             except TimeoutError as e:
                 raise TimeoutError(
                     f"OAuth callback timed out after {self._callback_timeout} seconds"
