@@ -672,23 +672,42 @@ class Context:
                 "This typically means you're outside a request context."
             )
 
-        # Check for cached session ID
-        session_id = getattr(session, "_fastmcp_state_prefix", None)
-        if session_id is not None:
-            return session_id
+        # In SDK v2 the ServerSession is constructed fresh per request, so the
+        # stable per-client identity lives on the underlying Connection, which
+        # persists for the whole client session. Cache the state prefix on the
+        # connection (its `session_id` for HTTP, its `state` dict otherwise) so
+        # session-scoped state survives across tool calls.
+        connection = getattr(session, "_connection", None)
 
-        # For HTTP, try to get from header
-        if request_ctx is not None:
+        # Check for a cached prefix on the stable connection (or the session, as
+        # a fallback for on_initialize where only a raw session is available).
+        if connection is not None:
+            cached = connection.state.get("_fastmcp_state_prefix")
+            if cached is not None:
+                return cached
+        session_cached = getattr(session, "_fastmcp_state_prefix", None)
+        if session_cached is not None:
+            return session_cached
+
+        # For HTTP, prefer the connection's negotiated session id, then the
+        # incoming request header.
+        session_id: str | None = None
+        if connection is not None:
+            session_id = connection.session_id
+        if session_id is None and request_ctx is not None:
             request = request_ctx.request
             if request:
                 session_id = request.headers.get("mcp-session-id")
 
-        # For STDIO/SSE/in-memory, generate a UUID
+        # For STDIO/SSE/in-memory, generate a UUID.
         if session_id is None:
             session_id = str(uuid4())
 
-        # Cache on session for consistency
-        session._fastmcp_state_prefix = session_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        # Cache on the stable connection (falling back to the session).
+        if connection is not None:
+            connection.state["_fastmcp_state_prefix"] = session_id
+        else:
+            session._fastmcp_state_prefix = session_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
         return session_id
 
     @property
