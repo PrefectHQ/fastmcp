@@ -26,7 +26,7 @@ The migration story is honest: there is **no drop-in** on modern connections. Th
 
 The client-side provider handlers (Anthropic, OpenAI, Google GenAI) are **retained** regardless: MRTR needs them to answer sampling input-requests from the client side. What is removed is the server-side push emitter, which the SDK never built for the modern era.
 
-In this PR, sampling still functions on the legacy eras and is not yet deprecation-warned — the deprecation and era-gating land as the first follow-up PR.
+In this PR, sampling still functions on the legacy eras. Users already see an SDK-level `MCPDeprecationWarning` on ordinary `ctx.sample` usage (the SDK deprecated the capability wire-side per SEP-2577, verified empirically by WS2), but FastMCP's own deprecation — warnings with migration guidance, plus the era-gating — lands as the first follow-up PR.
 
 ## MRTR elicitation
 
