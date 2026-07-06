@@ -231,7 +231,6 @@ def tool_server():
         ImageContent,
         TextContent,
     )
-    from pydantic import AnyUrl
 
     from fastmcp import FastMCP
     from fastmcp.utilities.types import Audio, File, Image
@@ -274,7 +273,7 @@ def tool_server():
                 resource=BlobResourceContents(
                     blob=base64.b64encode(b"abc").decode(),
                     mime_type="application/octet-stream",
-                    uri=AnyUrl("file:///test.bin"),
+                    uri="file:///test.bin",
                 ),
             ),
         ]
