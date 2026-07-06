@@ -127,6 +127,12 @@ class TestProxyPromptsSyncExecution:
 class TestProxyPromptsTaskForbidden:
     """Test that prompts with task=True are forbidden through proxy."""
 
+    @pytest.mark.xfail(
+        reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+        "ReadResourceRequestParams; prompt/resource task submission is not "
+        "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+        strict=True,
+    )
     async def test_prompt_task_raises_mcp_error(self, proxy_server: FastMCP):
         """Prompt called with task=True through proxy raises MCPError."""
         async with Client(proxy_server) as client:
@@ -157,6 +163,12 @@ class TestProxyResourcesSyncExecution:
 class TestProxyResourcesTaskForbidden:
     """Test that resources with task=True are forbidden through proxy."""
 
+    @pytest.mark.xfail(
+        reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+        "ReadResourceRequestParams; prompt/resource task submission is not "
+        "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+        strict=True,
+    )
     async def test_resource_task_raises_mcp_error(self, proxy_server: FastMCP):
         """Resource read with task=True through proxy raises MCPError."""
         async with Client(proxy_server) as client:
@@ -165,6 +177,12 @@ class TestProxyResourcesTaskForbidden:
 
             assert "does not support task-augmented execution" in str(exc_info.value)
 
+    @pytest.mark.xfail(
+        reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+        "ReadResourceRequestParams; prompt/resource task submission is not "
+        "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+        strict=True,
+    )
     async def test_resource_template_task_raises_mcp_error(self, proxy_server: FastMCP):
         """Resource template with task=True through proxy raises MCPError."""
         async with Client(proxy_server) as client:

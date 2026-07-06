@@ -237,6 +237,12 @@ class TestMountedPromptTasks:
             assert hasattr(task, "task_id")
             assert isinstance(task.task_id, str)
 
+    @pytest.mark.xfail(
+        reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+        "ReadResourceRequestParams; prompt/resource task submission is not "
+        "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+        strict=True,
+    )
     async def test_mounted_prompt_task_executes_in_background(self, parent_server):
         """Mounted prompt task executes in background."""
         async with Client(parent_server) as client:
@@ -273,6 +279,12 @@ class TestMountedResourceTasks:
             assert hasattr(task, "task_id")
             assert isinstance(task.task_id, str)
 
+    @pytest.mark.xfail(
+        reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+        "ReadResourceRequestParams; prompt/resource task submission is not "
+        "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+        strict=True,
+    )
     async def test_mounted_resource_task_executes_in_background(self, parent_server):
         """Mounted resource task executes in background."""
         async with Client(parent_server) as client:
@@ -289,6 +301,12 @@ class TestMountedResourceTasks:
             assert len(result) > 0
             assert "Data from child server" in result[0].text
 
+    @pytest.mark.xfail(
+        reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+        "ReadResourceRequestParams; prompt/resource task submission is not "
+        "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+        strict=True,
+    )
     async def test_mounted_resource_template_task(self, parent_server):
         """Mounted resource template with task=True works."""
         async with Client(parent_server) as client:
@@ -786,6 +804,12 @@ class TestMiddlewareWithMountedTasks:
             "grandchild:tool",  # Executes in Docket after middleware completes
         ]
 
+    @pytest.mark.xfail(
+        reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+        "ReadResourceRequestParams; prompt/resource task submission is not "
+        "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+        strict=True,
+    )
     async def test_resource_middleware_runs_with_background_task(self):
         """Middleware runs at parent, child, and grandchild levels for resource tasks."""
         calls: list[str] = []
@@ -823,6 +847,12 @@ class TestMiddlewareWithMountedTasks:
             "grandchild:resource",
         ]
 
+    @pytest.mark.xfail(
+        reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+        "ReadResourceRequestParams; prompt/resource task submission is not "
+        "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+        strict=True,
+    )
     async def test_prompt_middleware_runs_with_background_task(self):
         """Middleware runs at parent, child, and grandchild levels for prompt tasks."""
         calls: list[str] = []
@@ -860,6 +890,12 @@ class TestMiddlewareWithMountedTasks:
             "grandchild:prompt",
         ]
 
+    @pytest.mark.xfail(
+        reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+        "ReadResourceRequestParams; prompt/resource task submission is not "
+        "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+        strict=True,
+    )
     async def test_resource_template_middleware_runs_with_background_task(self):
         """Middleware runs at all levels for resource template tasks."""
         calls: list[str] = []

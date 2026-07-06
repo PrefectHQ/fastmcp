@@ -100,6 +100,12 @@ async def test_cached_tool_task_accessible_outside_context(task_server):
     assert result2.data == "Result: test"
 
 
+@pytest.mark.xfail(
+    reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+    "ReadResourceRequestParams; prompt/resource task submission is not "
+    "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+    strict=True,
+)
 async def test_cached_prompt_task_accessible_outside_context(task_server):
     """Prompt tasks with cached results work outside context."""
     task = None
@@ -120,6 +126,12 @@ async def test_cached_prompt_task_accessible_outside_context(task_server):
     assert result2.description == "Prompt that runs in background."
 
 
+@pytest.mark.xfail(
+    reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+    "ReadResourceRequestParams; prompt/resource task submission is not "
+    "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+    strict=True,
+)
 async def test_cached_resource_task_accessible_outside_context(task_server):
     """Resource tasks with cached results work outside context."""
     task = None

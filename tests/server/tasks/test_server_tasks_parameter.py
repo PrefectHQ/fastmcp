@@ -13,6 +13,12 @@ from fastmcp.client import Client
 
 
 @pytest.mark.timeout(10)
+@pytest.mark.xfail(
+    reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+    "ReadResourceRequestParams; prompt/resource task submission is not "
+    "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+    strict=True,
+)
 async def test_server_tasks_true_defaults_all_components():
     """Server with tasks=True makes all components default to supporting tasks."""
     mcp = FastMCP("test", tasks=True)
@@ -51,6 +57,12 @@ async def test_server_tasks_true_defaults_all_components():
         assert not resource_task.returned_immediately
 
 
+@pytest.mark.xfail(
+    reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+    "ReadResourceRequestParams; prompt/resource task submission is not "
+    "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+    strict=True,
+)
 async def test_server_tasks_false_defaults_all_components():
     """Server with tasks=False makes all components default to mode=forbidden."""
     import pytest
@@ -171,6 +183,12 @@ async def test_component_explicit_true_overrides_server_false():
         assert result.is_error
 
 
+@pytest.mark.xfail(
+    reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+    "ReadResourceRequestParams; prompt/resource task submission is not "
+    "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+    strict=True,
+)
 async def test_mixed_explicit_and_inherited():
     """Mix of explicit True/False/None on different components."""
     import pytest
@@ -286,6 +304,12 @@ async def test_server_tasks_parameter_sets_component_defaults():
         assert result.is_error
 
 
+@pytest.mark.xfail(
+    reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+    "ReadResourceRequestParams; prompt/resource task submission is not "
+    "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+    strict=True,
+)
 async def test_resource_template_inherits_server_tasks_default():
     """Resource templates inherit server tasks default."""
     mcp = FastMCP("test", tasks=True)
@@ -300,6 +324,12 @@ async def test_resource_template_inherits_server_tasks_default():
         assert not resource_task.returned_immediately
 
 
+@pytest.mark.xfail(
+    reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+    "ReadResourceRequestParams; prompt/resource task submission is not "
+    "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+    strict=True,
+)
 async def test_multiple_components_same_name_different_tasks():
     """Different component types with same name can have different task settings."""
     import pytest
@@ -351,6 +381,12 @@ async def test_task_with_custom_tool_name():
         assert result.data == "result from custom-named tool"
 
 
+@pytest.mark.xfail(
+    reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+    "ReadResourceRequestParams; prompt/resource task submission is not "
+    "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+    strict=True,
+)
 async def test_task_with_custom_resource_name():
     """Resources with custom names work correctly as tasks.
 
@@ -375,6 +411,12 @@ async def test_task_with_custom_resource_name():
         assert result[0].text == "result from custom-named resource"
 
 
+@pytest.mark.xfail(
+    reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+    "ReadResourceRequestParams; prompt/resource task submission is not "
+    "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+    strict=True,
+)
 async def test_task_with_custom_template_name():
     """Resource templates with custom names work correctly as tasks.
 

@@ -195,6 +195,12 @@ class TestResourceModeEnforcement:
             assert exc_info.value.error.code == METHOD_NOT_FOUND
             assert "requires task-augmented execution" in exc_info.value.error.message
 
+    @pytest.mark.xfail(
+        reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+        "ReadResourceRequestParams; prompt/resource task submission is not "
+        "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+        strict=True,
+    )
     async def test_required_resource_with_task_succeeds(self, server):
         """Required mode succeeds when read with task metadata."""
         async with Client(server) as client:
@@ -247,6 +253,12 @@ class TestPromptModeEnforcement:
             assert exc_info.value.error.code == METHOD_NOT_FOUND
             assert "requires task-augmented execution" in exc_info.value.error.message
 
+    @pytest.mark.xfail(
+        reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+        "ReadResourceRequestParams; prompt/resource task submission is not "
+        "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+        strict=True,
+    )
     async def test_required_prompt_with_task_succeeds(self, server):
         """Required mode succeeds when called with task metadata."""
         async with Client(server) as client:

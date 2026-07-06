@@ -565,7 +565,6 @@ async def mcp_content_server(tmp_path):
         TextContent,
         TextResourceContents,
     )
-    from pydantic import AnyUrl
 
     mcp = FastMCP("content-test")
 
@@ -588,15 +587,13 @@ async def mcp_content_server(tmp_path):
     async def return_embedded_resource() -> EmbeddedResource:
         return EmbeddedResource(
             type="resource",
-            resource=TextResourceContents(
-                uri=AnyUrl("test://resource"), text="embedded"
-            ),
+            resource=TextResourceContents(uri="test://resource", text="embedded"),
         )
 
     @mcp.tool(task=True)
     async def return_resource_link() -> ResourceLink:
         return ResourceLink(
-            type="resource_link", uri=AnyUrl("test://linked"), name="Test Resource"
+            type="resource_link", uri="test://linked", name="Test Resource"
         )
 
     @mcp.tool(task=True)

@@ -51,6 +51,12 @@ async def test_prompt_with_task_metadata_returns_immediately(prompt_server):
         assert len(task.task_id) > 0
 
 
+@pytest.mark.xfail(
+    reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+    "ReadResourceRequestParams; prompt/resource task submission is not "
+    "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+    strict=True,
+)
 async def test_prompt_task_executes_in_background(prompt_server):
     """Prompt task executes via Docket in background."""
     async with Client(prompt_server) as client:
@@ -68,6 +74,12 @@ async def test_prompt_task_executes_in_background(prompt_server):
         assert "comprehensive" in result.messages[0].content.text.lower()
 
 
+@pytest.mark.xfail(
+    reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+    "ReadResourceRequestParams; prompt/resource task submission is not "
+    "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+    strict=True,
+)
 async def test_forbidden_mode_prompt_rejects_task_calls(prompt_server):
     """Prompts with task=False (mode=forbidden) reject task-augmented calls."""
     from mcp.shared.exceptions import MCPError

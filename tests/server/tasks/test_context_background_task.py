@@ -284,6 +284,14 @@ class TestBackgroundTaskIntegration:
             result = await task.result()
             assert result.data == "ok"
 
+    @pytest.mark.xfail(
+        reason="Background-task sampling has no back-channel under SDK v2: the "
+        "per-request ServerSession that would carry sampling/createMessage is "
+        "gone once the submitting request completes, so ctx.sample() from a "
+        "worker raises NoBackChannelError. Needs a relay like elicit() "
+        "(context.py TODO); tracked in sdk-feedback.",
+        strict=True,
+    )
     async def test_sample_uses_origin_request_id_in_background_task(self):
         """E2E: ctx.sample() works in a task without an active request context."""
         mcp = FastMCP("sample-background-test")

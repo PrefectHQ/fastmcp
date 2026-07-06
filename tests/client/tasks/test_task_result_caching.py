@@ -5,6 +5,8 @@ Verifies that Task.result() and await task cache results properly to avoid
 redundant server calls and ensure consistent object identity.
 """
 
+import pytest
+
 from fastmcp import FastMCP
 from fastmcp.client import Client
 
@@ -159,6 +161,12 @@ async def test_forbidden_mode_tool_caches_error_result():
         assert result1 is result2 is result3
 
 
+@pytest.mark.xfail(
+    reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+    "ReadResourceRequestParams; prompt/resource task submission is not "
+    "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+    strict=True,
+)
 async def test_forbidden_mode_prompt_raises_error():
     """Prompts with task=False (mode=forbidden) raise error."""
     import pytest
@@ -176,6 +184,12 @@ async def test_forbidden_mode_prompt_raises_error():
             await client.get_prompt("non_task_prompt", task=True)
 
 
+@pytest.mark.xfail(
+    reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+    "ReadResourceRequestParams; prompt/resource task submission is not "
+    "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+    strict=True,
+)
 async def test_forbidden_mode_resource_raises_error():
     """Resources with task=False (mode=forbidden) raise error."""
     import pytest
