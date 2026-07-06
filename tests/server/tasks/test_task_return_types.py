@@ -559,13 +559,13 @@ async def mcp_content_server(tmp_path):
     import base64
 
     from mcp_types import (
-        AnyUrl,
         EmbeddedResource,
         ImageContent,
         ResourceLink,
         TextContent,
         TextResourceContents,
     )
+    from pydantic import AnyUrl
 
     mcp = FastMCP("content-test")
 

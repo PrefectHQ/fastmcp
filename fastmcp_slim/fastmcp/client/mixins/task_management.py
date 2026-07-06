@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any
 
 import mcp_types
 from mcp import MCPError
+from mcp_types import Result
+from pydantic import ConfigDict
 
 if TYPE_CHECKING:
     from fastmcp.client.client import Client
@@ -14,7 +16,6 @@ from mcp_types import (
     CancelTaskRequestParams,
     GetTaskPayloadRequest,
     GetTaskPayloadRequestParams,
-    GetTaskPayloadResult,
     GetTaskRequest,
     GetTaskRequestParams,
     GetTaskResult,
@@ -25,6 +26,24 @@ from mcp_types import (
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+class _RawTaskPayloadResult(Result):
+    """Permissive result type for `tasks/result` responses.
+
+    Per the v2 spec, a `tasks/result` payload arrives as extra wire fields whose
+    shape matches the original request's result type (CallToolResult,
+    GetPromptResult, ReadResourceResult, ...). `GetTaskPayloadResult` is a bare
+    `Result` that drops those fields on validation, so this subclass retains them
+    with `extra="allow"`; callers re-parse the resulting dict into the concrete
+    result type.
+    """
+
+    model_config = ConfigDict(
+        alias_generator=Result.model_config.get("alias_generator"),
+        populate_by_name=True,
+        extra="allow",
+    )
 
 
 class ClientTaskManagementMixin:
@@ -76,10 +95,12 @@ class ClientTaskManagementMixin:
         result = await self._await_with_session_monitoring(
             self.session.send_request(
                 request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
-                result_type=GetTaskPayloadResult,
+                result_type=_RawTaskPayloadResult,
             )
         )
-        # Return as dict for compatibility with Task class parsing
+        # Return as dict for compatibility with Task class parsing. The payload
+        # fields (content, structuredContent, messages, contents, ...) survive
+        # via the permissive result type's extra="allow".
         return result.model_dump(exclude_none=True, by_alias=True)
 
     async def list_tasks(
