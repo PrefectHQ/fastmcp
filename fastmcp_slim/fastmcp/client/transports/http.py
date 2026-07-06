@@ -197,8 +197,11 @@ class StreamableHttpTransport(ClientTransport):
             http_client,
             streamable_http_client(self.url, http_client=http_client) as transport,
         ):
-            read_stream, write_stream, get_session_id = transport
-            self._get_session_id_cb = get_session_id
+            # SDK v2 streamable_http_client yields a 2-tuple (read, write);
+            # the get_session_id callback is no longer part of the transport.
+            # Phase C: source the session id from the session/transport itself.
+            read_stream, write_stream = transport
+            self._get_session_id_cb = None
             async with ClientSession(
                 read_stream, write_stream, **session_kwargs
             ) as session:
