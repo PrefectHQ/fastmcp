@@ -350,6 +350,7 @@
                     "icon": "up",
                     "pages": [
                       "getting-started/upgrading/from-fastmcp-2",
+                      "getting-started/upgrading/to-mcp-sdk-v2",
                       "getting-started/upgrading/from-mcp-sdk",
                       "getting-started/upgrading/from-low-level-sdk"
                     ]

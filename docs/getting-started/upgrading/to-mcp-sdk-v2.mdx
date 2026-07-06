@@ -1,0 +1,116 @@
+---
+title: Upgrading to FastMCP on MCP SDK v2
+sidebarTitle: "To MCP SDK v2"
+description: What changes when FastMCP moves onto the MCP Python SDK v2, and how FastMCP absorbs most of it for you
+icon: up
+---
+
+FastMCP now builds on the MCP Python SDK v2. The SDK v2 makes two sweeping changes to the protocol layer: it splits the protocol types out of `mcp.types` into a standalone `mcp_types` package, and it renames every protocol field from camelCase to snake_case (`inputSchema` → `input_schema`, `mimeType` → `mime_type`, `isError` → `is_error`, and so on).
+
+FastMCP absorbs almost all of this. Field access is bridged so your existing reads keep working, and the imports you were taught have a stable home in FastMCP itself. The sections below describe what FastMCP handles for you, the small number of changes you must make in your own code, and the deprecation timeline for the compatibility shims.
+
+## What FastMCP absorbs
+
+### Legacy camelCase field access keeps working
+
+Objects that FastMCP hands back to you — the results of `client.list_tools()`, `client.call_tool_mcp()`, `client.read_resource()`, and the parameter objects passed to your sampling and elicitation handlers — are SDK v2 objects with snake_case fields. FastMCP installs a compatibility bridge at import time that routes the old camelCase names to their new snake_case fields, so code written against FastMCP 2.x still reads correctly:
+
+```python
+from fastmcp import Client
+
+async with Client("my_mcp_server.py") as client:
+    tools = await client.list_tools()
+    schema = tools[0].inputSchema  # still works, warns once
+```
+
+Each bridged read emits a `FastMCPDeprecationWarning` pointing you at the snake_case name (`tools[0].input_schema` here). The bridge covers the fields users actually read: `inputSchema`/`outputSchema` on tools, `mimeType` on resources and content, `isError`/`structuredContent` on tool results, `nextCursor` on paginated results, `serverInfo`/`protocolVersion` on the initialize result, the sampling parameter fields (`systemPrompt`, `maxTokens`, `stopSequences`, `modelPreferences`, `toolChoice`), and `requestedSchema` on elicitation parameters.
+
+The bridge is controlled by the `mcp_camelcase_compat` setting, which defaults to on. Set it to `False` (or the environment variable `FASTMCP_MCP_CAMELCASE_COMPAT=false`) to turn the shims off, in which case only the snake_case names resolve:
+
+```python
+import fastmcp
+
+fastmcp.settings.mcp_camelcase_compat = False
+```
+
+See [Settings](/more/settings) for the full reference.
+
+### Imports have a stable home
+
+The `mcp.types` module no longer exists. FastMCP re-exports the protocol types you're most likely to use — `TextContent`, `ImageContent`, `Tool`, `ErrorData`, `Icon`, `PromptMessage`, `SamplingMessage`, `ToolAnnotations`, and around two dozen others — from `fastmcp.types`. Update your imports to point there:
+
+```python
+from fastmcp.types import TextContent, Tool, ToolAnnotations
+```
+
+For protocol types FastMCP does not re-export (notification and request wrapper types like `ToolListChangedNotification` or `ServerNotification`), import them from `mcp_types` directly:
+
+```python
+import mcp_types
+
+notification = mcp_types.ToolListChangedNotification()
+```
+
+### `McpError` has an alias
+
+`fastmcp.exceptions.McpError` is an alias of the SDK's `MCPError`. Catching errors is unchanged — `except McpError` still catches SDK-raised errors, and reading `err.error.code` still works:
+
+```python
+from fastmcp.exceptions import McpError
+
+try:
+    ...
+except McpError as err:
+    print(err.error.code)
+```
+
+### Behavior preserved across the SDK boundary
+
+A few client behaviors that touch the SDK are preserved so you don't have to change anything:
+
+- `Client(timeout=...)` accepts both a `timedelta` and a plain float number of seconds, as before.
+- `client.ping()` returns a `bool`.
+- `client.get_session_id()` and `client.session_id` return `None` on protocol eras that have no session, rather than raising.
+
+## What you must change
+
+Three things are on you.
+
+**Your own `mcp.types` imports.** FastMCP can re-export types, but it can't rewrite imports in your code. Any `from mcp.types import X` or `import mcp.types` in your server or client will fail with an `ImportError`. Switch to `from fastmcp.types import X` for the common types, or `import mcp_types` for the rest.
+
+**`McpError` construction.** The v1 pattern of wrapping an `ErrorData` and passing it positionally raises a `TypeError` under SDK v2. Construct the error with keyword arguments instead:
+
+```python
+from fastmcp.exceptions import McpError
+
+# Before (raises TypeError under SDK v2):
+#   raise McpError(ErrorData(code=-32000, message="Client not supported"))
+
+# After:
+raise McpError(code=-32000, message="Client not supported")
+```
+
+Catching and `err.error.code` are unchanged — only construction moved.
+
+**Raw session access sees v2 objects.** If you reach past FastMCP's client and server surfaces into `client.session`, `ctx.session`, or the internals of `ctx.request_context`, you're now holding raw SDK v2 objects with snake_case fields and the v2 method signatures. FastMCP does not wrap these; code that depends on their v1 shape needs updating.
+
+## Deprecation timeline
+
+The camelCase bridge is a migration aid, not a permanent fixture. It works today and warns on every bridged read so you can find and update the affected call sites. Plan to migrate your reads to snake_case: the shims will be removed in a future release, after which only the snake_case names resolve — the same state you get today by setting `mcp_camelcase_compat = False`. Turning the setting off is a good way to surface every remaining camelCase read in your code as a hard `AttributeError` before the shims go away.
+
+## Protocol version support
+
+FastMCP servers built on the SDK v2 serve multiple protocol eras from the same server. The SDK negotiates the era each client speaks: the sessionless `2026-07-28` era (which discovers capabilities through `server/discover`) and earlier session-based handshake versions are all handled simultaneously. This formally supersedes FastMCP's earlier "latest protocol only" stance — a single server now works with clients across the protocol transition.
+
+Not every Context feature is available on every era yet. The push-style interactions that require the server to call back into the client — elicitation, sampling, and listing roots — depend on the session-based request/response flow of the earlier eras. On a `2026-07-28` connection these raise, because the sessionless era needs a multi-round-trip replacement that is still being built. Logging notifications and the request/response features flow on every era.
+
+| Context feature | Earlier eras (session-based) | `2026-07-28` (sessionless) |
+| --- | --- | --- |
+| `ctx.info` / logging notifications | Supported | Supported |
+| Tools, resources, prompts, completions | Supported | Supported |
+| `ctx.elicit` | Supported | Not yet — MRTR rewrite pending |
+| `ctx.sample` | Supported | Not yet — MRTR rewrite pending |
+| `ctx.list_roots` | Supported | Not yet — MRTR rewrite pending |
+| Tasks (via the FastMCP client) | Supported | Not yet |
+
+If your tools rely on `ctx.elicit`, `ctx.sample`, or `ctx.list_roots`, they continue to work against clients on the earlier eras. As the sessionless replacements land, this table will expand.

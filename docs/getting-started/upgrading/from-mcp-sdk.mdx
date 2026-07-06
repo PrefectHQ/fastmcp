@@ -113,7 +113,7 @@ def debug(error: str) -> list[Message]:
 
 ### Other `mcp.*` Imports
 
-FastMCP now builds on MCP SDK v2. The `mcp.types` module no longer exists — protocol types moved to a standalone `mcp_types` package, and the field names were renamed from camelCase to snake_case (`inputSchema` → `input_schema`, `mimeType` → `mime_type`, and so on). FastMCP re-exports the types you're most likely to use from `fastmcp.types`, so update `from mcp.types import X` to `from fastmcp.types import X`. For the full picture, see [Upgrading to FastMCP on MCP SDK v2](/development/upgrading-to-mcp-sdk-v2).
+FastMCP now builds on MCP SDK v2. The `mcp.types` module no longer exists — protocol types moved to a standalone `mcp_types` package, and the field names were renamed from camelCase to snake_case (`inputSchema` → `input_schema`, `mimeType` → `mime_type`, and so on). FastMCP re-exports the types you're most likely to use from `fastmcp.types`, so update `from mcp.types import X` to `from fastmcp.types import X`. For the full picture, see [Upgrading to FastMCP on MCP SDK v2](/getting-started/upgrading/to-mcp-sdk-v2).
 
 Where FastMCP provides its own API for the same thing, it's worth switching over:
 
