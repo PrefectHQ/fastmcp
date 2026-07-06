@@ -1,8 +1,8 @@
 """Tests for Scalekit OAuth provider."""
 
 import httpx
-from mcp import MCPError
 import pytest
+from mcp import MCPError
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport

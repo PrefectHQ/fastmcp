@@ -3,8 +3,8 @@
 import os
 from unittest.mock import patch
 
-from mcp import MCPError
 import pytest
+from mcp import MCPError
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport

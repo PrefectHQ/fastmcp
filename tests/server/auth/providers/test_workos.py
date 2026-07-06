@@ -2,10 +2,9 @@
 
 from urllib.parse import urlparse
 
-import httpx
-from mcp import MCPError
 import pytest
 from key_value.aio.stores.memory import MemoryStore
+from mcp import MCPError
 from pytest_httpx import HTTPXMock
 
 from fastmcp import Client, FastMCP

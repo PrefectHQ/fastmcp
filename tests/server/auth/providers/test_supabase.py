@@ -2,8 +2,8 @@
 
 from collections.abc import Generator
 
-from mcp import MCPError
 import pytest
+from mcp import MCPError
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport

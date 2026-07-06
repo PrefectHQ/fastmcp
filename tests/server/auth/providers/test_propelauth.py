@@ -4,8 +4,8 @@ from typing import cast
 from unittest.mock import AsyncMock
 
 import httpx
-from mcp import MCPError
 import pytest
+from mcp import MCPError
 from pydantic import SecretStr
 
 from fastmcp import Client, FastMCP
