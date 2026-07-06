@@ -28,8 +28,9 @@ class RecordingMessageHandler(MessageHandler):
 
     async def on_notification(self, message: mcp_types.ServerNotification) -> None:
         """Record all notifications with timestamp."""
+        # SDK v2 delivers notifications unwrapped (no `.root` wrapper).
         self.notifications.append(
-            NotificationRecording(method=message.root.method, notification=message)
+            NotificationRecording(method=message.method, notification=message)
         )
 
     def get_notifications(
