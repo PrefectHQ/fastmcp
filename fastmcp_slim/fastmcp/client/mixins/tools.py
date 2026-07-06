@@ -21,7 +21,7 @@ from fastmcp.exceptions import ToolError
 from fastmcp.telemetry import inject_trace_context
 from fastmcp.utilities.json_schema_type import json_schema_to_type
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.timeout import normalize_timeout_to_timedelta
+from fastmcp.utilities.timeout import normalize_timeout_to_seconds
 from fastmcp.utilities.types import get_cached_typeadapter
 
 logger = get_logger(__name__)
@@ -167,7 +167,7 @@ class ClientToolsMixin:
                 self.session.call_tool(
                     name=name,
                     arguments=arguments,
-                    read_timeout_seconds=normalize_timeout_to_timedelta(timeout),
+                    read_timeout_seconds=normalize_timeout_to_seconds(timeout),
                     progress_callback=progress_handler or self._progress_handler,
                     meta=propagated_meta if propagated_meta else None,
                 )
