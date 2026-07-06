@@ -13,7 +13,7 @@ from fastmcp.client.logging import LogMessage
 from fastmcp.client.transports import FastMCPTransport
 from fastmcp.exceptions import ToolError
 from fastmcp.server.context import _current_context
-from fastmcp.server.dependencies import get_server, request_ctx
+from fastmcp.server.dependencies import fastmcp_request_ctx, get_server
 from fastmcp.server.elicitation import AcceptedElicitation
 from fastmcp.server.providers.proxy import (
     FastMCPProxy,
@@ -220,7 +220,7 @@ class TestRestoreRequestContextCurrentServer:
 
     async def _run_in_child_context(self, fn):
         # Run in a child task so contextvar writes are isolated from the test
-        # task and `request_ctx` is genuinely unset (LookupError branch).
+        # task and `fastmcp_request_ctx` is genuinely unset (defaults to None).
         return await asyncio.create_task(fn())
 
     async def test_lookup_error_branch_restores_current_server(self):
@@ -231,13 +231,12 @@ class TestRestoreRequestContextCurrentServer:
         rc_ref: list = [(rc, weakref.ref(fastmcp))]
 
         async def body():
-            with pytest.raises(LookupError):
-                request_ctx.get()
+            assert fastmcp_request_ctx.get() is None
             _restore_request_context(rc_ref)
 
             # The actual Bug 4 fix: get_server() now resolves.
             assert get_server() is fastmcp
-            assert request_ctx.get() is rc
+            assert fastmcp_request_ctx.get() is rc
 
             ctx = _current_context.get()
             assert ctx is not None
@@ -264,10 +263,10 @@ class TestRestoreRequestContextCurrentServer:
         rc_ref: list = [(fresh_rc, weakref.ref(fastmcp))]
 
         async def body():
-            request_ctx.set(stale_rc)
+            fastmcp_request_ctx.set(stale_rc)
             _restore_request_context(rc_ref)
 
-            assert request_ctx.get() is fresh_rc
+            assert fastmcp_request_ctx.get() is fresh_rc
             assert get_server() is fastmcp
 
         await self._run_in_child_context(body)
@@ -278,7 +277,6 @@ class TestRestoreRequestContextCurrentServer:
         async def body():
             # No stash: nothing restored, no error.
             _restore_request_context(rc_ref)
-            with pytest.raises(LookupError):
-                request_ctx.get()
+            assert fastmcp_request_ctx.get() is None
 
         await self._run_in_child_context(body)

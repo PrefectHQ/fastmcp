@@ -185,27 +185,15 @@ class ProxyTool(Tool):
                         ctx.request_context,
                         ctx._fastmcp,  # weakref to FastMCP, not the Context
                     )
-                # Build meta dict from request context
-                meta: dict[str, Any] | None = None
-                if hasattr(ctx, "request_context"):
-                    req_ctx = ctx.request_context
-                    # Start with existing meta if present
-                    if hasattr(req_ctx, "meta") and req_ctx.meta:
-                        meta = dict(req_ctx.meta)
-                    # Add task metadata if this is a task request
-                    if (
-                        hasattr(req_ctx, "experimental")
-                        and hasattr(req_ctx.experimental, "is_task")
-                        and req_ctx.experimental.is_task
-                    ):
-                        task_metadata = req_ctx.experimental.task_metadata
-                        if task_metadata:
-                            meta = meta or {}
-                            meta["modelcontextprotocol.io/task"] = (
-                                task_metadata.model_dump(
-                                    by_alias=True, exclude_none=True
-                                )
-                            )
+                # Forward the inbound request's `_meta` block (trace context,
+                # version, etc.) to the backend. In SDK v2 the request context
+                # exposes the lifted `_meta` dict directly; task submission is a
+                # first-class params field rather than context state, so there
+                # is no separate task-metadata injection here.
+                req_ctx = ctx.request_context
+                meta: dict[str, Any] | None = (
+                    dict(req_ctx.meta) if req_ctx is not None and req_ctx.meta else None
+                )
 
                 result = await client.call_tool_mcp(
                     name=backend_name, arguments=arguments, meta=meta

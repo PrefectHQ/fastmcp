@@ -4,6 +4,7 @@ from typing import Any
 
 import mcp_types
 import pytest
+from mcp.server.context import ServerRequestContext
 
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
@@ -153,15 +154,18 @@ def mcp_server(recording_middleware):
 
     mcp.add_middleware(recording_middleware)
 
-    # Register progress handler
-    @mcp._mcp_server.progress_notification()
+    # Register a progress notification handler (v2 API: (ctx, params)).
     async def handle_progress(
-        progress_token: str | int,
-        progress: float,
-        total: float | None,
-        message: str | None,
-    ):
-        print("HI")
+        _ctx: ServerRequestContext,
+        _params: mcp_types.ProgressNotificationParams,
+    ) -> None:
+        pass
+
+    mcp._mcp_server.add_notification_handler(
+        "notifications/progress",
+        mcp_types.ProgressNotificationParams,
+        handle_progress,
+    )
 
     return mcp
 
