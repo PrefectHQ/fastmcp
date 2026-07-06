@@ -385,7 +385,7 @@ async def inspect_fastmcp_v1(mcp: SDKServer) -> FastMCPInfo:
             else None
         )
         server_website_url = (
-            server_info.website_url if hasattr(server_info, "websiteUrl") else None
+            server_info.website_url if hasattr(server_info, "website_url") else None
         )
 
         # SDK v2's MCPServer (FastMCP 1.x) exposes name/instructions/version

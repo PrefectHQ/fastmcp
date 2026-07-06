@@ -277,6 +277,26 @@ class TestIconExtraction:
         if info.tools[0].icons is not None:
             assert info.tools[0].icons[0]["src"] == "https://example.com/v1-tool.png"
 
+    async def test_website_url_in_fastmcp_v1(self):
+        """Remote/v1 inspect surfaces the server's website_url.
+
+        The v1 path reads website_url from the SDK v2 snake_case serverInfo
+        model; a stale camelCase guard silently dropped it.
+        """
+        mcp = SDKServer("Website1xServer", website_url="https://example.com")
+
+        info = await inspect_fastmcp_v1(mcp)
+
+        assert info.website_url == "https://example.com"
+
+    async def test_no_website_url_in_fastmcp_v1(self):
+        """A v1 server with no website_url reports None rather than raising."""
+        mcp = SDKServer("NoWebsite1xServer")
+
+        info = await inspect_fastmcp_v1(mcp)
+
+        assert info.website_url is None
+
     async def test_icons_in_formatted_output(self):
         """Test that icons appear in formatted JSON output."""
         from mcp_types import Icon
