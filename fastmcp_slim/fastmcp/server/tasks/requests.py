@@ -49,6 +49,21 @@ DOCKET_TO_MCP_STATE: dict[ExecutionState, str] = {
 }
 
 
+def _normalize_iso_timestamp(stored: str | None) -> str:
+    """Return an ISO 8601 timestamp string for a Task's createdAt/lastUpdatedAt.
+
+    The v2 Task model types these fields as ISO 8601 strings. `stored` is the
+    value read from Redis (already an ISO string) or None; either way this
+    returns a valid ISO string, falling back to the current UTC time.
+    """
+    if stored:
+        try:
+            return datetime.fromisoformat(stored.replace("Z", "+00:00")).isoformat()
+        except (ValueError, AttributeError):
+            pass
+    return datetime.now(timezone.utc).isoformat()
+
+
 def _parse_key_version(key_suffix: str) -> tuple[str, str | None]:
     """Parse a key suffix into (name_or_uri, version).
 
@@ -185,23 +200,16 @@ async def tasks_get_handler(server: FastMCP, params: dict[str, Any]) -> GetTaskR
             # Extract progress message from Docket if available (spec line 403)
             status_message = execution.progress.message
 
-        # createdAt is required per spec, but can be None from Redis
-        # Parse ISO string to datetime, or use current time as fallback
-        if created_at:
-            try:
-                created_at_dt = datetime.fromisoformat(
-                    created_at.replace("Z", "+00:00")
-                )
-            except (ValueError, AttributeError):
-                created_at_dt = datetime.now(timezone.utc)
-        else:
-            created_at_dt = datetime.now(timezone.utc)
+        # createdAt is required per spec, but can be None from Redis. The v2
+        # Task model types createdAt/lastUpdatedAt as ISO 8601 strings, so
+        # normalize the stored value (or fall back to now) to an ISO string.
+        created_at_iso = _normalize_iso_timestamp(created_at)
 
         return GetTaskResult(
             task_id=client_task_id,
             status=mcp_state,
-            created_at=created_at_dt,
-            last_updated_at=datetime.now(timezone.utc),
+            created_at=created_at_iso,
+            last_updated_at=datetime.now(timezone.utc).isoformat(),
             ttl=DEFAULT_TTL_MS,
             poll_interval=poll_interval_ms,
             status_message=status_message,
@@ -440,10 +448,8 @@ async def tasks_cancel_handler(
         return CancelTaskResult(
             task_id=client_task_id,
             status="cancelled",
-            created_at=datetime.fromisoformat(created_at)
-            if created_at
-            else datetime.now(timezone.utc),
-            last_updated_at=datetime.now(timezone.utc),
+            created_at=_normalize_iso_timestamp(created_at),
+            last_updated_at=datetime.now(timezone.utc).isoformat(),
             ttl=DEFAULT_TTL_MS,
             poll_interval=poll_interval_ms,
             status_message="Task cancelled",
