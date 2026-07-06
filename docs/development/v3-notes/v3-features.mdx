@@ -1205,8 +1205,8 @@ When `list_page_size` is set, `tools/list`, `resources/list`, `resources/templat
 ```python
 async with Client(server) as client:
     result = await client.list_tools_mcp()
-    while result.nextCursor:
-        result = await client.list_tools_mcp(cursor=result.nextCursor)
+    while result.next_cursor:
+        result = await client.list_tools_mcp(cursor=result.next_cursor)
 ```
 
 Documentation: [Pagination](/servers/pagination)

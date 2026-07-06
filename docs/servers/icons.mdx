@@ -19,7 +19,7 @@ from fastmcp.types import Icon
 
 icon = Icon(
     src="https://example.com/icon.png",
-    mimeType="image/png",
+    mime_type="image/png",
     sizes=["48x48"]
 )
 ```
@@ -27,7 +27,7 @@ icon = Icon(
 The fields serve different purposes:
 
 - **src**: URL or data URI pointing to the icon image
-- **mimeType** (optional): MIME type of the image (e.g., "image/png", "image/svg+xml")
+- **mime_type** (optional): MIME type of the image (e.g., "image/png", "image/svg+xml")
 - **sizes** (optional): Array of size descriptors (e.g., ["48x48"], ["any"])
 
 ## Server Icons
@@ -44,12 +44,12 @@ mcp = FastMCP(
     icons=[
         Icon(
             src="https://weather.example.com/icon-48.png",
-            mimeType="image/png",
+            mime_type="image/png",
             sizes=["48x48"]
         ),
         Icon(
             src="https://weather.example.com/icon-96.png",
-            mimeType="image/png",
+            mime_type="image/png",
             sizes=["96x96"]
         ),
     ]
@@ -121,7 +121,7 @@ from fastmcp.utilities.types import Image
 # SVG icon as data URI
 svg_icon = Icon(
     src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCI+PHBhdGggZD0iTTEyIDJDNi40OCAyIDIgNi40OCAyIDEyczQuNDggMTAgMTAgMTAgMTAtNC40OCAxMC0xMFMxNy41MiAyIDEyIDJ6Ii8+PC9zdmc+",
-    mimeType="image/svg+xml"
+    mime_type="image/svg+xml"
 )
 
 @mcp.tool(icons=[svg_icon])

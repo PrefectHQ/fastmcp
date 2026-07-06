@@ -443,7 +443,7 @@ async def research(question: str, ctx: Context) -> str:
             tool_results.append(
                 ToolResultContent(
                     type="tool_result",
-                    toolUseId=call.id,
+                    tool_use_id=call.id,
                     content=[TextContent(type="text", text=result)],
                 )
             )
@@ -452,14 +452,14 @@ async def research(question: str, ctx: Context) -> str:
         messages.append(SamplingMessage(role="user", content=tool_results))
 ```
 
-To report an error to the LLM, set `isError=True` on the tool result:
+To report an error to the LLM, set `is_error=True` on the tool result:
 
 ```python
 tool_result = ToolResultContent(
     type="tool_result",
-    toolUseId=call.id,
+    tool_use_id=call.id,
     content=[TextContent(type="text", text="Permission denied")],
-    isError=True,
+    is_error=True,
 )
 ```
 

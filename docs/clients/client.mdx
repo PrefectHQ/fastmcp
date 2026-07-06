@@ -135,7 +135,7 @@ def greet(name: str) -> str:
 
 async with Client(mcp) as client:
     # Initialization already happened automatically
-    print(f"Server: {client.initialize_result.serverInfo.name}")
+    print(f"Server: {client.initialize_result.server_info.name}")
     print(f"Instructions: {client.initialize_result.instructions}")
     print(f"Capabilities: {client.initialize_result.capabilities.tools}")
 ```
@@ -154,7 +154,7 @@ async with client:
 
     # Initialize manually with custom timeout
     result = await client.initialize(timeout=10.0)
-    print(f"Server: {result.serverInfo.name}")
+    print(f"Server: {result.server_info.name}")
 
     # Now ready for operations
     tools = await client.list_tools()

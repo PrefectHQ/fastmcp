@@ -175,7 +175,7 @@ async with client:
     result = await client.call_tool_mcp("my_tool", {"param": "value"})
     # result -> fastmcp.types.CallToolResult
 
-    if result.isError:
+    if result.is_error:
         print(f"Tool failed: {result.content}")
     else:
         print(f"Tool succeeded: {result.content}")
