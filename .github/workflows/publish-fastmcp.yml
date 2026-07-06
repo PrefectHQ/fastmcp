@@ -133,5 +133,19 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.workflow_run.head_sha }}
 
+      - name: Check release line
+        id: release_line
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git fetch origin "${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
+          if git merge-base --is-ancestor HEAD "refs/remotes/origin/${DEFAULT_BRANCH}"; then
+            echo "update_published_docs=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "update_published_docs=false" >> "$GITHUB_OUTPUT"
+            echo "Release commit is not on ${DEFAULT_BRANCH}; skipping published-docs update."
+          fi
+
       - name: Point published-docs at published release
+        if: steps.release_line.outputs.update_published_docs == 'true'
         run: git push --force origin "HEAD:published-docs"

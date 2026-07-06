@@ -65,6 +65,8 @@ Our release process is intentionally simple:
 2. Generate release notes automatically, and curate or add additional editorial information as needed
 3. GitHub releases automatically trigger PyPI deployments
 
+Current-major releases target `main`. Maintenance releases target their release branch, such as `release/3.x` for 3.x patches and `release/2.x` for 2.x patches. Stable releases from `main` update the `published-docs` branch after PyPI publishing succeeds; maintenance releases publish packages and GitHub release notes without repointing the live docs branch.
+
 This automation lets maintainers focus on code quality rather than release mechanics.
 
 ### Release Cadence
