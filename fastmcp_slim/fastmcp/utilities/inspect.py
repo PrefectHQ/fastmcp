@@ -126,7 +126,10 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
                 annotations=tool.annotations.model_dump() if tool.annotations else None,
                 tags=list(tool.tags) if tool.tags else None,
                 title=tool.title,
-                icons=[icon.model_dump() for icon in tool.icons]
+                icons=[
+                    icon.model_dump(by_alias=True, exclude_none=True)
+                    for icon in tool.icons
+                ]
                 if tool.icons
                 else None,
                 meta=tool.meta,
@@ -146,7 +149,10 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
                 else None,
                 tags=list(prompt.tags) if prompt.tags else None,
                 title=prompt.title,
-                icons=[icon.model_dump() for icon in prompt.icons]
+                icons=[
+                    icon.model_dump(by_alias=True, exclude_none=True)
+                    for icon in prompt.icons
+                ]
                 if prompt.icons
                 else None,
                 meta=prompt.meta,
@@ -168,7 +174,10 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
                 else None,
                 tags=list(resource.tags) if resource.tags else None,
                 title=resource.title,
-                icons=[icon.model_dump() for icon in resource.icons]
+                icons=[
+                    icon.model_dump(by_alias=True, exclude_none=True)
+                    for icon in resource.icons
+                ]
                 if resource.icons
                 else None,
                 meta=resource.meta,
@@ -191,7 +200,10 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
                 else None,
                 tags=list(template.tags) if template.tags else None,
                 title=template.title,
-                icons=[icon.model_dump() for icon in template.icons]
+                icons=[
+                    icon.model_dump(by_alias=True, exclude_none=True)
+                    for icon in template.icons
+                ]
                 if template.icons
                 else None,
                 meta=template.meta,
@@ -208,7 +220,10 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
 
     # Extract server-level icons and website_url
     server_icons = (
-        [icon.model_dump() for icon in mcp._mcp_server.icons]
+        [
+            icon.model_dump(by_alias=True, exclude_none=True)
+            for icon in mcp._mcp_server.icons
+        ]
         if hasattr(mcp._mcp_server, "icons") and mcp._mcp_server.icons
         else None
     )
@@ -268,7 +283,10 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
                     annotations=None,  # v1 doesn't have annotations
                     tags=None,  # v1 doesn't have tags
                     title=None,  # v1 doesn't have title
-                    icons=[icon.model_dump() for icon in mcp_tool.icons]
+                    icons=[
+                        icon.model_dump(by_alias=True, exclude_none=True)
+                        for icon in mcp_tool.icons
+                    ]
                     if hasattr(mcp_tool, "icons") and mcp_tool.icons
                     else None,
                     meta=None,  # v1 doesn't have meta field
@@ -291,7 +309,10 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
                     arguments=arguments,
                     tags=None,  # v1 doesn't have tags
                     title=None,  # v1 doesn't have title
-                    icons=[icon.model_dump() for icon in mcp_prompt.icons]
+                    icons=[
+                        icon.model_dump(by_alias=True, exclude_none=True)
+                        for icon in mcp_prompt.icons
+                    ]
                     if hasattr(mcp_prompt, "icons") and mcp_prompt.icons
                     else None,
                     meta=None,  # v1 doesn't have meta field
@@ -311,7 +332,10 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
                     annotations=None,  # v1 doesn't have annotations
                     tags=None,  # v1 doesn't have tags
                     title=None,  # v1 doesn't have title
-                    icons=[icon.model_dump() for icon in mcp_resource.icons]
+                    icons=[
+                        icon.model_dump(by_alias=True, exclude_none=True)
+                        for icon in mcp_resource.icons
+                    ]
                     if hasattr(mcp_resource, "icons") and mcp_resource.icons
                     else None,
                     meta=None,  # v1 doesn't have meta field
@@ -332,7 +356,10 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
                     annotations=None,  # v1 doesn't have annotations
                     tags=None,  # v1 doesn't have tags
                     title=None,  # v1 doesn't have title
-                    icons=[icon.model_dump() for icon in mcp_template.icons]
+                    icons=[
+                        icon.model_dump(by_alias=True, exclude_none=True)
+                        for icon in mcp_template.icons
+                    ]
                     if hasattr(mcp_template, "icons") and mcp_template.icons
                     else None,
                     meta=None,  # v1 doesn't have meta field
@@ -350,7 +377,10 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
         # Extract server-level icons and website_url from serverInfo
         server_info = client.initialize_result.server_info
         server_icons = (
-            [icon.model_dump() for icon in server_info.icons]
+            [
+                icon.model_dump(by_alias=True, exclude_none=True)
+                for icon in server_info.icons
+            ]
             if hasattr(server_info, "icons") and server_info.icons
             else None
         )
