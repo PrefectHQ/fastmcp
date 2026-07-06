@@ -12,7 +12,7 @@ Each entry is tagged **Absorbed** (public surface unchanged), **Bridged** (shim 
 
 ### Dependency floors: pydantic >= 2.12, Starlette >= 1.0 — Breaking (environment)
 
-The SDK v2 raises FastMCP's dependency floors. Projects pinning an older pydantic (e.g. `2.11.*`) hit an unsatisfiable-resolution error at install time and must bump their pin; unpinned projects get pydantic upgraded silently. The server extra floors Starlette at `>=1.0.1` — modern FastAPI (0.11x+) already runs Starlette 1.x, so coexistence is clean (verified with FastAPI 0.138.2); only very old FastAPI pinned below Starlette 1.0 conflicts. Both are documented in the [upgrade guide's Environment requirements](/getting-started/upgrading/to-mcp-sdk-v2#environment-requirements).
+The SDK v2 raises FastMCP's dependency floors. Projects pinning an older pydantic (e.g. `2.11.*`) hit an unsatisfiable-resolution error at install time and must bump their pin; unpinned projects get pydantic upgraded silently. The server extra floors Starlette at `>=1.0.1` — modern FastAPI (0.11x+) already runs Starlette 1.x, so coexistence is clean (verified with FastAPI 0.138.2); only very old FastAPI pinned below Starlette 1.0 conflicts. Both are documented in the [upgrade guide's Environment requirements](/getting-started/upgrading/from-fastmcp-3#environment-requirements).
 
 *Verify:* `fastmcp_slim/pyproject.toml` (`pydantic[email]>=2.12.0` core, `starlette>=1.0.1` server extra); WS2 environment-upgrade scenario.
 
@@ -255,7 +255,7 @@ Ordinary `ctx.info` and `ctx.sample` usage now emits an SDK-level `MCPDeprecatio
 
 Wire interop across the transition is verified: a 3.4.3 client against a v4 server and a v4 client against a 3.4.3 server are bidirectionally clean across 9 operations over HTTP (WS2).
 
-*Verify:* `docs/getting-started/upgrading/to-mcp-sdk-v2.mdx` (the published matrix and SDK-warning note), `tests/server/test_protocol_eras.py`.
+*Verify:* `docs/getting-started/upgrading/from-fastmcp-3.mdx` (the published matrix and SDK-warning note), `tests/server/test_protocol_eras.py`.
 
 ### Push-feature degradation quality — Known gap
 

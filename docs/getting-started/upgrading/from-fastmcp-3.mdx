@@ -1,13 +1,13 @@
 ---
-title: Upgrading to FastMCP on MCP SDK v2
-sidebarTitle: "To MCP SDK v2"
-description: What changes when FastMCP moves onto the MCP Python SDK v2, and how FastMCP absorbs most of it for you
+title: Upgrading from FastMCP 3
+sidebarTitle: "From FastMCP 3.x"
+description: What changes when you upgrade to FastMCP 4, which builds on the MCP Python SDK v2
 icon: up
 ---
 
-FastMCP now builds on the MCP Python SDK v2. The SDK v2 makes two sweeping changes to the protocol layer: it splits the protocol types out of `mcp.types` into a standalone `mcp_types` package, and it renames every protocol field from camelCase to snake_case (`inputSchema` → `input_schema`, `mimeType` → `mime_type`, `isError` → `is_error`, and so on).
+FastMCP 4 builds on the MCP Python SDK v2, and that is the source of every change in this guide. The SDK v2 makes two sweeping changes to the protocol layer: it splits the protocol types out of `mcp.types` into a standalone `mcp_types` package, and it renames every protocol field from camelCase to snake_case (`inputSchema` → `input_schema`, `mimeType` → `mime_type`, `isError` → `is_error`, and so on).
 
-FastMCP absorbs almost all of this. Field access is bridged so your existing reads keep working, and the imports you were taught have a stable home in FastMCP itself. The sections below describe what FastMCP handles for you, the small number of changes you must make in your own code, and the deprecation timeline for the compatibility shims.
+FastMCP 4 absorbs almost all of this for you. Field access is bridged so your existing reads keep working, and the imports you were taught have a stable home in FastMCP itself. The sections below describe what FastMCP handles for you, the small number of changes you must make in your own code, and the deprecation timeline for the compatibility shims.
 
 ## Environment requirements
 
