@@ -322,18 +322,21 @@ async def run_v1_server_async(
         port: Port to bind to
         transport: Transport protocol to use
     """
+    # In v1 (MCPServer), host/port are no longer stored on `settings`; they are
+    # passed directly to the transport runners as keyword arguments.
+    bind_kwargs: dict[str, Any] = {}
     if host is not None:
-        server.settings.host = host
+        bind_kwargs["host"] = host
     if port is not None:
-        server.settings.port = port
+        bind_kwargs["port"] = port
 
     match transport:
         case "stdio":
             await server.run_stdio_async()
         case "http" | "streamable-http" | None:
-            await server.run_streamable_http_async()
+            await server.run_streamable_http_async(**bind_kwargs)
         case "sse":
-            await server.run_sse_async()
+            await server.run_sse_async(**bind_kwargs)
 
 
 def _watch_filter(_change: Change, path: str) -> bool:
