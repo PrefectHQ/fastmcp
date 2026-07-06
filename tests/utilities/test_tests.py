@@ -66,16 +66,16 @@ class TestHeadlessOAuthCallbackHandler:
         oauth = self._make_oauth_with_redirect(
             "https://example.com/callback?code=abc&state="
         )
-        auth_code, state = await oauth.callback_handler()
-        assert auth_code == "abc"
-        assert state == ""
+        result = await oauth.callback_handler()
+        assert result.code == "abc"
+        assert result.state == ""
 
     async def test_callback_returns_none_when_state_missing(self):
         """A truly missing state still returns None (default)."""
         oauth = self._make_oauth_with_redirect("https://example.com/callback?code=abc")
-        auth_code, state = await oauth.callback_handler()
-        assert auth_code == "abc"
-        assert state is None
+        result = await oauth.callback_handler()
+        assert result.code == "abc"
+        assert result.state is None
 
     async def test_callback_uses_blank_error_description_verbatim(self):
         """When the OAuth provider sends an empty error_description, surface
