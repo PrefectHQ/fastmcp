@@ -27,6 +27,7 @@ from fastmcp.server.tasks.context import (
     register_task_session,
 )
 from fastmcp.server.tasks.keys import build_task_key, task_redis_prefix
+from fastmcp.tools.function_tool import _strict_input_validation
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -71,8 +72,15 @@ async def submit_to_docket(
     # here must surface before the Redis metadata and initial "working"
     # notification below are written, otherwise an invalid input would orphan a
     # task the client has already observed (#4349).
+    #
+    # Honor the server's strict_input_validation setting so a strict tool
+    # rejects lax coercions (e.g. {"n": "1"} for n: int) at submission just as
+    # it does on the synchronous call path — otherwise task=True would bypass
+    # strict validation entirely.
     if arguments is not None:
-        arguments = component.coerce_task_arguments(arguments)
+        arguments = component.coerce_task_arguments(
+            arguments, strict=_strict_input_validation()
+        )
 
     # Generate server-side task ID per SEP-1686 final spec (line 375-377)
     # Server MUST generate task IDs, clients no longer provide them

@@ -543,7 +543,9 @@ class FunctionTool(Tool):
             kwargs["key"] = task_key
         return await docket.add(lookup_key, **kwargs)(**arguments)
 
-    def coerce_task_arguments(self, arguments: dict[str, Any]) -> dict[str, Any]:
+    def coerce_task_arguments(
+        self, arguments: dict[str, Any], *, strict: bool = False
+    ) -> dict[str, Any]:
         """Validate client arguments against their declared parameter types.
 
         The synchronous ``run()`` path validates arguments through the
@@ -555,6 +557,11 @@ class FunctionTool(Tool):
         values are what get queued, and validation errors surface before any
         task state is created. Coerced values survive the trip to the worker
         because Docket serializes task arguments with cloudpickle.
+
+        ``strict`` mirrors the synchronous path's ``strict_input_validation``
+        handling: when set, arguments are validated in strict mode so lax
+        coercions (e.g. the string ``"1"`` into an ``int``) are rejected at
+        submission rather than silently coerced and queued.
 
         Injected dependency parameters (Context, Depends()) are excluded via
         the same wrapper used by the synchronous path, so only client-supplied
@@ -574,7 +581,7 @@ class FunctionTool(Tool):
                 continue
             adapter = get_cached_typeadapter(annotation)
             try:
-                coerced[name] = adapter.validate_python(value)
+                coerced[name] = adapter.validate_python(value, strict=strict)
             except PydanticValidationError as e:
                 # Argument coercion failure on the task path is a bad call, just
                 # like the synchronous path — surface it as fastmcp's

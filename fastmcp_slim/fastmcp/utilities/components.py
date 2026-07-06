@@ -232,7 +232,9 @@ class FastMCPComponent(FastMCPBaseModel):
         """
         # Base implementation: no-op (subclasses override)
 
-    def coerce_task_arguments(self, arguments: dict[str, Any]) -> dict[str, Any]:
+    def coerce_task_arguments(
+        self, arguments: dict[str, Any], *, strict: bool = False
+    ) -> dict[str, Any]:
         """Validate and coerce task arguments before any task state is created.
 
         Called by ``submit_to_docket`` up front, so invalid inputs raise before
@@ -242,6 +244,11 @@ class FastMCPComponent(FastMCPBaseModel):
         components that splat arguments into a typed Python callable (e.g.
         ``FunctionTool``) override this to mirror the synchronous validation
         path.
+
+        When ``strict`` is set (server-level ``strict_input_validation``),
+        overrides validate in strict mode so the task path rejects lax
+        coercions (e.g. the string ``"1"`` into an ``int``) exactly as the
+        synchronous call path does.
         """
         return arguments
 
