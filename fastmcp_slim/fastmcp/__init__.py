@@ -30,11 +30,12 @@ if settings.log_enabled:
     )
 
 # Install camelCase compatibility shims for MCP SDK v2's snake_case rename.
-# Gated by the setting; patches only mcp_types model classes, no client chain.
-if settings.mcp_camelcase_compat:
-    from fastmcp import _compat
+# Installed unconditionally; each shim's getter checks the live
+# `mcp_camelcase_compat` setting at read time, so the bridge can be toggled at
+# runtime. Patches only mcp_types model classes, no client chain.
+from fastmcp import _compat
 
-    _compat.install()
+_compat.install()
 
 try:
     __version__ = _version("fastmcp-slim")

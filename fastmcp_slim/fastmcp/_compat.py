@@ -9,8 +9,14 @@ This module installs warn-once `@property` shims that route a small set of
 documented camelCase reads to their snake_case attributes. Only fields users
 actually read (per the docs boundary inventory) are bridged; each read emits a
 single `FastMCPDeprecationWarning` per (class, name) and returns the correct
-value. Installation is idempotent and gated by the `mcp_camelcase_compat`
-setting.
+value. Installation is idempotent.
+
+The properties are installed unconditionally, but each getter checks the live
+`mcp_camelcase_compat` setting at read time: when the setting is enabled it
+warns and returns the snake_case value; when disabled it raises `AttributeError`
+exactly as if the property were never installed. This makes the setting a
+genuine runtime toggle (`fastmcp.settings.mcp_camelcase_compat = False` after
+import turns the bridge off) at negligible overhead.
 
 Guards ensure we never shadow a real upstream attribute: if a class already
 defines the camelCase name in its own `__dict__` or in its pydantic
@@ -95,11 +101,21 @@ _installed = False
 
 
 def _make_property(cls_name: str, camel: str, snake: str) -> property:
-    """Build a warn-once property routing a camelCase read to a snake attr."""
+    """Build a warn-once property routing a camelCase read to a snake attr.
+
+    The getter reads the live `mcp_camelcase_compat` setting on every access: if
+    the bridge is disabled it raises `AttributeError` (matching the message
+    Python raises for a genuinely missing attribute) so the shim is transparent;
+    if enabled it warns once and returns the snake_case value.
+    """
     warned = False
 
     def getter(self: object) -> object:
         nonlocal warned
+        import fastmcp
+
+        if not fastmcp.settings.mcp_camelcase_compat:
+            raise AttributeError(f"{cls_name!r} object has no attribute {camel!r}")
         if not warned:
             warned = True
             warnings.warn(

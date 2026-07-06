@@ -7,6 +7,7 @@ import mcp_types
 import pytest
 from mcp import MCPError as SDKMCPError
 
+import fastmcp
 import fastmcp._compat as _compat
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import FastMCPTransport
@@ -159,24 +160,41 @@ class TestGuards:
 
 
 class TestSettingOff:
-    def test_setting_off_no_bridge(self, monkeypatch):
-        # Simulate a fresh import with the setting disabled: strip the installed
-        # properties and confirm the camelCase read raises AttributeError.
-        installed = {}
-        for cls, mapping in _compat._ALIASES.items():
-            for camel in mapping:
-                attr = cls.__dict__.get(camel)
-                if isinstance(attr, property):
-                    installed.setdefault(cls, []).append(camel)
-                    delattr(cls, camel)
-        try:
-            tool = mcp_types.Tool(name="t", input_schema={"type": "object"})
-            with pytest.raises(AttributeError):
-                _ = tool.inputSchema  # ty: ignore[unresolved-attribute]
-        finally:
-            _compat._installed = False
-            _compat.install()
-        assert installed  # sanity: something was actually removed
+    def test_setting_off_raises_attribute_error(self, monkeypatch):
+        # The property stays installed, but with the setting disabled the getter
+        # raises AttributeError as if the camelCase name never existed.
+        monkeypatch.setattr(fastmcp.settings, "mcp_camelcase_compat", False)
+        tool = mcp_types.Tool(name="t", input_schema={"type": "object"})
+        with pytest.raises(AttributeError):
+            _ = tool.inputSchema  # ty: ignore[unresolved-attribute]
+
+    def test_setting_off_attribute_error_message(self, monkeypatch):
+        monkeypatch.setattr(fastmcp.settings, "mcp_camelcase_compat", False)
+        tool = mcp_types.Tool(name="t", input_schema={"type": "object"})
+        with pytest.raises(
+            AttributeError,
+            match=r"'Tool' object has no attribute 'inputSchema'",
+        ):
+            _ = tool.inputSchema  # ty: ignore[unresolved-attribute]
+
+    def test_runtime_toggle_on_off_on(self, monkeypatch):
+        # The bridge honours the live setting on every read: on -> off -> on.
+        tool = mcp_types.Tool(name="t", input_schema={"type": "object"})
+
+        # On (default): bridged read works and warns.
+        with pytest.warns(FastMCPDeprecationWarning):
+            assert tool.inputSchema == {"type": "object"}  # ty: ignore[unresolved-attribute]
+
+        # Off: same attribute now raises.
+        monkeypatch.setattr(fastmcp.settings, "mcp_camelcase_compat", False)
+        with pytest.raises(AttributeError):
+            _ = tool.inputSchema  # ty: ignore[unresolved-attribute]
+
+        # Back on: resolves again (warn-once may have fired already, so ignore).
+        monkeypatch.setattr(fastmcp.settings, "mcp_camelcase_compat", True)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            assert tool.inputSchema == {"type": "object"}  # ty: ignore[unresolved-attribute]
 
 
 class TestExceptionAlias:
