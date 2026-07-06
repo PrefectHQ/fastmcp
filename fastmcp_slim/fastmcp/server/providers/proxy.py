@@ -27,7 +27,7 @@ from mcp_types import (
 )
 from pydantic.networks import AnyUrl
 
-from fastmcp.client.client import Client, FastMCP1Server
+from fastmcp.client.client import Client, SDKServer
 from fastmcp.client.elicitation import ElicitResult, create_elicitation_callback
 from fastmcp.client.logging import LogMessage, create_log_callback
 from fastmcp.client.roots import RootsList, create_roots_callback
@@ -783,7 +783,7 @@ def _create_client_factory(
         Client[ClientTransportT]
         | ClientTransport
         | FastMCP[Any]
-        | FastMCP1Server
+        | SDKServer
         | AnyUrl
         | Path
         | MCPConfig
@@ -1090,7 +1090,7 @@ class ProxyClient(Client[ClientTransportT]):
         self,
         transport: ClientTransportT
         | FastMCP[Any]
-        | FastMCP1Server
+        | SDKServer
         | AnyUrl
         | Path
         | MCPConfig

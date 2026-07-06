@@ -89,7 +89,7 @@ from fastmcp.utilities.versions import (
 
 if TYPE_CHECKING:
     from fastmcp.client import Client
-    from fastmcp.client.client import FastMCP1Server
+    from fastmcp.client.client import SDKServer
     from fastmcp.client.sampling import SamplingHandler
     from fastmcp.client.transports import ClientTransport, ClientTransportT
     from fastmcp.server.providers.openapi import ComponentFn as OpenAPIComponentFn
@@ -2453,7 +2453,7 @@ class FastMCP(
             Client[ClientTransportT]
             | ClientTransport
             | FastMCP[Any]
-            | FastMCP1Server
+            | SDKServer
             | AnyUrl
             | Path
             | MCPConfig
@@ -2503,7 +2503,7 @@ def create_proxy(
         Client[ClientTransportT]
         | ClientTransport
         | FastMCP[Any]
-        | FastMCP1Server
+        | SDKServer
         | AnyUrl
         | Path
         | MCPConfig

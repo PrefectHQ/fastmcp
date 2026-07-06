@@ -2,7 +2,7 @@
 
 import importlib.metadata
 
-from mcp.server.mcpserver import MCPServer as FastMCP1x
+from mcp.server.mcpserver import MCPServer as SDKServer
 
 import fastmcp
 from fastmcp import FastMCP
@@ -261,7 +261,7 @@ class TestIconExtraction:
         """Test that icons are extracted from FastMCP 1.x servers."""
         from mcp_types import Icon
 
-        mcp = FastMCP1x("Icon1xServer")
+        mcp = SDKServer("Icon1xServer")
 
         @mcp.tool(
             icons=[Icon(src="https://example.com/v1-tool.png", mime_type="image/png")]

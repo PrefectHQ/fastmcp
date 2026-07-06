@@ -72,11 +72,11 @@ else:
 from .transports import (
     ClientTransport,
     ClientTransportT,
-    FastMCP1Server,
     FastMCPTransport,
     MCPConfigTransport,
     NodeStdioTransport,
     PythonStdioTransport,
+    SDKServer,
     SessionKwargs,
     SSETransport,
     StreamableHttpTransport,
@@ -209,7 +209,7 @@ class Client(
     @overload
     def __init__(
         self: Client[FastMCPTransport],
-        transport: FastMCP | FastMCP1Server,
+        transport: FastMCP | SDKServer,
         *args: Any,
         **kwargs: Any,
     ) -> None: ...
@@ -248,7 +248,7 @@ class Client(
         transport: (
             ClientTransportT
             | FastMCP
-            | FastMCP1Server
+            | SDKServer
             | AnyUrl
             | Path
             | MCPConfig

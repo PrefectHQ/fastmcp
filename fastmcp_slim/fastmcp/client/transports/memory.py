@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 import anyio
 from mcp import ClientSession
 from mcp.server import Server
-from mcp.server.mcpserver import MCPServer as FastMCP1Server
+from mcp.server.mcpserver import MCPServer as SDKServer
 from mcp.shared.memory import create_client_server_memory_streams
 from typing_extensions import Unpack
 
@@ -17,15 +17,15 @@ if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
 
 
-def _lowlevel_of(server: "FastMCP[Any] | FastMCP1Server") -> Server:
+def _lowlevel_of(server: "FastMCP[Any] | SDKServer") -> Server:
     """Resolve the underlying lowlevel MCP `Server` for either server type.
 
-    SDK v2's `MCPServer` (FastMCP 1.0) exposes its lowlevel server as
+    The SDK's own high-level `MCPServer` exposes its lowlevel server as
     `_lowlevel_server` and its own `run()` is synchronous, so we always drive
-    the async lowlevel `Server.run` here. FastMCP 2.x servers expose the same
+    the async lowlevel `Server.run` here. FastMCP servers expose the same
     lowlevel server as `_mcp_server`.
     """
-    if isinstance(server, FastMCP1Server):
+    if isinstance(server, SDKServer):
         return server._lowlevel_server
     return server._mcp_server
 
@@ -34,13 +34,14 @@ class FastMCPTransport(ClientTransport):
     """In-memory transport for FastMCP servers.
 
     This transport connects directly to a FastMCP server instance in the same
-    Python process. It works with both FastMCP 2.x servers and FastMCP 1.0
-    servers from the low-level MCP SDK. This is particularly useful for unit
-    tests or scenarios where client and server run in the same runtime.
+    Python process. It works with both FastMCP servers and the SDK's own
+    high-level `MCPServer` from the low-level MCP SDK. This is particularly
+    useful for unit tests or scenarios where client and server run in the same
+    runtime.
     """
 
     def __init__(
-        self, mcp: "FastMCP[Any] | FastMCP1Server", raise_exceptions: bool = False
+        self, mcp: "FastMCP[Any] | SDKServer", raise_exceptions: bool = False
     ):
         """Initialize a FastMCPTransport from a FastMCP server instance."""
 
@@ -110,16 +111,16 @@ class FastMCPTransport(ClientTransport):
 
 @contextlib.asynccontextmanager
 async def _enter_server_lifespan(
-    server: "FastMCP[Any] | FastMCP1Server",
+    server: "FastMCP[Any] | SDKServer",
 ) -> AsyncIterator[None]:
-    """Enters the server's lifespan context for FastMCP servers and does nothing for FastMCP 1 servers."""
+    """Enters the server's lifespan context for FastMCP servers and does nothing for the SDK's own high-level servers."""
     FastMCP2: type[Any] | None
     try:
         FastMCP2 = importlib.import_module("fastmcp.server.server").FastMCP
     except ImportError:
         FastMCP2 = None
 
-    if FastMCP2 is None and not isinstance(server, FastMCP1Server):
+    if FastMCP2 is None and not isinstance(server, SDKServer):
         raise ImportError(_install_hints.full_package("In-memory FastMCP transports"))
 
     if FastMCP2 is not None and isinstance(server, FastMCP2):

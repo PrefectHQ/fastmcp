@@ -8,7 +8,7 @@ from enum import Enum
 from typing import Any, Literal, cast
 
 import pydantic_core
-from mcp.server.mcpserver import MCPServer as FastMCP1x
+from mcp.server.mcpserver import MCPServer as SDKServer
 
 import fastmcp
 from fastmcp import Client
@@ -248,7 +248,7 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
     )
 
 
-async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
+async def inspect_fastmcp_v1(mcp: SDKServer) -> FastMCPInfo:
     """Extract information from a FastMCP v1.x instance using a Client.
 
     Args:
@@ -257,7 +257,7 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
     Returns:
         FastMCPInfo dataclass containing the extracted information
     """
-    # Use a client to interact with the FastMCP1x server
+    # Use a client to interact with the SDK's high-level MCPServer
     async with Client(mcp) as client:
         # Get components via client calls (these return MCP objects)
         mcp_tools = await client.list_tools()
@@ -407,7 +407,7 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
         )
 
 
-async def inspect_fastmcp(mcp: FastMCP[Any] | FastMCP1x) -> FastMCPInfo:
+async def inspect_fastmcp(mcp: FastMCP[Any] | SDKServer) -> FastMCPInfo:
     """Extract information from a FastMCP instance into a dataclass.
 
     This function automatically detects whether the instance is FastMCP v1.x or v2.x
@@ -419,7 +419,7 @@ async def inspect_fastmcp(mcp: FastMCP[Any] | FastMCP1x) -> FastMCPInfo:
     Returns:
         FastMCPInfo dataclass containing the extracted information
     """
-    if isinstance(mcp, FastMCP1x):
+    if isinstance(mcp, SDKServer):
         return await inspect_fastmcp_v1(mcp)
     else:
         return await inspect_fastmcp_v2(cast(FastMCP[Any], mcp))
@@ -461,7 +461,7 @@ def format_fastmcp_info(info: FastMCPInfo) -> bytes:
     return pydantic_core.to_json(result, indent=2)
 
 
-async def format_mcp_info(mcp: FastMCP[Any] | FastMCP1x) -> bytes:
+async def format_mcp_info(mcp: FastMCP[Any] | SDKServer) -> bytes:
     """Format server info as standard MCP protocol JSON.
 
     Uses Client to get the standard MCP protocol format with camelCase fields.
@@ -495,7 +495,7 @@ async def format_mcp_info(mcp: FastMCP[Any] | FastMCP1x) -> bytes:
 
 
 async def format_info(
-    mcp: FastMCP[Any] | FastMCP1x,
+    mcp: FastMCP[Any] | SDKServer,
     format: InspectFormat | Literal["fastmcp", "mcp"],
     info: FastMCPInfo | None = None,
 ) -> bytes:

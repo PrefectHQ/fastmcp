@@ -12,7 +12,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
-from mcp.server.mcpserver import MCPServer as FastMCP1x
+from mcp.server.mcpserver import MCPServer as SDKServer
 from watchfiles import Change, awatch
 
 import fastmcp
@@ -233,8 +233,8 @@ async def run_command(
 
     # Run the server
 
-    # handle v1 servers
-    if isinstance(server, FastMCP1x):
+    # handle the SDK's own high-level MCPServer (not a fastmcp.FastMCP)
+    if isinstance(server, SDKServer):
         await run_v1_server_async(server, host=host, port=port, transport=transport)
         return
 
@@ -309,7 +309,7 @@ def run_module_command(
 
 
 async def run_v1_server_async(
-    server: FastMCP1x,
+    server: SDKServer,
     host: str | None = None,
     port: int | None = None,
     transport: TransportType | None = None,
