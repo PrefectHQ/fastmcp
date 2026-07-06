@@ -186,11 +186,16 @@ async def _send_mcp_notification(
     if method != "notifications/tasks/status":
         raise ValueError(f"Unsupported notification method for subscriber: {method}")
 
+    # SDK v2: a notification's `_meta` lives on its params (`params._meta`), not
+    # at the notification envelope level, so nest it under params before parsing.
+    params_dict = dict(notification_dict.get("params", {}))
+    meta_dict = notification_dict.get("_meta")
+    if meta_dict is not None:
+        params_dict["_meta"] = meta_dict
     notification = mcp_types.TaskStatusNotification.model_validate(
         {
             "method": "notifications/tasks/status",
-            "params": notification_dict.get("params", {}),
-            "_meta": notification_dict.get("_meta"),
+            "params": params_dict,
         }
     )
     # SDK v2: `ServerNotification` is a union type; send the bare model.

@@ -5,6 +5,7 @@ Handles queuing tool/prompt/resource executions to Docket as background tasks.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from contextlib import suppress
 from datetime import datetime, timezone
@@ -180,22 +181,33 @@ async def submit_to_docket(
     else:
         await component.add_to_docket(docket, arguments, fn_key=key, task_key=task_key)  # type: ignore[call-arg]  # ty:ignore[invalid-argument-type, too-many-positional-arguments]
 
-    # Spawn subscription task to send status notifications (SEP-1686 optional feature)
-    # Start subscription in session's task group (persists for connection lifetime)
+    # Spawn subscription task to send status notifications (SEP-1686 optional feature).
+    # SDK v2 constructs a ServerSession per request and exposes no per-connection
+    # task group, so the subscription runs as a standalone asyncio task that
+    # outlives the submitting request; it is cancelled when the connection closes.
     # Deferred: subscriptions and notifications depend on docket at import time
     from fastmcp.server.tasks.subscriptions import subscribe_to_task_updates
 
-    if hasattr(ctx.session, "_subscription_task_group"):
-        tg = ctx.session._subscription_task_group
-        if tg:
-            tg.start_soon(  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
-                subscribe_to_task_updates,
-                server_task_id,
-                task_key,
-                ctx.session,
-                docket,
-                poll_interval_ms,
-            )
+    subscription_task = asyncio.create_task(
+        subscribe_to_task_updates(
+            server_task_id,
+            task_key,
+            ctx.session,
+            docket,
+            poll_interval_ms,
+        ),
+        name=f"task-subscription-{server_task_id[:8]}",
+    )
+    connection = getattr(ctx.session, "_connection", None)
+    if connection is not None:
+
+        async def _cancel_subscription() -> None:
+            if not subscription_task.done():
+                subscription_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await subscription_task
+
+        connection.exit_stack.push_async_callback(_cancel_subscription)
 
     # Deferred: notifications depends on docket at import time
     from fastmcp.server.tasks.notifications import (

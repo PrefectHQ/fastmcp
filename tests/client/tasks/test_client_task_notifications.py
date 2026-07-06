@@ -215,8 +215,9 @@ async def test_wait_returns_on_input_required(task_notification_server):
     async with Client(task_notification_server) as client:
         task = await client.call_tool("quick_task", {"value": 1}, task=True)
 
-        # Directly inject an input_required status into the cache and signal the event
-        now = datetime.now(timezone.utc)
+        # Directly inject an input_required status into the cache and signal the event.
+        # SDK v2 types the Task timestamps as ISO 8601 strings.
+        now = datetime.now(timezone.utc).isoformat()
         input_required_status = GetTaskResult(
             task_id=task._task_id,
             status="input_required",
