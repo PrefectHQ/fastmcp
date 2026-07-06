@@ -38,14 +38,26 @@ class TestPingMiddlewareInit:
 class TestPingMiddlewareOnMessage:
     """Test on_message hook behavior."""
 
+    def _mock_session(self):
+        """Build a mock session with a stable per-connection Connection.
+
+        SDK v2 constructs a ServerSession per request; PingMiddleware keys the
+        keepalive loop off the underlying Connection (and registers cleanup on
+        its exit stack), so tests supply a connection with an exit_stack.
+        """
+        connection = MagicMock()
+        connection.exit_stack = MagicMock()
+        connection.exit_stack.push_async_callback = MagicMock()
+        session = MagicMock()
+        session._connection = connection
+        session.send_ping = AsyncMock()
+        return session, connection
+
     async def test_starts_ping_task_on_first_message(self):
-        """Test that ping task is started on first message from a session."""
+        """Test that a ping task is started on first message from a connection."""
         middleware = PingMiddleware(interval_ms=1000)
 
-        mock_session = MagicMock()
-        mock_session._subscription_task_group = MagicMock()
-        mock_session._subscription_task_group.start_soon = MagicMock()
-
+        mock_session, connection = self._mock_session()
         mock_context = MagicMock()
         mock_context.fastmcp_context.session = mock_session
 
@@ -54,43 +66,34 @@ class TestPingMiddlewareOnMessage:
         result = await middleware.on_message(mock_context, mock_call_next)
 
         assert result == "result"
-        assert id(mock_session) in middleware._active_sessions
-        mock_session._subscription_task_group.start_soon.assert_called_once()
+        assert id(connection) in middleware._active_sessions
+        connection.exit_stack.push_async_callback.assert_called_once()
 
     async def test_does_not_start_duplicate_task(self):
-        """Test that duplicate messages from same session don't spawn duplicate tasks."""
+        """Test that duplicate messages from same connection don't spawn duplicates."""
         middleware = PingMiddleware(interval_ms=1000)
 
-        mock_session = MagicMock()
-        mock_session._subscription_task_group = MagicMock()
-        mock_session._subscription_task_group.start_soon = MagicMock()
-
+        mock_session, connection = self._mock_session()
         mock_context = MagicMock()
         mock_context.fastmcp_context.session = mock_session
 
         mock_call_next = AsyncMock(return_value="result")
 
-        # First message
+        # Three messages from the same connection
         await middleware.on_message(mock_context, mock_call_next)
-        # Second message from same session
         await middleware.on_message(mock_context, mock_call_next)
-        # Third message from same session
         await middleware.on_message(mock_context, mock_call_next)
 
-        # Should only start task once
-        assert mock_session._subscription_task_group.start_soon.call_count == 1
+        # Cleanup registered only once
+        assert connection.exit_stack.push_async_callback.call_count == 1
+        assert len(middleware._active_sessions) == 1
 
     async def test_starts_separate_task_per_session(self):
-        """Test that different sessions get separate ping tasks."""
+        """Test that different connections get separate ping tasks."""
         middleware = PingMiddleware(interval_ms=1000)
 
-        mock_session1 = MagicMock()
-        mock_session1._subscription_task_group = MagicMock()
-        mock_session1._subscription_task_group.start_soon = MagicMock()
-
-        mock_session2 = MagicMock()
-        mock_session2._subscription_task_group = MagicMock()
-        mock_session2._subscription_task_group.start_soon = MagicMock()
+        mock_session1, connection1 = self._mock_session()
+        mock_session2, connection2 = self._mock_session()
 
         mock_context1 = MagicMock()
         mock_context1.fastmcp_context.session = mock_session1
@@ -103,27 +106,9 @@ class TestPingMiddlewareOnMessage:
         await middleware.on_message(mock_context1, mock_call_next)
         await middleware.on_message(mock_context2, mock_call_next)
 
-        mock_session1._subscription_task_group.start_soon.assert_called_once()
-        mock_session2._subscription_task_group.start_soon.assert_called_once()
+        connection1.exit_stack.push_async_callback.assert_called_once()
+        connection2.exit_stack.push_async_callback.assert_called_once()
         assert len(middleware._active_sessions) == 2
-
-    async def test_skips_task_when_no_task_group(self):
-        """Test graceful handling when session has no task group."""
-        middleware = PingMiddleware(interval_ms=1000)
-
-        mock_session = MagicMock()
-        mock_session._subscription_task_group = None
-
-        mock_context = MagicMock()
-        mock_context.fastmcp_context.session = mock_session
-
-        mock_call_next = AsyncMock(return_value="result")
-
-        result = await middleware.on_message(mock_context, mock_call_next)
-
-        assert result == "result"
-        # Session should NOT be added if task group is None
-        assert id(mock_session) not in middleware._active_sessions
 
     async def test_skips_when_fastmcp_context_is_none(self):
         """Test that middleware passes through when fastmcp_context is None."""
