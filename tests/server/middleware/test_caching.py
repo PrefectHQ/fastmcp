@@ -38,6 +38,7 @@ from fastmcp.server.middleware.caching import (
     ResponseCachingStatistics,
     _make_call_tool_cache_key,
     _make_get_prompt_cache_key,
+    _make_list_cache_key,
     _make_read_resource_cache_key,
 )
 from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext
@@ -846,3 +847,50 @@ class TestAuthAwareCaching:
             assert {p.name for p in prompts} == {"public_prompt"}
         finally:
             auth_context_var.reset(tok)
+
+
+class TestListCacheKeyPartitioning:
+    """Regression tests for issue #4461: list caches must vary by Accept header."""
+
+    def test_list_cache_key_differs_by_accept_header(self, monkeypatch):
+        accepts = iter(["text/plain", "application/json"])
+        monkeypatch.setattr(
+            "fastmcp.server.dependencies.get_http_headers",
+            lambda **kwargs: {"accept": next(accepts)},
+        )
+        plain_key = _make_list_cache_key()
+        json_key = _make_list_cache_key()
+
+        assert plain_key != json_key
+
+    def test_list_cache_key_without_accept_uses_auth_partition(self, monkeypatch):
+        monkeypatch.setattr(
+            "fastmcp.server.dependencies.get_http_headers",
+            lambda **kwargs: {},
+        )
+        assert _make_list_cache_key() == ANONYMOUS_AUTH_KEY
+
+
+class TestListCachingPreservesIcons:
+    """Regression tests for issue #4455: icons must survive list caching."""
+
+    async def test_list_tools_preserves_icons_after_cache_hit(self):
+        from mcp.types import Icon
+
+        mcp_server = FastMCP("IconServer")
+        mcp_server.add_middleware(ResponseCachingMiddleware())
+
+        tool_icon = Icon(src="https://example.com/tool.png")
+
+        @mcp_server.tool(icons=[tool_icon])
+        def greet() -> str:
+            return "hello"
+
+        async with Client(mcp_server) as client:
+            tools_first = await client.list_tools()
+            tools_cached = await client.list_tools()
+
+        assert tools_first[0].icons is not None
+        assert tools_first[0].icons[0].src == "https://example.com/tool.png"
+        assert tools_cached[0].icons is not None
+        assert tools_cached[0].icons[0].src == "https://example.com/tool.png"

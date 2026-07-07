@@ -306,7 +306,7 @@ class ResponseCachingMiddleware(Middleware):
         if self._list_tools_settings.get("enabled") is False:
             return await call_next(context)
 
-        cache_key: str = _get_auth_partition_key()
+        cache_key: str = _make_list_cache_key()
 
         if cached_value := await self._list_tools_cache.get(key=cache_key):
             return cached_value
@@ -322,6 +322,8 @@ class ResponseCachingMiddleware(Middleware):
                 parameters=tool.parameters,
                 output_schema=tool.output_schema,
                 annotations=tool.annotations,
+                icons=tool.icons,
+                execution=tool.execution,
                 meta=tool.meta,
                 tags=tool.tags,
             )
@@ -347,7 +349,7 @@ class ResponseCachingMiddleware(Middleware):
         if self._list_resources_settings.get("enabled") is False:
             return await call_next(context)
 
-        cache_key: str = _get_auth_partition_key()
+        cache_key: str = _make_list_cache_key()
 
         if cached_value := await self._list_resources_cache.get(key=cache_key):
             return cached_value
@@ -364,6 +366,7 @@ class ResponseCachingMiddleware(Middleware):
                 meta=resource.meta,
                 mime_type=resource.mime_type,
                 annotations=resource.annotations,
+                icons=resource.icons,
                 uri=resource.uri,
             )
             for resource in resources
@@ -388,7 +391,7 @@ class ResponseCachingMiddleware(Middleware):
         if self._list_prompts_settings.get("enabled") is False:
             return await call_next(context)
 
-        cache_key: str = _get_auth_partition_key()
+        cache_key: str = _make_list_cache_key()
 
         if cached_value := await self._list_prompts_cache.get(key=cache_key):
             return cached_value
@@ -403,6 +406,7 @@ class ResponseCachingMiddleware(Middleware):
                 description=prompt.description,
                 tags=prompt.tags,
                 meta=prompt.meta,
+                icons=prompt.icons,
                 arguments=prompt.arguments,
             )
             for prompt in prompts
@@ -567,6 +571,32 @@ def _get_auth_partition_key() -> str:
     if token is None:
         return ANONYMOUS_AUTH_KEY
     return _hash_cache_key(token.token)
+
+
+def _get_accept_partition_key() -> str:
+    """Return a normalized Accept header value for list-operation cache keys.
+
+    List responses can be serialized differently depending on the client's
+    Accept header (for example plaintext vs structured JSON). Partitioning
+    the cache by Accept prevents one client's negotiated format from being
+    served to another.
+    """
+    from fastmcp.server.dependencies import get_http_headers
+
+    headers = get_http_headers(include={"accept"})
+    accept = headers.get("accept", "").strip().lower()
+    if not accept:
+        return ""
+    return accept
+
+
+def _make_list_cache_key() -> str:
+    """Build a cache key for list operations (tools/resources/prompts)."""
+    auth_key = _get_auth_partition_key()
+    accept_key = _get_accept_partition_key()
+    if accept_key:
+        return _hash_cache_key(f"{auth_key}:{accept_key}")
+    return auth_key
 
 
 def _make_call_tool_cache_key(
