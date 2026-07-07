@@ -273,6 +273,14 @@ FastMCP retains hardening that is not yet upstream and does not remove it during
 
 ### Retained OAuth / DCR hardening — Absorbed
 
-FastMCP keeps its own DCR redirect-URI hardening (PRs #4419, #4408) regardless of the SDK's validation, which still accepts unsafe `javascript:`/`data:` redirect schemes at the model level (sdk-feedback #4). The streamable-HTTP DNS-rebinding protection above is a second retained security surface. When HTTP convergence lands in v4, FastMCP would additionally *inherit* the SDK's session-owner credential enforcement — a security gain it lacks today (see [Feature Program](/development/v4-notes/feature-program)).
+FastMCP keeps its own DCR redirect-URI hardening (PRs #4419, #4408) regardless of the SDK's validation, which still accepts unsafe `javascript:`/`data:` redirect schemes at the model level (sdk-feedback #4). The streamable-HTTP DNS-rebinding protection above is a second retained security surface.
 
 *Verify:* recent commits `67527c1f` (block unsafe OAuth redirect schemes), `57a27992` (DNS rebinding), `cccb529f` (DCR redirect URI validation) on `main`.
+
+### Session-owner credential enforcement — Absorbed (security gain)
+
+A streamable-HTTP session is now bound to the credential that created it. Once the session manager owns the server lifecycle (its `run()` drives FastMCP's lifespan through `_lifespan_proxy`), the SDK's `_session_owners` map is populated on session creation and checked on every subsequent request: a request that presents a *different* credential for an existing `Mcp-Session-Id` is answered with 404, exactly as if the session did not exist. This closes a gap where a leaked session id was usable by any bearer — before this, any valid token could drive someone else's session. Identity is the `(client_id, issuer, subject)` triple the token verifier supplies; components it does not populate degrade out of the comparison.
+
+The enforcement is the SDK's, but it only activates on FastMCP's stateful HTTP path because FastMCP lets the manager enter the lifespan (see HTTP → Lifespan reconciliation above). No configuration is required.
+
+*Verify:* `tests/server/http/test_session_owner_enforcement.py` (create with token A → reuse with token B → 404; reuse with token A → 200); SDK `streamable_http_manager.py` `_session_owners`.
