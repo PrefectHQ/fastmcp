@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 import copy
 import datetime
+import hashlib
 import secrets
 import ssl
+import uuid
 import weakref
 from collections.abc import Callable, Coroutine
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
@@ -13,6 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast, overload
 
 import anyio
+import anyio.lowlevel
 import httpx
 import mcp_types
 from exceptiongroup import catch
@@ -22,8 +25,14 @@ from mcp.client._input_required import (
     run_input_required_driver,
 )
 from mcp.client._probe import negotiate_auto
+from mcp.client.caching import (
+    CacheConfig,
+    CacheMode,
+    ClientResponseCache,
+    InMemoryResponseCacheStore,
+)
 from mcp.client.extension import NotificationBinding
-from mcp.client.session import ClientRequestContext
+from mcp.client.session import ClientRequestContext, MessageHandlerFnT
 from mcp_types import (
     GetTaskResult,
     TaskStatusNotification,
@@ -106,6 +115,7 @@ logger = get_logger(__name__)
 
 T = TypeVar("T", bound="ClientTransport")
 ResultT = TypeVar("ResultT")
+CacheableT = TypeVar("CacheableT", bound=mcp_types.CacheableResult)
 
 ConnectMode = Literal["legacy", "auto"] | str
 """How the client negotiates the protocol era at connect time.
@@ -136,6 +146,37 @@ def _synthesize_discover(protocol_version: str) -> mcp_types.DiscoverResult:
         ttl_ms=0,
         cache_scope="public",
     )
+
+
+def _evicting_message_handler(
+    cache: ClientResponseCache, user_handler: MessageHandlerFnT | None
+) -> MessageHandlerFnT:
+    """Compose cache eviction over an existing message handler (SEP-2549).
+
+    A server notification (tools/list_changed, resource updates, etc.) evicts the
+    entries it invalidates *before* the wrapped handler runs, so a downstream
+    consumer never observes a change while a stale cached listing is still served.
+    Mirrors the SDK Client's `_evicting_message_handler`, but delegates to FastMCP's
+    own handler chain rather than clobbering it. Eviction faults are contained: a
+    cache-store error must never block notification delivery.
+    """
+
+    async def handler(
+        message: Any,
+    ) -> None:
+        if isinstance(message, mcp_types.ServerNotification):
+            try:
+                await cache.evict_for_notification(message)
+            except Exception:
+                logger.exception(
+                    "Response cache eviction failed; the notification is still delivered"
+                )
+        if user_handler is not None:
+            await user_handler(message)
+        else:
+            await anyio.lowlevel.checkpoint()
+
+    return handler
 
 
 @dataclass
@@ -217,6 +258,23 @@ class Client(
         timeout: Optional timeout for requests (seconds or timedelta)
         init_timeout: Optional timeout for initial connection (seconds or timedelta).
             Set to 0 to disable. If None, uses the value in the FastMCP global settings.
+        mode: Protocol-era negotiation at connect time. `"legacy"` (the default) runs
+            the initialize handshake, byte-identical to pre-v4 behavior. `"auto"` probes
+            `server/discover` and negotiates the modern era, denylist-falling-back to the
+            handshake for legacy servers. A modern version string (e.g. `"2026-07-28"`)
+            adopts that version directly. `mode="auto"` as a future default is a
+            release-time decision; the conservative `"legacy"` is the default for now.
+        prior_discover: A previously obtained `DiscoverResult` to adopt when `mode` is a
+            version pin, reused instead of synthesizing a minimal one. Ignored otherwise.
+        input_required_max_rounds: Cap on `InputRequiredResult` (SEP-2322) retry rounds
+            for `call_tool` / `get_prompt` / `read_resource` before the driver gives up.
+            Only reachable on 2026-era servers that emit `InputRequiredResult`.
+        cache: Client-side response caching (SEP-2549), opt-in. `None` (default) and
+            `False` disable it; `True` enables the default in-memory store honoring
+            server `ttlMs`/`cacheScope` hints; a `CacheConfig` customizes it. Honoring is
+            modern-only, so a cache is inert on legacy connections. A custom `CacheConfig`
+            store requires `target_id`, since FastMCP transports expose no server URL to
+            derive a shared-store identity from.
 
     Examples:
         ```python
@@ -309,6 +367,7 @@ class Client(
         mode: ConnectMode = "legacy",
         prior_discover: mcp_types.DiscoverResult | None = None,
         input_required_max_rounds: int = DEFAULT_INPUT_REQUIRED_MAX_ROUNDS,
+        cache: CacheConfig | bool | None = None,
     ) -> None:
         self.name = name or self.generate_name()
 
@@ -372,11 +431,32 @@ class Client(
 
         self.auto_initialize = auto_initialize
 
+        # Client-side response cache (SEP-2549). Only honored at modern protocol
+        # versions (the SDK ClientResponseCache gates hint-reading on the negotiated
+        # era), so it is inert for legacy connections. `cache=False` disables it.
+        # Retained so `new()` can rebuild an independent cache per clone.
+        self._cache_arg: CacheConfig | bool | None = cache
+        self._response_cache: ClientResponseCache | None = self._build_response_cache(
+            cache
+        )
+
+        # The unwrapped base handler (default routes task notifications; a user
+        # handler is preserved as-is). Retained so `new()` can rebuild the clone's
+        # handler without unwrapping the cache-eviction wrapper below.
+        self._base_message_handler: MessageHandlerFnT | None = (
+            message_handler or TaskNotificationHandler(self)
+        )
+        effective_message_handler = self._base_message_handler
+        if self._response_cache is not None:
+            effective_message_handler = _evicting_message_handler(
+                self._response_cache, effective_message_handler
+            )
+
         self._session_kwargs: SessionKwargs = {
             "sampling_callback": None,
             "list_roots_callback": None,
             "logging_callback": create_log_callback(log_handler),
-            "message_handler": message_handler or TaskNotificationHandler(self),
+            "message_handler": effective_message_handler,
             "read_timeout_seconds": read_timeout_seconds,
             "client_info": client_info,
             # SDK v2 does not carry `notifications/tasks/status` in any protocol
@@ -419,6 +499,54 @@ class Client(
         self._task_registry: dict[
             str, weakref.ref[ToolTask | PromptTask | ResourceTask]
         ] = {}
+
+    def _build_response_cache(
+        self, cache: CacheConfig | bool | None
+    ) -> ClientResponseCache | None:
+        """Build the SEP-2549 response cache from the `cache=` argument.
+
+        Response caching is opt-in: `None` (the default) and `False` both leave it
+        disabled, so a legacy connection is byte-identical to pre-v4 behavior (no
+        message-handler wrapping, no caching). `True` enables it with the default
+        `CacheConfig` (honoring server `ttlMs`/`cacheScope` hints via a per-client
+        in-memory store); a `CacheConfig` customizes it.
+
+        Our transports abstract away the server URL the SDK Client uses to derive a
+        cache identity, so `target_id` comes from the explicit `CacheConfig.target_id`
+        or a random per-client id — meaning a custom shared store cannot serve one
+        client's entries to another (documented on the parameter).
+        """
+        if cache is None or cache is False:
+            return None
+        config = cache if isinstance(cache, CacheConfig) else CacheConfig()
+
+        target_id = config.target_id
+        if target_id is None:
+            if config.store is not None:
+                raise ValueError(
+                    "a custom cache store requires CacheConfig.target_id for FastMCP "
+                    "transports: the server URL the SDK derives an identity from is not "
+                    "available here, so entries in a shared store could never be served "
+                    "to another client"
+                )
+            target_id = uuid.uuid4().hex
+
+        return ClientResponseCache(
+            store=config.store
+            if config.store is not None
+            else InMemoryResponseCacheStore(),
+            partition=config.partition,
+            arm_id=hashlib.sha256(target_id.encode()).hexdigest(),
+            default_ttl_ms=config.default_ttl_ms,
+            clock=config.clock,
+            share_public=config.share_public,
+            # Lazy: the negotiated version is unknown until the handshake completes.
+            negotiated_version=lambda: (
+                self._session_state.session.protocol_version
+                if self._session_state.session is not None
+                else None
+            ),
+        )
 
     def _reset_session_state(self, full: bool = False) -> None:
         """Reset session state after disconnect or cancellation.
@@ -533,17 +661,29 @@ class Client(
         new_client._task_registry = {}
         new_client._submitted_task_ids = set()
 
+        # Give the clone its own response cache so cached entries are not shared
+        # across independent sessions, and rebuild the negotiated_version closure
+        # to point at the clone's session state.
+        new_client._response_cache = new_client._build_response_cache(self._cache_arg)
+
         # Create a fresh session kwargs dict so the clone doesn't share
         # the original's mutable dict. Rebind the task notification handler
         # to the new client if the default handler is in use; preserve any
         # custom message handler the user may have set.
         new_client._session_kwargs = {**self._session_kwargs}  # type: ignore[typeddict-item]
-        if isinstance(
-            self._session_kwargs.get("message_handler"), TaskNotificationHandler
-        ):
-            new_client._session_kwargs["message_handler"] = TaskNotificationHandler(
-                new_client
+        # Recover the unwrapped base handler (never the cache-evicting wrapper): a
+        # default (TaskNotificationHandler) rebinds to the clone; a user handler is
+        # preserved. Then re-wrap with the clone's own cache if one exists.
+        base_handler: MessageHandlerFnT | None = self._base_message_handler
+        if isinstance(base_handler, TaskNotificationHandler) or base_handler is None:
+            base_handler = TaskNotificationHandler(new_client)
+        new_client._base_message_handler = base_handler
+        if new_client._response_cache is not None:
+            new_client._session_kwargs["message_handler"] = _evicting_message_handler(
+                new_client._response_cache, base_handler
             )
+        else:
+            new_client._session_kwargs["message_handler"] = base_handler
         # Rebind the task-status notification binding so it routes to the clone.
         new_client._session_kwargs["notification_bindings"] = [
             new_client._task_status_binding()
@@ -911,6 +1051,48 @@ class Client(
             with anyio.CancelScope(shield=True), suppress(asyncio.CancelledError):
                 await call_task
             raise
+
+    async def _cached_fetch(
+        self,
+        method: str,
+        *,
+        cursor: str | None,
+        cache_mode: CacheMode,
+        send: Callable[[], Coroutine[Any, Any, CacheableT]],
+        absorb: Callable[[CacheableT], CacheableT] | None = None,
+    ) -> CacheableT:
+        """Serve one of the cacheable list verbs through the response cache.
+
+        Mirrors the SDK Client's `_cached_fetch`: cursorless `use` calls are served
+        from (and stored to) the cache; a cursor page skips the cache (and evicts on
+        an expired-cursor `INVALID_PARAMS`, which signals the listing changed). The
+        cache is inert on legacy connections because the SDK cache reads no TTL/scope
+        hints below the modern era, so nothing is ever stored to serve.
+
+        `absorb` (tools/list only) re-applies the session's derived per-tool state to a
+        served cache hit, since a hit skips `session.list_tools`.
+        """
+        cache = self._response_cache
+        if cache is None or cache_mode == "bypass":
+            return await send()
+        # A closed (or never-entered) client must raise, never serve cached entries.
+        _ = self.session
+        if cursor is not None:
+            # Continuation pages skip the cache; an expired cursor means the listing
+            # changed, so evict (spec SHOULD) and re-raise.
+            try:
+                return await send()
+            except MCPError as e:
+                if e.code == mcp_types.INVALID_PARAMS:
+                    await cache.evict_method(method)
+                raise
+        if cache_mode == "use" and (hit := await cache.read(method, "")) is not None:
+            served = cast(CacheableT, hit)
+            return served if absorb is None else absorb(served)
+        gen = cache.capture(method, "")
+        result = await send()
+        await cache.write(method, "", result, gen, cache_mode)
+        return result
 
     async def _drive_input_required(
         self,

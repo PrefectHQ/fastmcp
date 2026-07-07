@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
 import mcp_types
 import pydantic_core
+from mcp.client.caching import CacheMode
 from pydantic import RootModel
 
 if TYPE_CHECKING:
@@ -34,12 +35,17 @@ class ClientPromptsMixin:
     # --- Prompts ---
 
     async def list_prompts_mcp(
-        self: Client, *, cursor: str | None = None
+        self: Client,
+        *,
+        cursor: str | None = None,
+        cache_mode: CacheMode = "use",
     ) -> mcp_types.ListPromptsResult:
         """Send a prompts/list request and return the complete MCP protocol result.
 
         Args:
             cursor: Optional pagination cursor from a previous request's nextCursor.
+            cache_mode: Response-cache behavior (only active with a cache and a modern
+                connection). See `list_tools_mcp`.
 
         Returns:
             mcp_types.ListPromptsResult: The complete response object from the protocol,
@@ -62,10 +68,15 @@ class ClientPromptsMixin:
                 if cursor is not None
                 else None
             )
-            result = await self._await_with_session_monitoring(
-                self.session.list_prompts(params=params)
+
+            async def _send() -> mcp_types.ListPromptsResult:
+                return await self._await_with_session_monitoring(
+                    self.session.list_prompts(params=params)
+                )
+
+            return await self._cached_fetch(
+                "prompts/list", cursor=cursor, cache_mode=cache_mode, send=_send
             )
-            return result
 
     async def list_prompts(
         self: Client,

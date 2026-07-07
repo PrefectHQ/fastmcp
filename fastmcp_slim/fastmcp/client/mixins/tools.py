@@ -7,6 +7,7 @@ import weakref
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
 import mcp_types
+from mcp.client.caching import CacheMode
 from opentelemetry.trace import Status, StatusCode
 from pydantic import RootModel
 
@@ -38,12 +39,19 @@ class ClientToolsMixin:
     # --- Tools ---
 
     async def list_tools_mcp(
-        self: Client, *, cursor: str | None = None
+        self: Client,
+        *,
+        cursor: str | None = None,
+        cache_mode: CacheMode = "use",
     ) -> mcp_types.ListToolsResult:
         """Send a tools/list request and return the complete MCP protocol result.
 
         Args:
             cursor: Optional pagination cursor from a previous request's nextCursor.
+            cache_mode: Response-cache behavior for this call (only active when the
+                client was built with a cache and the connection is modern). `"use"`
+                (default) serves and stores; `"refresh"` stores without serving;
+                `"bypass"` skips the cache. A cursor page always skips the cache.
 
         Returns:
             mcp_types.ListToolsResult: The complete response object from the protocol,
@@ -66,10 +74,25 @@ class ClientToolsMixin:
                 if cursor is not None
                 else None
             )
-            result = await self._await_with_session_monitoring(
-                self.session.list_tools(params=params)
+
+            async def _send() -> mcp_types.ListToolsResult:
+                return await self._await_with_session_monitoring(
+                    self.session.list_tools(params=params)
+                )
+
+            return await self._cached_fetch(
+                "tools/list",
+                cursor=cursor,
+                cache_mode=cache_mode,
+                send=_send,
+                # A cache hit skips session.list_tools, so re-absorb the served
+                # listing to rebuild the session's derived per-tool state. Hits are
+                # cursorless, but a cached page 1 can carry next_cursor — never prune
+                # on a partial listing.
+                absorb=lambda hit: self.session._absorb_tool_listing(
+                    hit, complete=hit.next_cursor is None
+                ),
             )
-            return result
 
     async def list_tools(
         self: Client,
