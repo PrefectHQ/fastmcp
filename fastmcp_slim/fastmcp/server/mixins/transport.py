@@ -347,6 +347,7 @@ class TransportMixin:
         host_origin_protection: bool | None = None,
         allowed_hosts: list[str] | None = None,
         allowed_origins: list[str] | None = None,
+        session_idle_timeout: float | None = None,
     ) -> StarletteWithLifespan:
         """Create a Starlette app using the specified HTTP transport.
 
@@ -369,6 +370,9 @@ class TransportMixin:
             allowed_origins: Additional browser origins trusted by the request guard.
                 Configure CORS separately when browser JavaScript must read
                 cross-origin responses.
+            session_idle_timeout: Maximum time in seconds a streamable-HTTP
+                session may remain idle before it is terminated. When None,
+                falls back to the ``http_session_idle_timeout`` setting.
 
         Returns:
             A Starlette application configured with the specified transport
@@ -409,6 +413,11 @@ class TransportMixin:
                     allowed_origins
                     if allowed_origins is not None
                     else fastmcp.settings.http_allowed_origins
+                ),
+                session_idle_timeout=(
+                    session_idle_timeout
+                    if session_idle_timeout is not None
+                    else fastmcp.settings.http_session_idle_timeout
                 ),
             )
         elif transport == "sse":

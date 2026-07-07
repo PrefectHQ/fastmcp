@@ -46,6 +46,7 @@ These control how the server listens when running with an HTTP transport.
 | `FASTMCP_HTTP_HOST_ORIGIN_PROTECTION` | `bool` | `true` | Validate `Host` and browser `Origin` headers for Streamable HTTP requests. |
 | `FASTMCP_HTTP_ALLOWED_HOSTS` | `list[str] \| null` | `null` | Additional trusted hostnames for Streamable HTTP requests. Use a JSON array, such as `["mcp.example.com"]`. |
 | `FASTMCP_HTTP_ALLOWED_ORIGINS` | `list[str] \| null` | `null` | Browser origins trusted by the Streamable HTTP request guard. Configure CORS separately for cross-origin browser reads. Use a JSON array, such as `["https://app.example.com"]`. |
+| `FASTMCP_HTTP_SESSION_IDLE_TIMEOUT` | `float \| null` | `null` | Seconds a Streamable HTTP session may remain idle before it is terminated. The deadline resets on every request. When `null`, sessions never expire from inactivity. Not supported in stateless mode. |
 | `FASTMCP_DEBUG` | `bool` | `false` | Enable debug mode. |
 
 ## Error Handling
