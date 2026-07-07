@@ -21,10 +21,11 @@ from pathlib import Path
 from typing import Annotated
 
 import cyclopts
-from mcp.types import GetTaskResult, TextContent
+from mcp_types import GetTaskResult
 from rich.console import Console
 
 from fastmcp.client import Client
+from fastmcp.types import TextContent
 
 console = Console()
 app = cyclopts.App(name="tasks-client", help="FastMCP Tasks Example Client")
