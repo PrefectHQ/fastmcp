@@ -8,7 +8,7 @@ import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import SpanKind, StatusCode
 
-from fastmcp import FastMCP
+from fastmcp import Client, FastMCP
 from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.server.auth import AccessToken
 
@@ -350,3 +350,65 @@ class TestAuthAttributesOnSpans:
         assert span.attributes["enduser.id"] == "client-no-scopes"
         # Scope attribute should not be present when scopes list is empty
         assert "enduser.scope" not in span.attributes
+
+
+class TestSingleServerSpan:
+    """Full-dispatch tests guarding against duplicate SERVER spans.
+
+    The SDK seeds its own `OpenTelemetryMiddleware` into every lowlevel server,
+    which would emit a second SERVER span per request alongside FastMCP's. These
+    tests exercise the real request path (through a `Client`) so a regression
+    that re-enables the SDK middleware would surface as an extra SERVER span.
+    Note the in-process `mcp.call_tool` tests above bypass the dispatcher and so
+    cannot catch this.
+    """
+
+    async def test_tool_call_emits_single_server_span(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        mcp = FastMCP("test-server")
+
+        @mcp.tool()
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        async with Client(mcp) as client:
+            await client.call_tool("greet", {"name": "World"})
+
+        spans = trace_exporter.get_finished_spans()
+        tool_server_spans = [
+            s
+            for s in spans
+            if s.kind == SpanKind.SERVER and s.name == "tools/call greet"
+        ]
+        assert len(tool_server_spans) == 1
+
+    async def test_server_span_shares_client_trace(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        """FastMCP extracts inbound W3C trace context from `_meta`, so the single
+        SERVER span must still join the client's distributed trace."""
+        mcp = FastMCP("test-server")
+
+        @mcp.tool()
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        async with Client(mcp) as client:
+            await client.call_tool("greet", {"name": "World"})
+
+        spans = trace_exporter.get_finished_spans()
+        server_span = next(
+            s
+            for s in spans
+            if s.kind == SpanKind.SERVER and s.name == "tools/call greet"
+        )
+        client_span = next(
+            s
+            for s in spans
+            if s.kind == SpanKind.CLIENT and s.name == "MCP send tools/call greet"
+        )
+        assert server_span.context is not None
+        assert client_span.context is not None
+        assert server_span.context.trace_id == client_span.context.trace_id
+        assert server_span.parent is not None

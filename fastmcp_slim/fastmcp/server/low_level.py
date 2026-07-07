@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, cast
 
 import mcp_types
+from mcp.server._otel import OpenTelemetryMiddleware
 from mcp.server.context import (
     CallNext,
     HandlerResult,
@@ -205,8 +206,20 @@ class LowLevelServer(_Server[LifespanResultT]):
             tools_changed=True,
         )
 
-        # Route initialize through FastMCP middleware. Append so the SDK's
-        # seeded OpenTelemetryMiddleware stays outermost and keeps emitting spans.
+        # The SDK seeds `OpenTelemetryMiddleware` into `self.middleware` so every
+        # lowlevel server emits a SERVER span per message. FastMCP emits its own,
+        # richer SERVER span per request (see `fastmcp.server.telemetry`), so the
+        # SDK's would produce a second, duplicate SERVER span with different
+        # attribute conventions for every request. Drop it — match by type rather
+        # than position so we don't depend on the SDK seeding it at index 0, and
+        # leave any other seeded middleware intact. FastMCP's telemetry extracts
+        # inbound W3C trace context from `_meta` itself, so distributed-trace
+        # propagation is unaffected.
+        self.middleware = [
+            mw for mw in self.middleware if not isinstance(mw, OpenTelemetryMiddleware)
+        ]
+
+        # Route initialize through FastMCP middleware.
         self.middleware.append(
             cast("ServerMiddleware[LifespanResultT]", FastMCPServerMiddleware(fastmcp))
         )
