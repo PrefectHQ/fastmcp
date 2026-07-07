@@ -230,28 +230,22 @@ class ClientResourcesMixin:
             propagated_meta = inject_trace_context(meta)
             request_meta = cast("mcp_types.RequestParamsMeta | None", propagated_meta)
 
-            # If meta provided, use send_request for SEP-1686 task support
-            if propagated_meta:
-                # SDK v2: ReadResourceRequestParams has no `task` field, so
-                # resource reads cannot be submitted as background tasks over the
-                # wire and always graceful-degrade to immediate execution
-                # (sdk-feedback #3). The uri is a plain string on the wire.
-                request = mcp_types.ReadResourceRequest(
-                    params=mcp_types.ReadResourceRequestParams(
-                        uri=uri_str,
-                        _meta=request_meta,  # type: ignore[unknown-argument]  # pydantic alias
-                    )
+            async def _retry(
+                input_responses: mcp_types.InputResponses | None,
+                request_state: str | None,
+            ) -> mcp_types.ReadResourceResult | mcp_types.InputRequiredResult:
+                return await self.session.read_resource(
+                    uri_str,
+                    meta=request_meta,
+                    input_responses=input_responses,
+                    request_state=request_state,
+                    allow_input_required=True,
                 )
-                result = await self._await_with_session_monitoring(
-                    self.session.send_request(
-                        request=request,  # type: ignore[arg-type]
-                        result_type=mcp_types.ReadResourceResult,
-                    )
-                )
-            else:
-                result = await self._await_with_session_monitoring(
-                    self.session.read_resource(uri_str)
-                )
+
+            first = await self._await_with_session_monitoring(_retry(None, None))
+            result = await self._await_with_session_monitoring(
+                self._drive_input_required(first, _retry)
+            )
             return result
 
     @overload

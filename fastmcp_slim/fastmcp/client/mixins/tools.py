@@ -169,14 +169,27 @@ class ClientToolsMixin:
                 propagated_meta if propagated_meta else None,
             )
 
-            result = await self._await_with_session_monitoring(
-                self.session.call_tool(
+            read_timeout_seconds = normalize_timeout_to_seconds(timeout)
+            progress_callback = progress_handler or self._progress_handler
+
+            async def _retry(
+                input_responses: mcp_types.InputResponses | None,
+                request_state: str | None,
+            ) -> mcp_types.CallToolResult | mcp_types.InputRequiredResult:
+                return await self.session.call_tool(
                     name=name,
                     arguments=arguments,
-                    read_timeout_seconds=normalize_timeout_to_seconds(timeout),
-                    progress_callback=progress_handler or self._progress_handler,
+                    read_timeout_seconds=read_timeout_seconds,
+                    progress_callback=progress_callback,
                     meta=request_meta,
+                    input_responses=input_responses,
+                    request_state=request_state,
+                    allow_input_required=True,
                 )
+
+            first = await self._await_with_session_monitoring(_retry(None, None))
+            result = await self._await_with_session_monitoring(
+                self._drive_input_required(first, _retry)
             )
 
             # Reflect tool-level errors on the span so callers see ERROR

@@ -162,28 +162,23 @@ class ClientPromptsMixin:
             propagated_meta = inject_trace_context(meta)
             request_meta = cast("mcp_types.RequestParamsMeta | None", propagated_meta)
 
-            # If meta provided, use send_request for SEP-1686 task support
-            if propagated_meta:
-                # SDK v2: GetPromptRequestParams has no `task` field, so prompt
-                # gets cannot be submitted as background tasks over the wire and
-                # always graceful-degrade to immediate execution (sdk-feedback #3).
-                request = mcp_types.GetPromptRequest(
-                    params=mcp_types.GetPromptRequestParams(
-                        name=name,
-                        arguments=serialized_arguments,
-                        _meta=request_meta,  # type: ignore[unknown-argument]  # pydantic alias
-                    )
+            async def _retry(
+                input_responses: mcp_types.InputResponses | None,
+                request_state: str | None,
+            ) -> mcp_types.GetPromptResult | mcp_types.InputRequiredResult:
+                return await self.session.get_prompt(
+                    name=name,
+                    arguments=serialized_arguments,
+                    meta=request_meta,
+                    input_responses=input_responses,
+                    request_state=request_state,
+                    allow_input_required=True,
                 )
-                result = await self._await_with_session_monitoring(
-                    self.session.send_request(
-                        request=request,  # type: ignore[arg-type]
-                        result_type=mcp_types.GetPromptResult,
-                    )
-                )
-            else:
-                result = await self._await_with_session_monitoring(
-                    self.session.get_prompt(name=name, arguments=serialized_arguments)
-                )
+
+            first = await self._await_with_session_monitoring(_retry(None, None))
+            result = await self._await_with_session_monitoring(
+                self._drive_input_required(first, _retry)
+            )
             return result
 
     @overload

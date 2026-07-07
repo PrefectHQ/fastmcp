@@ -6,7 +6,7 @@ import datetime
 import secrets
 import ssl
 import weakref
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,8 +17,13 @@ import httpx
 import mcp_types
 from exceptiongroup import catch
 from mcp import ClientSession, MCPError
+from mcp.client._input_required import (
+    DEFAULT_INPUT_REQUIRED_MAX_ROUNDS,
+    run_input_required_driver,
+)
 from mcp.client._probe import negotiate_auto
 from mcp.client.extension import NotificationBinding
+from mcp.client.session import ClientRequestContext
 from mcp_types import (
     GetTaskResult,
     TaskStatusNotification,
@@ -303,8 +308,11 @@ class Client(
         verify: ssl.SSLContext | bool | str | None = None,
         mode: ConnectMode = "legacy",
         prior_discover: mcp_types.DiscoverResult | None = None,
+        input_required_max_rounds: int = DEFAULT_INPUT_REQUIRED_MAX_ROUNDS,
     ) -> None:
         self.name = name or self.generate_name()
+
+        self.input_required_max_rounds = input_required_max_rounds
 
         if mode not in ("legacy", "auto") and mode not in MODERN_PROTOCOL_VERSIONS:
             hint = (
@@ -903,6 +911,47 @@ class Client(
             with anyio.CancelScope(shield=True), suppress(asyncio.CancelledError):
                 await call_task
             raise
+
+    async def _drive_input_required(
+        self,
+        first: ResultT | mcp_types.InputRequiredResult,
+        retry: Callable[
+            [mcp_types.InputResponses | None, str | None],
+            Coroutine[Any, Any, ResultT | mcp_types.InputRequiredResult],
+        ],
+    ) -> ResultT:
+        """Resolve a SEP-2322 `InputRequiredResult` to its terminal result.
+
+        A 2026-era server may answer `tools/call` / `prompts/get` / `resources/read`
+        with an `InputRequiredResult` carrying embedded sampling / elicitation / roots
+        requests. This hands that off to the SDK's `run_input_required_driver`, which
+        dispatches each embedded request through the *same* callback table that serves
+        legacy server-initiated RPCs (`session.dispatch_input_request`) and retries the
+        original call until it returns a terminal result.
+
+        Legacy servers never emit `InputRequiredResult`, so a terminal `first` passes
+        straight through untouched — zero behavior change for pre-2026 servers.
+        """
+        if not isinstance(first, mcp_types.InputRequiredResult):
+            return first
+        session = self.session
+
+        async def dispatch(
+            key: str, req: mcp_types.InputRequest
+        ) -> mcp_types.InputResponse | mcp_types.ErrorData:
+            ctx = ClientRequestContext(
+                session=session,
+                request_id=key,
+                meta=req.params.meta if req.params else None,
+            )
+            return await session.dispatch_input_request(ctx, req)
+
+        return await run_input_required_driver(
+            first,
+            dispatch=dispatch,
+            retry=retry,
+            max_rounds=self.input_required_max_rounds,
+        )
 
     def _handle_task_status_notification(
         self, notification: TaskStatusNotification
