@@ -146,6 +146,18 @@ Resources and prompts have **no `task` field** on their params in b1, so task-au
 
 *Verify:* `fastmcp_slim/fastmcp/_sdk_patches.py`, `server/tasks/*`.
 
+### Single SERVER span per request — Absorbed (post-migration fix)
+
+SDK v2 seeds an `OpenTelemetryMiddleware` into every lowlevel `Server`, so each inbound request already emits a SERVER span. FastMCP emits its own richer SERVER span per request (with `fastmcp.*` and auth/session attributes), so a server with an OTel exporter installed would export **two** SERVER spans per request under different attribute conventions. `LowLevelServer.__init__` now drops the SDK's seeded `OpenTelemetryMiddleware` (matched by type, not position, leaving any other seeded middleware intact) and keeps FastMCP's spans. Inbound W3C trace-context extraction is unaffected — FastMCP's telemetry reads `traceparent` from `_meta` itself, so distributed traces still link client to server. Client-side is not double-counted: the SDK's `ClientSession` emits a low-level `MCP send <method>` CLIENT span that nests *under* FastMCP's high-level client span, a legitimate parent/child hierarchy rather than a duplicate.
+
+*Verify:* `fastmcp_slim/fastmcp/server/low_level.py` (the `OpenTelemetryMiddleware` filter); `tests/server/telemetry/test_server_tracing.py::TestSingleServerSpan`.
+
+### Spec-correct error codes via a central translator — Breaking (wire error code)
+
+Resource-not-found responses from the core `resources/read` handler previously used `-32002`. SEP-2164 (and the SDK's own mcpserver, which maps `ResourceNotFoundError` → `INVALID_PARAMS`) makes this `-32602`. The per-adapter `MCPError(code=..., ...)` literals in `server/mixins/mcp_operations.py` are replaced by a single `fastmcp.exceptions.to_mcp_error()` translator that maps FastMCP's public exceptions to the `mcp_types` code constants (`NotFoundError`/`DisabledError`/`ValidationError` → `INVALID_PARAMS`, else `INTERNAL_ERROR`). Clients that string-matched on the old `-32002` for resource-not-found must switch to `-32602`; the human-readable message ("Resource not found: ...") is unchanged. The opt-in `ErrorHandlingMiddleware`, which has its own documented per-method-prefix code mapping, is intentionally left as-is.
+
+*Verify:* `fastmcp_slim/fastmcp/exceptions.py` (`to_mcp_error`); `fastmcp_slim/fastmcp/server/mixins/mcp_operations.py`; `tests/test_exceptions.py`.
+
 ## Client
 
 The `fastmcp.Client` public API is preserved exactly. The client stays a wrapper around `mcp.ClientSession` in legacy/handshake mode; the first-class `mcp.client.Client` is deliberately not adopted in this PR.
