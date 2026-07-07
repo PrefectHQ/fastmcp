@@ -27,7 +27,7 @@ from mcp.shared.exceptions import MCPError
 from pydantic import ValidationError
 
 from fastmcp.apps.config import UI_EXTENSION_ID
-from fastmcp.server.telemetry import server_span
+from fastmcp.server.telemetry import seam_span
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -35,28 +35,6 @@ if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
 
 logger = get_logger(__name__)
-
-
-# Methods whose SERVER span is emitted deep in the high-level FastMCP path
-# (see the `server_span(...)` call sites in `fastmcp.server.server`). Those paths
-# build spans enriched with component attributes (`fastmcp.component.key`,
-# `gen_ai.tool.name`, `mcp.resource.uri`, ...) that are only known there, so the
-# seam must NOT open a second span for them or every request would double-span.
-# Every other method (`logging/setLevel`, `tasks/*`, `completion/complete`,
-# `ping`, `initialize`, and any custom `add_request_handler` method) has no
-# high-level span, so the seam emits one for it — restoring the per-message
-# SERVER span that the removed SDK `OpenTelemetryMiddleware` used to provide.
-_HIGH_LEVEL_SPANNED_METHODS: frozenset[str] = frozenset(
-    {
-        "tools/list",
-        "tools/call",
-        "resources/list",
-        "resources/templates/list",
-        "resources/read",
-        "prompts/list",
-        "prompts/get",
-    }
-)
 
 
 def client_supports_extension(session: ServerSession, extension_id: str) -> bool:
@@ -126,33 +104,27 @@ class FastMCPServerMiddleware:
     def _seam_span(
         self, fastmcp: FastMCP | None, ctx: ServerRequestContext
     ) -> Iterator[None]:
-        """Emit a SERVER span at the middleware seam for methods the high-level
-        path does not already span.
+        """Open the per-request SERVER span at the middleware seam.
 
         The removed SDK ``OpenTelemetryMiddleware`` produced one SERVER span per
-        inbound message. FastMCP re-creates that guarantee for *requests*: methods
-        that open their own richer span deep in the high-level path
-        (``_HIGH_LEVEL_SPANNED_METHODS``) are left alone to avoid double-spanning;
-        every other request method gets its span emitted at this seam, which is
-        the last place shared by all request methods regardless of how their
-        handler is registered. Notifications (``request_id is None``) are skipped
-        — a SERVER span models an inbound request/response, not a fire-and-forget
-        notification.
+        inbound message. FastMCP re-creates that guarantee for *every* request
+        method here — the last place shared by all request methods regardless of
+        how their handler is registered — so a request rejected *before* the
+        high-level path (FastMCP middleware, auth check, not-found mapping,
+        params failure) is still traced with an error span.
+
+        For the high-level methods (tools/resources/prompts), the deep
+        ``server_span(...)`` call in ``fastmcp.server.server`` detects this seam
+        span as the active span and *enriches* it in place with component
+        attributes instead of opening a second span, so there is exactly one
+        richly-attributed SERVER span per request. Notifications
+        (``request_id is None``) are skipped — a SERVER span models an inbound
+        request/response, not a fire-and-forget notification.
         """
-        if (
-            fastmcp is None
-            or ctx.request_id is None
-            or ctx.method in _HIGH_LEVEL_SPANNED_METHODS
-        ):
+        if fastmcp is None or ctx.request_id is None:
             yield
             return
-        with server_span(
-            ctx.method,
-            ctx.method,
-            fastmcp.name,
-            "",
-            "",
-        ):
+        with seam_span(ctx.method, fastmcp.name):
             yield
 
     @contextmanager
