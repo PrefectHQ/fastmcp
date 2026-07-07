@@ -5,8 +5,10 @@ from enum import Enum
 from typing import Any, Generic, Literal, cast, get_origin
 
 from mcp.server.elicitation import (
+    AcceptedUrlElicitation,
     CancelledElicitation,
     DeclinedElicitation,
+    UrlElicitationResult,
 )
 from pydantic import BaseModel
 from pydantic.json_schema import GenerateJsonSchema, JsonSchemaValue
@@ -19,10 +21,12 @@ from fastmcp.utilities.types import get_cached_typeadapter
 
 __all__ = [
     "AcceptedElicitation",
+    "AcceptedUrlElicitation",
     "CancelledElicitation",
     "DeclinedElicitation",
     "ElicitConfig",
     "ScalarElicitationType",
+    "UrlElicitationResult",
     "get_elicitation_schema",
     "handle_elicit_accept",
     "parse_elicit_response_type",

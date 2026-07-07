@@ -6,7 +6,11 @@ from typing import Any, Generic, TypeAlias
 import mcp_types
 from mcp import ClientSession
 from mcp.client.session import ClientRequestContext, ElicitationFnT
-from mcp_types import ElicitRequestFormParams, ElicitRequestParams
+from mcp_types import (
+    ElicitRequestFormParams,
+    ElicitRequestParams,
+    ElicitRequestURLParams,
+)
 from mcp_types import ElicitResult as MCPElicitResult
 from pydantic_core import to_jsonable_python
 from typing_extensions import TypeVar
@@ -14,7 +18,12 @@ from typing_extensions import TypeVar
 from fastmcp.client._sdk_context_shim import LifespanContextT, RequestContext
 from fastmcp.utilities.json_schema_type import json_schema_to_type
 
-__all__ = ["ElicitRequestParams", "ElicitResult", "ElicitationHandler"]
+__all__ = [
+    "ElicitRequestParams",
+    "ElicitRequestURLParams",
+    "ElicitResult",
+    "ElicitationHandler",
+]
 
 T = TypeVar("T", default=Any)
 

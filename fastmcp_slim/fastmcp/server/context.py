@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 import warnings
 import weakref
 from collections.abc import Callable, Generator, Mapping, Sequence
@@ -31,8 +32,10 @@ from fastmcp.resources.base import ResourceResult
 from fastmcp.server.dependencies import FastMCPRequestContext, fastmcp_request_ctx
 from fastmcp.server.elicitation import (
     AcceptedElicitation,
+    AcceptedUrlElicitation,
     CancelledElicitation,
     DeclinedElicitation,
+    UrlElicitationResult,
     handle_elicit_accept,
     parse_elicit_response_type,
 )
@@ -1222,6 +1225,61 @@ class Context:
 
         if result.action == "accept":
             return handle_elicit_accept(config, result.content)
+        elif result.action == "decline":
+            return DeclinedElicitation()
+        elif result.action == "cancel":
+            return CancelledElicitation()
+        else:
+            raise ValueError(f"Unexpected elicitation action: {result.action}")
+
+    async def elicit_url(
+        self,
+        message: str,
+        url: str,
+    ) -> UrlElicitationResult:
+        """Direct the user to an external URL for an out-of-band interaction.
+
+        URL-mode elicitation (SEP-1036) asks the user to visit a URL instead of
+        answering a schema form. The interaction happens outside the MCP client,
+        so sensitive data never enters the LLM context. Use it for OAuth consent,
+        API-key entry, payment, or any flow where credentials must not pass
+        through the model. The client reports only whether the user consented to
+        navigate; the actual result of the interaction is obtained out-of-band.
+
+        A unique ``elicitation_id`` is generated automatically for each call.
+
+        Args:
+            message: A human-readable explanation of why the interaction is needed.
+            url: The URL the user should navigate to.
+
+        Returns:
+            An ``AcceptedUrlElicitation`` if the user consented to navigate, a
+            ``DeclinedElicitation`` if they explicitly declined, or a
+            ``CancelledElicitation`` if they dismissed the request.
+
+        Note:
+            URL-mode elicitation is not yet supported from background tasks
+            (``@server.tool(task=True)``); calling it there raises
+            ``NotImplementedError``.
+        """
+        if self.is_background_task:
+            raise NotImplementedError(
+                "URL elicitation (ctx.elicit_url) is not yet supported from "
+                "background tasks. The background-task elicitation relay only "
+                "carries form-mode requests. Use ctx.elicit_url from a regular "
+                "(foreground) request context instead."
+            )
+
+        elicitation_id = str(uuid.uuid4())
+        result = await self.session.elicit_url(
+            message=message,
+            url=url,
+            elicitation_id=elicitation_id,
+            related_request_id=self.request_id,
+        )
+
+        if result.action == "accept":
+            return AcceptedUrlElicitation()
         elif result.action == "decline":
             return DeclinedElicitation()
         elif result.action == "cancel":
