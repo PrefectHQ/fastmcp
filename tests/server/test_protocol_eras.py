@@ -35,7 +35,7 @@ from mcp_types.version import (
 from pydantic import FileUrl
 
 from fastmcp import Client as FastMCPClient
-from fastmcp import Context, FastMCP
+from fastmcp import Context, FastMCP, settings
 from fastmcp.server.elicitation import AcceptedElicitation
 from fastmcp.server.middleware import Middleware
 
@@ -321,21 +321,12 @@ async def test_list_roots_degradation_message_is_clear_on_modern(push_server):
     assert "back-channel" in message and "server-initiated" in message
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "sdk-feedback.md #10: elicitation/sampling attach a related_request_id, "
-        "so at 2026 the request reaches the client _on_request and fails with a "
-        "bare 'Method not found' KeyError instead of an era-aware "
-        "NoBackChannelError. list_roots (no related id) already degrades "
-        "clearly; elicit/sample do not."
-    ),
-)
 @pytest.mark.parametrize("tool", ["do_elicit", "do_sample"])
 async def test_elicit_sample_degradation_message_is_clear_on_modern(push_server, tool):
-    """Characterizes the inconsistency in #10: we WANT elicit/sample to surface
-    an era-aware message (like list_roots does). Currently they surface a bare
-    'Method not found', so this xfails strict until the SDK unifies the path.
+    """FastMCP era-gates elicit/sample: on a 2026-07-28 connection they raise a
+    clear, era-aware error before hitting the wire, instead of the SDK's opaque
+    'Method not found' (sdk-feedback.md #10). Both messages name the removed
+    server-initiated capability so the caller knows why the request degraded.
     """
     async with SDKClient(
         _server(push_server),
@@ -346,7 +337,194 @@ async def test_elicit_sample_degradation_message_is_clear_on_modern(push_server,
         result = await client.call_tool(tool, {})
     assert result.is_error is True
     message = " ".join(_texts(result.content)).lower()
-    assert "back-channel" in message or "server-initiated" in message
+    assert "server-initiated" in message
+
+
+# ---------------------------------------------------------------------------
+# 3a-bis. Server-configured sampling handler answers WITHOUT the client
+# back-channel, so ctx.sample()/ctx.sample_step() must keep working on modern
+# connections. The era-gate only fires when nothing can serve the request.
+# ---------------------------------------------------------------------------
+
+
+def _handler_server(behavior) -> FastMCP:
+    """A server whose sampling is answered by a server-side handler."""
+
+    def sampling_handler(messages, params, ctx) -> str:
+        return "handler-answer"
+
+    mcp = FastMCP("handler", sampling_handler=sampling_handler)
+    if behavior is not None:
+        mcp.sampling_handler_behavior = behavior
+
+    @mcp.tool
+    async def do_sample(ctx: Context) -> str:
+        result = await ctx.sample("hello")
+        return f"sampled {result.text}"
+
+    @mcp.tool
+    async def do_sample_step(ctx: Context) -> str:
+        step = await ctx.sample_step("hello")
+        return f"stepped {step.text}"
+
+    return mcp
+
+
+@pytest.mark.parametrize("mode", MODERN_MODES)
+@pytest.mark.parametrize("behavior", ["always", "fallback"])
+@pytest.mark.parametrize("method", ["do_sample", "do_sample_step"])
+async def test_server_sampling_handler_works_on_modern(mode, behavior, method):
+    """A server-side sampling handler answers entirely server-side, so it works
+    on modern (2026-07-28) connections regardless of behavior. The era-gate must
+    NOT block these — nothing touches the removed client back-channel. Crucially,
+    'fallback' must go straight to the handler (no bare client-attempt failure)."""
+    server = _handler_server(behavior)
+    async with SDKClient(_server(server), mode=mode) as client:
+        result = await client.call_tool(method, {})
+    assert result.is_error is False
+    assert "handler-answer" in " ".join(_texts(result.content))
+
+
+@pytest.mark.parametrize("behavior", ["always", "fallback"])
+@pytest.mark.parametrize("method", ["do_sample", "do_sample_step"])
+async def test_server_sampling_handler_works_on_legacy(behavior, method):
+    """Handshake-era behavior is unchanged: the server-side handler still answers
+    on legacy connections."""
+    server = _handler_server(behavior)
+    async with SDKClient(_server(server), mode="legacy") as client:
+        result = await client.call_tool(method, {})
+    assert result.is_error is False
+    assert "handler-answer" in " ".join(_texts(result.content))
+
+
+@pytest.mark.parametrize("mode", MODERN_MODES)
+@pytest.mark.parametrize("method", ["do_sample", "do_sample_step"])
+async def test_sampling_without_handler_still_era_gated_on_modern(
+    push_server, mode, method
+):
+    """With no server-side handler configured, the request would hit the removed
+    client back-channel, so the clear era error still fires on modern."""
+    # push_server only defines do_sample; add a do_sample_step twin inline.
+    mcp = FastMCP("no-handler")
+
+    @mcp.tool
+    async def do_sample(ctx: Context) -> str:
+        result = await ctx.sample("hello")
+        return f"sampled {result.text}"
+
+    @mcp.tool
+    async def do_sample_step(ctx: Context) -> str:
+        step = await ctx.sample_step("hello")
+        return f"stepped {step.text}"
+
+    async with SDKClient(
+        _server(mcp), mode=mode, sampling_callback=_sampling_cb
+    ) as client:
+        result = await client.call_tool(method, {})
+    assert result.is_error is True
+    assert "server-initiated" in " ".join(_texts(result.content)).lower()
+
+
+# ---------------------------------------------------------------------------
+# 3b. Sampling deprecation warning (SEP-2577): ctx.sample/ctx.sample_step warn
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def reset_sample_warn_flag():
+    """Reset the process-wide warn-once flag so a warning can be observed."""
+    import fastmcp.server.context as context_module
+
+    original = set(context_module._sample_deprecation_warned)
+    context_module._sample_deprecation_warned.clear()
+    try:
+        yield
+    finally:
+        context_module._sample_deprecation_warned.clear()
+        context_module._sample_deprecation_warned.update(original)
+
+
+@pytest.mark.parametrize("method", ["do_sample", "do_sample_step"])
+async def test_sampling_emits_deprecation_warning(reset_sample_warn_flag, method):
+    """`ctx.sample()` and `ctx.sample_step()` emit a FastMCPDeprecationWarning
+    naming SEP-2577 and the server-side-LLM migration path."""
+    from fastmcp.exceptions import FastMCPDeprecationWarning
+
+    mcp = FastMCP("warn")
+
+    @mcp.tool
+    async def do_sample(ctx: Context) -> str:
+        await ctx.sample("hello")
+        return "ok"
+
+    @mcp.tool
+    async def do_sample_step(ctx: Context) -> str:
+        await ctx.sample_step("hello")
+        return "ok"
+
+    with pytest.warns(FastMCPDeprecationWarning, match="SEP-2577"):
+        async with SDKClient(
+            _server(mcp), mode="legacy", sampling_callback=_sampling_cb
+        ) as client:
+            await client.call_tool(method, {})
+
+
+async def test_sampling_deprecation_warning_fires_once_per_process(
+    reset_sample_warn_flag,
+):
+    """The deprecation warning is warn-once: a second sample call in the same
+    process does not re-warn."""
+    from fastmcp.exceptions import FastMCPDeprecationWarning
+
+    mcp = FastMCP("warn-once")
+
+    @mcp.tool
+    async def do_sample(ctx: Context) -> str:
+        await ctx.sample("hello")
+        return "ok"
+
+    with pytest.warns(FastMCPDeprecationWarning):
+        async with SDKClient(
+            _server(mcp), mode="legacy", sampling_callback=_sampling_cb
+        ) as client:
+            await client.call_tool("do_sample", {})
+
+    import warnings as _warnings
+
+    with _warnings.catch_warnings():
+        _warnings.simplefilter("error", FastMCPDeprecationWarning)
+        async with SDKClient(
+            _server(mcp), mode="legacy", sampling_callback=_sampling_cb
+        ) as client:
+            result = await client.call_tool("do_sample", {})
+    assert result.is_error is False
+
+
+async def test_sampling_deprecation_warning_suppressible_via_settings(
+    reset_sample_warn_flag, monkeypatch
+):
+    """Setting `deprecation_warnings=False` suppresses the sampling warning,
+    matching the house pattern for every other FastMCP deprecation."""
+    import warnings as _warnings
+
+    from fastmcp.exceptions import FastMCPDeprecationWarning
+
+    monkeypatch.setattr(settings, "deprecation_warnings", False)
+
+    mcp = FastMCP("no-warn")
+
+    @mcp.tool
+    async def do_sample(ctx: Context) -> str:
+        await ctx.sample("hello")
+        return "ok"
+
+    with _warnings.catch_warnings():
+        _warnings.simplefilter("error", FastMCPDeprecationWarning)
+        async with SDKClient(
+            _server(mcp), mode="legacy", sampling_callback=_sampling_cb
+        ) as client:
+            result = await client.call_tool("do_sample", {})
+    assert result.is_error is False
 
 
 @pytest.mark.parametrize("mode", MODERN_MODES)

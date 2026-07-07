@@ -9,6 +9,7 @@ from mcp_types import TextContent
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import SSETransport
+from fastmcp.server import create_proxy
 from fastmcp.tools.base import Tool
 from fastmcp.tools.tool_transform import TransformedTool
 
@@ -272,9 +273,7 @@ class TestMultipleServerMount:
         )
 
         # Create a proxy server that will fail to connect
-        unreachable_proxy = FastMCP.as_proxy(
-            unreachable_client, name="unreachable_proxy"
-        )
+        unreachable_proxy = create_proxy(unreachable_client, name="unreachable_proxy")
 
         # Mount the unreachable proxy
         main_app.mount(unreachable_proxy, "unreachable")

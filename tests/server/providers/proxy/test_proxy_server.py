@@ -198,38 +198,6 @@ def test_create_proxy_with_url():
     assert client.transport.url == "http://example.com/mcp/"
 
 
-# --- Deprecated as_proxy tests (verify backwards compatibility) ---
-
-
-async def test_as_proxy_deprecated_with_server(fastmcp_server):
-    """FastMCP.as_proxy should work but emit deprecation warning."""
-    import warnings
-
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        proxy = FastMCP.as_proxy(fastmcp_server)
-        assert len(w) == 1
-        assert issubclass(w[0].category, DeprecationWarning)
-        assert "create_proxy" in str(w[0].message)
-
-    async with Client(proxy) as client:
-        result = await client.call_tool("greet", {"name": "Test"})
-        assert result.data == "Hello, Test!"
-
-
-def test_as_proxy_deprecated_with_url():
-    """FastMCP.as_proxy should work but emit deprecation warning."""
-    import warnings
-
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        proxy = FastMCP.as_proxy("http://example.com/mcp/")
-        assert len(w) == 1
-        assert issubclass(w[0].category, DeprecationWarning)
-
-    assert isinstance(proxy, FastMCPProxy)
-
-
 async def test_proxy_with_async_client_factory():
     """FastMCPProxy should accept an async client_factory."""
 

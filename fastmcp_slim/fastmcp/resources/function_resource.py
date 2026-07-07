@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import functools
 import inspect
-import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from types import MethodType
@@ -22,9 +21,6 @@ from mcp_types import Annotations, Icon
 from pydantic import AnyUrl
 from pydantic.json_schema import SkipJsonSchema
 
-import fastmcp
-from fastmcp.decorators import resolve_task_config
-from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.resources.base import Resource, ResourceResult
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
@@ -37,7 +33,6 @@ from fastmcp.utilities.tasks import TaskConfig
 if TYPE_CHECKING:
     from docket import Docket
 
-    from fastmcp.resources.template import ResourceTemplate
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -275,51 +270,6 @@ def resource(
             "Use @resource('uri') instead of @resource"
         )
 
-    def create_resource(fn: Callable[..., Any]) -> FunctionResource | ResourceTemplate:
-        from fastmcp.resources.template import ResourceTemplate
-        from fastmcp.server.dependencies import without_injected_parameters
-
-        resolved = resolve_task_config(task)
-        has_uri_params = "{" in uri and "}" in uri
-        wrapper_fn = without_injected_parameters(fn)
-        has_func_params = bool(inspect.signature(wrapper_fn).parameters)
-
-        # Create metadata first
-        resource_meta = ResourceMeta(
-            uri=uri,
-            name=name,
-            version=version,
-            title=title,
-            description=description,
-            icons=icons,
-            tags=tags,
-            mime_type=mime_type,
-            annotations=annotations,
-            meta=meta,
-            task=resolved,
-            auth=auth,
-        )
-
-        if has_uri_params or has_func_params:
-            # ResourceTemplate doesn't have metadata support yet, so pass individual params
-            return ResourceTemplate.from_function(
-                fn=fn,
-                uri_template=uri,
-                name=name,
-                version=version,
-                title=title,
-                description=description,
-                icons=icons,
-                mime_type=mime_type,
-                tags=tags,
-                annotations=annotations,
-                meta=meta,
-                task=resolved,
-                auth=auth,
-            )
-        else:
-            return FunctionResource.from_function(fn, metadata=resource_meta)
-
     def attach_metadata(fn: F) -> F:
         metadata = ResourceMeta(
             uri=uri,
@@ -340,14 +290,6 @@ def resource(
         return fn
 
     def decorator(fn: F) -> F:
-        if fastmcp.settings.decorator_mode == "object":
-            warnings.warn(
-                "decorator_mode='object' is deprecated and will be removed in a future version. "
-                "Decorators now return the original function with metadata attached.",
-                FastMCPDeprecationWarning,
-                stacklevel=3,
-            )
-            return create_resource(fn)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
         return attach_metadata(fn)
 
     return decorator

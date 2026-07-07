@@ -339,6 +339,21 @@ class Settings(BaseSettings):
     http_host_origin_protection: bool = True
     http_allowed_hosts: list[str] | None = None
     http_allowed_origins: list[str] | None = None
+    http_session_idle_timeout: Annotated[
+        float | None,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Maximum time in seconds a streamable-HTTP session may remain
+                idle before it is terminated. A session's deadline is pushed
+                forward on every request. When None (default), sessions never
+                expire from inactivity. Not supported in stateless HTTP mode.
+                Must be a positive number of seconds when set.
+                """
+            ),
+            gt=0,
+        ),
+    ] = None
 
     mounted_components_raise_on_load_error: Annotated[
         bool,
@@ -381,20 +396,3 @@ class Settings(BaseSettings):
             ),
         ),
     ] = "stable"
-
-    decorator_mode: Annotated[
-        Literal["function", "object"],
-        Field(
-            description=inspect.cleandoc(
-                """
-                Controls what decorators (@tool, @resource, @prompt) return.
-
-                - "function" (default): Decorators return the original function unchanged.
-                  The function remains callable and is registered with the server normally.
-                - "object" (deprecated): Decorators return component objects (FunctionTool,
-                  FunctionResource, FunctionPrompt). This was the default behavior in v2 and
-                  will be removed in a future version.
-                """
-            ),
-        ),
-    ] = "function"

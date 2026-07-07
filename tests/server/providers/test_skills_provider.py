@@ -15,6 +15,7 @@ from fastmcp.server.providers.skills import (
     SkillsProvider,
 )
 from fastmcp.server.providers.skills._common import parse_frontmatter
+from fastmcp.server.providers.skills.skill_provider import SkillFileResource
 
 
 class TestParseFrontmatter:
@@ -658,6 +659,112 @@ class TestPathTraversalPrevention:
                 await client.read_resource(
                     AnyUrl("skill://test-skill/../../../secret.txt")
                 )
+
+
+# Attack corpus mirroring the shapes exercised by the SDK's
+# mcp.shared.path_security tests: dot-dot traversal (bare, nested,
+# trailing), absolute-path injection (POSIX and Windows drive forms),
+# and null-byte injection. Each must be rejected before any filesystem
+# access, regardless of which skill surface receives it.
+SKILL_PATH_ESCAPES = [
+    "..",
+    "../secret.txt",
+    "../../../etc/passwd",
+    "sub/../../secret.txt",
+    "nested/../../outside.txt",
+    "/etc/passwd",
+    "/absolute/injection.txt",
+    "C:\\Windows\\system32",
+    "C:relative.txt",
+    "good\x00/../../../etc/passwd",
+    "file\x00.txt",
+]
+
+
+class TestPathSafetyAttackCorpus:
+    """Pin path-safety guards against the SDK's attack-shape corpus.
+
+    Every skill file surface routes user-supplied path parameters through
+    the SDK's ``safe_join``. These tests assert the whole corpus is
+    rejected with a clear error before the filesystem is touched, and
+    that legitimate nested paths continue to resolve.
+    """
+
+    @pytest.fixture
+    def skill_with_secret(self, tmp_path: Path) -> Path:
+        """A skill dir containing a nested file, with a secret one level up."""
+        skill_dir = tmp_path / "corpus-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("# Corpus\n\nContent")
+        (skill_dir / "docs").mkdir()
+        (skill_dir / "docs" / "nested.txt").write_text("NESTED OK")
+        (tmp_path / "secret.txt").write_text("SECRET DATA")
+        return skill_dir
+
+    async def _template(self, skill_dir: Path):
+        provider = SkillProvider(skill_path=skill_dir)
+        templates = await provider.list_resource_templates()
+        return templates[0]
+
+    @pytest.mark.parametrize("attack", SKILL_PATH_ESCAPES)
+    async def test_template_read_rejects_escape(
+        self, skill_with_secret: Path, attack: str
+    ):
+        template = await self._template(skill_with_secret)
+        with pytest.raises(ValueError, match="Invalid path"):
+            await template.read(arguments={"path": attack})
+
+    @pytest.mark.parametrize("attack", SKILL_PATH_ESCAPES)
+    async def test_template_create_resource_rejects_escape(
+        self, skill_with_secret: Path, attack: str
+    ):
+        template = await self._template(skill_with_secret)
+        with pytest.raises(ValueError, match="Invalid path"):
+            await template.create_resource(
+                uri=f"skill://corpus-skill/{attack}", params={"path": attack}
+            )
+
+    @pytest.mark.parametrize("attack", SKILL_PATH_ESCAPES)
+    async def test_file_resource_read_rejects_escape(
+        self, skill_with_secret: Path, attack: str
+    ):
+        provider = SkillProvider(
+            skill_path=skill_with_secret, supporting_files="resources"
+        )
+        resource = SkillFileResource(
+            uri=AnyUrl("skill://corpus-skill/x"),
+            name="corpus-skill/x",
+            mime_type="text/plain",
+            skill_info=provider.skill_info,
+            file_path=attack,
+        )
+        with pytest.raises(ValueError, match="Invalid path"):
+            await resource.read()
+
+    async def test_template_read_allows_nested_path(self, skill_with_secret: Path):
+        template = await self._template(skill_with_secret)
+        result = await template.read(arguments={"path": "docs/nested.txt"})
+        assert result == "NESTED OK"
+
+    async def test_template_read_allows_within_bounds_dotdot(
+        self, skill_with_secret: Path
+    ):
+        template = await self._template(skill_with_secret)
+        result = await template.read(arguments={"path": "docs/../docs/nested.txt"})
+        assert result == "NESTED OK"
+
+    async def test_file_resource_read_allows_nested_path(self, skill_with_secret: Path):
+        provider = SkillProvider(
+            skill_path=skill_with_secret, supporting_files="resources"
+        )
+        resource = SkillFileResource(
+            uri=AnyUrl("skill://corpus-skill/docs/nested.txt"),
+            name="corpus-skill/docs/nested.txt",
+            mime_type="text/plain",
+            skill_info=provider.skill_info,
+            file_path="docs/nested.txt",
+        )
+        assert await resource.read() == "NESTED OK"
 
 
 async def test_skill_provider_loads_and_serves_utf8_skill_md(

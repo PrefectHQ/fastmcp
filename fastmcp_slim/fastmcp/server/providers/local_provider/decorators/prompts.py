@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 import mcp_types
 
-import fastmcp
 from fastmcp.prompts.base import Prompt
 from fastmcp.prompts.function_prompt import FunctionPrompt
 from fastmcp.server.auth.authorization import AuthCheck
@@ -189,44 +188,24 @@ class PromptDecoratorMixin:
                     f"See https://gofastmcp.com/servers/prompts#using-with-methods"
                 )
 
-            resolved_task: bool | TaskConfig = task if task is not None else False
+            from fastmcp.prompts.function_prompt import PromptMeta
 
-            if fastmcp.settings.decorator_mode == "object":
-                prompt_obj = Prompt.from_function(
-                    fn,
-                    name=prompt_name,
-                    version=version,
-                    title=title,
-                    description=description,
-                    icons=icons,
-                    tags=tags,
-                    meta=meta,
-                    task=resolved_task,
-                    auth=auth,
-                )
-                self._add_component(prompt_obj)
-                if not enabled:
-                    self.disable(keys={prompt_obj.key})
-                return prompt_obj
-            else:
-                from fastmcp.prompts.function_prompt import PromptMeta
-
-                metadata = PromptMeta(
-                    name=prompt_name,
-                    version=version,
-                    title=title,
-                    description=description,
-                    icons=icons,
-                    tags=tags,
-                    meta=meta,
-                    task=task,
-                    auth=auth,
-                    enabled=enabled,
-                )
-                target = fn.__func__ if hasattr(fn, "__func__") else fn
-                target.__fastmcp__ = metadata  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-                self.add_prompt(fn)
-                return fn
+            metadata = PromptMeta(
+                name=prompt_name,
+                version=version,
+                title=title,
+                description=description,
+                icons=icons,
+                tags=tags,
+                meta=meta,
+                task=task,
+                auth=auth,
+                enabled=enabled,
+            )
+            target = fn.__func__ if hasattr(fn, "__func__") else fn
+            target.__fastmcp__ = metadata  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+            self.add_prompt(fn)
+            return fn
 
         if inspect.isroutine(name_or_fn):
             return decorate_and_register(name_or_fn, name)

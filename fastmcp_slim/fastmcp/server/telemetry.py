@@ -2,12 +2,29 @@
 
 from collections.abc import Generator
 from contextlib import contextmanager
+from contextvars import ContextVar
 
 from opentelemetry.context import Context
-from opentelemetry.trace import Span, SpanKind, Status, StatusCode
+from opentelemetry.trace import Span, SpanKind, Status, StatusCode, get_current_span
 
 from fastmcp.exceptions import ToolError as _ToolError
 from fastmcp.telemetry import extract_trace_context, get_tracer
+
+# Marker attribute set on the SERVER span opened at the FastMCP middleware seam
+# (see `fastmcp.server.low_level.FastMCPServerMiddleware._seam_span`). The seam
+# opens one span per inbound request so failures rejected *before* the
+# high-level path (auth, not-found, middleware vetoes) are still traced. The
+# attribute is set for observability; enrichment detection uses the ContextVar
+# below (the API `Span` type does not expose readable attributes).
+SEAM_SPAN_MARKER = "fastmcp.span.seam"
+
+# Tracks the SERVER span opened at the current request's seam. When the
+# high-level path reaches `server_span` and this span is still the active span,
+# `server_span` enriches it with component attributes instead of opening a
+# second span — restoring attribute parity on the single per-request span.
+_active_seam_span: ContextVar[Span | None] = ContextVar(
+    "fastmcp_active_seam_span", default=None
+)
 
 
 def get_auth_span_attributes() -> dict[str, str]:
@@ -51,6 +68,83 @@ def _get_parent_trace_context() -> Context | None:
     return None
 
 
+def _build_server_span_attrs(
+    method: str,
+    server_name: str,
+    component_type: str,
+    component_key: str,
+    resource_uri: str | None,
+    tool_name: str | None,
+    prompt_name: str | None,
+) -> dict[str, str]:
+    attrs: dict[str, str] = {
+        # MCP semantic conventions
+        "mcp.method.name": method,
+        # FastMCP-specific attributes
+        "fastmcp.server.name": server_name,
+        "fastmcp.component.type": component_type,
+        "fastmcp.component.key": component_key,
+        **get_auth_span_attributes(),
+        **get_session_span_attributes(),
+    }
+    if resource_uri is not None:
+        attrs["mcp.resource.uri"] = resource_uri
+    if tool_name is not None:
+        attrs["gen_ai.tool.name"] = tool_name
+    if prompt_name is not None:
+        attrs["gen_ai.prompt.name"] = prompt_name
+    return attrs
+
+
+def record_span_exception(span: Span, e: Exception) -> None:
+    """Record an exception and error status on a span."""
+    if span.is_recording():
+        error_type = "tool_error" if isinstance(e, _ToolError) else type(e).__qualname__
+        span.set_attribute("error.type", error_type)
+        span.record_exception(e)
+        span.set_status(Status(StatusCode.ERROR, str(e)))
+
+
+@contextmanager
+def seam_span(method: str, server_name: str) -> Generator[Span, None, None]:
+    """Open the per-request SERVER span at the FastMCP middleware seam.
+
+    The span is named after the method and carries the base MCP attributes
+    (`mcp.method.name`, `fastmcp.server.name`, auth/session context) so
+    seam-only methods (`logging/setLevel`, `tasks/*`, `ping`, `initialize`, ...)
+    are fully attributed even though they never reach the high-level path. It is
+    marked with `SEAM_SPAN_MARKER` so a later `server_span` call in the
+    high-level path enriches this span with component attributes instead of
+    opening a second one. Exceptions raised anywhere below the seam — including
+    rejections *before* the high-level path (auth, not-found, middleware vetoes)
+    that would otherwise produce no SERVER span at all — are recorded here.
+    """
+    tracer = get_tracer()
+    with tracer.start_as_current_span(
+        method,
+        context=_get_parent_trace_context(),
+        kind=SpanKind.SERVER,
+    ) as span:
+        if span.is_recording():
+            span.set_attribute(SEAM_SPAN_MARKER, True)
+            span.set_attributes(
+                {
+                    "mcp.method.name": method,
+                    "fastmcp.server.name": server_name,
+                    **get_auth_span_attributes(),
+                    **get_session_span_attributes(),
+                }
+            )
+        token = _active_seam_span.set(span)
+        try:
+            yield span
+        except Exception as e:
+            record_span_exception(span, e)
+            raise
+        finally:
+            _active_seam_span.reset(token)
+
+
 @contextmanager
 def server_span(
     name: str,
@@ -62,10 +156,46 @@ def server_span(
     tool_name: str | None = None,
     prompt_name: str | None = None,
 ) -> Generator[Span, None, None]:
-    """Create a SERVER span with standard MCP attributes and auth context.
+    """Emit or enrich a SERVER span with standard MCP attributes and auth context.
+
+    When the current active span is the request's seam span (opened by
+    `FastMCPServerMiddleware` and marked with `SEAM_SPAN_MARKER`), this sets the
+    component attributes on that span and yields it *without* starting a second
+    span — so failures rejected before this point and the successful high-level
+    call share one richly-attributed SERVER span. Otherwise (non-seam contexts,
+    e.g. in-process `mcp.call_tool()` calls that bypass the dispatcher) it opens a
+    new SERVER span as before.
 
     Automatically records any exception on the span and sets error status.
     """
+    attrs = _build_server_span_attrs(
+        method,
+        server_name,
+        component_type,
+        component_key,
+        resource_uri,
+        tool_name,
+        prompt_name,
+    )
+
+    seam = _active_seam_span.get()
+    active = get_current_span()
+    if (
+        seam is not None
+        and seam is active
+        and seam.is_recording()
+        and seam.get_span_context().is_valid
+    ):
+        # Enrich the already-active seam span rather than opening a second one.
+        seam.update_name(name)
+        seam.set_attributes(attrs)
+        try:
+            yield seam
+        except Exception as e:
+            record_span_exception(seam, e)
+            raise
+        return
+
     tracer = get_tracer()
     with tracer.start_as_current_span(
         name,
@@ -73,33 +203,11 @@ def server_span(
         kind=SpanKind.SERVER,
     ) as span:
         if span.is_recording():
-            attrs: dict[str, str] = {
-                # MCP semantic conventions
-                "mcp.method.name": method,
-                # FastMCP-specific attributes
-                "fastmcp.server.name": server_name,
-                "fastmcp.component.type": component_type,
-                "fastmcp.component.key": component_key,
-                **get_auth_span_attributes(),
-                **get_session_span_attributes(),
-            }
-            if resource_uri is not None:
-                attrs["mcp.resource.uri"] = resource_uri
-            if tool_name is not None:
-                attrs["gen_ai.tool.name"] = tool_name
-            if prompt_name is not None:
-                attrs["gen_ai.prompt.name"] = prompt_name
             span.set_attributes(attrs)
         try:
             yield span
         except Exception as e:
-            if span.is_recording():
-                error_type = (
-                    "tool_error" if isinstance(e, _ToolError) else type(e).__qualname__
-                )
-                span.set_attribute("error.type", error_type)
-                span.record_exception(e)
-                span.set_status(Status(StatusCode.ERROR, str(e)))
+            record_span_exception(span, e)
             raise
 
 
@@ -128,19 +236,16 @@ def delegate_span(
         try:
             yield span
         except Exception as e:
-            if span.is_recording():
-                error_type = (
-                    "tool_error" if isinstance(e, _ToolError) else type(e).__qualname__
-                )
-                span.set_attribute("error.type", error_type)
-                span.record_exception(e)
-                span.set_status(Status(StatusCode.ERROR, str(e)))
+            record_span_exception(span, e)
             raise
 
 
 __all__ = [
+    "SEAM_SPAN_MARKER",
     "delegate_span",
     "get_auth_span_attributes",
     "get_session_span_attributes",
+    "record_span_exception",
+    "seam_span",
     "server_span",
 ]

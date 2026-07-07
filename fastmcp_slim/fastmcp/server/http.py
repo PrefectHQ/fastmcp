@@ -496,6 +496,7 @@ def create_streamable_http_app(
     host_origin_protection: bool = True,
     allowed_hosts: Sequence[str] | None = None,
     allowed_origins: Sequence[str] | None = None,
+    session_idle_timeout: float | None = None,
 ) -> StarletteWithLifespan:
     """Return an instance of the StreamableHTTP server app.
 
@@ -518,6 +519,10 @@ def create_streamable_http_app(
         allowed_origins: Additional browser origins trusted by the request guard.
             Configure CORS separately when browser JavaScript must read
             cross-origin responses.
+        session_idle_timeout: Maximum time in seconds a session may remain idle
+            before it is terminated. The deadline is pushed forward on every
+            request. When None, sessions never expire from inactivity. Not
+            supported in stateless mode.
 
     Returns:
         A Starlette application with StreamableHTTP support
@@ -599,6 +604,7 @@ def create_streamable_http_app(
             retry_interval=retry_interval,
             json_response=json_response,
             stateless=stateless_http,
+            session_idle_timeout=session_idle_timeout,
             # FastMCP owns DNS-rebinding protection via HostOriginGuardMiddleware,
             # which is more expressive and already the documented surface. Always
             # disable the SDK's own protection so the two layers don't
@@ -607,10 +613,11 @@ def create_streamable_http_app(
                 enable_dns_rebinding_protection=False
             ),
         )
-        async with (
-            server._lifespan_manager(),
-            streamable_http_app.session_manager.run(),
-        ):
+        # The session manager's `run()` enters `server._mcp_server.lifespan`
+        # (our `_lifespan_proxy`), which now drives `server._lifespan_manager()`.
+        # Entering it here too would double-stack the same lifespan, so we let
+        # the manager own the single entry.
+        async with streamable_http_app.session_manager.run():
             try:
                 yield
             finally:

@@ -41,6 +41,8 @@ Token validation must address several security requirements: signature verificat
 
 The challenge in MCP environments is that clients need to obtain valid tokens before making requests, but the MCP protocol doesn't provide built-in discovery mechanisms for token endpoints. Clients must obtain tokens through separate channels or prior configuration.
 
+On the streamable-HTTP transport, each session is additionally bound to the credential that created it: a request that presents a different credential for an existing `Mcp-Session-Id` is rejected with a 404, exactly as if the session did not exist. A leaked session id is therefore useless without the original credential. Session identity is the `(client_id, issuer, subject)` triple your verifier populates.
+
 
 ## TokenVerifier Class
 

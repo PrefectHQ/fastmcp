@@ -6,6 +6,7 @@ from mcp_types import TextResourceContents
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import SSETransport, StreamableHttpTransport
+from fastmcp.server import create_proxy
 from fastmcp.server.providers.openapi import MCPType, RouteMap
 from fastmcp.utilities.tests import run_server_async
 
@@ -63,7 +64,7 @@ async def sse_server():
 @pytest.fixture
 async def proxy_server(shttp_server: str):
     """Start a proxy server."""
-    proxy = FastMCP.as_proxy(StreamableHttpTransport(shttp_server))
+    proxy = create_proxy(StreamableHttpTransport(shttp_server))
     async with run_server_async(proxy, transport="http") as url:
         yield url
 

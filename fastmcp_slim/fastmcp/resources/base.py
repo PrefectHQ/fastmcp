@@ -30,7 +30,6 @@ from pydantic import (
 from pydantic.json_schema import SkipJsonSchema
 from typing_extensions import Self
 
-from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.tasks import TaskConfig, TaskMeta
@@ -469,29 +468,3 @@ __all__ = [
     "ResourceContent",
     "ResourceResult",
 ]
-
-
-def __getattr__(name: str) -> Any:
-    """Deprecated re-exports for backwards compatibility."""
-    deprecated_exports = {
-        "FunctionResource": "FunctionResource",
-        "resource": "resource",
-    }
-
-    if name in deprecated_exports:
-        import warnings
-
-        import fastmcp
-
-        if fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                f"Importing {name} from fastmcp.resources.resource is deprecated. "
-                f"Import from fastmcp.resources.function_resource instead.",
-                FastMCPDeprecationWarning,
-                stacklevel=2,
-            )
-        from fastmcp.resources import function_resource
-
-        return getattr(function_resource, name)
-
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

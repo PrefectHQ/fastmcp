@@ -274,7 +274,6 @@ class RemoteMCPServer(BaseModel):
                 self.url,
                 headers=self.headers,
                 auth=self.auth,
-                sse_read_timeout=self.sse_read_timeout,
             )
 
 

@@ -9,6 +9,7 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.dependencies import CurrentContext, Depends, Shared
 from fastmcp.server.context import Context
+from fastmcp.server.dependencies import is_docket_available
 from tests.conftest import make_server_request_context
 
 HUZZAH = "huzzah!"
@@ -1193,3 +1194,43 @@ class TestSharedDependencies:
                 in result.messages[0].content.text
             )
             assert call_count == 1
+
+    @pytest.mark.skipif(
+        not is_docket_available(),
+        reason="requires pydocket for the Docket/Worker lifespan path",
+    )
+    async def test_shared_resolves_on_task_capable_server(self):
+        """Shared() dependencies resolve on a normal request even when the server
+        has task-enabled components.
+
+        When pydocket is installed AND a task-enabled component exists, the
+        lifespan takes the Docket/Worker branch. That branch must still capture
+        the app-scoped SharedContext snapshot so FastMCPServerMiddleware can
+        re-apply it per request; otherwise Shared() dependencies fail to resolve
+        on ordinary (non-task) calls.
+        """
+        mcp = FastMCP("task-capable-server")
+
+        call_count = 0
+
+        def get_config() -> dict[str, str]:
+            nonlocal call_count
+            call_count += 1
+            return {"key": "value"}
+
+        @mcp.tool(task=True)
+        async def background_tool(x: int) -> int:
+            return x
+
+        @mcp.tool()
+        async def normal_tool(config: dict[str, str] = Shared(get_config)) -> str:
+            return config["key"]
+
+        async with Client(mcp) as client:
+            result_a = await client.call_tool("normal_tool", {})
+            result_b = await client.call_tool("normal_tool", {})
+
+        assert result_a.content[0].text == "value"
+        assert result_b.content[0].text == "value"
+        # App-scoped: resolved once and reused across requests.
+        assert call_count == 1

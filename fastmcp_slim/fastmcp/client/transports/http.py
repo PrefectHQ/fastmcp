@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import datetime
 import ssl
 from collections.abc import AsyncIterator
 from typing import Any, Literal, cast
@@ -15,13 +14,10 @@ from mcp.shared._httpx_utils import McpHttpClientFactory, create_mcp_http_client
 from pydantic import AnyUrl
 from typing_extensions import Unpack
 
-import fastmcp as fastmcp
 from fastmcp.client.auth.bearer import BearerAuth
 from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.dependencies import get_http_headers
 from fastmcp.client.transports.base import ClientTransport, SessionKwargs
-from fastmcp.exceptions import FastMCPDeprecationWarning
-from fastmcp.utilities.timeout import normalize_timeout_to_timedelta
 
 
 class StreamableHttpTransport(ClientTransport):
@@ -32,7 +28,6 @@ class StreamableHttpTransport(ClientTransport):
         url: str | AnyUrl,
         headers: dict[str, str] | None = None,
         auth: httpx.Auth | Literal["oauth"] | str | None = None,
-        sse_read_timeout: datetime.timedelta | float | int | None = None,
         httpx_client_factory: McpHttpClientFactory | None = None,
         verify: ssl.SSLContext | bool | str | None = None,
     ):
@@ -43,7 +38,6 @@ class StreamableHttpTransport(ClientTransport):
             headers: Optional headers to include in requests.
             auth: Authentication method - httpx.Auth, "oauth" for OAuth flow,
                 or a bearer token string.
-            sse_read_timeout: Deprecated. Use read_timeout_seconds in session_kwargs.
             httpx_client_factory: Optional factory for creating httpx.AsyncClient.
                 If provided, must accept keyword arguments: headers, auth,
                 follow_redirects, and optionally timeout. Using **kwargs is
@@ -79,20 +73,6 @@ class StreamableHttpTransport(ClientTransport):
             )
 
         self._set_auth(auth)
-
-        if sse_read_timeout is not None:
-            if fastmcp.settings.deprecation_warnings:
-                import warnings
-
-                warnings.warn(
-                    "The `sse_read_timeout` parameter is deprecated and no longer used. "
-                    "The new streamable_http_client API does not support this parameter. "
-                    "Use `read_timeout_seconds` in session_kwargs or configure timeout on "
-                    "the httpx client via `httpx_client_factory` instead.",
-                    FastMCPDeprecationWarning,
-                    stacklevel=2,
-                )
-        self.sse_read_timeout = normalize_timeout_to_timedelta(sse_read_timeout)
 
         self.forward_incoming_headers: bool = False
 

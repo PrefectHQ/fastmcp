@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import inspect
-import warnings
 from collections.abc import Callable
 from contextvars import ContextVar
 from copy import deepcopy
@@ -15,8 +14,6 @@ from pydantic.fields import Field
 from pydantic.functional_validators import BeforeValidator
 from pydantic.json_schema import SkipJsonSchema
 
-import fastmcp
-from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.tools.base import (
     Tool,
     ToolResult,
@@ -343,9 +340,7 @@ class TransformedTool(Tool):
 
             # Otherwise convert to content and create ToolResult with proper structured content
 
-            unstructured_result = _convert_to_content(
-                result, serializer=self.serializer
-            )
+            unstructured_result = _convert_to_content(result)
 
             structured_output = None
             # First handle structured content based on output schema, if any
@@ -393,7 +388,6 @@ class TransformedTool(Tool):
         transform_args: dict[str, ArgTransform] | None = None,
         annotations: ToolAnnotations | NotSetT | None = NotSet,
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
-        serializer: Callable[[Any], str] | NotSetT | None = NotSet,  # Deprecated
         meta: dict[str, Any] | NotSetT | None = NotSet,
     ) -> TransformedTool:
         """Create a transformed tool from a parent tool.
@@ -415,7 +409,6 @@ class TransformedTool(Tool):
             output_schema: Control output schema for structured outputs:
                 - None (default): Inherit from transform_fn if available, then parent tool
                 - dict: Use custom output schema
-            serializer: Deprecated. Return ToolResult from your tools for full control over serialization.
             meta: Control meta information:
                 - NotSet (default): Inherit from parent tool
                 - dict: Use custom meta information
@@ -470,18 +463,6 @@ class TransformedTool(Tool):
         """
         tool = Tool._ensure_tool(tool)
 
-        if (
-            serializer is not NotSet
-            and serializer is not None
-            and fastmcp.settings.deprecation_warnings
-        ):
-            warnings.warn(
-                "The `serializer` parameter is deprecated. "
-                "Return ToolResult from your tools for full control over serialization. "
-                "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
-                FastMCPDeprecationWarning,
-                stacklevel=2,
-            )
         transform_args = transform_args or {}
 
         if transform_fn is not None:
@@ -601,9 +582,6 @@ class TransformedTool(Tool):
         final_annotations = (
             annotations if not isinstance(annotations, NotSetT) else tool.annotations
         )
-        final_serializer = (
-            serializer if not isinstance(serializer, NotSetT) else tool.serializer
-        )
 
         transformed_tool = cls(
             fn=final_fn,
@@ -617,7 +595,6 @@ class TransformedTool(Tool):
             output_schema=final_output_schema,
             tags=tags or tool.tags,
             annotations=final_annotations,
-            serializer=final_serializer,
             meta=final_meta,
             transform_args=transform_args,
             auth=tool.auth,

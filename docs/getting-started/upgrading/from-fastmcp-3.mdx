@@ -126,21 +126,23 @@ Ordinary use of `ctx.info` (client logging) and `ctx.sample` now emits an SDK-le
 The logging/sampling capability is deprecated as of 2026-07-28 (SEP-2577)
 ```
 
-These warnings come from the MCP SDK, not from FastMCP, and they are benign: the features keep working on session-based (handshake-era) connections exactly as the protocol table below describes. The SDK is signaling that the `2026-07-28` protocol era removed these capabilities from the wire — the warning is about the protocol's direction, not about your code being broken today.
+These warnings come from the MCP SDK, not from FastMCP. For logging they are benign: `ctx.info` keeps working on session-based connections exactly as the protocol table below describes, and the SDK is only signaling the protocol's direction. For sampling, FastMCP additionally emits its own `FastMCPDeprecationWarning`: `ctx.sample` and `ctx.sample_step` are deprecated and slated for removal, so treat that warning as a prompt to migrate to server-side LLM calls rather than as informational.
 
 ## Protocol version support
 
 FastMCP servers built on the SDK v2 serve multiple protocol eras from the same server. The SDK negotiates the era each client speaks: the sessionless `2026-07-28` era (which discovers capabilities through `server/discover`) and earlier session-based handshake versions are all handled simultaneously. This formally supersedes FastMCP's earlier "latest protocol only" stance — a single server now works with clients across the protocol transition.
 
-Not every Context feature is available on every era yet. The push-style interactions that require the server to call back into the client — elicitation, sampling, and listing roots — depend on the session-based request/response flow of the earlier eras. On a `2026-07-28` connection these raise, because the sessionless era needs a multi-round-trip replacement that is still being built. Logging notifications and the request/response features flow on every era.
+Not every Context feature is available on every era yet. The push-style interactions that require the server to call back into the client — elicitation, sampling, and listing roots — depend on the session-based request/response flow of the earlier eras. On a `2026-07-28` connection these raise a clear, era-aware error rather than reaching the client. Logging notifications and the request/response features flow on every era.
+
+Sampling is the exception that does not come back. `ctx.sample` and `ctx.sample_step` are **deprecated** and will be removed in a future FastMCP release: server-initiated sampling was removed from the wire by SEP-2577, and unlike elicitation it has no multi-round-trip replacement (the agentic loop would exhaust the round-trip budget). The migration is to call an LLM directly from your server rather than borrowing the client's model. See [Sampling](/servers/sampling) for details.
 
 | Context feature | Earlier eras (session-based) | `2026-07-28` (sessionless) |
 | --- | --- | --- |
 | `ctx.info` / logging notifications | Supported | Supported |
 | Tools, resources, prompts, completions | Supported | Supported |
 | `ctx.elicit` | Supported | Not yet — MRTR rewrite pending |
-| `ctx.sample` | Supported | Not yet — MRTR rewrite pending |
+| `ctx.sample` / `ctx.sample_step` | Supported (deprecated) | Removed — call an LLM server-side |
 | `ctx.list_roots` | Supported | Not yet — MRTR rewrite pending |
 | Tasks (via the FastMCP client) | Supported | Not yet |
 
-If your tools rely on `ctx.elicit`, `ctx.sample`, or `ctx.list_roots`, they continue to work against clients on the earlier eras. As the sessionless replacements land, this table will expand.
+If your tools rely on `ctx.elicit` or `ctx.list_roots`, they continue to work against clients on the earlier eras, and the sessionless replacements will expand this table as they land. Sampling is deprecated on every era and will not return on modern connections — migrate those tools to server-side LLM calls.

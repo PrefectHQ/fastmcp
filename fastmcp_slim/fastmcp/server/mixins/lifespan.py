@@ -135,10 +135,14 @@ class LifespanMixin:
             from fastmcp.server.tasks.context import restore_task_snapshot
 
             # Create Docket instance using configured name and URL
-            async with Docket(
-                name=settings.docket.name,
-                url=settings.docket.url,
-            ) as docket:
+            async with (
+                SharedContext(),
+                Docket(
+                    name=settings.docket.name,
+                    url=settings.docket.url,
+                ) as docket,
+            ):
+                self._capture_shared_context()
                 self._docket = docket
 
                 # Register task-enabled components with Docket

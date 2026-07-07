@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import inspect
 import types
-import warnings
 from collections.abc import Callable
 from functools import partial
 from typing import (
@@ -26,8 +25,6 @@ from typing import (
 import mcp_types
 from mcp_types import ToolAnnotations
 
-import fastmcp
-from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.base import Tool
@@ -44,7 +41,6 @@ except ImportError:
 
 if TYPE_CHECKING:
     from fastmcp.server.providers.local_provider import LocalProvider
-    from fastmcp.tools.base import ToolResultSerializerType
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -161,8 +157,6 @@ class ToolDecoratorMixin:
                     annotations=fmeta.annotations,
                     meta=tool_meta,
                     task=resolved_task,
-                    exclude_args=fmeta.exclude_args,
-                    serializer=fmeta.serializer,
                     timeout=fmeta.timeout,
                     auth=fmeta.auth,
                     run_in_thread=fmeta.run_in_thread,
@@ -188,11 +182,9 @@ class ToolDecoratorMixin:
         tags: set[str] | None = None,
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
-        exclude_args: list[str] | None = None,
         meta: dict[str, Any] | None = None,
         enabled: bool = True,
         task: bool | TaskConfig | None = None,
-        serializer: ToolResultSerializerType | None = None,  # Deprecated
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         run_in_thread: bool = True,
@@ -211,20 +203,17 @@ class ToolDecoratorMixin:
         tags: set[str] | None = None,
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
-        exclude_args: list[str] | None = None,
         meta: dict[str, Any] | None = None,
         enabled: bool = True,
         task: bool | TaskConfig | None = None,
-        serializer: ToolResultSerializerType | None = None,  # Deprecated
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         run_in_thread: bool = True,
     ) -> Callable[[F], F]: ...
 
-    # NOTE: This method mirrors fastmcp.tools.tool() but adds registration,
-    # the `enabled` param, and supports deprecated params (serializer, exclude_args).
-    # When deprecated params are removed, this should delegate to the standalone
-    # decorator to reduce duplication.
+    # NOTE: This method mirrors fastmcp.tools.tool() but adds registration and
+    # the `enabled` param. It could delegate to the standalone decorator to
+    # reduce duplication.
     def tool(
         self: LocalProvider,
         name_or_fn: str | AnyFunction | None = None,
@@ -237,11 +226,9 @@ class ToolDecoratorMixin:
         tags: set[str] | None = None,
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
-        exclude_args: list[str] | None = None,
         meta: dict[str, Any] | None = None,
         enabled: bool = True,
         task: bool | TaskConfig | None = None,
-        serializer: ToolResultSerializerType | None = None,  # Deprecated
         timeout: float | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         run_in_thread: bool = True,
@@ -268,11 +255,9 @@ class ToolDecoratorMixin:
             tags: Optional set of tags for categorizing the tool
             output_schema: Optional JSON schema for the tool's output
             annotations: Optional annotations about the tool's behavior
-            exclude_args: Optional list of argument names to exclude from the tool schema
             meta: Optional meta information about the tool
             enabled: Whether the tool is enabled (default True). If False, adds to blocklist.
             task: Optional task configuration for background execution
-            serializer: Deprecated. Return ToolResult from your tools for full control over serialization.
 
         Returns:
             The registered FunctionTool or a decorator function.
@@ -290,14 +275,6 @@ class ToolDecoratorMixin:
                 return str(x)
             ```
         """
-        if serializer is not None and fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                "The `serializer` parameter is deprecated. "
-                "Return ToolResult from your tools for full control over serialization. "
-                "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
-                FastMCPDeprecationWarning,
-                stacklevel=2,
-            )
         if isinstance(annotations, dict):
             annotations = ToolAnnotations(**annotations)
 
@@ -330,57 +307,28 @@ class ToolDecoratorMixin:
                     f"See https://gofastmcp.com/servers/tools#using-with-methods"
                 )
 
-            resolved_task: bool | TaskConfig = task if task is not None else False
+            from fastmcp.tools.function_tool import ToolMeta
 
-            if fastmcp.settings.decorator_mode == "object":
-                tool_obj = Tool.from_function(
-                    fn,
-                    name=tool_name,
-                    version=version,
-                    title=title,
-                    description=description,
-                    icons=icons,
-                    tags=tags,
-                    output_schema=output_schema,
-                    annotations=annotations,
-                    exclude_args=exclude_args,
-                    meta=meta,
-                    serializer=serializer,
-                    task=resolved_task,
-                    timeout=timeout,
-                    auth=auth,
-                    run_in_thread=run_in_thread,
-                )
-                self._add_component(tool_obj)
-                if not enabled:
-                    self.disable(keys={tool_obj.key})
-                _maybe_apply_prefab_ui(self, tool_obj)
-                return tool_obj
-            else:
-                from fastmcp.tools.function_tool import ToolMeta
-
-                metadata = ToolMeta(
-                    name=tool_name,
-                    version=version,
-                    title=title,
-                    description=description,
-                    icons=icons,
-                    tags=tags,
-                    output_schema=output_schema,
-                    annotations=annotations,
-                    meta=meta,
-                    task=task,
-                    exclude_args=exclude_args,
-                    serializer=serializer,
-                    timeout=timeout,
-                    auth=auth,
-                    enabled=enabled,
-                    run_in_thread=run_in_thread,
-                )
-                target = fn.__func__ if hasattr(fn, "__func__") else fn
-                target.__fastmcp__ = metadata  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-                tool_obj = self.add_tool(fn)
-                return fn
+            metadata = ToolMeta(
+                name=tool_name,
+                version=version,
+                title=title,
+                description=description,
+                icons=icons,
+                tags=tags,
+                output_schema=output_schema,
+                annotations=annotations,
+                meta=meta,
+                task=task,
+                timeout=timeout,
+                auth=auth,
+                enabled=enabled,
+                run_in_thread=run_in_thread,
+            )
+            target = fn.__func__ if hasattr(fn, "__func__") else fn
+            target.__fastmcp__ = metadata  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+            self.add_tool(fn)
+            return fn
 
         if inspect.isroutine(name_or_fn):
             return decorate_and_register(name_or_fn, name)
@@ -412,11 +360,9 @@ class ToolDecoratorMixin:
             tags=tags,
             output_schema=output_schema,
             annotations=annotations,
-            exclude_args=exclude_args,
             meta=meta,
             enabled=enabled,
             task=task,
-            serializer=serializer,
             timeout=timeout,
             auth=auth,
             run_in_thread=run_in_thread,

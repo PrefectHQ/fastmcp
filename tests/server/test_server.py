@@ -1,5 +1,4 @@
 import os
-import warnings
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from textwrap import dedent
@@ -159,37 +158,6 @@ class TestLocalProviderProperty:
         mcp.local_provider.remove_prompt("my_prompt")
         prompts = await mcp.list_prompts()
         assert not any(p.name == "my_prompt" for p in prompts)
-
-
-class TestRemoveToolDeprecation:
-    async def test_remove_tool_emits_deprecation_warning(self):
-        mcp = FastMCP()
-
-        @mcp.tool
-        def my_tool() -> str:
-            return "result"
-
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            mcp.remove_tool("my_tool")
-
-            assert len(w) == 1
-            assert issubclass(w[0].category, DeprecationWarning)
-            assert "local_provider" in str(w[0].message)
-
-    async def test_remove_tool_still_works(self):
-        mcp = FastMCP()
-
-        @mcp.tool
-        def my_tool() -> str:
-            return "result"
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            mcp.remove_tool("my_tool")
-
-        tools = await mcp.list_tools()
-        assert not any(t.name == "my_tool" for t in tools)
 
 
 class TestResourcePrefixMounting:

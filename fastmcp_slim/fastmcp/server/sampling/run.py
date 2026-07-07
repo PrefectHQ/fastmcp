@@ -138,12 +138,19 @@ def _parse_model_preferences(
 # --- Standalone functions for sample_step() ---
 
 
-def determine_handler_mode(context: Context, needs_tools: bool) -> bool:
+def determine_handler_mode(
+    context: Context, needs_tools: bool, *, client_available: bool = True
+) -> bool:
     """Determine whether to use fallback handler or client for sampling.
 
     Args:
         context: The MCP context.
         needs_tools: Whether the sampling request requires tool support.
+        client_available: Whether the client back-channel can be reached at all.
+            On modern (2026-07-28) connections the server-initiated createMessage
+            back-channel was removed (SEP-2577), so the client can never serve a
+            sampling request; pass False there to force the server-side handler
+            path (``"fallback"`` behaves like ``"always"`` when a handler exists).
 
     Returns:
         True if fallback handler should be used, False to use client.
@@ -154,11 +161,13 @@ def determine_handler_mode(context: Context, needs_tools: bool) -> bool:
     fastmcp = context.fastmcp
     session = context.session
 
-    # Check what capabilities the client has
-    has_sampling = session.check_client_capability(
+    # Check what capabilities the client has. On connections without a
+    # back-channel the client can never serve the request regardless of the
+    # capabilities it advertised, so treat both as unavailable.
+    has_sampling = client_available and session.check_client_capability(
         capability=ClientCapabilities(sampling=SamplingCapability())
     )
-    has_tools_capability = session.check_client_capability(
+    has_tools_capability = client_available and session.check_client_capability(
         capability=ClientCapabilities(
             sampling=SamplingCapability(tools=SamplingToolsCapability())
         )
@@ -498,11 +507,17 @@ async def sample_step_impl(
     auto_execute_tools: bool = True,
     mask_error_details: bool | None = None,
     tool_concurrency: int | None = None,
+    client_available: bool = True,
 ) -> SampleStep:
     """Implementation of Context.sample_step().
 
     Make a single LLM sampling call. This is a stateless function that makes
     exactly one LLM call and optionally executes any requested tools.
+
+    When ``client_available`` is False (e.g. a modern 2026-07-28 connection with
+    no back-channel), the client is never used and a configured sampling handler
+    serves the request; the caller is responsible for raising a clear era error
+    when no handler can serve it.
     """
     # Convert messages to SamplingMessage objects
     current_messages = prepare_messages(messages)
@@ -517,7 +532,9 @@ async def sample_step_impl(
     )
 
     # Determine whether to use fallback handler or client
-    use_fallback = determine_handler_mode(context, bool(sampling_tools))
+    use_fallback = determine_handler_mode(
+        context, bool(sampling_tools), client_available=client_available
+    )
 
     # Build tool choice
     effective_tool_choice: ToolChoice | None = None
@@ -633,12 +650,18 @@ async def sample_impl(
     result_type: type[ResultT] | None = None,
     mask_error_details: bool | None = None,
     tool_concurrency: int | None = None,
+    client_available: bool = True,
 ) -> SamplingResult[ResultT]:
     """Implementation of Context.sample().
 
     Send a sampling request to the client and await the response. This method
     runs to completion automatically, executing a tool loop until the LLM
     provides a final text response.
+
+    When ``client_available`` is False (e.g. a modern 2026-07-28 connection with
+    no back-channel), the client is never used and a configured sampling handler
+    serves the request; the caller is responsible for raising a clear era error
+    when no handler can serve it.
     """
     # Safety limit to prevent infinite loops
     max_iterations = 100
@@ -675,6 +698,7 @@ async def sample_impl(
             tool_choice=tool_choice,
             mask_error_details=mask_error_details,
             tool_concurrency=tool_concurrency,
+            client_available=client_available,
         )
 
         # Check for final_response tool call for structured output

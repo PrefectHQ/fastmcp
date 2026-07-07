@@ -5,7 +5,6 @@ from __future__ import annotations
 import functools
 import inspect
 import logging
-import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -30,13 +29,11 @@ from pydantic import Field, TypeAdapter
 from pydantic import ValidationError as PydanticValidationError
 from pydantic.json_schema import SkipJsonSchema
 
-import fastmcp
-from fastmcp.decorators import get_fastmcp_meta, resolve_task_config
-from fastmcp.exceptions import FastMCPDeprecationWarning, ValidationError
+from fastmcp.decorators import get_fastmcp_meta
+from fastmcp.exceptions import ValidationError
 from fastmcp.tools.base import (
     Tool,
     ToolResult,
-    ToolResultSerializerType,
 )
 from fastmcp.tools.function_parsing import ParsedFunction, _is_object_schema
 from fastmcp.utilities.async_utils import (
@@ -170,8 +167,6 @@ class ToolMeta:
     meta: dict[str, Any] | None = None
     app: Any = None
     task: bool | TaskConfig | None = None
-    exclude_args: list[str] | None = None
-    serializer: Any | None = None
     timeout: float | None = None
     auth: AuthCheck | list[AuthCheck] | None = None
     enabled: bool = True
@@ -236,9 +231,7 @@ class FunctionTool(Tool):
         icons: list[Icon] | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
-        exclude_args: list[str] | None = None,
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
-        serializer: ToolResultSerializerType | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
         timeout: float | None = None,
@@ -268,14 +261,12 @@ class FunctionTool(Tool):
                     annotations,
                     meta,
                     task,
-                    serializer,
                     timeout,
                     auth,
                     run_in_thread,
                 ]
             )
             or output_schema is not NotSet
-            or exclude_args is not None
         )
 
         if metadata is not None and individual_params_provided:
@@ -302,31 +293,12 @@ class FunctionTool(Tool):
                 annotations=annotations,
                 meta=meta,
                 task=task,
-                exclude_args=exclude_args,
-                serializer=serializer,
                 timeout=timeout,
                 auth=auth,
                 run_in_thread=True if run_in_thread is None else run_in_thread,
             )
 
-        if metadata.serializer is not None and fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                "The `serializer` parameter is deprecated. "
-                "Return ToolResult from your tools for full control over serialization. "
-                "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
-                FastMCPDeprecationWarning,
-                stacklevel=2,
-            )
-        if metadata.exclude_args and fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                "The `exclude_args` parameter is deprecated as of FastMCP 2.14. "
-                "Use dependency injection with `Depends()` instead for better lifecycle management. "
-                "See https://gofastmcp.com/servers/dependency-injection#using-depends for examples.",
-                FastMCPDeprecationWarning,
-                stacklevel=2,
-            )
-
-        parsed_fn = ParsedFunction.from_function(fn, exclude_args=metadata.exclude_args)
+        parsed_fn = ParsedFunction.from_function(fn)
         func_name = metadata.name or parsed_fn.name
 
         if func_name == "<lambda>":
@@ -389,7 +361,6 @@ class FunctionTool(Tool):
             output_schema=final_output_schema,
             annotations=metadata.annotations,
             tags=metadata.tags or set(),
-            serializer=metadata.serializer,
             meta=metadata.meta,
             task_config=task_config,
             timeout=metadata.timeout,
@@ -605,8 +576,6 @@ def tool(
     annotations: ToolAnnotations | dict[str, Any] | None = None,
     meta: dict[str, Any] | None = None,
     task: bool | TaskConfig | None = None,
-    exclude_args: list[str] | None = None,
-    serializer: Any | None = None,
     timeout: float | None = None,
     auth: AuthCheck | list[AuthCheck] | None = None,
     run_in_thread: bool = True,
@@ -625,8 +594,6 @@ def tool(
     annotations: ToolAnnotations | dict[str, Any] | None = None,
     meta: dict[str, Any] | None = None,
     task: bool | TaskConfig | None = None,
-    exclude_args: list[str] | None = None,
-    serializer: Any | None = None,
     timeout: float | None = None,
     auth: AuthCheck | list[AuthCheck] | None = None,
     run_in_thread: bool = True,
@@ -646,8 +613,6 @@ def tool(
     annotations: ToolAnnotations | dict[str, Any] | None = None,
     meta: dict[str, Any] | None = None,
     task: bool | TaskConfig | None = None,
-    exclude_args: list[str] | None = None,
-    serializer: Any | None = None,
     timeout: float | None = None,
     auth: AuthCheck | list[AuthCheck] | None = None,
     run_in_thread: bool = True,
@@ -676,27 +641,6 @@ def tool(
             "See https://gofastmcp.com/servers/tools#using-with-methods"
         )
 
-    def create_tool(fn: Callable[..., Any], tool_name: str | None) -> FunctionTool:
-        # Create metadata first, then pass it
-        tool_meta = ToolMeta(
-            name=tool_name,
-            version=version,
-            title=title,
-            description=description,
-            icons=icons,
-            tags=tags,
-            output_schema=output_schema,
-            annotations=annotations,
-            meta=meta,
-            task=resolve_task_config(task),
-            exclude_args=exclude_args,
-            serializer=serializer,
-            timeout=timeout,
-            auth=auth,
-            run_in_thread=run_in_thread,
-        )
-        return FunctionTool.from_function(fn, metadata=tool_meta)
-
     def attach_metadata(fn: F, tool_name: str | None) -> F:
         metadata = ToolMeta(
             name=tool_name,
@@ -709,8 +653,6 @@ def tool(
             annotations=annotations,
             meta=meta,
             task=task,
-            exclude_args=exclude_args,
-            serializer=serializer,
             timeout=timeout,
             auth=auth,
             run_in_thread=run_in_thread,
@@ -720,14 +662,6 @@ def tool(
         return fn
 
     def decorator(fn: F, tool_name: str | None) -> F:
-        if fastmcp.settings.decorator_mode == "object":
-            warnings.warn(
-                "decorator_mode='object' is deprecated and will be removed in a future version. "
-                "Decorators now return the original function with metadata attached.",
-                FastMCPDeprecationWarning,
-                stacklevel=4,
-            )
-            return create_tool(fn, tool_name)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
         return attach_metadata(fn, tool_name)
 
     if inspect.isroutine(name_or_fn):

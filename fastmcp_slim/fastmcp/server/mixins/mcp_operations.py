@@ -9,6 +9,7 @@ import mcp_types
 from mcp.server.context import ServerRequestContext
 from mcp.shared.exceptions import MCPError
 from mcp_types import (
+    INVALID_PARAMS,
     CallToolRequestParams,
     EmptyResult,
     GetPromptRequestParams,
@@ -17,7 +18,12 @@ from mcp_types import (
     SetLevelRequestParams,
 )
 
-from fastmcp.exceptions import DisabledError, FastMCPError, NotFoundError
+from fastmcp.exceptions import (
+    DisabledError,
+    FastMCPError,
+    NotFoundError,
+    to_mcp_error,
+)
 from fastmcp.server.dependencies import bind_request_context, extract_version_spec
 from fastmcp.server.tasks.config import TaskMeta
 from fastmcp.utilities.logging import get_logger
@@ -46,7 +52,7 @@ def _apply_pagination(
     try:
         return paginate_sequence(items, cursor, page_size)
     except ValueError as e:
-        raise MCPError(code=-32602, message=str(e)) from e
+        raise MCPError(code=INVALID_PARAMS, message=str(e)) from e
 
 
 def _normalize_call_tool_result(
@@ -275,8 +281,8 @@ class MCPOperationsMixin:
             try:
                 result = await self.read_resource(str(uri), version=version)
             except (DisabledError, NotFoundError) as e:
-                raise MCPError(
-                    code=-32002, message=f"Resource not found: {str(uri)!r}"
+                raise to_mcp_error(
+                    NotFoundError(f"Resource not found: {str(uri)!r}")
                 ) from e
 
             if isinstance(result, mcp_types.CreateTaskResult):
@@ -308,7 +314,7 @@ class MCPOperationsMixin:
             try:
                 result = await self.render_prompt(name, arguments, version=version)
             except (DisabledError, NotFoundError) as e:
-                raise MCPError(code=-32602, message=f"Unknown prompt: {name!r}") from e
+                raise to_mcp_error(NotFoundError(f"Unknown prompt: {name!r}")) from e
 
             if isinstance(result, mcp_types.CreateTaskResult):
                 return result

@@ -8,6 +8,7 @@ from mcp.server.context import ServerRequestContext
 
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
+from fastmcp.server import create_proxy
 from fastmcp.server.context import Context
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.base import ToolResult
@@ -475,7 +476,7 @@ class TestProxyServer:
     ):
         # proxy server will have its tools listed as well as called in order to
         # apply transforms and filters prior to the call.
-        proxy_server = FastMCP.as_proxy(mcp_server, name="Proxy Server")
+        proxy_server = create_proxy(mcp_server, name="Proxy Server")
         async with Client(proxy_server) as client:
             await client.call_tool("add", {"a": 1, "b": 2})
 
@@ -492,7 +493,7 @@ class TestProxyServer:
     ):
         """Tests that tags on remote FastMCP servers are visible to middleware
         via proxy. See https://github.com/PrefectHQ/fastmcp/issues/1300"""
-        proxy_server = FastMCP.as_proxy(mcp_server, name="Proxy Server")
+        proxy_server = create_proxy(mcp_server, name="Proxy Server")
 
         TAGS = []
 

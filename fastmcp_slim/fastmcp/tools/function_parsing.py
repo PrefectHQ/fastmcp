@@ -21,7 +21,6 @@ from fastmcp.utilities.types import (
     Audio,
     File,
     Image,
-    create_function_without_params,
     get_cached_typeadapter,
     is_class_member_of_type,
     replace_type,
@@ -178,7 +177,6 @@ class ParsedFunction:
     def from_function(
         cls,
         fn: Callable[..., Any],
-        exclude_args: list[str] | None = None,
         validate: bool = True,
         wrap_non_object_output_schema: bool = True,
     ) -> ParsedFunction:
@@ -192,19 +190,6 @@ class ParsedFunction:
                     raise ValueError(
                         "Functions with **kwargs are not supported as tools"
                     )
-
-            # Reject exclude_args that don't exist in the function or don't have a default value
-            if exclude_args:
-                for arg_name in exclude_args:
-                    if arg_name not in sig.parameters:
-                        raise ValueError(
-                            f"Parameter '{arg_name}' in exclude_args does not exist in function."
-                        )
-                    param = sig.parameters[arg_name]
-                    if param.default == inspect.Parameter.empty:
-                        raise ValueError(
-                            f"Parameter '{arg_name}' in exclude_args must have a default value."
-                        )
 
         # collect name and description before we potentially modify the function
         fn_name = getattr(fn, "__name__", None) or fn.__class__.__name__
@@ -241,19 +226,10 @@ class ParsedFunction:
         # Handle injected parameters (Context, Docket dependencies)
         wrapper_fn = without_injected_parameters(fn)
 
-        # Also handle exclude_args with non-serializable types (issue #2431)
-        # This must happen before Pydantic tries to serialize the parameters
-        if exclude_args:
-            wrapper_fn = create_function_without_params(wrapper_fn, list(exclude_args))
-
         input_type_adapter = get_cached_typeadapter(wrapper_fn)
         input_schema = input_type_adapter.json_schema()
 
-        # Compress and handle exclude_args
-        prune_params = list(exclude_args) if exclude_args else None
-        input_schema = compress_schema(
-            input_schema, prune_params=prune_params, prune_titles=True
-        )
+        input_schema = compress_schema(input_schema, prune_titles=True)
 
         # Inject parameter descriptions from the docstring into the schema.
         # Explicit annotations (Field(description=...), Annotated[x, "..."])

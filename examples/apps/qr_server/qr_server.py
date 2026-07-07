@@ -26,7 +26,7 @@ import qrcode  # type: ignore[import-untyped]
 from mcp import types
 
 from fastmcp import FastMCP
-from fastmcp.server.apps import AppConfig, ResourceCSP
+from fastmcp.apps import AppConfig, ResourceCSP
 from fastmcp.tools import ToolResult
 
 VIEW_URI: str = "ui://qr-server/view.html"

@@ -6,8 +6,8 @@ from contextlib import asynccontextmanager
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
+from fastmcp.server import create_proxy
 from fastmcp.server.providers import FastMCPProvider
-from fastmcp.server.providers.proxy import FastMCPProxy
 from fastmcp.server.providers.wrapped_provider import _WrappedProvider
 from fastmcp.server.transforms import Namespace
 
@@ -25,7 +25,7 @@ class TestProxyServer:
             return f"Data for {query}"
 
         # Create proxy server
-        proxy_server = FastMCP.as_proxy(FastMCPTransport(original_server))
+        proxy_server = create_proxy(FastMCPTransport(original_server))
 
         # Mount proxy server
         main_app = FastMCP("MainApp")
@@ -45,7 +45,7 @@ class TestProxyServer:
         original_server = FastMCP("OriginalServer")
 
         # Create proxy server
-        proxy_server = FastMCP.as_proxy(FastMCPTransport(original_server))
+        proxy_server = create_proxy(FastMCPTransport(original_server))
 
         # Mount proxy server
         main_app = FastMCP("MainApp")
@@ -74,7 +74,7 @@ class TestProxyServer:
             return json.dumps({"api_key": "12345"})
 
         # Create proxy server
-        proxy_server = FastMCP.as_proxy(FastMCPTransport(original_server))
+        proxy_server = create_proxy(FastMCPTransport(original_server))
 
         # Mount proxy server
         main_app = FastMCP("MainApp")
@@ -96,7 +96,7 @@ class TestProxyServer:
             return f"Welcome, {name}!"
 
         # Create proxy server
-        proxy_server = FastMCP.as_proxy(FastMCPTransport(original_server))
+        proxy_server = create_proxy(FastMCPTransport(original_server))
 
         # Mount proxy server
         main_app = FastMCP("MainApp")
@@ -108,10 +108,10 @@ class TestProxyServer:
         # The message should contain our welcome text
 
 
-class TestAsProxyKwarg:
-    """Test the as_proxy kwarg."""
+class TestMountProviderStructure:
+    """Test the provider structure produced by mounting."""
 
-    async def test_as_proxy_defaults_false(self):
+    async def test_mount_wraps_in_fastmcp_provider(self):
         mcp = FastMCP("Main")
         sub = FastMCP("Sub")
 
@@ -129,53 +129,6 @@ class TestAsProxyKwarg:
         # Inner provider is FastMCPProvider
         assert isinstance(provider._inner, FastMCPProvider)
         assert provider._inner.server is sub
-        # Verify namespace is applied
-        tools = await mcp.list_tools()
-        assert {t.name for t in tools} == {"sub_sub_tool"}
-
-    async def test_as_proxy_false(self):
-        mcp = FastMCP("Main")
-        sub = FastMCP("Sub")
-
-        @sub.tool
-        def sub_tool() -> str:
-            return "test"
-
-        mcp.mount(sub, "sub", as_proxy=False)
-
-        # Index 1 because LocalProvider is at index 0
-        provider = mcp.providers[1]
-        # Provider is wrapped with Namespace transform
-        assert isinstance(provider, _WrappedProvider)
-        assert len(provider._transforms) == 1
-        assert isinstance(provider._transforms[0], Namespace)
-        # Inner provider is FastMCPProvider
-        assert isinstance(provider._inner, FastMCPProvider)
-        assert provider._inner.server is sub
-        # Verify namespace is applied
-        tools = await mcp.list_tools()
-        assert {t.name for t in tools} == {"sub_sub_tool"}
-
-    async def test_as_proxy_true(self):
-        mcp = FastMCP("Main")
-        sub = FastMCP("Sub")
-
-        @sub.tool
-        def sub_tool() -> str:
-            return "test"
-
-        mcp.mount(sub, "sub", as_proxy=True)
-
-        # Index 1 because LocalProvider is at index 0
-        provider = mcp.providers[1]
-        # Provider is wrapped with Namespace transform
-        assert isinstance(provider, _WrappedProvider)
-        assert len(provider._transforms) == 1
-        assert isinstance(provider._transforms[0], Namespace)
-        # Inner provider is FastMCPProvider wrapping a proxy
-        assert isinstance(provider._inner, FastMCPProvider)
-        assert provider._inner.server is not sub
-        assert isinstance(provider._inner.server, FastMCPProxy)
         # Verify namespace is applied
         tools = await mcp.list_tools()
         assert {t.name for t in tools} == {"sub_sub_tool"}
@@ -214,10 +167,10 @@ class TestAsProxyKwarg:
         tools = await mcp.list_tools()
         assert {t.name for t in tools} == {"sub_sub_tool"}
 
-    async def test_as_proxy_ignored_for_proxy_mounts_default(self):
+    async def test_mounting_a_proxy_preserves_the_proxy(self):
         mcp = FastMCP("Main")
         sub = FastMCP("Sub")
-        sub_proxy = FastMCP.as_proxy(FastMCPTransport(sub))
+        sub_proxy = create_proxy(FastMCPTransport(sub))
 
         mcp.mount(sub_proxy, "sub")
 
@@ -231,45 +184,11 @@ class TestAsProxyKwarg:
         assert isinstance(provider._inner, FastMCPProvider)
         assert provider._inner.server is sub_proxy
 
-    async def test_as_proxy_ignored_for_proxy_mounts_false(self):
-        mcp = FastMCP("Main")
-        sub = FastMCP("Sub")
-        sub_proxy = FastMCP.as_proxy(FastMCPTransport(sub))
-
-        mcp.mount(sub_proxy, "sub", as_proxy=False)
-
-        # Index 1 because LocalProvider is at index 0
-        provider = mcp.providers[1]
-        # Provider is wrapped with Namespace transform
-        assert isinstance(provider, _WrappedProvider)
-        assert len(provider._transforms) == 1
-        assert isinstance(provider._transforms[0], Namespace)
-        # Inner provider is FastMCPProvider
-        assert isinstance(provider._inner, FastMCPProvider)
-        assert provider._inner.server is sub_proxy
-
-    async def test_as_proxy_ignored_for_proxy_mounts_true(self):
-        mcp = FastMCP("Main")
-        sub = FastMCP("Sub")
-        sub_proxy = FastMCP.as_proxy(FastMCPTransport(sub))
-
-        mcp.mount(sub_proxy, "sub", as_proxy=True)
-
-        # Index 1 because LocalProvider is at index 0
-        provider = mcp.providers[1]
-        # Provider is wrapped with Namespace transform
-        assert isinstance(provider, _WrappedProvider)
-        assert len(provider._transforms) == 1
-        assert isinstance(provider._transforms[0], Namespace)
-        # Inner provider is FastMCPProvider
-        assert isinstance(provider._inner, FastMCPProvider)
-        assert provider._inner.server is sub_proxy
-
-    async def test_as_proxy_mounts_still_have_live_link(self):
+    async def test_mounts_have_live_link(self):
         mcp = FastMCP("Main")
         sub = FastMCP("Sub")
 
-        mcp.mount(sub, "sub", as_proxy=True)
+        mcp.mount(sub, "sub")
 
         assert len(await mcp.list_tools()) == 0
 
@@ -294,7 +213,7 @@ class TestAsProxyKwarg:
         def hello():
             return "hi"
 
-        mcp.mount(sub, as_proxy=True)
+        mcp.mount(sub)
 
         assert lifespan_check == []
 

@@ -146,6 +146,18 @@ Resources and prompts have **no `task` field** on their params in b1, so task-au
 
 *Verify:* `fastmcp_slim/fastmcp/_sdk_patches.py`, `server/tasks/*`.
 
+### Single SERVER span per request — Absorbed (post-migration fix)
+
+SDK v2 seeds an `OpenTelemetryMiddleware` into every lowlevel `Server`, so each inbound request already emits a SERVER span. FastMCP emits its own richer SERVER span per request (with `fastmcp.*` and auth/session attributes), so a server with an OTel exporter installed would export **two** SERVER spans per request under different attribute conventions. `LowLevelServer.__init__` now drops the SDK's seeded `OpenTelemetryMiddleware` (matched by type, not position, leaving any other seeded middleware intact) and keeps FastMCP's spans. Inbound W3C trace-context extraction is unaffected — FastMCP's telemetry reads `traceparent` from `_meta` itself, so distributed traces still link client to server. Client-side is not double-counted: the SDK's `ClientSession` emits a low-level `MCP send <method>` CLIENT span that nests *under* FastMCP's high-level client span, a legitimate parent/child hierarchy rather than a duplicate.
+
+*Verify:* `fastmcp_slim/fastmcp/server/low_level.py` (the `OpenTelemetryMiddleware` filter); `tests/server/telemetry/test_server_tracing.py::TestSingleServerSpan`.
+
+### Spec-correct error codes via a central translator — Breaking (wire error code)
+
+Resource-not-found responses from the core `resources/read` handler previously used `-32002`. SEP-2164 (and the SDK's own mcpserver, which maps `ResourceNotFoundError` → `INVALID_PARAMS`) makes this `-32602`. The per-adapter `MCPError(code=..., ...)` literals in `server/mixins/mcp_operations.py` are replaced by a single `fastmcp.exceptions.to_mcp_error()` translator that maps FastMCP's public exceptions to the `mcp_types` code constants (`NotFoundError`/`DisabledError`/`ValidationError` → `INVALID_PARAMS`, else `INTERNAL_ERROR`). Clients that string-matched on the old `-32002` for resource-not-found must switch to `-32602`; the human-readable message ("Resource not found: ...") is unchanged. The opt-in `ErrorHandlingMiddleware`, which has its own documented per-method-prefix code mapping, is intentionally left as-is.
+
+*Verify:* `fastmcp_slim/fastmcp/exceptions.py` (`to_mcp_error`); `fastmcp_slim/fastmcp/server/mixins/mcp_operations.py`; `tests/test_exceptions.py`.
+
 ## Client
 
 The `fastmcp.Client` public API is preserved exactly. The client stays a wrapper around `mcp.ClientSession` in legacy/handshake mode; the first-class `mcp.client.Client` is deliberately not adopted in this PR.
@@ -245,23 +257,31 @@ The push-style Context features that require the server to call back into the cl
 | `ctx.info` / logging notifications | Supported | Supported |
 | Tools, resources, prompts, completions | Supported | Supported |
 | `ctx.elicit` | Supported | Not yet — MRTR rewrite pending |
-| `ctx.sample` | Supported | Not yet — being removed in 4.0 |
+| `ctx.sample` / `ctx.sample_step` | Supported (deprecated) | Removed — call an LLM server-side |
 | `ctx.list_roots` | Supported | Not yet — MRTR rewrite pending |
 | Tasks (via the FastMCP client) | Supported | Not yet |
 
-Tools that rely on `ctx.elicit`, `ctx.sample`, or `ctx.list_roots` continue to work against clients on the session-based eras.
+Tools that rely on `ctx.elicit` or `ctx.list_roots` continue to work against clients on the session-based eras. Sampling is the exception: it is deprecated on every era and will not return on modern connections (see the Deprecated entry below).
 
-Ordinary `ctx.info` and `ctx.sample` usage now emits an SDK-level `MCPDeprecationWarning` ("The logging/sampling capability is deprecated as of 2026-07-28 (SEP-2577)"). The warnings come from the SDK, not FastMCP, and are benign — the features keep working on session-based connections per the matrix. Users will see them and wonder, so the upgrade guide calls them out explicitly.
+Ordinary `ctx.info` usage emits an SDK-level `MCPDeprecationWarning` ("The logging capability is deprecated as of 2026-07-28 (SEP-2577)"). That warning comes from the SDK, not FastMCP, and is benign — logging keeps working on session-based connections per the matrix. `ctx.sample`/`ctx.sample_step` additionally emit a FastMCP-owned `FastMCPDeprecationWarning` (see below). The upgrade guide calls both out explicitly.
 
 Wire interop across the transition is verified: a 3.4.3 client against a v4 server and a v4 client against a 3.4.3 server are bidirectionally clean across 9 operations over HTTP (WS2).
 
 *Verify:* `docs/getting-started/upgrading/from-fastmcp-3.mdx` (the published matrix and SDK-warning note), `tests/server/test_protocol_eras.py`.
 
-### Push-feature degradation quality — Known gap
+### Sampling deprecated, era-gated — Deprecated
 
-The degradation error differs by feature on a `2026-07-28` connection: `ctx.list_roots` raises a clear `NoBackChannelError`, while `ctx.elicit` / `ctx.sample` surface a bare "Method not found" because those methods were removed from the 2026 server-request registry. This is sdk-feedback #10 and is captured by a strict xfail in `test_protocol_eras.py`. FastMCP's planned fix is to era-gate `ctx.elicit`/`ctx.sample` to raise a clear message before the wire.
+`ctx.sample()` and `ctx.sample_step()` are deprecated and slated for removal in a future FastMCP release. Server-initiated sampling relies on the `createMessage` back-channel that SEP-2577 removed from the wire as of `2026-07-28`, and unlike elicitation it has no multi-round-trip replacement (the agentic loop would exhaust the round-trip budget). Both methods now emit a `FastMCPDeprecationWarning` once per process (gated on `settings.deprecation_warnings`), and on a `2026-07-28` connection they raise a clear `ToolError` before touching the wire. The client-side sampling handler infrastructure (anthropic/openai/google_genai) is retained for future MRTR work and is not deprecated. The migration is to call an LLM directly from your server rather than borrowing the client's model.
 
-*Verify:* `tests/server/test_protocol_eras.py:319` (strict xfail referencing sdk-feedback #10).
+The dead TODO at `server/context.py` (a background-task sampling relay that was never built) is removed: that relay is not being built, so the note is gone rather than left as a promise.
+
+*Verify:* `fastmcp_slim/fastmcp/server/context.py` (`_warn_sampling_deprecated`, `_is_modern_protocol`, the `sample`/`sample_step` gates), `docs/servers/sampling.mdx` (deprecation banner), `tests/server/test_protocol_eras.py` (warning + era-gate tests).
+
+### Push-feature degradation quality — Resolved (was sdk-feedback #10)
+
+On a `2026-07-28` connection the degradation error used to differ by feature: `ctx.list_roots` raised a clear `NoBackChannelError`, while `ctx.elicit` / `ctx.sample` surfaced a bare "Method not found" because those methods attach a `related_request_id` and reach client dispatch before failing. FastMCP now era-gates `ctx.elicit` and `ctx.sample`/`ctx.sample_step` to raise a clear, era-aware `ToolError` before the wire ("server-initiated sampling is not available on MCP 2026-07-28 connections…" and "elicitation via server-initiated requests is unavailable on 2026-07-28 connections."). The strict xfail that captured #10 is flipped to a passing test.
+
+*Verify:* `tests/server/test_protocol_eras.py` (`test_elicit_sample_degradation_message_is_clear_on_modern`, now a real test), `server/context.py` (era gates).
 
 ### The xfail register — Known gap
 
@@ -273,6 +293,42 @@ FastMCP retains hardening that is not yet upstream and does not remove it during
 
 ### Retained OAuth / DCR hardening — Absorbed
 
-FastMCP keeps its own DCR redirect-URI hardening (PRs #4419, #4408) regardless of the SDK's validation, which still accepts unsafe `javascript:`/`data:` redirect schemes at the model level (sdk-feedback #4). The streamable-HTTP DNS-rebinding protection above is a second retained security surface. When HTTP convergence lands in v4, FastMCP would additionally *inherit* the SDK's session-owner credential enforcement — a security gain it lacks today (see [Feature Program](/development/v4-notes/feature-program)).
+FastMCP keeps its own DCR redirect-URI hardening (PRs #4419, #4408) regardless of the SDK's validation, which still accepts unsafe `javascript:`/`data:` redirect schemes at the model level (sdk-feedback #4). The streamable-HTTP DNS-rebinding protection above is a second retained security surface.
 
 *Verify:* recent commits `67527c1f` (block unsafe OAuth redirect schemes), `57a27992` (DNS rebinding), `cccb529f` (DCR redirect URI validation) on `main`.
+
+## Removed in 4.0
+
+Deprecations that warned in 3.x are removed in 4.0. Each entry below is a hard removal — the old surface raises `TypeError` / `AttributeError` rather than warning, unless noted otherwise.
+
+### Module and class shims
+
+- **`fastmcp.server.proxy`** (deprecated 3.0) — Breaking. Import proxy classes (`FastMCPProxy`, `ProxyClient`, etc.) from `fastmcp.server.providers.proxy` instead.
+- **`fastmcp.server.openapi`** and its submodules (`server`, `components`, `routing`), including the **`FastMCPOpenAPI`** class (deprecated 3.0) — Breaking. Use `FastMCP` with an `OpenAPIProvider` from `fastmcp.server.providers.openapi` instead.
+- **`fastmcp.experimental.server.openapi`** and **`fastmcp.experimental.utilities.openapi`** shims (deprecated 2.14) — Breaking. Import from `fastmcp.server.providers.openapi` and `fastmcp.utilities.openapi` respectively.
+- **`fastmcp.server.apps`** and **`fastmcp.server.app`** shims (deprecated 3.2) — Breaking. Import from `fastmcp.apps` (e.g. `AppConfig`) or `fastmcp` (`FastMCPApp`) instead.
+- **`PromptToolMiddleware`** and **`ResourceToolMiddleware`** (deprecated 3.1) — Breaking. Use the `PromptsAsTools` / `ResourcesAsTools` transforms from `fastmcp.server.transforms` instead. The non-deprecated `ToolInjectionMiddleware` base class is retained.
+- **`StreamableHttpTransport(sse_read_timeout=...)`** (deprecated no-op) — Breaking. The parameter had no effect under the SDK v2 client; configure timeouts via `read_timeout_seconds` in `session_kwargs` or on the httpx client via `httpx_client_factory`. `SSETransport` still accepts `sse_read_timeout`.
+
+### `FastMCP` server methods and `mount()` kwargs
+
+The following `FastMCP` methods and parameters, deprecated since 3.0, are removed:
+
+- `FastMCP.as_proxy(...)` → `create_proxy(...)` (`from fastmcp.server import create_proxy`)
+- `FastMCP.import_server(sub)` → `mount(sub)`
+- `mount(prefix=...)` → `mount(namespace=...)`
+- `mount(as_proxy=...)` — removed; mounts always invoke the child's lifespan and middleware, so the flag was already meaningless. To proxy a server, wrap it with `create_proxy()` before mounting.
+- `FastMCP.add_tool_transformation(name, config)` → `add_transform(ToolTransform({name: config}))`
+- `FastMCP.remove_tool_transformation(name)` — removed; it was a no-op that only warned (transforms are immutable once added). Use `server.disable(keys=[...])` to hide tools.
+- `FastMCP.remove_tool(name)` → `mcp.local_provider.remove_tool(name)`
+
+The `_REMOVED_KWARGS` constructor shim (which raises helpful `TypeError`s for kwargs removed in 3.0) is retained through 4.0.
+
+### Tool and component parameters
+
+- **Tool-level `serializer` parameter** — removed from `@tool` / `mcp.tool()`, `Tool.from_function`, `Tool.from_tool`, `TransformedTool.from_tool`, the OpenAPI `OpenAPITool`, and the `mcp_mixin` tool decorator. Return a `ToolResult` from your tool for full control over serialization instead (see [Custom Serialization](/servers/tools#custom-serialization)). The server-level `tool_serializer` constructor kwarg was already removed in 3.0.
+- **Tool `exclude_args` parameter** — removed from the tool decorator and its plumbing (`ParsedFunction.from_function`, `Tool.from_function`, `mcp.tool()`). Use dependency injection with `Depends()` to hide parameters from the tool schema instead.
+- **`decorator_mode` setting** (`FASTMCP_DECORATOR_MODE`) and its `"object"` mode — removed. Decorators always return the original function with metadata attached; the object-returning machinery is gone. Access component objects through the server (e.g. `await mcp.get_tool("name")`) rather than the decorated function.
+- **Component-import compatibility shims** — the `__getattr__` shims that re-exported `FunctionTool` / `ParsedFunction` / `tool` from `fastmcp.tools.tool`, `FunctionResource` / `resource` from `fastmcp.resources.resource`, and `FunctionPrompt` / `prompt` from `fastmcp.prompts.prompt` are removed. Import these from their canonical modules (`fastmcp.tools.function_tool`, `fastmcp.resources.function_resource`, `fastmcp.prompts.function_prompt`) instead.
+
+*Verify:* deletions of `fastmcp_slim/fastmcp/server/proxy.py`, `fastmcp_slim/fastmcp/server/openapi/`, `fastmcp_slim/fastmcp/experimental/server/openapi/`, `fastmcp_slim/fastmcp/experimental/utilities/openapi/`, `fastmcp_slim/fastmcp/server/apps.py`, `fastmcp_slim/fastmcp/server/app.py`; the removed classes in `fastmcp_slim/fastmcp/server/middleware/tool_injection.py`; the removed parameter in `fastmcp_slim/fastmcp/client/transports/http.py`; `fastmcp_slim/fastmcp/server/server.py`; `fastmcp_slim/fastmcp/tools/base.py`, `tools/function_tool.py`, `tools/tool_transform.py`, `tools/function_parsing.py`; `fastmcp_slim/fastmcp/settings.py`, `resources/function_resource.py`, `prompts/function_prompt.py`, and the local-provider decorators; `resources/base.py`, `prompts/base.py`.

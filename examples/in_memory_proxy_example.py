@@ -3,7 +3,7 @@ This example demonstrates how to set up and use an in-memory FastMCP proxy.
 
 It illustrates the pattern:
 1. Create an original FastMCP server with some tools.
-2. Create a proxy FastMCP server using ``FastMCP.as_proxy(original_server)``.
+2. Create a proxy FastMCP server using ``create_proxy(original_server)``.
 3. Use another Client to connect to the proxy server (in-memory) and interact with the original server's tools through the proxy.
 """
 
@@ -11,6 +11,7 @@ import asyncio
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.server import create_proxy
 from fastmcp.types import TextContent
 
 
@@ -36,10 +37,8 @@ async def main():
 
     # 2. Proxy Server Creation
     print("\nStep 2: Creating the Proxy Server (InMemoryProxy)...")
-    print(
-        f"          (Using FastMCP.as_proxy to wrap '{original_server.name}' directly)"
-    )
-    proxy_server = FastMCP.as_proxy(original_server, name="InMemoryProxy")
+    print(f"          (Using create_proxy to wrap '{original_server.name}' directly)")
+    proxy_server = create_proxy(original_server, name="InMemoryProxy")
     print(
         f"   -> Proxy Server '{proxy_server.name}' created, proxying '{original_server.name}'."
     )
@@ -64,8 +63,10 @@ async def main():
         print(f"\n   Calling 'echo' tool via proxy with message: '{message_to_echo}'")
         try:
             result = await final_client.call_tool("echo", {"message": message_to_echo})
-            if result and isinstance(result[0], TextContent):
-                print(f"      Result from proxied 'echo' call: '{result[0].text}'")
+            if result.content and isinstance(result.content[0], TextContent):
+                print(
+                    f"      Result from proxied 'echo' call: '{result.content[0].text}'"
+                )
             else:
                 print(
                     f"      Error: Unexpected result format from proxied 'echo' call: {result}"

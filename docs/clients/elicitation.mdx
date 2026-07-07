@@ -136,3 +136,20 @@ client = Client(
     elicitation_handler=elicitation_handler
 )
 ```
+
+## Input-required rounds
+
+<VersionBadge version="4.0.0" />
+
+Modern-era servers (protocol version `2026-07-28` and later) can pause a `call_tool`, `get_prompt`, or `read_resource` call to ask for input before producing a final result. When this happens, the client answers each round automatically using the callbacks you already configured — your `elicitation_handler`, `sampling_handler`, and roots — and retries until the call reaches a terminal result. No extra wiring is needed beyond the handlers described above.
+
+The `input_required_max_rounds` parameter caps how many rounds the client will answer before giving up, guarding against a server that never terminates. It defaults to `10`.
+
+```python
+client = Client(
+    "https://example.com/mcp",
+    mode="auto",
+    elicitation_handler=elicitation_handler,
+    input_required_max_rounds=5,
+)
+```

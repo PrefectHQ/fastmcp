@@ -5,7 +5,6 @@ from __future__ import annotations
 import functools
 import inspect
 import json
-import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from types import MethodType
@@ -24,9 +23,7 @@ import pydantic_core
 from mcp_types import Icon
 from pydantic.json_schema import SkipJsonSchema
 
-import fastmcp
-from fastmcp.decorators import resolve_task_config
-from fastmcp.exceptions import FastMCPDeprecationWarning, FastMCPError, PromptError
+from fastmcp.exceptions import FastMCPError, PromptError
 from fastmcp.prompts.base import Prompt, PromptArgument, PromptResult
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
@@ -457,23 +454,6 @@ def prompt(
             "See https://gofastmcp.com/servers/prompts#using-with-methods"
         )
 
-    def create_prompt(
-        fn: Callable[..., Any], prompt_name: str | None
-    ) -> FunctionPrompt:
-        # Create metadata first, then pass it
-        prompt_meta = PromptMeta(
-            name=prompt_name,
-            version=version,
-            title=title,
-            description=description,
-            icons=icons,
-            tags=tags,
-            meta=meta,
-            task=resolve_task_config(task),
-            auth=auth,
-        )
-        return FunctionPrompt.from_function(fn, metadata=prompt_meta)
-
     def attach_metadata(fn: F, prompt_name: str | None) -> F:
         metadata = PromptMeta(
             name=prompt_name,
@@ -491,14 +471,6 @@ def prompt(
         return fn
 
     def decorator(fn: F, prompt_name: str | None) -> F:
-        if fastmcp.settings.decorator_mode == "object":
-            warnings.warn(
-                "decorator_mode='object' is deprecated and will be removed in a future version. "
-                "Decorators now return the original function with metadata attached.",
-                FastMCPDeprecationWarning,
-                stacklevel=4,
-            )
-            return create_prompt(fn, prompt_name)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
         return attach_metadata(fn, prompt_name)
 
     if inspect.isroutine(name_or_fn):

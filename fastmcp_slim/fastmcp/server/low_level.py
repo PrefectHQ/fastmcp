@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, cast
 
 import mcp_types
+from mcp.server._otel import OpenTelemetryMiddleware
 from mcp.server.context import (
     CallNext,
     HandlerResult,
@@ -26,6 +27,7 @@ from mcp.shared.exceptions import MCPError
 from pydantic import ValidationError
 
 from fastmcp.apps.config import UI_EXTENSION_ID
+from fastmcp.server.telemetry import seam_span
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -85,7 +87,11 @@ class FastMCPServerMiddleware:
         from fastmcp.server.dependencies import bind_request_context
 
         fastmcp = self._ref()
-        with self._apply_shared_context(fastmcp), bind_request_context(ctx):
+        with (
+            self._apply_shared_context(fastmcp),
+            bind_request_context(ctx),
+            self._seam_span(fastmcp, ctx),
+        ):
             # Only initialize requests (request_id present) go through FastMCP
             # middleware here; every other request already binds the context in
             # its own adapter, so we just pass through.
@@ -93,6 +99,33 @@ class FastMCPServerMiddleware:
                 if fastmcp is not None:
                     return await self._run_initialize_mw(fastmcp, ctx, call_next)
             return await call_next(ctx)
+
+    @contextmanager
+    def _seam_span(
+        self, fastmcp: FastMCP | None, ctx: ServerRequestContext
+    ) -> Iterator[None]:
+        """Open the per-request SERVER span at the middleware seam.
+
+        The removed SDK ``OpenTelemetryMiddleware`` produced one SERVER span per
+        inbound message. FastMCP re-creates that guarantee for *every* request
+        method here — the last place shared by all request methods regardless of
+        how their handler is registered — so a request rejected *before* the
+        high-level path (FastMCP middleware, auth check, not-found mapping,
+        params failure) is still traced with an error span.
+
+        For the high-level methods (tools/resources/prompts), the deep
+        ``server_span(...)`` call in ``fastmcp.server.server`` detects this seam
+        span as the active span and *enriches* it in place with component
+        attributes instead of opening a second span, so there is exactly one
+        richly-attributed SERVER span per request. Notifications
+        (``request_id is None``) are skipped — a SERVER span models an inbound
+        request/response, not a fire-and-forget notification.
+        """
+        if fastmcp is None or ctx.request_id is None:
+            yield
+            return
+        with seam_span(ctx.method, fastmcp.name):
+            yield
 
     @contextmanager
     def _apply_shared_context(self, fastmcp: FastMCP | None) -> Iterator[None]:
@@ -205,8 +238,20 @@ class LowLevelServer(_Server[LifespanResultT]):
             tools_changed=True,
         )
 
-        # Route initialize through FastMCP middleware. Append so the SDK's
-        # seeded OpenTelemetryMiddleware stays outermost and keeps emitting spans.
+        # The SDK seeds `OpenTelemetryMiddleware` into `self.middleware` so every
+        # lowlevel server emits a SERVER span per message. FastMCP emits its own,
+        # richer SERVER span per request (see `fastmcp.server.telemetry`), so the
+        # SDK's would produce a second, duplicate SERVER span with different
+        # attribute conventions for every request. Drop it — match by type rather
+        # than position so we don't depend on the SDK seeding it at index 0, and
+        # leave any other seeded middleware intact. FastMCP's telemetry extracts
+        # inbound W3C trace context from `_meta` itself, so distributed-trace
+        # propagation is unaffected.
+        self.middleware = [
+            mw for mw in self.middleware if not isinstance(mw, OpenTelemetryMiddleware)
+        ]
+
+        # Route initialize through FastMCP middleware.
         self.middleware.append(
             cast("ServerMiddleware[LifespanResultT]", FastMCPServerMiddleware(fastmcp))
         )

@@ -16,6 +16,7 @@ from fastmcp.client.elicitation import ElicitRequestParams, ElicitResult
 from fastmcp.client.logging import LogMessage
 from fastmcp.client.sampling import RequestContext, SamplingMessage, SamplingParams
 from fastmcp.exceptions import ToolError
+from fastmcp.server import create_proxy
 from fastmcp.server.elicitation import AcceptedElicitation
 from fastmcp.server.providers.proxy import ProxyClient, _create_client_factory
 
@@ -88,7 +89,7 @@ async def proxy_server(fastmcp_server: FastMCP):
     """
     A proxy server that forwards interactions with the proxy client to the given fastmcp server.
     """
-    return FastMCP.as_proxy(ProxyClient(fastmcp_server))
+    return create_proxy(ProxyClient(fastmcp_server))
 
 
 class TestProxyClient:
@@ -377,7 +378,7 @@ class TestProxyClient:
             else:
                 return f"Elicitation {result.action}"
 
-        proxy_server = FastMCP.as_proxy(ProxyClient(fastmcp_server))
+        proxy_server = create_proxy(ProxyClient(fastmcp_server))
 
         # Test that elicitation works correctly through the proxy
         async def elicitation_handler(
@@ -407,16 +408,16 @@ class TestProxyClient:
         # Create a disconnected client (should use fresh sessions per request)
         base_client = Client(fastmcp_server)
 
-        # Test both as_proxy convenience method and direct client_factory usage
-        proxy_via_as_proxy = FastMCP.as_proxy(base_client)
+        # Test both create_proxy convenience function and direct client_factory usage
+        proxy_via_create_proxy = create_proxy(base_client)
         proxy_via_factory = FastMCPProxy(client_factory=base_client.new)
 
         # Verify the proxies are created successfully - this tests the client factory pattern
-        assert proxy_via_as_proxy is not None
+        assert proxy_via_create_proxy is not None
         assert proxy_via_factory is not None
 
         # Verify they have the expected client factory behavior
-        assert hasattr(proxy_via_as_proxy, "_local_provider")
+        assert hasattr(proxy_via_create_proxy, "_local_provider")
         assert hasattr(proxy_via_factory, "_local_provider")
 
     async def test_connected_proxy_client_uses_fresh_sessions(
@@ -464,7 +465,7 @@ def roots_backend_server():
 
 @pytest.fixture
 async def roots_proxy_server(roots_backend_server: FastMCP):
-    return FastMCP.as_proxy(ProxyClient(roots_backend_server))
+    return create_proxy(ProxyClient(roots_backend_server))
 
 
 class TestProxyServerInitiatedForwardingNonTool:
