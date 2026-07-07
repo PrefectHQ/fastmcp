@@ -160,6 +160,80 @@ async with client:
     tools = await client.list_tools()
 ```
 
+## Protocol negotiation
+
+<VersionBadge version="4.0.0" />
+
+MCP has two protocol eras: the original *legacy* era, which begins every connection with an `initialize` handshake, and the *modern* era (protocol version `2026-07-28` and later), which a client discovers by probing the server's `server/discover` endpoint. The `mode` parameter controls which era the client negotiates when it connects.
+
+By default, `mode="legacy"`. This runs the initialize handshake and behaves identically to earlier FastMCP versions, so existing code connecting to any server keeps working unchanged.
+
+```python
+from fastmcp import Client
+
+# Legacy handshake (the default)
+client = Client("https://example.com/mcp", mode="legacy")
+```
+
+Set `mode="auto"` to negotiate the newest era the server supports. The client probes `server/discover` and adopts the modern protocol when the server responds; for any server that is not positive evidence of modern support, it falls back to the legacy handshake. This makes `"auto"` safe to use against a mixed fleet of legacy and modern servers.
+
+```python
+client = Client("https://example.com/mcp", mode="auto")
+```
+
+You can also pin a specific modern protocol version to adopt it directly, without a discovery probe:
+
+```python
+client = Client("https://example.com/mcp", mode="2026-07-28")
+```
+
+Once connected, the negotiated version and the server's advertised capabilities are available as properties. Both are populated regardless of which era was negotiated, and both are `None` while the client is disconnected.
+
+```python
+async with Client("https://example.com/mcp", mode="auto") as client:
+    print(client.protocol_version)      # e.g. "2026-07-28"
+    print(client.server_capabilities)   # ServerCapabilities | None
+```
+
+<Note>
+`mode="auto"` is not the default yet — the conservative `"legacy"` remains the default to preserve byte-identical behavior against pre-2026 servers. Whether `"auto"` becomes the default is a future release decision.
+</Note>
+
+## Response caching
+
+<VersionBadge version="4.0.0" />
+
+The client can cache the results of `list_tools`, `list_resources`, `list_prompts`, and `read_resource` so that repeated calls avoid a network round-trip. Caching is opt-in and honors the server's own cache hints, so it only takes effect against modern-era servers that advertise them — a cache is inert on a legacy connection.
+
+Enable the default in-memory cache by passing `cache=True`. It respects the `ttlMs` and `cacheScope` hints the server attaches to each response.
+
+```python
+from fastmcp import Client
+
+client = Client("https://example.com/mcp", mode="auto", cache=True)
+
+async with client:
+    tools = await client.list_tools()   # fetched from the server
+    tools = await client.list_tools()   # served from the cache
+```
+
+The default (`cache=None`) and `cache=False` both disable caching. For control over the store, TTL, or partitioning, pass a `CacheConfig`. A custom config requires a `target_id`, since in-memory FastMCP transports expose no server URL to derive a shared-store identity from.
+
+```python
+from fastmcp import Client
+from mcp.client.caching import CacheConfig
+
+config = CacheConfig(target_id="weather-api", default_ttl_ms=60_000)
+client = Client("https://example.com/mcp", mode="auto", cache=config)
+```
+
+The high-level `list_tools`, `list_resources`, `list_prompts`, and `read_resource` methods always use the cache when one is configured. To override the behavior for a single call, use the lower-level `*_mcp` variants, which accept a `cache_mode` argument: `"use"` (the default) serves and stores, `"refresh"` stores a fresh result without serving a cached one, and `"bypass"` skips the cache entirely.
+
+```python
+async with client:
+    fresh = await client.list_tools_mcp(cache_mode="refresh")
+```
+
 ## Operations
 
 FastMCP clients interact with three types of server components.
