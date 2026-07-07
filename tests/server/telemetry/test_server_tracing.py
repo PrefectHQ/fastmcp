@@ -376,12 +376,19 @@ class TestSingleServerSpan:
             await client.call_tool("greet", {"name": "World"})
 
         spans = trace_exporter.get_finished_spans()
-        tool_server_spans = [
+        # Exactly one SERVER span for the tools/call request. Match by method name
+        # (not just the "tools/call greet" name) so a seam-level span accidentally
+        # opened for this high-level method — which would be named "tools/call" —
+        # is also counted and would trip the assertion.
+        tool_call_server_spans = [
             s
             for s in spans
-            if s.kind == SpanKind.SERVER and s.name == "tools/call greet"
+            if s.kind == SpanKind.SERVER
+            and s.attributes is not None
+            and s.attributes.get("mcp.method.name") == "tools/call"
         ]
-        assert len(tool_server_spans) == 1
+        assert len(tool_call_server_spans) == 1
+        assert tool_call_server_spans[0].name == "tools/call greet"
 
     async def test_server_span_shares_client_trace(
         self, trace_exporter: InMemorySpanExporter
@@ -412,3 +419,54 @@ class TestSingleServerSpan:
         assert client_span.context is not None
         assert server_span.context.trace_id == client_span.context.trace_id
         assert server_span.parent is not None
+
+
+class TestSeamServerSpan:
+    """SERVER spans for methods outside the high-level tool/resource/prompt path.
+
+    FastMCP's rich SERVER spans are created deep in the high-level path, so
+    methods like `logging/setLevel`, `tasks/*`, `ping`, and `initialize` — which
+    never reach that code — would have no span at all once the SDK's
+    `OpenTelemetryMiddleware` is removed. The FastMCP middleware seam
+    (`FastMCPServerMiddleware`) emits a span for exactly those methods, so every
+    request method carries a SERVER span again.
+    """
+
+    async def test_set_logging_level_emits_seam_span(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        mcp = FastMCP("test-server")
+
+        async with Client(mcp) as client:
+            await client.set_logging_level("info")
+
+        spans = trace_exporter.get_finished_spans()
+        seam_spans = [
+            s
+            for s in spans
+            if s.kind == SpanKind.SERVER and s.name == "logging/setLevel"
+        ]
+        assert len(seam_spans) == 1
+        span = seam_spans[0]
+        assert span.attributes is not None
+        assert span.attributes["mcp.method.name"] == "logging/setLevel"
+        assert span.attributes["fastmcp.server.name"] == "test-server"
+
+    async def test_seam_method_emits_single_server_span(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        """A seam-spanned method must produce exactly one SERVER span, not two."""
+        mcp = FastMCP("test-server")
+
+        async with Client(mcp) as client:
+            await client.set_logging_level("info")
+
+        spans = trace_exporter.get_finished_spans()
+        set_level_server_spans = [
+            s
+            for s in spans
+            if s.kind == SpanKind.SERVER
+            and s.attributes is not None
+            and s.attributes.get("mcp.method.name") == "logging/setLevel"
+        ]
+        assert len(set_level_server_spans) == 1

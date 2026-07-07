@@ -27,6 +27,7 @@ from mcp.shared.exceptions import MCPError
 from pydantic import ValidationError
 
 from fastmcp.apps.config import UI_EXTENSION_ID
+from fastmcp.server.telemetry import server_span
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -34,6 +35,28 @@ if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
 
 logger = get_logger(__name__)
+
+
+# Methods whose SERVER span is emitted deep in the high-level FastMCP path
+# (see the `server_span(...)` call sites in `fastmcp.server.server`). Those paths
+# build spans enriched with component attributes (`fastmcp.component.key`,
+# `gen_ai.tool.name`, `mcp.resource.uri`, ...) that are only known there, so the
+# seam must NOT open a second span for them or every request would double-span.
+# Every other method (`logging/setLevel`, `tasks/*`, `completion/complete`,
+# `ping`, `initialize`, and any custom `add_request_handler` method) has no
+# high-level span, so the seam emits one for it — restoring the per-message
+# SERVER span that the removed SDK `OpenTelemetryMiddleware` used to provide.
+_HIGH_LEVEL_SPANNED_METHODS: frozenset[str] = frozenset(
+    {
+        "tools/list",
+        "tools/call",
+        "resources/list",
+        "resources/templates/list",
+        "resources/read",
+        "prompts/list",
+        "prompts/get",
+    }
+)
 
 
 def client_supports_extension(session: ServerSession, extension_id: str) -> bool:
@@ -86,7 +109,11 @@ class FastMCPServerMiddleware:
         from fastmcp.server.dependencies import bind_request_context
 
         fastmcp = self._ref()
-        with self._apply_shared_context(fastmcp), bind_request_context(ctx):
+        with (
+            self._apply_shared_context(fastmcp),
+            bind_request_context(ctx),
+            self._seam_span(fastmcp, ctx),
+        ):
             # Only initialize requests (request_id present) go through FastMCP
             # middleware here; every other request already binds the context in
             # its own adapter, so we just pass through.
@@ -94,6 +121,39 @@ class FastMCPServerMiddleware:
                 if fastmcp is not None:
                     return await self._run_initialize_mw(fastmcp, ctx, call_next)
             return await call_next(ctx)
+
+    @contextmanager
+    def _seam_span(
+        self, fastmcp: FastMCP | None, ctx: ServerRequestContext
+    ) -> Iterator[None]:
+        """Emit a SERVER span at the middleware seam for methods the high-level
+        path does not already span.
+
+        The removed SDK ``OpenTelemetryMiddleware`` produced one SERVER span per
+        inbound message. FastMCP re-creates that guarantee for *requests*: methods
+        that open their own richer span deep in the high-level path
+        (``_HIGH_LEVEL_SPANNED_METHODS``) are left alone to avoid double-spanning;
+        every other request method gets its span emitted at this seam, which is
+        the last place shared by all request methods regardless of how their
+        handler is registered. Notifications (``request_id is None``) are skipped
+        — a SERVER span models an inbound request/response, not a fire-and-forget
+        notification.
+        """
+        if (
+            fastmcp is None
+            or ctx.request_id is None
+            or ctx.method in _HIGH_LEVEL_SPANNED_METHODS
+        ):
+            yield
+            return
+        with server_span(
+            ctx.method,
+            ctx.method,
+            fastmcp.name,
+            "",
+            "",
+        ):
+            yield
 
     @contextmanager
     def _apply_shared_context(self, fastmcp: FastMCP | None) -> Iterator[None]:
