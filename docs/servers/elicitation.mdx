@@ -116,6 +116,45 @@ Elicitation requires the client to implement an elicitation handler. If a client
 
 See [Client Elicitation](/clients/elicitation) for details on how clients handle these requests.
 
+## URL Elicitation
+
+Some interactions should never pass through the model. OAuth consent screens, API-key entry, and payment flows all involve secrets or credentials that you don't want flowing through the LLM context or the MCP client's form UI. URL elicitation solves this by directing the user to visit a URL out-of-band, where the sensitive interaction happens in a real browser session. The server learns only whether the user agreed to navigate—never what they entered.
+
+Call `ctx.elicit_url()` with a message explaining why the interaction is needed and the URL the user should visit. FastMCP generates a unique elicitation ID for each call automatically.
+
+```python
+from fastmcp import FastMCP, Context
+from fastmcp.server.elicitation import (
+    AcceptedUrlElicitation,
+    DeclinedElicitation,
+    CancelledElicitation,
+)
+
+mcp = FastMCP("Payments Server")
+
+@mcp.tool
+async def connect_account(ctx: Context) -> str:
+    """Connect the user's account via an out-of-band OAuth flow."""
+    result = await ctx.elicit_url(
+        message="Authorize access to your account to continue",
+        url="https://example.com/oauth/authorize",
+    )
+
+    match result:
+        case AcceptedUrlElicitation():
+            return "Account authorization started—complete it in your browser."
+        case DeclinedElicitation():
+            return "Authorization declined"
+        case CancelledElicitation():
+            return "Authorization cancelled"
+```
+
+The result is one of `AcceptedUrlElicitation`, `DeclinedElicitation`, or `CancelledElicitation`. An accepted result means the user consented to navigate to the URL—the actual interaction (signing in, entering a key, paying) completes out-of-band in the browser, not through MCP.
+
+<Note>
+URL elicitation is not yet supported from [background tasks](/servers/tasks). Calling `ctx.elicit_url()` inside a `@mcp.tool(task=True)` tool raises `NotImplementedError`; use it from a regular tool instead.
+</Note>
+
 ## Schema and Response Types
 
 The server must send a schema to the client indicating the type of data it expects in response to the elicitation request. The MCP spec only supports a limited subset of JSON Schema types for elicitation responses—specifically JSON **objects** with **primitive** properties including `string`, `number` (or `integer`), `boolean`, and `enum` fields.

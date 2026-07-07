@@ -112,6 +112,34 @@ async def elicitation_handler(message, response_type, params, context):
 - **`decline`**: User chose not to provide the requested information. Omit `content`.
 - **`cancel`**: User cancelled the entire operation. Omit `content`.
 
+## URL Elicitation
+
+Servers can request a different kind of interaction: instead of asking the user to fill out a form, they can direct the user to visit a URL out-of-band—for OAuth consent, API-key entry, or payment. This keeps sensitive data out of the LLM context. See [URL Elicitation](/servers/elicitation#url-elicitation) on the server side for why this matters.
+
+A URL elicitation is distinguishable from a form elicitation in two ways: `response_type` is `None` (there is no schema to fill out), and `params` is an `ElicitRequestURLParams` carrying the URL the user should visit. Check for it with `isinstance`, then present the URL and return an accept/decline/cancel action—no `content` is needed for any of them.
+
+```python
+from fastmcp import Client
+from fastmcp.client.elicitation import ElicitResult, ElicitRequestURLParams
+
+async def elicitation_handler(message, response_type, params, context):
+    if isinstance(params, ElicitRequestURLParams):
+        print(f"{message}\nVisit: {params.url}")
+        approved = input("Open this URL? [y/N] ").lower() == "y"
+        return ElicitResult(action="accept" if approved else "decline")
+
+    # Otherwise this is a normal form elicitation
+    user_input = input(f"{message}: ")
+    return response_type(value=user_input)
+
+client = Client(
+    "my_mcp_server.py",
+    elicitation_handler=elicitation_handler,
+)
+```
+
+Returning `action="accept"` signals that the user consented to navigate to the URL. The actual interaction completes out-of-band in the user's browser, so your handler never sees the secrets exchanged there.
+
 ## Example
 
 A file management tool might ask which directory to create:
