@@ -607,10 +607,11 @@ def create_streamable_http_app(
                 enable_dns_rebinding_protection=False
             ),
         )
-        async with (
-            server._lifespan_manager(),
-            streamable_http_app.session_manager.run(),
-        ):
+        # The session manager's `run()` enters `server._mcp_server.lifespan`
+        # (our `_lifespan_proxy`), which now drives `server._lifespan_manager()`.
+        # Entering it here too would double-stack the same lifespan, so we let
+        # the manager own the single entry.
+        async with streamable_http_app.session_manager.run():
             try:
                 yield
             finally:

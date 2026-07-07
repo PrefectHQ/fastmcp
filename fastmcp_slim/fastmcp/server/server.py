@@ -289,17 +289,16 @@ def _lifespan_proxy(
     async def wrap(
         low_level_server: LowLevelServer[LifespanResultT],
     ) -> AsyncIterator[LifespanResultT]:
-        if fastmcp_server._lifespan is default_lifespan:
-            yield {}  # ty:ignore[invalid-yield]
-            return
-
-        if not fastmcp_server._lifespan_result_set:
-            raise RuntimeError(
-                "FastMCP server has a lifespan defined but no lifespan result is set, which means the server's context manager was not entered. "
-                " Are you running the server in a way that supports lifespans? If so, please file an issue at https://github.com/PrefectHQ/fastmcp/issues."
-            )
-
-        yield fastmcp_server._lifespan_result  # ty:ignore[invalid-yield]
+        # Drive the FastMCP lifespan rather than merely reading it back. The
+        # SDK enters this proxy exactly once per manager/server run (via
+        # ``StreamableHTTPSessionManager.run`` → ``app.lifespan(app)`` or
+        # ``Server.run`` → ``self.lifespan(self)``) and reuses the yielded
+        # state for every session. ``_lifespan_manager`` is ref-counted, so
+        # when an outer caller (``run_http_async``/``run_stdio_async``) has
+        # already entered it, this nested entry reuses the existing result
+        # instead of re-running setup.
+        async with fastmcp_server._lifespan_manager():
+            yield fastmcp_server._lifespan_result  # ty:ignore[invalid-yield]
 
     return wrap
 
