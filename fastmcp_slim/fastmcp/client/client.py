@@ -17,12 +17,14 @@ import httpx
 import mcp_types
 from exceptiongroup import catch
 from mcp import ClientSession, MCPError
+from mcp.client._probe import negotiate_auto
 from mcp.client.extension import NotificationBinding
 from mcp_types import (
     GetTaskResult,
     TaskStatusNotification,
     TaskStatusNotificationParams,
 )
+from mcp_types.version import HANDSHAKE_PROTOCOL_VERSIONS, MODERN_PROTOCOL_VERSIONS
 from pydantic import AnyUrl
 
 import fastmcp as fastmcp
@@ -99,6 +101,36 @@ logger = get_logger(__name__)
 
 T = TypeVar("T", bound="ClientTransport")
 ResultT = TypeVar("ResultT")
+
+ConnectMode = Literal["legacy", "auto"] | str
+"""How the client negotiates the protocol era at connect time.
+
+- ``"legacy"`` (the current default): the classic initialize handshake, byte-identical
+  to pre-v4 behavior for handshake-era servers.
+- ``"auto"``: probe ``server/discover`` at the newest modern version and adopt it, falling
+  back to the initialize handshake for any server that is not positive evidence of a modern
+  peer (a denylist fallback — see the SDK's ``negotiate_auto``).
+- a modern protocol-version string (e.g. ``"2026-07-28"``): adopt that version directly
+  without probing, synthesizing a minimal ``DiscoverResult`` when none is supplied.
+
+The ``str`` arm is only for the version-pin case; ``Client.__init__`` rejects any other value.
+"""
+
+
+def _synthesize_discover(protocol_version: str) -> mcp_types.DiscoverResult:
+    """Build a minimal ``DiscoverResult`` for a pinned modern version (no wire probe).
+
+    Mirrors the SDK Client's ``_synthesize_discover``: the version is pinned but the
+    server identity is unknown, so ``server_info`` is empty.
+    """
+    return mcp_types.DiscoverResult(
+        supported_versions=[protocol_version],
+        capabilities=mcp_types.ServerCapabilities(),
+        server_info=mcp_types.Implementation(name="", version=""),
+        result_type="complete",
+        ttl_ms=0,
+        cache_scope="public",
+    )
 
 
 @dataclass
@@ -269,8 +301,23 @@ class Client(
         client_info: mcp_types.Implementation | None = None,
         auth: httpx.Auth | Literal["oauth"] | str | None = None,
         verify: ssl.SSLContext | bool | str | None = None,
+        mode: ConnectMode = "legacy",
+        prior_discover: mcp_types.DiscoverResult | None = None,
     ) -> None:
         self.name = name or self.generate_name()
+
+        if mode not in ("legacy", "auto") and mode not in MODERN_PROTOCOL_VERSIONS:
+            hint = (
+                f" ({mode!r} is a handshake-era version; use mode='legacy')"
+                if mode in HANDSHAKE_PROTOCOL_VERSIONS
+                else ""
+            )
+            raise ValueError(
+                "mode must be 'legacy', 'auto', or one of "
+                f"{list(MODERN_PROTOCOL_VERSIONS)}; got {mode!r}{hint}"
+            )
+        self.mode: ConnectMode = mode
+        self._prior_discover = prior_discover
 
         self.transport = cast(ClientTransportT, infer_transport(transport))
 
@@ -391,8 +438,33 @@ class Client(
 
     @property
     def initialize_result(self) -> mcp_types.InitializeResult | None:
-        """Get the result of the initialization request."""
+        """Get the result of the initialization request.
+
+        `None` on a modern (`server/discover`) connection, which negotiates via a
+        `DiscoverResult` rather than an `InitializeResult`. Use `protocol_version` /
+        `server_capabilities` for era-neutral access to the negotiated identity.
+        """
         return self._session_state.initialize_result
+
+    @property
+    def protocol_version(self) -> str | None:
+        """The negotiated protocol version, or `None` when disconnected.
+
+        Set during connect-time negotiation regardless of era: the initialize
+        handshake, `server/discover`, or a direct version pin all populate it.
+        """
+        session = self._session_state.session
+        return session.protocol_version if session is not None else None
+
+    @property
+    def server_capabilities(self) -> mcp_types.ServerCapabilities | None:
+        """The server's advertised capabilities, or `None` when disconnected.
+
+        Populated from whichever negotiation result the era produced (the
+        `InitializeResult` on legacy, the `DiscoverResult` on modern).
+        """
+        session = self._session_state.session
+        return session.server_capabilities if session is not None else None
 
     def set_roots(self, roots: RootsList | RootsHandler) -> None:
         """Set the roots for the client. This does not automatically call `send_roots_list_changed`."""
@@ -483,12 +555,57 @@ class Client(
                 # Initialize the session if auto_initialize is enabled
                 try:
                     if self.auto_initialize:
-                        await self.initialize()
+                        await self._negotiate()
                     yield
                 except anyio.ClosedResourceError as e:
                     raise RuntimeError("Server session was closed unexpectedly") from e
                 finally:
                     self._reset_session_state()
+
+    async def _negotiate(
+        self,
+        timeout: datetime.timedelta | float | int | None = None,
+    ) -> None:
+        """Run the connect-time protocol negotiation dictated by ``self.mode``.
+
+        - ``"legacy"``: today's initialize handshake (populates ``initialize_result``).
+        - ``"auto"``: probe ``server/discover`` at the newest modern version and adopt it,
+          denylist-falling-back to the initialize handshake for handshake-era servers.
+        - a modern version string: adopt that version directly (from ``prior_discover`` if
+          supplied, else a synthesized minimal ``DiscoverResult``).
+
+        Idempotent: once the session has a negotiated protocol version, this is a no-op.
+        """
+        if self.session.protocol_version is not None:
+            # Already negotiated (e.g. a manual initialize() call before context entry).
+            if self.session.initialize_result is not None:
+                self._session_state.initialize_result = self.session.initialize_result
+            return
+
+        if timeout is None:
+            timeout = self._init_timeout
+        else:
+            timeout = normalize_timeout_to_seconds(timeout)
+
+        try:
+            with anyio.fail_after(timeout):
+                if self.mode == "legacy":
+                    self._session_state.initialize_result = (
+                        await self.session.initialize()
+                    )
+                elif self.mode == "auto":
+                    await negotiate_auto(self.session)
+                    # auto may have fallen back to the legacy handshake; surface its
+                    # InitializeResult through the existing public property when so.
+                    self._session_state.initialize_result = (
+                        self.session.initialize_result
+                    )
+                else:
+                    self.session.adopt(
+                        self._prior_discover or _synthesize_discover(self.mode)
+                    )
+        except TimeoutError as e:
+            raise RuntimeError("Failed to initialize server session") from e
 
     async def initialize(
         self,
@@ -504,6 +621,11 @@ class Client(
         manager unless `auto_initialize=False` was set during client construction.
         Manual calls to this method are only needed when auto-initialization is disabled.
 
+        With `mode="auto"` or a pinned modern version, connect-time negotiation may adopt
+        the modern `server/discover` era, which has no `InitializeResult`; in that case
+        this method raises. Read `protocol_version` / `server_capabilities` instead, or use
+        `mode="legacy"` (the default) when you need the handshake result.
+
         Args:
             timeout: Optional timeout for the initialization request (seconds or timedelta).
                 If None, uses the client's init_timeout setting.
@@ -513,7 +635,8 @@ class Client(
                 capabilities, protocol version, and optional instructions.
 
         Raises:
-            RuntimeError: If the client is not connected or initialization times out.
+            RuntimeError: If the client is not connected, initialization times out, or the
+                negotiated era carries no `InitializeResult` (a modern `discover` connection).
 
         Example:
             ```python
@@ -529,17 +652,15 @@ class Client(
         if self.initialize_result is not None:
             return self.initialize_result
 
-        if timeout is None:
-            timeout = self._init_timeout
-        else:
-            timeout = normalize_timeout_to_seconds(timeout)
+        await self._negotiate(timeout=timeout)
 
-        try:
-            with anyio.fail_after(timeout):
-                self._session_state.initialize_result = await self.session.initialize()
-                return self._session_state.initialize_result
-        except TimeoutError as e:
-            raise RuntimeError("Failed to initialize server session") from e
+        if self.initialize_result is None:
+            raise RuntimeError(
+                "The client negotiated a modern protocol era (server/discover), which has "
+                "no InitializeResult. Read client.protocol_version / client.server_capabilities "
+                "instead, or construct the client with mode='legacy'."
+            )
+        return self.initialize_result
 
     async def __aenter__(self):
         return await self._connect()
