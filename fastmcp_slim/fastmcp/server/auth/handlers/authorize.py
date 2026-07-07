@@ -191,6 +191,7 @@ class AuthorizationHandler(SDKAuthorizationHandler):
             server_icon_url: Optional server icon URL for branding
         """
         super().__init__(provider)
+        self._issuer = str(base_url)
         self._base_url = str(base_url).rstrip("/")
         self._server_name = server_name
         self._server_icon_url = server_icon_url
@@ -215,7 +216,7 @@ class AuthorizationHandler(SDKAuthorizationHandler):
             redirect_url = response.headers["location"]
             if "error" in parse_qs(urlparse(redirect_url).query):
                 response.headers["location"] = add_query_params(
-                    redirect_url, {"iss": f"{self._base_url}/"}
+                    redirect_url, {"iss": self._issuer}
                 )
 
         # Check if this is a client not found error

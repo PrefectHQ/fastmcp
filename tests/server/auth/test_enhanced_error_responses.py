@@ -186,6 +186,59 @@ class TestEnhancedAuthorizationHandler:
             assert query_params["state"] == ["test-state"]
             assert query_params["iss"] == ["https://myserver.com/"]
 
+    def test_redirect_error_matches_path_base_url_metadata_issuer(self, rsa_key_pair):
+        """Authorization error redirects should match the metadata issuer exactly."""
+        oauth_proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
+            upstream_token_endpoint="https://github.com/login/oauth/access_token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="test-client-secret",
+            token_verifier=JWTVerifier(
+                public_key=rsa_key_pair.public_key,
+                issuer="https://test.com",
+                audience="https://test.com",
+                base_url="https://test.com",
+            ),
+            base_url="https://proxy.example.com/oauth",
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+        )
+        app = Starlette(routes=oauth_proxy.get_routes())
+
+        client_info = OAuthClientInformationFull(
+            client_id="valid-client",
+            client_secret="valid-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+            scope="read",
+        )
+
+        asyncio.run(oauth_proxy.register_client(client_info))
+
+        with TestClient(app) as client:
+            metadata_response = client.get("/.well-known/oauth-authorization-server")
+            metadata = metadata_response.json()
+
+            response = client.get(
+                "/authorize",
+                params={
+                    "client_id": "valid-client",
+                    "redirect_uri": "http://localhost:12345/callback",
+                    "response_type": "code",
+                    "code_challenge": "test-challenge",
+                    "state": "test-state",
+                    "scope": "admin",
+                },
+                headers={"Accept": "text/html"},
+                follow_redirects=False,
+            )
+
+            assert metadata["issuer"] == "https://proxy.example.com/oauth"
+            assert response.status_code == 302
+            query_params = parse_qs(urlparse(response.headers["location"]).query)
+            assert query_params["error"] == ["invalid_scope"]
+            assert query_params["state"] == ["test-state"]
+            assert query_params["iss"] == [metadata["issuer"]]
+
     def test_html_error_includes_server_branding(self, oauth_proxy):
         """Test that HTML error page includes server branding from FastMCP instance."""
         # Create FastMCP server with custom branding
