@@ -99,9 +99,7 @@ def _build_server_span_attrs(
 def record_span_exception(span: Span, e: Exception) -> None:
     """Record an exception and error status on a span."""
     if span.is_recording():
-        error_type = (
-            "tool_error" if isinstance(e, _ToolError) else type(e).__qualname__
-        )
+        error_type = "tool_error" if isinstance(e, _ToolError) else type(e).__qualname__
         span.set_attribute("error.type", error_type)
         span.record_exception(e)
         span.set_status(Status(StatusCode.ERROR, str(e)))

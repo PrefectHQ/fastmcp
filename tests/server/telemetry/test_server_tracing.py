@@ -11,6 +11,7 @@ from opentelemetry.trace import SpanKind, StatusCode
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.server.auth import AccessToken
+from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 
 
 class TestToolTracing:
@@ -388,7 +389,16 @@ class TestSingleServerSpan:
             and s.attributes.get("mcp.method.name") == "tools/call"
         ]
         assert len(tool_call_server_spans) == 1
-        assert tool_call_server_spans[0].name == "tools/call greet"
+        span = tool_call_server_spans[0]
+        assert span.name == "tools/call greet"
+        # The single span carries the rich component attributes that the
+        # high-level path enriches the seam span with (attribute parity: the
+        # enrichment must not lose the component context by opening a second
+        # span or by leaving the seam span bare).
+        assert span.attributes is not None
+        assert span.attributes["fastmcp.component.key"] == "tool:greet@"
+        assert span.attributes["gen_ai.tool.name"] == "greet"
+        assert span.attributes["fastmcp.component.type"] == "tool"
 
     async def test_server_span_shares_client_trace(
         self, trace_exporter: InMemorySpanExporter
@@ -470,3 +480,98 @@ class TestSeamServerSpan:
             and s.attributes.get("mcp.method.name") == "logging/setLevel"
         ]
         assert len(set_level_server_spans) == 1
+
+
+class TestFailurePathServerSpan:
+    """A tools/call rejected before the high-level handler must still be traced.
+
+    The rich SERVER span for tools/call is created deep in the high-level path,
+    after FastMCP middleware runs. A request rejected *before* that point (a
+    raising middleware, a not-found tool) never reaches it, so without the seam
+    span such failures would produce no SERVER span at all — the failure-path
+    observability regression this guards against. The seam span opened by
+    `FastMCPServerMiddleware` wraps the whole request, so every tools/call
+    carries a SERVER span with `mcp.method.name=tools/call`, and an exception
+    that propagates past the handler marks that span's status as an error.
+    """
+
+    async def test_middleware_error_before_handler_emits_error_span(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        """An unexpected error raised in FastMCP middleware, before the
+        high-level path, propagates to the seam span, which records it as an
+        error — where previously this method produced no SERVER span at all."""
+
+        class RaisingMiddleware(Middleware):
+            async def on_call_tool(
+                self,
+                context: MiddlewareContext,
+                call_next: CallNext,
+            ):
+                raise RuntimeError("rejected before handler")
+
+        mcp = FastMCP("test-server", middleware=[RaisingMiddleware()])
+
+        @mcp.tool()
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        async with Client(mcp) as client:
+            with pytest.raises(Exception):
+                await client.call_tool("greet", {"name": "World"})
+
+        spans = trace_exporter.get_finished_spans()
+        tool_call_server_spans = [
+            s
+            for s in spans
+            if s.kind == SpanKind.SERVER
+            and s.attributes is not None
+            and s.attributes.get("mcp.method.name") == "tools/call"
+        ]
+        assert len(tool_call_server_spans) == 1
+        span = tool_call_server_spans[0]
+        assert span.status.status_code == StatusCode.ERROR
+        assert span.attributes is not None
+        assert span.attributes["mcp.method.name"] == "tools/call"
+        assert span.attributes["error.type"] == "RuntimeError"
+        assert len(span.events) > 0  # exception recorded
+
+    async def test_tool_visible_rejection_before_handler_still_spans(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        """A tool-visible error raised in middleware is returned as an error
+        result (correct MCP semantics, so the span status is unset), but the
+        seam span still guarantees exactly one SERVER span for the tools/call —
+        the request is no longer invisible to tracing."""
+
+        class RejectingMiddleware(Middleware):
+            async def on_call_tool(
+                self,
+                context: MiddlewareContext,
+                call_next: CallNext,
+            ):
+                raise ToolError("rejected before handler")
+
+        mcp = FastMCP("test-server", middleware=[RejectingMiddleware()])
+
+        @mcp.tool()
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool("greet", {"name": "World"})
+
+        spans = trace_exporter.get_finished_spans()
+        tool_call_server_spans = [
+            s
+            for s in spans
+            if s.kind == SpanKind.SERVER
+            and s.attributes is not None
+            and s.attributes.get("mcp.method.name") == "tools/call"
+        ]
+        assert len(tool_call_server_spans) == 1
+        assert (
+            tool_call_server_spans[0].attributes is not None
+            and tool_call_server_spans[0].attributes["mcp.method.name"] == "tools/call"
+        )
