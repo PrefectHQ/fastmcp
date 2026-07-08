@@ -39,6 +39,10 @@ def test_get_setting_raises_for_missing_nested_parent():
     assert str(exc_info.value) == "Setting missing does not exist."
 
 
+def test_http_host_origin_protection_defaults_to_false():
+    assert Settings().http_host_origin_protection is False
+
+
 @pytest.mark.parametrize(
     ("value", "expected"),
     [

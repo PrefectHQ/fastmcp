@@ -287,7 +287,8 @@ class TransportMixin:
             stateless_http: Whether to use stateless HTTP (defaults to settings.stateless_http)
             stateless: Alias for stateless_http for CLI consistency
             host_origin_protection: Whether to validate Host and Origin headers
-                before requests reach the MCP endpoint. "auto" protects
+                before requests reach the MCP endpoint. Defaults to
+                settings.http_host_origin_protection. "auto" protects
                 localhost-bound servers and explicit host/origin allowlists.
             allowed_hosts: Additional hostnames that may appear in the Host header.
             allowed_origins: Additional browser origins trusted by the request guard.
@@ -395,7 +396,8 @@ class TransportMixin:
                 disconnections. Requires event_store to be set. Only used with
                 streamable-http transport.
             host_origin_protection: Whether to validate Host and Origin headers
-                before requests reach the MCP endpoint. "auto" protects
+                before requests reach the MCP endpoint. Defaults to
+                settings.http_host_origin_protection. "auto" protects
                 localhost-bound servers and explicit host/origin allowlists.
             allowed_hosts: Additional hostnames that may appear in the Host header.
             allowed_origins: Additional browser origins trusted by the request guard.

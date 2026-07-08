@@ -32,6 +32,15 @@ def test_resolve_allowed_hosts_for_run_merges_configured_hosts_with_loopback_hos
     ) == ["mcp.example.com", "127.0.0.1"]
 
 
+def test_resolve_allowed_hosts_for_run_preserves_configured_hosts_when_disabled():
+    assert _resolve_allowed_hosts_for_run(
+        host="127.0.0.1",
+        host_origin_protection=False,
+        allowed_hosts=None,
+        configured_allowed_hosts=["mcp.example.com"],
+    ) == ["mcp.example.com"]
+
+
 def test_resolve_allowed_hosts_for_run_preserves_explicit_hosts():
     assert _resolve_allowed_hosts_for_run(
         host="127.0.0.1",

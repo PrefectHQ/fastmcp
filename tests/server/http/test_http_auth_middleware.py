@@ -166,6 +166,28 @@ class TestStreamableHTTPAppResourceMetadataURL:
 class TestStreamableHTTPHostOriginProtection:
     """Test host and origin validation for streamable HTTP apps."""
 
+    def test_default_allows_untrusted_host_for_compatibility(self):
+        server = FastMCP(name="TestServer")
+        app = create_streamable_http_app(
+            server=server,
+            streamable_http_path="/mcp",
+            allowed_hosts=["apps.example.com"],
+        )
+
+        with TestClient(app, base_url="http://127.0.0.1") as client:
+            response = client.post(
+                "/mcp",
+                headers={
+                    "accept": "application/json, text/event-stream",
+                    "host": "internal-upstream",
+                    "x-forwarded-host": "apps.example.com",
+                },
+                json=INITIALIZE_REQUEST,
+            )
+
+        assert response.status_code == 200
+        assert "mcp-session-id" in response.headers
+
     async def test_auto_allows_public_host_when_server_scope_is_ambiguous(self):
         status = await _guard_status(
             host="mcp.example.com",
@@ -216,11 +238,12 @@ class TestStreamableHTTPHostOriginProtection:
 
         assert status == 200
 
-    def test_rejects_untrusted_host_before_session_initialization(self):
+    def test_auto_rejects_untrusted_host_before_session_initialization(self):
         server = FastMCP(name="TestServer")
         app = create_streamable_http_app(
             server=server,
             streamable_http_path="/mcp",
+            host_origin_protection="auto",
         )
 
         with TestClient(app, base_url="http://127.0.0.1") as client:
@@ -236,11 +259,12 @@ class TestStreamableHTTPHostOriginProtection:
         assert response.status_code == 421
         assert "mcp-session-id" not in response.headers
 
-    def test_rejects_untrusted_origin_before_session_initialization(self):
+    def test_auto_rejects_untrusted_origin_before_session_initialization(self):
         server = FastMCP(name="TestServer")
         app = create_streamable_http_app(
             server=server,
             streamable_http_path="/mcp",
+            host_origin_protection="auto",
         )
 
         with TestClient(app, base_url="http://127.0.0.1") as client:
@@ -261,6 +285,7 @@ class TestStreamableHTTPHostOriginProtection:
         app = create_streamable_http_app(
             server=server,
             streamable_http_path="/mcp",
+            host_origin_protection="auto",
             allowed_hosts=["mcp.example.com"],
             allowed_origins=["https://app.example.com"],
         )
@@ -284,6 +309,7 @@ class TestStreamableHTTPHostOriginProtection:
         app = create_streamable_http_app(
             server=server,
             streamable_http_path="/mcp",
+            host_origin_protection="auto",
             allowed_hosts=["mcp.example.com"],
         )
 
@@ -305,6 +331,7 @@ class TestStreamableHTTPHostOriginProtection:
         app = create_streamable_http_app(
             server=server,
             streamable_http_path="/mcp",
+            host_origin_protection="auto",
         )
 
         with TestClient(app, base_url="http://127.0.0.1") as client:
@@ -325,6 +352,7 @@ class TestStreamableHTTPHostOriginProtection:
         app = create_streamable_http_app(
             server=server,
             streamable_http_path="/mcp",
+            host_origin_protection="auto",
             allowed_hosts=["mcp.example.com"],
         )
 
@@ -346,6 +374,7 @@ class TestStreamableHTTPHostOriginProtection:
         app = create_streamable_http_app(
             server=server,
             streamable_http_path="/mcp",
+            host_origin_protection="auto",
             allowed_hosts=["mcp.example.com"],
             allowed_origins=["http://localhost:3000"],
         )
@@ -375,6 +404,7 @@ class TestStreamableHTTPHostOriginProtection:
         app = create_streamable_http_app(
             server=server,
             streamable_http_path="/mcp",
+            host_origin_protection="auto",
             allowed_hosts=["mcp.example.com"],
         )
 
