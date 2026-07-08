@@ -283,6 +283,12 @@ On a `2026-07-28` connection the degradation error used to differ by feature: `c
 
 *Verify:* `tests/server/test_protocol_eras.py` (`test_elicit_sample_degradation_message_is_clear_on_modern`, now a real test), `server/context.py` (era gates).
 
+### Server-level cache hints (SEP-2549) — New (opt-in feature)
+
+A FastMCP server can emit SEP-2549 freshness hints so a caching client (`fastmcp.Client(cache=...)`) may reuse a response without a wire round-trip. Two constructor params carry it: `FastMCP(cache_ttl=300, cache_scope="public")`, where `cache_ttl` is in seconds and `cache_scope` is `"public"` or `"private"` (default `"private"` when a TTL is set). The hint is uniform by construction — one server-level value applies to every SDK-cacheable method (`tools/list`, `prompts/list`, `resources/list`, `resources/templates/list`, `resources/read`, and `server/discover`) with no per-component surface and no aggregation. FastMCP does not hand-set the wire fields: it passes the hint through to the SDK low-level `Server(cache_hints=...)`, whose runner fills `ttlMs`/`cacheScope` on every cacheable result via `apply_cache_hint`, leaving any field a handler set explicitly untouched. `cache_ttl` must be positive, and a `cache_scope` without a `cache_ttl` is rejected at construction (a scope alone does not enable caching, since the client gates on the TTL's presence). Absent both params, no hint is emitted. Honoring is modern-only (the SDK client reads hints only at `2026-07-28`) and opt-in on the client, so a hinted server is inert unless the client passes `cache=`.
+
+*Verify:* `fastmcp_slim/fastmcp/server/caching.py` (`build_cache_hints`), `fastmcp_slim/fastmcp/server/server.py` (constructor params passed to `LowLevelServer(cache_hints=...)`), `tests/server/test_cache_hints.py` (unit validation + end-to-end interop with `fastmcp.Client(cache=True)`).
+
 ### The xfail register — Known gap
 
 Roughly forty `xfail` markers across the test tree (concentrated in `tests/server/tasks/`, `tests/client/tasks/`, and `test_protocol_eras.py`) are the built-in beta tracker: each names the SDK gap it waits on. They are enumerated and mapped to sdk-feedback findings on the [Known Gaps](/development/v4-notes/known-gaps) page.
