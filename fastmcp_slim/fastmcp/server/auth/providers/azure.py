@@ -501,8 +501,12 @@ class AzureProvider(OAuthProxy):
         Returns:
             List of scopes for Azure token endpoint
         """
-        # Prefix scopes for this API
-        prefixed_scopes = self._prefix_scopes_for_azure(scopes or [])
+        # Prefix scopes for this API. Some clients omit the scope parameter on
+        # the MCP authorization request; use the provider's configured scopes
+        # just like the authorize URL path does.
+        prefixed_scopes = self._prefix_scopes_for_azure(
+            scopes or self.required_scopes or []
+        )
 
         # Add OIDC scopes only (not other API scopes) to avoid AADSTS28000
         if self.additional_authorize_scopes:
@@ -528,9 +532,13 @@ class AzureProvider(OAuthProxy):
         """
         logger.debug("Base scopes from storage: %s", scopes)
 
+        # Some clients omit the scope parameter on the MCP authorization request;
+        # use the provider's configured scopes just like the authorize URL path does.
+        requested_scopes = scopes or self.required_scopes or []
+
         # Filter out any additional_authorize_scopes that may have been stored
         additional_scopes_set = set(self.additional_authorize_scopes or [])
-        base_scopes = [s for s in scopes if s not in additional_scopes_set]
+        base_scopes = [s for s in requested_scopes if s not in additional_scopes_set]
 
         # Prefix base scopes with identifier_uri for Azure
         prefixed_scopes = self._prefix_scopes_for_azure(base_scopes)
