@@ -15,10 +15,13 @@ Execution is deliberately avoided: examples spin up servers, hit external
 services, and pull heavy optional dependencies. Static resolution catches the
 class of breakage we actually keep reintroducing (renamed imports) cheaply.
 
-Standalone example sub-projects that pin their own ``fastmcp``/``mcp`` in a
-local ``pyproject.toml`` (e.g. ``examples/testing_demo`` targets v1 on purpose)
-are excluded — their imports are validated against a different package than the
-one installed here.
+Standalone example sub-projects with their own ``uv.lock`` (e.g.
+``examples/testing_demo`` targets v1 on purpose) are excluded — their
+dependency graph is independently resolved, so their imports are validated
+against a different package than the one installed here. A bare
+``pyproject.toml`` without its own lock (e.g. ``examples/apps/qr_server``)
+still resolves against this tree's install and is checked like any other
+example — it is not, on its own, evidence of an incompatible dependency.
 
 Run:
     uv run pytest tests/test_examples_importable.py -v -s
@@ -41,13 +44,17 @@ _CHECKED_ROOTS = ("fastmcp", "mcp", "mcp_types")
 def _standalone_dirs() -> set[Path]:
     """Directories that are self-contained example sub-projects.
 
-    A ``pyproject.toml`` under ``examples/`` marks a project boundary: the
-    directory ships its own dependency pins (``examples/testing_demo`` targets
-    fastmcp v1 on purpose, ``examples/smart_home`` pins fastmcp from git), so
-    its imports must not be validated against the package installed for the
-    main test suite. Everything below such a directory is excluded.
+    A ``uv.lock`` under ``examples/`` marks a genuinely independent dependency
+    graph (``examples/testing_demo`` locks and targets fastmcp v1 on purpose),
+    so its imports must not be validated against the package installed for
+    the main test suite. A ``pyproject.toml`` alone is not sufficient — most
+    example sub-projects (``examples/apps/qr_server``, ``examples/smart_home``,
+    ``examples/atproto_mcp``) have one purely to declare extra dependencies
+    (qrcode, phue2, atproto) but share this tree's fastmcp/mcp install, so
+    their fastmcp/mcp imports are still checked. Everything below a directory
+    with its own lock is excluded.
     """
-    return {pyproject.parent for pyproject in EXAMPLES_DIR.rglob("pyproject.toml")}
+    return {lockfile.parent for lockfile in EXAMPLES_DIR.rglob("uv.lock")}
 
 
 def _find_example_files() -> list[Path]:
