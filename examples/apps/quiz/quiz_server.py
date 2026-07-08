@@ -12,8 +12,6 @@ Usage:
 
 from __future__ import annotations
 
-from typing import TypedDict
-
 from prefab_ui.actions import SetState, ShowToast
 from prefab_ui.actions.mcp import CallTool, SendMessage
 from prefab_ui.app import PrefabApp
@@ -30,6 +28,7 @@ from prefab_ui.components import (
     Text,
 )
 from prefab_ui.rx import ERROR, RESULT, Rx
+from typing_extensions import TypedDict
 
 from fastmcp import FastMCP, FastMCPApp
 
