@@ -17,10 +17,10 @@ interoperate — the server half of the feature whose client half is exercised i
 from __future__ import annotations
 
 import pytest
+from mcp_types.methods import CACHEABLE_METHODS
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.caching import build_cache_hints
-from mcp_types.methods import CACHEABLE_METHODS
 
 
 class TestBuildCacheHints:

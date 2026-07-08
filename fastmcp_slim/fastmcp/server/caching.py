@@ -55,4 +55,4 @@ def build_cache_hints(
     if cache_ttl <= 0:
         raise ValueError(f"cache_ttl must be a positive integer, got {cache_ttl}")
     hint = CacheHint(ttl_ms=cache_ttl * 1000, scope=cache_scope or "private")
-    return {method: hint for method in get_args(CacheableMethod)}
+    return dict.fromkeys(get_args(CacheableMethod), hint)
