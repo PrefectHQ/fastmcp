@@ -60,6 +60,7 @@ from fastmcp.resources.base import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth import AuthCheck, AuthContext, AuthProvider, run_auth_checks
 from fastmcp.server.lifespan import Lifespan
+from fastmcp.server.caching import build_cache_hints
 from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.mixins import LifespanMixin, MCPOperationsMixin, TransportMixin
@@ -329,6 +330,8 @@ class FastMCP(
         dereference_schemas: bool = True,
         strict_input_validation: bool | None = None,
         list_page_size: int | None = None,
+        cache_ttl: int | None = None,
+        cache_scope: Literal["public", "private"] | None = None,
         tasks: bool | None = None,
         session_state_store: AsyncKeyValue | None = None,
         sampling_handler: SamplingHandler | None = None,
@@ -387,6 +390,11 @@ class FastMCP(
             raise ValueError("list_page_size must be a positive integer")
         self._list_page_size: int | None = list_page_size
 
+        # Server-level SEP-2549 cache hints, applied uniformly to every
+        # SDK-cacheable result by the low-level server's runner (raises on
+        # invalid ttl/scope).
+        cache_hints = build_cache_hints(cache_ttl, cache_scope)
+
         # Handle Lifespan instances (they're callable) or regular lifespan functions
         if lifespan is not None:
             self._lifespan: LifespanCallable[LifespanResultT] = cast(
@@ -415,6 +423,7 @@ class FastMCP(
             website_url=website_url,
             icons=icons,
             lifespan=_lifespan_proxy(fastmcp_server=self),
+            cache_hints=cache_hints,
         )
 
         self.auth: AuthProvider | None = auth
