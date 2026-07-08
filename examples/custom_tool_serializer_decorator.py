@@ -12,8 +12,8 @@ from typing import Any
 
 import yaml
 
-from fastmcp import FastMCP
-from fastmcp.tools.tool import ToolResult
+from fastmcp import Client, FastMCP
+from fastmcp.tools import ToolResult
 
 
 def with_serializer(serializer: Callable[[Any], str]):
@@ -55,18 +55,18 @@ def get_json_data() -> dict:
 
 
 async def example_usage():
-    # YAML serialized tool
-    yaml_result = await server._call_tool_mcp("get_example_data", {})
-    print("YAML Tool Result:")
-    print(yaml_result)
-    print()
+    async with Client(server) as client:
+        # YAML serialized tool
+        yaml_result = await client.call_tool("get_example_data", {})
+        print("YAML Tool Result:")
+        print(yaml_result.data)
+        print()
 
-    # Default JSON serialized tool
-    json_result = await server._call_tool_mcp("get_json_data", {})
-    print("JSON Tool Result:")
-    print(json_result)
+        # Default JSON serialized tool
+        json_result = await client.call_tool("get_json_data", {})
+        print("JSON Tool Result:")
+        print(json_result.data)
 
 
 if __name__ == "__main__":
     asyncio.run(example_usage())
-    server.run()
