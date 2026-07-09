@@ -42,11 +42,13 @@ from key_value.aio.stores.filetree import (
 )
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from mcp.server.auth.handlers.metadata import MetadataHandler
+from mcp.server.auth.middleware.client_auth import ClientAuthenticator
 from mcp.server.auth.provider import (
     AccessToken,
     AuthorizationCode,
     AuthorizationParams,
     AuthorizeError,
+    IdentityAssertionParams,
     RefreshToken,
     RegistrationError,
     TokenError,
@@ -72,6 +74,11 @@ from fastmcp.server.auth.auth import (
 )
 from fastmcp.server.auth.cimd import CIMDClientManager
 from fastmcp.server.auth.handlers.authorize import AuthorizationHandler
+from fastmcp.server.auth.identity_assertion import (
+    IdentityAssertion,
+    IdentityAssertionError,
+    IdentityAssertionValidator,
+)
 from fastmcp.server.auth.jwt_issuer import (
     JWTIssuer,
     derive_jwt_key,
@@ -99,6 +106,24 @@ from fastmcp.utilities.logging import get_logger
 logger = get_logger(__name__)
 
 _REFRESH_LOCK_CACHE_SIZE = 10_000
+
+#: Marker claim identifying a FastMCP access token minted from a SEP-990 ID-JAG.
+#: These tokens are self-contained (they carry the asserted subject directly) and
+#: are validated without the upstream token-swap that regular proxy tokens use.
+_ID_JAG_GRANT_MARKER = "id_jag"
+
+
+def _assertion_granted_scopes(claims: dict[str, Any]) -> list[str]:
+    """Scopes granted by an ID-JAG, from its `scope` or `scp` claim."""
+    scope = claims.get("scope")
+    if isinstance(scope, str):
+        return scope.split()
+    scp = claims.get("scp")
+    if isinstance(scp, list):
+        return [str(s) for s in scp]
+    if isinstance(scp, str):
+        return scp.split()
+    return []
 
 
 def _normalize_resource_url(url: str) -> str:
@@ -281,6 +306,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         token_expiry_threshold_seconds: int = 0,
         # CIMD (Client ID Metadata Document) support
         enable_cimd: bool = True,
+        # Identity assertion (SEP-990 ID-JAG) support
+        identity_assertion: IdentityAssertion | None = None,
     ):
         """Initialize the OAuth proxy provider.
 
@@ -377,6 +404,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
                 client IDs. When True, clients can authenticate using HTTPS URLs as client
                 IDs, with metadata fetched from the URL. Supports private_key_jwt auth.
+            identity_assertion: Optional SEP-990 identity assertion (ID-JAG) configuration.
+                When provided, the token endpoint accepts the RFC 7523 jwt-bearer grant
+                carrying an ID-JAG issued by one of the configured trusted issuers, and
+                mints a short-lived access token (no refresh token) for the asserted
+                subject. When omitted, the grant is rejected as unsupported.
         """
 
         default_scopes = valid_scopes or token_verifier.required_scopes
@@ -618,6 +650,16 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 enable_cimd=True,
                 default_scope=self._default_scope_str,
                 allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
+            )
+
+        # Identity assertion (SEP-990 ID-JAG): the audience the ID-JAG must be
+        # bound to is this authorization server's own issuer URL (base_url).
+        self._identity_assertion: IdentityAssertion | None = identity_assertion
+        self._identity_assertion_validator: IdentityAssertionValidator | None = None
+        if identity_assertion is not None:
+            self._identity_assertion_validator = IdentityAssertionValidator(
+                config=identity_assertion,
+                audience=str(self.base_url),
             )
 
         # Advisory locks for transparent upstream token refresh, keyed by
@@ -1285,6 +1327,78 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         )
 
     # -------------------------------------------------------------------------
+    # Identity Assertion Flow (SEP-990 ID-JAG)
+    # -------------------------------------------------------------------------
+
+    async def exchange_identity_assertion(
+        self,
+        client: OAuthClientInformationFull,
+        params: IdentityAssertionParams,
+    ) -> OAuthToken:
+        """Exchange a SEP-990 ID-JAG for a short-lived FastMCP access token.
+
+        Validates the ID-JAG against the configured trusted issuers (signature,
+        `iss`, `aud`, `exp`, `typ`, `sub`, and `jti` replay), then mints a
+        self-contained FastMCP access token carrying the asserted subject. No
+        refresh token is issued — the client re-exchanges a fresh assertion.
+
+        Raises:
+            TokenError: ``invalid_grant`` if the assertion is rejected, or
+                ``unsupported_grant_type`` if identity assertion is not configured.
+        """
+        if self._identity_assertion_validator is None:
+            raise TokenError(
+                "unsupported_grant_type",
+                "The JWT bearer grant is not supported by this authorization server",
+            )
+
+        try:
+            claims = await self._identity_assertion_validator.validate(params.assertion)
+        except IdentityAssertionError as e:
+            # Log detail server-side; return a generic error to the client so we
+            # do not leak which validation step failed.
+            logger.info("ID-JAG rejected: %s", e)
+            raise TokenError("invalid_grant", "Invalid identity assertion") from e
+
+        subject = str(claims["sub"])
+
+        # Granted scopes derive from the assertion (and policy), not from the
+        # client-controlled `params.scopes`.
+        granted_scopes = _assertion_granted_scopes(claims)
+        if not granted_scopes:
+            granted_scopes = list(params.scopes or [])
+
+        expires_in = self._identity_assertion.access_token_expiry_seconds  # type: ignore[union-attr]
+        access_jti = secrets.token_urlsafe(32)
+
+        access_token = self.jwt_issuer.issue_access_token(
+            client_id=client.client_id or "",
+            scopes=granted_scopes,
+            jti=access_jti,
+            expires_in=expires_in,
+            subject=subject,
+            extra_claims={
+                "fastmcp_grant": _ID_JAG_GRANT_MARKER,
+                "assertion_iss": str(claims.get("iss")),
+            },
+        )
+
+        logger.debug(
+            "Issued ID-JAG access token for subject=%s client=%s jti=%s",
+            subject,
+            client.client_id,
+            access_jti[:8],
+        )
+
+        # SEP-990: no refresh token — the IdP controls session lifetime.
+        return OAuthToken(
+            access_token=access_token,
+            token_type="Bearer",
+            expires_in=expires_in,
+            scope=" ".join(granted_scopes),
+        )
+
+    # -------------------------------------------------------------------------
     # Refresh Token Flow
     # -------------------------------------------------------------------------
 
@@ -1808,6 +1922,20 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             jti = payload["jti"]
             upstream_claims = payload.get("upstream_claims")
 
+            # SEP-990: ID-JAG tokens are self-contained — the asserted subject
+            # is carried in the token itself, and there is no upstream token to
+            # swap for. Return directly from the verified claims.
+            if payload.get("fastmcp_grant") == _ID_JAG_GRANT_MARKER:
+                scope = payload.get("scope", "")
+                return AccessToken(
+                    token=token,
+                    client_id=str(payload.get("client_id", "")),
+                    scopes=scope.split() if scope else [],
+                    expires_at=int(payload["exp"]) if payload.get("exp") else None,
+                    subject=str(payload["sub"]) if payload.get("sub") else None,
+                    claims=payload,
+                )
+
             # 2. Look up upstream token via JTI mapping
             jti_mapping = await self._jti_mapping_store.get(key=jti)
             if not jti_mapping:
@@ -2050,22 +2178,30 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     )
                 )
             elif (
-                self._cimd_manager is not None
+                (self._cimd_manager is not None or self._identity_assertion is not None)
                 and isinstance(route, Route)
                 and route.path == "/token"
                 and route.methods is not None
                 and "POST" in route.methods
             ):
-                # Replace the token endpoint authenticator with one that supports
-                # private_key_jwt for CIMD clients
+                # Replace the token endpoint so it can (a) authenticate CIMD
+                # private_key_jwt clients and (b) accept the SEP-990 jwt-bearer
+                # grant when identity assertion is enabled.
                 token_endpoint_url = f"{self.base_url}/token"
-                cimd_authenticator = PrivateKeyJWTClientAuthenticator(
-                    provider=self,
-                    cimd_manager=self._cimd_manager,
-                    token_endpoint_url=token_endpoint_url,
-                )
+                if self._cimd_manager is not None:
+                    authenticator: ClientAuthenticator = (
+                        PrivateKeyJWTClientAuthenticator(
+                            provider=self,
+                            cimd_manager=self._cimd_manager,
+                            token_endpoint_url=token_endpoint_url,
+                        )
+                    )
+                else:
+                    authenticator = ClientAuthenticator(self)
                 token_handler = TokenHandler(
-                    provider=self, client_authenticator=cimd_authenticator
+                    provider=self,
+                    client_authenticator=authenticator,
+                    identity_assertion_enabled=self._identity_assertion is not None,
                 )
                 custom_routes.append(
                     Route(
@@ -2077,7 +2213,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     )
                 )
             elif (
-                self._cimd_manager is not None
+                (self._cimd_manager is not None or self._identity_assertion is not None)
                 and isinstance(route, Route)
                 and route.path.startswith("/.well-known/oauth-authorization-server")
             ):
@@ -2090,14 +2226,16 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     self.service_documentation_url,
                     client_registration_options,
                     revocation_options,
+                    supports_identity_assertion=self._identity_assertion is not None,
                 )
-                metadata.client_id_metadata_document_supported = True
-                existing = metadata.token_endpoint_auth_methods_supported or []
-                metadata.token_endpoint_auth_methods_supported = [
-                    *existing,
-                    "private_key_jwt",
-                    "none",
-                ]
+                if self._cimd_manager is not None:
+                    metadata.client_id_metadata_document_supported = True
+                    existing = metadata.token_endpoint_auth_methods_supported or []
+                    metadata.token_endpoint_auth_methods_supported = [
+                        *existing,
+                        "private_key_jwt",
+                        "none",
+                    ]
                 handler = MetadataHandler(metadata)
                 methods = route.methods or ["GET", "OPTIONS"]
 

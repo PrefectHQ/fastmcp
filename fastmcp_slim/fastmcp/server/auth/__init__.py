@@ -15,6 +15,7 @@ from .authorization import (
     restrict_tag,
     run_auth_checks,
 )
+from .identity_assertion import IdentityAssertion
 
 if TYPE_CHECKING:
     from .oauth_proxy import OAuthProxy as OAuthProxy
@@ -61,6 +62,7 @@ __all__ = [
     "AuthContext",
     "AuthProvider",
     "DebugTokenVerifier",
+    "IdentityAssertion",
     "JWTVerifier",
     "MultiAuth",
     "OAuthProvider",
