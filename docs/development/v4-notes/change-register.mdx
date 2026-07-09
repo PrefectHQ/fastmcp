@@ -152,6 +152,12 @@ SDK v2 seeds an `OpenTelemetryMiddleware` into every lowlevel `Server`, so each 
 
 *Verify:* `fastmcp_slim/fastmcp/server/low_level.py` (the `OpenTelemetryMiddleware` filter); `tests/server/telemetry/test_server_tracing.py::TestSingleServerSpan`.
 
+### Telemetry on by default, with an explicit off-switch — Absorbed
+
+FastMCP's OpenTelemetry instrumentation is on by default. Because FastMCP uses only the OpenTelemetry API, span creation is a no-op with negligible overhead (the API's `NonRecordingSpan`) unless the user configures an SDK and exporter — so being always-on costs nothing until you opt into collection. The new `FASTMCP_ENABLE_TELEMETRY` setting (`fastmcp.settings.enable_telemetry`, default `true`) is the explicit off-switch: set it to `false` and `get_tracer()` returns a genuine no-op tracer, so no FastMCP spans are created even when an SDK is configured. The off-switch governs FastMCP's own spans (all SERVER spans, plus FastMCP's high-level CLIENT span); the SDK's low-level `mcp-python-sdk` `MCP send <method>` CLIENT spans are governed by the user's OpenTelemetry SDK, not this setting. FastMCP's SERVER span now also carries `mcp.protocol.version` — the attribute the dropped SDK `OpenTelemetryMiddleware` set — restoring parity with the SDK's semantic conventions.
+
+*Verify:* `fastmcp_slim/fastmcp/settings.py` (`enable_telemetry`); `fastmcp_slim/fastmcp/telemetry.py` (`get_tracer` off-switch); `fastmcp_slim/fastmcp/server/telemetry.py` (`get_protocol_span_attributes`); `tests/server/telemetry/test_server_tracing.py::TestTelemetryEnabledByDefault`, `::TestProtocolVersionAttribute`.
+
 ### Spec-correct error codes via a central translator — Breaking (wire error code)
 
 Resource-not-found responses from the core `resources/read` handler previously used `-32002`. SEP-2164 (and the SDK's own mcpserver, which maps `ResourceNotFoundError` → `INVALID_PARAMS`) makes this `-32602`. The per-adapter `MCPError(code=..., ...)` literals in `server/mixins/mcp_operations.py` are replaced by a single `fastmcp.exceptions.to_mcp_error()` translator that maps FastMCP's public exceptions to the `mcp_types` code constants (`NotFoundError`/`DisabledError`/`ValidationError` → `INVALID_PARAMS`, else `INTERNAL_ERROR`). Clients that string-matched on the old `-32002` for resource-not-found must switch to `-32602`; the human-readable message ("Resource not found: ...") is unchanged. The opt-in `ErrorHandlingMiddleware`, which has its own documented per-method-prefix code mapping, is intentionally left as-is.

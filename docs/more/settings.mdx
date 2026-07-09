@@ -72,6 +72,12 @@ These control how the server listens when running with an HTTP transport.
 | `FASTMCP_SHOW_SERVER_BANNER` | `bool` | `true` | Show the server banner on startup. Also controllable via `--no-banner` or `server.run(show_banner=False)`. |
 | `FASTMCP_CHECK_FOR_UPDATES` | `Literal["stable", "prerelease", "off"]` | `stable` | Update checking on CLI startup. `stable` checks stable releases only, `prerelease` includes pre-releases, `off` disables checking. |
 
+## Telemetry
+
+| Environment Variable | Type | Default | Description |
+|---|---|---|---|
+| `FASTMCP_ENABLE_TELEMETRY` | `bool` | `true` | Whether FastMCP's native [OpenTelemetry instrumentation](/servers/telemetry) is active. Enabled by default; FastMCP uses only the OpenTelemetry API, so span creation is a no-op with negligible overhead unless an OpenTelemetry SDK and exporter are configured. Set to `false` to turn instrumentation off entirely, in which case no FastMCP spans are created even when an SDK is configured. |
+
 ## Tasks (Docket)
 
 These configure the [Docket](https://github.com/prefecthq/docket) task queue used by [server tasks](/servers/tasks). All use the `FASTMCP_DOCKET_` prefix.

@@ -26,7 +26,7 @@ from typing import Any
 from opentelemetry import context as otel_context
 from opentelemetry import propagate, trace
 from opentelemetry.context import Context
-from opentelemetry.trace import Span, Status, StatusCode, Tracer
+from opentelemetry.trace import NoOpTracer, Span, Status, StatusCode, Tracer
 from opentelemetry.trace import get_tracer as otel_get_tracer
 
 INSTRUMENTATION_NAME = "fastmcp"
@@ -34,16 +34,30 @@ INSTRUMENTATION_NAME = "fastmcp"
 TRACE_PARENT_KEY = "traceparent"
 TRACE_STATE_KEY = "tracestate"
 
+_NOOP_TRACER = NoOpTracer()
+
 
 def get_tracer(version: str | None = None) -> Tracer:
     """Get the FastMCP tracer for creating spans.
+
+    Instrumentation is on by default. FastMCP uses only the OpenTelemetry API,
+    so span creation is a no-op with negligible overhead unless an OpenTelemetry
+    SDK and exporter are configured. Set `fastmcp.settings.enable_telemetry` to
+    False (env `FASTMCP_ENABLE_TELEMETRY=false`) to turn instrumentation off
+    entirely, in which case this returns a no-op tracer even when an SDK is
+    configured.
 
     Args:
         version: Optional version string for the instrumentation
 
     Returns:
-        A tracer instance. Returns a no-op tracer if no SDK is configured.
+        A tracer instance. Returns a no-op tracer if telemetry is disabled or
+        no SDK is configured.
     """
+    import fastmcp
+
+    if not fastmcp.settings.enable_telemetry:
+        return _NOOP_TRACER
     return otel_get_tracer(INSTRUMENTATION_NAME, version)
 
 
