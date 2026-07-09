@@ -160,7 +160,28 @@ Resource-not-found responses from the core `resources/read` handler previously u
 
 ## Client
 
-The `fastmcp.Client` public API is preserved exactly. The client stays a wrapper around `mcp.ClientSession` in legacy/handshake mode; the first-class `mcp.client.Client` is deliberately not adopted in this PR.
+The `fastmcp.Client` public API is largely preserved. The client stays a wrapper around `mcp.ClientSession`; the first-class `mcp.client.Client` is deliberately not adopted in this PR. Two client-surface changes are called out below: the connection `mode` default flips to `"auto"`, and `extensions=` / `result_claims=` are newly surfaced.
+
+### Connection `mode` defaults to `"auto"` — Breaking (behavior)
+
+`Client(mode=...)` now defaults to `"auto"` instead of `"legacy"`. The client probes `server/discover` and adopts the modern (`2026-07-28`) era when the server responds, denylist-falling-back to the initialize handshake for any server that is not positive evidence of a modern peer. Against a FastMCP server (which serves both eras), an ordinary `Client(url)` now negotiates the modern era by default, where the legacy-only Context push features are unavailable per the per-feature era matrix (see the *Protocol eras* section below) — server-initiated sampling/elicitation/roots, `ping`, session ids, and FastMCP task submission all require the legacy era. The one-line revert is `Client(..., mode="legacy")`, which restores byte-identical pre-v4 negotiation.
+
+The SSE transport is legacy-only (it cannot carry the sessionless modern era), so a client connecting over SSE negotiates the legacy handshake even under `mode="auto"` — expressed by a `ClientTransport.legacy_only` flag set on `SSETransport`.
+
+```python
+from fastmcp import Client
+
+client = Client("https://example.com/mcp")                  # now negotiates "auto"
+client = Client("https://example.com/mcp", mode="legacy")   # opt back into the handshake
+```
+
+*Verify:* `fastmcp_slim/fastmcp/client/client.py` (`mode` default, `_negotiate` `legacy_only` shortcut), `fastmcp_slim/fastmcp/client/transports/{base,sse}.py` (`legacy_only`), `tests/client/client/test_mode_negotiation.py` (default, clean discover-rejection fallback, legacy-only transport), `docs/clients/client.mdx`.
+
+### `extensions=` / `result_claims=` surfaced — New (opt-in feature)
+
+`fastmcp.Client` now accepts `extensions=` (a sequence of SEP-2133 `ClientExtension` instances) and `result_claims=` (extra `ResultClaim`s keyed by an advertised extension's identifier). Each extension's capability advertisement, result claims, and notification bindings are folded into the underlying `ClientSession` on every transport. User-supplied notification bindings **compose** with FastMCP's internal task-status binding rather than clobbering it: the task binding always leads, and a user extension that binds the same method surfaces a clear duplicate-method error at connect time rather than silently winning. Claimed shapes are modern-only, so they are inert on a legacy connection.
+
+*Verify:* `fastmcp_slim/fastmcp/client/client.py` (`_fold_extensions`, `_build_extension_kwargs`, `new()`), `fastmcp_slim/fastmcp/client/transports/base.py` (`SessionKwargs.extensions`/`result_claims`), `tests/client/test_client_extensions.py` (fold, composition, live both-bindings-fire).
 
 ### Transports yield 2-tuples — Absorbed
 

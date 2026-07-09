@@ -166,19 +166,19 @@ async with client:
 
 MCP has two protocol eras: the original *legacy* era, which begins every connection with an `initialize` handshake, and the *modern* era (protocol version `2026-07-28` and later), which a client discovers by probing the server's `server/discover` endpoint. The `mode` parameter controls which era the client negotiates when it connects.
 
-By default, `mode="legacy"`. This runs the initialize handshake and behaves identically to earlier FastMCP versions, so existing code connecting to any server keeps working unchanged.
+By default, `mode="auto"`. The client probes `server/discover` and adopts the modern protocol when the server responds; for any server that is not positive evidence of modern support, it falls back to the legacy handshake. This makes the default safe against a mixed fleet of legacy and modern servers.
 
 ```python
 from fastmcp import Client
 
-# Legacy handshake (the default)
-client = Client("https://example.com/mcp", mode="legacy")
+# Negotiate the newest era the server supports (the default)
+client = Client("https://example.com/mcp", mode="auto")
 ```
 
-Set `mode="auto"` to negotiate the newest era the server supports. The client probes `server/discover` and adopts the modern protocol when the server responds; for any server that is not positive evidence of modern support, it falls back to the legacy handshake. This makes `"auto"` safe to use against a mixed fleet of legacy and modern servers.
+Set `mode="legacy"` to force the initialize handshake. This behaves identically to earlier FastMCP versions and is the opt-out if a server misbehaves under discovery or you need the legacy `initialize` result object.
 
 ```python
-client = Client("https://example.com/mcp", mode="auto")
+client = Client("https://example.com/mcp", mode="legacy")
 ```
 
 You can also pin a specific modern protocol version to adopt it directly, without a discovery probe:
@@ -196,7 +196,9 @@ async with Client("https://example.com/mcp", mode="auto") as client:
 ```
 
 <Note>
-`mode="auto"` is not the default yet — the conservative `"legacy"` remains the default to preserve byte-identical behavior against pre-2026 servers. Whether `"auto"` becomes the default is a future release decision.
+`mode="auto"` is the default as of FastMCP 4.0. Earlier versions defaulted to `"legacy"`. If a server behaves unexpectedly under discovery, or you depend on the legacy `initialize` result, pin the old behavior with `Client(..., mode="legacy")`.
+
+The SSE transport is legacy-only — it cannot carry the sessionless modern era — so a client connecting over SSE always negotiates the legacy handshake, even under `mode="auto"`.
 </Note>
 
 ## Response caching
@@ -232,6 +234,31 @@ The high-level `list_tools`, `list_resources`, `list_prompts`, and `read_resourc
 ```python
 async with client:
     fresh = await client.list_tools_mcp(cache_mode="refresh")
+```
+
+## Client extensions
+
+<VersionBadge version="4.0.0" />
+
+Client extensions (SEP-2133) are the advanced mechanism a client uses to opt into vendor capabilities that live outside the core protocol. An extension is a `ClientExtension` instance that bundles three things: a capability *advertisement* the server can read, one or more *result claims* that let the client parse extra `tools/call` result shapes, and *notification bindings* that observe server notifications the core protocol doesn't define. Pass a sequence of them to `extensions=`.
+
+```python
+from fastmcp import Client
+from myproject.extensions import AppsExtension
+
+client = Client("https://example.com/mcp", extensions=[AppsExtension()])
+```
+
+Each extension's contributions are threaded into the underlying session. Notification bindings compose with FastMCP's own internal task-status binding rather than replacing it, so an extension that observes a custom notification and FastMCP's task tracking both work on the same connection. Result claims and their advertisements are honored only on modern-era connections, so they are inert on a legacy handshake.
+
+For the rare case where you need to register additional result claims against an extension that is already advertised, pass them through `result_claims=`, keyed by the extension's identifier. Prefer declaring claims on the extension itself; this parameter merges extra claims with an extension's own.
+
+```python
+client = Client(
+    "https://example.com/mcp",
+    extensions=[AppsExtension()],
+    result_claims={"example.com/apps": [extra_claim]},
+)
 ```
 
 ## Operations
