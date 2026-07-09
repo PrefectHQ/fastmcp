@@ -11,7 +11,7 @@ import pytest
 from key_value.aio.stores.memory import MemoryStore
 from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
-from starlette.routing import Mount
+from starlette.routing import Mount, Route
 
 from fastmcp import FastMCP
 from fastmcp.server.auth import RemoteAuthProvider
@@ -267,6 +267,97 @@ class TestOAuthMounting:
                 "https://api.example.com/api",
                 "https://api.example.com/api/",
             ]
+
+    def test_get_routes_authorization_server_metadata_is_path_scoped(
+        self, test_tokens
+    ):
+        """Regression test for issue #4390.
+
+        ``server/http.py`` mounts ``get_routes()`` directly, so the
+        authorization-server metadata route it returns must be path-scoped when
+        the server is deployed under a ``base_url`` subpath. Otherwise two
+        servers sharing a host under different subpaths both claim the host-root
+        ``/.well-known/oauth-authorization-server`` and only one can win.
+        """
+        auth_provider = OAuthProxy(
+            upstream_authorization_endpoint="https://upstream.example.com/authorize",
+            upstream_token_endpoint="https://upstream.example.com/token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="unused",
+            token_verifier=StaticTokenVerifier(tokens=test_tokens),
+            base_url="https://api.example.com/vault",  # deployed under /vault
+            client_storage=MemoryStore(),
+        )
+
+        route_paths = {
+            route.path
+            for route in auth_provider.get_routes(mcp_path="/mcp")
+            if isinstance(route, Route)
+        }
+
+        # Path-scoped per RFC 8414 ...
+        assert "/.well-known/oauth-authorization-server/vault" in route_paths
+        # ... and NOT at the colliding host root.
+        assert "/.well-known/oauth-authorization-server" not in route_paths
+        # Protected-resource metadata stays path-scoped (RFC 9728), unchanged.
+        assert any(
+            path.startswith("/.well-known/oauth-protected-resource")
+            for path in route_paths
+        )
+
+    def test_get_routes_and_well_known_agree_on_auth_server_path(self, test_tokens):
+        """get_routes() and get_well_known_routes() must expose the same single
+        authorization-server metadata path for a subpath deployment (#4390)."""
+        auth_provider = OAuthProxy(
+            upstream_authorization_endpoint="https://upstream.example.com/authorize",
+            upstream_token_endpoint="https://upstream.example.com/token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="unused",
+            token_verifier=StaticTokenVerifier(tokens=test_tokens),
+            base_url="https://api.example.com/vault",
+            client_storage=MemoryStore(),
+        )
+
+        def auth_server_paths(routes):
+            return sorted(
+                route.path
+                for route in routes
+                if isinstance(route, Route)
+                and route.path.startswith("/.well-known/oauth-authorization-server")
+            )
+
+        expected = ["/.well-known/oauth-authorization-server/vault"]
+        assert auth_server_paths(auth_provider.get_routes(mcp_path="/mcp")) == expected
+        assert (
+            auth_server_paths(auth_provider.get_well_known_routes(mcp_path="/mcp"))
+            == expected
+        )
+
+    def test_get_routes_authorization_server_metadata_root_deployment(
+        self, test_tokens
+    ):
+        """Root deployments keep the host-root metadata path (no #4390 regression)."""
+        auth_provider = OAuthProxy(
+            upstream_authorization_endpoint="https://upstream.example.com/authorize",
+            upstream_token_endpoint="https://upstream.example.com/token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="unused",
+            token_verifier=StaticTokenVerifier(tokens=test_tokens),
+            base_url="https://api.example.com",  # root, no subpath
+            client_storage=MemoryStore(),
+        )
+
+        route_paths = {
+            route.path
+            for route in auth_provider.get_routes(mcp_path="/mcp")
+            if isinstance(route, Route)
+        }
+
+        assert "/.well-known/oauth-authorization-server" in route_paths
+        assert not any(
+            path.startswith("/.well-known/oauth-authorization-server/")
+            for path in route_paths
+        )
 
     async def test_oauth_authorization_server_metadata_path_aware_discovery(
         self, test_tokens

@@ -720,6 +720,46 @@ class OAuthProvider(
         """
         return await self.load_access_token(token)
 
+    def _path_scope_authorization_server_metadata(
+        self, routes: list[Route]
+    ) -> list[Route]:
+        """Scope the authorization-server metadata route to the issuer subpath.
+
+        ``server/http.py`` mounts :meth:`get_routes` directly, so when the server
+        is deployed under a ``base_url``/``issuer_url`` subpath the
+        authorization-server metadata route must be path-scoped here (RFC 8414
+        path-aware discovery) — otherwise it lands at the host root
+        ``/.well-known/oauth-authorization-server`` and collides with any other
+        OAuth server sharing the host under a different subpath.
+        :meth:`get_well_known_routes` performs the equivalent scoping for callers
+        that mount the well-known routes manually. See PrefectHQ/fastmcp#4390.
+        """
+        if not self.issuer_url:
+            return routes
+
+        issuer_path = urlparse(str(self.issuer_url)).path.rstrip("/")
+        if not issuer_path or issuer_path == "/":
+            return routes
+
+        scoped_routes: list[Route] = []
+        for route in routes:
+            if (
+                isinstance(route, Route)
+                and route.path == "/.well-known/oauth-authorization-server"
+            ):
+                scoped_routes.append(
+                    Route(
+                        f"/.well-known/oauth-authorization-server{issuer_path}",
+                        endpoint=route.endpoint,
+                        methods=route.methods,
+                        name=route.name,
+                        include_in_schema=route.include_in_schema,
+                    )
+                )
+            else:
+                scoped_routes.append(route)
+        return scoped_routes
+
     def get_routes(
         self,
         mcp_path: str | None = None,
@@ -797,6 +837,11 @@ class OAuthProvider(
         # Add base routes
         oauth_routes.extend(super().get_routes(mcp_path))
 
+        # RFC 8414 path-aware discovery: server/http.py mounts these routes
+        # directly, so the authorization-server metadata route must be scoped to
+        # the issuer subpath here (not only in get_well_known_routes). See #4390.
+        oauth_routes = self._path_scope_authorization_server_metadata(oauth_routes)
+
         return oauth_routes
 
     def get_well_known_routes(
@@ -829,7 +874,9 @@ class OAuthProvider(
 
         new_routes = []
         for route in routes:
-            if route.path != "/.well-known/oauth-authorization-server":
+            # Match by prefix so the authorization-server metadata route is still
+            # recognized after get_routes() has path-scoped it (see #4390).
+            if not route.path.startswith("/.well-known/oauth-authorization-server"):
                 new_routes.append(route)
                 continue
 
