@@ -76,7 +76,7 @@ class TestTaskMetaParameter:
 
         # call_tool enriches the task_meta before passing to _run
         # We test this via the client integration path
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             result = await client.call_tool("auto_key_tool", {}, task=True)
             # Should succeed because fn_key was auto-populated
             from fastmcp.client.tasks import ToolTask
@@ -105,7 +105,7 @@ class TestTaskMetaTTL:
 
         custom_ttl_ms = 30000  # 30 seconds
 
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             # Use client.call_tool with task=True and ttl
             task = await client.call_tool("ttl_tool", {}, task=True, ttl=custom_ttl_ms)
 
@@ -125,7 +125,7 @@ class TestTaskMetaTTL:
         async def default_ttl_tool() -> str:
             return "done"
 
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             # Use client.call_tool with task=True, default ttl
             task = await client.call_tool("default_ttl_tool", {}, task=True)
 
@@ -169,7 +169,7 @@ class TestTaskMetaMiddleware:
 
         server.add_middleware(TrackingMiddleware(middleware_saw_request))
 
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             # Use client to trigger the middleware chain
             task = await client.call_tool("middleware_test_tool", {}, task=True)
 
@@ -193,7 +193,7 @@ class TestTaskMetaClientIntegration:
         async def client_test_tool(x: int) -> int:
             return x * 2
 
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             # Client passes task=True, server receives as task_meta
             task = await client.call_tool("client_test_tool", {"x": 5}, task=True)
 
@@ -214,7 +214,7 @@ class TestTaskMetaClientIntegration:
         async def immediate_tool(x: int) -> int:
             return x * 2
 
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             # No task=True, should execute synchronously
             result = await client.call_tool("immediate_tool", {"x": 5})
 
@@ -231,7 +231,7 @@ class TestTaskMetaClientIntegration:
 
         custom_ttl_ms = 60000  # 60 seconds
 
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             task = await client.call_tool(
                 "custom_ttl_tool", {}, task=True, ttl=custom_ttl_ms
             )
@@ -265,7 +265,7 @@ class TestTaskMetaDirectServerCall:
             # Should get CreateTaskResult since we're in server context
             return f"Created task: {result.task.task_id}"
 
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             # Call outer_tool which internally calls inner_tool with task_meta
             result = await client.call_tool("outer_tool", {"x": 5})
             # The outer tool should have successfully created a background task
@@ -288,7 +288,7 @@ class TestTaskMetaDirectServerCall:
             assert isinstance(first_content, mcp_types.TextContent)
             return f"Got result: {first_content.text}"
 
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             result = await client.call_tool("outer_tool", {"x": 5})
             assert "Got result: 10" in str(result)
 
@@ -308,7 +308,7 @@ class TestTaskMetaDirectServerCall:
             )
             return f"Task TTL: {result.task.ttl}"
 
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             result = await client.call_tool("outer_tool", {"x": 5})
             # The inner tool task should have the custom TTL
             assert "Task TTL: 45000" in str(result)

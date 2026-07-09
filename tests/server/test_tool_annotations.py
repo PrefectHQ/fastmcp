@@ -229,7 +229,7 @@ async def test_task_execution_auto_populated_for_task_enabled_tool():
         """A tool that runs in background."""
         return f"Processed: {data}"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         tools_result = await client.list_tools()
         assert len(tools_result) == 1
         assert tools_result[0].name == "background_tool"

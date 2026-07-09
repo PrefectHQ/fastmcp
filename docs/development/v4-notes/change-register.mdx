@@ -166,7 +166,7 @@ The `fastmcp.Client` public API is largely preserved. The client stays a wrapper
 
 `Client(mode=...)` now defaults to `"auto"` instead of `"legacy"`. The client probes `server/discover` and adopts the modern (`2026-07-28`) era when the server responds, denylist-falling-back to the initialize handshake for any server that is not positive evidence of a modern peer. Against a FastMCP server (which serves both eras), an ordinary `Client(url)` now negotiates the modern era by default, where the legacy-only Context push features are unavailable per the per-feature era matrix (see the *Protocol eras* section below) — server-initiated sampling/elicitation/roots, `ping`, session ids, and FastMCP task submission all require the legacy era. The one-line revert is `Client(..., mode="legacy")`, which restores byte-identical pre-v4 negotiation.
 
-The SSE transport is legacy-only (it cannot carry the sessionless modern era), so a client connecting over SSE negotiates the legacy handshake even under `mode="auto"` — expressed by a `ClientTransport.legacy_only` flag set on `SSETransport`.
+The SSE transport is legacy-only (it cannot carry the sessionless modern era), so a client connecting over SSE negotiates the legacy handshake even under `mode="auto"` — expressed by a `ClientTransport.legacy_only` flag set on `SSETransport` and `MCPConfigTransport`. Two internal library seams that are inherently handshake-based are pinned to legacy so the flip does not break them: the `ProxyClient` backend (which forwards the initialize handshake and server-initiated features) defaults to `mode="legacy"`, and the `inspect` utility (which reads the full `server_info` only the handshake carries) connects legacy.
 
 ```python
 from fastmcp import Client
@@ -175,7 +175,7 @@ client = Client("https://example.com/mcp")                  # now negotiates "au
 client = Client("https://example.com/mcp", mode="legacy")   # opt back into the handshake
 ```
 
-*Verify:* `fastmcp_slim/fastmcp/client/client.py` (`mode` default, `_negotiate` `legacy_only` shortcut), `fastmcp_slim/fastmcp/client/transports/{base,sse}.py` (`legacy_only`), `tests/client/client/test_mode_negotiation.py` (default, clean discover-rejection fallback, legacy-only transport), `docs/clients/client.mdx`.
+*Verify:* `fastmcp_slim/fastmcp/client/client.py` (`mode` default, `_negotiate` `legacy_only` shortcut), `fastmcp_slim/fastmcp/client/transports/{base,sse,config}.py` (`legacy_only`), `fastmcp_slim/fastmcp/server/providers/proxy.py` (`ProxyClient` legacy default), `fastmcp_slim/fastmcp/mcp_config.py` and `fastmcp_slim/fastmcp/utilities/inspect.py` (legacy inner clients), `tests/client/client/test_mode_negotiation.py` (default, clean discover-rejection fallback, legacy-only transport), `docs/clients/client.mdx`.
 
 ### `extensions=` / `result_claims=` surfaced — New (opt-in feature)
 

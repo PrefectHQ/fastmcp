@@ -188,7 +188,7 @@ class TestBaseTransformBehavior:
             await ctx.disable_components(names={"delete_record"})
             return "disabled"
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             # Before disabling, search should find delete_record
             result = await client.call_tool("search_tools", {"pattern": "delete"})
             found = _parse_tool_result(result)

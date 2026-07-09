@@ -7,7 +7,7 @@ an elicitation/create request to the client session. The client's
 elicitation_handler fires, and the relay pushes the response to Redis
 for the blocked worker.
 
-These tests use Client(mcp) with the real memory:// Docket backend.
+These tests use Client(mcp, mode="legacy") with the real memory:// Docket backend.
 """
 
 import asyncio
@@ -44,7 +44,7 @@ class TestElicitationRelay:
             assert message == "What is your name?"
             return ElicitResult(action="accept", content={"value": "Alice"})
 
-        async with Client(mcp, elicitation_handler=handler) as client:
+        async with Client(mcp, mode="legacy", elicitation_handler=handler) as client:
             task = await client.call_tool("ask_name", {}, task=True)
             result = await task.result()
             assert result.data == "Hello, Alice!"
@@ -65,7 +65,7 @@ class TestElicitationRelay:
         async def handler(message, response_type, params, ctx):
             return ElicitResult(action="decline")
 
-        async with Client(mcp, elicitation_handler=handler) as client:
+        async with Client(mcp, mode="legacy", elicitation_handler=handler) as client:
             task = await client.call_tool("optional_input", {}, task=True)
             result = await task.result()
             assert result.data == "User declined"
@@ -84,7 +84,7 @@ class TestElicitationRelay:
         async def handler(message, response_type, params, ctx):
             return ElicitResult(action="cancel")
 
-        async with Client(mcp, elicitation_handler=handler) as client:
+        async with Client(mcp, mode="legacy", elicitation_handler=handler) as client:
             task = await client.call_tool("cancellable", {}, task=True)
             result = await task.result()
             assert result.data == "Cancelled"
@@ -109,7 +109,7 @@ class TestElicitationRelay:
         async def handler(message, response_type, params, ctx):
             return ElicitResult(action="accept", content={"name": "Bob", "age": 30})
 
-        async with Client(mcp, elicitation_handler=handler) as client:
+        async with Client(mcp, mode="legacy", elicitation_handler=handler) as client:
             task = await client.call_tool("get_user", {}, task=True)
             result = await task.result()
             assert result.data == "Bob is 30"
@@ -135,7 +135,7 @@ class TestElicitationRelay:
                 action="accept", content={"host": "localhost", "port": 8080}
             )
 
-        async with Client(mcp, elicitation_handler=handler) as client:
+        async with Client(mcp, mode="legacy", elicitation_handler=handler) as client:
             task = await client.call_tool("get_config", {}, task=True)
             result = await task.result()
             assert result.data == "localhost:8080"
@@ -166,7 +166,7 @@ class TestElicitationRelay:
                 assert message == "Last name?"
                 return ElicitResult(action="accept", content={"value": "Doe"})
 
-        async with Client(mcp, elicitation_handler=handler) as client:
+        async with Client(mcp, mode="legacy", elicitation_handler=handler) as client:
             task = await client.call_tool("two_questions", {}, task=True)
             result = await task.result()
             assert result.data == "Jane Doe"
@@ -185,7 +185,7 @@ class TestElicitationRelay:
                 return f"Got: {result.data}"
             return "Other"
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             task = await client.call_tool("needs_input", {}, task=True)
             result = await asyncio.wait_for(task.result(), timeout=15.0)
             assert result.data == "Cancelled as expected"

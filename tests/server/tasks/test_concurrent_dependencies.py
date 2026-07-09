@@ -30,7 +30,7 @@ async def test_concurrent_foreground_tools_with_context():
         results.append(name)
         return f"done:{name}"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         tasks = [client.call_tool("slow_tool", {"name": f"task-{i}"}) for i in range(4)]
         outcomes = await asyncio.gather(*tasks)
 
@@ -56,7 +56,7 @@ async def test_concurrent_foreground_tools_with_progress():
         await progress.increment()
         return f"done:{name}"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         tasks = [
             client.call_tool(
                 "variable_tool", {"name": f"t-{i}", "delay": 0.01 * (i + 1)}
@@ -80,7 +80,7 @@ async def test_concurrent_background_tasks_with_context():
         await asyncio.sleep(0.05)
         return f"bg:{name}"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         task_handles = [
             await client.call_tool("bg_tool", {"name": f"bg-{i}"}, task=True)
             for i in range(4)
@@ -109,7 +109,7 @@ async def test_concurrent_background_tasks_with_progress():
         await progress.increment()
         return f"bg:{name}"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         task_handles = [
             await client.call_tool(
                 "bg_progress_tool",
@@ -137,7 +137,7 @@ async def test_dependency_aenter_returns_fresh_instances():
         instances.append(ctx)
         return "ok"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         await asyncio.gather(
             client.call_tool("capture_context", {}),
             client.call_tool("capture_context", {}),
@@ -161,7 +161,7 @@ async def test_progress_aenter_returns_fresh_instances():
         await progress.increment()
         return "ok"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         await asyncio.gather(
             client.call_tool("capture_progress", {}),
             client.call_tool("capture_progress", {}),
@@ -187,7 +187,7 @@ async def test_sync_context_functions_work_in_background_without_deps():
         headers = get_http_headers()
         return {"has_headers": str(bool(headers))}
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         task = await client.call_tool("bare_sync_access", {}, task=True)
         result = await task.result()
         assert result.data == {"has_headers": "False"}
@@ -207,7 +207,7 @@ async def test_sync_context_functions_work_in_background_with_context():
             "is_background": str(ctx.is_background_task),
         }
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         task = await client.call_tool("context_sync_access", {}, task=True)
         result = await task.result()
         assert result.data["is_background"] == "True"

@@ -25,7 +25,7 @@ async def metadata_server():
 
 async def test_tasks_get_includes_related_task_metadata(metadata_server: FastMCP):
     """tasks/get response includes io.modelcontextprotocol/related-task in _meta."""
-    async with Client(metadata_server) as client:
+    async with Client(metadata_server, mode="legacy") as client:
         # Submit a task
         task = await client.call_tool("test_tool", {"value": 5}, task=True)
         task_id = task.task_id
@@ -41,7 +41,7 @@ async def test_tasks_get_includes_related_task_metadata(metadata_server: FastMCP
 
 async def test_tasks_result_includes_related_task_metadata(metadata_server: FastMCP):
     """tasks/result response includes io.modelcontextprotocol/related-task in _meta."""
-    async with Client(metadata_server) as client:
+    async with Client(metadata_server, mode="legacy") as client:
         # Submit and complete a task
         task = await client.call_tool("test_tool", {"value": 7}, task=True)
         result = await task.result()
@@ -54,7 +54,7 @@ async def test_tasks_result_includes_related_task_metadata(metadata_server: Fast
 
 async def test_tasks_list_includes_related_task_metadata(metadata_server: FastMCP):
     """tasks/list response includes io.modelcontextprotocol/related-task in _meta."""
-    async with Client(metadata_server) as client:
+    async with Client(metadata_server, mode="legacy") as client:
         # List tasks via client (which uses protocol properly)
         result = await client.list_tasks()
 

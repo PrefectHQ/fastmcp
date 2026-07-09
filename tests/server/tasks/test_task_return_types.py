@@ -96,7 +96,7 @@ async def test_task_basic_types(
     expected_value: Any,
 ):
     """Task mode returns basic types correctly."""
-    async with Client(return_type_server) as client:
+    async with Client(return_type_server, mode="legacy") as client:
         task = await client.call_tool(tool_name, task=True)
         result = await task
         assert isinstance(result.data, expected_type)
@@ -105,7 +105,7 @@ async def test_task_basic_types(
 
 async def test_task_model_return(return_type_server):
     """Task mode returns same BaseModel (as dict) as immediate mode."""
-    async with Client(return_type_server) as client:
+    async with Client(return_type_server, mode="legacy") as client:
         task = await client.call_tool("return_model", task=True)
         result = await task
 
@@ -118,7 +118,7 @@ async def test_task_model_return(return_type_server):
 
 async def test_task_vs_immediate_equivalence(return_type_server):
     """Verify task mode and immediate mode return identical results."""
-    async with Client(return_type_server) as client:
+    async with Client(return_type_server, mode="legacy") as client:
         # Test a few types to verify equivalence
         tools_to_test = ["return_string", "return_int", "return_dict"]
 
@@ -160,7 +160,7 @@ async def prompt_return_server():
 
 async def test_prompt_task_single_message(prompt_return_server):
     """Prompt task returns single message correctly."""
-    async with Client(prompt_return_server) as client:
+    async with Client(prompt_return_server, mode="legacy") as client:
         task = await client.get_prompt("single_message_prompt", task=True)
         result = await task
 
@@ -170,7 +170,7 @@ async def test_prompt_task_single_message(prompt_return_server):
 
 async def test_prompt_task_multiple_messages(prompt_return_server):
     """Prompt task returns multiple messages correctly."""
-    async with Client(prompt_return_server) as client:
+    async with Client(prompt_return_server, mode="legacy") as client:
         task = await client.get_prompt("multi_message_prompt", task=True)
         result = await task
 
@@ -202,7 +202,7 @@ async def resource_return_server():
 
 async def test_resource_task_text_content(resource_return_server):
     """Resource task returns text content correctly."""
-    async with Client(resource_return_server) as client:
+    async with Client(resource_return_server, mode="legacy") as client:
         task = await client.read_resource("text://simple", task=True)
         contents = await task
 
@@ -212,7 +212,7 @@ async def test_resource_task_text_content(resource_return_server):
 
 async def test_resource_task_json_content(resource_return_server):
     """Resource task returns structured content correctly."""
-    async with Client(resource_return_server) as client:
+    async with Client(resource_return_server, mode="legacy") as client:
         task = await client.read_resource("data://json", task=True)
         contents = await task
 
@@ -287,7 +287,7 @@ async def test_task_binary_types(
     assertion_fn: Any,
 ):
     """Task mode handles binary and special types."""
-    async with Client(binary_type_server) as client:
+    async with Client(binary_type_server, mode="legacy") as client:
         task = await client.call_tool(tool_name, task=True)
         result = await task
         assert isinstance(result.data, expected_type)
@@ -338,7 +338,7 @@ async def test_task_collection_types(
     expected_value: Any,
 ):
     """Task mode handles collection types."""
-    async with Client(collection_server) as client:
+    async with Client(collection_server, mode="legacy") as client:
         task = await client.call_tool(tool_name, task=True)
         result = await task
         assert isinstance(result.data, expected_type)
@@ -347,7 +347,7 @@ async def test_task_collection_types(
 
 async def test_task_empty_dict_return(collection_server):
     """Task mode handles empty dict return."""
-    async with Client(collection_server) as client:
+    async with Client(collection_server, mode="legacy") as client:
         task = await client.call_tool("return_empty_dict", task=True)
         result = await task
         # Empty structured content becomes None in data
@@ -426,7 +426,7 @@ async def test_task_media_types(
     assertion_fn: Any,
 ):
     """Task mode handles media types (Image, Audio, File)."""
-    async with Client(media_server) as client:
+    async with Client(media_server, mode="legacy") as client:
         task = await client.call_tool(tool_name, task=True)
         result = await task
         assert assertion_fn(result)
@@ -498,7 +498,7 @@ async def test_task_structured_dict_types(
     expected_age: int,
 ):
     """Task mode handles TypedDict and dataclass returns."""
-    async with Client(structured_type_server) as client:
+    async with Client(structured_type_server, mode="legacy") as client:
         task = await client.call_tool(tool_name, task=True)
         result = await task
         # Both deserialize to dynamic Root class
@@ -520,7 +520,7 @@ async def test_task_union_types(
     expected_value: Any,
 ):
     """Task mode handles union type branches."""
-    async with Client(structured_type_server) as client:
+    async with Client(structured_type_server, mode="legacy") as client:
         task = await client.call_tool(tool_name, task=True)
         result = await task
         assert isinstance(result.data, expected_type)
@@ -541,7 +541,7 @@ async def test_task_optional_types(
     expected_value: Any,
 ):
     """Task mode handles Optional types."""
-    async with Client(structured_type_server) as client:
+    async with Client(structured_type_server, mode="legacy") as client:
         task = await client.call_tool(tool_name, task=True)
         result = await task
         assert isinstance(result.data, expected_type)
@@ -650,7 +650,7 @@ async def test_task_mcp_content_types(
     assertion_fn: Any,
 ):
     """Task mode handles MCP content block types."""
-    async with Client(mcp_content_server) as client:
+    async with Client(mcp_content_server, mode="legacy") as client:
         task = await client.call_tool(tool_name, task=True)
         result = await task
         assert assertion_fn(result)
@@ -658,7 +658,7 @@ async def test_task_mcp_content_types(
 
 async def test_task_mixed_content_return(mcp_content_server):
     """Task mode handles mixed content list return."""
-    async with Client(mcp_content_server) as client:
+    async with Client(mcp_content_server, mode="legacy") as client:
         task = await client.call_tool("return_mixed_content", task=True)
         result = await task
         assert len(result.content) == 3

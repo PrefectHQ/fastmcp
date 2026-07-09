@@ -25,5 +25,7 @@ async def test_elicitation_none_response_type_warns_deprecation():
     async def elicitation_handler(message, response_type, params, ctx):
         return ElicitResult(action="accept", content={})
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         await client.call_tool("my_tool", {})

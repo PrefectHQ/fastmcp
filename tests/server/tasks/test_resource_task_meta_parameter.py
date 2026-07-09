@@ -124,7 +124,7 @@ class TestResourceTaskMetaClientIntegration:
         async def immediate_resource() -> str:
             return "hello"
 
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             result = await client.read_resource("data://test")
 
             # Should get ReadResourceResult directly
@@ -138,7 +138,7 @@ class TestResourceTaskMetaClientIntegration:
         async def task_resource() -> str:
             return "hello"
 
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             from fastmcp.client.tasks import ResourceTask
 
             task = await client.read_resource("data://test", task=True)
@@ -157,7 +157,7 @@ class TestResourceTaskMetaClientIntegration:
         async def get_item(id: str) -> str:
             return f"Item {id}"
 
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             from fastmcp.client.tasks import ResourceTask
 
             task = await client.read_resource("item://42", task=True)
@@ -187,7 +187,7 @@ class TestResourceTaskMetaDirectServerCall:
             # Should get CreateTaskResult since we provided task_meta
             return f"Created task: {result.task.task_id}"
 
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             result = await client.call_tool("outer_tool", {})
             assert "Created task:" in str(result)
 
@@ -206,7 +206,7 @@ class TestResourceTaskMetaDirectServerCall:
             # Should get ResourceResult directly
             return f"Got result: {result.contents[0].content}"
 
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             result = await client.call_tool("outer_tool", {})
             assert "Got result: inner data" in str(result)
 
@@ -223,7 +223,7 @@ class TestResourceTaskMetaDirectServerCall:
             result = await server.read_resource("item://99", task_meta=TaskMeta())
             return f"Created task: {result.task.task_id}"
 
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             result = await client.call_tool("outer_tool", {})
             assert "Created task:" in str(result)
 
@@ -243,7 +243,7 @@ class TestResourceTaskMetaDirectServerCall:
             )
             return f"Task TTL: {result.task.ttl}"
 
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             result = await client.call_tool("outer_tool", {})
             assert "Task TTL: 45000" in str(result)
 
@@ -274,7 +274,7 @@ class TestResourceTaskMetaTypeNarrowing:
         async def task_resource() -> str:
             return "hello"
 
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             # Need to use client to get full task infrastructure
             from fastmcp.client.tasks import ResourceTask
 

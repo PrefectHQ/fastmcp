@@ -176,7 +176,7 @@ async def test_create_proxy_with_client(fastmcp_server):
 async def test_create_proxy_with_server(fastmcp_server):
     """create_proxy should accept a FastMCP instance."""
     proxy = create_proxy(fastmcp_server)
-    async with Client(proxy) as client:
+    async with Client(proxy, mode="legacy") as client:
         result = await client.call_tool("greet", {"name": "Test"})
         assert result.data == "Hello, Test!"
 
@@ -184,7 +184,7 @@ async def test_create_proxy_with_server(fastmcp_server):
 async def test_create_proxy_with_transport(fastmcp_server):
     """create_proxy should accept a ClientTransport."""
     proxy = create_proxy(FastMCPTransport(fastmcp_server))
-    async with Client(proxy) as client:
+    async with Client(proxy, mode="legacy") as client:
         result = await client.call_tool("greet", {"name": "Test"})
         assert result.data == "Hello, Test!"
 
@@ -218,7 +218,7 @@ async def test_proxy_with_async_client_factory():
 async def test_proxy_ping_forwards_to_remote_server(fastmcp_server):
     proxy = create_proxy(fastmcp_server)
 
-    async with Client(proxy) as client:
+    async with Client(proxy, mode="legacy") as client:
         assert await client.ping() is True
 
 
@@ -230,7 +230,7 @@ async def test_proxy_ping_surfaces_wrong_remote_path():
         # SDK v2 surfaces a wrong remote path as an HTTP "Not Found" rather than
         # the v1 "Session terminated" message.
         with pytest.raises(MCPError, match="Not Found"):
-            async with Client(proxy):
+            async with Client(proxy, mode="legacy"):
                 pass
 
 
@@ -242,7 +242,7 @@ async def test_proxy_initialize_forwards_remote_connection_error():
     )
 
     with pytest.raises(MCPError, match="Client failed to connect"):
-        async with Client(proxy):
+        async with Client(proxy, mode="legacy"):
             pass
 
 
@@ -265,7 +265,7 @@ async def test_proxy_list_tools_client_surfaces_remote_connection_error():
     )
 
     with pytest.raises(MCPError, match="Client failed to connect"):
-        async with Client(proxy) as client:
+        async with Client(proxy, mode="legacy") as client:
             await client.list_tools()
 
 
@@ -322,7 +322,7 @@ class TestTools:
         )
 
         proxy = create_proxy(server)
-        async with Client(proxy) as client:
+        async with Client(proxy, mode="legacy") as client:
             result = await client.call_tool("add_transformed", {"a": 1, "b": 2})
         assert result.data == 3
 
@@ -332,31 +332,31 @@ class TestTools:
         assert tool.description is None
 
     async def test_list_tools_same_as_original(self, fastmcp_server, proxy_server):
-        async with Client(fastmcp_server) as original_client:
+        async with Client(fastmcp_server, mode="legacy") as original_client:
             original = await original_client.list_tools()
-        async with Client(proxy_server) as proxy_client:
+        async with Client(proxy_server, mode="legacy") as proxy_client:
             proxied = await proxy_client.list_tools()
         assert proxied == original
 
     async def test_call_tool_result_same_as_original(
         self, fastmcp_server: FastMCP, proxy_server: FastMCPProxy
     ):
-        async with Client(fastmcp_server) as original_client:
+        async with Client(fastmcp_server, mode="legacy") as original_client:
             result = await original_client.call_tool("greet", {"name": "Alice"})
-        async with Client(proxy_server) as proxy_client:
+        async with Client(proxy_server, mode="legacy") as proxy_client:
             proxy_result = await proxy_client.call_tool("greet", {"name": "Alice"})
 
         assert result.content == proxy_result.content
         assert result.data == proxy_result.data
 
     async def test_call_tool_calls_tool(self, proxy_server):
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             proxy_result = await client.call_tool("add", {"a": 1, "b": 2})
         assert proxy_result.data == 3
 
     async def test_error_tool_raises_error(self, proxy_server):
         with pytest.raises(ToolError, match="This is a test error"):
-            async with Client(proxy_server) as client:
+            async with Client(proxy_server, mode="legacy") as client:
                 await client.call_tool("error_tool", {})
 
     async def test_error_tool_with_image_content(self, proxy_server):
@@ -373,7 +373,7 @@ class TestTools:
             Client, "call_tool_mcp", new_callable=AsyncMock, return_value=error_result
         ):
             with pytest.raises(ToolError):
-                async with Client(proxy_server) as client:
+                async with Client(proxy_server, mode="legacy") as client:
                     await client.call_tool("error_tool", {})
 
     async def test_error_tool_with_empty_content(self, proxy_server):
@@ -386,7 +386,7 @@ class TestTools:
             Client, "call_tool_mcp", new_callable=AsyncMock, return_value=error_result
         ):
             with pytest.raises(ToolError):
-                async with Client(proxy_server) as client:
+                async with Client(proxy_server, mode="legacy") as client:
                     await client.call_tool("error_tool", {})
 
     async def test_error_tool_passthrough_preserves_content(self, proxy_server):
@@ -403,7 +403,7 @@ class TestTools:
         with patch.object(
             Client, "call_tool_mcp", new_callable=AsyncMock, return_value=error_result
         ):
-            async with Client(proxy_server) as client:
+            async with Client(proxy_server, mode="legacy") as client:
                 result = await client.call_tool("error_tool", {}, raise_on_error=False)
 
         assert result.is_error is True
@@ -422,7 +422,7 @@ class TestTools:
                 meta={"custom_key": "custom_value", "processed": True},
             )
 
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             result = await client.call_tool("tool_with_meta", {"value": "test"})
 
         assert isinstance(result.content[0], TextContent)
@@ -438,7 +438,7 @@ class TestTools:
         def greet(name: str, extra: str = "extra") -> str:
             return f"Overwritten, {name}! {extra}"
 
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             result = await client.call_tool("greet", {"name": "Marvin", "extra": "abc"})
         assert result.data == "Overwritten, Marvin! abc"
 
@@ -451,7 +451,7 @@ class TestTools:
         def greet(name: str, extra: str = "extra") -> str:
             return f"Overwritten, {name}! {extra}"
 
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             tools = await client.list_tools()
             greet_tool = next(t for t in tools if t.name == "greet")
             assert "extra" in greet_tool.input_schema["properties"]
@@ -474,27 +474,27 @@ class TestResources:
         assert wave_resource.icons == [Icon(src="https://example.com/wave-icon.png")]
 
     async def test_list_resources_same_as_original(self, fastmcp_server, proxy_server):
-        async with Client(fastmcp_server) as original_client:
+        async with Client(fastmcp_server, mode="legacy") as original_client:
             original = await original_client.list_resources()
-        async with Client(proxy_server) as proxy_client:
+        async with Client(proxy_server, mode="legacy") as proxy_client:
             proxied = await proxy_client.list_resources()
         assert proxied == original
 
     async def test_read_resource(self, proxy_server: FastMCPProxy):
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             result = await client.read_resource("resource://wave")
         assert isinstance(result[0], TextResourceContents)
         assert result[0].text == "👋"
 
     async def test_read_resource_same_as_original(self, fastmcp_server, proxy_server):
-        async with Client(fastmcp_server) as client:
+        async with Client(fastmcp_server, mode="legacy") as client:
             result = await client.read_resource("resource://wave")
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             proxy_result = await client.read_resource("resource://wave")
         assert proxy_result == result
 
     async def test_read_json_resource(self, proxy_server: FastMCPProxy):
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             result = await client.read_resource("data://users")
         assert len(result) == 1
         assert isinstance(result[0], TextResourceContents)
@@ -507,11 +507,11 @@ class TestResources:
     ):
         """Test that proxy correctly returns all resource contents, not just the first one."""
         # Read from original server
-        async with Client(fastmcp_server) as client:
+        async with Client(fastmcp_server, mode="legacy") as client:
             original_result = await client.read_resource("data://multi")
 
         # Read from proxy server
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             proxy_result = await client.read_resource("data://multi")
 
         # Both should return the same number of contents
@@ -540,7 +540,7 @@ class TestResources:
         with pytest.raises(
             MCPError, match="Resource not found: 'resource://nonexistent'"
         ):
-            async with Client(proxy_server) as client:
+            async with Client(proxy_server, mode="legacy") as client:
                 await client.read_resource("resource://nonexistent")
 
     async def test_proxy_can_overwrite_proxied_resource(self, proxy_server):
@@ -552,7 +552,7 @@ class TestResources:
         def overwritten_wave() -> str:
             return "Overwritten wave! 🌊"
 
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             result = await client.read_resource("resource://wave")
         assert isinstance(result[0], TextResourceContents)
         assert result[0].text == "Overwritten wave! 🌊"
@@ -566,7 +566,7 @@ class TestResources:
         def overwritten_wave() -> str:
             return "Overwritten wave! 🌊"
 
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             resources = await client.list_resources()
             wave_resource = next(
                 r for r in resources if str(r.uri) == "resource://wave"
@@ -593,15 +593,15 @@ class TestResourceTemplates:
     async def test_list_resource_templates_same_as_original(
         self, fastmcp_server, proxy_server
     ):
-        async with Client(fastmcp_server) as original_client:
+        async with Client(fastmcp_server, mode="legacy") as original_client:
             result = await original_client.list_resource_templates()
-        async with Client(proxy_server) as proxy_client:
+        async with Client(proxy_server, mode="legacy") as proxy_client:
             proxy_result = await proxy_client.list_resource_templates()
         assert proxy_result == result
 
     @pytest.mark.parametrize("id", [1, 2, 3])
     async def test_read_resource_template(self, proxy_server: FastMCPProxy, id: int):
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             result = await client.read_resource(f"data://user/{id}")
         assert isinstance(result[0], TextResourceContents)
         assert json.loads(result[0].text) == USERS[id - 1]
@@ -609,9 +609,9 @@ class TestResourceTemplates:
     async def test_read_resource_template_same_as_original(
         self, fastmcp_server, proxy_server
     ):
-        async with Client(fastmcp_server) as client:
+        async with Client(fastmcp_server, mode="legacy") as client:
             result = await client.read_resource("data://user/1")
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             proxy_result = await client.read_resource("data://user/1")
         assert proxy_result == result
 
@@ -620,11 +620,11 @@ class TestResourceTemplates:
     ):
         """Test that proxy template correctly returns all resource contents."""
         # Read from original server
-        async with Client(fastmcp_server) as client:
+        async with Client(fastmcp_server, mode="legacy") as client:
             original_result = await client.read_resource("data://multi/test123")
 
         # Read from proxy server
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             proxy_result = await client.read_resource("data://multi/test123")
 
         # Both should return the same number of contents
@@ -662,7 +662,7 @@ class TestResourceTemplates:
                 }
             )
 
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             result = await client.read_resource("data://user/1")
         assert isinstance(result[0], TextResourceContents)
         user_data = json.loads(result[0].text)
@@ -678,7 +678,7 @@ class TestResourceTemplates:
         def overwritten_get_user(user_id: str) -> dict[str, Any]:
             return {"id": user_id, "name": "Overwritten User", "active": True}
 
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             templates = await client.list_resource_templates()
             user_template = next(
                 t for t in templates if t.uri_template == "data://user/{user_id}"
@@ -696,8 +696,8 @@ class TestResourceTemplateQueryParams:
         def get_data(id: str, format: str = "json") -> str:
             return f"id={id} format={format}"
 
-        proxy = create_proxy(Client(remote))
-        async with Client(proxy) as client:
+        proxy = create_proxy(Client(remote, mode="legacy"))
+        async with Client(proxy, mode="legacy") as client:
             result = await client.read_resource("data://123?format=xml")
         assert isinstance(result[0], TextResourceContents)
         assert result[0].text == "id=123 format=xml"
@@ -709,8 +709,8 @@ class TestResourceTemplateQueryParams:
         def get_data(id: str, format: str = "json") -> str:
             return f"id={id} format={format}"
 
-        proxy = create_proxy(Client(remote))
-        async with Client(proxy) as client:
+        proxy = create_proxy(Client(remote, mode="legacy"))
+        async with Client(proxy, mode="legacy") as client:
             result = await client.read_resource("data://123")
         assert isinstance(result[0], TextResourceContents)
         assert result[0].text == "id=123 format=json"
@@ -722,8 +722,8 @@ class TestResourceTemplateQueryParams:
         def get_data(id: str, limit: int = 10, offset: int = 0) -> str:
             return f"id={id} limit={limit} offset={offset}"
 
-        proxy = create_proxy(Client(remote))
-        async with Client(proxy) as client:
+        proxy = create_proxy(Client(remote, mode="legacy"))
+        async with Client(proxy, mode="legacy") as client:
             result = await client.read_resource("data://abc?limit=5&offset=20")
         assert isinstance(result[0], TextResourceContents)
         assert result[0].text == "id=abc limit=5 offset=20"
@@ -735,8 +735,8 @@ class TestResourceTemplateQueryParams:
         def get_data(id: str) -> str:
             return f"id={id}"
 
-        proxy = create_proxy(Client(remote))
-        async with Client(proxy) as client:
+        proxy = create_proxy(Client(remote, mode="legacy"))
+        async with Client(proxy, mode="legacy") as client:
             result = await client.read_resource("data://a%2Fb")
         assert isinstance(result[0], TextResourceContents)
         assert result[0].text == "id=a/b"
@@ -748,8 +748,8 @@ class TestResourceTemplateQueryParams:
         def get_data(id: str, api_version: str = "v1") -> str:
             return f"id={id} api_version={api_version}"
 
-        proxy = create_proxy(Client(remote))
-        async with Client(proxy) as client:
+        proxy = create_proxy(Client(remote, mode="legacy"))
+        async with Client(proxy, mode="legacy") as client:
             result = await client.read_resource("data://123?api-version=v2")
         assert isinstance(result[0], TextResourceContents)
         assert result[0].text == "id=123 api_version=v2"
@@ -769,8 +769,8 @@ class TestResourceTemplateQueryParams:
         def get_data(id: str, api_version: str = "v1") -> str:
             return f"id={id} api_version={api_version}"
 
-        proxy = create_proxy(Client(remote))
-        async with Client(proxy) as client:
+        proxy = create_proxy(Client(remote, mode="legacy"))
+        async with Client(proxy, mode="legacy") as client:
             result = await client.read_resource("data://123?api-version=a%2Fb")
         assert isinstance(result[0], TextResourceContents)
         assert result[0].text == "id=123 api_version=a/b"
@@ -791,23 +791,23 @@ class TestPrompts:
         ]
 
     async def test_list_prompts_same_as_original(self, fastmcp_server, proxy_server):
-        async with Client(fastmcp_server) as client:
+        async with Client(fastmcp_server, mode="legacy") as client:
             result = await client.list_prompts()
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             proxy_result = await client.list_prompts()
         assert proxy_result == result
 
     async def test_render_prompt_same_as_original(
         self, fastmcp_server: FastMCP, proxy_server: FastMCPProxy
     ):
-        async with Client(fastmcp_server) as client:
+        async with Client(fastmcp_server, mode="legacy") as client:
             result = await client.get_prompt("welcome", {"name": "Alice"})
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             proxy_result = await client.get_prompt("welcome", {"name": "Alice"})
         assert proxy_result == result
 
     async def test_render_prompt_calls_prompt(self, proxy_server):
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             result = await client.get_prompt("welcome", {"name": "Alice"})
         assert result.messages[0].role == "user"
         assert isinstance(result.messages[0].content, TextContent)
@@ -822,7 +822,7 @@ class TestPrompts:
         def welcome(name: str, extra: str = "friend") -> str:
             return f"Overwritten welcome, {name}! You are my {extra}."
 
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             result = await client.get_prompt(
                 "welcome", {"name": "Alice", "extra": "colleague"}
             )
@@ -842,7 +842,7 @@ class TestPrompts:
         def welcome(name: str, extra: str = "friend") -> str:
             return f"Overwritten welcome, {name}! You are my {extra}."
 
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             prompts = await client.list_prompts()
             welcome_prompt = next(p for p in prompts if p.name == "welcome")
             # Check that the overwritten prompt has the additional 'extra' parameter
@@ -853,9 +853,9 @@ class TestPrompts:
         self, fastmcp_server: FastMCP, proxy_server: FastMCPProxy
     ):
         """Test that ProxyPrompt preserves ImageContent without lossy conversion."""
-        async with Client(fastmcp_server) as client:
+        async with Client(fastmcp_server, mode="legacy") as client:
             result = await client.get_prompt("image_prompt")
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             proxy_result = await client.get_prompt("image_prompt")
 
         # The proxy result should match the original exactly

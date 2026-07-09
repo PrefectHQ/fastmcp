@@ -1116,6 +1116,12 @@ class ProxyClient(Client[ClientTransportT]):
     ):
         if "name" not in kwargs:
             kwargs["name"] = self.generate_name()
+        # Proxy forwarding is built on the legacy handshake era: it relays
+        # server-initiated roots/sampling/elicitation/logging (unavailable on
+        # the sessionless modern era) and forwards the backend's initialize
+        # result. Default the backend connection to legacy unless the caller
+        # explicitly opts into another mode.
+        kwargs.setdefault("mode", "legacy")
         # Install context-restoring handler wrappers BEFORE super().__init__
         # registers them with the Client's session kwargs.
         self._proxy_rc_ref = [None]

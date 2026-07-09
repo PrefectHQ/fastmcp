@@ -123,7 +123,7 @@ async def test_simple_initialization_hook():
     server.add_middleware(middleware)
 
     # Connect client
-    async with Client(server):
+    async with Client(server, mode="legacy"):
         # Middleware should have been called
         assert middleware.called is True, "on_initialize was not called"
 
@@ -139,7 +139,7 @@ async def test_middleware_receives_initialization():
         return f"Result: {x}"
 
     # Connect client
-    async with Client(server) as client:
+    async with Client(server, mode="legacy") as client:
         # Middleware should have been called during initialization
         assert middleware.initialized is True
 
@@ -160,7 +160,7 @@ async def test_client_detection_middleware():
         return "example"
 
     # Connect with a client
-    async with Client(server) as client:
+    async with Client(server, mode="legacy") as client:
         # Middleware should have been called during initialization
         assert middleware.initialization_called is True
         assert middleware.is_test_client is True
@@ -190,7 +190,7 @@ async def test_multiple_middleware_initialization():
     def test_tool() -> str:
         return "test"
 
-    async with Client(server) as client:
+    async with Client(server, mode="legacy") as client:
         # Both middleware should have processed initialization
         assert init_mw.initialized is True
         assert detect_mw.initialization_called is True
@@ -241,7 +241,7 @@ async def test_session_state_persists_across_tool_calls():
     def test_tool() -> str:
         return "success"
 
-    async with Client(server) as client:
+    async with Client(server, mode="legacy") as client:
         # First call - state should be None initially
         result = await client.call_tool("test_tool", {})
         assert isinstance(result.content[0], TextContent)
@@ -287,7 +287,7 @@ async def test_middleware_can_access_initialize_result():
     middleware = ResponseCapturingMiddleware()
     server.add_middleware(middleware)
 
-    async with Client(server):
+    async with Client(server, mode="legacy"):
         # Middleware should have captured the InitializeResult
         assert middleware.initialize_result is not None
         assert isinstance(middleware.initialize_result, mt.InitializeResult)
@@ -315,7 +315,7 @@ async def test_middleware_mcp_error_during_initialization():
     server.add_middleware(ErrorThrowingMiddleware())
 
     with pytest.raises(MCPError) as exc_info:
-        async with Client(server):
+        async with Client(server, mode="legacy"):
             pass
 
     assert exc_info.value.error.message == "Invalid initialization parameters"
@@ -337,7 +337,7 @@ async def test_middleware_mcp_error_before_call_next():
     server.add_middleware(EarlyErrorMiddleware())
 
     with pytest.raises(MCPError) as exc_info:
-        async with Client(server):
+        async with Client(server, mode="legacy"):
             pass
 
     assert exc_info.value.error.message == "Request validation failed"
@@ -370,7 +370,7 @@ async def test_middleware_mcp_error_after_call_next():
     server.add_middleware(middleware)
 
     # Error is logged but not re-raised to prevent duplicate response
-    async with Client(server):
+    async with Client(server, mode="legacy"):
         pass
 
     assert middleware.error_raised is True
@@ -403,7 +403,7 @@ async def test_state_isolation_between_streamable_http_clients():
 
         # Client 1 stores its value
         transport1 = StreamableHttpTransport(url=url)
-        async with Client(transport=transport1) as client1:
+        async with Client(transport=transport1, mode="legacy") as client1:
             result1 = await client1.call_tool(
                 "store_and_read", {"value": "client1-value"}
             )
@@ -414,7 +414,7 @@ async def test_state_isolation_between_streamable_http_clients():
 
         # Client 2 should have completely isolated state
         transport2 = StreamableHttpTransport(url=url)
-        async with Client(transport=transport2) as client2:
+        async with Client(transport=transport2, mode="legacy") as client2:
             result2 = await client2.call_tool(
                 "store_and_read", {"value": "client2-value"}
             )

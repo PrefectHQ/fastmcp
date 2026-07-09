@@ -36,7 +36,7 @@ async def resource_server():
 
 async def test_synchronous_resource_unchanged(resource_server):
     """Resources without task metadata execute synchronously as before."""
-    async with Client(resource_server) as client:
+    async with Client(resource_server, mode="legacy") as client:
         # Regular call without task metadata
         result = await client.read_resource("file://data.txt")
 
@@ -46,7 +46,7 @@ async def test_synchronous_resource_unchanged(resource_server):
 
 async def test_resource_with_task_metadata_returns_immediately(resource_server):
     """Resources with task metadata return immediately with ResourceTask object."""
-    async with Client(resource_server) as client:
+    async with Client(resource_server, mode="legacy") as client:
         # Call with task metadata
         task = await client.read_resource("file://large.txt", task=True)
 
@@ -64,7 +64,7 @@ async def test_resource_with_task_metadata_returns_immediately(resource_server):
 )
 async def test_resource_task_executes_in_background(resource_server):
     """Resource task executes via Docket in background."""
-    async with Client(resource_server) as client:
+    async with Client(resource_server, mode="legacy") as client:
         task = await client.read_resource("file://large.txt", task=True)
 
         # Verify background execution
@@ -84,7 +84,7 @@ async def test_resource_task_executes_in_background(resource_server):
 )
 async def test_resource_template_with_task(resource_server):
     """Resource templates with task=True execute in background."""
-    async with Client(resource_server) as client:
+    async with Client(resource_server, mode="legacy") as client:
         task = await client.read_resource("file://user/123/data.json", task=True)
 
         # Verify background execution
@@ -113,7 +113,7 @@ async def test_forbidden_mode_resource_rejects_task_calls(resource_server):
     async def sync_only_resource() -> str:
         return "Sync content"
 
-    async with Client(resource_server) as client:
+    async with Client(resource_server, mode="legacy") as client:
         # Calling with task=True when task=False should raise MCPError
         with pytest.raises(MCPError) as exc_info:
             await client.read_resource("file://sync.txt", task=True)

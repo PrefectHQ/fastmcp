@@ -95,8 +95,12 @@ class TestStatefulProxyClient:
             results["logger_b"] = message
 
         async with (
-            Client(stateful_proxy_server, log_handler=log_handler_a) as client_a,
-            Client(stateful_proxy_server, log_handler=log_handler_b) as client_b,
+            Client(
+                stateful_proxy_server, mode="legacy", log_handler=log_handler_a
+            ) as client_a,
+            Client(
+                stateful_proxy_server, mode="legacy", log_handler=log_handler_b
+            ) as client_b,
         ):
             async with create_task_group() as tg:
                 tg.start_soon(
@@ -115,7 +119,7 @@ class TestStatefulProxyClient:
 
     async def test_stateful_proxy(self, stateful_proxy_server: FastMCP):
         """Test that the state shared across multiple calls for the same client (fixes #959)."""
-        async with Client(stateful_proxy_server) as client:
+        async with Client(stateful_proxy_server, mode="legacy") as client:
             with pytest.raises(ToolError, match="Value not found"):
                 await client.call_tool("stateful_get", {})
 
@@ -126,7 +130,7 @@ class TestStatefulProxyClient:
     async def test_stateless_proxy(self, stateless_server: str):
         """Test that the state will not be shared across different calls,
         even if they are from the same client."""
-        async with Client(stateless_server) as client:
+        async with Client(stateless_server, mode="legacy") as client:
             await client.call_tool("stateful_put", {"value": 1})
 
             with pytest.raises(ToolError, match="Value not found"):
@@ -154,7 +158,7 @@ class TestStatefulProxyClient:
         multi_proxy_mcp.mount(proxy_mcp_a, namespace="a")
         multi_proxy_mcp.mount(proxy_mcp_b, namespace="b")
 
-        async with Client(multi_proxy_mcp) as client:
+        async with Client(multi_proxy_mcp, mode="legacy") as client:
             result_a = await client.call_tool("a_tool_a", {})
             result_b = await client.call_tool("b_tool_b", {})
             assert result_a.data == "a"
@@ -202,7 +206,7 @@ class TestStatefulProxyClient:
         # related_request_id routing for server-initiated messages.
         async with run_server_async(proxy) as proxy_url:
             async with Client(
-                proxy_url, elicitation_handler=elicitation_handler
+                proxy_url, mode="legacy", elicitation_handler=elicitation_handler
             ) as client:
                 result1 = await client.call_tool("ask_name", {})
                 assert result1.data == "Hello, Alice!"

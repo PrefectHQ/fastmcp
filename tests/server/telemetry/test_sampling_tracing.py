@@ -43,7 +43,9 @@ class TestSamplingCreateMessageSpan:
             result = await context.sample(messages=question)
             return result.text or ""
 
-        async with Client(mcp, sampling_handler=sampling_handler) as client:
+        async with Client(
+            mcp, mode="legacy", sampling_handler=sampling_handler
+        ) as client:
             await client.call_tool("ask", {"question": "hi"})
 
         spans = _spans_named(trace_exporter, "sampling create_message")
@@ -78,7 +80,9 @@ class TestSamplingCreateMessageSpan:
             return result.text or ""
 
         with pytest.raises(Exception):
-            async with Client(mcp, sampling_handler=sampling_handler) as client:
+            async with Client(
+                mcp, mode="legacy", sampling_handler=sampling_handler
+            ) as client:
                 await client.call_tool("ask", {"question": "hi"})
 
         spans = _spans_named(trace_exporter, "sampling create_message")

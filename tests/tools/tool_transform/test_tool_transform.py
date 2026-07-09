@@ -736,7 +736,7 @@ class TestProxy:
         )
         proxy_server.add_tool(new_add_tool)
 
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             # The tool should be registered with its transformed name
             result = await client.call_tool("add_transformed", {"new_x": 1, "old_y": 2})
             assert isinstance(result.content[0], TextContent)

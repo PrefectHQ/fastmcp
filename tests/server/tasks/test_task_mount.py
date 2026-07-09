@@ -109,7 +109,7 @@ class TestMountedToolTasks:
 
     async def test_mounted_tool_task_returns_task_object(self, parent_server):
         """Mounted tool called with task=True returns a task object."""
-        async with Client(parent_server) as client:
+        async with Client(parent_server, mode="legacy") as client:
             # Tool name is prefixed: child_multiply
             task = await client.call_tool("child_multiply", {"a": 6, "b": 7}, task=True)
 
@@ -120,7 +120,7 @@ class TestMountedToolTasks:
 
     async def test_mounted_tool_task_executes_in_background(self, parent_server):
         """Mounted tool task executes in background."""
-        async with Client(parent_server) as client:
+        async with Client(parent_server, mode="legacy") as client:
             task = await client.call_tool("child_multiply", {"a": 3, "b": 4}, task=True)
 
             # Should execute in background
@@ -130,7 +130,7 @@ class TestMountedToolTasks:
         self, parent_server: FastMCP
     ):
         """Mounted tool task returns correct result."""
-        async with Client(parent_server) as client:
+        async with Client(parent_server, mode="legacy") as client:
             task = await client.call_tool("child_multiply", {"a": 8, "b": 9}, task=True)
 
             result = await task.result()
@@ -138,7 +138,7 @@ class TestMountedToolTasks:
 
     async def test_mounted_tool_task_status(self, parent_server):
         """Can poll task status for mounted tool."""
-        async with Client(parent_server) as client:
+        async with Client(parent_server, mode="legacy") as client:
             task = await client.call_tool(
                 "child_slow_child_tool", {"duration": 0.5}, task=True
             )
@@ -157,7 +157,7 @@ class TestMountedToolTasks:
     @pytest.mark.timeout(10)
     async def test_mounted_tool_task_cancellation(self, parent_server):
         """Can cancel a mounted tool task."""
-        async with Client(parent_server) as client:
+        async with Client(parent_server, mode="legacy") as client:
             task = await client.call_tool(
                 "child_slow_child_tool", {"duration": 10.0}, task=True
             )
@@ -174,7 +174,7 @@ class TestMountedToolTasks:
 
     async def test_graceful_degradation_sync_mounted_tool(self, parent_server):
         """Sync-only mounted tool returns error with task=True."""
-        async with Client(parent_server) as client:
+        async with Client(parent_server, mode="legacy") as client:
             task = await client.call_tool(
                 "child_sync_child_tool",
                 {"message": "hello"},
@@ -190,7 +190,7 @@ class TestMountedToolTasks:
 
     async def test_parent_and_mounted_tools_both_work(self, parent_server):
         """Both parent and mounted tools work as tasks."""
-        async with Client(parent_server) as client:
+        async with Client(parent_server, mode="legacy") as client:
             # Parent tool
             parent_task = await client.call_tool("parent_tool", {"value": 5}, task=True)
             # Mounted tool
@@ -212,7 +212,7 @@ class TestMountedToolTasksNoPrefix:
         self, parent_server_no_prefix
     ):
         """Mounted tool without prefix works as task."""
-        async with Client(parent_server_no_prefix) as client:
+        async with Client(parent_server_no_prefix, mode="legacy") as client:
             # No prefix, so tool keeps original name
             task = await client.call_tool("multiply", {"a": 5, "b": 6}, task=True)
 
@@ -227,7 +227,7 @@ class TestMountedPromptTasks:
 
     async def test_mounted_prompt_task_returns_task_object(self, parent_server):
         """Mounted prompt called with task=True returns a task object."""
-        async with Client(parent_server) as client:
+        async with Client(parent_server, mode="legacy") as client:
             # Prompt name is prefixed: child_child_prompt
             task = await client.get_prompt(
                 "child_child_prompt", {"topic": "FastMCP"}, task=True
@@ -245,7 +245,7 @@ class TestMountedPromptTasks:
     )
     async def test_mounted_prompt_task_executes_in_background(self, parent_server):
         """Mounted prompt task executes in background."""
-        async with Client(parent_server) as client:
+        async with Client(parent_server, mode="legacy") as client:
             task = await client.get_prompt(
                 "child_child_prompt", {"topic": "testing"}, task=True
             )
@@ -256,7 +256,7 @@ class TestMountedPromptTasks:
         self, parent_server: FastMCP
     ):
         """Mounted prompt task returns correct result."""
-        async with Client(parent_server) as client:
+        async with Client(parent_server, mode="legacy") as client:
             task = await client.get_prompt(
                 "child_child_prompt", {"topic": "MCP protocol"}, task=True
             )
@@ -271,7 +271,7 @@ class TestMountedResourceTasks:
 
     async def test_mounted_resource_task_returns_task_object(self, parent_server):
         """Mounted resource read with task=True returns a task object."""
-        async with Client(parent_server) as client:
+        async with Client(parent_server, mode="legacy") as client:
             # Resource URI is prefixed: child://child/data.txt
             task = await client.read_resource("child://child/data.txt", task=True)
 
@@ -287,14 +287,14 @@ class TestMountedResourceTasks:
     )
     async def test_mounted_resource_task_executes_in_background(self, parent_server):
         """Mounted resource task executes in background."""
-        async with Client(parent_server) as client:
+        async with Client(parent_server, mode="legacy") as client:
             task = await client.read_resource("child://child/data.txt", task=True)
 
             assert not task.returned_immediately
 
     async def test_mounted_resource_task_returns_correct_result(self, parent_server):
         """Mounted resource task returns correct result."""
-        async with Client(parent_server) as client:
+        async with Client(parent_server, mode="legacy") as client:
             task = await client.read_resource("child://child/data.txt", task=True)
 
             result = await task.result()
@@ -309,7 +309,7 @@ class TestMountedResourceTasks:
     )
     async def test_mounted_resource_template_task(self, parent_server):
         """Mounted resource template with task=True works."""
-        async with Client(parent_server) as client:
+        async with Client(parent_server, mode="legacy") as client:
             task = await client.read_resource("child://child/item/99.json", task=True)
 
             assert not task.returned_immediately
@@ -335,7 +335,7 @@ class TestMountedTaskDependencies:
         parent = FastMCP("dep-parent")
         parent.mount(child, namespace="child")
 
-        async with Client(parent) as client:
+        async with Client(parent, mode="legacy") as client:
             task = await client.call_tool("child_tool_with_docket", {}, task=True)
             result = await task.result()
 
@@ -356,7 +356,7 @@ class TestMountedTaskDependencies:
         parent = FastMCP("server-dep-parent")
         parent.mount(child, namespace="child")
 
-        async with Client(parent) as client:
+        async with Client(parent, mode="legacy") as client:
             task = await client.call_tool("child_tool_with_server", {}, task=True)
             await task.result()
 
@@ -380,7 +380,7 @@ class TestMountedTaskServerContext:
         parent = FastMCP("parent")
         parent.mount(child, namespace="child")
 
-        async with Client(parent) as client:
+        async with Client(parent, mode="legacy") as client:
             task = await client.call_tool("child_whoami", {}, task=True)
             result = await task.result()
 
@@ -403,7 +403,7 @@ class TestMountedTaskServerContext:
         parent = FastMCP("parent")
         parent.mount(child, namespace="child")
 
-        async with Client(parent) as client:
+        async with Client(parent, mode="legacy") as client:
             task = await client.call_tool("child_whoami_ctx", {}, task=True)
             result = await task.result()
 
@@ -427,7 +427,7 @@ class TestMountedTaskServerContext:
         parent = FastMCP("parent")
         parent.mount(child, namespace="child")
 
-        async with Client(parent) as client:
+        async with Client(parent, mode="legacy") as client:
             task = await client.call_tool("child_gc_deep_whoami", {}, task=True)
             result = await task.result()
 
@@ -456,7 +456,7 @@ class TestMultipleMounts:
         parent.mount(child1, namespace="math1")
         parent.mount(child2, namespace="math2")
 
-        async with Client(parent) as client:
+        async with Client(parent, mode="legacy") as client:
             task1 = await client.call_tool("math1_add", {"a": 10, "b": 5}, task=True)
             task2 = await client.call_tool(
                 "math2_subtract", {"a": 10, "b": 5}, task=True
@@ -489,7 +489,7 @@ class TestMountedFunctionNameCollisions:
         parent.mount(child1, namespace="c1")
         parent.mount(child2, namespace="c2")
 
-        async with Client(parent) as client:
+        async with Client(parent, mode="legacy") as client:
             # Both should execute their own implementation
             task1 = await client.call_tool("c1_process", {"value": 10}, task=True)
             task2 = await client.call_tool("c2_process", {"value": 10}, task=True)
@@ -517,7 +517,7 @@ class TestMountedFunctionNameCollisions:
         parent.mount(child1)  # No prefix
         parent.mount(child2)  # No prefix - overwrites child1's "process"
 
-        async with Client(parent) as client:
+        async with Client(parent, mode="legacy") as client:
             # Last mount wins - child2's process should execute
             task = await client.call_tool("process", {"value": 10}, task=True)
             result = await task.result()
@@ -536,7 +536,7 @@ class TestMountedFunctionNameCollisions:
         child.mount(grandchild, namespace="gc")
         parent.mount(child, namespace="child")
 
-        async with Client(parent) as client:
+        async with Client(parent, mode="legacy") as client:
             # Tool should be accessible and execute correctly
             task = await client.call_tool("child_gc_deep_tool", {}, task=True)
             result = await task.result()
@@ -548,7 +548,7 @@ class TestMountedTaskList:
 
     async def test_list_tasks_includes_mounted_tasks(self, parent_server):
         """Task list includes tasks from mounted server tools."""
-        async with Client(parent_server) as client:
+        async with Client(parent_server, mode="legacy") as client:
             # Create tasks on both parent and mounted tools
             parent_task = await client.call_tool("parent_tool", {"value": 1}, task=True)
             child_task = await client.call_tool(
@@ -645,13 +645,13 @@ class TestMountedTaskConfigModes:
 
     async def test_optional_mode_sync_through_mount(self, parent_with_modes):
         """Optional mode tool works without task through mount."""
-        async with Client(parent_with_modes) as client:
+        async with Client(parent_with_modes, mode="legacy") as client:
             result = await client.call_tool("child_optional_tool", {})
             assert "optional result" in str(result)
 
     async def test_optional_mode_task_through_mount(self, parent_with_modes):
         """Optional mode tool works with task through mount."""
-        async with Client(parent_with_modes) as client:
+        async with Client(parent_with_modes, mode="legacy") as client:
             task = await client.call_tool("child_optional_tool", {}, task=True)
             assert task is not None
             result = await task.result()
@@ -659,7 +659,7 @@ class TestMountedTaskConfigModes:
 
     async def test_required_mode_with_task_through_mount(self, parent_with_modes):
         """Required mode tool succeeds with task through mount."""
-        async with Client(parent_with_modes) as client:
+        async with Client(parent_with_modes, mode="legacy") as client:
             task = await client.call_tool("child_required_tool", {}, task=True)
             assert task is not None
             result = await task.result()
@@ -669,7 +669,7 @@ class TestMountedTaskConfigModes:
         """Required mode tool errors without task through mount."""
         from fastmcp.exceptions import ToolError
 
-        async with Client(parent_with_modes) as client:
+        async with Client(parent_with_modes, mode="legacy") as client:
             with pytest.raises(ToolError) as exc_info:
                 await client.call_tool("child_required_tool", {})
 
@@ -677,13 +677,13 @@ class TestMountedTaskConfigModes:
 
     async def test_forbidden_mode_sync_through_mount(self, parent_with_modes):
         """Forbidden mode tool works without task through mount."""
-        async with Client(parent_with_modes) as client:
+        async with Client(parent_with_modes, mode="legacy") as client:
             result = await client.call_tool("child_forbidden_tool", {})
             assert "forbidden result" in str(result)
 
     async def test_forbidden_mode_with_task_through_mount(self, parent_with_modes):
         """Forbidden mode tool degrades gracefully with task through mount."""
-        async with Client(parent_with_modes) as client:
+        async with Client(parent_with_modes, mode="legacy") as client:
             task = await client.call_tool(
                 "child_forbidden_tool", {}, task=True, raise_on_error=False
             )
@@ -787,7 +787,7 @@ class TestMiddlewareWithMountedTasks:
         parent.mount(child, namespace="c")
         parent.add_middleware(ToolTracingMiddleware("parent", calls))
 
-        async with Client(parent) as client:
+        async with Client(parent, mode="legacy") as client:
             task = await client.call_tool("c_gc_compute", {"x": 5}, task=True)
             result = await task.result()
             assert result.data == 10
@@ -831,7 +831,7 @@ class TestMiddlewareWithMountedTasks:
         parent.mount(child, namespace="c")
         parent.add_middleware(ResourceTracingMiddleware("parent", calls))
 
-        async with Client(parent) as client:
+        async with Client(parent, mode="legacy") as client:
             task = await client.read_resource("data://c/gc/value", task=True)
             result = await task.result()
             assert result[0].text == "result"
@@ -874,7 +874,7 @@ class TestMiddlewareWithMountedTasks:
         parent.mount(child, namespace="c")
         parent.add_middleware(PromptTracingMiddleware("parent", calls))
 
-        async with Client(parent) as client:
+        async with Client(parent, mode="legacy") as client:
             task = await client.get_prompt("c_gc_greet", {"name": "World"}, task=True)
             result = await task.result()
             assert result.messages[0].content.text == "Hello, World!"
@@ -917,7 +917,7 @@ class TestMiddlewareWithMountedTasks:
         parent.mount(child, namespace="c")
         parent.add_middleware(ResourceTracingMiddleware("parent", calls))
 
-        async with Client(parent) as client:
+        async with Client(parent, mode="legacy") as client:
             task = await client.read_resource("item://c/gc/42", task=True)
             result = await task.result()
             assert result[0].text == "item-42"
@@ -966,7 +966,7 @@ class TestMountedTasksWithTaskMetaParameter:
             )
             return f"task:{result.task.task_id}"
 
-        async with Client(parent) as client:
+        async with Client(parent, mode="legacy") as client:
             result = await client.call_tool("outer", {})
             assert "task:" in str(result)
 
@@ -990,7 +990,7 @@ class TestMountedTasksWithTaskMetaParameter:
             )
             return f"task:{result.task.task_id}"
 
-        async with Client(parent) as client:
+        async with Client(parent, mode="legacy") as client:
             result = await client.call_tool("outer", {})
             assert "task:" in str(result)
 
@@ -1014,7 +1014,7 @@ class TestMountedTasksWithTaskMetaParameter:
             )
             return f"task:{result.task.task_id}"
 
-        async with Client(parent) as client:
+        async with Client(parent, mode="legacy") as client:
             result = await client.call_tool("outer", {})
             assert "task:" in str(result)
 
@@ -1041,7 +1041,7 @@ class TestMountedTasksWithTaskMetaParameter:
             )
             return f"task:{result.task.task_id}"
 
-        async with Client(parent) as client:
+        async with Client(parent, mode="legacy") as client:
             result = await client.call_tool("outer", {})
             assert "task:" in str(result)
 
@@ -1068,7 +1068,7 @@ class TestMountedTasksWithTaskMetaParameter:
             )
             return f"task:{result.task.task_id}"
 
-        async with Client(parent) as client:
+        async with Client(parent, mode="legacy") as client:
             result = await client.call_tool("outer", {})
             assert "task:" in str(result)
 
@@ -1092,7 +1092,7 @@ class TestMountedTasksWithTaskMetaParameter:
             )
             return f"task:{result.task.task_id}"
 
-        async with Client(parent) as client:
+        async with Client(parent, mode="legacy") as client:
             result = await client.call_tool("outer", {})
             assert "task:" in str(result)
 
@@ -1119,6 +1119,6 @@ class TestMountedTasksWithTaskMetaParameter:
             )
             return f"task:{result.task.task_id}"
 
-        async with Client(parent) as client:
+        async with Client(parent, mode="legacy") as client:
             result = await client.call_tool("outer", {})
             assert "task:" in str(result)

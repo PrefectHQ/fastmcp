@@ -35,7 +35,7 @@ async def test_server_tasks_true_defaults_all_components():
     async def my_resource() -> str:
         return "resource result"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         # Verify all task-enabled components are registered with docket
         # Components use prefixed keys: tool:name, prompt:name, resource:uri
         docket = mcp.docket
@@ -82,7 +82,7 @@ async def test_server_tasks_false_defaults_all_components():
     async def my_resource() -> str:
         return "resource result"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         # Tool with mode="forbidden" returns error when called with task=True
         tool_task = await client.call_tool("my_tool", task=True, raise_on_error=False)
         assert tool_task.returned_immediately
@@ -107,7 +107,7 @@ async def test_server_tasks_none_defaults_to_false():
     async def my_tool() -> str:
         return "tool result"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         # Tool should NOT support background execution (mode="forbidden" from default)
         tool_task = await client.call_tool("my_tool", task=True, raise_on_error=False)
         assert tool_task.returned_immediately
@@ -128,7 +128,7 @@ async def test_component_explicit_false_overrides_server_true():
     async def default_tool() -> str:
         return "background result"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         # Verify docket registration matches task settings (prefixed keys)
         docket = mcp.docket
         assert docket is not None
@@ -163,7 +163,7 @@ async def test_component_explicit_true_overrides_server_false():
     async def default_tool() -> str:
         return "immediate result"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         # Verify docket registration matches task settings (prefixed keys)
         docket = mcp.docket
         assert docket is not None
@@ -224,7 +224,7 @@ async def test_mixed_explicit_and_inherited():
     async def explicit_false_resource() -> str:
         return "explicit False"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         # Verify docket registration matches task settings
         # Components use prefixed keys: tool:name, prompt:name, resource:uri
         docket = mcp.docket
@@ -282,7 +282,7 @@ async def test_server_tasks_parameter_sets_component_defaults():
     async def tool_inherits_true() -> str:
         return "tool result"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         # Tool inherits tasks=True from server
         tool_task = await client.call_tool("tool_inherits_true", task=True)
         assert not tool_task.returned_immediately
@@ -294,7 +294,7 @@ async def test_server_tasks_parameter_sets_component_defaults():
     async def tool_inherits_false() -> str:
         return "tool result"
 
-    async with Client(mcp2) as client:
+    async with Client(mcp2, mode="legacy") as client:
         # Tool inherits tasks=False (mode="forbidden") - returns error
         tool_task = await client.call_tool(
             "tool_inherits_false", task=True, raise_on_error=False
@@ -318,7 +318,7 @@ async def test_resource_template_inherits_server_tasks_default():
     async def templated_resource(item_id: str) -> str:
         return f"resource {item_id}"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         # Template should support background execution
         resource_task = await client.read_resource("test://123", task=True)
         assert not resource_task.returned_immediately
@@ -345,7 +345,7 @@ async def test_multiple_components_same_name_different_tasks():
     async def shared_name_prompt() -> str:
         return "prompt result"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         # Tool with explicit True should support background execution
         tool_task = await client.call_tool("shared_name", task=True)
         assert not tool_task.returned_immediately
@@ -368,7 +368,7 @@ async def test_task_with_custom_tool_name():
 
     mcp.tool(my_function, name="custom-tool-name")
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         # Verify the tool is registered with its custom name in Docket (prefixed key)
         docket = mcp.docket
         assert docket is not None
@@ -398,7 +398,7 @@ async def test_task_with_custom_resource_name():
     async def my_resource_func() -> str:
         return "result from custom-named resource"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         # Verify the resource is registered with its key (prefixed URI) in Docket
         docket = mcp.docket
         assert docket is not None
@@ -428,7 +428,7 @@ async def test_task_with_custom_template_name():
     async def my_template_func(item_id: str) -> str:
         return f"result for {item_id}"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         # Verify the template is registered with its key (prefixed uri_template) in Docket
         docket = mcp.docket
         assert docket is not None

@@ -32,7 +32,7 @@ async def keepalive_server():
 
 async def test_keepalive_returned_in_submitted_state(keepalive_server: FastMCP):
     """ttl is returned in tasks/get even when task is submitted/working."""
-    async with Client(keepalive_server) as client:
+    async with Client(keepalive_server, mode="legacy") as client:
         # Submit task with explicit ttl
         task = await client.call_tool(
             "slow_task",
@@ -55,7 +55,7 @@ async def test_keepalive_returned_in_submitted_state(keepalive_server: FastMCP):
 
 async def test_keepalive_returned_in_completed_state(keepalive_server: FastMCP):
     """ttl is returned in tasks/get after task completes."""
-    async with Client(keepalive_server) as client:
+    async with Client(keepalive_server, mode="legacy") as client:
         # Submit and complete task
         task = await client.call_tool(
             "quick_task",
@@ -77,7 +77,7 @@ async def test_keepalive_returned_in_completed_state(keepalive_server: FastMCP):
 
 async def test_default_keepalive_when_not_specified(keepalive_server: FastMCP):
     """Default ttl is used when client doesn't specify."""
-    async with Client(keepalive_server) as client:
+    async with Client(keepalive_server, mode="legacy") as client:
         # Submit without explicit ttl
         task = await client.call_tool("quick_task", {"value": 3}, task=True)
         await task.wait(timeout=2.0)

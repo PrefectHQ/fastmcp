@@ -67,14 +67,14 @@ def custom_tool_server():
 
 async def test_custom_tool_sync_execution(custom_tool_server):
     """Custom tool executes synchronously when no task metadata."""
-    async with Client(custom_tool_server) as client:
+    async with Client(custom_tool_server, mode="legacy") as client:
         result = await client.call_tool("custom_tool", {})
         assert "Custom tool executed" in str(result)
 
 
 async def test_custom_tool_background_execution(custom_tool_server):
     """Custom tool executes as background task when task=True."""
-    async with Client(custom_tool_server) as client:
+    async with Client(custom_tool_server, mode="legacy") as client:
         task = await client.call_tool("custom_tool", {}, task=True)
 
         assert task is not None
@@ -88,7 +88,7 @@ async def test_custom_tool_background_execution(custom_tool_server):
 
 async def test_custom_tool_with_arguments(custom_tool_server):
     """Custom tool receives arguments correctly in background execution."""
-    async with Client(custom_tool_server) as client:
+    async with Client(custom_tool_server, mode="legacy") as client:
         task = await client.call_tool("custom_logic", {"duration": 1}, task=True)
 
         assert task is not None
@@ -98,7 +98,7 @@ async def test_custom_tool_with_arguments(custom_tool_server):
 
 async def test_custom_tool_forbidden_sync_only(custom_tool_server):
     """Custom tool with forbidden mode executes sync only."""
-    async with Client(custom_tool_server) as client:
+    async with Client(custom_tool_server, mode="legacy") as client:
         # Sync execution works
         result = await client.call_tool("custom_forbidden", {})
         assert "Sync only" in str(result)
@@ -106,7 +106,7 @@ async def test_custom_tool_forbidden_sync_only(custom_tool_server):
 
 async def test_custom_tool_forbidden_rejects_task(custom_tool_server):
     """Custom tool with forbidden mode returns error for task request."""
-    async with Client(custom_tool_server) as client:
+    async with Client(custom_tool_server, mode="legacy") as client:
         task = await client.call_tool("custom_forbidden", {}, task=True)
 
         # Should return immediately with error

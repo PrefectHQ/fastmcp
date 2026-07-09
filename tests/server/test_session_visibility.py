@@ -70,7 +70,7 @@ class TestSessionVisibility:
             assert rules[0]["tags"] == ["finance"]
             return "activated"
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             result = await client.call_tool("activate_finance", {})
             assert result.data == "activated"
 
@@ -94,7 +94,7 @@ class TestSessionVisibility:
             assert rules[0]["tags"] == ["internal"]
             return "deactivated"
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             result = await client.call_tool("deactivate_internal", {})
             assert result.data == "deactivated"
 
@@ -116,7 +116,7 @@ class TestSessionVisibility:
         # Globally disable finance tools
         mcp.disable(tags={"finance"})
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             # Before activation, finance tool should not be visible
             tools_before = await client.list_tools()
             assert not any(t.name == "finance_tool" for t in tools_before)
@@ -151,7 +151,7 @@ class TestSessionVisibility:
         # Globally disable finance tools
         mcp.disable(tags={"finance"})
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             # Activate finance
             await client.call_tool("activate_finance", {})
 
@@ -182,13 +182,13 @@ class TestSessionVisibility:
         mcp.disable(tags={"finance"})
 
         # Session A activates finance
-        async with Client(mcp) as client_a:
+        async with Client(mcp, mode="legacy") as client_a:
             await client_a.call_tool("activate_finance", {})
             tools_a = await client_a.list_tools()
             assert any(t.name == "finance_tool" for t in tools_a)
 
         # Session B should not see finance tool (different session)
-        async with Client(mcp) as client_b:
+        async with Client(mcp, mode="legacy") as client_b:
             tools_b = await client_b.list_tools()
             assert not any(t.name == "finance_tool" for t in tools_b)
 
@@ -220,7 +220,7 @@ class TestSessionVisibility:
         # Globally disable all versioned tools
         mcp.disable(names={"old_tool", "new_tool"})
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             # Enable v2 tools
             await client.call_tool("enable_v2_only", {})
 
@@ -254,7 +254,7 @@ class TestSessionVisibility:
         # Globally disable finance tools
         mcp.disable(tags={"finance"})
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             # Activate finance
             await client.call_tool("activate_finance", {})
             tools_after_activate = await client.list_tools()
@@ -292,7 +292,7 @@ class TestSessionVisibility:
         # Globally disable finance and admin tools
         mcp.disable(tags={"finance", "admin"})
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             # Activate both
             await client.call_tool("activate_multiple", {})
 
@@ -318,7 +318,7 @@ class TestSessionVisibility:
             await ctx.disable_components(tags={"test"})
             return "toggled"
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             # Toggle (enable then disable)
             await client.call_tool("toggle_test", {})
 
@@ -344,7 +344,7 @@ class TestSessionVisibility:
         # Globally disable finance resources
         mcp.disable(tags={"finance"})
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             # Before activation, finance resource should not be visible
             resources_before = await client.list_resources()
             assert not any(str(r.uri) == "resource://finance" for r in resources_before)
@@ -374,7 +374,7 @@ class TestSessionVisibility:
         # Globally disable finance prompts
         mcp.disable(tags={"finance"})
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             # Before activation, finance prompt should not be visible
             prompts_before = await client.list_prompts()
             assert not any(p.name == "finance_prompt" for p in prompts_before)
@@ -402,7 +402,7 @@ class TestSessionVisibilityNotifications:
             return "activated"
 
         handler = RecordingMessageHandler()
-        async with Client(mcp, message_handler=handler) as client:
+        async with Client(mcp, mode="legacy", message_handler=handler) as client:
             handler.reset()
             await client.call_tool("activate", {})
 
@@ -432,7 +432,7 @@ class TestSessionVisibilityNotifications:
             return "deactivated"
 
         handler = RecordingMessageHandler()
-        async with Client(mcp, message_handler=handler) as client:
+        async with Client(mcp, mode="legacy", message_handler=handler) as client:
             handler.reset()
             await client.call_tool("deactivate", {})
 
@@ -461,7 +461,7 @@ class TestSessionVisibilityNotifications:
             return "cleared"
 
         handler = RecordingMessageHandler()
-        async with Client(mcp, message_handler=handler) as client:
+        async with Client(mcp, mode="legacy", message_handler=handler) as client:
             handler.reset()
             await client.call_tool("clear", {})
 
@@ -491,7 +491,7 @@ class TestSessionVisibilityNotifications:
             return "activated"
 
         handler = RecordingMessageHandler()
-        async with Client(mcp, message_handler=handler) as client:
+        async with Client(mcp, mode="legacy", message_handler=handler) as client:
             handler.reset()
             await client.call_tool("activate_tools_only", {})
 
@@ -537,7 +537,7 @@ class TestConcurrentSessionIsolation:
 
         async def session_a():
             nonlocal session_a_sees_finance
-            async with Client(mcp) as client:
+            async with Client(mcp, mode="legacy") as client:
                 # Activate finance for this session
                 await client.call_tool("activate_finance", {})
 
@@ -556,7 +556,7 @@ class TestConcurrentSessionIsolation:
             # Wait for session A to activate
             await ready_event.wait()
 
-            async with Client(mcp) as client:
+            async with Client(mcp, mode="legacy") as client:
                 # Session B should NOT see finance tool
                 tools = await client.list_tools()
                 session_b_sees_finance = any(t.name == "finance_tool" for t in tools)
@@ -590,13 +590,13 @@ class TestConcurrentSessionIsolation:
         results: dict[str, bool] = {}
 
         async def activated_session(session_id: str):
-            async with Client(mcp) as client:
+            async with Client(mcp, mode="legacy") as client:
                 await client.call_tool("activate_premium", {})
                 tools = await client.list_tools()
                 results[session_id] = any(t.name == "premium_tool" for t in tools)
 
         async def non_activated_session(session_id: str):
-            async with Client(mcp) as client:
+            async with Client(mcp, mode="legacy") as client:
                 tools = await client.list_tools()
                 results[session_id] = any(t.name == "premium_tool" for t in tools)
 
@@ -644,7 +644,7 @@ class TestSessionVisibilityResetBug:
             await ctx.reset_visibility()
             return "exited"
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             # Tool visible initially
             tools = await client.list_tools()
             assert any(t.name == "my_tool" for t in tools)
@@ -681,7 +681,7 @@ class TestSessionVisibilityResetBug:
             await ctx.reset_visibility()
             return "exited"
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             for i in range(3):
                 # create_project should be visible
                 tools = await client.list_tools()
@@ -719,7 +719,7 @@ class TestSessionVisibilityResetBug:
         check_done = anyio.Event()
 
         async def session_a():
-            async with Client(mcp) as client:
+            async with Client(mcp, mode="legacy") as client:
                 await client.call_tool("disable_system", {})
                 ready.set()
                 await check_done.wait()
@@ -727,7 +727,7 @@ class TestSessionVisibilityResetBug:
         async def session_b():
             nonlocal session_b_sees_tool
             await ready.wait()
-            async with Client(mcp) as client:
+            async with Client(mcp, mode="legacy") as client:
                 tools = await client.list_tools()
                 session_b_sees_tool = any(t.name == "shared_tool" for t in tools)
                 check_done.set()
@@ -756,13 +756,13 @@ class TestSessionVisibilityResetBug:
             return "disabled"
 
         # Session A disables the tool (no reset)
-        async with Client(mcp) as client_a:
+        async with Client(mcp, mode="legacy") as client_a:
             await client_a.call_tool("disable_system", {})
             tools = await client_a.list_tools()
             assert not any(t.name == "shared_tool" for t in tools)
 
         # Session B should see it fresh
-        async with Client(mcp) as client_b:
+        async with Client(mcp, mode="legacy") as client_b:
             tools = await client_b.list_tools()
             assert any(t.name == "shared_tool" for t in tools), (
                 "New session should see shared_tool regardless of previous session"

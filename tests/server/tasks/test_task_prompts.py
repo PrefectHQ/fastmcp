@@ -31,7 +31,7 @@ async def prompt_server():
 
 async def test_synchronous_prompt_unchanged(prompt_server):
     """Prompts without task metadata execute synchronously as before."""
-    async with Client(prompt_server) as client:
+    async with Client(prompt_server, mode="legacy") as client:
         # Regular call without task metadata
         result = await client.get_prompt("simple_prompt", {"topic": "AI"})
 
@@ -41,7 +41,7 @@ async def test_synchronous_prompt_unchanged(prompt_server):
 
 async def test_prompt_with_task_metadata_returns_immediately(prompt_server):
     """Prompts with task metadata return immediately with PromptTask object."""
-    async with Client(prompt_server) as client:
+    async with Client(prompt_server, mode="legacy") as client:
         # Call with task metadata
         task = await client.get_prompt("background_prompt", {"topic": "AI"}, task=True)
 
@@ -59,7 +59,7 @@ async def test_prompt_with_task_metadata_returns_immediately(prompt_server):
 )
 async def test_prompt_task_executes_in_background(prompt_server):
     """Prompt task executes via Docket in background."""
-    async with Client(prompt_server) as client:
+    async with Client(prompt_server, mode="legacy") as client:
         task = await client.get_prompt(
             "background_prompt",
             {"topic": "Machine Learning", "depth": "comprehensive"},
@@ -89,7 +89,7 @@ async def test_forbidden_mode_prompt_rejects_task_calls(prompt_server):
     async def sync_only_prompt(topic: str) -> str:
         return f"Sync prompt: {topic}"
 
-    async with Client(prompt_server) as client:
+    async with Client(prompt_server, mode="legacy") as client:
         # Calling with task=True when task=False should raise MCPError
         import pytest
 

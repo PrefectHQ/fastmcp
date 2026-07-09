@@ -1,7 +1,7 @@
 """Tests for Context background task support (SEP-1686).
 
 Tests Context API surface (unit) and background task elicitation (integration).
-Integration tests use Client(mcp) with the real memory:// Docket backend —
+Integration tests use Client(mcp, mode="legacy") with the real memory:// Docket backend —
 no mocking of Redis, Docket, or session internals.
 """
 
@@ -272,7 +272,7 @@ class TestElicitFailFast:
             "fastmcp.server.tasks.notifications.push_notification",
             side_effect=ConnectionError("Redis queue unavailable"),
         ):
-            async with Client(mcp) as client:
+            async with Client(mcp, mode="legacy") as client:
                 task = await client.call_tool("failfast_tool", {}, task=True)
                 await asyncio.wait_for(elicit_started.wait(), timeout=5.0)
                 await task.wait(timeout=10.0)
@@ -304,14 +304,14 @@ class TestContextDocumentation:
 
 
 # =============================================================================
-# Integration tests: Client(mcp) + memory:// Docket backend
+# Integration tests: Client(mcp, mode="legacy") + memory:// Docket backend
 # =============================================================================
 
 
 class TestBackgroundTaskIntegration:
     """Integration tests for background task context using real Docket memory backend.
 
-    These tests use Client(mcp) with the memory:// broker — no mocking.
+    These tests use Client(mcp, mode="legacy") with the memory:// broker — no mocking.
     The memory:// backend provides a fully functional in-memory Redis store
     that Docket uses automatically when running tests.
     """
@@ -329,7 +329,7 @@ class TestBackgroundTaskIntegration:
             progress_reported.set()
             return "done"
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             task = await client.call_tool("progress_tool", {}, task=True)
             await asyncio.wait_for(progress_reported.wait(), timeout=5.0)
             await task.wait(timeout=5.0)
@@ -350,7 +350,7 @@ class TestBackgroundTaskIntegration:
             task_completed.set()
             return "ok"
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             task = await client.call_tool("verify_wiring", {}, task=True)
             await asyncio.wait_for(task_completed.wait(), timeout=5.0)
             await task.wait(timeout=5.0)
@@ -394,7 +394,7 @@ class TestBackgroundTaskIntegration:
             assert snapshot["origin_request_id"] == origin
             return "ok"
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             task = await client.call_tool("check_origin_request_id", {}, task=True)
             result = await task.result()
             assert result.data == "ok"
@@ -429,7 +429,9 @@ class TestBackgroundTaskIntegration:
                 stop_reason="endTurn",
             )
 
-        async with Client(mcp, sampling_handler=sampling_handler) as client:
+        async with Client(
+            mcp, mode="legacy", sampling_handler=sampling_handler
+        ) as client:
             task = await client.call_tool("ask_client", {}, task=True)
             result = await task.result()
 
@@ -450,7 +452,7 @@ class TestBackgroundTaskIntegration:
         async def handler(message, response_type, params, ctx):
             return ElicitResult(action="accept", content={"value": "Bob"})
 
-        async with Client(mcp, elicitation_handler=handler) as client:
+        async with Client(mcp, mode="legacy", elicitation_handler=handler) as client:
             task = await client.call_tool("ask_name", {}, task=True)
             await task.wait(timeout=10.0)
             result = await task.result()
@@ -472,7 +474,7 @@ class TestBackgroundTaskIntegration:
         async def handler(message, response_type, params, ctx):
             return ElicitResult(action="decline")
 
-        async with Client(mcp, elicitation_handler=handler) as client:
+        async with Client(mcp, mode="legacy", elicitation_handler=handler) as client:
             task = await client.call_tool("optional_input", {}, task=True)
             await task.wait(timeout=10.0)
             result = await task.result()
@@ -498,7 +500,7 @@ class TestBackgroundTaskIntegration:
         async def handler(message, response_type, params, ctx):
             return ElicitResult(action="accept", content={"name": "Alice", "age": 30})
 
-        async with Client(mcp, elicitation_handler=handler) as client:
+        async with Client(mcp, mode="legacy", elicitation_handler=handler) as client:
             task = await client.call_tool("get_user_info", {}, task=True)
             await task.wait(timeout=10.0)
             result = await task.result()
@@ -512,7 +514,7 @@ class TestBackgroundTaskIntegration:
         async def simple_tool() -> str:
             return "done"
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             task = await client.call_tool("simple_tool", {}, task=True)
             await task.wait(timeout=5.0)
 
@@ -530,7 +532,7 @@ class TestBackgroundTaskIntegration:
 class TestAccessTokenInBackgroundTasks:
     """Tests for access token availability in background tasks (#3095).
 
-    Integration tests use Client(mcp) with the real memory:// Docket backend.
+    Integration tests use Client(mcp, mode="legacy") with the real memory:// Docket backend.
     The token snapshot/restore round-trip flows through actual Redis (fakeredis).
 
     Note: async tests run in isolated asyncio tasks, so ContextVar changes
@@ -556,7 +558,7 @@ class TestAccessTokenInBackgroundTasks:
         )
         auth_context_var.set(AuthenticatedUser(test_token))
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             task = await client.call_tool("check_token", {}, task=True)
             result = await task.result()
             assert result.data == "roundtrip-jwt|test-client"
@@ -570,7 +572,7 @@ class TestAccessTokenInBackgroundTasks:
             token = get_access_token()
             return "no-token" if token is None else token.token
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             task = await client.call_tool("check_token", {}, task=True)
             result = await task.result()
             assert result.data == "no-token"

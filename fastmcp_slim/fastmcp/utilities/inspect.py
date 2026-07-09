@@ -257,8 +257,9 @@ async def inspect_fastmcp_v1(mcp: SDKServer) -> FastMCPInfo:
     Returns:
         FastMCPInfo dataclass containing the extracted information
     """
-    # Use a client to interact with the SDK's high-level MCPServer
-    async with Client(mcp) as client:
+    # Inspection reads the full server_info (icons, website_url) that only the
+    # legacy initialize handshake carries, so pin the handshake era.
+    async with Client(mcp, mode="legacy") as client:
         # Get components via client calls (these return MCP objects)
         mcp_tools = await client.list_tools()
         mcp_prompts = await client.list_prompts()
@@ -467,7 +468,9 @@ async def format_mcp_info(mcp: FastMCP[Any] | SDKServer) -> bytes:
     Uses Client to get the standard MCP protocol format with camelCase fields.
     Includes version metadata at the top level.
     """
-    async with Client(mcp) as client:
+    # Inspection reads the full server_info that only the legacy initialize
+    # handshake carries, so pin the handshake era.
+    async with Client(mcp, mode="legacy") as client:
         # Get all the MCP protocol objects
         tools_result = await client.list_tools_mcp()
         prompts_result = await client.list_prompts_mcp()

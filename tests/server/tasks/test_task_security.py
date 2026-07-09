@@ -38,7 +38,7 @@ async def test_same_client_can_access_all_its_tasks(task_server: FastMCP):
     )
     reset = auth_context_var.set(AuthenticatedUser(token))
     try:
-        async with Client(task_server) as client:
+        async with Client(task_server, mode="legacy") as client:
             task1 = await client.call_tool(
                 "secret_tool", {"data": "first"}, task=True, task_id="task-1"
             )
@@ -60,7 +60,7 @@ async def test_same_client_can_access_all_its_tasks(task_server: FastMCP):
 
 async def test_unauthenticated_client_can_access_its_tasks(task_server: FastMCP):
     """An unauthenticated client can access tasks it created (by task ID)."""
-    async with Client(task_server) as client:
+    async with Client(task_server, mode="legacy") as client:
         task = await client.call_tool(
             "secret_tool", {"data": "hello"}, task=True, task_id="my-task"
         )
@@ -95,14 +95,14 @@ async def test_distinct_clients_cannot_access_each_others_tasks(
     a peer's task id returns 'not found'."""
     reset = _set_auth("client-a")
     try:
-        async with Client(task_server) as client_a:
+        async with Client(task_server, mode="legacy") as client_a:
             task_id = await _submit_task_id(client_a, "client-a-secret")
     finally:
         auth_context_var.reset(reset)
 
     reset = _set_auth("client-b")
     try:
-        async with Client(task_server) as client_b:
+        async with Client(task_server, mode="legacy") as client_b:
             with pytest.raises(Exception, match="not found"):
                 await client_b.get_task_status(task_id)
     finally:
@@ -118,14 +118,14 @@ async def test_distinct_subs_same_client_id_cannot_access_each_others_tasks(
 
     reset = _set_auth(shared_client, sub="user-alice")
     try:
-        async with Client(task_server) as alice:
+        async with Client(task_server, mode="legacy") as alice:
             task_id = await _submit_task_id(alice, "alice-secret")
     finally:
         auth_context_var.reset(reset)
 
     reset = _set_auth(shared_client, sub="user-bob")
     try:
-        async with Client(task_server) as bob:
+        async with Client(task_server, mode="legacy") as bob:
             with pytest.raises(Exception, match="not found"):
                 await bob.get_task_status(task_id)
     finally:
@@ -139,11 +139,11 @@ async def test_authenticated_and_anonymous_keyspaces_are_disjoint(
     tasks (and vice versa) even when colliding on task id."""
     reset = _set_auth("client-a")
     try:
-        async with Client(task_server) as authed:
+        async with Client(task_server, mode="legacy") as authed:
             authed_task_id = await _submit_task_id(authed, "authed-secret")
     finally:
         auth_context_var.reset(reset)
 
-    async with Client(task_server) as anon:
+    async with Client(task_server, mode="legacy") as anon:
         with pytest.raises(Exception, match="not found"):
             await anon.get_task_status(authed_task_id)

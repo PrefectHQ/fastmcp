@@ -16,7 +16,7 @@ async def test_progress_in_immediate_execution():
         await progress.set_message("Testing")
         return "done"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         result = await client.call_tool("test_tool", {})
         from mcp_types import TextContent
 
@@ -35,7 +35,7 @@ async def test_progress_in_background_task():
         await progress.set_message("Step 1")
         return "done"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         task = await client.call_tool("test_task", {}, task=True)
         result = await task.result()
         from mcp_types import TextContent
@@ -55,7 +55,7 @@ async def test_progress_tracks_multiple_increments():
             await progress.increment()
         return "counted"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         result = await client.call_tool("count_to_ten", {})
         from mcp_types import TextContent
 
@@ -86,7 +86,7 @@ async def test_progress_status_message_in_background_task():
         await progress.increment()
         return "done"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         task = await client.call_tool("task_with_progress", {}, task=True)
 
         # Wait for first step to start
@@ -141,7 +141,7 @@ async def test_inmemory_progress_state():
             "message": progress.message,
         }
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         result = await client.call_tool("test_tool", {})
         from mcp_types import TextContent
 

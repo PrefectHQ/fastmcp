@@ -18,7 +18,7 @@ async def test_capabilities_include_tasks():
     async def test_tool() -> str:
         return "test"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         # Get server initialization result which includes capabilities
         init_result = client.initialize_result
 
@@ -59,7 +59,7 @@ async def test_client_uses_task_capable_session():
     async def test_tool() -> str:
         return "test"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         # Client should have connected successfully with task capabilities
         assert client.initialize_result is not None
         # Session should be a ClientSession (task-capable init uses standard session)

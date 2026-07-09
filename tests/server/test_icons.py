@@ -35,7 +35,7 @@ class TestServerIcons:
         )
 
         # Verify that icons and website_url are passed to the underlying server
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             server_info = client.initialize_result.server_info
             assert server_info.website_url == "https://example.com"
             assert server_info.icons == icons
@@ -44,7 +44,7 @@ class TestServerIcons:
         """Test that server works without icons and websiteUrl."""
         mcp = FastMCP(name="TestServer")
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             server_info = client.initialize_result.server_info
             assert server_info.website_url is None
             assert server_info.icons is None
@@ -289,7 +289,7 @@ class TestIconTypes:
 
         mcp = FastMCP("TestServer", icons=icons)
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             server_info = client.initialize_result.server_info
             assert len(server_info.icons) == 3
             assert server_info.icons == icons
@@ -318,7 +318,7 @@ class TestIconTypes:
 
         mcp = FastMCP("TestServer", icons=icons)
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             server_info = client.initialize_result.server_info
             assert server_info.icons[0].src == "https://example.com/icon.png"
             assert server_info.icons[0].mime_type is None

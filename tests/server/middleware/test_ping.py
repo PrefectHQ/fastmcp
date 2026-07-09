@@ -193,7 +193,7 @@ class TestPingMiddlewareIntegration:
 
         assert len(middleware._active_sessions) == 0
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             result = await client.call_tool("hello")
             assert result.content[0].text == "Hello!"
 
@@ -214,7 +214,7 @@ class TestPingMiddlewareIntegration:
         def hello() -> str:
             return "Hello!"
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             await client.call_tool("hello")
             # Should have one active session
             assert len(middleware._active_sessions) == 1

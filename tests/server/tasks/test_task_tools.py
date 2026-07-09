@@ -59,7 +59,7 @@ async def test_task_tool_validates_model_arguments():
     arguments = {"item": {"value": "a"}, "items": [{"value": "b"}]}
     expected = {"item": "_Item", "element": "_Item"}
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         sync_result = await client.call_tool("inspect_items", arguments)
         task = await client.call_tool("inspect_items", arguments, task=True)
         task_result = await task.result()
@@ -92,7 +92,7 @@ async def test_task_tool_invalid_arguments_fail_before_task_state():
         return item.value
 
     recorder = _Recorder()
-    async with Client(server, message_handler=recorder) as client:
+    async with Client(server, mode="legacy", message_handler=recorder) as client:
         # `item` is missing its required `value` field.
         task = await client.call_tool("needs_item", {"item": {}}, task=True)
         assert task.returned_immediately
@@ -126,7 +126,7 @@ async def test_task_submission_honors_strict_input_validation():
         return n * n
 
     recorder = _Recorder()
-    async with Client(server, message_handler=recorder) as client:
+    async with Client(server, mode="legacy", message_handler=recorder) as client:
         # Sync path rejects the string-for-int coercion under strict validation.
         with pytest.raises(ToolError):
             await client.call_tool("square", {"n": "1"})
@@ -149,7 +149,7 @@ async def test_task_submission_valid_argument_under_strict_validation():
     async def square(n: int) -> int:
         return n * n
 
-    async with Client(server) as client:
+    async with Client(server, mode="legacy") as client:
         task = await client.call_tool("square", {"n": 4}, task=True)
         assert not task.returned_immediately
         result = await task.result()
@@ -174,7 +174,7 @@ def test_resolve_param_hints_handles_partials():
 
 async def test_synchronous_tool_call_unchanged(tool_server):
     """Tools without task metadata execute synchronously as before."""
-    async with Client(tool_server) as client:
+    async with Client(tool_server, mode="legacy") as client:
         # Regular call without task metadata
         result = await client.call_tool("simple_tool", {"message": "hello"})
 
@@ -184,7 +184,7 @@ async def test_synchronous_tool_call_unchanged(tool_server):
 
 async def test_tool_with_task_metadata_returns_immediately(tool_server):
     """Tools with task metadata return immediately with ToolTask object."""
-    async with Client(tool_server) as client:
+    async with Client(tool_server, mode="legacy") as client:
         # Call with task metadata
         task = await client.call_tool("simple_tool", {"message": "test"}, task=True)
         assert task
@@ -207,7 +207,7 @@ async def test_tool_task_executes_in_background(tool_server):
         await execution_completed.wait()
         return "completed"
 
-    async with Client(tool_server) as client:
+    async with Client(tool_server, mode="legacy") as client:
         task = await client.call_tool("coordinated_tool", task=True)
         assert task
         assert not task.returned_immediately
@@ -229,7 +229,7 @@ async def test_tool_task_executes_in_background(tool_server):
 
 async def test_forbidden_mode_tool_rejects_task_calls(tool_server):
     """Tools with task=False (mode=forbidden) reject task-augmented calls."""
-    async with Client(tool_server) as client:
+    async with Client(tool_server, mode="legacy") as client:
         # Calling with task=True when task=False should return error
         task = await client.call_tool(
             "sync_only_tool", {"message": "test"}, task=True, raise_on_error=False

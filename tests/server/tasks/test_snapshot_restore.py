@@ -39,7 +39,7 @@ async def test_snapshot_restored_before_user_code_runs():
         seen_cached.append(_recall_snapshot(info.task_id) is not None)
         return "ok"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         task = await client.call_tool("bare_tool", {}, task=True)
         await task.result()
 
@@ -66,7 +66,7 @@ async def test_get_access_token_in_bg_task_without_context_dep():
     )
     auth_context_var.set(AuthenticatedUser(test_token))
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         task = await client.call_tool("bare_tool", {}, task=True)
         await task.result()
 
@@ -89,7 +89,7 @@ async def test_restore_failure_is_nonfatal():
     def boom(*_args, **_kwargs):
         raise RuntimeError("simulated deserialization failure")
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         with patch.object(TaskContextSnapshot, "from_json", boom):
             task = await client.call_tool("bare_tool", {}, task=True)
             result = await task.result()

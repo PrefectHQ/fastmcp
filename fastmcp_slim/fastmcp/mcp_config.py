@@ -137,7 +137,9 @@ class _TransformingMCPServerMixin(BaseModel):
             ) from exc
 
         transport = cast("ClientTransport", super().to_transport())  # ty: ignore[unresolved-attribute]
-        client = Client(transport=transport, name=client_name)
+        # The proxy that wraps this client forwards the initialize handshake and
+        # server-initiated features, which require the legacy era.
+        client = Client(transport=transport, name=client_name, mode="legacy")
         wrapped_mcp_server = create_proxy(client, name=server_name)
 
         if self.include_tags is not None:

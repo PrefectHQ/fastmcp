@@ -68,13 +68,13 @@ class TestProxyToolsSyncExecution:
 
     async def test_tool_sync_execution_works(self, proxy_server: FastMCP):
         """Tool called without task=True works through proxy."""
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             result = await client.call_tool("add_numbers", {"a": 5, "b": 3})
             assert "8" in str(result)
 
     async def test_sync_only_tool_works(self, proxy_server: FastMCP):
         """Sync-only tool works through proxy."""
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             result = await client.call_tool("sync_only_tool", {"message": "test"})
             assert "sync: test" in str(result)
 
@@ -84,7 +84,7 @@ class TestProxyToolsTaskForbidden:
 
     async def test_tool_task_returns_error_immediately(self, proxy_server: FastMCP):
         """Tool called with task=True through proxy returns error immediately."""
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             task = await client.call_tool(
                 "add_numbers", {"a": 5, "b": 3}, task=True, raise_on_error=False
             )
@@ -100,7 +100,7 @@ class TestProxyToolsTaskForbidden:
         self, proxy_server: FastMCP
     ):
         """Sync-only tool with task=True also returns error immediately."""
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             task = await client.call_tool(
                 "sync_only_tool",
                 {"message": "test"},
@@ -118,7 +118,7 @@ class TestProxyPromptsSyncExecution:
 
     async def test_prompt_sync_execution_works(self, proxy_server: FastMCP):
         """Prompt called without task=True works through proxy."""
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             result = await client.get_prompt("greeting_prompt", {"name": "Alice"})
             assert isinstance(result.messages[0].content, TextContent)
             assert "Hello, Alice!" in result.messages[0].content.text
@@ -135,7 +135,7 @@ class TestProxyPromptsTaskForbidden:
     )
     async def test_prompt_task_raises_mcp_error(self, proxy_server: FastMCP):
         """Prompt called with task=True through proxy raises MCPError."""
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             with pytest.raises(MCPError) as exc_info:
                 await client.get_prompt("greeting_prompt", {"name": "Alice"}, task=True)
 
@@ -147,14 +147,14 @@ class TestProxyResourcesSyncExecution:
 
     async def test_resource_sync_execution_works(self, proxy_server: FastMCP):
         """Resource read without task=True works through proxy."""
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             result = await client.read_resource("data://info.txt")
             assert isinstance(result[0], TextResourceContents)
             assert "Important information from the backend" in result[0].text
 
     async def test_resource_template_sync_execution_works(self, proxy_server: FastMCP):
         """Resource template without task=True works through proxy."""
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             result = await client.read_resource("data://user/42.json")
             assert isinstance(result[0], TextResourceContents)
             assert '"id": "42"' in result[0].text
@@ -171,7 +171,7 @@ class TestProxyResourcesTaskForbidden:
     )
     async def test_resource_task_raises_mcp_error(self, proxy_server: FastMCP):
         """Resource read with task=True through proxy raises MCPError."""
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             with pytest.raises(MCPError) as exc_info:
                 await client.read_resource("data://info.txt", task=True)
 
@@ -185,7 +185,7 @@ class TestProxyResourcesTaskForbidden:
     )
     async def test_resource_template_task_raises_mcp_error(self, proxy_server: FastMCP):
         """Resource template with task=True through proxy raises MCPError."""
-        async with Client(proxy_server) as client:
+        async with Client(proxy_server, mode="legacy") as client:
             with pytest.raises(MCPError) as exc_info:
                 await client.read_resource("data://user/42.json", task=True)
 

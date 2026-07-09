@@ -110,7 +110,7 @@ class TestToolModeEnforcement:
 
     async def test_required_mode_without_task_returns_error(self, server):
         """Required mode raises error when called without task metadata."""
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             with pytest.raises(ToolError) as exc_info:
                 await client.call_tool("required_tool", {})
 
@@ -118,7 +118,7 @@ class TestToolModeEnforcement:
 
     async def test_required_mode_with_task_succeeds(self, server):
         """Required mode succeeds when called with task metadata."""
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             task = await client.call_tool("required_tool", {}, task=True)
             assert task is not None
             result = await task.result()
@@ -126,7 +126,7 @@ class TestToolModeEnforcement:
 
     async def test_forbidden_mode_with_task_returns_error(self, server):
         """Forbidden mode returns error when called with task metadata."""
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             # Call with task=True should fail
             task = await client.call_tool(
                 "forbidden_tool", {}, task=True, raise_on_error=False
@@ -140,19 +140,19 @@ class TestToolModeEnforcement:
 
     async def test_forbidden_mode_without_task_succeeds(self, server):
         """Forbidden mode succeeds when called without task metadata."""
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             result = await client.call_tool("forbidden_tool", {})
             assert "forbidden result" in str(result)
 
     async def test_optional_mode_without_task_succeeds(self, server):
         """Optional mode succeeds when called without task metadata."""
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             result = await client.call_tool("optional_tool", {})
             assert "optional result" in str(result)
 
     async def test_optional_mode_with_task_succeeds(self, server):
         """Optional mode succeeds when called with task metadata."""
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             task = await client.call_tool("optional_tool", {}, task=True)
             assert task is not None
             result = await task.result()
@@ -188,7 +188,7 @@ class TestResourceModeEnforcement:
         """Required mode returns error when read without task metadata."""
         from mcp_types import METHOD_NOT_FOUND
 
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             with pytest.raises(MCPError) as exc_info:
                 await client.read_resource("resource://required")
 
@@ -203,7 +203,7 @@ class TestResourceModeEnforcement:
     )
     async def test_required_resource_with_task_succeeds(self, server):
         """Required mode succeeds when read with task metadata."""
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             task = await client.read_resource("resource://required", task=True)
             assert task is not None
             result = await task.result()
@@ -212,7 +212,7 @@ class TestResourceModeEnforcement:
 
     async def test_forbidden_resource_without_task_succeeds(self, server):
         """Forbidden mode succeeds when read without task metadata."""
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             result = await client.read_resource("resource://forbidden")
             assert "forbidden content" in str(result)
 
@@ -246,7 +246,7 @@ class TestPromptModeEnforcement:
         """Required mode returns error when called without task metadata."""
         from mcp_types import METHOD_NOT_FOUND
 
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             with pytest.raises(MCPError) as exc_info:
                 await client.get_prompt("required_prompt")
 
@@ -261,7 +261,7 @@ class TestPromptModeEnforcement:
     )
     async def test_required_prompt_with_task_succeeds(self, server):
         """Required mode succeeds when called with task metadata."""
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             task = await client.get_prompt("required_prompt", task=True)
             assert task is not None
             result = await task.result()
@@ -270,7 +270,7 @@ class TestPromptModeEnforcement:
 
     async def test_forbidden_prompt_without_task_succeeds(self, server):
         """Forbidden mode succeeds when called without task metadata."""
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             result = await client.get_prompt("forbidden_prompt")
             assert isinstance(result.messages[0].content, TextContent)
             assert "forbidden message" in str(result.messages[0].content)
@@ -287,7 +287,7 @@ class TestToolExecutionMetadata:
         async def my_tool() -> str:
             return "ok"
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             tools = await client.list_tools()
             tool = next(t for t in tools if t.name == "my_tool")
             assert isinstance(tool, MCPTool)
@@ -302,7 +302,7 @@ class TestToolExecutionMetadata:
         async def my_tool() -> str:
             return "ok"
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             tools = await client.list_tools()
             tool = next(t for t in tools if t.name == "my_tool")
             assert isinstance(tool, MCPTool)
@@ -317,7 +317,7 @@ class TestToolExecutionMetadata:
         async def my_tool() -> str:
             return "ok"
 
-        async with Client(mcp) as client:
+        async with Client(mcp, mode="legacy") as client:
             tools = await client.list_tools()
             tool = next(t for t in tools if t.name == "my_tool")
             assert tool.execution is None

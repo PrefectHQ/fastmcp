@@ -173,7 +173,7 @@ class TestMiddlewareHooks:
     async def test_call_tool(
         self, mcp_server: FastMCP, recording_middleware: RecordingMiddleware
     ):
-        async with Client(mcp_server) as client:
+        async with Client(mcp_server, mode="legacy") as client:
             await client.call_tool("add", {"a": 1, "b": 2})
 
         assert recording_middleware.assert_called(at_least=9)
@@ -299,7 +299,7 @@ class TestMiddlewareHooks:
     async def test_initialize(
         self, mcp_server: FastMCP, recording_middleware: RecordingMiddleware
     ):
-        async with Client(mcp_server) as client:
+        async with Client(mcp_server, mode="legacy") as client:
             await client.ping()
 
         assert recording_middleware.assert_called(at_least=1)

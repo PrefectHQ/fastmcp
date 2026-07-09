@@ -31,7 +31,7 @@ async def task_enabled_server():
 
 async def test_task_metadata_includes_task_id_and_ttl(task_enabled_server):
     """Task metadata properly includes server-generated taskId and ttl."""
-    async with Client(task_enabled_server) as client:
+    async with Client(task_enabled_server, mode="legacy") as client:
         # Submit with specific ttl (server generates task ID)
         task = await client.call_tool(
             "simple_tool",
@@ -54,7 +54,7 @@ async def test_task_notification_sent_after_submission(task_enabled_server):
     async def background_tool(message: str) -> str:
         return f"Processed: {message}"
 
-    async with Client(task_enabled_server) as client:
+    async with Client(task_enabled_server, mode="legacy") as client:
         task = await client.call_tool("background_tool", {"message": "test"}, task=True)
         assert task
         assert not task.returned_immediately
@@ -71,7 +71,7 @@ async def test_failed_task_stores_error(task_enabled_server):
     async def failing_task_tool() -> str:
         raise ValueError("This tool always fails")
 
-    async with Client(task_enabled_server) as client:
+    async with Client(task_enabled_server, mode="legacy") as client:
         task = await client.call_tool("failing_task_tool", task=True)
         assert task
         assert not task.returned_immediately

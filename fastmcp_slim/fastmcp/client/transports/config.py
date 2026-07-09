@@ -72,6 +72,11 @@ class MCPConfigTransport(ClientTransport):
         ```
     """
 
+    # This transport fronts a proxy whose backend ProxyClient is legacy-only
+    # (proxy forwarding relies on the handshake era), so the composite server it
+    # exposes is legacy-era; a client with mode="auto" negotiates the handshake.
+    legacy_only = True
+
     def __init__(self, config: MCPConfig | dict, name_as_prefix: bool = True):
         if isinstance(config, dict):
             config = MCPConfig.from_dict(config)
