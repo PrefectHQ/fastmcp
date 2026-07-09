@@ -54,7 +54,7 @@ async def test_elicitation_implicit_acceptance(fastmcp_server):
         return response_type(name="Bob")
 
     async with Client(
-        fastmcp_server, elicitation_handler=elicitation_handler
+        fastmcp_server, mode="legacy", elicitation_handler=elicitation_handler
     ) as client:
         result = await client.call_tool("ask_for_name")
         assert result.data == "Hello, Bob!"
@@ -69,7 +69,7 @@ async def test_elicitation_implicit_acceptance_must_be_dict(fastmcp_server):
         return "Bob"
 
     async with Client(
-        fastmcp_server, elicitation_handler=elicitation_handler
+        fastmcp_server, mode="legacy", elicitation_handler=elicitation_handler
     ) as client:
         with pytest.raises(
             ToolError,
@@ -182,7 +182,9 @@ async def test_dict_based_titled_single_select():
 
         return ElicitResult(action="accept", content={"value": "low"})
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         result = await client.call_tool("my_tool", {})
         assert result.data == "low"
 
@@ -215,7 +217,9 @@ async def test_list_list_multi_select_untitled():
 
         return ElicitResult(action="accept", content={"value": ["bug", "feature"]})
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         result = await client.call_tool("my_tool", {})
         assert result.data == "bug,feature"
 
@@ -256,7 +260,9 @@ async def test_list_dict_multi_select_titled():
 
         return ElicitResult(action="accept", content={"value": ["low", "high"]})
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         result = await client.call_tool("my_tool", {})
         assert result.data == "low,high"
 
@@ -320,7 +326,9 @@ async def test_list_enum_multi_select_direct():
 
         return ElicitResult(action="accept", content={"value": ["low", "high"]})
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         result = await client.call_tool("my_tool", {})
         assert result.data == "low,high"
 

@@ -22,7 +22,7 @@ async def test_tool_task_result_cached_on_first_call():
         call_count += 1
         return call_count
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         task = await client.call_tool("counting_tool", task=True)
 
         result1 = await task.result()
@@ -49,7 +49,7 @@ async def test_prompt_task_result_cached():
         call_count += 1
         return f"Call number: {call_count}"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         task = await client.get_prompt("counting_prompt", task=True)
 
         result1 = await task.result()
@@ -76,7 +76,7 @@ async def test_resource_task_result_cached():
         call_count += 1
         return f"Count: {call_count}"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         task = await client.read_resource("file://counter.txt", task=True)
 
         result1 = await task.result()
@@ -100,7 +100,7 @@ async def test_multiple_await_returns_same_object():
     async def sample_tool() -> str:
         return "result"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         task = await client.call_tool("sample_tool", task=True)
 
         result1 = await task
@@ -120,7 +120,7 @@ async def test_result_and_await_share_cache():
     async def sample_tool() -> str:
         return "cached"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         task = await client.call_tool("sample_tool", task=True)
 
         # Call result() first
@@ -142,7 +142,7 @@ async def test_forbidden_mode_tool_caches_error_result():
     async def non_task_tool() -> int:
         return 1
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         # Request as task, but mode="forbidden" will reject with error
         task = await client.call_tool("non_task_tool", task=True, raise_on_error=False)
 
@@ -178,7 +178,7 @@ async def test_forbidden_mode_prompt_raises_error():
     async def non_task_prompt() -> str:
         return "Immediate"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         # Prompts with mode="forbidden" raise MCPError when called with task=True
         with pytest.raises(MCPError):
             await client.get_prompt("non_task_prompt", task=True)
@@ -201,7 +201,7 @@ async def test_forbidden_mode_resource_raises_error():
     async def non_task_resource() -> str:
         return "Immediate"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         # Resources with mode="forbidden" raise MCPError when called with task=True
         with pytest.raises(MCPError):
             await client.read_resource("file://immediate.txt", task=True)
@@ -219,7 +219,7 @@ async def test_immediate_task_caches_result():
         call_count += 1
         return call_count
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         # Call with task=True
         task = await client.call_tool("task_tool", task=True)
 
@@ -245,7 +245,7 @@ async def test_cache_persists_across_mixed_access_patterns():
     async def mixed_tool() -> str:
         return "mixed"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         task = await client.call_tool("mixed_tool", task=True)
 
         # Access in various orders
@@ -266,7 +266,7 @@ async def test_different_tasks_have_separate_caches():
     async def separate_tool(value: str) -> str:
         return f"Result: {value}"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         task1 = await client.call_tool("separate_tool", {"value": "A"}, task=True)
         task2 = await client.call_tool("separate_tool", {"value": "B"}, task=True)
 
@@ -296,7 +296,7 @@ async def test_cache_survives_status_checks():
     async def status_check_tool() -> str:
         return "status"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         task = await client.call_tool("status_check_tool", task=True)
 
         # Check status multiple times
@@ -322,7 +322,7 @@ async def test_cache_survives_wait_calls():
     async def wait_test_tool() -> str:
         return "waited"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         task = await client.call_tool("wait_test_tool", task=True)
 
         # Wait for completion

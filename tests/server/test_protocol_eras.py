@@ -567,7 +567,7 @@ async def test_task_submission_and_get_on_legacy_latest(task_server):
     `task=` parameter (verified: mcp.client.session.ClientSession.call_tool
     exposes no task metadata arg) — see item below.
     """
-    async with FastMCPClient(task_server) as client:
+    async with FastMCPClient(task_server, mode="legacy") as client:
         assert client.initialize_result is not None
         assert client.initialize_result.protocol_version == "2025-11-25"
 

@@ -47,7 +47,7 @@ async def test_task_teardown_does_not_hang():
 
     t0 = time.monotonic()
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         task = await client.call_tool("fast_tool", {"x": 21}, task=True)
         result = await task.result()
         assert result.data == 42

@@ -79,10 +79,19 @@ async def test_unauthorized(client_unauthorized: Client):
             pass
 
 
-async def test_ping(client_with_headless_oauth: Client):
-    """Test that we can ping the server."""
-    async with client_with_headless_oauth:
-        assert await client_with_headless_oauth.ping()
+async def test_ping(streamable_http_server: str):
+    """Test that we can ping the server.
+
+    Pinned to legacy: `ping` is a handshake-era request removed from the modern
+    (2026-07-28) protocol.
+    """
+    client = Client(
+        transport=StreamableHttpTransport(streamable_http_server),
+        auth=HeadlessOAuth(mcp_url=streamable_http_server, scopes=["read", "write"]),
+        mode="legacy",
+    )
+    async with client:
+        assert await client.ping()
 
 
 async def test_list_tools(client_with_headless_oauth: Client):

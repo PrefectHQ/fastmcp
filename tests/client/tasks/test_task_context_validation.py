@@ -37,7 +37,7 @@ async def task_server():
 async def test_task_status_outside_context_raises(task_server):
     """Calling task.status() outside client context raises error."""
     task = None
-    async with Client(task_server) as client:
+    async with Client(task_server, mode="legacy") as client:
         task = await client.call_tool("background_tool", {"value": "test"}, task=True)
         assert not task.returned_immediately
     # Now outside context
@@ -49,7 +49,7 @@ async def test_task_status_outside_context_raises(task_server):
 async def test_task_result_outside_context_raises(task_server):
     """Calling task.result() outside context raises error."""
     task = None
-    async with Client(task_server) as client:
+    async with Client(task_server, mode="legacy") as client:
         task = await client.call_tool("background_tool", {"value": "test"}, task=True)
         assert not task.returned_immediately
     # Now outside context
@@ -61,7 +61,7 @@ async def test_task_result_outside_context_raises(task_server):
 async def test_task_wait_outside_context_raises(task_server):
     """Calling task.wait() outside context raises error."""
     task = None
-    async with Client(task_server) as client:
+    async with Client(task_server, mode="legacy") as client:
         task = await client.call_tool("background_tool", {"value": "test"}, task=True)
         assert not task.returned_immediately
     # Now outside context
@@ -73,7 +73,7 @@ async def test_task_wait_outside_context_raises(task_server):
 async def test_task_cancel_outside_context_raises(task_server):
     """Calling task.cancel() outside context raises error."""
     task = None
-    async with Client(task_server) as client:
+    async with Client(task_server, mode="legacy") as client:
         task = await client.call_tool("background_tool", {"value": "test"}, task=True)
         assert not task.returned_immediately
     # Now outside context
@@ -85,7 +85,7 @@ async def test_task_cancel_outside_context_raises(task_server):
 async def test_cached_tool_task_accessible_outside_context(task_server):
     """Tool tasks with cached results work outside context."""
     task = None
-    async with Client(task_server) as client:
+    async with Client(task_server, mode="legacy") as client:
         task = await client.call_tool("background_tool", {"value": "test"}, task=True)
         assert not task.returned_immediately
 
@@ -109,7 +109,7 @@ async def test_cached_tool_task_accessible_outside_context(task_server):
 async def test_cached_prompt_task_accessible_outside_context(task_server):
     """Prompt tasks with cached results work outside context."""
     task = None
-    async with Client(task_server) as client:
+    async with Client(task_server, mode="legacy") as client:
         task = await client.get_prompt(
             "background_prompt", {"topic": "test"}, task=True
         )
@@ -135,7 +135,7 @@ async def test_cached_prompt_task_accessible_outside_context(task_server):
 async def test_cached_resource_task_accessible_outside_context(task_server):
     """Resource tasks with cached results work outside context."""
     task = None
-    async with Client(task_server) as client:
+    async with Client(task_server, mode="legacy") as client:
         task = await client.read_resource("file://background.txt", task=True)
         assert not task.returned_immediately
 
@@ -152,7 +152,7 @@ async def test_cached_resource_task_accessible_outside_context(task_server):
 async def test_uncached_status_outside_context_raises(task_server):
     """Even after caching result, status() still requires client context."""
     task = None
-    async with Client(task_server) as client:
+    async with Client(task_server, mode="legacy") as client:
         task = await client.call_tool("background_tool", {"value": "test"}, task=True)
         assert not task.returned_immediately
 
@@ -172,7 +172,7 @@ async def test_uncached_status_outside_context_raises(task_server):
 async def test_task_await_syntax_outside_context_raises(task_server):
     """Using await task syntax outside context raises error for background tasks."""
     task = None
-    async with Client(task_server) as client:
+    async with Client(task_server, mode="legacy") as client:
         task = await client.call_tool("background_tool", {"value": "test"}, task=True)
         assert not task.returned_immediately
     # Now outside context
@@ -184,7 +184,7 @@ async def test_task_await_syntax_outside_context_raises(task_server):
 async def test_task_await_syntax_works_for_cached_results(task_server):
     """Using await task syntax works outside context when result is cached."""
     task = None
-    async with Client(task_server) as client:
+    async with Client(task_server, mode="legacy") as client:
         task = await client.call_tool("background_tool", {"value": "test"}, task=True)
         result1 = await task  # Cache it
     # Now outside context
@@ -196,7 +196,7 @@ async def test_task_await_syntax_works_for_cached_results(task_server):
 
 async def test_multiple_result_calls_return_same_cached_object(task_server):
     """Multiple result() calls return the same cached object."""
-    async with Client(task_server) as client:
+    async with Client(task_server, mode="legacy") as client:
         task = await client.call_tool("background_tool", {"value": "test"}, task=True)
 
         result1 = await task.result()
@@ -211,7 +211,7 @@ async def test_multiple_result_calls_return_same_cached_object(task_server):
 async def test_background_task_properties_accessible_outside_context(task_server):
     """Background task properties like task_id accessible outside context."""
     task = None
-    async with Client(task_server) as client:
+    async with Client(task_server, mode="legacy") as client:
         task = await client.call_tool("background_tool", {"value": "test"}, task=True)
         task_id_inside = task.task_id
         assert not task.returned_immediately

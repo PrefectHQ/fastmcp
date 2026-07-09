@@ -31,7 +31,7 @@ async def prompt_server():
 
 async def test_get_prompt_as_task_returns_prompt_task(prompt_server):
     """get_prompt with task=True returns a PromptTask object."""
-    async with Client(prompt_server) as client:
+    async with Client(prompt_server, mode="legacy") as client:
         task = await client.get_prompt("analysis_prompt", {"topic": "AI"}, task=True)
 
         assert isinstance(task, PromptTask)
@@ -40,7 +40,7 @@ async def test_get_prompt_as_task_returns_prompt_task(prompt_server):
 
 async def test_prompt_task_server_generated_id(prompt_server):
     """get_prompt with task=True gets server-generated task ID."""
-    async with Client(prompt_server) as client:
+    async with Client(prompt_server, mode="legacy") as client:
         task = await client.get_prompt(
             "creative_prompt",
             {"theme": "future"},
@@ -62,7 +62,7 @@ async def test_prompt_task_server_generated_id(prompt_server):
 )
 async def test_prompt_task_result_returns_get_prompt_result(prompt_server):
     """PromptTask.result() returns GetPromptResult."""
-    async with Client(prompt_server) as client:
+    async with Client(prompt_server, mode="legacy") as client:
         task = await client.get_prompt(
             "analysis_prompt", {"topic": "Robotics", "style": "casual"}, task=True
         )
@@ -83,7 +83,7 @@ async def test_prompt_task_result_returns_get_prompt_result(prompt_server):
 
 async def test_prompt_task_await_syntax(prompt_server):
     """PromptTask can be awaited directly."""
-    async with Client(prompt_server) as client:
+    async with Client(prompt_server, mode="legacy") as client:
         task = await client.get_prompt("creative_prompt", {"theme": "ocean"}, task=True)
 
         # Can await task directly
@@ -93,7 +93,7 @@ async def test_prompt_task_await_syntax(prompt_server):
 
 async def test_prompt_task_status_and_wait(prompt_server):
     """PromptTask supports status() and wait() methods."""
-    async with Client(prompt_server) as client:
+    async with Client(prompt_server, mode="legacy") as client:
         task = await client.get_prompt("analysis_prompt", {"topic": "Space"}, task=True)
 
         # Check status

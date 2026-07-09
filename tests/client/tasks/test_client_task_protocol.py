@@ -24,7 +24,7 @@ async def test_end_to_end_task_flow():
         await complete_signal.wait()
         return f"Processed: {message}"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         # Submit task
         task = await client.call_tool(
             "controlled_tool", {"message": "integration test"}, task=True
@@ -53,7 +53,7 @@ async def test_multiple_concurrent_tasks():
     async def multiply(a: int, b: int) -> int:
         return a * b
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         # Submit multiple tasks
         tasks = []
         for i in range(5):
@@ -74,7 +74,7 @@ async def test_task_id_auto_generation():
     async def echo(message: str) -> str:
         return f"Echo: {message}"
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         # Submit without custom task ID
         task_1 = await client.call_tool("echo", {"message": "first"}, task=True)
         task_2 = await client.call_tool("echo", {"message": "second"}, task=True)

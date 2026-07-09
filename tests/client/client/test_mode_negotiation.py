@@ -4,25 +4,35 @@ FastMCP serves both protocol eras from one server object over the in-memory
 stream loop (``serve_dual_era_loop``), so a single ``fastmcp_server`` fixture can
 be driven legacy or modern by varying ``mode=`` alone:
 
-* ``mode="legacy"`` (the current default) runs the initialize handshake and
-  reports the handshake-era version, byte-identically to pre-v4 behavior.
-* ``mode="auto"`` probes ``server/discover`` and negotiates the modern era.
+* ``mode="auto"`` (the default) probes ``server/discover`` and negotiates the
+  modern era.
+* ``mode="legacy"`` runs the initialize handshake and reports the handshake-era
+  version, byte-identically to pre-v4 behavior.
 * ``mode="2026-07-28"`` pins the modern version and adopts a synthesized
   ``DiscoverResult`` without a probe.
 """
 
 from __future__ import annotations
 
+import contextlib
+from collections.abc import AsyncIterator
+from typing import Any
+
 import pytest
+from mcp import ClientSession
+from mcp.shared.exceptions import MCPError
+from mcp_types import METHOD_NOT_FOUND
 from mcp_types.version import LATEST_HANDSHAKE_VERSION, LATEST_MODERN_VERSION
+from typing_extensions import Unpack
 
 from fastmcp import Client, FastMCP
+from fastmcp.client.transports import FastMCPTransport, SessionKwargs
 
 
 class TestModeValidation:
-    def test_default_mode_is_legacy(self, fastmcp_server):
-        """The conservative default is 'legacy' (see the v4 phasing note)."""
-        assert Client(fastmcp_server).mode == "legacy"
+    def test_default_mode_is_auto(self, fastmcp_server):
+        """The default is 'auto': probe server/discover, fall back to the handshake."""
+        assert Client(fastmcp_server).mode == "auto"
 
     @pytest.mark.parametrize("mode", ["legacy", "auto", LATEST_MODERN_VERSION])
     def test_valid_modes_accepted(self, fastmcp_server, mode):
@@ -47,12 +57,6 @@ class TestLegacyMode:
             assert client.initialize_result.server_info.name == "TestServer"
             assert client.server_capabilities is not None
 
-    async def test_default_matches_legacy(self, fastmcp_server):
-        """Omitting mode= is byte-identical to mode='legacy'."""
-        async with Client(fastmcp_server) as client:
-            assert client.protocol_version == LATEST_HANDSHAKE_VERSION
-            assert client.initialize_result is not None
-
     async def test_legacy_call_tool(self, fastmcp_server):
         async with Client(fastmcp_server, mode="legacy") as client:
             result = await client.call_tool("add", {"a": 2, "b": 3})
@@ -73,6 +77,12 @@ class TestAutoMode:
             result = await client.call_tool("add", {"a": 4, "b": 5})
         assert result.data == 9
 
+    async def test_default_matches_auto(self, fastmcp_server):
+        """Omitting mode= is identical to mode='auto': modern via server/discover."""
+        async with Client(fastmcp_server) as client:
+            assert client.protocol_version == LATEST_MODERN_VERSION
+            assert client.initialize_result is None
+
     async def test_auto_falls_back_to_legacy_for_handshake_only_server(self):
         """A server that only speaks the handshake era makes auto denylist-fall-back to
         initialize, which still populates the InitializeResult.
@@ -90,6 +100,61 @@ class TestAutoMode:
 
         async with Client(mcp, mode="auto") as client:
             assert client.protocol_version == LATEST_MODERN_VERSION
+
+    async def test_auto_falls_back_cleanly_when_discover_is_rejected(
+        self, fastmcp_server
+    ):
+        """A server that rejects the server/discover probe with a JSON-RPC error
+        (e.g. a non-FastMCP legacy server that doesn't implement discover) makes
+        auto fall back to the initialize handshake, cleanly — no error surfaces
+        and the legacy InitializeResult is populated.
+
+        This characterizes the FastMCP-observable outcome of the SDK's
+        denylist fallback (`negotiate_auto`): every RPC error except a
+        disjoint modern-only -32022 falls back to `initialize()`.
+        """
+
+        class _DiscoverRejectingTransport(FastMCPTransport):
+            """Wraps the in-memory transport but rejects server/discover."""
+
+            @contextlib.asynccontextmanager
+            async def connect_session(
+                self, **session_kwargs: Unpack[SessionKwargs]
+            ) -> AsyncIterator[ClientSession]:
+                async with super().connect_session(**session_kwargs) as session:
+
+                    async def _reject_discover(version: str) -> dict[str, Any]:
+                        raise MCPError(
+                            code=METHOD_NOT_FOUND, message="Method not found"
+                        )
+
+                    session.send_discover = _reject_discover  # ty: ignore[invalid-assignment]
+                    yield session
+
+        transport = _DiscoverRejectingTransport(fastmcp_server)
+        async with Client(transport, mode="auto") as client:
+            # Fell back to the handshake: legacy version + populated InitializeResult.
+            assert client.protocol_version == LATEST_HANDSHAKE_VERSION
+            assert client.initialize_result is not None
+            result = await client.call_tool("add", {"a": 1, "b": 2})
+            assert result.data == 3
+
+    async def test_auto_uses_legacy_on_legacy_only_transport(self, fastmcp_server):
+        """A `legacy_only` transport (e.g. SSE) negotiates the handshake under auto.
+
+        SSE cannot serve the sessionless modern era, so a client with the default
+        `mode="auto"` must run the initialize handshake directly rather than
+        probing server/discover (which the FastMCP server answers even over SSE
+        but then cannot serve).
+        """
+
+        class _LegacyOnlyTransport(FastMCPTransport):
+            legacy_only = True
+
+        transport = _LegacyOnlyTransport(fastmcp_server)
+        async with Client(transport, mode="auto") as client:
+            assert client.protocol_version == LATEST_HANDSHAKE_VERSION
+            assert client.initialize_result is not None
 
 
 class TestPinnedMode:

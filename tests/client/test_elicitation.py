@@ -51,7 +51,7 @@ def fastmcp_server():
 async def test_elicitation_with_no_handler(fastmcp_server):
     """Test that elicitation works without a handler."""
 
-    async with Client(fastmcp_server) as client:
+    async with Client(fastmcp_server, mode="legacy") as client:
         with pytest.raises(ToolError, match="Elicitation not supported"):
             await client.call_tool("ask_for_name")
 
@@ -64,7 +64,7 @@ async def test_elicitation_accept_content(fastmcp_server):
         return ElicitResult(action="accept", content=response_type(name="Alice"))
 
     async with Client(
-        fastmcp_server, elicitation_handler=elicitation_handler
+        fastmcp_server, mode="legacy", elicitation_handler=elicitation_handler
     ) as client:
         result = await client.call_tool("ask_for_name")
         assert result.data == "Hello, Alice!"
@@ -77,7 +77,7 @@ async def test_elicitation_decline(fastmcp_server):
         return ElicitResult(action="decline")
 
     async with Client(
-        fastmcp_server, elicitation_handler=elicitation_handler
+        fastmcp_server, mode="legacy", elicitation_handler=elicitation_handler
     ) as client:
         result = await client.call_tool("ask_for_name")
         assert result.data == "No name provided."
@@ -103,7 +103,9 @@ async def test_elicitation_handler_parameters():
         captured_params["ctx"] = ctx
         return ElicitResult(action="accept", content={"value": 42})
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         await client.call_tool("test_tool", {})
 
         assert captured_params["message"] == "Test message"
@@ -138,7 +140,9 @@ async def test_elicitation_response_title_and_description_on_scalar():
         captured_schema.update(params.requested_schema)
         return ElicitResult(action="accept", content={"value": True})
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         await client.call_tool("confirm_purchase", {})
 
     assert captured_schema["properties"]["value"]["title"] == "Confirm purchase"
@@ -167,7 +171,9 @@ async def test_elicitation_response_title_on_dict_shorthand():
         captured_schema.update(params.requested_schema)
         return ElicitResult(action="accept", content={"value": "low"})
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         await client.call_tool("pick_priority", {})
 
     assert captured_schema["properties"]["value"]["title"] == "Priority level"
@@ -191,7 +197,9 @@ async def test_elicitation_response_title_on_list_shorthand():
         captured_schema.update(params.requested_schema)
         return ElicitResult(action="accept", content={"value": "red"})
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         await client.call_tool("pick_color", {})
 
     assert captured_schema["properties"]["value"]["title"] == "Favorite color"
@@ -216,7 +224,9 @@ async def test_elicitation_response_title_rejected_for_basemodel():
     async def elicitation_handler(message, response_type, params, ctx):
         return ElicitResult(action="accept", content={"name": "x"})
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         with pytest.raises(ToolError, match="response_title"):
             await client.call_tool("ask", {})
 
@@ -237,7 +247,9 @@ async def test_elicitation_response_title_rejected_for_none():
     async def elicitation_handler(message, response_type, params, ctx):
         return ElicitResult(action="accept", content={})
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         with pytest.raises(ToolError, match="response_title"):
             await client.call_tool("ask", {})
 
@@ -263,7 +275,9 @@ async def test_elicitation_cancel_action():
     async def elicitation_handler(message, response_type, params, ctx):
         return ElicitResult(action="cancel")
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         result = await client.call_tool("ask_for_optional_info", {})
         assert result.data == "Request was canceled"
 
@@ -283,7 +297,9 @@ class TestScalarResponseTypes:
         async def elicitation_handler(message, response_type, params, ctx):
             return ElicitResult(action="accept", content="Alice")
 
-        async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+        async with Client(
+            mcp, mode="legacy", elicitation_handler=elicitation_handler
+        ) as client:
             result = await client.call_tool("my_tool", {})
             assert result.data == "Alice"
 
@@ -306,7 +322,9 @@ class TestScalarResponseTypes:
             assert response_type is None
             return ElicitResult(action="accept")
 
-        async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+        async with Client(
+            mcp, mode="legacy", elicitation_handler=elicitation_handler
+        ) as client:
             result = await client.call_tool("my_tool", {})
             assert result.data is None
 
@@ -328,7 +346,9 @@ class TestScalarResponseTypes:
         ):
             return ElicitResult(action="accept", content={})
 
-        async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+        async with Client(
+            mcp, mode="legacy", elicitation_handler=elicitation_handler
+        ) as client:
             result = await client.call_tool("my_tool", {})
             assert result.data is None
 
@@ -348,7 +368,9 @@ class TestScalarResponseTypes:
         async def elicitation_handler(message, response_type, params, ctx):
             return ElicitResult(action="accept", content={"value": "hello"})
 
-        async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+        async with Client(
+            mcp, mode="legacy", elicitation_handler=elicitation_handler
+        ) as client:
             with pytest.raises(
                 ToolError, match="Elicitation expected an empty response"
             ):
@@ -368,7 +390,9 @@ class TestScalarResponseTypes:
         async def elicitation_handler(message, response_type, params, ctx):
             return ElicitResult(action="accept", content={"value": "hello"})
 
-        async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+        async with Client(
+            mcp, mode="legacy", elicitation_handler=elicitation_handler
+        ) as client:
             result = await client.call_tool("my_tool", {})
             assert result.data == "hello"
 
@@ -386,7 +410,9 @@ class TestScalarResponseTypes:
         async def elicitation_handler(message, response_type, params, ctx):
             return ElicitResult(action="accept", content={"value": 42})
 
-        async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+        async with Client(
+            mcp, mode="legacy", elicitation_handler=elicitation_handler
+        ) as client:
             result = await client.call_tool("my_tool", {})
             assert result.data == 42
 
@@ -404,7 +430,9 @@ class TestScalarResponseTypes:
         async def elicitation_handler(message, response_type, params, ctx):
             return ElicitResult(action="accept", content={"value": 3.14})
 
-        async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+        async with Client(
+            mcp, mode="legacy", elicitation_handler=elicitation_handler
+        ) as client:
             result = await client.call_tool("my_tool", {})
             assert result.data == 3.14
 
@@ -422,7 +450,9 @@ class TestScalarResponseTypes:
         async def elicitation_handler(message, response_type, params, ctx):
             return ElicitResult(action="accept", content={"value": True})
 
-        async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+        async with Client(
+            mcp, mode="legacy", elicitation_handler=elicitation_handler
+        ) as client:
             result = await client.call_tool("my_tool", {})
             assert result.data is True
 
@@ -442,7 +472,9 @@ class TestScalarResponseTypes:
         async def elicitation_handler(message, response_type, params, ctx):
             return ElicitResult(action="accept", content={"value": "x"})
 
-        async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+        async with Client(
+            mcp, mode="legacy", elicitation_handler=elicitation_handler
+        ) as client:
             result = await client.call_tool("my_tool", {})
             assert result.data == "x"
 
@@ -464,7 +496,9 @@ class TestScalarResponseTypes:
         async def elicitation_handler(message, response_type, params, ctx):
             return ElicitResult(action="accept", content={"value": "x"})
 
-        async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+        async with Client(
+            mcp, mode="legacy", elicitation_handler=elicitation_handler
+        ) as client:
             result = await client.call_tool("my_tool", {})
             assert result.data == "x"
 
@@ -482,7 +516,9 @@ class TestScalarResponseTypes:
         async def elicitation_handler(message, response_type, params, ctx):
             return ElicitResult(action="accept", content={"value": "x"})
 
-        async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+        async with Client(
+            mcp, mode="legacy", elicitation_handler=elicitation_handler
+        ) as client:
             result = await client.call_tool("my_tool", {})
             assert result.data == "x"
 
@@ -506,7 +542,9 @@ async def test_elicitation_handler_error():
     async def elicitation_handler(message, response_type, params, ctx):
         raise ValueError("Handler failed!")
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         result = await client.call_tool("failing_elicit", {})
         assert "Error:" in result.data
 
@@ -549,7 +587,9 @@ async def test_elicitation_multiple_calls():
         else:
             raise ValueError("Unexpected call")
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         result = await client.call_tool("multi_step_form", {})
         assert result.data == "Hello Bob, you are 25 years old"
         assert call_count == 2
@@ -621,7 +661,9 @@ async def test_structured_response_type(
 
         return ElicitResult(action="accept", content=UserInfo(name="Alice", age=30))
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         result = await client.call_tool("get_user_info", {})
         assert result.data == "User: Alice, age: 30"
 
@@ -668,7 +710,9 @@ async def test_all_primitive_field_types():
             ),
         )
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         result = await client.call_tool("get_data", {})
 
         # Now all literal/enum fields should be preserved as strings
@@ -748,7 +792,9 @@ class TestPatternMatching:
         async def elicitation_handler(message, response_type, params, ctx):
             return ElicitResult(action="accept", content={"value": "Alice"})
 
-        async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+        async with Client(
+            mcp, mode="legacy", elicitation_handler=elicitation_handler
+        ) as client:
             result = await client.call_tool("pattern_match_tool", {})
             assert result.data == "Hello Alice!"
 
@@ -773,7 +819,9 @@ class TestPatternMatching:
         async def elicitation_handler(message, response_type, params, ctx):
             return ElicitResult(action="decline")
 
-        async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+        async with Client(
+            mcp, mode="legacy", elicitation_handler=elicitation_handler
+        ) as client:
             result = await client.call_tool("pattern_match_tool", {})
             assert result.data == "You declined"
 
@@ -798,6 +846,8 @@ class TestPatternMatching:
         async def elicitation_handler(message, response_type, params, ctx):
             return ElicitResult(action="cancel")
 
-        async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+        async with Client(
+            mcp, mode="legacy", elicitation_handler=elicitation_handler
+        ) as client:
             result = await client.call_tool("pattern_match_tool", {})
             assert result.data == "Cancelled"

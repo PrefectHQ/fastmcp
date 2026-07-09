@@ -25,6 +25,10 @@ from fastmcp.utilities.timeout import normalize_timeout_to_timedelta
 class SSETransport(ClientTransport):
     """Transport implementation that connects to an MCP server via Server-Sent Events."""
 
+    # SSE predates the sessionless modern era and cannot serve it; a client with
+    # `mode="auto"` negotiates the legacy handshake directly over SSE.
+    legacy_only = True
+
     def __init__(
         self,
         url: str | AnyUrl,

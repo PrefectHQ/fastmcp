@@ -95,7 +95,9 @@ class TestSetLoggingLevel:
     async def test_set_logging_level(self, fastmcp_server: FastMCP):
         """Client can set the minimum log level and lower-level messages are suppressed."""
         log_handler = LogHandler()
-        async with Client(fastmcp_server, log_handler=log_handler.handle_log) as client:
+        async with Client(
+            fastmcp_server, mode="legacy", log_handler=log_handler.handle_log
+        ) as client:
             await client.set_logging_level("warning")
             await client.call_tool(
                 "echo_log", {"message": "debug msg", "level": "debug"}
@@ -115,7 +117,9 @@ class TestSetLoggingLevel:
     async def test_set_logging_level_debug_allows_all(self, fastmcp_server: FastMCP):
         """Setting level to debug allows all messages through."""
         log_handler = LogHandler()
-        async with Client(fastmcp_server, log_handler=log_handler.handle_log) as client:
+        async with Client(
+            fastmcp_server, mode="legacy", log_handler=log_handler.handle_log
+        ) as client:
             await client.set_logging_level("debug")
             await client.call_tool(
                 "echo_log", {"message": "debug msg", "level": "debug"}
@@ -169,7 +173,9 @@ class TestSetLoggingLevel:
             await context.log(message=message, level=level)
 
         log_handler = LogHandler()
-        async with Client(mcp, log_handler=log_handler.handle_log) as client:
+        async with Client(
+            mcp, mode="legacy", log_handler=log_handler.handle_log
+        ) as client:
             await client.set_logging_level("warning")
             await client.call_tool("echo_log", {"message": "info msg", "level": "info"})
             await client.call_tool(

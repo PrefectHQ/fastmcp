@@ -221,6 +221,7 @@ class TestStaticClientE2E:
             async with Client(
                 transport=StreamableHttpTransport(url),
                 auth=oauth,
+                mode="legacy",  # `ping` is a handshake-era request
             ) as client:
                 assert await client.ping()
                 tools = await client.list_tools()

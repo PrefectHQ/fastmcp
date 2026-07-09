@@ -181,8 +181,9 @@ async def test_both_bindings_fire_against_live_server():
     """The internal task binding and a user extension binding both fire.
 
     A ``task=True`` tool drives ``notifications/tasks/status`` (the internal
-    binding) while the same tool emits a custom notification the user extension
-    observes, proving the two coexist on one live connection.
+    binding) while a second tool emits a custom notification the user extension
+    observes, proving the two coexist on one live connection. Pinned to
+    ``mode="legacy"`` because FastMCP task submission is a legacy-era feature.
     """
     received: list[PingParams] = []
     mcp = FastMCP("compose-server")
@@ -200,7 +201,7 @@ async def test_both_bindings_fire_against_live_server():
         await asyncio.sleep(0.02)
         return value * 2
 
-    client = Client(mcp, extensions=[_DemoExtension(received)])
+    client = Client(mcp, extensions=[_DemoExtension(received)], mode="legacy")
 
     async with client:
         # The user extension binding fires on the custom notification.

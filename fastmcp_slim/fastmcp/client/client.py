@@ -124,11 +124,11 @@ CacheableT = TypeVar("CacheableT", bound=mcp_types.CacheableResult)
 ConnectMode = Literal["legacy", "auto"] | str
 """How the client negotiates the protocol era at connect time.
 
-- ``"legacy"`` (the current default): the classic initialize handshake, byte-identical
-  to pre-v4 behavior for handshake-era servers.
-- ``"auto"``: probe ``server/discover`` at the newest modern version and adopt it, falling
-  back to the initialize handshake for any server that is not positive evidence of a modern
-  peer (a denylist fallback — see the SDK's ``negotiate_auto``).
+- ``"auto"`` (the default): probe ``server/discover`` at the newest modern version and
+  adopt it, falling back to the initialize handshake for any server that is not positive
+  evidence of a modern peer (a denylist fallback — see the SDK's ``negotiate_auto``).
+- ``"legacy"``: the classic initialize handshake, byte-identical to pre-v4 behavior for
+  handshake-era servers. Opt into this to force the old handshake.
 - a modern protocol-version string (e.g. ``"2026-07-28"``): adopt that version directly
   without probing, synthesizing a minimal ``DiscoverResult`` when none is supplied.
 
@@ -342,12 +342,13 @@ class Client(
         timeout: Optional timeout for requests (seconds or timedelta)
         init_timeout: Optional timeout for initial connection (seconds or timedelta).
             Set to 0 to disable. If None, uses the value in the FastMCP global settings.
-        mode: Protocol-era negotiation at connect time. `"legacy"` (the default) runs
-            the initialize handshake, byte-identical to pre-v4 behavior. `"auto"` probes
+        mode: Protocol-era negotiation at connect time. `"auto"` (the default) probes
             `server/discover` and negotiates the modern era, denylist-falling-back to the
-            handshake for legacy servers. A modern version string (e.g. `"2026-07-28"`)
-            adopts that version directly. `mode="auto"` as a future default is a
-            release-time decision; the conservative `"legacy"` is the default for now.
+            initialize handshake for any server that is not positive evidence of a modern
+            peer — safe against a mixed fleet of legacy and modern servers. `"legacy"`
+            forces the initialize handshake, byte-identical to pre-v4 behavior; opt into it
+            to pin the old handshake. A modern version string (e.g. `"2026-07-28"`) adopts
+            that version directly without a probe.
         prior_discover: A previously obtained `DiscoverResult` to adopt when `mode` is a
             version pin, reused instead of synthesizing a minimal one. Ignored otherwise.
         input_required_max_rounds: Cap on `InputRequiredResult` (SEP-2322) retry rounds
@@ -460,7 +461,7 @@ class Client(
         client_info: mcp_types.Implementation | None = None,
         auth: httpx.Auth | Literal["oauth"] | str | None = None,
         verify: ssl.SSLContext | bool | str | None = None,
-        mode: ConnectMode = "legacy",
+        mode: ConnectMode = "auto",
         prior_discover: mcp_types.DiscoverResult | None = None,
         input_required_max_rounds: int = DEFAULT_INPUT_REQUIRED_MAX_ROUNDS,
         cache: CacheConfig | bool | None = None,
@@ -835,13 +836,20 @@ class Client(
         else:
             timeout = normalize_timeout_to_seconds(timeout)
 
+        # A legacy-only transport (SSE) cannot serve the modern era; treat "auto"
+        # as "legacy" there rather than probing server/discover, which some servers
+        # answer over SSE but then cannot serve.
+        effective_mode = self.mode
+        if effective_mode == "auto" and self.transport.legacy_only:
+            effective_mode = "legacy"
+
         try:
             with anyio.fail_after(timeout):
-                if self.mode == "legacy":
+                if effective_mode == "legacy":
                     self._session_state.initialize_result = (
                         await self.session.initialize()
                     )
-                elif self.mode == "auto":
+                elif effective_mode == "auto":
                     await negotiate_auto(self.session)
                     # auto may have fallen back to the legacy handshake; surface its
                     # InitializeResult through the existing public property when so.
@@ -872,7 +880,7 @@ class Client(
         With `mode="auto"` or a pinned modern version, connect-time negotiation may adopt
         the modern `server/discover` era, which has no `InitializeResult`; in that case
         this method raises. Read `protocol_version` / `server_capabilities` instead, or use
-        `mode="legacy"` (the default) when you need the handshake result.
+        `mode="legacy"` when you need the handshake result.
 
         Args:
             timeout: Optional timeout for the initialization request (seconds or timedelta).

@@ -150,7 +150,7 @@ async def nested_server():
 async def test_ping(streamable_http_server: str):
     """Test pinging the server."""
     async with Client(
-        transport=StreamableHttpTransport(streamable_http_server)
+        transport=StreamableHttpTransport(streamable_http_server), mode="legacy"
     ) as client:
         result = await client.ping()
         assert result is True
@@ -163,7 +163,8 @@ async def test_ping_with_streamable_http_alias(
     async with Client(
         transport=StreamableHttpTransport(
             streamable_http_server_with_streamable_http_alias
-        )
+        ),
+        mode="legacy",
     ) as client:
         result = await client.ping()
         assert result is True
@@ -187,7 +188,7 @@ async def test_session_id_callback(streamable_http_server: str):
     """Test getting mcp-session-id from the transport."""
     transport = StreamableHttpTransport(streamable_http_server)
     assert transport.get_session_id() is None
-    async with Client(transport=transport):
+    async with Client(transport=transport, mode="legacy"):
         session_id = transport.get_session_id()
         assert session_id is not None
 
@@ -226,6 +227,7 @@ async def test_elicitation_tool(streamable_http_server: str, request):
     async with Client(
         transport=StreamableHttpTransport(streamable_http_server),
         elicitation_handler=elicitation_handler,
+        mode="legacy",
     ) as client:
         result = await client.call_tool("elicit")
         assert result.data == "You said your name was: Alice!"
@@ -253,7 +255,9 @@ async def test_stateless_http_still_accepts_post(streamable_http_server: str):
 
 async def test_nested_streamable_http_server_resolves_correctly(nested_server: str):
     """Test patch for https://github.com/modelcontextprotocol/python-sdk/pull/659"""
-    async with Client(transport=StreamableHttpTransport(nested_server)) as client:
+    async with Client(
+        transport=StreamableHttpTransport(nested_server), mode="legacy"
+    ) as client:
         result = await client.ping()
         assert result is True
 
@@ -265,11 +269,14 @@ async def test_nested_streamable_http_server_resolves_correctly(nested_server: s
 class TestTimeout:
     async def test_timeout(self, streamable_http_server: str):
         # note this transport behaves differently than others and raises
-        # MCPError from the *client* context
+        # MCPError from the *client* context. Pinned to legacy: on a modern
+        # (server/discover) connection a connect-time timeout surfaces as a raw
+        # httpx.ReadTimeout from the probe rather than a wrapped MCPError.
         with pytest.raises(MCPError, match="timed out"):
             async with Client(
                 transport=StreamableHttpTransport(streamable_http_server),
                 timeout=0.02,
+                mode="legacy",
             ) as client:
                 await client.call_tool("sleep", {"seconds": 0.05})
 

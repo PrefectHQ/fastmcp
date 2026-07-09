@@ -33,7 +33,7 @@ async def tool_task_server():
 
 async def test_call_tool_as_task_returns_tool_task(tool_task_server):
     """call_tool with task=True returns a ToolTask object."""
-    async with Client(tool_task_server) as client:
+    async with Client(tool_task_server, mode="legacy") as client:
         task = await client.call_tool("echo", {"message": "hello"}, task=True)
 
         assert isinstance(task, ToolTask)
@@ -43,7 +43,7 @@ async def test_call_tool_as_task_returns_tool_task(tool_task_server):
 
 async def test_tool_task_server_generated_id(tool_task_server):
     """call_tool with task=True gets server-generated task ID."""
-    async with Client(tool_task_server) as client:
+    async with Client(tool_task_server, mode="legacy") as client:
         task = await client.call_tool("echo", {"message": "test"}, task=True)
 
         # Server should generate a UUID task ID
@@ -55,7 +55,7 @@ async def test_tool_task_server_generated_id(tool_task_server):
 
 async def test_tool_task_result_returns_call_tool_result(tool_task_server):
     """ToolTask.result() returns CallToolResult with tool data."""
-    async with Client(tool_task_server) as client:
+    async with Client(tool_task_server, mode="legacy") as client:
         task = await client.call_tool("multiply", {"a": 6, "b": 7}, task=True)
         assert not task.returned_immediately
 
@@ -65,7 +65,7 @@ async def test_tool_task_result_returns_call_tool_result(tool_task_server):
 
 async def test_tool_task_await_syntax(tool_task_server):
     """Tool tasks can be awaited directly to get result."""
-    async with Client(tool_task_server) as client:
+    async with Client(tool_task_server, mode="legacy") as client:
         task = await client.call_tool("multiply", {"a": 7, "b": 6}, task=True)
 
         # Can await task directly (syntactic sugar for task.result())
@@ -75,7 +75,7 @@ async def test_tool_task_await_syntax(tool_task_server):
 
 async def test_tool_task_status_and_wait(tool_task_server):
     """ToolTask.status() returns GetTaskResult."""
-    async with Client(tool_task_server) as client:
+    async with Client(tool_task_server, mode="legacy") as client:
         task = await client.call_tool("echo", {"message": "test"}, task=True)
 
         status = await task.status()
@@ -96,7 +96,7 @@ async def test_immediate_tool_task_respects_raise_on_error_true():
     def failing_tool() -> str:
         raise ValueError("immediate task failure")
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         task = await client.call_tool("failing_tool", task=True, raise_on_error=True)
 
         assert task.returned_immediately
@@ -114,7 +114,7 @@ async def test_immediate_tool_task_respects_raise_on_error_false():
     def failing_tool() -> str:
         raise ValueError("immediate task failure")
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         task = await client.call_tool("failing_tool", task=True, raise_on_error=False)
 
         assert task.returned_immediately
@@ -131,7 +131,7 @@ async def test_background_tool_task_respects_raise_on_error_true():
     async def failing_tool() -> str:
         raise ValueError("background task failure")
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         task = await client.call_tool("failing_tool", task=True, raise_on_error=True)
 
         assert not task.returned_immediately
@@ -147,7 +147,7 @@ async def test_background_tool_task_respects_raise_on_error_false():
     async def failing_tool() -> str:
         raise ValueError("background task failure")
 
-    async with Client(mcp) as client:
+    async with Client(mcp, mode="legacy") as client:
         task = await client.call_tool("failing_tool", task=True, raise_on_error=False)
 
         assert not task.returned_immediately

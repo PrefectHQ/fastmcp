@@ -45,6 +45,13 @@ class ClientTransport(abc.ABC):
 
     """
 
+    #: Whether this transport can only carry the legacy (handshake) protocol era.
+    #: The modern `2026-07-28` era is sessionless and served over Streamable HTTP;
+    #: the SSE transport predates it and cannot serve it. When True, a client with
+    #: `mode="auto"` negotiates the legacy handshake directly rather than probing
+    #: `server/discover` (which some servers answer over SSE but then cannot serve).
+    legacy_only: bool = False
+
     @abc.abstractmethod
     @contextlib.asynccontextmanager
     async def connect_session(

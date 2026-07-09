@@ -589,7 +589,7 @@ class TestSessionIdOnSpans:
         from fastmcp.client.transports import StreamableHttpTransport
 
         transport = StreamableHttpTransport(http_server_url)
-        client = Client(transport=transport)
+        client = Client(transport=transport, mode="legacy")
         async with client:
             await client.call_tool("echo", {"message": "test"})
 
@@ -657,7 +657,7 @@ class TestSessionIdOnSpans:
         from fastmcp.client.transports import StreamableHttpTransport
 
         transport = StreamableHttpTransport(http_server_url)
-        client = Client(transport=transport)
+        client = Client(transport=transport, mode="legacy")
         async with client:
             await client.call_tool("echo", {"message": "test"})
 

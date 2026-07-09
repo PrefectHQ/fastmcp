@@ -341,7 +341,7 @@ async def test_read_resource_mcp(fastmcp_server):
 
 async def test_client_connection(fastmcp_server):
     """Test that connect is idempotent."""
-    client = Client(transport=FastMCPTransport(fastmcp_server))
+    client = Client(transport=FastMCPTransport(fastmcp_server), mode="legacy")
 
     # Connect idempotently
     async with client:
@@ -353,7 +353,7 @@ async def test_client_connection(fastmcp_server):
 
 async def test_initialize_called_once(fastmcp_server):
     """Test that initialization is called once and sets initialize_result."""
-    client = Client(transport=FastMCPTransport(fastmcp_server))
+    client = Client(transport=FastMCPTransport(fastmcp_server), mode="legacy")
     async with client:
         # Verify that initialization succeeded by checking initialize_result
         assert client.initialize_result is not None
@@ -362,7 +362,7 @@ async def test_initialize_called_once(fastmcp_server):
 
 async def test_initialize_result_connected(fastmcp_server):
     """Test that initialize_result returns the correct result when connected."""
-    client = Client(transport=FastMCPTransport(fastmcp_server))
+    client = Client(transport=FastMCPTransport(fastmcp_server), mode="legacy")
 
     # Initialize result should be None before connection
     assert client.initialize_result is None
@@ -397,7 +397,7 @@ async def test_server_info_custom_version():
     """Test that custom version is properly set in serverInfo."""
     # Test with custom version
     server_with_version = FastMCP("CustomVersionServer", version="1.2.3")
-    client = Client(transport=FastMCPTransport(server_with_version))
+    client = Client(transport=FastMCPTransport(server_with_version), mode="legacy")
 
     async with client:
         result = client.initialize_result
@@ -407,7 +407,7 @@ async def test_server_info_custom_version():
 
     # Test without version (backward compatibility)
     server_without_version = FastMCP("DefaultVersionServer")
-    client = Client(transport=FastMCPTransport(server_without_version))
+    client = Client(transport=FastMCPTransport(server_without_version), mode="legacy")
 
     async with client:
         result = client.initialize_result

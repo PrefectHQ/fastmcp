@@ -76,7 +76,9 @@ async def test_simple_sampling(fastmcp_server: FastMCP):
     ) -> str:
         return "This is the sample message!"
 
-    async with Client(fastmcp_server, sampling_handler=sampling_handler) as client:
+    async with Client(
+        fastmcp_server, mode="legacy", sampling_handler=sampling_handler
+    ) as client:
         result = await client.call_tool("simple_sample", {"message": "Hello, world!"})
         assert result.data == "This is the sample message!"
 
@@ -88,7 +90,9 @@ async def test_sampling_with_system_prompt(fastmcp_server: FastMCP):
         assert params.system_prompt is not None
         return params.system_prompt
 
-    async with Client(fastmcp_server, sampling_handler=sampling_handler) as client:
+    async with Client(
+        fastmcp_server, mode="legacy", sampling_handler=sampling_handler
+    ) as client:
         result = await client.call_tool(
             "sample_with_system_prompt", {"message": "Hello, world!"}
         )
@@ -110,7 +114,9 @@ async def test_sampling_with_messages(fastmcp_server: FastMCP):
         assert messages[1].content.text == "How can I assist you today?"
         return "I need to think."
 
-    async with Client(fastmcp_server, sampling_handler=sampling_handler) as client:
+    async with Client(
+        fastmcp_server, mode="legacy", sampling_handler=sampling_handler
+    ) as client:
         result = await client.call_tool(
             "sample_with_messages", {"message": "Hello, world!"}
         )
@@ -144,7 +150,9 @@ async def test_sampling_with_image(fastmcp_server: FastMCP):
         assert len(messages) == 2
         return to_json(messages).decode()
 
-    async with Client(fastmcp_server, sampling_handler=sampling_handler) as client:
+    async with Client(
+        fastmcp_server, mode="legacy", sampling_handler=sampling_handler
+    ) as client:
         image_bytes = b"abc123"
         result = await client.call_tool(
             "sample_with_image", {"image_bytes": image_bytes}
@@ -264,6 +272,7 @@ class TestSamplingWithTools:
         # Explicitly disable tools capability by passing SamplingCapability without tools
         async with Client(
             server,
+            mode="legacy",
             sampling_handler=sampling_handler,
             sampling_capabilities=mcp_types.SamplingCapability(),  # No tools
         ) as client:
