@@ -653,6 +653,67 @@ auth = OAuthProxy(
 )
 ```
 
+## Identity Assertion (SEP-990)
+
+<VersionBadge version="4.0.0" />
+
+<Tip>
+Identity assertion is a beta feature. The API may change in a future release.
+</Tip>
+
+Identity assertion enables an enterprise "on-behalf-of" flow. A corporate identity provider (Okta, Microsoft Entra, etc.) issues an *ID-JAG* — a signed JWT that asserts an employee's identity to a specific MCP authorization server. The client presents that ID-JAG at the token endpoint using the RFC 7523 `jwt-bearer` grant, and the proxy validates it and mints a short-lived access token for the asserted user. No refresh token is issued: the identity provider controls session lifetime, and the client re-exchanges a fresh ID-JAG when its access token expires. This lets a workforce reach your MCP server with corporate-managed identity and centralized revocation, without each user running an interactive browser login.
+
+To enable it, pass an `IdentityAssertion` configuration listing the issuers you trust:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth import OAuthProxy, IdentityAssertion
+
+auth = OAuthProxy(
+    upstream_authorization_endpoint="https://accounts.example.com/authorize",
+    upstream_token_endpoint="https://accounts.example.com/token",
+    upstream_client_id="your-client-id",
+    upstream_client_secret="your-client-secret",
+    base_url="https://your-server.com",
+    identity_assertion=IdentityAssertion(
+        trusted_issuers=["https://login.acme-corp.com"],
+    ),
+)
+
+mcp = FastMCP("Internal API", auth=auth)
+
+@mcp.tool
+def whoami() -> str:
+    from fastmcp.server.dependencies import get_access_token
+
+    token = get_access_token()
+    return token.subject or "unknown"
+```
+
+When identity assertion is configured, the proxy advertises the `urn:ietf:params:oauth:grant-type:jwt-bearer` grant type and the `urn:ietf:params:oauth:grant-profile:id-jag` grant profile in its authorization server metadata, so compatible clients can discover the capability. When it is not configured, the grant is rejected as unsupported.
+
+### How Validation Works
+
+For each ID-JAG presented at the token endpoint, the proxy checks that:
+
+- the JOSE header `typ` is `oauth-id-jag+jwt`;
+- the `iss` claim is one of the configured `trusted_issuers`;
+- the signature verifies against the issuer's published keys;
+- the `aud` claim identifies this authorization server;
+- `exp` (and `iat`, when present) place the assertion within a short lifetime; and
+- the `jti` has not been seen before, preventing replay.
+
+The issuer's signing keys are discovered automatically via OIDC (`{issuer}/.well-known/openid-configuration`). For issuers that do not publish a discovery document, provide the JWKS URI explicitly per issuer:
+
+```python
+identity_assertion=IdentityAssertion(
+    trusted_issuers=["https://login.acme-corp.com"],
+    jwks_uris={"https://login.acme-corp.com": "https://login.acme-corp.com/keys"},
+)
+```
+
+The subject asserted in the ID-JAG flows into the normal FastMCP auth context. Tools read it through `get_access_token()` exactly as they would for any other token, because the proxy issues the access token through its own token factory.
+
 ## Security
 
 ### Key and Storage Management
