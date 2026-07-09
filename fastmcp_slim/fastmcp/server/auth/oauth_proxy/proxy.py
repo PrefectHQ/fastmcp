@@ -1346,7 +1346,10 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             TokenError: ``invalid_grant`` if the assertion is rejected, or
                 ``unsupported_grant_type`` if identity assertion is not configured.
         """
-        if self._identity_assertion_validator is None:
+        if (
+            self._identity_assertion is None
+            or self._identity_assertion_validator is None
+        ):
             raise TokenError(
                 "unsupported_grant_type",
                 "The JWT bearer grant is not supported by this authorization server",
@@ -1368,7 +1371,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         if not granted_scopes:
             granted_scopes = list(params.scopes or [])
 
-        expires_in = self._identity_assertion.access_token_expiry_seconds  # type: ignore[union-attr]
+        expires_in = self._identity_assertion.access_token_expiry_seconds
         access_jti = secrets.token_urlsafe(32)
 
         access_token = self.jwt_issuer.issue_access_token(

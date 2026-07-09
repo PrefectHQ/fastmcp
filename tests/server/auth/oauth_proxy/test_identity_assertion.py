@@ -115,9 +115,7 @@ async def _post_token(proxy: OAuthProxy, assertion: str) -> httpx.Response:
     await _register_client(proxy)
     app = FastMCP("ID-JAG Server", auth=proxy).http_app()
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url=BASE_URL
-    ) as client:
+    async with httpx.AsyncClient(transport=transport, base_url=BASE_URL) as client:
         return await client.post(
             "/token",
             data={
@@ -149,9 +147,7 @@ class TestMetadataAdvertisement:
     async def _metadata(self, proxy: OAuthProxy) -> dict:
         app = FastMCP("ID-JAG Server", auth=proxy).http_app()
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(
-            transport=transport, base_url=BASE_URL
-        ) as client:
+        async with httpx.AsyncClient(transport=transport, base_url=BASE_URL) as client:
             resp = await client.get("/.well-known/oauth-authorization-server")
             return resp.json()
 
@@ -159,7 +155,9 @@ class TestMetadataAdvertisement:
         proxy = _make_proxy(config)
         metadata = await self._metadata(proxy)
         assert JWT_BEARER_GRANT_TYPE in metadata["grant_types_supported"]
-        assert ID_JAG_GRANT_PROFILE in metadata["authorization_grant_profiles_supported"]
+        assert (
+            ID_JAG_GRANT_PROFILE in metadata["authorization_grant_profiles_supported"]
+        )
 
     async def test_not_advertised_when_disabled(self):
         proxy = _make_proxy(None)
@@ -308,9 +306,7 @@ class TestValidationMatrix:
         assert second.status_code == 401
         assert second.json()["error"] == "invalid_grant"
 
-    async def test_wrong_signature_rejected(
-        self, config: IdentityAssertion
-    ):
+    async def test_wrong_signature_rejected(self, config: IdentityAssertion):
         # Sign with a different key than the one served in the JWKS.
         other_key = RSAKeyPair.generate()
         proxy = _make_proxy(config)
