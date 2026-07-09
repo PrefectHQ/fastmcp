@@ -2,6 +2,7 @@ import asyncio
 import gc
 import inspect
 import os
+import threading
 import weakref
 
 import psutil
@@ -236,6 +237,44 @@ class TestKeepAlive:
             pid3: int = result3.data
 
         assert pid1 == pid2 == pid3
+
+    def test_keep_alive_reconnects_on_different_running_loop(self, stdio_script):
+        transport = PythonStdioTransport(script_path=stdio_script)
+        client = Client(transport=transport, init_timeout=2)
+        first_loop = asyncio.new_event_loop()
+        ready = threading.Event()
+
+        def run_first_loop():
+            asyncio.set_event_loop(first_loop)
+            ready.set()
+            first_loop.run_forever()
+
+        async def get_pid(*, close: bool = False) -> int:
+            async with client:
+                result = await client.call_tool("pid")
+            if close:
+                await client.close()
+            return result.data
+
+        thread = threading.Thread(target=run_first_loop)
+        thread.start()
+        try:
+            assert ready.wait(timeout=2)
+            pid1 = asyncio.run_coroutine_threadsafe(get_pid(), first_loop).result(
+                timeout=5
+            )
+            pid2 = asyncio.run(asyncio.wait_for(get_pid(close=True), timeout=5))
+
+            assert pid1 != pid2
+        finally:
+            if transport._connect_task is not None:
+                owner_loop = transport._connect_task.get_loop()
+                asyncio.run_coroutine_threadsafe(transport.close(), owner_loop).result(
+                    timeout=5
+                )
+            first_loop.call_soon_threadsafe(first_loop.stop)
+            thread.join(timeout=2)
+            first_loop.close()
 
     async def test_close_session_and_try_to_use_client_raises_error(self, stdio_script):
         client = Client(transport=PythonStdioTransport(script_path=stdio_script))

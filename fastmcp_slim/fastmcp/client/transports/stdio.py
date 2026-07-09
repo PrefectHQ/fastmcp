@@ -83,6 +83,14 @@ class StdioTransport(ClientTransport):
     async def connect(
         self, **session_kwargs: Unpack[SessionKwargs]
     ) -> ClientSession | None:
+        current_loop = asyncio.get_running_loop()
+        if (
+            self._connect_task is not None
+            and self._connect_task.get_loop() is not current_loop
+        ):
+            logger.debug("Stdio transport changed event loops; reconnecting")
+            await self.disconnect()
+
         # If the connect task completed or the session's streams are dead,
         # the subprocess has exited. Tear down so we can start fresh.
         if self._connect_task is not None and (
@@ -125,6 +133,19 @@ class StdioTransport(ClientTransport):
 
     async def disconnect(self):
         if self._connect_task is None:
+            return
+
+        owner_loop = self._connect_task.get_loop()
+        current_loop = asyncio.get_running_loop()
+        if (
+            owner_loop is not current_loop
+            and not self._connect_task.done()
+            and owner_loop.is_running()
+        ):
+            disconnect_future = asyncio.run_coroutine_threadsafe(
+                self.disconnect(), owner_loop
+            )
+            await asyncio.wrap_future(disconnect_future)
             return
 
         # signal the connection task to stop
