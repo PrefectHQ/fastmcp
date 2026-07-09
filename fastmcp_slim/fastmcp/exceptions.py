@@ -80,6 +80,17 @@ class DisabledError(Exception):
     """Object is disabled."""
 
 
+class ResourceSecurityError(NotFoundError):
+    """A templated resource parameter failed path-security screening.
+
+    Subclasses ``NotFoundError`` so the read handler surfaces a
+    non-leaky ``INVALID_PARAMS`` (-32602) "resource not found" error to
+    the client — a traversal attempt is indistinguishable from a request
+    for a resource that does not exist, and never reveals which parameter
+    or policy tripped.
+    """
+
+
 class AuthorizationError(FastMCPError):
     """Error when authorization check fails."""
 

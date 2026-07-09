@@ -22,6 +22,11 @@ from pydantic import AnyUrl
 from pydantic.json_schema import SkipJsonSchema
 
 from fastmcp.resources.base import Resource, ResourceResult
+from fastmcp.resources.security import (
+    INHERIT_SECURITY,
+    InheritSecurity,
+    ResourceSecurity,
+)
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
@@ -64,6 +69,7 @@ class ResourceMeta:
     task: bool | TaskConfig | None = None
     auth: AuthCheck | list[AuthCheck] | None = None
     enabled: bool = True
+    security: ResourceSecurity | None | InheritSecurity = INHERIT_SECURITY
 
 
 class FunctionResource(Resource):
@@ -255,6 +261,7 @@ def resource(
     meta: dict[str, Any] | None = None,
     task: bool | TaskConfig | None = None,
     auth: AuthCheck | list[AuthCheck] | None = None,
+    security: ResourceSecurity | None | InheritSecurity = INHERIT_SECURITY,
 ) -> Callable[[F], F]:
     """Standalone decorator to mark a function as an MCP resource.
 
@@ -284,6 +291,7 @@ def resource(
             meta=meta,
             task=task,
             auth=auth,
+            security=security,
         )
         target = fn.__func__ if isinstance(fn, staticmethod | MethodType) else fn
         cast(Any, target).__fastmcp__ = metadata
