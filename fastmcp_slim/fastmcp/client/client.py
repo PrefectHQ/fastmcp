@@ -8,7 +8,7 @@ import secrets
 import ssl
 import uuid
 import weakref
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,7 +31,11 @@ from mcp.client.caching import (
     ClientResponseCache,
     InMemoryResponseCacheStore,
 )
-from mcp.client.extension import NotificationBinding
+from mcp.client.extension import (
+    ClientExtension,
+    NotificationBinding,
+    ResultClaim,
+)
 from mcp.client.session import ClientRequestContext, MessageHandlerFnT
 from mcp_types import (
     GetTaskResult,
@@ -146,6 +150,86 @@ def _synthesize_discover(protocol_version: str) -> mcp_types.DiscoverResult:
         ttl_ms=0,
         cache_scope="public",
     )
+
+
+@dataclass
+class _FoldedExtensions:
+    """`Client(extensions=...)` folded into the shapes `ClientSession` consumes.
+
+    `ad` maps each extension identifier to its advertised settings (the SEP-2133
+    capability ad), `claims` maps each identifier to its `ResultClaim`s, and
+    `bindings` is the flat list of `NotificationBinding`s the extensions observe.
+    """
+
+    ad: dict[str, dict[str, Any]]
+    claims: dict[str, tuple[ResultClaim[Any], ...]]
+    bindings: list[NotificationBinding[Any]]
+
+
+def _fold_extensions(
+    extensions: Sequence[ClientExtension] | None,
+) -> _FoldedExtensions:
+    """Decompose `ClientExtension` instances into `ClientSession` kwargs.
+
+    Mirrors the SDK Client's own folding, using only the public `ClientExtension`
+    surface (`settings()`, `claims()`, `notifications()`). Duplicate identifiers,
+    result-type tags, or notification methods across extensions raise here rather
+    than at session construction, naming both owners.
+    """
+    folded = _FoldedExtensions(ad={}, claims={}, bindings=[])
+    if not extensions:
+        return folded
+    if isinstance(extensions, Mapping):
+        raise TypeError(
+            "extensions= takes a sequence of ClientExtension instances; use "
+            "mcp.client.advertise(identifier, settings) for an advertise-only entry"
+        )
+    claim_owners: dict[str, str] = {}
+    binding_owners: dict[str, str] = {}
+    for extension in extensions:
+        identifier = getattr(extension, "identifier", None)
+        if identifier is None:
+            raise ValueError(
+                f"{type(extension).__name__} has no `identifier`; a ClientExtension "
+                "must set the `identifier` class attribute (or assign one in "
+                "`__init__`) before it can be used"
+            )
+        if identifier in folded.ad:
+            raise ValueError(
+                f"extension identifier {identifier!r} is passed more than once"
+            )
+        folded.ad[identifier] = extension.settings()
+        extension_claims = tuple(extension.claims())
+        for claim in extension_claims:
+            tag = claim.result_type
+            if tag in claim_owners:
+                owner = claim_owners[tag]
+                both = (
+                    f"extension {identifier!r} claims"
+                    if owner == identifier
+                    else f"extensions {owner!r} and {identifier!r} both claim"
+                )
+                raise ValueError(
+                    f"{both} resultType {tag!r}; a wire tag can have only one resolver"
+                )
+            claim_owners[tag] = identifier
+        if extension_claims:
+            folded.claims[identifier] = extension_claims
+        for binding in extension.notifications():
+            if binding.method in binding_owners:
+                owner = binding_owners[binding.method]
+                both = (
+                    f"extension {identifier!r} binds"
+                    if owner == identifier
+                    else f"extensions {owner!r} and {identifier!r} both bind"
+                )
+                raise ValueError(
+                    f"{both} notification method {binding.method!r}; a method can "
+                    "have only one observer"
+                )
+            binding_owners[binding.method] = identifier
+            folded.bindings.append(binding)
+    return folded
 
 
 def _evicting_message_handler(
@@ -275,6 +359,18 @@ class Client(
             modern-only, so a cache is inert on legacy connections. A custom `CacheConfig`
             store requires `target_id`, since FastMCP transports expose no server URL to
             derive a shared-store identity from.
+        extensions: Opt-in client extensions (SEP-2133), a sequence of
+            `mcp.client.extension.ClientExtension` instances. Each contributes its
+            capability advertisement, its result claims, and its notification bindings,
+            all of which are threaded into the underlying session. User-supplied
+            notification bindings compose with FastMCP's internal task-status binding
+            rather than replacing it. For an advertise-only entry, use
+            `mcp.client.advertise(identifier, settings)`.
+        result_claims: Additional `ResultClaim`s (SEP-2133) keyed by the identifier of
+            an extension already advertised through `extensions`, merged with that
+            extension's own claims. Rarely needed directly; prefer declaring claims on
+            the extension itself. Claimed shapes are modern-only and inert on a legacy
+            connection.
 
     Examples:
         ```python
@@ -368,6 +464,8 @@ class Client(
         prior_discover: mcp_types.DiscoverResult | None = None,
         input_required_max_rounds: int = DEFAULT_INPUT_REQUIRED_MAX_ROUNDS,
         cache: CacheConfig | bool | None = None,
+        extensions: Sequence[ClientExtension] | None = None,
+        result_claims: Mapping[str, Sequence[ResultClaim[Any]]] | None = None,
     ) -> None:
         self.name = name or self.generate_name()
 
@@ -452,6 +550,11 @@ class Client(
                 self._response_cache, effective_message_handler
             )
 
+        # Opt-in client extensions (SEP-2133) and their result claims. Retained so
+        # `new()` can rebuild an independent set of session kwargs per clone.
+        self._extensions_arg = extensions
+        self._result_claims_arg = result_claims
+
         self._session_kwargs: SessionKwargs = {
             "sampling_callback": None,
             "list_roots_callback": None,
@@ -459,10 +562,7 @@ class Client(
             "message_handler": effective_message_handler,
             "read_timeout_seconds": read_timeout_seconds,
             "client_info": client_info,
-            # SDK v2 does not carry `notifications/tasks/status` in any protocol
-            # version's core notification tables, so it is never tee'd to the
-            # message_handler; a binding routes it to Task objects instead.
-            "notification_bindings": [self._task_status_binding()],
+            **self._build_extension_kwargs(),
         }
 
         if roots is not None:
@@ -684,10 +784,10 @@ class Client(
             )
         else:
             new_client._session_kwargs["message_handler"] = base_handler
-        # Rebind the task-status notification binding so it routes to the clone.
-        new_client._session_kwargs["notification_bindings"] = [
-            new_client._task_status_binding()
-        ]
+        # Rebuild the extension-contributed kwargs (capability ad, result claims,
+        # notification bindings) so the clone's task-status binding routes to the
+        # clone while user extensions still compose with it.
+        new_client._session_kwargs.update(new_client._build_extension_kwargs())
 
         new_client.name += f":{secrets.token_hex(2)}"
 
@@ -1159,6 +1259,37 @@ class Client(
                 # Convert notification params to GetTaskResult (they share the same fields via Task)
                 status = GetTaskResult.model_validate(params.model_dump())
                 task._handle_status_notification(status)
+
+    def _build_extension_kwargs(self) -> SessionKwargs:
+        """Session kwargs contributed by `extensions=` / `result_claims=`.
+
+        Folds the user's `ClientExtension` instances into the capability ad, result
+        claims, and notification bindings the SDK `ClientSession` consumes, then
+        merges in any explicitly-passed `result_claims`. The internal task-status
+        binding is always prepended to the folded bindings so user extensions
+        *compose* with it rather than clobbering it; a user extension that binds the
+        same `notifications/tasks/status` method surfaces a duplicate-method error
+        from the SDK rather than silently replacing FastMCP's routing.
+        """
+        folded = _fold_extensions(self._extensions_arg)
+
+        claims: dict[str, tuple[ResultClaim[Any], ...]] = dict(folded.claims)
+        for identifier, extra in (self._result_claims_arg or {}).items():
+            existing = claims.get(identifier, ())
+            claims[identifier] = (*existing, *extra)
+
+        kwargs: SessionKwargs = {
+            # The internal task binding must lead so user bindings extend it.
+            "notification_bindings": [
+                self._task_status_binding(),
+                *folded.bindings,
+            ],
+        }
+        if folded.ad:
+            kwargs["extensions"] = folded.ad
+        if claims:
+            kwargs["result_claims"] = claims
+        return kwargs
 
     def _task_status_binding(self) -> NotificationBinding[TaskStatusNotificationParams]:
         """Build a binding routing `notifications/tasks/status` to Task objects.
