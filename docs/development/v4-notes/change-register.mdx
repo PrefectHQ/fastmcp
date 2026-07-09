@@ -303,6 +303,14 @@ FastMCP keeps its own DCR redirect-URI hardening (PRs #4419, #4408) regardless o
 
 *Verify:* recent commits `67527c1f` (block unsafe OAuth redirect schemes), `57a27992` (DNS rebinding), `cccb529f` (DCR redirect URI validation) on `main`.
 
+### Templated resource parameters are path-screened by default — Breaking (behavior)
+
+Every templated resource now has its extracted parameter values screened for path-traversal (`..` segments), absolute paths, and null bytes **before the handler runs** — on by default, at the server's read chokepoint, covering local and provider-sourced (mounted/proxied) templates alike. Previously these payloads reached handlers raw; a template whose parameter flowed into a filesystem path or upstream URL was exposed unless the author added their own check. A rejected read now surfaces a non-leaky "resource not found" error (`-32602`) and a debug log.
+
+The check is component-based, matching the SDK's `contains_path_traversal`: only a standalone `..` segment is traversal, so values that merely contain dots (`HEAD~3..HEAD`, `file.tar.gz`) and dotfiles (`.env`) still pass. This can break a template that legitimately accepts `..`-bearing or absolute values — exempt the parameter with `ResourceSecurity(exempt_params={...})`, disable per-component with `security=None`, or set a server-wide default with `FastMCP(resource_security=...)`. See [Resources → Path Security](/servers/resources#path-security).
+
+*Verify:* `fastmcp_slim/fastmcp/resources/security.py` (`ResourceSecurity`), the screening block in `FastMCP.read_resource` (`fastmcp_slim/fastmcp/server/server.py`), and `tests/resources/test_resource_security.py`.
+
 ## Removed in 4.0
 
 Deprecations that warned in 3.x are removed in 4.0. Each entry below is a hard removal — the old surface raises `TypeError` / `AttributeError` rather than warning, unless noted otherwise.

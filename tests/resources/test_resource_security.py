@@ -21,7 +21,7 @@ from fastmcp.resources.security import (
     INHERIT_SECURITY,
     ResourceSecurity,
 )
-
+from fastmcp.resources.template import ResourceTemplate
 
 # ---------------------------------------------------------------------------
 # ResourceSecurity model (unit)
@@ -158,7 +158,9 @@ class TestChokepointEnforcement:
     )
     async def test_safe_uris_pass_by_default(self, server: FastMCP, uri: str):
         result = await server.read_resource(uri)
-        assert "content:" in result.contents[0].content
+        content = result.contents[0].content
+        assert isinstance(content, str)
+        assert content.startswith("content:")
 
 
 class TestServerDefaultConfiguration:
@@ -240,19 +242,23 @@ class TestPerComponentOverride:
             await mcp.read_resource("file:///../etc/passwd")
 
     def test_inherit_default_on_template(self):
-        mcp = FastMCP("test")
-
-        @mcp.resource("file:///{path*}")
         def read_file(path: str) -> str:
             return path
 
-        template = mcp._local_provider._components[
-            list(mcp._local_provider._components)[0]
-        ]
+        template = ResourceTemplate.from_function(read_file, "file:///{path*}")
         assert template.security is INHERIT_SECURITY
         assert template.resolve_security(DEFAULT_RESOURCE_SECURITY) is (
             DEFAULT_RESOURCE_SECURITY
         )
+
+    def test_explicit_none_disables(self):
+        def read_file(path: str) -> str:
+            return path
+
+        template = ResourceTemplate.from_function(
+            read_file, "file:///{path*}", security=None
+        )
+        assert template.resolve_security(DEFAULT_RESOURCE_SECURITY) is None
 
 
 # ---------------------------------------------------------------------------
