@@ -158,7 +158,9 @@ class IdentityAssertionValidator:
                 must match this unless `config.audience` overrides it.
         """
         self.config = config
-        self.audience = config.audience or audience
+        # Normalize away any trailing slash so an ID-JAG `aud` of
+        # "https://server.com" matches a base URL rendered as "https://server.com/".
+        self.audience = config.audience or audience.rstrip("/")
 
         self._jti_cache: dict[str, float] = {}
         self._jti_cache_max_size = 10000
