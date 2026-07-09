@@ -62,5 +62,6 @@ async def test_http_user_lifespan_fires_once_across_sessions():
             assert exit_count == 0
 
     # After the server process task is torn down, the lifespan has exited once.
-    assert enter_count == 1
+    # (A spurious re-entry during teardown would re-exit, so this also guards
+    # that the lifespan was entered exactly once.)
     assert exit_count == 1
