@@ -425,7 +425,7 @@ class OpenAPIProvider(Provider):
             matching = [t for t in matching if version.matches(t.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
+        return max(matching, key=version_sort_key)
 
     async def _list_prompts(self) -> Sequence[Prompt]:
         """Return empty list - OpenAPI doesn't create prompts."""

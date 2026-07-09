@@ -454,14 +454,13 @@ class File:
 def replace_type(type_, type_map: dict[type, type]):
     """
     Given a (possibly generic, nested, or otherwise complex) type, replaces all
-    instances of old_type with new_type.
+    instances of keys in type_map with their corresponding values.
 
     This is useful for transforming types when creating tools.
 
     Args:
-        type_: The type to replace instances of old_type with new_type.
-        old_type: The type to replace.
-        new_type: The type to replace old_type with.
+        type_: The type to transform.
+        type_map: A mapping of types to replace (keys are replaced by values).
 
     Examples:
     ```python

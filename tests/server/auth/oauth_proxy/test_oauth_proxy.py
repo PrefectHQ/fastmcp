@@ -207,7 +207,7 @@ class TestOAuthProxyInitialization:
         assert proxy._redirect_path == "/auth/callback"
 
     async def test_metadata_advertises_cimd_support(self, jwt_verifier):
-        """OAuth metadata should advertise CIMD support when enabled."""
+        """OAuth metadata should advertise CIMD and public-client auth support."""
         proxy = OAuthProxy(
             upstream_authorization_endpoint="https://auth.example.com/authorize",
             upstream_token_endpoint="https://auth.example.com/token",
@@ -231,6 +231,12 @@ class TestOAuthProxyInitialization:
         assert response.status_code == 200
         metadata = response.json()
         assert metadata.get("client_id_metadata_document_supported") is True
+        assert set(metadata.get("token_endpoint_auth_methods_supported")) == {
+            "client_secret_post",
+            "client_secret_basic",
+            "private_key_jwt",
+            "none",
+        }
 
 
 class TestOptionalClientSecret:
@@ -354,6 +360,40 @@ class TestIdpCallbackErrorForwarding:
         assert params["error"] == ["access_denied"]
         assert params["error_description"] == ["User denied access"]
         assert params["state"] == [client_state]
+
+    async def test_error_with_unsafe_transaction_redirect_returns_html_error(
+        self, oauth_proxy
+    ):
+        """IdP errors must not redirect to unsafe stored callback URIs."""
+        txn_id = "test-txn-unsafe"
+
+        transaction = OAuthTransaction(
+            txn_id=txn_id,
+            client_id="test-client",
+            client_redirect_uri="javascript:alert(document.cookie)//",
+            client_state="client-state-abc",
+            code_challenge=None,
+            code_challenge_method="S256",
+            scopes=["read"],
+            created_at=time.time(),
+        )
+        await oauth_proxy._transaction_store.put(key=txn_id, value=transaction)
+
+        app = Starlette(routes=oauth_proxy.get_routes())
+        transport = httpx.ASGITransport(app=app)
+
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="https://myserver.com",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get(
+                f"/auth/callback?error=access_denied&state={txn_id}"
+            )
+
+        assert response.status_code == 400
+        assert "location" not in response.headers
+        assert "Invalid redirect URI" in response.text
 
     async def test_error_with_missing_transaction_returns_html_error(self, oauth_proxy):
         """When the IdP returns an error but the transaction is missing or

@@ -54,6 +54,7 @@ from fastmcp.exceptions import (
     PromptError,
     ResourceError,
     ToolError,
+    ValidationError,
 )
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.prompts import Prompt
@@ -98,6 +99,33 @@ if TYPE_CHECKING:
     from fastmcp.server.providers.proxy import FastMCPProxy
 
 logger = get_logger(__name__)
+
+
+def _version_request_meta(
+    version: VersionSpec | None,
+) -> mcp.types.RequestParams.Meta | None:
+    if version is None:
+        return None
+
+    if version.eq is not None and version.gte is None and version.lt is None:
+        version_value: str | dict[str, str] = version.eq
+    else:
+        version_value = {
+            key: value
+            for key, value in {
+                "gte": version.gte,
+                "lt": version.lt,
+                "eq": version.eq,
+            }.items()
+            if value is not None
+        }
+
+    if not version_value:
+        return None
+
+    return mcp.types.RequestParams.Meta.model_validate(
+        {"fastmcp": {"version": version_value}}
+    )
 
 
 # The MCP SDK warns "Tool X not listed, no validation will be performed"
@@ -752,7 +780,7 @@ class FastMCP(
 
         if not authorized:
             return None
-        return cast(Tool, max(authorized, key=version_sort_key))
+        return max(authorized, key=version_sort_key)
 
     async def list_resources(
         self, *, run_middleware: bool = True
@@ -887,7 +915,7 @@ class FastMCP(
 
         if not authorized:
             return None
-        return cast(Resource, max(authorized, key=version_sort_key))
+        return max(authorized, key=version_sort_key)
 
     async def list_resource_templates(
         self, *, run_middleware: bool = True
@@ -1023,7 +1051,7 @@ class FastMCP(
 
         if not authorized:
             return None
-        return cast(ResourceTemplate, max(authorized, key=version_sort_key))
+        return max(authorized, key=version_sort_key)
 
     async def list_prompts(self, *, run_middleware: bool = True) -> Sequence[Prompt]:
         """List all enabled prompts from providers.
@@ -1145,7 +1173,7 @@ class FastMCP(
 
         if not authorized:
             return None
-        return cast(Prompt, max(authorized, key=version_sort_key))
+        return max(authorized, key=version_sort_key)
 
     @overload
     async def call_tool(
@@ -1221,7 +1249,9 @@ class FastMCP(
             if run_middleware:
                 mw_context = MiddlewareContext[CallToolRequestParams](
                     message=mcp.types.CallToolRequestParams(
-                        name=name, arguments=arguments or {}
+                        name=name,
+                        arguments=arguments or {},
+                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # pydantic alias
                     ),
                     source="client",
                     type="request",
@@ -1280,13 +1310,29 @@ class FastMCP(
                     task_meta = replace(task_meta, fn_key=tool.key)
                 try:
                     return await tool._run(arguments or {}, task_meta=task_meta)
+                except ValidationError as e:
+                    # Argument-validation failure (a bad call). FunctionTool
+                    # converts pydantic's call-validation error into fastmcp's
+                    # ValidationError (see #4128) so it can be filtered as a
+                    # client error. Log the underlying detail without a URL or
+                    # traceback, matching the previous pydantic-error logging.
+                    cause = e.__cause__
+                    detail = (
+                        cause.errors(include_url=False)
+                        if isinstance(cause, PydanticValidationError)
+                        else str(e)
+                    )
+                    logger.warning("Invalid arguments for tool %r: %s", name, detail)
+                    raise
                 except FastMCPError as e:
                     logger.log(
                         e.log_level, f"Error calling tool {name!r}", exc_info=False
                     )
                     raise
                 except PydanticValidationError as e:
-                    # fastmcp's own ValidationError is a FastMCPError, already handled above.
+                    # A pydantic error that is NOT an argument-validation failure
+                    # (e.g. raised by a non-FunctionTool's own validation). Kept
+                    # for backward compatibility.
                     logger.warning(
                         "Invalid arguments for tool %r: %s",
                         name,
@@ -1372,7 +1418,10 @@ class FastMCP(
             if run_middleware:
                 uri_param = AnyUrl(uri)
                 mw_context = MiddlewareContext(
-                    message=mcp.types.ReadResourceRequestParams(uri=uri_param),
+                    message=mcp.types.ReadResourceRequestParams(
+                        uri=uri_param,
+                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # pydantic alias
+                    ),
                     source="client",
                     type="request",
                     method="resources/read",
@@ -1546,7 +1595,9 @@ class FastMCP(
             if run_middleware:
                 mw_context = MiddlewareContext(
                     message=mcp.types.GetPromptRequestParams(
-                        name=name, arguments=arguments
+                        name=name,
+                        arguments=arguments,
+                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # pydantic alias
                     ),
                     source="client",
                     type="request",

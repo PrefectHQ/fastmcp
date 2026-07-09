@@ -202,8 +202,8 @@ class TestEnhancedRequireAuthMiddleware:
             base_url="https://test.com",
         )
 
-    def test_invalid_token_enhanced_error_message(self, jwt_verifier):
-        """Test that invalid_token errors have enhanced error messages."""
+    def test_missing_auth_no_error_attribute(self, jwt_verifier):
+        """Test that missing auth returns 401 without error attribute (RFC 6750 §3.1)."""
         from fastmcp.server.http import create_streamable_http_app
 
         server = FastMCP("Test Server")
@@ -225,6 +225,36 @@ class TestEnhancedRequireAuthMiddleware:
             assert response.status_code == 401
             assert "www-authenticate" in response.headers
 
+            # Per RFC 6750 §3.1: no error attribute when auth is missing
+            www_auth = response.headers["www-authenticate"]
+            assert "error=" not in www_auth
+            assert response.content == b""
+
+    def test_invalid_token_enhanced_error_message(self, jwt_verifier):
+        """Test that invalid_token errors have enhanced error messages."""
+        from fastmcp.server.http import create_streamable_http_app
+
+        server = FastMCP("Test Server")
+
+        @server.tool
+        def test_tool() -> str:
+            return "test"
+
+        app = create_streamable_http_app(
+            server=server,
+            streamable_http_path="/mcp",
+            auth=jwt_verifier,
+        )
+
+        with TestClient(app) as client:
+            # Request WITH an invalid Authorization header
+            response = client.post(
+                "/mcp", headers={"Authorization": "Bearer invalid-token"}
+            )
+
+            assert response.status_code == 401
+            assert "www-authenticate" in response.headers
+
             # Check enhanced error message
             data = response.json()
             assert data["error"] == "invalid_token"
@@ -233,7 +263,7 @@ class TestEnhancedRequireAuthMiddleware:
             assert "automatically re-register" in data["error_description"]
 
     def test_invalid_token_www_authenticate_header_format(self, jwt_verifier):
-        """Test that WWW-Authenticate header format matches SDK."""
+        """Test that invalid token WWW-Authenticate header includes error attribute."""
         from fastmcp.server.http import create_streamable_http_app
 
         server = FastMCP("Test Server")
@@ -244,12 +274,15 @@ class TestEnhancedRequireAuthMiddleware:
         )
 
         with TestClient(app) as client:
-            response = client.post("/mcp")
+            # Request WITH an invalid token
+            response = client.post(
+                "/mcp", headers={"Authorization": "Bearer invalid-token"}
+            )
 
             assert response.status_code == 401
             www_auth = response.headers["www-authenticate"]
 
-            # Should follow Bearer challenge format
+            # Should follow Bearer challenge format with error
             assert www_auth.startswith("Bearer ")
             assert 'error="invalid_token"' in www_auth
             assert "error_description=" in www_auth

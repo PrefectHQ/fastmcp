@@ -31,7 +31,7 @@ def create_test_server() -> FastMCP:
         result = await ctx.elicit("What is your name?", response_type=str)
 
         if result.action == "accept":
-            return f"You said your name was: {result.data}!"  # ty: ignore[unresolved-attribute]
+            return f"You said your name was: {result.data}!"
         else:
             return "No name provided"
 
