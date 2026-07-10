@@ -3,6 +3,7 @@
 import os
 from unittest.mock import patch
 
+import httpx
 import pytest
 from mcp import MCPError
 
@@ -11,6 +12,12 @@ from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.server.auth.providers.descope import DescopeProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.utilities.tests import HeadlessOAuth, run_server_async
+
+PROJECT_LEVEL_OPENID_CONFIGURATION = {
+    "issuer": "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU",
+    "scopes_supported": ["mcp:skyflow"],
+    "jwks_uri": "https://api.descope.com/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/jwks.json",
+}
 
 
 class TestDescopeProvider:
@@ -65,6 +72,88 @@ class TestDescopeProvider:
         )
         assert str(provider3.descope_base_url) == "https://api.descope.com"
         assert provider3.project_id == "P2abc123"
+
+    def test_project_level_config_url_parsing(self):
+        """Test project-level well-known URLs without the agentic path segment."""
+        provider = DescopeProvider(
+            config_url="https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/openid-configuration",
+            base_url="https://myserver.com",
+        )
+
+        assert provider.project_id == "P2v9EBlmO4XTrOwMRfsY1jeUONxU"
+        assert str(provider.descope_base_url) == "https://api.descope.com"
+        assert isinstance(provider.token_verifier, JWTVerifier)
+        assert (
+            provider.token_verifier.issuer
+            == "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU"
+        )
+        assert provider.openid_configuration_url == (
+            "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/openid-configuration"
+        )
+        assert provider.oauth_authorization_server_metadata_url == (
+            "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/oauth-authorization-server"
+        )
+
+    def test_discover_scopes_supported_from_well_known(self):
+        """Test that scopes_supported are discovered from Descope well-known metadata."""
+        config_url = "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/openid-configuration"
+        mock_response = httpx.Response(
+            200,
+            json=PROJECT_LEVEL_OPENID_CONFIGURATION,
+            request=httpx.Request("GET", config_url),
+        )
+
+        with patch("httpx.get", return_value=mock_response) as mock_get:
+            provider = DescopeProvider(
+                config_url=config_url,
+                base_url="https://myserver.com",
+            )
+
+        mock_get.assert_called_once_with(config_url, timeout=10.0)
+        assert provider._scopes_supported == ["mcp:skyflow"]
+        assert provider.token_verifier.required_scopes == []
+
+    def test_scopes_supported_and_required_scopes_can_differ(self):
+        """Test that scopes_supported and required_scopes can be configured independently."""
+        provider = DescopeProvider(
+            config_url="https://api.descope.com/v1/apps/agentic/P2abc123/M123/.well-known/openid-configuration",
+            base_url="https://myserver.com",
+            scopes_supported=["mcp:read", "mcp:write"],
+            required_scopes=["mcp:read"],
+        )
+
+        assert provider._scopes_supported == ["mcp:read", "mcp:write"]
+        assert provider.token_verifier.required_scopes == ["mcp:read"]
+
+    def test_explicit_required_scopes_skip_discovery(self):
+        """Test that explicit required_scopes skip well-known discovery."""
+        config_url = "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/openid-configuration"
+
+        with patch("httpx.get") as mock_get:
+            provider = DescopeProvider(
+                config_url=config_url,
+                base_url="https://myserver.com",
+                required_scopes=["custom:scope"],
+            )
+
+        mock_get.assert_not_called()
+        assert provider.token_verifier.required_scopes == ["custom:scope"]
+        assert provider._scopes_supported is None
+
+    def test_explicit_scopes_supported_skip_discovery(self):
+        """Test that explicit scopes_supported skip well-known discovery."""
+        config_url = "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/openid-configuration"
+
+        with patch("httpx.get") as mock_get:
+            provider = DescopeProvider(
+                config_url=config_url,
+                base_url="https://myserver.com",
+                scopes_supported=["custom:advertised"],
+            )
+
+        mock_get.assert_not_called()
+        assert provider._scopes_supported == ["custom:advertised"]
+        assert provider.token_verifier.required_scopes == []
 
     def test_requires_config_url_or_project_id_and_descope_base_url(self):
         """Test that either config_url or both project_id and descope_base_url are required."""
