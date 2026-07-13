@@ -48,7 +48,7 @@ class TestHeadlessOAuthCallbackHandler:
 
     The OAuth callback handler in HeadlessOAuth parses the redirect Location
     header. parse_qs without keep_blank_values=True silently drops keys whose
-    value is empty (e.g. `?state=`), which mis-models real OAuth callbacks
+    value is empty (e.g. `?state=`), which misrepresents real OAuth callbacks
     where an empty `state` is distinct from a missing one.
     """
 
