@@ -5,7 +5,6 @@ from urllib.parse import urlparse
 import pytest
 from key_value.aio.stores.memory import MemoryStore
 from mcp import MCPError
-from tests.utilities.httpx2_mock import HTTPXMock
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
@@ -16,6 +15,7 @@ from fastmcp.server.auth.providers.workos import (
     WorkOSTokenVerifier,
 )
 from fastmcp.utilities.tests import HeadlessOAuth, run_server_async
+from tests.utilities.httpx2_mock import HTTPXMock
 
 
 @pytest.fixture

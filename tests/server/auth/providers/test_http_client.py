@@ -9,10 +9,10 @@ import time
 import httpx2
 import pytest
 from joserfc import jwk
-from tests.utilities.httpx2_mock import HTTPXMock
 
 from fastmcp.server.auth.providers.introspection import IntrospectionTokenVerifier
 from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
+from tests.utilities.httpx2_mock import HTTPXMock
 
 
 class TestIntrospectionHttpClient:
