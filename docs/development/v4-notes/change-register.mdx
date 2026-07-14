@@ -185,7 +185,7 @@ client = Client("my_mcp_server.py", timeout=30.0)  # also works
 
 ### `get_session_id` via header sniff — Bridged
 
-The SDK dropped `get_session_id` from the streamable-HTTP transport with no replacement (the SDK source has an author TODO acknowledging it breaks the Transport protocol). FastMCP reconstructs it by registering an httpx response event hook on the client it owns, capturing the `mcp-session-id` response header. The removal trigger is the upstream TODO.
+The SDK dropped `get_session_id` from the streamable-HTTP transport with no replacement (the SDK source has an author TODO acknowledging it breaks the Transport protocol). FastMCP reconstructs it by registering an httpx2 response event hook on the client it owns, capturing the `mcp-session-id` response header (httpx2 preserves httpx's `event_hooks` API). The removal trigger is the upstream TODO.
 
 *Verify:* `fastmcp_slim/fastmcp/client/transports/http.py` (`_capture_session_id`, `get_session_id`).
 
@@ -239,6 +239,22 @@ Four overrides survive, each for a concrete reason:
 FastMCP owns DNS-rebinding protection through its `HostOriginGuardMiddleware`, which is more expressive than the SDK's and is the documented surface. To avoid two allowlists double-blocking with confusing errors from two layers, FastMCP **always** disables the SDK's layer by passing `TransportSecuritySettings(enable_dns_rebinding_protection=False)` to the manager — both when FastMCP's protection is on (so they don't double-block) and when it's off (so the SDK's default-on flip can't silently re-enable it).
 
 *Verify:* `fastmcp_slim/fastmcp/server/http.py` (`enable_dns_rebinding_protection=False`, `HostOriginGuardMiddleware`).
+
+### httpx2 at the SDK boundary — Breaking (custom client/factory, typing) / Absorbed (everything else)
+
+SDK v2.0.0b2 replaces `httpx` + `httpx-sse` with [httpx2](https://pypi.org/project/httpx2/) (`>=2.5.0`), a next-generation httpx fork with built-in SSE. httpx2 is a near drop-in fork: the public API (`AsyncClient`, `Auth`, `Request`, `Response`, `Timeout`, `MockTransport`, exception hierarchy) matches httpx name-for-name. The SDK duck-types the client you hand it — `streamable_http_client(http_client=...)` and `sse_client(httpx_client_factory=...)` are type-hinted `httpx2.AsyncClient` with no `isinstance` gate — but the objects that cross into the SDK must be httpx2.
+
+FastMCP adopts a **seam-only** posture: only code whose objects reach the SDK moves to httpx2. That is the client transports (`client/transports/{base,http,sse}.py`), client auth (`client/auth/{oauth,bearer}.py` — `BearerAuth`/`OAuth` now subclass `httpx2.Auth`), the client-side exception-group handler (`utilities/exceptions.py`), the proxy's upstream client (`server/providers/proxy.py`), and the `MCPConfig` client-auth field (`mcp_config.py`). FastMCP-owned HTTP that never crosses the SDK boundary — server auth providers' upstream IdP calls, the OpenAPI provider's user-supplied `AsyncClient`, `from_openapi`/`from_fastapi`, `version_check`, `resources/types.py`, SSRF download guard, the `apps_dev` CLI — stays on httpx. The result is a permanent dual dependency (`httpx` and `httpx2` both ship in the `mcp` extra), chosen because the only httpx2 test-mocking tool is `pytest-httpx2` (a respx-based rewrite of the `httpx_mock` API), and porting the ~170 `httpx_mock` calls across 10 security-critical server-auth test files to respx is disproportionate to the benefit. Keeping those providers on httpx keeps their `pytest-httpx` tests untouched.
+
+User-visible deltas, all at the client seam:
+
+- **Custom client factory / client.** `StreamableHttpTransport(httpx_client_factory=...)`, `SSETransport(httpx_client_factory=...)`, and `OAuth(httpx_client_factory=...)` factories must now return `httpx2.AsyncClient`; a custom `httpx.Auth` passed as `Client(auth=...)` should become `httpx2.Auth`. httpx2 is a drop-in fork, so the change is an import swap (`import httpx` → `import httpx2`). This is a typing break; at runtime a duck-compatible httpx client still satisfies the SDK, but mixing `httpx.Timeout`/`httpx.Auth` with an httpx2 client is unsupported.
+- **TLS trust store.** httpx2 verifies TLS against the OS trust store via `truststore` (honoring `SSL_CERT_FILE`/`SSL_CERT_DIR` first) instead of the bundled certifi CA set. Corporate-CA and certifi-pinned setups may see different trust behavior on the client path.
+- **Logger renames.** The client HTTP stack now logs under `httpx2` and `httpcore2.*` (was `httpx`/`httpcore.*`). Anyone filtering client HTTP logs by logger name must update the names. FastMCP-owned httpx calls still log under `httpx`/`httpcore`.
+
+The session-id header hook (below) works unchanged: httpx2 keeps httpx's `event_hooks` API.
+
+*Verify:* `fastmcp_slim/pyproject.toml` (`mcp` extra lists both `httpx` and `httpx2`); the nine seam source files import `httpx2`; `server/server.py` tool/resource/prompt handlers catch both `httpx` and `httpx2` `HTTPStatusError`/`TimeoutException` because a tool may raise from either library.
 
 ## Protocol eras
 

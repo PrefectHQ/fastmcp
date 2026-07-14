@@ -114,6 +114,30 @@ Catching and `err.error.code` are unchanged — only construction moved.
 
 **Raw session access sees v2 objects.** If you reach past FastMCP's client and server surfaces into `client.session`, `ctx.session`, or the internals of `ctx.request_context`, you're now holding raw SDK v2 objects with snake_case fields and the v2 method signatures. FastMCP does not wrap these; code that depends on their v1 shape needs updating.
 
+**Custom client HTTP now uses httpx2.** The SDK v2 replaces `httpx` with [httpx2](https://pypi.org/project/httpx2/), a next-generation httpx fork, for the client transport stack. If you pass a custom client or factory into a FastMCP client transport — `StreamableHttpTransport(httpx_client_factory=...)`, `SSETransport(httpx_client_factory=...)`, `OAuth(httpx_client_factory=...)`, or a custom `httpx.Auth` as `Client(auth=...)` — those objects must now be httpx2. httpx2 is a drop-in fork with the same public API, so the change is an import swap:
+
+```python
+# Before
+import httpx
+
+transport = StreamableHttpTransport(
+    "https://example.com/mcp",
+    httpx_client_factory=lambda **kwargs: httpx.AsyncClient(verify=False, **kwargs),
+)
+
+# After
+import httpx2
+
+transport = StreamableHttpTransport(
+    "https://example.com/mcp",
+    httpx_client_factory=lambda **kwargs: httpx2.AsyncClient(verify=False, **kwargs),
+)
+```
+
+Server-side HTTP that FastMCP owns — the `httpx.AsyncClient` you pass to `FastMCP.from_openapi(client=...)`, custom auth providers' upstream calls, and HTTP made inside your own tools — stays on httpx and needs no change.
+
+Two runtime behaviors shift with httpx2 on the client path. TLS verification uses the operating system's trust store (via `truststore`, honoring `SSL_CERT_FILE`/`SSL_CERT_DIR`) instead of the bundled certifi CA set, so corporate-CA or certifi-pinned setups may verify differently. And the client HTTP loggers are renamed from `httpx`/`httpcore.*` to `httpx2`/`httpcore2.*` — update any logging filters that select the client HTTP stack by logger name.
+
 ## Deprecation timeline
 
 The camelCase bridge is a migration aid, not a permanent fixture. It works today and warns on every bridged read so you can find and update the affected call sites. Plan to migrate your reads to snake_case: the shims will be removed in a future release, after which only the snake_case names resolve — the same state you get today by setting `mcp_camelcase_compat = False`. Turning the setting off is a good way to surface every remaining camelCase read in your code as a hard `AttributeError` before the shims go away.
