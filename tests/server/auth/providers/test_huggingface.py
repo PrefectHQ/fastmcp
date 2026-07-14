@@ -4,7 +4,7 @@ import re
 
 import pytest
 from key_value.aio.stores.memory import MemoryStore
-from pytest_httpx import HTTPXMock
+from tests.utilities.httpx2_mock import HTTPXMock
 
 from fastmcp.server.auth.providers.huggingface import (
     DEFAULT_HUGGINGFACE_SCOPES,

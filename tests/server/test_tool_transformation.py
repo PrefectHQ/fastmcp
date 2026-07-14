@@ -1,4 +1,4 @@
-import httpx
+import httpx2
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -253,7 +253,7 @@ async def test_openapi_path_params_not_duplicated_in_description():
         },
     }
 
-    async with httpx.AsyncClient(base_url="http://localhost") as http_client:
+    async with httpx2.AsyncClient(base_url="http://localhost") as http_client:
         mcp = FastMCP.from_openapi(openapi_spec=spec, client=http_client)
 
         # Hide one of the two path params

@@ -1,6 +1,6 @@
 """End-to-end tests for OpenAPIProvider implementation."""
 
-import httpx
+import httpx2
 import pytest
 
 from fastmcp import FastMCP
@@ -96,7 +96,7 @@ class TestEndToEndFunctionality:
 
     async def test_tool_schema_generation(self, simple_spec):
         """Test that tools have correct input schemas."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             server = create_openapi_server(
                 openapi_spec=simple_spec,
                 client=client,
@@ -127,7 +127,7 @@ class TestEndToEndFunctionality:
 
     async def test_collision_handling(self, collision_spec):
         """Test that parameter collision handling works correctly."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             server = create_openapi_server(
                 openapi_spec=collision_spec,
                 client=client,
@@ -164,7 +164,7 @@ class TestEndToEndFunctionality:
 
     async def test_tool_execution_parameter_mapping(self, collision_spec):
         """Test that tool execution with collisions works correctly."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             server = create_openapi_server(
                 openapi_spec=collision_spec,
                 client=client,
@@ -194,7 +194,7 @@ class TestEndToEndFunctionality:
 
     async def test_optional_parameter_handling(self, simple_spec):
         """Test that optional parameters are handled correctly."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             server = create_openapi_server(
                 openapi_spec=simple_spec,
                 client=client,

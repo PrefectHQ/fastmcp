@@ -1,4 +1,4 @@
-import httpx
+import httpx2
 import pytest
 from pydantic import AnyHttpUrl
 
@@ -318,8 +318,8 @@ class TestMultiAuthIntegration:
         mcp = FastMCP("test", auth=auth)
         app = mcp.http_app(path="/mcp")
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
             base_url="http://localhost",
         ) as client:
             # No token → 401
@@ -346,8 +346,8 @@ class TestMultiAuthIntegration:
         mcp = FastMCP("test", auth=auth)
         app = mcp.http_app(path="/mcp")
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
             base_url="https://api.example.com",
         ) as client:
             # Protected resource metadata should be available
@@ -370,8 +370,8 @@ class TestMultiAuthIntegration:
         mcp = FastMCP("test", auth=auth)
         app = mcp.http_app(path="/mcp")
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
             base_url="http://localhost",
         ) as client:
             response = await client.get("/mcp")
@@ -394,8 +394,8 @@ class TestMultiAuthIntegration:
         mcp = FastMCP("test", auth=auth)
         app = mcp.http_app(path="/mcp")
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
             base_url="http://localhost",
         ) as client:
             response = await client.get("/mcp")
@@ -444,8 +444,8 @@ class TestMultiAuthIntegration:
         mcp = FastMCP("test", auth=auth)
         app = mcp.http_app(path="/mcp")
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app, raise_app_exceptions=False),
             base_url="http://localhost",
         ) as client:
             # No token → 401
