@@ -59,6 +59,9 @@ class ResourceError(FastMCPError):
 class ToolError(FastMCPError):
     """Error in tool operations."""
 
+    def __init__(self, *args: object, log_level: int = logging.INFO) -> None:
+        super().__init__(*args, log_level=log_level)
+
 
 class PromptError(FastMCPError):
     """Error in prompt operations."""
