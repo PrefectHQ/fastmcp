@@ -12,7 +12,7 @@ This implementation is based on:
 from collections.abc import Sequence
 from typing import Any, Literal
 
-import httpx
+import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl, BaseModel, model_validator
 from typing_extensions import Self
@@ -162,7 +162,7 @@ class OIDCConfiguration(BaseModel):
             get_kwargs["timeout"] = timeout_seconds
 
         try:
-            response = httpx.get(str(config_url), **get_kwargs)
+            response = httpx2.get(str(config_url), **get_kwargs)
             response.raise_for_status()
 
             config_data = response.json()

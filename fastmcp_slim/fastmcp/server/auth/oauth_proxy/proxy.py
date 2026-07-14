@@ -29,7 +29,7 @@ from typing import Any, Literal
 from urllib.parse import urlencode, urlparse, urlunparse
 
 import anyio
-import httpx
+import httpx2
 from authlib.common.security import generate_token
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 from cryptography.fernet import Fernet
@@ -1967,7 +1967,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Attempt upstream revocation if endpoint is configured
         if self._upstream_revocation_endpoint:
             try:
-                async with httpx.AsyncClient(
+                async with httpx2.AsyncClient(
                     timeout=HTTP_TIMEOUT_SECONDS
                 ) as http_client:
                     revocation_data: dict[str, str] = {"token": token.token}

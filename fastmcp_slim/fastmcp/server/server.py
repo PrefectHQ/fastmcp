@@ -19,7 +19,6 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast, overload
 
-import httpx
 import httpx2
 import mcp_types
 from key_value.aio.adapters.pydantic import PydanticAdapter
@@ -97,6 +96,26 @@ if TYPE_CHECKING:
     from fastmcp.server.providers.proxy import FastMCPProxy
 
 logger = get_logger(__name__)
+
+# FastMCP uses httpx2 internally, but user-supplied tools, resources, and OpenAPI
+# clients may still raise exceptions from the legacy httpx package. Build the
+# actionable-error catch tuples defensively so that a user who keeps httpx
+# installed continues to get 429/timeout mapping, without making httpx a
+# dependency of FastMCP.
+try:
+    import httpx
+
+    _ACTIONABLE_HTTP_STATUS_ERRORS: tuple[type[BaseException], ...] = (
+        httpx2.HTTPStatusError,
+        httpx.HTTPStatusError,
+    )
+    _ACTIONABLE_TIMEOUT_ERRORS: tuple[type[BaseException], ...] = (
+        httpx2.TimeoutException,
+        httpx.TimeoutException,
+    )
+except ImportError:
+    _ACTIONABLE_HTTP_STATUS_ERRORS = (httpx2.HTTPStatusError,)
+    _ACTIONABLE_TIMEOUT_ERRORS = (httpx2.TimeoutException,)
 
 
 def _version_request_meta(
@@ -1325,12 +1344,15 @@ class FastMCP(
                     logger.exception(f"Error calling tool {name!r}")
                     # Handle actionable errors that should reach the LLM
                     # even when masking is enabled
-                    if isinstance(e, (httpx.HTTPStatusError, httpx2.HTTPStatusError)):
-                        if e.response.status_code == 429:
+                    if isinstance(e, _ACTIONABLE_HTTP_STATUS_ERRORS):
+                        if (
+                            cast("httpx2.HTTPStatusError", e).response.status_code
+                            == 429
+                        ):
                             raise ToolError(
                                 "Rate limited by upstream API, please retry later"
                             ) from e
-                    if isinstance(e, (httpx.TimeoutException, httpx2.TimeoutException)):
+                    if isinstance(e, _ACTIONABLE_TIMEOUT_ERRORS):
                         raise ToolError(
                             "Upstream request timed out, please retry"
                         ) from e
@@ -1462,16 +1484,15 @@ class FastMCP(
                     except Exception as e:
                         logger.exception(f"Error reading resource {uri!r}")
                         # Handle actionable errors that should reach the LLM
-                        if isinstance(
-                            e, (httpx.HTTPStatusError, httpx2.HTTPStatusError)
-                        ):
-                            if e.response.status_code == 429:
+                        if isinstance(e, _ACTIONABLE_HTTP_STATUS_ERRORS):
+                            if (
+                                cast("httpx2.HTTPStatusError", e).response.status_code
+                                == 429
+                            ):
                                 raise ResourceError(
                                     "Rate limited by upstream API, please retry later"
                                 ) from e
-                        if isinstance(
-                            e, (httpx.TimeoutException, httpx2.TimeoutException)
-                        ):
+                        if isinstance(e, _ACTIONABLE_TIMEOUT_ERRORS):
                             raise ResourceError(
                                 "Upstream request timed out, please retry"
                             ) from e
@@ -1510,12 +1531,15 @@ class FastMCP(
                 except Exception as e:
                     logger.exception(f"Error reading resource {uri!r}")
                     # Handle actionable errors that should reach the LLM
-                    if isinstance(e, (httpx.HTTPStatusError, httpx2.HTTPStatusError)):
-                        if e.response.status_code == 429:
+                    if isinstance(e, _ACTIONABLE_HTTP_STATUS_ERRORS):
+                        if (
+                            cast("httpx2.HTTPStatusError", e).response.status_code
+                            == 429
+                        ):
                             raise ResourceError(
                                 "Rate limited by upstream API, please retry later"
                             ) from e
-                    if isinstance(e, (httpx.TimeoutException, httpx2.TimeoutException)):
+                    if isinstance(e, _ACTIONABLE_TIMEOUT_ERRORS):
                         raise ResourceError(
                             "Upstream request timed out, please retry"
                         ) from e
@@ -2149,7 +2173,7 @@ class FastMCP(
     def from_openapi(
         cls,
         openapi_spec: dict[str, Any],
-        client: httpx.AsyncClient | None = None,
+        client: httpx2.AsyncClient | None = None,
         name: str = "OpenAPI Server",
         route_maps: list[RouteMap] | None = None,
         route_map_fn: OpenAPIRouteMapFn | None = None,
@@ -2164,8 +2188,10 @@ class FastMCP(
 
         Args:
             openapi_spec: OpenAPI schema as a dictionary
-            client: Optional httpx AsyncClient for making HTTP requests.
-                If not provided, a default client is created using the first
+            client: Optional httpx2 AsyncClient for making HTTP requests.
+                An httpx (v1) AsyncClient is also accepted and works via
+                duck-typing. If not provided, a default client is created
+                using the first
                 server URL from the OpenAPI spec with a 30-second timeout.
             name: Name for the MCP server
             route_maps: Optional list of RouteMap objects defining route mappings
@@ -2219,7 +2245,7 @@ class FastMCP(
             route_map_fn: Optional callable for advanced route type mapping
             mcp_component_fn: Optional callable for component customization
             mcp_names: Optional dictionary mapping operationId to component names
-            httpx_client_kwargs: Optional kwargs passed to httpx.AsyncClient.
+            httpx_client_kwargs: Optional kwargs passed to httpx2.AsyncClient.
                 Use this to configure timeout and other client settings.
             tags: Optional set of tags to add to all components
             **settings: Additional settings passed to FastMCP
@@ -2233,8 +2259,8 @@ class FastMCP(
             httpx_client_kwargs = {}
         httpx_client_kwargs.setdefault("base_url", "http://fastapi")
 
-        client = httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
+        client = httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
             **httpx_client_kwargs,
         )
 

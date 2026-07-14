@@ -6,7 +6,7 @@ import json
 import re
 from typing import TYPE_CHECKING, Any
 
-import httpx
+import httpx2
 from mcp_types import ToolAnnotations
 from pydantic.networks import AnyUrl
 
@@ -41,7 +41,7 @@ _SAFE_HEADERS = frozenset(
 )
 
 
-def _redact_headers(headers: httpx.Headers) -> dict[str, str]:
+def _redact_headers(headers: httpx2.Headers) -> dict[str, str]:
     return {k: v if k.lower() in _SAFE_HEADERS else "***" for k, v in headers.items()}
 
 
@@ -138,7 +138,7 @@ class OpenAPITool(Tool):
 
     def __init__(
         self,
-        client: httpx.AsyncClient,
+        client: httpx2.AsyncClient,
         route: HTTPRoute,
         director: RequestDirector,
         name: str,
@@ -221,7 +221,7 @@ class OpenAPITool(Tool):
             except json.JSONDecodeError:
                 return ToolResult(content=response.text)
 
-        except httpx.HTTPStatusError as e:
+        except httpx2.HTTPStatusError as e:
             error_message = (
                 f"HTTP error {e.response.status_code}: {e.response.reason_phrase}"
             )
@@ -233,10 +233,10 @@ class OpenAPITool(Tool):
                     error_message += f" - {e.response.text}"
             raise ValueError(error_message) from e
 
-        except httpx.TimeoutException as e:
+        except httpx2.TimeoutException as e:
             raise ValueError(f"HTTP request timed out ({type(e).__name__})") from e
 
-        except httpx.RequestError as e:
+        except httpx2.RequestError as e:
             raise ValueError(f"Request error ({type(e).__name__}): {e!s}") from e
 
 
@@ -247,7 +247,7 @@ class OpenAPIResource(Resource):
 
     def __init__(
         self,
-        client: httpx.AsyncClient,
+        client: httpx2.AsyncClient,
         route: HTTPRoute,
         director: RequestDirector,
         uri: str,
@@ -320,7 +320,7 @@ class OpenAPIResource(Resource):
                     ]
                 )
 
-        except httpx.HTTPStatusError as e:
+        except httpx2.HTTPStatusError as e:
             error_message = (
                 f"HTTP error {e.response.status_code}: {e.response.reason_phrase}"
             )
@@ -332,10 +332,10 @@ class OpenAPIResource(Resource):
                     error_message += f" - {e.response.text}"
             raise ValueError(error_message) from e
 
-        except httpx.TimeoutException as e:
+        except httpx2.TimeoutException as e:
             raise ValueError(f"HTTP request timed out ({type(e).__name__})") from e
 
-        except httpx.RequestError as e:
+        except httpx2.RequestError as e:
             raise ValueError(f"Request error ({type(e).__name__}): {e!s}") from e
 
 
@@ -353,7 +353,7 @@ class OpenAPIResourceTemplate(ResourceTemplate):
 
     def __init__(
         self,
-        client: httpx.AsyncClient,
+        client: httpx2.AsyncClient,
         route: HTTPRoute,
         director: RequestDirector,
         uri_template: str,
