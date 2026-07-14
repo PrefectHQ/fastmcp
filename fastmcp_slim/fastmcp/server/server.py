@@ -1462,12 +1462,16 @@ class FastMCP(
                     except Exception as e:
                         logger.exception(f"Error reading resource {uri!r}")
                         # Handle actionable errors that should reach the LLM
-                        if isinstance(e, (httpx.HTTPStatusError, httpx2.HTTPStatusError)):
+                        if isinstance(
+                            e, (httpx.HTTPStatusError, httpx2.HTTPStatusError)
+                        ):
                             if e.response.status_code == 429:
                                 raise ResourceError(
                                     "Rate limited by upstream API, please retry later"
                                 ) from e
-                        if isinstance(e, (httpx.TimeoutException, httpx2.TimeoutException)):
+                        if isinstance(
+                            e, (httpx.TimeoutException, httpx2.TimeoutException)
+                        ):
                             raise ResourceError(
                                 "Upstream request timed out, please retry"
                             ) from e
