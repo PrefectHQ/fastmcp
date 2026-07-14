@@ -114,7 +114,7 @@ Catching and `err.error.code` are unchanged — only construction moved.
 
 **Raw session access sees v2 objects.** If you reach past FastMCP's client and server surfaces into `client.session`, `ctx.session`, or the internals of `ctx.request_context`, you're now holding raw SDK v2 objects with snake_case fields and the v2 method signatures. FastMCP does not wrap these; code that depends on their v1 shape needs updating.
 
-**Custom client HTTP now uses httpx2.** The SDK v2 replaces `httpx` with [httpx2](https://pypi.org/project/httpx2/), a next-generation httpx fork, for the client transport stack. If you pass a custom client or factory into a FastMCP client transport — `StreamableHttpTransport(httpx_client_factory=...)`, `SSETransport(httpx_client_factory=...)`, `OAuth(httpx_client_factory=...)`, or a custom `httpx.Auth` as `Client(auth=...)` — those objects must now be httpx2. httpx2 is a drop-in fork with the same public API, so the change is an import swap:
+**FastMCP now uses httpx2 exclusively.** FastMCP has replaced `httpx` with [httpx2](https://pypi.org/project/httpx2/), a next-generation httpx fork, across its entire HTTP stack — client transports and every server-side path (auth providers, the OpenAPI integration, the version check). `httpx` is no longer a FastMCP dependency. If you pass a custom client or factory into a FastMCP client transport — `StreamableHttpTransport(httpx_client_factory=...)`, `SSETransport(httpx_client_factory=...)`, `OAuth(httpx_client_factory=...)`, or a custom `httpx.Auth` as `Client(auth=...)` — those objects must now be httpx2. httpx2 is a drop-in fork with the same public API, so the change is an import swap:
 
 ```python
 # Before
@@ -134,9 +134,9 @@ transport = StreamableHttpTransport(
 )
 ```
 
-Server-side HTTP that FastMCP owns — the `httpx.AsyncClient` you pass to `FastMCP.from_openapi(client=...)`, custom auth providers' upstream calls, and HTTP made inside your own tools — stays on httpx and needs no change.
+The `client` you pass to `FastMCP.from_openapi(client=...)` (and `OpenAPIProvider(client=...)`) is now type-hinted `httpx2.AsyncClient`. FastMCP does not gate on the type, so an existing `httpx.AsyncClient` keeps working at runtime via duck-typing this release — but switching it to `httpx2.AsyncClient` clears the type hint and is the supported path going forward. HTTP made inside your own tools is entirely yours and is unaffected either way.
 
-Two runtime behaviors shift with httpx2 on the client path. TLS verification uses the operating system's trust store (via `truststore`, honoring `SSL_CERT_FILE`/`SSL_CERT_DIR`) instead of the bundled certifi CA set, so corporate-CA or certifi-pinned setups may verify differently. And the client HTTP loggers are renamed from `httpx`/`httpcore.*` to `httpx2`/`httpcore2.*` — update any logging filters that select the client HTTP stack by logger name.
+Two runtime behaviors shift with httpx2, and because the switch is now wholesale they apply to **all** FastMCP HTTP — including server-auth upstream calls, not just the client path. TLS verification uses the operating system's trust store (via `truststore`, honoring `SSL_CERT_FILE`/`SSL_CERT_DIR`) instead of the bundled certifi CA set, so corporate-CA or certifi-pinned setups may verify differently. And the FastMCP HTTP loggers are renamed from `httpx`/`httpcore.*` to `httpx2`/`httpcore2.*` — update any logging filters that select the HTTP stack by logger name.
 
 ## Deprecation timeline
 
