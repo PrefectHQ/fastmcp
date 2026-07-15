@@ -136,6 +136,19 @@ transport = StreamableHttpTransport(
 
 The `client` you pass to `FastMCP.from_openapi(client=...)` (and `OpenAPIProvider(client=...)`) is now type-hinted `httpx2.AsyncClient`. FastMCP does not gate on the type, so an existing `httpx.AsyncClient` keeps working at runtime via duck-typing this release — but switching it to `httpx2.AsyncClient` clears the type hint and is the supported path going forward. HTTP made inside your own tools is entirely yours and is unaffected either way.
 
+**The subtlest break is exception handlers, and no type checker will catch it.** `httpx` very likely remains installed in your environment (the Anthropic, OpenAI, and Google SDKs all depend on it), so code that catches old-httpx exceptions around FastMCP calls still imports and still type-checks — it just never matches, because FastMCP now raises `httpx2` exceptions. The handler silently becomes dead code:
+
+```python
+import httpx  # still installed transitively — this import works
+
+try:
+    result = await client.call_tool("fetch", {"url": url})
+except httpx.ConnectError:  # dead code: FastMCP now raises httpx2.ConnectError
+    return fallback()
+```
+
+Grep your codebase for `except httpx.` and move those handlers to `httpx2`. The exception hierarchies match name-for-name, so the fix is an import swap — the hard part is remembering to look. One place you are covered automatically: exceptions raised *inside your tools and resources* (for example, a tool whose own old-httpx call gets a 429) are still mapped to `ToolError`/`ResourceError` by FastMCP's error boundary, which recognizes both libraries' exceptions during the transition.
+
 Two runtime behaviors shift with httpx2, and because the switch is now wholesale they apply to **all** FastMCP HTTP — including server-auth upstream calls, not just the client path. TLS verification uses the operating system's trust store (via `truststore`, honoring `SSL_CERT_FILE`/`SSL_CERT_DIR`) instead of the bundled certifi CA set, so corporate-CA or certifi-pinned setups may verify differently. And the FastMCP HTTP loggers are renamed from `httpx`/`httpcore.*` to `httpx2`/`httpcore2.*` — update any logging filters that select the HTTP stack by logger name.
 
 ## Deprecation timeline
