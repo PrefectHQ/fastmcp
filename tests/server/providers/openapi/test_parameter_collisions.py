@@ -146,7 +146,7 @@ class TestParameterCollisions:
                 assert update_tool is not None
 
                 # Check that both path and body 'id' parameters are included
-                params = update_tool.inputSchema
+                params = update_tool.input_schema
                 properties = params["properties"]
 
                 # Should have both path ID and body ID (with potential suffixing)
@@ -188,7 +188,7 @@ class TestParameterCollisions:
                 assert search_tool is not None
 
                 # Check that both query and header 'query' parameters are handled
-                params = search_tool.inputSchema
+                params = search_tool.input_schema
                 properties = params["properties"]
 
                 # Should handle the collision somehow (suffixing or other mechanism)
@@ -220,6 +220,6 @@ class TestParameterCollisions:
 
                 # Tools should have valid schemas
                 for tool in tools:
-                    assert tool.inputSchema is not None
-                    assert tool.inputSchema["type"] == "object"
-                    assert "properties" in tool.inputSchema
+                    assert tool.input_schema is not None
+                    assert tool.input_schema["type"] == "object"
+                    assert "properties" in tool.input_schema

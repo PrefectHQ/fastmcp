@@ -261,7 +261,7 @@ class TestResourceContentToMcp:
 
         assert hasattr(mcp_content, "text")
         assert mcp_content.text == "hello world"
-        assert mcp_content.mimeType == "text/html"
+        assert mcp_content.mime_type == "text/html"
         assert mcp_content.meta == {"csp": "script-src 'self'"}
 
     def test_binary_content_to_mcp(self):
@@ -275,18 +275,18 @@ class TestResourceContentToMcp:
 
         assert hasattr(mcp_content, "blob")
         assert mcp_content.blob == "AAEC"  # base64 of \x00\x01\x02
-        assert mcp_content.mimeType == "application/octet-stream"
+        assert mcp_content.mime_type == "application/octet-stream"
         assert mcp_content.meta == {"encoding": "raw"}
 
     def test_default_mime_types(self):
         """Test default mime types are applied correctly."""
         text_rc = ResourceContent(content="text")
         text_mcp = text_rc.to_mcp_resource_contents("resource://test")
-        assert text_mcp.mimeType == "text/plain"
+        assert text_mcp.mime_type == "text/plain"
 
         binary_rc = ResourceContent(content=b"binary")
         binary_mcp = binary_rc.to_mcp_resource_contents("resource://test")
-        assert binary_mcp.mimeType == "application/octet-stream"
+        assert binary_mcp.mime_type == "application/octet-stream"
 
     def test_none_meta(self):
         """Test that None meta is handled correctly."""

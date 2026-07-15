@@ -5,9 +5,13 @@ import warnings
 from importlib.metadata import PackageNotFoundError, version as _version
 from typing import TYPE_CHECKING
 
-from fastmcp import _install_hints
+from fastmcp import _install_hints, _sdk_patches
 from fastmcp.settings import Settings
 from fastmcp.utilities.logging import configure_logging as _configure_logging
+
+# Apply temporary SDK registry patches (SEP-1686 task methods) before any
+# client/server use. See fastmcp._sdk_patches for the upstream-gap rationale.
+_sdk_patches.install()
 
 if TYPE_CHECKING:
     from fastmcp.client import Client as Client
@@ -24,6 +28,14 @@ if settings.log_enabled:
         level=settings.log_level,
         enable_rich_tracebacks=settings.enable_rich_tracebacks,
     )
+
+# Install camelCase compatibility shims for MCP SDK v2's snake_case rename.
+# Installed unconditionally; each shim's getter checks the live
+# `mcp_camelcase_compat` setting at read time, so the bridge can be toggled at
+# runtime. Patches only mcp_types model classes, no client chain.
+from fastmcp import _compat
+
+_compat.install()
 
 try:
     __version__ = _version("fastmcp-slim")

@@ -348,7 +348,7 @@ class TestOpenAPIProviderBasicFunctionality:
                     },
                     "required": ["name", "active"],
                 }
-                assert tool.inputSchema == expected_input_schema
+                assert tool.input_schema == expected_input_schema
 
                 expected_output_schema = {
                     "type": "object",
@@ -360,4 +360,4 @@ class TestOpenAPIProviderBasicFunctionality:
                     "required": ["id", "name", "active"],
                     "title": "User",
                 }
-                assert tool.outputSchema == expected_output_schema
+                assert tool.output_schema == expected_output_schema

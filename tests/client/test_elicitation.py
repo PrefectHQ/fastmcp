@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Any, Literal, cast
 
 import pytest
-from mcp.types import ElicitRequestFormParams, ElicitRequestParams
+from mcp_types import ElicitRequestFormParams, ElicitRequestParams
 from pydantic import BaseModel
 from typing_extensions import TypedDict
 
@@ -108,7 +108,7 @@ async def test_elicitation_handler_parameters():
 
         assert captured_params["message"] == "Test message"
         assert "ScalarElicitationType" in str(captured_params["response_type"])
-        assert captured_params["params"].requestedSchema == {
+        assert captured_params["params"].requested_schema == {
             "properties": {"value": {"title": "Value", "type": "integer"}},
             "required": ["value"],
             "title": "ScalarElicitationType",
@@ -135,7 +135,7 @@ async def test_elicitation_response_title_and_description_on_scalar():
         return "no answer"
 
     async def elicitation_handler(message, response_type, params, ctx):
-        captured_schema.update(params.requestedSchema)
+        captured_schema.update(params.requested_schema)
         return ElicitResult(action="accept", content={"value": True})
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
@@ -164,7 +164,7 @@ async def test_elicitation_response_title_on_dict_shorthand():
         return "ok" if isinstance(result, AcceptedElicitation) else "none"
 
     async def elicitation_handler(message, response_type, params, ctx):
-        captured_schema.update(params.requestedSchema)
+        captured_schema.update(params.requested_schema)
         return ElicitResult(action="accept", content={"value": "low"})
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
@@ -188,7 +188,7 @@ async def test_elicitation_response_title_on_list_shorthand():
         return "ok" if isinstance(result, AcceptedElicitation) else "none"
 
     async def elicitation_handler(message, response_type, params, ctx):
-        captured_schema.update(params.requestedSchema)
+        captured_schema.update(params.requested_schema)
         return ElicitResult(action="accept", content={"value": "red"})
 
     async with Client(mcp, elicitation_handler=elicitation_handler) as client:
@@ -302,7 +302,7 @@ class TestScalarResponseTypes:
             message, response_type, params: ElicitRequestParams, ctx
         ):
             assert isinstance(params, ElicitRequestFormParams)
-            assert params.requestedSchema == {"type": "object", "properties": {}}
+            assert params.requested_schema == {"type": "object", "properties": {}}
             assert response_type is None
             return ElicitResult(action="accept")
 
@@ -612,7 +612,7 @@ async def test_structured_response_type(
         )
 
         # Verify the schema has the dataclass fields (available in params)
-        schema = params.requestedSchema
+        schema = params.requested_schema
         assert schema["type"] == "object"
         assert "name" in schema["properties"]
         assert "age" in schema["properties"]

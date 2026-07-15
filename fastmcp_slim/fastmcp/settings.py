@@ -224,6 +224,22 @@ class Settings(BaseSettings):
         ),
     ] = True
 
+    mcp_camelcase_compat: Annotated[
+        bool,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Whether to install compatibility shims that let legacy
+                camelCase reads on MCP SDK objects (e.g. `tool.inputSchema`,
+                `result.isError`) keep working after the SDK v2 rename to
+                snake_case. Each bridged read emits a
+                `FastMCPDeprecationWarning`. Set to False to disable the shims
+                entirely, in which case only the snake_case names resolve.
+                """
+            ),
+        ),
+    ] = True
+
     client_raise_first_exceptiongroup_error: Annotated[
         bool,
         Field(
@@ -320,9 +336,24 @@ class Settings(BaseSettings):
     stateless_http: bool = (
         False  # If True, uses true stateless mode (new transport per request)
     )
-    http_host_origin_protection: bool = True
+    http_host_origin_protection: bool | Literal["auto"] = False
     http_allowed_hosts: list[str] | None = None
     http_allowed_origins: list[str] | None = None
+    http_session_idle_timeout: Annotated[
+        float | None,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Maximum time in seconds a streamable-HTTP session may remain
+                idle before it is terminated. A session's deadline is pushed
+                forward on every request. When None (default), sessions never
+                expire from inactivity. Not supported in stateless HTTP mode.
+                Must be a positive number of seconds when set.
+                """
+            ),
+            gt=0,
+        ),
+    ] = None
 
     mounted_components_raise_on_load_error: Annotated[
         bool,
@@ -365,20 +396,3 @@ class Settings(BaseSettings):
             ),
         ),
     ] = "stable"
-
-    decorator_mode: Annotated[
-        Literal["function", "object"],
-        Field(
-            description=inspect.cleandoc(
-                """
-                Controls what decorators (@tool, @resource, @prompt) return.
-
-                - "function" (default): Decorators return the original function unchanged.
-                  The function remains callable and is registered with the server normally.
-                - "object" (deprecated): Decorators return component objects (FunctionTool,
-                  FunctionResource, FunctionPrompt). This was the default behavior in v2 and
-                  will be removed in a future version.
-                """
-            ),
-        ),
-    ] = "function"

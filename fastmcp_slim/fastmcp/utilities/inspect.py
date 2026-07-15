@@ -8,7 +8,7 @@ from enum import Enum
 from typing import Any, Literal, cast
 
 import pydantic_core
-from mcp.server.fastmcp import FastMCP as FastMCP1x
+from mcp.server.mcpserver import MCPServer as SDKServer
 
 import fastmcp
 from fastmcp import Client
@@ -121,12 +121,15 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
                 key=tool.key,
                 name=tool.name or tool.key,
                 description=tool.description,
-                input_schema=mcp_tool.inputSchema if mcp_tool.inputSchema else {},
+                input_schema=mcp_tool.input_schema if mcp_tool.input_schema else {},
                 output_schema=tool.output_schema,
                 annotations=tool.annotations.model_dump() if tool.annotations else None,
                 tags=list(tool.tags) if tool.tags else None,
                 title=tool.title,
-                icons=[icon.model_dump() for icon in tool.icons]
+                icons=[
+                    icon.model_dump(by_alias=True, exclude_none=True)
+                    for icon in tool.icons
+                ]
                 if tool.icons
                 else None,
                 meta=tool.meta,
@@ -146,7 +149,10 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
                 else None,
                 tags=list(prompt.tags) if prompt.tags else None,
                 title=prompt.title,
-                icons=[icon.model_dump() for icon in prompt.icons]
+                icons=[
+                    icon.model_dump(by_alias=True, exclude_none=True)
+                    for icon in prompt.icons
+                ]
                 if prompt.icons
                 else None,
                 meta=prompt.meta,
@@ -168,7 +174,10 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
                 else None,
                 tags=list(resource.tags) if resource.tags else None,
                 title=resource.title,
-                icons=[icon.model_dump() for icon in resource.icons]
+                icons=[
+                    icon.model_dump(by_alias=True, exclude_none=True)
+                    for icon in resource.icons
+                ]
                 if resource.icons
                 else None,
                 meta=resource.meta,
@@ -191,7 +200,10 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
                 else None,
                 tags=list(template.tags) if template.tags else None,
                 title=template.title,
-                icons=[icon.model_dump() for icon in template.icons]
+                icons=[
+                    icon.model_dump(by_alias=True, exclude_none=True)
+                    for icon in template.icons
+                ]
                 if template.icons
                 else None,
                 meta=template.meta,
@@ -208,7 +220,10 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
 
     # Extract server-level icons and website_url
     server_icons = (
-        [icon.model_dump() for icon in mcp._mcp_server.icons]
+        [
+            icon.model_dump(by_alias=True, exclude_none=True)
+            for icon in mcp._mcp_server.icons
+        ]
         if hasattr(mcp._mcp_server, "icons") and mcp._mcp_server.icons
         else None
     )
@@ -233,7 +248,7 @@ async def inspect_fastmcp_v2(mcp: FastMCP[Any]) -> FastMCPInfo:
     )
 
 
-async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
+async def inspect_fastmcp_v1(mcp: SDKServer) -> FastMCPInfo:
     """Extract information from a FastMCP v1.x instance using a Client.
 
     Args:
@@ -242,7 +257,7 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
     Returns:
         FastMCPInfo dataclass containing the extracted information
     """
-    # Use a client to interact with the FastMCP1x server
+    # Use a client to interact with the SDK's high-level MCPServer
     async with Client(mcp) as client:
         # Get components via client calls (these return MCP objects)
         mcp_tools = await client.list_tools()
@@ -263,12 +278,15 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
                     key=mcp_tool.name,
                     name=mcp_tool.name,
                     description=mcp_tool.description,
-                    input_schema=mcp_tool.inputSchema if mcp_tool.inputSchema else {},
+                    input_schema=mcp_tool.input_schema if mcp_tool.input_schema else {},
                     output_schema=None,  # v1 doesn't have output_schema
                     annotations=None,  # v1 doesn't have annotations
                     tags=None,  # v1 doesn't have tags
                     title=None,  # v1 doesn't have title
-                    icons=[icon.model_dump() for icon in mcp_tool.icons]
+                    icons=[
+                        icon.model_dump(by_alias=True, exclude_none=True)
+                        for icon in mcp_tool.icons
+                    ]
                     if hasattr(mcp_tool, "icons") and mcp_tool.icons
                     else None,
                     meta=None,  # v1 doesn't have meta field
@@ -291,7 +309,10 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
                     arguments=arguments,
                     tags=None,  # v1 doesn't have tags
                     title=None,  # v1 doesn't have title
-                    icons=[icon.model_dump() for icon in mcp_prompt.icons]
+                    icons=[
+                        icon.model_dump(by_alias=True, exclude_none=True)
+                        for icon in mcp_prompt.icons
+                    ]
                     if hasattr(mcp_prompt, "icons") and mcp_prompt.icons
                     else None,
                     meta=None,  # v1 doesn't have meta field
@@ -307,11 +328,14 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
                     uri=str(mcp_resource.uri),
                     name=mcp_resource.name,
                     description=mcp_resource.description,
-                    mime_type=mcp_resource.mimeType,
+                    mime_type=mcp_resource.mime_type,
                     annotations=None,  # v1 doesn't have annotations
                     tags=None,  # v1 doesn't have tags
                     title=None,  # v1 doesn't have title
-                    icons=[icon.model_dump() for icon in mcp_resource.icons]
+                    icons=[
+                        icon.model_dump(by_alias=True, exclude_none=True)
+                        for icon in mcp_resource.icons
+                    ]
                     if hasattr(mcp_resource, "icons") and mcp_resource.icons
                     else None,
                     meta=None,  # v1 doesn't have meta field
@@ -323,16 +347,19 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
         for mcp_template in mcp_templates:
             template_infos.append(  # noqa: PERF401
                 TemplateInfo(
-                    key=str(mcp_template.uriTemplate),
-                    uri_template=str(mcp_template.uriTemplate),
+                    key=str(mcp_template.uri_template),
+                    uri_template=str(mcp_template.uri_template),
                     name=mcp_template.name,
                     description=mcp_template.description,
-                    mime_type=mcp_template.mimeType,
+                    mime_type=mcp_template.mime_type,
                     parameters=None,  # v1 doesn't expose template parameters
                     annotations=None,  # v1 doesn't have annotations
                     tags=None,  # v1 doesn't have tags
                     title=None,  # v1 doesn't have title
-                    icons=[icon.model_dump() for icon in mcp_template.icons]
+                    icons=[
+                        icon.model_dump(by_alias=True, exclude_none=True)
+                        for icon in mcp_template.icons
+                    ]
                     if hasattr(mcp_template, "icons") and mcp_template.icons
                     else None,
                     meta=None,  # v1 doesn't have meta field
@@ -348,20 +375,25 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
         }
 
         # Extract server-level icons and website_url from serverInfo
-        server_info = client.initialize_result.serverInfo
+        server_info = client.initialize_result.server_info
         server_icons = (
-            [icon.model_dump() for icon in server_info.icons]
+            [
+                icon.model_dump(by_alias=True, exclude_none=True)
+                for icon in server_info.icons
+            ]
             if hasattr(server_info, "icons") and server_info.icons
             else None
         )
         server_website_url = (
-            server_info.websiteUrl if hasattr(server_info, "websiteUrl") else None
+            server_info.website_url if hasattr(server_info, "website_url") else None
         )
 
+        # SDK v2's MCPServer (FastMCP 1.x) exposes name/instructions/version
+        # directly; the v1 `_mcp_server` low-level wrapper attribute is gone.
         return FastMCPInfo(
-            name=mcp._mcp_server.name,
-            instructions=mcp._mcp_server.instructions,
-            version=mcp._mcp_server.version,
+            name=mcp.name,
+            instructions=mcp.instructions,
+            version=mcp.version,
             website_url=server_website_url,
             icons=server_icons,
             fastmcp_version=fastmcp.__version__,  # Version generating this manifest
@@ -375,7 +407,7 @@ async def inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo:
         )
 
 
-async def inspect_fastmcp(mcp: FastMCP[Any] | FastMCP1x) -> FastMCPInfo:
+async def inspect_fastmcp(mcp: FastMCP[Any] | SDKServer) -> FastMCPInfo:
     """Extract information from a FastMCP instance into a dataclass.
 
     This function automatically detects whether the instance is FastMCP v1.x or v2.x
@@ -387,7 +419,7 @@ async def inspect_fastmcp(mcp: FastMCP[Any] | FastMCP1x) -> FastMCPInfo:
     Returns:
         FastMCPInfo dataclass containing the extracted information
     """
-    if isinstance(mcp, FastMCP1x):
+    if isinstance(mcp, SDKServer):
         return await inspect_fastmcp_v1(mcp)
     else:
         return await inspect_fastmcp_v2(cast(FastMCP[Any], mcp))
@@ -429,7 +461,7 @@ def format_fastmcp_info(info: FastMCPInfo) -> bytes:
     return pydantic_core.to_json(result, indent=2)
 
 
-async def format_mcp_info(mcp: FastMCP[Any] | FastMCP1x) -> bytes:
+async def format_mcp_info(mcp: FastMCP[Any] | SDKServer) -> bytes:
     """Format server info as standard MCP protocol JSON.
 
     Uses Client to get the standard MCP protocol format with camelCase fields.
@@ -443,7 +475,7 @@ async def format_mcp_info(mcp: FastMCP[Any] | FastMCP1x) -> bytes:
         templates_result = await client.list_resource_templates_mcp()
 
         # Get server info from the initialize result
-        server_info = client.initialize_result.serverInfo
+        server_info = client.initialize_result.server_info
 
         # Combine into MCP protocol structure with environment metadata
         result = {
@@ -456,14 +488,14 @@ async def format_mcp_info(mcp: FastMCP[Any] | FastMCP1x) -> bytes:
             "tools": tools_result.tools,
             "prompts": prompts_result.prompts,
             "resources": resources_result.resources,
-            "resourceTemplates": templates_result.resourceTemplates,
+            "resourceTemplates": templates_result.resource_templates,
         }
 
         return pydantic_core.to_json(result, indent=2)
 
 
 async def format_info(
-    mcp: FastMCP[Any] | FastMCP1x,
+    mcp: FastMCP[Any] | SDKServer,
     format: InspectFormat | Literal["fastmcp", "mcp"],
     info: FastMCPInfo | None = None,
 ) -> bytes:

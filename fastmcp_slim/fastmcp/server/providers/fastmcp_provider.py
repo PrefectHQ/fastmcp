@@ -14,8 +14,8 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, overload
 
-import mcp.types
-from mcp.types import AnyUrl
+import mcp_types
+from pydantic import AnyUrl
 
 from fastmcp.prompts.base import Prompt, PromptResult
 from fastmcp.resources.base import Resource, ResourceResult
@@ -92,13 +92,13 @@ class FastMCPProviderTool(Tool):
         self,
         arguments: dict[str, Any],
         task_meta: TaskMeta,
-    ) -> mcp.types.CreateTaskResult: ...
+    ) -> mcp_types.CreateTaskResult: ...
 
     async def _run(
         self,
         arguments: dict[str, Any],
         task_meta: TaskMeta | None = None,
-    ) -> ToolResult | mcp.types.CreateTaskResult:
+    ) -> ToolResult | mcp_types.CreateTaskResult:
         """Delegate to child server's call_tool() with task_meta.
 
         Passes task_meta through to the child server so it can handle
@@ -134,7 +134,7 @@ class FastMCPProviderTool(Tool):
             self._original_name, arguments, version=version
         )
         # Result from call_tool should always be ToolResult when no task_meta
-        if isinstance(result, mcp.types.CreateTaskResult):
+        if isinstance(result, mcp_types.CreateTaskResult):
             raise RuntimeError(
                 "Unexpected CreateTaskResult from call_tool without task_meta"
             )
@@ -190,11 +190,11 @@ class FastMCPProviderResource(Resource):
     async def _read(self, task_meta: None = None) -> ResourceResult: ...
 
     @overload
-    async def _read(self, task_meta: TaskMeta) -> mcp.types.CreateTaskResult: ...
+    async def _read(self, task_meta: TaskMeta) -> mcp_types.CreateTaskResult: ...
 
     async def _read(
         self, task_meta: TaskMeta | None = None
-    ) -> ResourceResult | mcp.types.CreateTaskResult:
+    ) -> ResourceResult | mcp_types.CreateTaskResult:
         """Delegate to child server's read_resource() with task_meta.
 
         Passes task_meta through to the child server so it can handle
@@ -270,13 +270,13 @@ class FastMCPProviderPrompt(Prompt):
         self,
         arguments: dict[str, Any] | None,
         task_meta: TaskMeta,
-    ) -> mcp.types.CreateTaskResult: ...
+    ) -> mcp_types.CreateTaskResult: ...
 
     async def _render(
         self,
         arguments: dict[str, Any] | None = None,
         task_meta: TaskMeta | None = None,
-    ) -> PromptResult | mcp.types.CreateTaskResult:
+    ) -> PromptResult | mcp_types.CreateTaskResult:
         """Delegate to child server's render_prompt() with task_meta.
 
         Passes task_meta through to the child server so it can handle
@@ -309,7 +309,7 @@ class FastMCPProviderPrompt(Prompt):
             self._original_name, arguments, version=version
         )
         # Result from render_prompt should always be PromptResult when no task_meta
-        if isinstance(result, mcp.types.CreateTaskResult):
+        if isinstance(result, mcp_types.CreateTaskResult):
             raise RuntimeError(
                 "Unexpected CreateTaskResult from render_prompt without task_meta"
             )
@@ -396,11 +396,11 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
     @overload
     async def _read(
         self, uri: str, params: dict[str, Any], task_meta: TaskMeta
-    ) -> mcp.types.CreateTaskResult: ...
+    ) -> mcp_types.CreateTaskResult: ...
 
     async def _read(
         self, uri: str, params: dict[str, Any], task_meta: TaskMeta | None = None
-    ) -> ResourceResult | mcp.types.CreateTaskResult:
+    ) -> ResourceResult | mcp_types.CreateTaskResult:
         """Delegate to child server's read_resource() with task_meta.
 
         Passes task_meta through to the child server so it can handle
@@ -437,7 +437,7 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
 
         # Read from the wrapped server
         result = await self._server.read_resource(original_uri, version=version)
-        if isinstance(result, mcp.types.CreateTaskResult):
+        if isinstance(result, mcp_types.CreateTaskResult):
             raise RuntimeError("Unexpected CreateTaskResult during Docket execution")
 
         return result

@@ -108,6 +108,7 @@ class TestResourceURLValidation:
             await proxy_with_resource_url.authorize(client, params)
 
         assert exc_info.value.error == "invalid_target"
+        assert exc_info.value.error_description is not None
         assert "Resource does not match" in exc_info.value.error_description
 
     async def test_authorize_accepts_matching_resource(self, proxy_with_resource_url):

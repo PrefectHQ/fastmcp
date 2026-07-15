@@ -387,10 +387,11 @@ class TestAuthEndpoints:
             },
         )
         error_response = response.json()
-        # SDK validates client_id before other fields, returning unauthorized_client
-        # (FastMCP's OAuthProxy transforms this to invalid_client, but this test
-        # uses the SDK's create_auth_routes directly)
-        assert error_response["error"] == "unauthorized_client"
+        # The SDK authenticates the client before validating other fields; a
+        # missing/failed client authentication returns invalid_client (401).
+        # `unauthorized_client` is now reserved for an authenticated client
+        # using a grant type it isn't allowed to use.
+        assert error_response["error"] == "invalid_client"
         assert "error_description" in error_response
 
     async def test_token_invalid_auth_code(
@@ -951,10 +952,12 @@ class TestAuthEndpoints:
     async def test_client_registration_invalid_grant_type(
         self, test_client: httpx.AsyncClient
     ):
+        # The SDK requires `authorization_code` to be present in grant_types;
+        # a set that omits it is rejected. (`refresh_token` alone is invalid.)
         client_metadata = {
             "redirect_uris": ["https://client.example.com/callback"],
             "client_name": "Test Client",
-            "grant_types": ["authorization_code"],
+            "grant_types": ["refresh_token"],
         }
 
         response = await test_client.post(
@@ -967,5 +970,5 @@ class TestAuthEndpoints:
         assert error_data["error"] == "invalid_client_metadata"
         assert (
             error_data["error_description"]
-            == "grant_types must be authorization_code and refresh_token"
+            == "grant_types must include 'authorization_code'"
         )

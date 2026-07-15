@@ -284,6 +284,7 @@
                       "integrations/eunomia-authorization",
                       "integrations/github",
                       "integrations/google",
+                      "integrations/huggingface",
                       "integrations/keycloak",
                       "integrations/oci",
                       "integrations/permit",
@@ -350,6 +351,7 @@
                     "icon": "up",
                     "pages": [
                       "getting-started/upgrading/from-fastmcp-2",
+                      "getting-started/upgrading/from-fastmcp-3",
                       "getting-started/upgrading/from-mcp-sdk",
                       "getting-started/upgrading/from-low-level-sdk"
                     ]
@@ -362,7 +364,17 @@
                       "development/contributing",
                       "development/tests",
                       "development/releases",
-                      "patterns/contrib"
+                      "patterns/contrib",
+                      {
+                        "collapsed": true,
+                        "group": "v4 Notes",
+                        "pages": [
+                          "development/v4-notes/index",
+                          "development/v4-notes/change-register",
+                          "development/v4-notes/feature-program",
+                          "development/v4-notes/known-gaps"
+                        ]
+                      }
                     ]
                   },
                   {
@@ -478,6 +490,10 @@
     {
       "destination": "/getting-started/upgrading/from-low-level-sdk",
       "source": "/getting-started/low-level-sdk"
+    },
+    {
+      "destination": "/getting-started/upgrading/from-fastmcp-3",
+      "source": "/getting-started/upgrading/to-mcp-sdk-v2"
     }
   ],
   "search": {

@@ -5,7 +5,8 @@ from urllib.parse import urlparse
 
 import httpx
 import pytest
-from mcp.types import TextResourceContents
+from mcp import MCPError
+from mcp_types import TextResourceContents
 
 import fastmcp.client.auth.oauth as oauth_module
 import fastmcp.utilities.http as http_module
@@ -68,8 +69,12 @@ def client_with_headless_oauth(streamable_http_server: str) -> Client:
 
 
 async def test_unauthorized(client_unauthorized: Client):
-    """Test that unauthenticated requests are rejected."""
-    with pytest.raises(httpx.HTTPStatusError, match="401 Unauthorized"):
+    """Test that unauthenticated requests are rejected.
+
+    SDK v2 surfaces the server's 401 as an MCPError ("Server returned an error
+    response") rather than re-raising the raw httpx.HTTPStatusError.
+    """
+    with pytest.raises(MCPError, match="error response"):
         async with client_unauthorized:
             pass
 

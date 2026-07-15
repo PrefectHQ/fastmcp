@@ -3,7 +3,7 @@ from typing import Annotated, Any
 
 import pytest
 from inline_snapshot import snapshot
-from mcp.types import AudioContent, EmbeddedResource, ImageContent, TextContent
+from mcp_types import AudioContent, EmbeddedResource, ImageContent, TextContent
 from pydantic import AnyUrl, BaseModel, Field, TypeAdapter
 from typing_extensions import TypedDict
 

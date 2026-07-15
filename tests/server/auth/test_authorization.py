@@ -2,7 +2,6 @@
 
 from unittest.mock import Mock
 
-import mcp.types as mcp_types
 import pytest
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
@@ -378,10 +377,10 @@ class TestToolLevelAuth:
 
 
 class TestAuthMiddleware:
-    """Tests for middleware filtering via MCP handler layer.
+    """Tests for middleware filtering via the MCP handler layer.
 
-    These tests call _list_tools_mcp() which applies middleware during list,
-    simulating what happens when a client calls list_tools over MCP.
+    These tests drive an in-memory client so the middleware runs in the dispatch
+    chain, exactly as it does when a real client calls list_tools over MCP.
     """
 
     async def test_middleware_filters_tools_without_token(self):
@@ -392,8 +391,9 @@ class TestAuthMiddleware:
             return "public"
 
         # No token - all tools filtered by middleware
-        result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
-        assert len(result.tools) == 0
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+        assert len(tools) == 0
 
     async def test_middleware_allows_tools_with_token(self):
         mcp = FastMCP(middleware=[AuthMiddleware(auth=require_scopes("test"))])
@@ -405,8 +405,9 @@ class TestAuthMiddleware:
         token = make_token(scopes=["test"])
         tok = set_token(token)
         try:
-            result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
-            assert len(result.tools) == 1
+            async with Client(mcp) as client:
+                tools = await client.list_tools()
+            assert len(tools) == 1
         finally:
             auth_context_var.reset(tok)
 
@@ -421,8 +422,9 @@ class TestAuthMiddleware:
         token = make_token(scopes=["read"])
         tok = set_token(token)
         try:
-            result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
-            assert len(result.tools) == 0
+            async with Client(mcp) as client:
+                tools = await client.list_tools()
+            assert len(tools) == 0
         finally:
             auth_context_var.reset(tok)
 
@@ -430,8 +432,9 @@ class TestAuthMiddleware:
         token = make_token(scopes=["api"])
         tok = set_token(token)
         try:
-            result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
-            assert len(result.tools) == 1
+            async with Client(mcp) as client:
+                tools = await client.list_tools()
+            assert len(tools) == 1
         finally:
             auth_context_var.reset(tok)
 
@@ -449,16 +452,18 @@ class TestAuthMiddleware:
             return "admin"
 
         # No token - public tool allowed, admin tool blocked
-        result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
-        assert len(result.tools) == 1
-        assert result.tools[0].name == "public_tool"
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+        assert len(tools) == 1
+        assert tools[0].name == "public_tool"
 
         # Token with admin scope - both allowed
         token = make_token(scopes=["admin"])
         tok = set_token(token)
         try:
-            result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
-            assert len(result.tools) == 2
+            async with Client(mcp) as client:
+                tools = await client.list_tools()
+            assert len(tools) == 2
         finally:
             auth_context_var.reset(tok)
 
@@ -478,8 +483,9 @@ class TestAuthMiddleware:
         def allowed_tool() -> str:
             return "allowed"
 
-        result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
-        assert [tool.name for tool in result.tools] == ["allowed_tool"]
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+        assert [tool.name for tool in tools] == ["allowed_tool"]
 
     async def test_middleware_skips_resource_on_authorization_error(self):
         def deny_blocked_resource(ctx: AuthContext) -> bool:
@@ -497,10 +503,9 @@ class TestAuthMiddleware:
         def allowed_resource() -> str:
             return "allowed"
 
-        result = await mcp._list_resources_mcp(mcp_types.ListResourcesRequest())
-        assert [str(resource.uri) for resource in result.resources] == [
-            "resource://allowed"
-        ]
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+        assert [str(resource.uri) for resource in resources] == ["resource://allowed"]
 
     async def test_middleware_skips_resource_template_on_authorization_error(self):
         def deny_blocked_resource_template(ctx: AuthContext) -> bool:
@@ -518,10 +523,9 @@ class TestAuthMiddleware:
         def allowed_resource_template(item: str) -> str:
             return item
 
-        result = await mcp._list_resource_templates_mcp(
-            mcp_types.ListResourceTemplatesRequest()
-        )
-        assert [template.uriTemplate for template in result.resourceTemplates] == [
+        async with Client(mcp) as client:
+            templates = await client.list_resource_templates()
+        assert [template.uri_template for template in templates] == [
             "resource://allowed/{item}"
         ]
 
@@ -541,8 +545,9 @@ class TestAuthMiddleware:
         def allowed_prompt() -> str:
             return "allowed"
 
-        result = await mcp._list_prompts_mcp(mcp_types.ListPromptsRequest())
-        assert [prompt.name for prompt in result.prompts] == ["allowed_prompt"]
+        async with Client(mcp) as client:
+            prompts = await client.list_prompts()
+        assert [prompt.name for prompt in prompts] == ["allowed_prompt"]
 
 
 # =============================================================================
@@ -663,17 +668,17 @@ class TestAsyncAuthIntegration:
             return "api"
 
         # Without token, tool is hidden
-        result = await mcp._list_tools_mcp(__import__("mcp").types.ListToolsRequest())
-        assert len(result.tools) == 0
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+        assert len(tools) == 0
 
         # With token containing "api" scope, tool is visible
         token = make_token(scopes=["api"])
         tok = set_token(token)
         try:
-            result = await mcp._list_tools_mcp(
-                __import__("mcp").types.ListToolsRequest()
-            )
-            assert len(result.tools) == 1
+            async with Client(mcp) as client:
+                tools = await client.list_tools()
+            assert len(tools) == 1
         finally:
             auth_context_var.reset(tok)
 

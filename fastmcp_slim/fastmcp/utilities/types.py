@@ -19,12 +19,17 @@ from typing import (
     get_type_hints,
 )
 
-import mcp.types
-from mcp.types import Annotations, ContentBlock, ModelPreferences, SamplingMessage
+import mcp_types
+from mcp_types import Annotations, ContentBlock, ModelPreferences, SamplingMessage
 from pydantic import AnyUrl, BaseModel, ConfigDict, Field, TypeAdapter, UrlConstraints
 from typing_extensions import TypeVar
 
 T = TypeVar("T", default=Any)
+
+# TODO(sdkv2): the SDK's `mcp.types.AnyFunction` alias was removed with the
+# mcp.types module. FastMCP owns it now; keep the same `Callable[..., Any]`
+# meaning used by tool/prompt/resource decorators.
+AnyFunction: TypeAlias = Callable[..., Any]
 
 # sentinel values for optional arguments
 NotSet = ...
@@ -290,14 +295,14 @@ class Image:
         self,
         mime_type: str | None = None,
         annotations: Annotations | None = None,
-    ) -> mcp.types.ImageContent:
+    ) -> mcp_types.ImageContent:
         """Convert to MCP ImageContent."""
         data = self._get_data()
 
-        return mcp.types.ImageContent(
+        return mcp_types.ImageContent(
             type="image",
             data=data,
-            mimeType=mime_type or self._mime_type,
+            mime_type=mime_type or self._mime_type,
             annotations=annotations or self.annotations,
         )
 
@@ -348,7 +353,7 @@ class Audio:
         self,
         mime_type: str | None = None,
         annotations: Annotations | None = None,
-    ) -> mcp.types.AudioContent:
+    ) -> mcp_types.AudioContent:
         if self.path:
             with open(self.path, "rb") as f:
                 data = base64.b64encode(f.read()).decode()
@@ -357,10 +362,10 @@ class Audio:
         else:
             raise ValueError("No audio data available")
 
-        return mcp.types.AudioContent(
+        return mcp_types.AudioContent(
             type="audio",
             data=data,
-            mimeType=mime_type or self._mime_type,
+            mime_type=mime_type or self._mime_type,
             annotations=annotations or self.annotations,
         )
 
@@ -408,7 +413,7 @@ class File:
         self,
         mime_type: str | None = None,
         annotations: Annotations | None = None,
-    ) -> mcp.types.EmbeddedResource:
+    ) -> mcp_types.EmbeddedResource:
         if self.path:
             with open(self.path, "rb") as f:
                 raw_data = f.read()
@@ -423,28 +428,30 @@ class File:
             raise ValueError("No resource data available")
 
         mime = mime_type or self._mime_type
+        # Validate the URI shape, then pass the string form to the SDK types
+        # (their `uri` fields are plain `str` in the v2 SDK).
         UriType = Annotated[AnyUrl, UrlConstraints(host_required=False)]
-        uri = TypeAdapter(UriType).validate_python(uri_str)
+        uri = str(TypeAdapter(UriType).validate_python(uri_str))
 
         if mime.startswith("text/"):
             try:
                 text = raw_data.decode("utf-8")
             except UnicodeDecodeError:
                 text = raw_data.decode("latin-1")
-            resource = mcp.types.TextResourceContents(
+            resource = mcp_types.TextResourceContents(
                 text=text,
-                mimeType=mime,
+                mime_type=mime,
                 uri=uri,
             )
         else:
             data = base64.b64encode(raw_data).decode()
-            resource = mcp.types.BlobResourceContents(
+            resource = mcp_types.BlobResourceContents(
                 blob=data,
-                mimeType=mime,
+                mime_type=mime,
                 uri=uri,
             )
 
-        return mcp.types.EmbeddedResource(
+        return mcp_types.EmbeddedResource(
             type="resource",
             resource=resource,
             annotations=annotations or self.annotations,

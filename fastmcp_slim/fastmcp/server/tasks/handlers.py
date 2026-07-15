@@ -5,14 +5,15 @@ Handles queuing tool/prompt/resource executions to Docket as background tasks.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from contextlib import suppress
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Literal
 
-import mcp.types
-from mcp.shared.exceptions import McpError
-from mcp.types import INTERNAL_ERROR, ErrorData
+import mcp_types
+from mcp.shared.exceptions import MCPError
+from mcp_types import INTERNAL_ERROR
 
 from fastmcp.server.dependencies import (
     _current_docket,
@@ -26,6 +27,7 @@ from fastmcp.server.tasks.context import (
     register_task_session,
 )
 from fastmcp.server.tasks.keys import build_task_key, task_redis_prefix
+from fastmcp.tools.function_tool import _strict_input_validation
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -46,7 +48,7 @@ async def submit_to_docket(
     component: Tool | Resource | ResourceTemplate | Prompt,
     arguments: dict[str, Any] | None = None,
     task_meta: TaskMeta | None = None,
-) -> mcp.types.CreateTaskResult:
+) -> mcp_types.CreateTaskResult:
     """Submit any component to Docket for background execution (SEP-1686).
 
     Unified handler for all component types. Called by component's internal
@@ -70,15 +72,25 @@ async def submit_to_docket(
     # here must surface before the Redis metadata and initial "working"
     # notification below are written, otherwise an invalid input would orphan a
     # task the client has already observed (#4349).
+    #
+    # Honor the server's strict_input_validation setting so a strict tool
+    # rejects lax coercions (e.g. {"n": "1"} for n: int) at submission just as
+    # it does on the synchronous call path — otherwise task=True would bypass
+    # strict validation entirely.
     if arguments is not None:
-        arguments = component.coerce_task_arguments(arguments)
+        arguments = component.coerce_task_arguments(
+            arguments, strict=_strict_input_validation()
+        )
 
     # Generate server-side task ID per SEP-1686 final spec (line 375-377)
     # Server MUST generate task IDs, clients no longer provide them
     server_task_id = str(uuid.uuid4())
 
-    # Record creation timestamp per SEP-1686 final spec (line 430)
+    # Record creation timestamp per SEP-1686 final spec (line 430). SDK v2
+    # types `Task.created_at` / `TaskStatusNotificationParams.created_at` as ISO
+    # strings, so carry a serialized copy for wire-crossing models.
     created_at = datetime.now(timezone.utc)
+    created_at_iso = created_at.isoformat()
 
     ctx = get_context()
 
@@ -95,11 +107,9 @@ async def submit_to_docket(
     # mounted children (whose parent server owns the Docket instance).
     docket = ctx.fastmcp._docket or _current_docket.get()
     if docket is None:
-        raise McpError(
-            ErrorData(
-                code=INTERNAL_ERROR,
-                message="Background tasks require a running FastMCP server context",
-            )
+        raise MCPError(
+            code=INTERNAL_ERROR,
+            message="Background tasks require a running FastMCP server context",
         )
 
     # Register the current server so background workers resolve
@@ -144,15 +154,15 @@ async def submit_to_docket(
 
     # Send an initial tasks/status notification before queueing.
     # This guarantees clients can observe task creation immediately.
-    notification = mcp.types.TaskStatusNotification.model_validate(
+    notification = mcp_types.TaskStatusNotification.model_validate(
         {
             "method": "notifications/tasks/status",
             "params": {
                 "taskId": server_task_id,
                 "status": "working",
                 "statusMessage": "Task submitted",
-                "createdAt": created_at,
-                "lastUpdatedAt": created_at,
+                "createdAt": created_at_iso,
+                "lastUpdatedAt": created_at_iso,
                 "ttl": ttl_ms,
                 "pollInterval": poll_interval_ms,
             },
@@ -163,10 +173,11 @@ async def submit_to_docket(
             },
         }
     )
-    server_notification = mcp.types.ServerNotification(notification)
+    # SDK v2: `ServerNotification` is a union type, not a wrapper class;
+    # `send_notification` takes the bare notification model directly.
     with suppress(Exception):
         # Don't let notification failures break task creation
-        await ctx.session.send_notification(server_notification)
+        await ctx.session.send_notification(notification)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
 
     # Queue function to Docket by key (result storage via execution_ttl)
     # Use component.add_to_docket() which handles calling conventions
@@ -178,22 +189,33 @@ async def submit_to_docket(
     else:
         await component.add_to_docket(docket, arguments, fn_key=key, task_key=task_key)  # type: ignore[call-arg]  # ty:ignore[invalid-argument-type, too-many-positional-arguments]
 
-    # Spawn subscription task to send status notifications (SEP-1686 optional feature)
-    # Start subscription in session's task group (persists for connection lifetime)
+    # Spawn subscription task to send status notifications (SEP-1686 optional feature).
+    # SDK v2 constructs a ServerSession per request and exposes no per-connection
+    # task group, so the subscription runs as a standalone asyncio task that
+    # outlives the submitting request; it is cancelled when the connection closes.
     # Deferred: subscriptions and notifications depend on docket at import time
     from fastmcp.server.tasks.subscriptions import subscribe_to_task_updates
 
-    if hasattr(ctx.session, "_subscription_task_group"):
-        tg = ctx.session._subscription_task_group
-        if tg:
-            tg.start_soon(  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
-                subscribe_to_task_updates,
-                server_task_id,
-                task_key,
-                ctx.session,
-                docket,
-                poll_interval_ms,
-            )
+    subscription_task = asyncio.create_task(
+        subscribe_to_task_updates(
+            server_task_id,
+            task_key,
+            ctx.session,
+            docket,
+            poll_interval_ms,
+        ),
+        name=f"task-subscription-{server_task_id[:8]}",
+    )
+    connection = getattr(ctx.session, "_connection", None)
+    if connection is not None:
+
+        async def _cancel_subscription() -> None:
+            if not subscription_task.done():
+                subscription_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await subscription_task
+
+        connection.exit_stack.push_async_callback(_cancel_subscription)
 
     # Deferred: notifications depends on docket at import time
     from fastmcp.server.tasks.notifications import (
@@ -207,32 +229,35 @@ async def submit_to_docket(
                 session_id, ctx.session, docket, ctx.fastmcp
             )
 
-            # Register cleanup callback on session exit (once per session)
-            # This ensures subscriber is stopped when the session disconnects
-            if (
-                hasattr(ctx.session, "_exit_stack")
-                and ctx.session._exit_stack is not None
-                and not getattr(ctx.session, "_notification_cleanup_registered", False)
+            # Register cleanup callback on connection exit (once per session).
+            # SDK v2 constructs ServerSession per request, so the stable
+            # per-connection lifecycle hook lives on the underlying Connection
+            # (`connection.exit_stack`), not the session. The registration flag
+            # is likewise stashed on the connection's `state` so it survives
+            # across requests.
+            connection = getattr(ctx.session, "_connection", None)
+            if connection is not None and not connection.state.get(
+                "_notification_cleanup_registered"
             ):
 
                 async def _cleanup_subscriber() -> None:
                     await stop_subscriber(session_id)  # type: ignore[arg-type]
 
-                ctx.session._exit_stack.push_async_callback(_cleanup_subscriber)
-                ctx.session._notification_cleanup_registered = True  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+                connection.exit_stack.push_async_callback(_cleanup_subscriber)
+                connection.state["_notification_cleanup_registered"] = True
         except Exception as e:
             # Non-fatal: elicitation will still work via polling fallback
             logger.debug("Failed to start notification subscriber: %s", e)
 
     # Return CreateTaskResult with proper Task object
     # Tasks MUST begin in "working" status per SEP-1686 final spec (line 381)
-    return mcp.types.CreateTaskResult(
-        task=mcp.types.Task(
-            taskId=server_task_id,
+    return mcp_types.CreateTaskResult(
+        task=mcp_types.Task(
+            task_id=server_task_id,
             status="working",
-            createdAt=created_at,
-            lastUpdatedAt=created_at,
+            created_at=created_at_iso,
+            last_updated_at=created_at_iso,
             ttl=ttl_ms,
-            pollInterval=poll_interval_ms,
+            poll_interval=poll_interval_ms,
         )
     )

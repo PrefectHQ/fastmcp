@@ -444,7 +444,7 @@ async def dashboard(ctx: Context) -> dict:
 
 **Future phases** will add a component DSL for building UIs declaratively, an in-repo renderer, and a `FastMCPApp` class.
 
-Implementation: `fastmcp_slim/fastmcp/server/apps.py` (models and constants), with integration points in `server.py` (decorator parameters), `low_level.py` (extension advertisement), and `context.py` (`client_supports_extension` method).
+Implementation: `fastmcp_slim/fastmcp/apps/config.py` (models and constants), with integration points in `server.py` (decorator parameters), `low_level.py` (extension advertisement), and `context.py` (`client_supports_extension` method).
 
 ---
 
@@ -1205,8 +1205,8 @@ When `list_page_size` is set, `tools/list`, `resources/list`, `resources/templat
 ```python
 async with Client(server) as client:
     result = await client.list_tools_mcp()
-    while result.nextCursor:
-        result = await client.list_tools_mcp(cursor=result.nextCursor)
+    while result.next_cursor:
+        result = await client.list_tools_mcp(cursor=result.next_cursor)
 ```
 
 Documentation: [Pagination](/servers/pagination)
@@ -1426,7 +1426,7 @@ Prompt functions now use `Message` instead of `mcp.types.PromptMessage`:
 
 ```python
 # v2.x
-from mcp.types import PromptMessage, TextContent
+from fastmcp.types import PromptMessage, TextContent
 
 @mcp.prompt
 def my_prompt() -> PromptMessage:

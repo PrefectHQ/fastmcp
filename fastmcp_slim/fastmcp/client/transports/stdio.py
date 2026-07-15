@@ -141,22 +141,24 @@ class StdioTransport(ClientTransport):
         self._ready_event = anyio.Event()
 
     def _is_session_dead(self) -> bool:
-        """Check if the session's underlying streams have been closed.
+        """Check whether the session's underlying connection has closed.
 
-        Checks both the write stream (stdin to subprocess) and the read
-        stream (stdout from subprocess).  On some platforms the write-side
-        pipe lingers after the process exits, so the read-side check
-        (which reflects stdout_reader detecting the dead process) is the
-        more reliable signal.
+        SDK v2 drives the session through a `JSONRPCDispatcher` rather than
+        exposing raw read/write streams: when the subprocess exits, the
+        dispatcher's read loop ends and marks itself closed (or never-running).
+        Detect that so a keep_alive transport tears the stale session down and
+        reconnects instead of reusing a dead subprocess.
         """
         if self._session is None:
             return False
-        try:
-            if self._session._write_stream.statistics().open_send_streams == 0:
-                return True
-            return self._session._read_stream.statistics().open_send_streams == 0
-        except AttributeError:
+        dispatcher = getattr(self._session, "_dispatcher", None)
+        if dispatcher is None:
             return False
+        # A dispatcher that has closed, or that started running and then
+        # stopped, indicates the connection is gone. `_running` is False before
+        # the read loop starts too, so only treat "not running" as dead once the
+        # dispatcher has been closed.
+        return bool(getattr(dispatcher, "_closed", False))
 
     async def close(self):
         await self.disconnect()

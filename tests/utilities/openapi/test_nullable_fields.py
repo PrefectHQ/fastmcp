@@ -458,7 +458,7 @@ class TestNullableInputSchemaIntegration:
     """Test that nullable fields are converted in tool input schemas end-to-end.
 
     These tests exercise the full pipeline: OpenAPI spec -> OpenAPIProvider ->
-    tool.inputSchema, verifying that `nullable: true` doesn't leak through.
+    tool.input_schema, verifying that `nullable: true` doesn't leak through.
     """
 
     async def test_nullable_query_param_converted_in_tool_input_schema(self):
@@ -496,7 +496,7 @@ class TestNullableInputSchemaIntegration:
             async with Client(mcp) as mcp_client:
                 tools = await mcp_client.list_tools()
                 assert len(tools) == 1
-                schema = tools[0].inputSchema
+                schema = tools[0].input_schema
                 category_prop = schema["properties"]["category"]
                 assert "nullable" not in category_prop
                 assert category_prop["type"] == ["string", "null"]
@@ -545,7 +545,7 @@ class TestNullableInputSchemaIntegration:
             async with Client(mcp) as mcp_client:
                 tools = await mcp_client.list_tools()
                 assert len(tools) == 1
-                schema = tools[0].inputSchema
+                schema = tools[0].input_schema
 
                 # Find the bio property — it may be inline or in $defs
                 if "$defs" in schema:

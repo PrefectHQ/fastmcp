@@ -20,7 +20,7 @@ Major versions represent fundamental shifts. FastMCP 2.x is entirely different f
 Unlike traditional semantic versioning, minor versions **may** include [breaking changes](#breaking-changes) when necessary for the ecosystem's evolution. This flexibility is essential in a young ecosystem where perfect backwards compatibility would prevent important improvements.
 </Warning>
 
-FastMCP always targets the most current MCP Protocol version. Breaking changes in the MCP spec or MCP SDK automatically flow through to FastMCP - we prioritize staying current with the latest features and conventions over maintaining compatibility with older protocol versions.
+FastMCP tracks the current MCP Protocol version while serving earlier handshake versions alongside it. Building on MCP SDK v2, a FastMCP server negotiates the protocol era each client speaks — the sessionless `2026-07-28` era and earlier session-based eras are both handled by the same server. New features and conventions from the spec flow through to FastMCP as they land; for the details of which capabilities are available on each era, see [Upgrading from FastMCP 3](/getting-started/upgrading/from-fastmcp-3#protocol-version-support).
 
 **Patch (2.0.x)**: Bug fixes and refinements
 
@@ -64,6 +64,8 @@ Our release process is intentionally simple:
 1. Create GitHub release with tag `vMAJOR.MINOR.PATCH` (e.g., `v2.11.0`)
 2. Generate release notes automatically, and curate or add additional editorial information as needed
 3. GitHub releases automatically trigger PyPI deployments
+
+Current-major releases target `main`. Maintenance releases target their release branch, such as `release/3.x` for 3.x patches and `release/2.x` for 2.x patches. Stable releases from `main` update the `published-docs` branch after PyPI publishing succeeds; maintenance releases publish packages and GitHub release notes without repointing the live docs branch.
 
 This automation lets maintainers focus on code quality rather than release mechanics.
 

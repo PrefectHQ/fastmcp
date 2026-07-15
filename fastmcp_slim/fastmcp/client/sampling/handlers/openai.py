@@ -5,8 +5,7 @@ from collections.abc import Iterator, Sequence
 from typing import Any, Literal, get_args
 
 from mcp import ClientSession, ServerSession
-from mcp.shared.context import LifespanContextT, RequestContext
-from mcp.types import (
+from mcp_types import (
     AudioContent,
     CreateMessageResult,
     CreateMessageResultWithTools,
@@ -20,7 +19,9 @@ from mcp.types import (
     ToolResultContent,
     ToolUseContent,
 )
-from mcp.types import CreateMessageRequestParams as SamplingParams
+from mcp_types import CreateMessageRequestParams as SamplingParams
+
+from fastmcp.client._sdk_context_shim import LifespanContextT, RequestContext
 
 try:
     from openai import AsyncOpenAI
@@ -64,12 +65,12 @@ def _image_content_to_openai_part(
     content: ImageContent,
 ) -> ChatCompletionContentPartImageParam:
     """Convert MCP ImageContent to OpenAI image_url content part."""
-    if content.mimeType not in _OPENAI_IMAGE_MEDIA_TYPES:
+    if content.mime_type not in _OPENAI_IMAGE_MEDIA_TYPES:
         raise ValueError(
-            f"Unsupported image MIME type for OpenAI: {content.mimeType!r}. "
+            f"Unsupported image MIME type for OpenAI: {content.mime_type!r}. "
             f"Supported types: {', '.join(sorted(_OPENAI_IMAGE_MEDIA_TYPES))}"
         )
-    data_url = f"data:{content.mimeType};base64,{content.data}"
+    data_url = f"data:{content.mime_type};base64,{content.data}"
     return ChatCompletionContentPartImageParam(
         type="image_url",
         image_url={"url": data_url},
@@ -80,10 +81,10 @@ def _audio_content_to_openai_part(
     content: AudioContent,
 ) -> ChatCompletionContentPartInputAudioParam:
     """Convert MCP AudioContent to OpenAI input_audio content part."""
-    audio_format = _OPENAI_AUDIO_FORMATS.get(content.mimeType)
+    audio_format = _OPENAI_AUDIO_FORMATS.get(content.mime_type)
     if audio_format is None:
         raise ValueError(
-            f"Unsupported audio MIME type for OpenAI: {content.mimeType!r}. "
+            f"Unsupported audio MIME type for OpenAI: {content.mime_type!r}. "
             f"Supported types: {', '.join(sorted(_OPENAI_AUDIO_FORMATS))}"
         )
     return ChatCompletionContentPartInputAudioParam(
@@ -112,12 +113,12 @@ class OpenAISamplingHandler:
     ) -> CreateMessageResult | CreateMessageResultWithTools:
         openai_messages: list[ChatCompletionMessageParam] = (
             self._convert_to_openai_messages(
-                system_prompt=params.systemPrompt,
+                system_prompt=params.system_prompt,
                 messages=messages,
             )
         )
 
-        model: ChatModel = self._select_model_from_preferences(params.modelPreferences)
+        model: ChatModel = self._select_model_from_preferences(params.model_preferences)
 
         # Convert MCP tools to OpenAI format
         openai_tools: list[ChatCompletionToolParam] | None = None
@@ -126,8 +127,8 @@ class OpenAISamplingHandler:
 
         # Convert tool_choice to OpenAI format
         openai_tool_choice: ChatCompletionToolChoiceOptionParam | None = None
-        if params.toolChoice:
-            openai_tool_choice = self._convert_tool_choice_to_openai(params.toolChoice)
+        if params.tool_choice:
+            openai_tool_choice = self._convert_tool_choice_to_openai(params.tool_choice)
 
         # Build kwargs to avoid sentinel type compatibility issues across
         # openai SDK versions (NotGiven vs Omit)
@@ -135,12 +136,12 @@ class OpenAISamplingHandler:
             "model": model,
             "messages": openai_messages,
         }
-        if params.maxTokens is not None:
-            kwargs["max_completion_tokens"] = params.maxTokens
+        if params.max_tokens is not None:
+            kwargs["max_completion_tokens"] = params.max_tokens
         if params.temperature is not None:
             kwargs["temperature"] = params.temperature
-        if params.stopSequences:
-            kwargs["stop"] = params.stopSequences
+        if params.stop_sequences:
+            kwargs["stop"] = params.stop_sequences
         if openai_tools is not None:
             kwargs["tools"] = openai_tools
         if openai_tool_choice is not None:
@@ -240,7 +241,7 @@ class OpenAISamplingHandler:
                         tool_messages.append(
                             ChatCompletionToolMessageParam(
                                 role="tool",
-                                tool_call_id=item.toolUseId,
+                                tool_call_id=item.tool_use_id,
                                 content=content_text,
                             )
                         )
@@ -327,7 +328,7 @@ class OpenAISamplingHandler:
                 openai_messages.append(
                     ChatCompletionToolMessageParam(
                         role="tool",
-                        tool_call_id=content.toolUseId,
+                        tool_call_id=content.tool_use_id,
                         content="\n".join(result_texts),
                     )
                 )
@@ -417,7 +418,7 @@ class OpenAISamplingHandler:
         openai_tools: list[ChatCompletionToolParam] = []
         for tool in tools:
             # Build parameters dict, ensuring required fields
-            parameters: dict[str, Any] = dict(tool.inputSchema)
+            parameters: dict[str, Any] = dict(tool.input_schema)
             if "type" not in parameters:
                 parameters["type"] = "object"
 
@@ -509,5 +510,5 @@ class OpenAISamplingHandler:
             content=content,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
             role="assistant",
             model=chat_completion.model,
-            stopReason=stop_reason,
+            stop_reason=stop_reason,
         )

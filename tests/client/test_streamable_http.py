@@ -5,8 +5,8 @@ from contextlib import suppress
 from unittest.mock import AsyncMock, call
 
 import pytest
-from mcp import McpError
-from mcp.types import TextResourceContents
+from mcp import MCPError
+from mcp_types import TextResourceContents
 
 from fastmcp import Context
 from fastmcp.client import Client
@@ -265,8 +265,8 @@ async def test_nested_streamable_http_server_resolves_correctly(nested_server: s
 class TestTimeout:
     async def test_timeout(self, streamable_http_server: str):
         # note this transport behaves differently than others and raises
-        # McpError from the *client* context
-        with pytest.raises(McpError, match="Timed out"):
+        # MCPError from the *client* context
+        with pytest.raises(MCPError, match="timed out"):
             async with Client(
                 transport=StreamableHttpTransport(streamable_http_server),
                 timeout=0.02,
@@ -277,7 +277,7 @@ class TestTimeout:
         async with Client(
             transport=StreamableHttpTransport(streamable_http_server),
         ) as client:
-            with pytest.raises(McpError):
+            with pytest.raises(MCPError):
                 await client.call_tool("sleep", {"seconds": 0.2}, timeout=0.1)
 
     async def test_timeout_tool_call_overrides_client_timeout(
@@ -287,5 +287,5 @@ class TestTimeout:
             transport=StreamableHttpTransport(streamable_http_server),
             timeout=2,
         ) as client:
-            with pytest.raises(McpError):
+            with pytest.raises(MCPError):
                 await client.call_tool("sleep", {"seconds": 0.2}, timeout=0.1)

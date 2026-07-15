@@ -61,7 +61,7 @@ async def test_task_notification_sent_after_submission(task_enabled_server):
 
         # Verify we can query the task
         status = await task.status()
-        assert status.taskId == task.task_id
+        assert status.task_id == task.task_id
 
 
 async def test_failed_task_stores_error(task_enabled_server):

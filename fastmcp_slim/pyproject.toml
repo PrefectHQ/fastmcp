@@ -4,8 +4,9 @@ dynamic = ["version", "optional-dependencies"]
 description = "The dependency-slim FastMCP package."
 authors = [{ name = "Jeremiah Lowin" }]
 dependencies = [
+    "mcp-types==2.0.0b1",
     "platformdirs>=4.0.0",
-    "pydantic[email]>=2.11.7",
+    "pydantic[email]>=2.12.0",
     "pydantic-settings>=2.0.0",
     "python-dotenv>=1.1.0",
     "rich>=13.9.4",
@@ -78,8 +79,8 @@ gemini = ["google-genai>=1.18.0", "jsonref>=1.1.0"]
 mcp = [
     "exceptiongroup>=1.2.2",
     "httpx>=0.28.1,<1.0",
-    "mcp>=1.24.0,<2.0",
-    "opentelemetry-api>=1.20.0",
+    "mcp==2.0.0b1",
+    "opentelemetry-api>=1.28.0",
     # starlette floor: transitive via mcp (which only requires >=0.27).
     # Pin past CVE-2026-48710, which was patched in 1.0.1.
     "starlette>=1.0.1",

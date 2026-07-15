@@ -1,0 +1,37 @@
+---
+title: v4.0 Development Notes
+---
+
+This directory is the working map of FastMCP v4.0: the complete register of user-facing changes from the MCP Python SDK v2 migration ([PR #4437](https://github.com/PrefectHQ/fastmcp/pull/4437)), plus the forward v4 feature program. It plays three roles at once.
+
+1. **A change register.** Every user-visible change from the migration, organized by subsystem, with a note on how FastMCP handles it (absorbed, bridged, breaking, or deprecated) and where to find it in the diff. This is the [Change Register](/development/v4-notes/change-register).
+2. **A feature program.** The forward v4 work — sampling removal, MRTR elicitation, the first-class 2026 client, and the SDK-delegation round-two convergence — each with an explicit status. This is the [Feature Program](/development/v4-notes/feature-program).
+3. **A review lens.** Because the migration PR is too large to review line by line, the change register is organized so a reviewer can take one subsystem, read its claimed changes, and verify each against the diff. The [Known Gaps](/development/v4-notes/known-gaps) page collects the deliberate xfails and the upstream dependencies that gate the follow-up work.
+
+## Why v4 exists
+
+FastMCP v4.0 is an engine swap. Three forces drive the major version:
+
+**The MCP Python SDK v2 rebuild.** The SDK v2 makes two sweeping changes to the protocol layer: it splits the protocol types out of `mcp.types` into a standalone `mcp_types` package, and it renames every protocol field from camelCase to snake_case (`inputSchema` → `input_schema`, `mimeType` → `mime_type`, `isError` → `is_error`). It also rewrites the server request-handling model — handlers are now registered by method string and return bare result models, there is no `request_ctx` ContextVar, and server-side middleware is a first-class SDK concept. FastMCP absorbs almost all of this so that a typical server needs zero code changes.
+
+**Protocol version 2026-07-28.** The SDK v2 serves multiple protocol eras from one server. Alongside the session-based handshake eras, it introduces the sessionless `2026-07-28` era, which discovers capabilities through `server/discover` and removes server-initiated requests (SEP-2577). This formally supersedes FastMCP's earlier "latest protocol only" stance: a single server now works with clients across the protocol transition.
+
+**Sampling removal.** The `2026-07-28` era removes the server's ability to push a request back to the client mid-call. That takes the push-shaped sampling API (`ctx.sample`, `ctx.sample_step`) off the table on modern connections. Rather than leave it half-working, v4 deprecates it now and removes it in the 4.0 release — a real architectural shift for servers that borrowed the client's model, and one that justifies the major bump.
+
+## Release strategy
+
+The migration merges to `main` and development continues there with subsequent PRs. Releases follow the SDK's own beta timeline:
+
+- **`main` carries the beta pins.** While the SDK is on `mcp==2.0.0b1` / `mcp-types==2.0.0b1`, `main` cuts **pre-releases** (`4.0.0b1`, `4.0.0b2`, …). No stable PyPI release goes out until `mcp 2.0.0` reaches GA — at which point the pins swap to the stable SDK and `4.0.0` ships. The pin-swap is a tracked checklist item on the [Known Gaps](/development/v4-notes/known-gaps) page.
+- **`release/3.x` is the maintenance line.** A `release/3.x` branch is cut from pre-merge `main`. It stays on the SDK v1 line, receives upstream security patches, and serves users who cannot move to the SDK v2 beta yet.
+
+## How to read the register
+
+Each subsystem section in the [Change Register](/development/v4-notes/change-register) tags its changes with one of four dispositions:
+
+- **Absorbed** — the SDK changed underneath, but FastMCP's public surface is identical. Nothing for users to do.
+- **Bridged** — a compatibility shim keeps old code working, usually with a `FastMCPDeprecationWarning`. Users should migrate but are not forced to.
+- **Breaking** — user code must change. These are the headline migration items.
+- **Deprecated** — still works, warns now, slated for removal in a later release.
+
+The user-facing summary of the migration lives in the published [Upgrading from FastMCP 3](/getting-started/upgrading/from-fastmcp-3) guide. These development notes are the exhaustive version behind it.

@@ -8,14 +8,20 @@ no mocking of Redis, Docket, or session internals.
 import asyncio
 import json
 from datetime import datetime, timezone
-from typing import cast
-from unittest.mock import patch
+from typing import Any, cast
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from mcp import ServerSession
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
-from mcp.types import CreateMessageResult, TextContent
+from mcp_types import (
+    ClientCapabilities,
+    CreateMessageResult,
+    Implementation,
+    InitializeRequestParams,
+    TextContent,
+)
 from pydantic import BaseModel
 
 from fastmcp import FastMCP
@@ -107,6 +113,115 @@ class TestContextSessionProperty:
         ctx = Context(mcp, session=cast(ServerSession, mock_session))
 
         assert ctx.session is mock_session
+
+
+class TestContextBackgroundTaskLogging:
+    """Tests for per-session log gating in background task mode."""
+
+    def _make_task_context(
+        self, mcp: FastMCP, session_id: str
+    ) -> tuple[Context, AsyncMock]:
+        send_log_message = AsyncMock()
+
+        class MockConnection:
+            def __init__(self, session_id: str) -> None:
+                self.session_id = session_id
+
+        class MockSession:
+            def __init__(self, session_id: str) -> None:
+                self._connection = MockConnection(session_id)
+                self._fastmcp_state_prefix = session_id
+                self.send_log_message = send_log_message
+
+        session = MockSession(session_id)
+        ctx = Context(
+            mcp, session=cast(ServerSession, session), task_id="test-task-123"
+        )
+        return ctx, send_log_message
+
+    async def test_background_task_honors_session_level(self):
+        """A background task has a session but no request context; the
+        per-session minimum registered via logging/setLevel must still gate
+        its logs, so sub-threshold messages are not sent to the client."""
+        mcp = FastMCP("test")
+        session_id = "session-abc"
+        mcp._client_log_levels[session_id] = "error"
+
+        ctx, send_log_message = self._make_task_context(mcp, session_id)
+        assert ctx.is_background_task is True
+        assert ctx.request_context is None
+
+        await ctx.info("info msg")
+        send_log_message.assert_not_called()
+
+        await ctx.error("error msg")
+        send_log_message.assert_called_once()
+
+    async def test_background_task_without_session_level_sends_all(self):
+        """When no per-session level is registered, background-task logs fall
+        back to the server default (which allows everything by default)."""
+        mcp = FastMCP("test")
+        ctx, send_log_message = self._make_task_context(mcp, "session-xyz")
+
+        await ctx.info("info msg")
+        send_log_message.assert_called_once()
+
+
+class TestContextClientExtensionBackgroundTask:
+    """Tests for Context.client_supports_extension() in background task mode.
+
+    A background task has a live snapshot session but no request context. The
+    client's advertised capabilities are preserved on the snapshot session's
+    ``client_params``, so extension detection must read from the session rather
+    than gating on ``request_context``.
+    """
+
+    def _make_task_context(
+        self, mcp: FastMCP, extensions: dict[str, dict[str, Any]] | None
+    ) -> Context:
+        capabilities = ClientCapabilities(extensions=extensions)
+        client_params = InitializeRequestParams(
+            protocol_version="2025-06-18",
+            capabilities=capabilities,
+            client_info=Implementation(name="test-client", version="1.0"),
+        )
+
+        class MockSession:
+            _fastmcp_state_prefix = "session-ext"
+
+            def __init__(self) -> None:
+                self.client_params = client_params
+
+        session = MockSession()
+        return Context(
+            mcp, session=cast(ServerSession, session), task_id="test-task-ext"
+        )
+
+    def test_background_task_detects_advertised_extension(self):
+        """The snapshot session preserves the client's initialize params, so an
+        advertised extension is detected even with no request context."""
+        mcp = FastMCP("test")
+        ctx = self._make_task_context(mcp, {"ext-abc": {}})
+
+        assert ctx.is_background_task is True
+        assert ctx.request_context is None
+        assert ctx.client_supports_extension("ext-abc") is True
+        assert ctx.client_supports_extension("ext-missing") is False
+
+    def test_background_task_no_extensions_returns_false(self):
+        """When the client advertised no extensions, detection returns False."""
+        mcp = FastMCP("test")
+        ctx = self._make_task_context(mcp, None)
+
+        assert ctx.client_supports_extension("ext-abc") is False
+
+    def test_no_session_returns_false(self):
+        """With no session available at all (e.g. distributed worker), the
+        method degrades to False rather than raising."""
+        mcp = FastMCP("test")
+        ctx = Context(mcp, task_id="test-task-ext")
+
+        assert ctx.client_supports_extension("ext-abc") is False
 
 
 class TestContextElicitBackgroundTask:
@@ -284,6 +399,14 @@ class TestBackgroundTaskIntegration:
             result = await task.result()
             assert result.data == "ok"
 
+    @pytest.mark.xfail(
+        reason="Background-task sampling has no back-channel under SDK v2: the "
+        "per-request ServerSession that would carry sampling/createMessage is "
+        "gone once the submitting request completes, so ctx.sample() from a "
+        "worker raises NoBackChannelError. Needs a relay like elicit() "
+        "(context.py TODO); tracked in sdk-feedback.",
+        strict=True,
+    )
     async def test_sample_uses_origin_request_id_in_background_task(self):
         """E2E: ctx.sample() works in a task without an active request context."""
         mcp = FastMCP("sample-background-test")
@@ -303,7 +426,7 @@ class TestBackgroundTaskIntegration:
                 role="assistant",
                 content=TextContent(type="text", text="hello from background"),
                 model="test-model",
-                stopReason="endTurn",
+                stop_reason="endTurn",
             )
 
         async with Client(mcp, sampling_handler=sampling_handler) as client:

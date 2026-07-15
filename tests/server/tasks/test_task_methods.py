@@ -7,7 +7,7 @@ Tests the tasks/get, tasks/result, and tasks/list JSON-RPC protocol methods.
 import asyncio
 
 import pytest
-from mcp.shared.exceptions import McpError
+from mcp.shared.exceptions import MCPError
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -45,7 +45,7 @@ async def test_tasks_get_endpoint_returns_status(endpoint_server):
 
         # Check status immediately - should be submitted or working
         status = await task.status()
-        assert status.taskId == task.task_id
+        assert status.task_id == task.task_id
         assert status.status in ["working", "completed"]
 
         # Wait for completion
@@ -62,8 +62,8 @@ async def test_tasks_get_endpoint_includes_poll_interval(endpoint_server):
         task = await client.call_tool("quick_tool", {"value": 42}, task=True)
 
         status = await task.status()
-        assert status.pollInterval is not None
-        assert isinstance(status.pollInterval, int)
+        assert status.poll_interval is not None
+        assert isinstance(status.poll_interval, int)
 
 
 async def test_tasks_result_endpoint_returns_result_when_completed(endpoint_server):
@@ -150,7 +150,7 @@ async def test_get_status_nonexistent_task_raises_error(endpoint_server):
     async with Client(endpoint_server) as client:
         # Try to get status for task that was never created
         # Per SDK implementation: raises ValueError which becomes JSON-RPC error
-        with pytest.raises(McpError, match="Task nonexistent-task-id not found"):
+        with pytest.raises(MCPError, match="Task nonexistent-task-id not found"):
             await client.get_task_status("nonexistent-task-id")
 
 

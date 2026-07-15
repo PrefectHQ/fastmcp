@@ -101,6 +101,7 @@ class LifespanMixin:
             # set up SharedContext so Shared() dependencies work.
             if not is_docket_available():
                 async with SharedContext():
+                    self._capture_shared_context()
                     yield
                 return
 
@@ -119,6 +120,7 @@ class LifespanMixin:
             # set up SharedContext so Shared() dependencies work.
             if not task_components:
                 async with SharedContext():
+                    self._capture_shared_context()
                     yield
                 return
 
@@ -133,10 +135,14 @@ class LifespanMixin:
             from fastmcp.server.tasks.context import restore_task_snapshot
 
             # Create Docket instance using configured name and URL
-            async with Docket(
-                name=settings.docket.name,
-                url=settings.docket.url,
-            ) as docket:
+            async with (
+                SharedContext(),
+                Docket(
+                    name=settings.docket.name,
+                    url=settings.docket.url,
+                ) as docket,
+            ):
+                self._capture_shared_context()
                 self._docket = docket
 
                 # Register task-enabled components with Docket
@@ -183,6 +189,25 @@ class LifespanMixin:
         finally:
             # Reset server ContextVar
             _current_server.reset(server_token)
+
+    def _capture_shared_context(self: FastMCP) -> None:
+        """Snapshot the live ``SharedContext`` ContextVar values.
+
+        The SDK v2 dispatcher runs each request handler in the *message
+        sender's* contextvars (via ``ContextReceiveStream.last_context``), not
+        the server-lifespan context. App-scoped ``Shared()`` dependencies rely
+        on ``uncalled_for.SharedContext`` ContextVars set during the lifespan,
+        which are therefore invisible to handlers. We capture those values here
+        so ``FastMCPServerMiddleware`` can re-apply them per request.
+        """
+        try:
+            self._shared_context_snapshot = {
+                SharedContext.resolved: SharedContext.resolved.get(),
+                SharedContext.lock: SharedContext.lock.get(),
+                SharedContext.stack: SharedContext.stack.get(),
+            }
+        except LookupError:  # pragma: no cover - SharedContext not active
+            self._shared_context_snapshot = None
 
     @asynccontextmanager
     async def _lifespan_manager(self: FastMCP) -> AsyncIterator[None]:
@@ -248,14 +273,15 @@ class LifespanMixin:
         if not is_docket_available():
             return
 
-        from mcp.types import (
-            CancelTaskRequest,
-            GetTaskPayloadRequest,
-            GetTaskRequest,
-            ListTasksRequest,
-            ServerResult,
+        from mcp.server.context import ServerRequestContext
+        from mcp_types import (
+            CancelTaskRequestParams,
+            GetTaskPayloadRequestParams,
+            GetTaskRequestParams,
+            PaginatedRequestParams,
         )
 
+        from fastmcp.server.dependencies import bind_request_context
         from fastmcp.server.tasks.requests import (
             tasks_cancel_handler,
             tasks_get_handler,
@@ -263,37 +289,46 @@ class LifespanMixin:
             tasks_result_handler,
         )
 
-        # Manually register handlers (SDK decorators fail with locally-defined functions)
-        # SDK expects handlers that receive Request objects and return ServerResult
+        # v2 handlers take (ctx, params) and return the bare result model.
 
-        async def handle_get_task(req: GetTaskRequest) -> ServerResult:
-            params = req.params.model_dump(by_alias=True, exclude_none=True)
-            result = await tasks_get_handler(self, params)
-            return ServerResult(result)
+        async def handle_get_task(
+            ctx: ServerRequestContext, params: GetTaskRequestParams
+        ) -> Any:
+            with bind_request_context(ctx):
+                p = params.model_dump(by_alias=True, exclude_none=True)
+                return await tasks_get_handler(self, p)
 
-        async def handle_get_task_result(req: GetTaskPayloadRequest) -> ServerResult:
-            params = req.params.model_dump(by_alias=True, exclude_none=True)
-            result = await tasks_result_handler(self, params)
-            return ServerResult(result)
+        async def handle_get_task_result(
+            ctx: ServerRequestContext, params: GetTaskPayloadRequestParams
+        ) -> Any:
+            with bind_request_context(ctx):
+                p = params.model_dump(by_alias=True, exclude_none=True)
+                return await tasks_result_handler(self, p)
 
-        async def handle_list_tasks(req: ListTasksRequest) -> ServerResult:
-            params = (
-                req.params.model_dump(by_alias=True, exclude_none=True)
-                if req.params
-                else {}
-            )
-            result = await tasks_list_handler(self, params)
-            return ServerResult(result)
+        async def handle_list_tasks(
+            ctx: ServerRequestContext, params: PaginatedRequestParams | None
+        ) -> Any:
+            with bind_request_context(ctx):
+                p = (
+                    params.model_dump(by_alias=True, exclude_none=True)
+                    if params
+                    else {}
+                )
+                return await tasks_list_handler(self, p)
 
-        async def handle_cancel_task(req: CancelTaskRequest) -> ServerResult:
-            params = req.params.model_dump(by_alias=True, exclude_none=True)
-            result = await tasks_cancel_handler(self, params)
-            return ServerResult(result)
+        async def handle_cancel_task(
+            ctx: ServerRequestContext, params: CancelTaskRequestParams
+        ) -> Any:
+            with bind_request_context(ctx):
+                p = params.model_dump(by_alias=True, exclude_none=True)
+                return await tasks_cancel_handler(self, p)
 
-        # Register directly with SDK (same as what decorators do internally)
-        self._mcp_server.request_handlers[GetTaskRequest] = handle_get_task
-        self._mcp_server.request_handlers[GetTaskPayloadRequest] = (
-            handle_get_task_result
+        s = self._mcp_server
+        s.add_request_handler("tasks/get", GetTaskRequestParams, handle_get_task)
+        s.add_request_handler(
+            "tasks/result", GetTaskPayloadRequestParams, handle_get_task_result
         )
-        self._mcp_server.request_handlers[ListTasksRequest] = handle_list_tasks
-        self._mcp_server.request_handlers[CancelTaskRequest] = handle_cancel_task
+        s.add_request_handler("tasks/list", PaginatedRequestParams, handle_list_tasks)
+        s.add_request_handler(
+            "tasks/cancel", CancelTaskRequestParams, handle_cancel_task
+        )

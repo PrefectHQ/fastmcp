@@ -14,7 +14,7 @@ class TestInitialize:
         async with client:
             # Should be automatically initialized
             assert client.initialize_result is not None
-            assert client.initialize_result.serverInfo.name == "TestServer"
+            assert client.initialize_result.server_info.name == "TestServer"
             assert client.initialize_result.instructions is None
 
     async def test_auto_initialize_explicit_true(self, fastmcp_server):
@@ -23,7 +23,7 @@ class TestInitialize:
 
         async with client:
             assert client.initialize_result is not None
-            assert client.initialize_result.serverInfo.name == "TestServer"
+            assert client.initialize_result.server_info.name == "TestServer"
 
     async def test_auto_initialize_false(self, fastmcp_server):
         """Test that auto_initialize=False prevents automatic initialization."""
@@ -42,7 +42,7 @@ class TestInitialize:
             result = await client.initialize()
 
             assert result is not None
-            assert result.serverInfo.name == "TestServer"
+            assert result.server_info.name == "TestServer"
             assert client.initialize_result is result
 
     async def test_initialize_idempotent(self, fastmcp_server):
@@ -90,7 +90,7 @@ class TestInitialize:
             # Access via property
             result = client.initialize_result
             assert result is not None
-            assert result.serverInfo.name == "TestServer"
+            assert result.server_info.name == "TestServer"
 
             # Call method - should return cached
             result2 = await client.initialize()

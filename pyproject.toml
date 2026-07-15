@@ -72,7 +72,7 @@ members = ["fastmcp_slim", "fastmcp_remote"]
 [tool.uv]
 default-groups = ["dev"]
 exclude-newer = "1 week"
-exclude-newer-package = { prefab-ui = false }
+exclude-newer-package = { prefab-ui = false, mcp = false, mcp-types = false }
 
 [dependency-groups]
 dev = [

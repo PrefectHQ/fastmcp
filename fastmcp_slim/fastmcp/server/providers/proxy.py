@@ -15,13 +15,11 @@ from typing import TYPE_CHECKING, Any, cast
 
 import anyio
 import httpx
-import mcp.types
-from mcp import ServerSession
-from mcp.client.session import ClientSession
-from mcp.server.lowlevel.server import request_ctx
-from mcp.shared.context import LifespanContextT, RequestContext
-from mcp.shared.exceptions import McpError
-from mcp.types import (
+import mcp_types
+from mcp.server.connection import Connection
+from mcp.server.context import ServerRequestContext
+from mcp.shared.exceptions import MCPError
+from mcp_types import (
     METHOD_NOT_FOUND,
     BlobResourceContents,
     ElicitRequestFormParams,
@@ -29,7 +27,7 @@ from mcp.types import (
 )
 from pydantic.networks import AnyUrl
 
-from fastmcp.client.client import Client, FastMCP1Server
+from fastmcp.client.client import Client, SDKServer
 from fastmcp.client.elicitation import ElicitResult, create_elicitation_callback
 from fastmcp.client.logging import LogMessage, create_log_callback
 from fastmcp.client.roots import RootsList, create_roots_callback
@@ -44,7 +42,7 @@ from fastmcp.resources import Resource, ResourceTemplate
 from fastmcp.resources.base import ResourceContent, ResourceResult
 from fastmcp.resources.template import expand_uri_template
 from fastmcp.server.context import Context
-from fastmcp.server.dependencies import get_context
+from fastmcp.server.dependencies import fastmcp_request_ctx, get_context
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.providers.aggregate import ProviderErrorStrategy
 from fastmcp.server.providers.base import Provider
@@ -66,13 +64,33 @@ logger = get_logger(__name__)
 ClientFactoryT = Callable[[], Client] | Callable[[], Awaitable[Client]]
 
 
-def _proxy_upstream_error(error: Exception) -> McpError:
-    return McpError(
-        mcp.types.ErrorData(
-            code=mcp.types.INTERNAL_ERROR,
-            message=str(error),
-        )
+def _proxy_upstream_error(error: Exception) -> MCPError:
+    return MCPError(
+        code=mcp_types.INTERNAL_ERROR,
+        message=str(error),
     )
+
+
+def _stash_proxy_request_context(client: Client, ctx: Context) -> None:
+    """Stash the proxy's ``RequestContext`` on a ``ProxyClient`` before a backend call.
+
+    Every proxy component (tool, resource, template, prompt) must call this
+    before relaying to its backend so the forwarding handlers can restore the
+    proxy's request context before relaying a server-initiated request
+    (roots/sampling/elicitation) back to the proxy's client. Required for every
+    proxy client: under SDK v2 an in-memory backend shares this event loop, so a
+    handler's ``get_context()`` would otherwise resolve to the backend context
+    and the server-initiated request would hang until timeout.
+
+    We stash a ``(RequestContext, weakref[FastMCP])`` tuple — never a ``Context``
+    instance — because ``Context`` properties are themselves ContextVar-dependent
+    and would resolve stale values in the receive loop.
+    """
+    if isinstance(client, ProxyClient):
+        client._proxy_rc_ref[0] = (
+            ctx.request_context,
+            ctx._fastmcp,  # weakref to FastMCP, not the Context
+        )
 
 
 class ProxyInitializeMiddleware(Middleware):
@@ -81,15 +99,15 @@ class ProxyInitializeMiddleware(Middleware):
 
     async def on_initialize(
         self,
-        context: MiddlewareContext[mcp.types.InitializeRequest],
+        context: MiddlewareContext[mcp_types.InitializeRequest],
         call_next: CallNext[
-            mcp.types.InitializeRequest,
-            mcp.types.InitializeResult | None,
+            mcp_types.InitializeRequest,
+            mcp_types.InitializeResult | None,
         ],
-    ) -> mcp.types.InitializeResult | None:
+    ) -> mcp_types.InitializeResult | None:
         client = await self.proxy._get_client()
         try:
-            if isinstance(client, StatefulProxyClient):
+            if isinstance(client, ProxyClient):
                 ctx = context.fastmcp_context
                 if ctx is not None:
                     client._proxy_rc_ref[0] = (
@@ -98,7 +116,7 @@ class ProxyInitializeMiddleware(Middleware):
                     )
             async with client:
                 await client.initialize()
-        except McpError:
+        except MCPError:
             raise
         except (
             RuntimeError,
@@ -146,7 +164,7 @@ class ProxyTool(Tool):
 
     @classmethod
     def from_mcp_tool(
-        cls, client_factory: ClientFactoryT, mcp_tool: mcp.types.Tool
+        cls, client_factory: ClientFactoryT, mcp_tool: mcp_types.Tool
     ) -> ProxyTool:
         """Factory method to create a ProxyTool from a raw MCP tool schema."""
         return cls(
@@ -154,9 +172,9 @@ class ProxyTool(Tool):
             name=mcp_tool.name,
             title=mcp_tool.title,
             description=mcp_tool.description,
-            parameters=mcp_tool.inputSchema,
+            parameters=mcp_tool.input_schema,
             annotations=mcp_tool.annotations,
-            output_schema=mcp_tool.outputSchema,
+            output_schema=mcp_tool.output_schema,
             icons=mcp_tool.icons,
             meta=mcp_tool.meta,
             tags=get_fastmcp_metadata(mcp_tool.meta).get("tags", []),
@@ -180,34 +198,16 @@ class ProxyTool(Tool):
             client = await self._get_client()
             async with client:
                 ctx = context or get_context()
-                # StatefulProxyClient reuses sessions across requests, so
-                # its receive-loop task has stale ContextVars from the first
-                # request. Stash the current RequestContext in the shared
-                # ref so handlers can restore it before forwarding.
-                if isinstance(client, StatefulProxyClient):
-                    client._proxy_rc_ref[0] = (
-                        ctx.request_context,
-                        ctx._fastmcp,  # weakref to FastMCP, not the Context
-                    )
-                # Build meta dict from request context
-                meta: dict[str, Any] | None = None
-                if hasattr(ctx, "request_context"):
-                    req_ctx = ctx.request_context
-                    # Start with existing meta if present
-                    if hasattr(req_ctx, "meta") and req_ctx.meta:
-                        meta = dict(req_ctx.meta)
-                    # Add task metadata if this is a task request
-                    if (
-                        hasattr(req_ctx, "experimental")
-                        and hasattr(req_ctx.experimental, "is_task")
-                        and req_ctx.experimental.is_task
-                    ):
-                        task_metadata = req_ctx.experimental.task_metadata
-                        if task_metadata:
-                            meta = meta or {}
-                            meta["modelcontextprotocol.io/task"] = (
-                                task_metadata.model_dump(exclude_none=True)
-                            )
+                _stash_proxy_request_context(client, ctx)
+                # Forward the inbound request's `_meta` block (trace context,
+                # version, etc.) to the backend. In SDK v2 the request context
+                # exposes the lifted `_meta` dict directly; task submission is a
+                # first-class params field rather than context state, so there
+                # is no separate task-metadata injection here.
+                req_ctx = ctx.request_context
+                meta: dict[str, Any] | None = (
+                    dict(req_ctx.meta) if req_ctx is not None and req_ctx.meta else None
+                )
 
                 result = await client.call_tool_mcp(
                     name=backend_name, arguments=arguments, meta=meta
@@ -219,9 +219,9 @@ class ProxyTool(Tool):
             # Preserve backend's meta (includes task metadata for background tasks)
             return ToolResult(
                 content=result.content,
-                structured_content=result.structuredContent,
+                structured_content=result.structured_content,
                 meta=result.meta,
-                is_error=result.isError,
+                is_error=result.is_error,
             )
 
     def get_span_attributes(self) -> dict[str, Any]:
@@ -269,7 +269,7 @@ class ProxyResource(Resource):
     def from_mcp_resource(
         cls,
         client_factory: ClientFactoryT,
-        mcp_resource: mcp.types.Resource,
+        mcp_resource: mcp_types.Resource,
     ) -> ProxyResource:
         """Factory method to create a ProxyResource from a raw MCP resource schema."""
 
@@ -279,7 +279,7 @@ class ProxyResource(Resource):
             name=mcp_resource.name,
             title=mcp_resource.title,
             description=mcp_resource.description,
-            mime_type=mcp_resource.mimeType or "text/plain",
+            mime_type=mcp_resource.mime_type or "text/plain",
             icons=mcp_resource.icons,
             meta=mcp_resource.meta,
             tags=get_fastmcp_metadata(mcp_resource.meta).get("tags", []),
@@ -301,6 +301,7 @@ class ProxyResource(Resource):
             span.set_attribute("fastmcp.provider.type", "ProxyProvider")
             client = await self._get_client()
             async with client:
+                _stash_proxy_request_context(client, get_context())
                 result = await client.read_resource(backend_uri)
             if not result:
                 raise ResourceError(
@@ -314,7 +315,7 @@ class ProxyResource(Resource):
                     contents.append(
                         ResourceContent(
                             content=item.text,
-                            mime_type=item.mimeType,
+                            mime_type=item.mime_type,
                             meta=item.meta,
                         )
                     )
@@ -322,7 +323,7 @@ class ProxyResource(Resource):
                     contents.append(
                         ResourceContent(
                             content=base64.b64decode(item.blob),
-                            mime_type=item.mimeType,
+                            mime_type=item.mime_type,
                             meta=item.meta,
                         )
                     )
@@ -366,17 +367,17 @@ class ProxyTemplate(ResourceTemplate):
 
     @classmethod
     def from_mcp_template(  # type: ignore[override]
-        cls, client_factory: ClientFactoryT, mcp_template: mcp.types.ResourceTemplate
+        cls, client_factory: ClientFactoryT, mcp_template: mcp_types.ResourceTemplate
     ) -> ProxyTemplate:  # ty:ignore[invalid-method-override]
         """Factory method to create a ProxyTemplate from a raw MCP template schema."""
 
         return cls(
             client_factory=client_factory,
-            uri_template=mcp_template.uriTemplate,
+            uri_template=mcp_template.uri_template,
             name=mcp_template.name,
             title=mcp_template.title,
             description=mcp_template.description,
-            mime_type=mcp_template.mimeType or "text/plain",
+            mime_type=mcp_template.mime_type or "text/plain",
             icons=mcp_template.icons,
             parameters={},  # Remote templates don't have local parameters
             meta=mcp_template.meta,
@@ -398,6 +399,7 @@ class ProxyTemplate(ResourceTemplate):
         parameterized_uri = expand_uri_template(backend_template, params)
         client = await self._get_client()
         async with client:
+            _stash_proxy_request_context(client, context or get_context())
             result = await client.read_resource(parameterized_uri)
 
         if not result:
@@ -412,7 +414,7 @@ class ProxyTemplate(ResourceTemplate):
                 contents.append(
                     ResourceContent(
                         content=item.text,
-                        mime_type=item.mimeType,
+                        mime_type=item.mime_type,
                         meta=item.meta,
                     )
                 )
@@ -420,7 +422,7 @@ class ProxyTemplate(ResourceTemplate):
                 contents.append(
                     ResourceContent(
                         content=base64.b64decode(item.blob),
-                        mime_type=item.mimeType,
+                        mime_type=item.mime_type,
                         meta=item.meta,
                     )
                 )
@@ -437,7 +439,7 @@ class ProxyTemplate(ResourceTemplate):
             description=self.description,
             mime_type=result[
                 0
-            ].mimeType,  # Use first item's mimeType for backward compatibility
+            ].mime_type,  # Use first item's mimeType for backward compatibility
             icons=self.icons,
             meta=self.meta,
             tags=get_fastmcp_metadata(self.meta).get("tags", []),
@@ -481,7 +483,7 @@ class ProxyPrompt(Prompt):
 
     @classmethod
     def from_mcp_prompt(
-        cls, client_factory: ClientFactoryT, mcp_prompt: mcp.types.Prompt
+        cls, client_factory: ClientFactoryT, mcp_prompt: mcp_types.Prompt
     ) -> ProxyPrompt:
         """Factory method to create a ProxyPrompt from a raw MCP prompt schema."""
         arguments = [
@@ -516,6 +518,7 @@ class ProxyPrompt(Prompt):
             span.set_attribute("fastmcp.provider.type", "ProxyProvider")
             client = await self._get_client()
             async with client:
+                _stash_proxy_request_context(client, get_context())
                 result = await client.get_prompt(backend_name, arguments)
             # Convert GetPromptResult to PromptResult, preserving meta from result
             # (not the static prompt meta which includes fastmcp tags)
@@ -635,7 +638,7 @@ class ProxyProvider(Provider):
                 tools = [
                     ProxyTool.from_mcp_tool(self.client_factory, t) for t in mcp_tools
                 ]
-        except McpError as e:
+        except MCPError as e:
             if e.error.code == METHOD_NOT_FOUND:
                 tools = []
             else:
@@ -672,7 +675,7 @@ class ProxyProvider(Provider):
                     ProxyResource.from_mcp_resource(self.client_factory, r)
                     for r in mcp_resources
                 ]
-        except McpError as e:
+        except MCPError as e:
             if e.error.code == METHOD_NOT_FOUND:
                 resources = []
             else:
@@ -709,7 +712,7 @@ class ProxyProvider(Provider):
                     ProxyTemplate.from_mcp_template(self.client_factory, t)
                     for t in mcp_templates
                 ]
-        except McpError as e:
+        except MCPError as e:
             if e.error.code == METHOD_NOT_FOUND:
                 templates = []
             else:
@@ -746,7 +749,7 @@ class ProxyProvider(Provider):
                     ProxyPrompt.from_mcp_prompt(self.client_factory, p)
                     for p in mcp_prompts
                 ]
-        except McpError as e:
+        except MCPError as e:
             if e.error.code == METHOD_NOT_FOUND:
                 prompts = []
             else:
@@ -796,7 +799,7 @@ def _create_client_factory(
         Client[ClientTransportT]
         | ClientTransport
         | FastMCP[Any]
-        | FastMCP1Server
+        | SDKServer
         | AnyUrl
         | Path
         | MCPConfig
@@ -919,14 +922,17 @@ class FastMCPProxy(FastMCP):
 
     def _setup_proxy_ping_handler(self) -> None:
         async def ping_remote(
-            _request: mcp.types.PingRequest,
-        ) -> mcp.types.ServerResult:
+            _ctx: ServerRequestContext[Any, Any],
+            _params: mcp_types.RequestParams | None,
+        ) -> mcp_types.EmptyResult:
             client = await self._get_client()
             async with client:
                 await client.ping()
-            return mcp.types.ServerResult(mcp.types.EmptyResult())
+            return mcp_types.EmptyResult()
 
-        self._mcp_server.request_handlers[mcp.types.PingRequest] = ping_remote
+        self._mcp_server.add_request_handler(
+            "ping", mcp_types.RequestParams, ping_remote
+        )
 
 
 # -----------------------------------------------------------------------------
@@ -935,7 +941,7 @@ class FastMCPProxy(FastMCP):
 
 
 async def default_proxy_roots_handler(
-    context: RequestContext[ClientSession, LifespanContextT],
+    context: ServerRequestContext[Any, Any],
 ) -> RootsList:
     """Forward list roots request from remote server to proxy's connected clients."""
     ctx = get_context()
@@ -943,21 +949,21 @@ async def default_proxy_roots_handler(
 
 
 async def default_proxy_sampling_handler(
-    messages: list[mcp.types.SamplingMessage],
-    params: mcp.types.CreateMessageRequestParams,
-    context: RequestContext[ClientSession, LifespanContextT],
-) -> mcp.types.CreateMessageResult:
+    messages: list[mcp_types.SamplingMessage],
+    params: mcp_types.CreateMessageRequestParams,
+    context: ServerRequestContext[Any, Any],
+) -> mcp_types.CreateMessageResult:
     """Forward sampling request from remote server to proxy's connected clients."""
     ctx = get_context()
     result = await ctx.sample(
         list(messages),
-        system_prompt=params.systemPrompt,
+        system_prompt=params.system_prompt,
         temperature=params.temperature,
-        max_tokens=params.maxTokens,
-        model_preferences=params.modelPreferences,
+        max_tokens=params.max_tokens,
+        model_preferences=params.model_preferences,
     )
-    content = mcp.types.TextContent(type="text", text=result.text or "")
-    return mcp.types.CreateMessageResult(
+    content = mcp_types.TextContent(type="text", text=result.text or "")
+    return mcp_types.CreateMessageResult(
         role="assistant",
         model="fastmcp-client",
         # TODO(ty): remove when ty supports isinstance exclusion narrowing
@@ -968,20 +974,20 @@ async def default_proxy_sampling_handler(
 async def default_proxy_elicitation_handler(
     message: str,
     response_type: type,
-    params: mcp.types.ElicitRequestParams,
-    context: RequestContext[ClientSession, LifespanContextT],
+    params: mcp_types.ElicitRequestParams,
+    context: ServerRequestContext[Any, Any],
 ) -> ElicitResult:
     """Forward elicitation request from remote server to proxy's connected clients."""
     ctx = get_context()
     # requestedSchema only exists on ElicitRequestFormParams, not ElicitRequestURLParams
     requested_schema = (
-        params.requestedSchema
+        params.requested_schema
         if isinstance(params, ElicitRequestFormParams)
         else {"type": "object", "properties": {}}
     )
     result = await ctx.session.elicit(
         message=message,
-        requestedSchema=requested_schema,
+        requested_schema=requested_schema,
         related_request_id=ctx.request_id,
     )
     return ElicitResult(action=result.action, content=result.content)
@@ -1009,13 +1015,17 @@ def _restore_request_context(
     rc_ref: list[Any],
 ) -> None:
     """Set the ``request_ctx``, ``_current_context`` and ``_current_server``
-    ContextVars from stashed values.
+    ContextVars from stashed values so a proxy forwarding handler relays to the
+    proxy's own client rather than the upstream server.
 
-    Called at the start of proxy handler invocations in
-    ``StatefulProxyClient`` to fix stale ContextVars in the receive-loop
-    task.  Only overrides when the ContextVar is genuinely stale (same
-    session, different request_id) to avoid corrupting the concurrent
-    case where multiple sessions share the same ref via ``copy.copy``.
+    Called at the start of every proxy handler invocation. The stashed proxy
+    ``RequestContext`` is the correct forwarding target, so we restore it unless
+    it is already active. This covers two cases:
+
+    - Stateful proxy: the reused receive-loop task carries a stale ContextVar
+      from an earlier request (same session, different request_id).
+    - In-memory backend (SDK v2): the backend runs in this event loop, so the
+      handler may inherit the *backend's* request_ctx (a different session).
 
     We stash a ``(RequestContext, weakref[FastMCP])`` tuple — never a
     ``Context`` instance — because ``Context`` properties are themselves
@@ -1041,21 +1051,15 @@ def _restore_request_context(
         return
 
     rc, fastmcp_ref = stashed
-    try:
-        current_rc = request_ctx.get()
-    except LookupError:
-        request_ctx.set(rc)
-        fastmcp = fastmcp_ref()
-        if fastmcp is not None:
-            _current_context.set(Context(fastmcp))
-            _current_server.set(weakref.ref(fastmcp))
+    current_rc = fastmcp_request_ctx.get()
+    # Restore unless the stashed proxy context is already the active one.
+    if current_rc is rc:
         return
-    if current_rc.session is rc.session and current_rc.request_id != rc.request_id:
-        request_ctx.set(rc)
-        fastmcp = fastmcp_ref()
-        if fastmcp is not None:
-            _current_context.set(Context(fastmcp))
-            _current_server.set(weakref.ref(fastmcp))
+    fastmcp_request_ctx.set(rc)
+    fastmcp = fastmcp_ref()
+    if fastmcp is not None:
+        _current_context.set(Context(fastmcp))
+        _current_server.set(weakref.ref(fastmcp))
 
 
 def _make_restoring_handler(handler: Callable, rc_ref: list[Any]) -> Callable:
@@ -1077,13 +1081,32 @@ class ProxyClient(Client[ClientTransportT]):
     """A proxy client that forwards advanced interactions between a remote MCP server and the proxy's connected clients.
 
     Supports forwarding roots, sampling, elicitation, logging, and progress.
+
+    The default forwarding handlers must resolve the *proxy's* request context so
+    they relay server-initiated requests (roots/sampling/elicitation) back to the
+    proxy's own connected client, not to the upstream server they are talking to.
+    Under SDK v2 an in-memory backend runs in the same event loop as this client,
+    so a naive ``get_context()`` inside a handler can resolve to the backend's
+    context and forward the request straight back to the backend — an infinite
+    loop. To avoid that, ``ProxyTool.run`` (and the other proxy components) stash
+    the proxy-side ``RequestContext`` in ``_proxy_rc_ref`` before each backend
+    call, and the handlers are wrapped to restore it before forwarding.
     """
+
+    # Mutable list shared across copies (Client.new() uses copy.copy, which
+    # preserves references to mutable containers). Proxy components write [0]
+    # before each backend call; handlers read it to restore the proxy's
+    # request_ctx before forwarding. Stores a (RequestContext, weakref[FastMCP])
+    # tuple — never a Context instance — because Context properties are
+    # ContextVar-dependent and would resolve stale values in the receive loop.
+    _proxy_rc_ref: list[Any]
+    _proxy_restoring_handler_keys: set[str]
 
     def __init__(
         self,
         transport: ClientTransportT
         | FastMCP[Any]
-        | FastMCP1Server
+        | SDKServer
         | AnyUrl
         | Path
         | MCPConfig
@@ -1093,58 +1116,6 @@ class ProxyClient(Client[ClientTransportT]):
     ):
         if "name" not in kwargs:
             kwargs["name"] = self.generate_name()
-        if "roots" not in kwargs:
-            kwargs["roots"] = default_proxy_roots_handler
-        if "sampling_handler" not in kwargs:
-            kwargs["sampling_handler"] = default_proxy_sampling_handler
-        if "elicitation_handler" not in kwargs:
-            kwargs["elicitation_handler"] = default_proxy_elicitation_handler
-        if "log_handler" not in kwargs:
-            kwargs["log_handler"] = default_proxy_log_handler
-        if "progress_handler" not in kwargs:
-            kwargs["progress_handler"] = default_proxy_progress_handler
-        super().__init__(transport=transport, **kwargs)  # ty: ignore[no-matching-overload]
-
-        # Enable forwarding of inbound HTTP headers (e.g. authorization) to
-        # the upstream server. This is only appropriate for proxy clients,
-        # where the caller's credentials should be propagated.
-        from fastmcp.client.transports.http import StreamableHttpTransport
-        from fastmcp.client.transports.sse import SSETransport
-
-        if isinstance(self.transport, StreamableHttpTransport | SSETransport):
-            self.transport.forward_incoming_headers = True
-
-
-class StatefulProxyClient(ProxyClient[ClientTransportT]):
-    """A proxy client that provides a stateful client factory for the proxy server.
-
-    The stateful proxy client bound its copy to the server session.
-    And it will be disconnected when the session is exited.
-
-    This is useful to proxy a stateful mcp server such as the Playwright MCP server.
-    Note that it is essential to ensure that the proxy server itself is also stateful.
-
-    Because session reuse means the receive-loop task inherits a stale
-    ``request_ctx`` ContextVar snapshot, the default proxy handlers are
-    replaced with versions that restore the ContextVar before forwarding.
-    ``ProxyTool.run`` stashes the current ``RequestContext`` in
-    ``_proxy_rc_ref`` before each backend call, and the handlers consult
-    it to detect (and correct) staleness.
-    """
-
-    # Mutable list shared across copies (Client.new() uses copy.copy,
-    # which preserves references to mutable containers).  ProxyTool.run
-    # writes [0] before each backend call; handlers read it to detect
-    # stale ContextVars and restore the correct request_ctx.
-    #
-    # Stores a (RequestContext, weakref[FastMCP]) tuple — never a Context
-    # instance — because Context properties are ContextVar-dependent and
-    # would resolve stale values in the receive loop.  The restore helper
-    # constructs a fresh Context from the weakref after setting request_ctx.
-    _proxy_rc_ref: list[Any]
-    _proxy_restoring_handler_keys: set[str]
-
-    def __init__(self, *args: Any, **kwargs: Any):
         # Install context-restoring handler wrappers BEFORE super().__init__
         # registers them with the Client's session kwargs.
         self._proxy_rc_ref = [None]
@@ -1159,9 +1130,16 @@ class StatefulProxyClient(ProxyClient[ClientTransportT]):
             if key not in kwargs:
                 kwargs[key] = _make_restoring_handler(default_fn, self._proxy_rc_ref)
                 self._proxy_restoring_handler_keys.add(key)
+        super().__init__(transport=transport, **kwargs)  # ty: ignore[no-matching-overload]
 
-        super().__init__(*args, **kwargs)
-        self._caches: dict[ServerSession, Client[ClientTransportT]] = {}
+        # Enable forwarding of inbound HTTP headers (e.g. authorization) to
+        # the upstream server. This is only appropriate for proxy clients,
+        # where the caller's credentials should be propagated.
+        from fastmcp.client.transports.http import StreamableHttpTransport
+        from fastmcp.client.transports.sse import SSETransport
+
+        if isinstance(self.transport, StreamableHttpTransport | SSETransport):
+            self.transport.forward_incoming_headers = True
 
     def _bind_restoring_handlers(self) -> None:
         if "roots" in self._proxy_restoring_handler_keys:
@@ -1189,11 +1167,39 @@ class StatefulProxyClient(ProxyClient[ClientTransportT]):
                 default_proxy_progress_handler, self._proxy_rc_ref
             )
 
-    def new(self) -> StatefulProxyClient[ClientTransportT]:
-        new_client = cast(StatefulProxyClient[ClientTransportT], super().new())
+    def new(self) -> ProxyClient[ClientTransportT]:
+        new_client = cast(ProxyClient[ClientTransportT], super().new())
         new_client._proxy_rc_ref = [None]
+        new_client._proxy_restoring_handler_keys = set(
+            self._proxy_restoring_handler_keys
+        )
         new_client._bind_restoring_handlers()
         return new_client
+
+
+class StatefulProxyClient(ProxyClient[ClientTransportT]):
+    """A proxy client that provides a stateful client factory for the proxy server.
+
+    The stateful proxy client bound its copy to the server session.
+    And it will be disconnected when the session is exited.
+
+    This is useful to proxy a stateful mcp server such as the Playwright MCP server.
+    Note that it is essential to ensure that the proxy server itself is also stateful.
+
+    The base ``ProxyClient`` already installs the context-restoring handlers
+    (see its docstring); this subclass additionally caches one client per stable
+    ``Connection`` and forces disconnect when the connection is torn down.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        # SDK v2 constructs a ServerSession per request, so per-session keying
+        # would build a fresh proxy client for every request. Key by the stable
+        # per-connection `Connection` instead, and tie cleanup to its exit stack.
+        self._caches: dict[Connection, Client[ClientTransportT]] = {}
+
+    def new(self) -> StatefulProxyClient[ClientTransportT]:
+        return cast(StatefulProxyClient[ClientTransportT], super().new())
 
     async def __aexit__(self, exc_type, exc_value, traceback) -> None:  # type: ignore[override]  # ty:ignore[invalid-method-override]
         """The stateful proxy client will be forced disconnected when the session is exited.
@@ -1213,17 +1219,27 @@ class StatefulProxyClient(ProxyClient[ClientTransportT]):
         Use this method as the client factory for stateful proxy server.
         """
         session = get_context().session
-        proxy_client = self._caches.get(session, None)
+        # SDK v2: the ServerSession is per-request; the Connection is the stable
+        # per-connection object that owns the exit stack. Key the cache and the
+        # cleanup callback off it so one proxy client is reused for the whole
+        # connection instead of one per request.
+        connection = getattr(session, "_connection", None)
+        if connection is None:
+            raise RuntimeError(
+                "Stateful proxy requires a per-connection server session; "
+                "no connection is available on the current context."
+            )
+        proxy_client = self._caches.get(connection, None)
 
         if proxy_client is None:
             proxy_client = self.new()
-            logger.debug(f"{proxy_client} created for {session}")
-            self._caches[session] = proxy_client
+            logger.debug(f"{proxy_client} created for {connection}")
+            self._caches[connection] = proxy_client
 
-            async def _on_session_exit():
-                self._caches.pop(session, None)
+            async def _on_connection_exit():
+                self._caches.pop(connection, None)
                 logger.debug(f"{proxy_client} will be disconnect")
-                # This callback runs while the server session's exit stack is
+                # This callback runs while the connection's exit stack is
                 # unwinding, which usually happens because the owning task is
                 # being cancelled. Shield the disconnect so the forced cleanup
                 # actually runs to completion instead of aborting at the first
@@ -1231,6 +1247,6 @@ class StatefulProxyClient(ProxyClient[ClientTransportT]):
                 with anyio.CancelScope(shield=True):
                     await proxy_client._disconnect(force=True)
 
-            session._exit_stack.push_async_callback(_on_session_exit)
+            connection.exit_stack.push_async_callback(_on_connection_exit)
 
         return proxy_client

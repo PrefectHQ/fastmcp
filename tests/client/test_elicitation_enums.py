@@ -170,7 +170,7 @@ async def test_dict_based_titled_single_select():
 
     async def elicitation_handler(message, response_type, params, ctx):
         # Verify schema follows SEP-1330 pattern with type: "string"
-        schema = params.requestedSchema
+        schema = params.requested_schema
         assert schema["type"] == "object"
         assert "value" in schema["properties"]
         value_schema = schema["properties"]["value"]
@@ -205,7 +205,7 @@ async def test_list_list_multi_select_untitled():
 
     async def elicitation_handler(message, response_type, params, ctx):
         # Verify schema has array with enum pattern
-        schema = params.requestedSchema
+        schema = params.requested_schema
         assert schema["type"] == "object"
         assert "value" in schema["properties"]
         value_schema = schema["properties"]["value"]
@@ -243,7 +243,7 @@ async def test_list_dict_multi_select_titled():
 
     async def elicitation_handler(message, response_type, params, ctx):
         # Verify schema has array with SEP-1330 compliant items (anyOf pattern)
-        schema = params.requestedSchema
+        schema = params.requested_schema
         assert schema["type"] == "object"
         assert "value" in schema["properties"]
         value_schema = schema["properties"]["value"]
@@ -310,7 +310,7 @@ async def test_list_enum_multi_select_direct():
 
     async def elicitation_handler(message, response_type, params, ctx):
         # Verify schema has array with enum pattern
-        schema = params.requestedSchema
+        schema = params.requested_schema
         assert schema["type"] == "object"
         assert "value" in schema["properties"]
         value_schema = schema["properties"]["value"]

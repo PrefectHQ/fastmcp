@@ -1217,11 +1217,11 @@ async def _list_tools(mcp_url: str) -> list[dict[str, Any]]:
         return []
 
     try:
-        async with streamable_http_client(mcp_url) as (read, write, _):  # noqa: SIM117
+        async with streamable_http_client(mcp_url) as (read, write):  # noqa: SIM117
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.list_tools()
-                return [t.model_dump() for t in result.tools]
+                return [t.model_dump(by_alias=True) for t in result.tools]
     except Exception as exc:
         logger.debug(f"Could not list tools from {mcp_url}: {exc}")
         return []
@@ -1232,15 +1232,14 @@ async def _read_mcp_resource(mcp_url: str, uri: str) -> str | None:
     try:
         from mcp import ClientSession
         from mcp.client.streamable_http import streamable_http_client
-        from pydantic import AnyUrl
     except ImportError:
         return None
 
     try:
-        async with streamable_http_client(mcp_url) as (read, write, _):  # noqa: SIM117
+        async with streamable_http_client(mcp_url) as (read, write):  # noqa: SIM117
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.read_resource(AnyUrl(uri))
+                result = await session.read_resource(uri)
                 for content in result.contents:
                     text = getattr(content, "text", None)
                     if text:

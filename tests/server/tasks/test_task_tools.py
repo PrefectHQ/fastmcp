@@ -8,7 +8,7 @@ and test_task_resources.py.
 import asyncio
 import functools
 
-import mcp.types
+import mcp_types
 import pytest
 from pydantic import BaseModel
 
@@ -82,8 +82,8 @@ async def test_task_tool_invalid_arguments_fail_before_task_state():
             super().__init__()
             self.methods: list[str] = []
 
-        async def on_notification(self, message: mcp.types.ServerNotification) -> None:
-            self.methods.append(message.root.method)
+        async def on_notification(self, message: mcp_types.ServerNotification) -> None:
+            self.methods.append(message.method)
 
     server = FastMCP("tool-task-invalid-args-server")
 
@@ -100,6 +100,60 @@ async def test_task_tool_invalid_arguments_fail_before_task_state():
             await task.result()
 
     assert "notifications/tasks/status" not in recorder.methods
+
+
+async def test_task_submission_honors_strict_input_validation():
+    """Strict input validation applies to task submissions, not just sync calls.
+
+    With ``strict_input_validation=True``, a lax coercion like ``{"n": "1"}``
+    for an ``int`` parameter is rejected on the synchronous path. The task
+    submission path must reject it identically rather than silently coercing
+    and queueing it — otherwise ``task=True`` would bypass the strict flag.
+    """
+
+    class _Recorder(MessageHandler):
+        def __init__(self):
+            super().__init__()
+            self.methods: list[str] = []
+
+        async def on_notification(self, message: mcp_types.ServerNotification) -> None:
+            self.methods.append(message.method)
+
+    server = FastMCP("strict-task-server", strict_input_validation=True)
+
+    @server.tool(task=True)
+    async def square(n: int) -> int:
+        return n * n
+
+    recorder = _Recorder()
+    async with Client(server, message_handler=recorder) as client:
+        # Sync path rejects the string-for-int coercion under strict validation.
+        with pytest.raises(ToolError):
+            await client.call_tool("square", {"n": "1"})
+
+        # Task path must reject it too, before any task state is created — so no
+        # status notification is emitted for the orphaned submission.
+        task = await client.call_tool("square", {"n": "1"}, task=True)
+        assert task.returned_immediately
+        with pytest.raises(ToolError):
+            await task.result()
+
+    assert "notifications/tasks/status" not in recorder.methods
+
+
+async def test_task_submission_valid_argument_under_strict_validation():
+    """A well-typed argument still submits fine when strict validation is on."""
+    server = FastMCP("strict-task-valid-server", strict_input_validation=True)
+
+    @server.tool(task=True)
+    async def square(n: int) -> int:
+        return n * n
+
+    async with Client(server) as client:
+        task = await client.call_tool("square", {"n": 4}, task=True)
+        assert not task.returned_immediately
+        result = await task.result()
+        assert result.data == 16
 
 
 def test_resolve_param_hints_handles_partials():

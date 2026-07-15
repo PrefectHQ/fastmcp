@@ -430,7 +430,7 @@ class TestOpenAPIComprehensive:
                 collision_tool = next(
                     tool for tool in tools if tool.name == "collision_test"
                 )
-                schema = collision_tool.inputSchema
+                schema = collision_tool.input_schema
                 properties = schema["properties"]
 
                 # Should have unique parameter names for colliding parameters
@@ -461,7 +461,7 @@ class TestOpenAPIComprehensive:
                 search_tool = next(
                     tool for tool in tools if tool.name == "search_users"
                 )
-                schema = search_tool.inputSchema
+                schema = search_tool.input_schema
                 properties = schema["properties"]
 
                 # Should have flattened deepObject parameters
@@ -681,7 +681,7 @@ class TestOpenAPIComprehensive:
 
                 # Find create_user tool which uses schema refs
                 create_tool = next(tool for tool in tools if tool.name == "create_user")
-                schema = create_tool.inputSchema
+                schema = create_tool.input_schema
                 properties = schema["properties"]
 
                 # Should have resolved User schema properties
@@ -702,7 +702,7 @@ class TestOpenAPIComprehensive:
 
                 # Check list_users tool - has optional query parameters
                 list_tool = next(tool for tool in tools if tool.name == "list_users")
-                schema = list_tool.inputSchema
+                schema = list_tool.input_schema
                 # Query parameters should be optional
                 # (may not appear in required list)
                 # This test just ensures the schema is well-formed
@@ -712,7 +712,7 @@ class TestOpenAPIComprehensive:
                 search_tool = next(
                     tool for tool in tools if tool.name == "search_users"
                 )
-                search_schema = search_tool.inputSchema
+                search_schema = search_tool.input_schema
                 # Should have some required parameters
                 assert len(search_schema["properties"]) > 0
 

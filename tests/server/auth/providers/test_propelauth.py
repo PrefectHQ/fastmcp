@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from mcp import MCPError
 from pydantic import SecretStr
 
 from fastmcp import Client, FastMCP
@@ -269,12 +270,11 @@ async def mcp_server_url():
 
 class TestPropelAuthProviderIntegration:
     async def test_unauthorized_access(self, mcp_server_url: str):
-        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+        # SDK v2 surfaces the server's 401 as a generic MCPError at the client
+        # boundary rather than re-raising httpx.HTTPStatusError.
+        with pytest.raises(MCPError):
             async with Client(mcp_server_url) as client:
                 tools = await client.list_tools()  # noqa: F841
-
-        assert isinstance(exc_info.value, httpx.HTTPStatusError)
-        assert exc_info.value.response.status_code == 401
         assert "tools" not in locals()
 
     async def test_metadata_route_forwards_propelauth_response(

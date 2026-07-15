@@ -2,7 +2,7 @@
 
 import importlib.metadata
 
-from mcp.server.fastmcp import FastMCP as FastMCP1x
+from mcp.server.mcpserver import MCPServer as SDKServer
 
 import fastmcp
 from fastmcp import FastMCP
@@ -21,7 +21,7 @@ class TestIconExtraction:
 
     async def test_server_icons_and_website(self):
         """Test that server-level icons and website_url are extracted."""
-        from mcp.types import Icon
+        from mcp_types import Icon
 
         mcp = FastMCP(
             "IconServer",
@@ -29,7 +29,7 @@ class TestIconExtraction:
             icons=[
                 Icon(
                     src="https://example.com/icon.png",
-                    mimeType="image/png",
+                    mime_type="image/png",
                     sizes=["48x48"],
                 )
             ],
@@ -55,7 +55,7 @@ class TestIconExtraction:
 
     async def test_tool_icons(self):
         """Test that tool icons are extracted."""
-        from mcp.types import Icon
+        from mcp_types import Icon
 
         mcp = FastMCP("ToolIconServer")
 
@@ -63,7 +63,7 @@ class TestIconExtraction:
             icons=[
                 Icon(
                     src="https://example.com/calculator.png",
-                    mimeType="image/png",
+                    mime_type="image/png",
                 )
             ]
         )
@@ -92,13 +92,13 @@ class TestIconExtraction:
 
     async def test_resource_icons(self):
         """Test that resource icons are extracted."""
-        from mcp.types import Icon
+        from mcp_types import Icon
 
         mcp = FastMCP("ResourceIconServer")
 
         @mcp.resource(
             "resource://data",
-            icons=[Icon(src="https://example.com/data.png", mimeType="image/png")],
+            icons=[Icon(src="https://example.com/data.png", mime_type="image/png")],
         )
         def get_data() -> str:
             """Get data."""
@@ -125,13 +125,13 @@ class TestIconExtraction:
 
     async def test_template_icons(self):
         """Test that resource template icons are extracted."""
-        from mcp.types import Icon
+        from mcp_types import Icon
 
         mcp = FastMCP("TemplateIconServer")
 
         @mcp.resource(
             "resource://user/{id}",
-            icons=[Icon(src="https://example.com/user.png", mimeType="image/png")],
+            icons=[Icon(src="https://example.com/user.png", mime_type="image/png")],
         )
         def get_user(id: str) -> str:
             """Get user by ID."""
@@ -162,12 +162,12 @@ class TestIconExtraction:
 
     async def test_prompt_icons(self):
         """Test that prompt icons are extracted."""
-        from mcp.types import Icon
+        from mcp_types import Icon
 
         mcp = FastMCP("PromptIconServer")
 
         @mcp.prompt(
-            icons=[Icon(src="https://example.com/analyze.png", mimeType="image/png")]
+            icons=[Icon(src="https://example.com/analyze.png", mime_type="image/png")]
         )
         def analyze(data: str) -> list:
             """Analyze data."""
@@ -194,19 +194,19 @@ class TestIconExtraction:
 
     async def test_multiple_icons(self):
         """Test that components with multiple icons extract all of them."""
-        from mcp.types import Icon
+        from mcp_types import Icon
 
         mcp = FastMCP(
             "MultiIconServer",
             icons=[
                 Icon(
                     src="https://example.com/icon-48.png",
-                    mimeType="image/png",
+                    mime_type="image/png",
                     sizes=["48x48"],
                 ),
                 Icon(
                     src="https://example.com/icon-96.png",
-                    mimeType="image/png",
+                    mime_type="image/png",
                     sizes=["96x96"],
                 ),
             ],
@@ -239,13 +239,13 @@ class TestIconExtraction:
 
     async def test_data_uri_icons(self):
         """Test that data URI icons are extracted correctly."""
-        from mcp.types import Icon
+        from mcp_types import Icon
 
         data_uri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
 
         mcp = FastMCP("DataURIServer")
 
-        @mcp.tool(icons=[Icon(src=data_uri, mimeType="image/png")])
+        @mcp.tool(icons=[Icon(src=data_uri, mime_type="image/png")])
         def data_uri_tool() -> str:
             """Tool with data URI icon."""
             return "data"
@@ -259,12 +259,12 @@ class TestIconExtraction:
 
     async def test_icons_in_fastmcp_v1(self):
         """Test that icons are extracted from FastMCP 1.x servers."""
-        from mcp.types import Icon
+        from mcp_types import Icon
 
-        mcp = FastMCP1x("Icon1xServer")
+        mcp = SDKServer("Icon1xServer")
 
         @mcp.tool(
-            icons=[Icon(src="https://example.com/v1-tool.png", mimeType="image/png")]
+            icons=[Icon(src="https://example.com/v1-tool.png", mime_type="image/png")]
         )
         def v1_tool() -> str:
             """Tool in v1 server."""
@@ -277,18 +277,38 @@ class TestIconExtraction:
         if info.tools[0].icons is not None:
             assert info.tools[0].icons[0]["src"] == "https://example.com/v1-tool.png"
 
+    async def test_website_url_in_fastmcp_v1(self):
+        """Remote/v1 inspect surfaces the server's website_url.
+
+        The v1 path reads website_url from the SDK v2 snake_case serverInfo
+        model; a stale camelCase guard silently dropped it.
+        """
+        mcp = SDKServer("Website1xServer", website_url="https://example.com")
+
+        info = await inspect_fastmcp_v1(mcp)
+
+        assert info.website_url == "https://example.com"
+
+    async def test_no_website_url_in_fastmcp_v1(self):
+        """A v1 server with no website_url reports None rather than raising."""
+        mcp = SDKServer("NoWebsite1xServer")
+
+        info = await inspect_fastmcp_v1(mcp)
+
+        assert info.website_url is None
+
     async def test_icons_in_formatted_output(self):
         """Test that icons appear in formatted JSON output."""
-        from mcp.types import Icon
+        from mcp_types import Icon
 
         mcp = FastMCP(
             "FormattedIconServer",
             website_url="https://example.com",
-            icons=[Icon(src="https://example.com/server.png", mimeType="image/png")],
+            icons=[Icon(src="https://example.com/server.png", mime_type="image/png")],
         )
 
         @mcp.tool(
-            icons=[Icon(src="https://example.com/tool.png", mimeType="image/png")]
+            icons=[Icon(src="https://example.com/tool.png", mime_type="image/png")]
         )
         def icon_tool() -> str:
             """Tool with icon."""

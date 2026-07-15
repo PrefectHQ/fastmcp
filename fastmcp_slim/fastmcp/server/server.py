@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import secrets
-import warnings
 from collections.abc import (
     AsyncIterator,
     Callable,
@@ -22,15 +20,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast, overload
 
 import httpx
-import mcp.types
+import mcp_types
 from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.stores.memory import MemoryStore
 from mcp.server.lowlevel.server import LifespanResultT
-from mcp.shared.exceptions import McpError
-from mcp.types import (
+from mcp.shared.exceptions import MCPError
+from mcp_types import (
     Annotations,
-    AnyFunction,
     CallToolRequestParams,
     ToolAnnotations,
 )
@@ -48,7 +45,6 @@ from fastmcp.apps.config import (
 )
 from fastmcp.exceptions import (
     AuthorizationError,
-    FastMCPDeprecationWarning,
     FastMCPError,
     NotFoundError,
     PromptError,
@@ -63,6 +59,7 @@ from fastmcp.prompts.function_prompt import FunctionPrompt
 from fastmcp.resources.base import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth import AuthCheck, AuthContext, AuthProvider, run_auth_checks
+from fastmcp.server.caching import build_cache_hints
 from fastmcp.server.lifespan import Lifespan
 from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
@@ -82,7 +79,7 @@ from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.tools.tool_transform import ToolTransformConfig
 from fastmcp.utilities.components import FastMCPComponent, _coerce_version
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import FastMCPBaseModel, NotSet, NotSetT
+from fastmcp.utilities.types import AnyFunction, FastMCPBaseModel, NotSet, NotSetT
 from fastmcp.utilities.versions import (
     VersionSpec,
     version_sort_key,
@@ -90,7 +87,7 @@ from fastmcp.utilities.versions import (
 
 if TYPE_CHECKING:
     from fastmcp.client import Client
-    from fastmcp.client.client import FastMCP1Server
+    from fastmcp.client.client import SDKServer
     from fastmcp.client.sampling import SamplingHandler
     from fastmcp.client.transports import ClientTransport, ClientTransportT
     from fastmcp.server.providers.openapi import ComponentFn as OpenAPIComponentFn
@@ -103,7 +100,7 @@ logger = get_logger(__name__)
 
 def _version_request_meta(
     version: VersionSpec | None,
-) -> mcp.types.RequestParams.Meta | None:
+) -> dict[str, Any] | None:
     if version is None:
         return None
 
@@ -123,9 +120,9 @@ def _version_request_meta(
     if not version_value:
         return None
 
-    return mcp.types.RequestParams.Meta.model_validate(
-        {"fastmcp": {"version": version_value}}
-    )
+    # SDK v2: request `_meta` is a plain dict (the `Meta` type alias), not the
+    # old `RequestParams.Meta` nested model.
+    return {"fastmcp": {"version": version_value}}
 
 
 # The MCP SDK warns "Tool X not listed, no validation will be performed"
@@ -179,9 +176,6 @@ def _check_removed_kwargs(kwargs: dict[str, Any]) -> None:
 
 
 Transport = Literal["stdio", "http", "sse", "streamable-http"]
-
-# Compiled URI parsing regex to split a URI into protocol and path components
-URI_PATTERN = re.compile(r"^([^:]+://)(.*?)$")
 
 
 LifespanCallable = Callable[
@@ -290,17 +284,16 @@ def _lifespan_proxy(
     async def wrap(
         low_level_server: LowLevelServer[LifespanResultT],
     ) -> AsyncIterator[LifespanResultT]:
-        if fastmcp_server._lifespan is default_lifespan:
-            yield {}  # ty:ignore[invalid-yield]
-            return
-
-        if not fastmcp_server._lifespan_result_set:
-            raise RuntimeError(
-                "FastMCP server has a lifespan defined but no lifespan result is set, which means the server's context manager was not entered. "
-                " Are you running the server in a way that supports lifespans? If so, please file an issue at https://github.com/PrefectHQ/fastmcp/issues."
-            )
-
-        yield fastmcp_server._lifespan_result  # ty:ignore[invalid-yield]
+        # Drive the FastMCP lifespan rather than merely reading it back. The
+        # SDK enters this proxy exactly once per manager/server run (via
+        # ``StreamableHTTPSessionManager.run`` → ``app.lifespan(app)`` or
+        # ``Server.run`` → ``self.lifespan(self)``) and reuses the yielded
+        # state for every session. ``_lifespan_manager`` is ref-counted, so
+        # when an outer caller (``run_http_async``/``run_stdio_async``) has
+        # already entered it, this nested entry reuses the existing result
+        # instead of re-running setup.
+        async with fastmcp_server._lifespan_manager():
+            yield fastmcp_server._lifespan_result  # ty:ignore[invalid-yield]
 
     return wrap
 
@@ -325,7 +318,7 @@ class FastMCP(
         *,
         version: str | int | float | None = None,
         website_url: str | None = None,
-        icons: list[mcp.types.Icon] | None = None,
+        icons: list[mcp_types.Icon] | None = None,
         auth: AuthProvider | None = None,
         middleware: Sequence[Middleware] | None = None,
         providers: Sequence[Provider] | None = None,
@@ -337,11 +330,13 @@ class FastMCP(
         dereference_schemas: bool = True,
         strict_input_validation: bool | None = None,
         list_page_size: int | None = None,
+        cache_ttl: int | None = None,
+        cache_scope: Literal["public", "private"] | None = None,
         tasks: bool | None = None,
         session_state_store: AsyncKeyValue | None = None,
         sampling_handler: SamplingHandler | None = None,
         sampling_handler_behavior: Literal["always", "fallback"] | None = None,
-        client_log_level: mcp.types.LoggingLevel | None = None,
+        client_log_level: mcp_types.LoggingLevel | None = None,
         experimental_capabilities: dict[str, dict[str, Any]] | None = None,
         **kwargs: Any,
     ):
@@ -395,6 +390,11 @@ class FastMCP(
             raise ValueError("list_page_size must be a positive integer")
         self._list_page_size: int | None = list_page_size
 
+        # Server-level SEP-2549 cache hints, applied uniformly to every
+        # SDK-cacheable result by the low-level server's runner (raises on
+        # invalid ttl/scope).
+        cache_hints = build_cache_hints(cache_ttl, cache_scope)
+
         # Handle Lifespan instances (they're callable) or regular lifespan functions
         if lifespan is not None:
             self._lifespan: LifespanCallable[LifespanResultT] = cast(
@@ -404,12 +404,16 @@ class FastMCP(
             self._lifespan = cast(LifespanCallable[LifespanResultT], default_lifespan)
         self._lifespan_result: LifespanResultT | None = None
         self._lifespan_result_set: bool = False
+        # Snapshot of SharedContext ContextVar values captured during the
+        # lifespan, re-applied per request by FastMCPServerMiddleware because
+        # the SDK v2 dispatcher runs handlers in the sender's context.
+        self._shared_context_snapshot: dict[Any, Any] | None = None
         self._lifespan_ref_count: int = 0
         self._lifespan_lock: asyncio.Lock = asyncio.Lock()
         self._started: asyncio.Event = asyncio.Event()
 
         # Generate random ID if no name provided
-        self._mcp_server: LowLevelServer[LifespanResultT, Any] = LowLevelServer[
+        self._mcp_server: LowLevelServer[LifespanResultT] = LowLevelServer[
             LifespanResultT
         ](
             fastmcp=self,
@@ -419,6 +423,7 @@ class FastMCP(
             website_url=website_url,
             icons=icons,
             lifespan=_lifespan_proxy(fastmcp_server=self),
+            cache_hints=cache_hints,
         )
 
         self.auth: AuthProvider | None = auth
@@ -435,11 +440,17 @@ class FastMCP(
             else fastmcp.settings.strict_input_validation
         )
 
-        self.client_log_level: mcp.types.LoggingLevel | None = (
+        self.client_log_level: mcp_types.LoggingLevel | None = (
             client_log_level
             if client_log_level is not None
             else fastmcp.settings.client_log_level
         )
+
+        # Per-session minimum log level requested by clients via logging/setLevel.
+        # Keyed by session id (a sentinel for stdio where session_id is None).
+        # v2 sessions are per-request so this state lives on the server, not the
+        # session object.
+        self._client_log_levels: dict[str, mcp_types.LoggingLevel] = {}
 
         self.experimental_capabilities: dict[str, dict[str, Any]] = (
             experimental_capabilities or {}
@@ -486,7 +497,7 @@ class FastMCP(
         return self._mcp_server.website_url
 
     @property
-    def icons(self) -> list[mcp.types.Icon]:
+    def icons(self) -> list[mcp_types.Icon]:
         if self._mcp_server.icons is None:
             return []
         else:
@@ -616,38 +627,6 @@ class FastMCP(
         """
         self._transforms.append(transform)
 
-    def add_tool_transformation(
-        self, tool_name: str, transformation: ToolTransformConfig
-    ) -> None:
-        """Add a tool transformation.
-
-        .. deprecated::
-            Use ``add_transform(ToolTransform({...}))`` instead.
-        """
-        if fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                "add_tool_transformation is deprecated. Use "
-                "server.add_transform(ToolTransform({tool_name: config})) instead.",
-                FastMCPDeprecationWarning,
-                stacklevel=2,
-            )
-        self.add_transform(ToolTransform({tool_name: transformation}))
-
-    def remove_tool_transformation(self, _tool_name: str) -> None:
-        """Remove a tool transformation.
-
-        .. deprecated::
-            Tool transformations are now immutable. Use enable/disable controls instead.
-        """
-        if fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                "remove_tool_transformation is deprecated and has no effect. "
-                "Transforms are immutable once added. Use server.disable(keys=[...]) "
-                "to hide tools instead.",
-                FastMCPDeprecationWarning,
-                stacklevel=2,
-            )
-
     async def list_tools(self, *, run_middleware: bool = True) -> Sequence[Tool]:
         """List all enabled tools from providers.
 
@@ -658,7 +637,7 @@ class FastMCP(
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
                 mw_context = MiddlewareContext(
-                    message=mcp.types.ListToolsRequest(method="tools/list"),
+                    message=mcp_types.ListToolsRequest(method="tools/list"),
                     source="client",
                     type="request",
                     method="tools/list",
@@ -1195,7 +1174,7 @@ class FastMCP(
         version: VersionSpec | None = None,
         run_middleware: bool = True,
         task_meta: TaskMeta,
-    ) -> mcp.types.CreateTaskResult: ...
+    ) -> mcp_types.CreateTaskResult: ...
 
     async def call_tool(
         self,
@@ -1205,7 +1184,7 @@ class FastMCP(
         version: VersionSpec | None = None,
         run_middleware: bool = True,
         task_meta: TaskMeta | None = None,
-    ) -> ToolResult | mcp.types.CreateTaskResult:
+    ) -> ToolResult | mcp_types.CreateTaskResult:
         """Call a tool by name.
 
         This is the public API for executing tools. By default, middleware is applied.
@@ -1248,10 +1227,12 @@ class FastMCP(
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
                 mw_context = MiddlewareContext[CallToolRequestParams](
-                    message=mcp.types.CallToolRequestParams(
+                    message=mcp_types.CallToolRequestParams(
                         name=name,
                         arguments=arguments or {},
-                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # pydantic alias
+                        # `_meta` carries the app-level `fastmcp` version key, which the
+                        # reserved-key RequestParamsMeta TypedDict can't express statically.
+                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # ty: ignore[invalid-argument-type]
                     ),
                     source="client",
                     type="request",
@@ -1375,7 +1356,7 @@ class FastMCP(
         version: VersionSpec | None = None,
         run_middleware: bool = True,
         task_meta: TaskMeta,
-    ) -> mcp.types.CreateTaskResult: ...
+    ) -> mcp_types.CreateTaskResult: ...
 
     async def read_resource(
         self,
@@ -1384,7 +1365,7 @@ class FastMCP(
         version: VersionSpec | None = None,
         run_middleware: bool = True,
         task_meta: TaskMeta | None = None,
-    ) -> ResourceResult | mcp.types.CreateTaskResult:
+    ) -> ResourceResult | mcp_types.CreateTaskResult:
         """Read a resource by URI.
 
         This is the public API for reading resources. By default, middleware is applied.
@@ -1416,11 +1397,12 @@ class FastMCP(
 
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
-                uri_param = AnyUrl(uri)
                 mw_context = MiddlewareContext(
-                    message=mcp.types.ReadResourceRequestParams(
-                        uri=uri_param,
-                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # pydantic alias
+                    message=mcp_types.ReadResourceRequestParams(
+                        uri=str(uri),
+                        # `_meta` carries the app-level `fastmcp` version key, which the
+                        # reserved-key RequestParamsMeta TypedDict can't express statically.
+                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # ty: ignore[invalid-argument-type]
                     ),
                     source="client",
                     type="request",
@@ -1473,7 +1455,7 @@ class FastMCP(
                             exc_info=True,
                         )
                         raise
-                    except McpError:
+                    except MCPError:
                         logger.exception(f"Error reading resource {uri!r}")
                         raise
                     except Exception as e:
@@ -1517,7 +1499,7 @@ class FastMCP(
                         e.log_level, f"Error reading resource {uri!r}", exc_info=True
                     )
                     raise
-                except McpError:
+                except MCPError:
                     logger.exception(f"Error reading resource {uri!r}")
                     raise
                 except Exception as e:
@@ -1557,7 +1539,7 @@ class FastMCP(
         version: VersionSpec | None = None,
         run_middleware: bool = True,
         task_meta: TaskMeta,
-    ) -> mcp.types.CreateTaskResult: ...
+    ) -> mcp_types.CreateTaskResult: ...
 
     async def render_prompt(
         self,
@@ -1567,7 +1549,7 @@ class FastMCP(
         version: VersionSpec | None = None,
         run_middleware: bool = True,
         task_meta: TaskMeta | None = None,
-    ) -> PromptResult | mcp.types.CreateTaskResult:
+    ) -> PromptResult | mcp_types.CreateTaskResult:
         """Render a prompt by name.
 
         This is the public API for rendering prompts. By default, middleware is applied.
@@ -1594,10 +1576,12 @@ class FastMCP(
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
                 mw_context = MiddlewareContext(
-                    message=mcp.types.GetPromptRequestParams(
+                    message=mcp_types.GetPromptRequestParams(
                         name=name,
                         arguments=arguments,
-                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # pydantic alias
+                        # `_meta` carries the app-level `fastmcp` version key, which the
+                        # reserved-key RequestParamsMeta TypedDict can't express statically.
+                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # ty: ignore[invalid-argument-type]
                     ),
                     source="client",
                     type="request",
@@ -1638,7 +1622,7 @@ class FastMCP(
                         e.log_level, f"Error rendering prompt {name!r}", exc_info=True
                     )
                     raise
-                except McpError:
+                except MCPError:
                     logger.exception(f"Error rendering prompt {name!r}")
                     raise
                 except Exception as e:
@@ -1661,35 +1645,6 @@ class FastMCP(
         """
         return self._local_provider.add_tool(tool)
 
-    def remove_tool(self, name: str, version: str | None = None) -> None:
-        """Remove tool(s) from the server.
-
-        .. deprecated::
-            Use ``mcp.local_provider.remove_tool(name)`` instead.
-
-        Args:
-            name: The name of the tool to remove.
-            version: If None, removes ALL versions. If specified, removes only that version.
-
-        Raises:
-            NotFoundError: If no matching tool is found.
-        """
-        if fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                "remove_tool() is deprecated. Use "
-                "mcp.local_provider.remove_tool(name) instead.",
-                FastMCPDeprecationWarning,
-                stacklevel=2,
-            )
-        try:
-            self._local_provider.remove_tool(name, version)
-        except KeyError:
-            if version is None:
-                raise NotFoundError(f"Tool {name!r} not found") from None
-            raise NotFoundError(
-                f"Tool {name!r} version {version!r} not found"
-            ) from None
-
     @overload
     def tool(
         self,
@@ -1699,11 +1654,10 @@ class FastMCP(
         version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
-        icons: list[mcp.types.Icon] | None = None,
+        icons: list[mcp_types.Icon] | None = None,
         tags: set[str] | None = None,
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
-        exclude_args: list[str] | None = None,
         meta: dict[str, Any] | None = None,
         app: AppConfig | dict[str, Any] | bool | None = None,
         task: bool | TaskConfig | None = None,
@@ -1721,11 +1675,10 @@ class FastMCP(
         version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
-        icons: list[mcp.types.Icon] | None = None,
+        icons: list[mcp_types.Icon] | None = None,
         tags: set[str] | None = None,
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
-        exclude_args: list[str] | None = None,
         meta: dict[str, Any] | None = None,
         app: AppConfig | dict[str, Any] | bool | None = None,
         task: bool | TaskConfig | None = None,
@@ -1742,11 +1695,10 @@ class FastMCP(
         version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
-        icons: list[mcp.types.Icon] | None = None,
+        icons: list[mcp_types.Icon] | None = None,
         tags: set[str] | None = None,
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
         annotations: ToolAnnotations | dict[str, Any] | None = None,
-        exclude_args: list[str] | None = None,
         meta: dict[str, Any] | None = None,
         app: AppConfig | dict[str, Any] | bool | None = None,
         task: bool | TaskConfig | None = None,
@@ -1778,8 +1730,6 @@ class FastMCP(
             tags: Optional set of tags for categorizing the tool
             output_schema: Optional JSON schema for the tool's output
             annotations: Optional annotations about the tool's behavior
-            exclude_args: Optional list of argument names to exclude from the tool schema.
-                Deprecated: Use `Depends()` for dependency injection instead.
             meta: Optional meta information about the tool
 
         Examples:
@@ -1825,7 +1775,6 @@ class FastMCP(
             tags=tags,
             output_schema=output_schema,
             annotations=annotations,
-            exclude_args=exclude_args,
             meta=meta,
             task=task if task is not None else self._support_tasks_by_default,
             timeout=timeout,
@@ -1867,7 +1816,7 @@ class FastMCP(
         version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
-        icons: list[mcp.types.Icon] | None = None,
+        icons: list[mcp_types.Icon] | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
         annotations: Annotations | dict[str, Any] | None = None,
@@ -1998,7 +1947,7 @@ class FastMCP(
         version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
-        icons: list[mcp.types.Icon] | None = None,
+        icons: list[mcp_types.Icon] | None = None,
         tags: set[str] | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
@@ -2014,7 +1963,7 @@ class FastMCP(
         version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
-        icons: list[mcp.types.Icon] | None = None,
+        icons: list[mcp_types.Icon] | None = None,
         tags: set[str] | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
@@ -2029,7 +1978,7 @@ class FastMCP(
         version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
-        icons: list[mcp.types.Icon] | None = None,
+        icons: list[mcp_types.Icon] | None = None,
         tags: set[str] | None = None,
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
@@ -2125,17 +2074,14 @@ class FastMCP(
         self,
         server: FastMCP[LifespanResultT],
         namespace: str | None = None,
-        as_proxy: bool | None = None,
         tool_names: dict[str, str] | None = None,
-        prefix: str | None = None,  # deprecated, use namespace
     ) -> None:
         """Mount another FastMCP server on this server with an optional namespace.
 
-        Unlike importing (with import_server), mounting establishes a dynamic connection
-        between servers. When a client interacts with a mounted server's objects through
-        the parent server, requests are forwarded to the mounted server in real-time.
-        This means changes to the mounted server are immediately reflected when accessed
-        through the parent.
+        Mounting establishes a dynamic connection between servers. When a client
+        interacts with a mounted server's objects through the parent server, requests
+        are forwarded to the mounted server in real-time. This means changes to the
+        mounted server are immediately reflected when accessed through the parent.
 
         When a server is mounted with a namespace:
         - Tools from the mounted server are accessible with namespaced names.
@@ -2161,47 +2107,14 @@ class FastMCP(
             server: The FastMCP server to mount.
             namespace: Optional namespace to use for the mounted server's objects. If None,
                 the server's objects are accessible with their original names.
-            as_proxy: Deprecated. Mounted servers now always have their lifespan and
-                middleware invoked. To create a proxy server, use create_proxy()
-                explicitly before mounting.
             tool_names: Optional mapping of original tool names to custom names. Use this
                 to override namespaced names. Keys are the original tool names from the
                 mounted server.
-            prefix: Deprecated. Use namespace instead.
         """
-        import warnings
-
         from fastmcp.server.providers.fastmcp_provider import FastMCPProvider
 
         if server is self:
             raise ValueError("Cannot mount a server onto itself")
-
-        # Handle deprecated prefix parameter
-        if prefix is not None:
-            warnings.warn(
-                "The 'prefix' parameter is deprecated, use 'namespace' instead",
-                FastMCPDeprecationWarning,
-                stacklevel=2,
-            )
-            if namespace is None:
-                namespace = prefix
-            else:
-                raise ValueError("Cannot specify both 'prefix' and 'namespace'")
-
-        if as_proxy is not None:
-            warnings.warn(
-                "as_proxy is deprecated and will be removed in a future version. "
-                "Mounted servers now always have their lifespan and middleware invoked. "
-                "To create a proxy server, use create_proxy() explicitly.",
-                FastMCPDeprecationWarning,
-                stacklevel=2,
-            )
-            # Still honor the flag for backward compatibility
-            if as_proxy:
-                from fastmcp.server.providers.proxy import FastMCPProxy
-
-                if not isinstance(server, FastMCPProxy):
-                    server = FastMCP.as_proxy(server)
 
         # Warn if parent masks errors but child doesn't (or vice versa)
         if self._mask_error_details and not server._mask_error_details:
@@ -2226,105 +2139,6 @@ class FastMCP(
 
         # Use add_provider with namespace (applies namespace in AggregateProvider)
         self.add_provider(provider, namespace=namespace or "")
-
-    async def import_server(
-        self,
-        server: FastMCP[LifespanResultT],
-        prefix: str | None = None,
-    ) -> None:
-        """
-        Import the MCP objects from another FastMCP server into this one,
-        optionally with a given prefix.
-
-        .. deprecated::
-            Use :meth:`mount` instead. ``import_server`` will be removed in a
-            future version.
-
-        Note that when a server is *imported*, its objects are immediately
-        registered to the importing server. This is a one-time operation and
-        future changes to the imported server will not be reflected in the
-        importing server. Server-level configurations and lifespans are not imported.
-
-        When a server is imported with a prefix:
-        - The tools are imported with prefixed names
-          Example: If server has a tool named "get_weather", it will be
-          available as "prefix_get_weather"
-        - The resources are imported with prefixed URIs using the new format
-          Example: If server has a resource with URI "weather://forecast", it will
-          be available as "weather://prefix/forecast"
-        - The templates are imported with prefixed URI templates using the new format
-          Example: If server has a template with URI "weather://location/{id}", it will
-          be available as "weather://prefix/location/{id}"
-        - The prompts are imported with prefixed names
-          Example: If server has a prompt named "weather_prompt", it will be available as
-          "prefix_weather_prompt"
-
-        When a server is imported without a prefix (prefix=None), its tools, resources,
-        templates, and prompts are imported with their original names.
-
-        Args:
-            server: The FastMCP server to import
-            prefix: Optional prefix to use for the imported server's objects. If None,
-                objects are imported with their original names.
-        """
-        import warnings
-
-        warnings.warn(
-            "import_server is deprecated, use mount() instead",
-            FastMCPDeprecationWarning,
-            stacklevel=2,
-        )
-
-        def add_resource_prefix(uri: str, prefix: str) -> str:
-            """Add prefix to resource URI: protocol://path → protocol://prefix/path."""
-            match = URI_PATTERN.match(uri)
-            if match:
-                protocol, path = match.groups()
-                return f"{protocol}{prefix}/{path}"
-            return uri
-
-        # Import tools from the server
-        for tool in await server.list_tools():
-            if prefix:
-                tool = tool.model_copy(update={"name": f"{prefix}_{tool.name}"})
-            self.add_tool(tool)
-
-        # Import resources and templates from the server
-        for resource in await server.list_resources():
-            if prefix:
-                new_uri = add_resource_prefix(str(resource.uri), prefix)
-                resource = resource.model_copy(update={"uri": new_uri})
-            self.add_resource(resource)
-
-        for template in await server.list_resource_templates():
-            if prefix:
-                new_uri_template = add_resource_prefix(template.uri_template, prefix)
-                template = template.model_copy(
-                    update={"uri_template": new_uri_template}
-                )
-            self.add_template(template)
-
-        # Import prompts from the server
-        for prompt in await server.list_prompts():
-            if prefix:
-                prompt = prompt.model_copy(update={"name": f"{prefix}_{prompt.name}"})
-            self.add_prompt(prompt)
-
-        if server._lifespan != default_lifespan:
-            from warnings import warn
-
-            warn(
-                message="When importing from a server with a lifespan, the lifespan from the imported server will not be used.",
-                category=RuntimeWarning,
-                stacklevel=2,
-            )
-
-        if prefix:
-            logger.debug(
-                f"[{self.name}] Imported server {server.name} with prefix '{prefix}'"
-            )
-        else:
-            logger.debug(f"[{self.name}] Imported server {server.name}")
 
     @classmethod
     def from_openapi(
@@ -2433,43 +2247,6 @@ class FastMCP(
         return cls(name=server_name, providers=[provider], **settings)
 
     @classmethod
-    def as_proxy(
-        cls,
-        backend: (
-            Client[ClientTransportT]
-            | ClientTransport
-            | FastMCP[Any]
-            | FastMCP1Server
-            | AnyUrl
-            | Path
-            | MCPConfig
-            | dict[str, Any]
-            | str
-        ),
-        **settings: Any,
-    ) -> FastMCPProxy:
-        """Create a FastMCP proxy server for the given backend.
-
-        .. deprecated::
-            Use :func:`fastmcp.server.create_proxy` instead.
-            This method will be removed in a future version.
-
-        The `backend` argument can be either an existing `fastmcp.client.Client`
-        instance or any value accepted as the `transport` argument of
-        `fastmcp.client.Client`. This mirrors the convenience of the
-        `fastmcp.client.Client` constructor.
-        """
-        if fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                "FastMCP.as_proxy() is deprecated. Use create_proxy() from "
-                "fastmcp.server instead: `from fastmcp.server import create_proxy`",
-                FastMCPDeprecationWarning,
-                stacklevel=2,
-            )
-        # Call the module-level create_proxy function directly
-        return create_proxy(backend, **settings)
-
-    @classmethod
     def generate_name(cls, name: str | None = None) -> str:
         class_name = cls.__name__
 
@@ -2489,7 +2266,7 @@ def create_proxy(
         Client[ClientTransportT]
         | ClientTransport
         | FastMCP[Any]
-        | FastMCP1Server
+        | SDKServer
         | AnyUrl
         | Path
         | MCPConfig

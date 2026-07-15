@@ -4,12 +4,12 @@ import time
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
-import mcp.types as mcp_types
+import mcp_types
 import pytest
 from anyio import create_task_group
 from dirty_equals import Contains
-from mcp import McpError
-from mcp.types import Icon, TextContent, TextResourceContents
+from mcp import MCPError
+from mcp_types import Icon, TextContent, TextResourceContents
 from pydantic import AnyUrl
 
 from fastmcp import FastMCP
@@ -147,7 +147,7 @@ def fastmcp_server():
                     content=mcp_types.ImageContent(
                         type="image",
                         data="iVBORw0KGgoAAAANSUhEUg==",
-                        mimeType="image/png",
+                        mime_type="image/png",
                     ),
                     role="user",
                 ),
@@ -198,38 +198,6 @@ def test_create_proxy_with_url():
     assert client.transport.url == "http://example.com/mcp/"
 
 
-# --- Deprecated as_proxy tests (verify backwards compatibility) ---
-
-
-async def test_as_proxy_deprecated_with_server(fastmcp_server):
-    """FastMCP.as_proxy should work but emit deprecation warning."""
-    import warnings
-
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        proxy = FastMCP.as_proxy(fastmcp_server)
-        assert len(w) == 1
-        assert issubclass(w[0].category, DeprecationWarning)
-        assert "create_proxy" in str(w[0].message)
-
-    async with Client(proxy) as client:
-        result = await client.call_tool("greet", {"name": "Test"})
-        assert result.data == "Hello, Test!"
-
-
-def test_as_proxy_deprecated_with_url():
-    """FastMCP.as_proxy should work but emit deprecation warning."""
-    import warnings
-
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        proxy = FastMCP.as_proxy("http://example.com/mcp/")
-        assert len(w) == 1
-        assert issubclass(w[0].category, DeprecationWarning)
-
-    assert isinstance(proxy, FastMCPProxy)
-
-
 async def test_proxy_with_async_client_factory():
     """FastMCPProxy should accept an async client_factory."""
 
@@ -259,7 +227,9 @@ async def test_proxy_ping_surfaces_wrong_remote_path():
     async with run_server_async(remote, transport="http") as url:
         proxy = create_proxy(StreamableHttpTransport(url.removesuffix("/mcp")))
 
-        with pytest.raises(McpError, match="Session terminated"):
+        # SDK v2 surfaces a wrong remote path as an HTTP "Not Found" rather than
+        # the v1 "Session terminated" message.
+        with pytest.raises(MCPError, match="Not Found"):
             async with Client(proxy):
                 pass
 
@@ -271,7 +241,7 @@ async def test_proxy_initialize_forwards_remote_connection_error():
         provider_error_strategy="raise",
     )
 
-    with pytest.raises(McpError, match="Client failed to connect"):
+    with pytest.raises(MCPError, match="Client failed to connect"):
         async with Client(proxy):
             pass
 
@@ -294,7 +264,7 @@ async def test_proxy_list_tools_client_surfaces_remote_connection_error():
         provider_error_strategy="raise",
     )
 
-    with pytest.raises(McpError, match="Client failed to connect"):
+    with pytest.raises(MCPError, match="Client failed to connect"):
         async with Client(proxy) as client:
             await client.list_tools()
 
@@ -362,17 +332,22 @@ class TestTools:
         assert tool.description is None
 
     async def test_list_tools_same_as_original(self, fastmcp_server, proxy_server):
-        assert await proxy_server._list_tools_mcp(
-            mcp_types.ListToolsRequest()
-        ) == await fastmcp_server._list_tools_mcp(mcp_types.ListToolsRequest())
+        async with Client(fastmcp_server) as original_client:
+            original = await original_client.list_tools()
+        async with Client(proxy_server) as proxy_client:
+            proxied = await proxy_client.list_tools()
+        assert proxied == original
 
     async def test_call_tool_result_same_as_original(
         self, fastmcp_server: FastMCP, proxy_server: FastMCPProxy
     ):
-        result = await fastmcp_server._call_tool_mcp("greet", {"name": "Alice"})
-        proxy_result = await proxy_server._call_tool_mcp("greet", {"name": "Alice"})
+        async with Client(fastmcp_server) as original_client:
+            result = await original_client.call_tool("greet", {"name": "Alice"})
+        async with Client(proxy_server) as proxy_client:
+            proxy_result = await proxy_client.call_tool("greet", {"name": "Alice"})
 
-        assert result == proxy_result
+        assert result.content == proxy_result.content
+        assert result.data == proxy_result.data
 
     async def test_call_tool_calls_tool(self, proxy_server):
         async with Client(proxy_server) as client:
@@ -389,10 +364,10 @@ class TestTools:
         error_result = mcp_types.CallToolResult(
             content=[
                 mcp_types.ImageContent(
-                    type="image", data="abc123", mimeType="image/png"
+                    type="image", data="abc123", mime_type="image/png"
                 )
             ],
-            isError=True,
+            is_error=True,
         )
         with patch.object(
             Client, "call_tool_mcp", new_callable=AsyncMock, return_value=error_result
@@ -405,7 +380,7 @@ class TestTools:
         """Error responses with empty content should not crash."""
         error_result = mcp_types.CallToolResult(
             content=[],
-            isError=True,
+            is_error=True,
         )
         with patch.object(
             Client, "call_tool_mcp", new_callable=AsyncMock, return_value=error_result
@@ -419,11 +394,11 @@ class TestTools:
         error_result = mcp_types.CallToolResult(
             content=[
                 mcp_types.ImageContent(
-                    type="image", data="abc123", mimeType="image/png"
+                    type="image", data="abc123", mime_type="image/png"
                 )
             ],
-            structuredContent={"detail": "boom"},
-            isError=True,
+            structured_content={"detail": "boom"},
+            is_error=True,
         )
         with patch.object(
             Client, "call_tool_mcp", new_callable=AsyncMock, return_value=error_result
@@ -479,7 +454,7 @@ class TestTools:
         async with Client(proxy_server) as client:
             tools = await client.list_tools()
             greet_tool = next(t for t in tools if t.name == "greet")
-            assert "extra" in greet_tool.inputSchema["properties"]
+            assert "extra" in greet_tool.input_schema["properties"]
 
 
 class TestResources:
@@ -499,9 +474,11 @@ class TestResources:
         assert wave_resource.icons == [Icon(src="https://example.com/wave-icon.png")]
 
     async def test_list_resources_same_as_original(self, fastmcp_server, proxy_server):
-        assert await proxy_server._list_resources_mcp(
-            mcp_types.ListResourcesRequest()
-        ) == await fastmcp_server._list_resources_mcp(mcp_types.ListResourcesRequest())
+        async with Client(fastmcp_server) as original_client:
+            original = await original_client.list_resources()
+        async with Client(proxy_server) as proxy_client:
+            proxied = await proxy_client.list_resources()
+        assert proxied == original
 
     async def test_read_resource(self, proxy_server: FastMCPProxy):
         async with Client(proxy_server) as client:
@@ -546,22 +523,22 @@ class TestResources:
             assert isinstance(original, TextResourceContents)
             assert isinstance(proxied, TextResourceContents)
             assert original.text == proxied.text, f"Content {i} text mismatch"
-            assert original.mimeType == proxied.mimeType, (
+            assert original.mime_type == proxied.mime_type, (
                 f"Content {i} mimeType mismatch"
             )
             assert original.meta == proxied.meta, f"Content {i} meta mismatch"
 
         # Verify the contents are what we expect
         assert original_result[0].text == "First item"
-        assert original_result[0].mimeType == "text/plain"
+        assert original_result[0].mime_type == "text/plain"
         assert original_result[1].text == '{"key": "value"}'
-        assert original_result[1].mimeType == "application/json"
+        assert original_result[1].mime_type == "application/json"
         assert original_result[2].text == "# Markdown\nContent"
-        assert original_result[2].mimeType == "text/markdown"
+        assert original_result[2].mime_type == "text/markdown"
 
     async def test_read_resource_returns_none_if_not_found(self, proxy_server):
         with pytest.raises(
-            McpError, match="Unknown resource: 'resource://nonexistent'"
+            MCPError, match="Resource not found: 'resource://nonexistent'"
         ):
             async with Client(proxy_server) as client:
                 await client.read_resource("resource://nonexistent")
@@ -616,12 +593,10 @@ class TestResourceTemplates:
     async def test_list_resource_templates_same_as_original(
         self, fastmcp_server, proxy_server
     ):
-        result = await fastmcp_server._list_resource_templates_mcp(
-            mcp_types.ListResourceTemplatesRequest()
-        )
-        proxy_result = await proxy_server._list_resource_templates_mcp(
-            mcp_types.ListResourceTemplatesRequest()
-        )
+        async with Client(fastmcp_server) as original_client:
+            result = await original_client.list_resource_templates()
+        async with Client(proxy_server) as proxy_client:
+            proxy_result = await proxy_client.list_resource_templates()
         assert proxy_result == result
 
     @pytest.mark.parametrize("id", [1, 2, 3])
@@ -661,15 +636,15 @@ class TestResourceTemplates:
             assert isinstance(original, TextResourceContents)
             assert isinstance(proxied, TextResourceContents)
             assert original.text == proxied.text, f"Content {i} text mismatch"
-            assert original.mimeType == proxied.mimeType, (
+            assert original.mime_type == proxied.mime_type, (
                 f"Content {i} mimeType mismatch"
             )
 
         # Verify the contents are what we expect
         assert original_result[0].text == "Item test123 - First"
-        assert original_result[0].mimeType == "text/plain"
+        assert original_result[0].mime_type == "text/plain"
         assert original_result[1].text == '{"id": "test123", "status": "active"}'
-        assert original_result[1].mimeType == "application/json"
+        assert original_result[1].mime_type == "application/json"
 
     async def test_proxy_can_overwrite_proxied_resource_template(self, proxy_server):
         """
@@ -706,7 +681,7 @@ class TestResourceTemplates:
         async with Client(proxy_server) as client:
             templates = await client.list_resource_templates()
             user_template = next(
-                t for t in templates if t.uriTemplate == "data://user/{user_id}"
+                t for t in templates if t.uri_template == "data://user/{user_id}"
             )
             assert user_template.name == "overwritten_get_user"
 
@@ -888,7 +863,7 @@ class TestPrompts:
         # Verify the image content is preserved as ImageContent, not JSON text
         assert isinstance(proxy_result.messages[1].content, mcp_types.ImageContent)
         assert proxy_result.messages[1].content.data == "iVBORw0KGgoAAAANSUhEUg=="
-        assert proxy_result.messages[1].content.mimeType == "image/png"
+        assert proxy_result.messages[1].content.mime_type == "image/png"
 
 
 async def test_proxy_handles_multiple_concurrent_tasks_correctly(

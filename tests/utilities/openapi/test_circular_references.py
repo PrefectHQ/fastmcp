@@ -102,13 +102,13 @@ class TestCircularReferencesSerialization:
 
         # Build an MCP Tool with this schema and try to serialize it —
         # this is the exact path that crashes in the reported issue.
-        from mcp.types import Tool as MCPTool
+        from mcp_types import Tool as MCPTool
 
         tool = MCPTool(
             name="get_node",
             description="Get a node",
-            inputSchema={"type": "object", "properties": {}},
-            outputSchema=output_schema,
+            input_schema={"type": "object", "properties": {}},
+            output_schema=output_schema,
         )
         # This must not raise ValueError: Circular reference detected
         tool.model_dump(by_alias=True, mode="json", exclude_none=True)
@@ -148,13 +148,13 @@ class TestCircularReferencesSerialization:
         )
         assert output_schema is not None
 
-        from mcp.types import Tool as MCPTool
+        from mcp_types import Tool as MCPTool
 
         tool = MCPTool(
             name="get_pr",
             description="Get a pull request",
-            inputSchema={"type": "object", "properties": {}},
-            outputSchema=output_schema,
+            input_schema={"type": "object", "properties": {}},
+            output_schema=output_schema,
         )
         tool.model_dump(by_alias=True, mode="json", exclude_none=True)
 

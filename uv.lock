@@ -10,11 +10,13 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
+exclude-newer = "2026-06-29T14:57:29.757967Z"
 exclude-newer-span = "P1W"
 
 [options.exclude-newer-package]
+mcp-types = false
 prefab-ui = false
+mcp = false
 
 [manifest]
 members = [
@@ -953,6 +955,7 @@ requires-dist = [{ name = "fastmcp-slim", extras = ["client", "server"], editabl
 name = "fastmcp-slim"
 source = { editable = "fastmcp_slim" }
 dependencies = [
+    { name = "mcp-types" },
     { name = "platformdirs" },
     { name = "pydantic", extra = ["email"] },
     { name = "pydantic-settings" },
@@ -1044,20 +1047,21 @@ requires-dist = [
     { name = "jsonref", marker = "extra == 'gemini'", specifier = ">=1.1.0" },
     { name = "jsonref", marker = "extra == 'server'", specifier = ">=1.1.0" },
     { name = "jsonschema-path", marker = "extra == 'server'", specifier = ">=0.3.4" },
-    { name = "mcp", marker = "extra == 'client'", specifier = ">=1.24.0,<2.0" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.24.0,<2.0" },
-    { name = "mcp", marker = "extra == 'server'", specifier = ">=1.24.0,<2.0" },
+    { name = "mcp", marker = "extra == 'client'", specifier = "==2.0.0b1" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = "==2.0.0b1" },
+    { name = "mcp", marker = "extra == 'server'", specifier = "==2.0.0b1" },
+    { name = "mcp-types", specifier = "==2.0.0b1" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=1.102.0" },
     { name = "openapi-pydantic", marker = "extra == 'server'", specifier = ">=0.5.1" },
-    { name = "opentelemetry-api", marker = "extra == 'client'", specifier = ">=1.20.0" },
-    { name = "opentelemetry-api", marker = "extra == 'mcp'", specifier = ">=1.20.0" },
-    { name = "opentelemetry-api", marker = "extra == 'server'", specifier = ">=1.20.0" },
+    { name = "opentelemetry-api", marker = "extra == 'client'", specifier = ">=1.28.0" },
+    { name = "opentelemetry-api", marker = "extra == 'mcp'", specifier = ">=1.28.0" },
+    { name = "opentelemetry-api", marker = "extra == 'server'", specifier = ">=1.28.0" },
     { name = "packaging", marker = "extra == 'server'", specifier = ">=24.0" },
     { name = "platformdirs", specifier = ">=4.0.0" },
     { name = "prefab-ui", marker = "extra == 'apps'", specifier = ">=0.18.0" },
     { name = "py-key-value-aio", extras = ["filetree", "keyring", "memory"], marker = "extra == 'client'", specifier = ">=0.4.4,<0.5.0" },
     { name = "py-key-value-aio", extras = ["filetree", "keyring", "memory"], marker = "extra == 'server'", specifier = ">=0.4.4,<0.5.0" },
-    { name = "pydantic", extras = ["email"], specifier = ">=2.11.7" },
+    { name = "pydantic", extras = ["email"], specifier = ">=2.12.0" },
     { name = "pydantic-monty", marker = "extra == 'code-mode'", specifier = "==0.0.17" },
     { name = "pydantic-settings", specifier = ">=2.0.0" },
     { name = "pydocket", marker = "extra == 'tasks'", specifier = ">=0.20.0" },
@@ -1660,13 +1664,15 @@ wheels = [
 
 [[package]]
 name = "mcp"
-version = "1.26.0"
+version = "2.0.0b1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
     { name = "httpx" },
     { name = "httpx-sse" },
     { name = "jsonschema" },
+    { name = "mcp-types" },
+    { name = "opentelemetry-api" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyjwt", extra = ["crypto"] },
@@ -1678,9 +1684,22 @@ dependencies = [
     { name = "typing-inspection" },
     { name = "uvicorn", marker = "sys_platform != 'emscripten'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fc/6d/62e76bbb8144d6ed86e202b5edd8a4cb631e7c8130f3f4893c3f90262b10/mcp-1.26.0.tar.gz", hash = "sha256:db6e2ef491eecc1a0d93711a76f28dec2e05999f93afd48795da1c1137142c66", size = 608005, upload-time = "2026-01-24T19:40:32.468Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d6/78/9f540a2f8f673973c9dee7977d020a0c10b97be3a6417a833bc3af166811/mcp-2.0.0b1.tar.gz", hash = "sha256:f0bb4543507117f872613fc76bd7b73cc2a8f6ddd9426f0402f268447f21b260", size = 1478434, upload-time = "2026-06-30T23:24:38.363Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fd/d9/eaa1f80170d2b7c5ba23f3b59f766f3a0bb41155fbc32a69adfa1adaaef9/mcp-1.26.0-py3-none-any.whl", hash = "sha256:904a21c33c25aa98ddbeb47273033c435e595bbacfdb177f4bd87f6dceebe1ca", size = 233615, upload-time = "2026-01-24T19:40:30.652Z" },
+    { url = "https://files.pythonhosted.org/packages/ac/bb/9c5c4e428e63d40b5542cfc9c61a0438943ccb260bf9929dc02c47527235/mcp-2.0.0b1-py3-none-any.whl", hash = "sha256:7e169929da99487b1998f8f53548bb93ff5157165f2f5a10fb45202c02a91fce", size = 320414, upload-time = "2026-06-30T23:24:34.788Z" },
+]
+
+[[package]]
+name = "mcp-types"
+version = "2.0.0b1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2b/88/f3e4322a5bfc382f8851e584f2e2c87354467dc17fb602dd4b13dee65b7c/mcp_types-2.0.0b1.tar.gz", hash = "sha256:6a26910a737c4cd4de36c7d5629febe7d33d4556a9d196166b5c7187a6516944", size = 65785, upload-time = "2026-06-30T23:24:39.796Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3f/05/2da79c73dd07d028163c2b24d4cc6e988da11dff83f7902a07d69a87df80/mcp_types-2.0.0b1-py3-none-any.whl", hash = "sha256:c1b22b56b0ba7b1d51c84dc99afdd603ae225c55e9e8f07477774552bf34c8cd", size = 68945, upload-time = "2026-06-30T23:24:36.671Z" },
 ]
 
 [[package]]

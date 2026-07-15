@@ -9,14 +9,14 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, ClassVar, overload
 from urllib.parse import parse_qs, quote, unquote
 
-import mcp.types
-from mcp.types import Annotations, Icon
+import mcp_types
+from mcp_types import Annotations, Icon
 from pydantic.json_schema import SkipJsonSchema
 
 if TYPE_CHECKING:
     from docket import Docket
     from docket.execution import Execution
-from mcp.types import ResourceTemplate as SDKResourceTemplate
+from mcp_types import ResourceTemplate as SDKResourceTemplate
 from pydantic import (
     Field,
     field_validator,
@@ -264,11 +264,11 @@ class ResourceTemplate(FastMCPComponent):
     @overload
     async def _read(
         self, uri: str, params: dict[str, Any], task_meta: TaskMeta
-    ) -> mcp.types.CreateTaskResult: ...
+    ) -> mcp_types.CreateTaskResult: ...
 
     async def _read(
         self, uri: str, params: dict[str, Any], task_meta: TaskMeta | None = None
-    ) -> ResourceResult | mcp.types.CreateTaskResult:
+    ) -> ResourceResult | mcp_types.CreateTaskResult:
         """Server entry point that handles task routing.
 
         This allows ANY ResourceTemplate subclass to support background execution
@@ -323,9 +323,9 @@ class ResourceTemplate(FastMCPComponent):
 
         return SDKResourceTemplate(
             name=overrides.get("name", self.name),
-            uriTemplate=overrides.get("uriTemplate", self.uri_template),
+            uri_template=overrides.get("uriTemplate", self.uri_template),
             description=overrides.get("description", self.description),
-            mimeType=overrides.get("mimeType", self.mime_type),
+            mime_type=overrides.get("mimeType", self.mime_type),
             title=overrides.get("title", self.title),
             icons=overrides.get("icons", self.icons),
             annotations=overrides.get("annotations", self.annotations),
@@ -340,10 +340,10 @@ class ResourceTemplate(FastMCPComponent):
         # Note: This creates a simple ResourceTemplate instance. For function-based templates,
         # the original function is lost, which is expected for remote templates.
         return cls(
-            uri_template=mcp_template.uriTemplate,
+            uri_template=mcp_template.uri_template,
             name=mcp_template.name,
             description=mcp_template.description,
-            mime_type=mcp_template.mimeType or "text/plain",
+            mime_type=mcp_template.mime_type or "text/plain",
             parameters={},  # Remote templates don't have local parameters
         )
 
@@ -402,11 +402,11 @@ class FunctionResourceTemplate(ResourceTemplate):
     @overload
     async def _read(
         self, uri: str, params: dict[str, Any], task_meta: TaskMeta
-    ) -> mcp.types.CreateTaskResult: ...
+    ) -> mcp_types.CreateTaskResult: ...
 
     async def _read(
         self, uri: str, params: dict[str, Any], task_meta: TaskMeta | None = None
-    ) -> ResourceResult | mcp.types.CreateTaskResult:
+    ) -> ResourceResult | mcp_types.CreateTaskResult:
         """Optimized server entry point that skips ephemeral resource creation.
 
         For FunctionResourceTemplate, we can call read() directly instead of

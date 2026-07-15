@@ -343,8 +343,6 @@ def extract_components(module: ModuleType) -> list[FastMCPComponent]:
                     annotations=meta.annotations,
                     meta=meta.meta,
                     task=resolved_task,
-                    exclude_args=meta.exclude_args,
-                    serializer=meta.serializer,
                     timeout=meta.timeout,
                     auth=meta.auth,
                     run_in_thread=meta.run_in_thread,

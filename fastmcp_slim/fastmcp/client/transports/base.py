@@ -1,12 +1,12 @@
 import abc
 import contextlib
-import datetime
-from collections.abc import AsyncIterator
-from typing import Literal, TypeVar
+from collections.abc import AsyncIterator, Sequence
+from typing import Any, Literal, TypeVar
 
 import httpx
-import mcp.types
+import mcp_types
 from mcp import ClientSession
+from mcp.client.extension import NotificationBinding
 from mcp.client.session import (
     ElicitationFnT,
     ListRootsFnT,
@@ -23,14 +23,15 @@ ClientTransportT = TypeVar("ClientTransportT", bound="ClientTransport")
 class SessionKwargs(TypedDict, total=False):
     """Keyword arguments for the MCP ClientSession constructor."""
 
-    read_timeout_seconds: datetime.timedelta | None
+    read_timeout_seconds: float | None
     sampling_callback: SamplingFnT | None
-    sampling_capabilities: mcp.types.SamplingCapability | None
+    sampling_capabilities: mcp_types.SamplingCapability | None
     list_roots_callback: ListRootsFnT | None
     logging_callback: LoggingFnT | None
     elicitation_callback: ElicitationFnT | None
     message_handler: MessageHandlerFnT | None
-    client_info: mcp.types.Implementation | None
+    client_info: mcp_types.Implementation | None
+    notification_bindings: Sequence[NotificationBinding[Any]] | None
 
 
 class ClientTransport(abc.ABC):
