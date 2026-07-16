@@ -34,7 +34,12 @@ from fastmcp.client.roots import RootsList, create_roots_callback
 from fastmcp.client.sampling import create_sampling_callback
 from fastmcp.client.telemetry import client_span
 from fastmcp.client.transports import ClientTransportT
-from fastmcp.exceptions import ResourceError
+from fastmcp.exceptions import (
+    InvalidToolOutputSchemaError,
+    ResourceError,
+    ToolError,
+    ToolOutputValidationError,
+)
 from fastmcp.mcp_config import MCPConfig
 from fastmcp.prompts import Message, Prompt, PromptResult
 from fastmcp.prompts.base import PromptArgument
@@ -209,9 +214,15 @@ class ProxyTool(Tool):
                     dict(req_ctx.meta) if req_ctx is not None and req_ctx.meta else None
                 )
 
-                result = await client.call_tool_mcp(
-                    name=backend_name, arguments=arguments, meta=meta
-                )
+                try:
+                    result = await client.call_tool_mcp(
+                        name=backend_name, arguments=arguments, meta=meta
+                    )
+                except (
+                    ToolOutputValidationError,
+                    InvalidToolOutputSchemaError,
+                ) as error:
+                    raise ToolError(str(error)) from None
             # Pass an upstream error result through faithfully rather than
             # collapsing it into a raised ToolError — this preserves the
             # backend's content (including non-text and structured content),

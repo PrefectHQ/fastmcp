@@ -7,6 +7,8 @@ import weakref
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
 import mcp_types
+from jsonschema.exceptions import SchemaError as JSONSchemaError
+from jsonschema.exceptions import ValidationError as JSONSchemaValidationError
 from mcp.client.caching import CacheMode
 from opentelemetry.trace import Status, StatusCode
 from pydantic import RootModel
@@ -18,7 +20,11 @@ if TYPE_CHECKING:
 from fastmcp.client.progress import ProgressHandler
 from fastmcp.client.tasks import ToolTask
 from fastmcp.client.telemetry import client_span
-from fastmcp.exceptions import ToolError
+from fastmcp.exceptions import (
+    InvalidToolOutputSchemaError,
+    ToolError,
+    ToolOutputValidationError,
+)
 from fastmcp.telemetry import inject_trace_context
 from fastmcp.utilities.json_schema_type import json_schema_to_type
 from fastmcp.utilities.logging import get_logger
@@ -31,6 +37,72 @@ AUTO_PAGINATION_MAX_PAGES = 250
 
 # Type alias for task response union (SEP-1686 graceful degradation)
 ToolTaskResponseUnion = RootModel[mcp_types.CreateTaskResult | mcp_types.CallToolResult]
+
+
+def _translate_tool_output_error(
+    tool_name: str, error: RuntimeError
+) -> ToolOutputValidationError | InvalidToolOutputSchemaError | None:
+    """Translate SDK output-schema failures without retaining returned data."""
+    current = error.__cause__ or error.__context__
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, JSONSchemaError):
+            return InvalidToolOutputSchemaError(tool_name)
+        if isinstance(current, JSONSchemaValidationError):
+            path = tuple(current.absolute_path)
+            rule = current.validator if isinstance(current.validator, str) else None
+
+            expected_types: tuple[str, ...] = ()
+            if rule == "type":
+                value = current.validator_value
+                if isinstance(value, str):
+                    candidates = (value,)
+                elif isinstance(value, list) and all(
+                    isinstance(item, str) for item in value
+                ):
+                    candidates = tuple(value)
+                else:
+                    candidates = ()
+                json_types = {
+                    "array",
+                    "boolean",
+                    "integer",
+                    "null",
+                    "number",
+                    "object",
+                    "string",
+                }
+                if all(candidate in json_types for candidate in candidates):
+                    expected_types = candidates
+
+            instance = current.instance
+            if instance is None:
+                received_type = "null"
+            elif isinstance(instance, bool):
+                received_type = "boolean"
+            elif isinstance(instance, str):
+                received_type = "string"
+            elif isinstance(instance, dict):
+                received_type = "object"
+            elif isinstance(instance, list):
+                received_type = "array"
+            elif isinstance(instance, int):
+                received_type = "integer"
+            elif isinstance(instance, float):
+                received_type = "number"
+            else:
+                received_type = None
+
+            return ToolOutputValidationError(
+                tool_name=tool_name,
+                path=path,
+                rule=rule,
+                expected_types=expected_types,
+                received_type=received_type,
+            )
+        current = current.__cause__ or current.__context__
+    return None
 
 
 class ClientToolsMixin:
@@ -210,10 +282,25 @@ class ClientToolsMixin:
                     allow_input_required=True,
                 )
 
-            first = await self._await_with_session_monitoring(_retry(None, None))
-            result = await self._await_with_session_monitoring(
-                self._drive_input_required(first, _retry)
-            )
+            result: mcp_types.CallToolResult | None = None
+            output_error: (
+                ToolOutputValidationError | InvalidToolOutputSchemaError | None
+            ) = None
+            try:
+                first = await self._await_with_session_monitoring(_retry(None, None))
+                result = await self._await_with_session_monitoring(
+                    self._drive_input_required(first, _retry)
+                )
+            except RuntimeError as error:
+                output_error = _translate_tool_output_error(name, error)
+                if output_error is None:
+                    raise
+
+            # Raise outside the SDK exception handler so the payload-bearing
+            # RuntimeError is not attached to the safe exception's context.
+            if output_error is not None:
+                raise output_error
+            result = cast(mcp_types.CallToolResult, result)
 
             # Reflect tool-level errors on the span so callers see ERROR
             # status even though the MCP protocol call itself succeeded.

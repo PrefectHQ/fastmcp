@@ -72,6 +72,44 @@ class ClientError(Exception):
     """Error in client operations."""
 
 
+class ToolOutputValidationError(ClientError):
+    """An upstream tool returned data that violates its output schema."""
+
+    def __init__(
+        self,
+        tool_name: str,
+        path: tuple[str | int, ...],
+        rule: str | None,
+        expected_types: tuple[str, ...],
+        received_type: str | None,
+    ) -> None:
+        self.tool_name = tool_name
+        self.path = path
+        self.rule = rule
+        self.expected_types = expected_types
+        self.received_type = received_type
+
+        location = ".".join(str(part) for part in path) or "$"
+        message = (
+            f"Tool {tool_name!r} returned data that does not match its declared "
+            f"output schema at {location!r}"
+        )
+        if expected_types and received_type is not None:
+            expected = " or ".join(expected_types)
+            message += f": expected {expected}, received {received_type}"
+        elif rule is not None:
+            message += f": validation rule {rule!r} failed"
+        super().__init__(f"{message}.")
+
+
+class InvalidToolOutputSchemaError(ClientError):
+    """An upstream tool advertised an invalid output schema."""
+
+    def __init__(self, tool_name: str) -> None:
+        self.tool_name = tool_name
+        super().__init__(f"Tool {tool_name!r} advertised an invalid output schema.")
+
+
 class NotFoundError(Exception):
     """Object not found."""
 
