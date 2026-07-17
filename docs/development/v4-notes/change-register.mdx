@@ -219,6 +219,21 @@ Proxy forwarding handlers stash the request context so a backend that issues a s
 
 *Verify:* commit `1ac166bd`, `server/providers/proxy.py`.
 
+### Shared response cache via `KeyValueResponseCacheStore` — New
+
+The SDK's client response cache (SEP-2549) reads and writes through a pluggable `ResponseCacheStore`; the default is a per-client in-memory LRU. FastMCP adds `KeyValueResponseCacheStore`, an adapter over the same `AsyncKeyValue` key-value abstraction the event store and OAuth proxy already use, so a fleet of clients (e.g. proxy replicas) can share one Redis-backed response cache. Pass it via `CacheConfig(store=...)`; a custom store requires an explicit `partition` (SDK) and `target_id` (FastMCP). Results serialize through a type-tagged envelope validated against an allowlist of cacheable result models — an unknown tag is a cache miss, never an import-by-name — and each adapter owns its own collection so `clear()` never touches another tenant.
+
+```python
+from fastmcp.client.caching import KeyValueResponseCacheStore
+from mcp.client.caching import CacheConfig
+from key_value.aio.stores.redis import RedisStore
+
+store = KeyValueResponseCacheStore(storage=RedisStore(url="redis://localhost"))
+config = CacheConfig(store=store, partition="tenant-a", target_id="weather-api")
+```
+
+*Verify:* `fastmcp_slim/fastmcp/client/caching.py`, `tests/client/client/test_kv_response_cache.py`.
+
 ## HTTP
 
 The maintainer asked whether FastMCP can now delete its custom HTTP app and let the SDK's `Server.streamable_http_app()` handle everything. The answer for this PR is **no** — every override earns its keep. Convergence is a v4 project gated on three upstream additions (see [Feature Program](/development/v4-notes/feature-program)).
