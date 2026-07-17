@@ -700,6 +700,8 @@ For each ID-JAG presented at the token endpoint, the proxy checks that:
 - the `iss` claim is one of the configured `trusted_issuers`;
 - the signature verifies against the issuer's published keys;
 - the `aud` claim identifies this authorization server;
+- the signed `client_id` claim matches the client presenting the assertion — an assertion the IdP minted for one client cannot be redeemed by another;
+- the signed `resource` claim names this server — an assertion minted for a different MCP server behind the same IdP is rejected;
 - `exp` (and `iat`/`nbf`, when present) place the assertion within a short lifetime and its validity window; and
 - the `jti` has not been seen before, preventing replay.
 

@@ -30,6 +30,7 @@ from tests.server.auth.oauth_proxy.conftest import MockTokenVerifier
 BASE_URL = "https://myserver.com"
 ISSUER = "https://login.acme-corp.com"
 JWKS_URI = "https://login.acme-corp.com/jwks"
+RESOURCE = f"{BASE_URL}/mcp"
 
 
 def _b64url_json(value: object) -> str:
@@ -62,8 +63,15 @@ def _mint_id_jag(
     scope: str | None = None,
     include_iat: bool = True,
     nbf_offset: int | None = None,
+    client_id: str | None = "mcp-client",
+    resource: str | None = RESOURCE,
 ) -> str:
-    """Mint a fake ID-JAG JWT with full control over header and claims."""
+    """Mint a fake ID-JAG JWT with full control over header and claims.
+
+    `client_id` and `resource` default to values matching the standard test
+    client and this server's resource URL — SEP-990 binds the assertion to
+    both, and the exchange enforces the bindings. Pass `None` to omit.
+    """
     now = int(time.time())
     header = {"alg": "RS256", "typ": typ, "kid": "idp-key-1"}
     payload: dict = {
@@ -73,6 +81,10 @@ def _mint_id_jag(
         "exp": now + expires_in,
         "jti": jti,
     }
+    if client_id is not None:
+        payload["client_id"] = client_id
+    if resource is not None:
+        payload["resource"] = resource
     if include_iat:
         payload["iat"] = now
     if nbf_offset is not None:
@@ -503,6 +515,56 @@ class TestValidationMatrix:
         assert resp.status_code == 401
         assert resp.json()["error"] == "invalid_grant"
 
+    async def test_assertion_for_other_client_rejected(
+        self, idp_key: RSAKeyPair, config: IdentityAssertion
+    ):
+        # SEP-990: the IdP signs which client the assertion was minted for.
+        # A registered client must not be able to redeem an assertion minted
+        # for a different client — with public clients, this signed binding is
+        # the control that stops cross-client redemption of leaked assertions.
+        assertion = _mint_id_jag(idp_key, client_id="some-other-client")
+
+        resp = await _post_token(proxy=_make_proxy(config), assertion=assertion)
+
+        assert resp.status_code == 401
+        assert resp.json()["error"] == "invalid_grant"
+
+    async def test_assertion_without_client_id_rejected(
+        self, idp_key: RSAKeyPair, config: IdentityAssertion
+    ):
+        assertion = _mint_id_jag(idp_key, client_id=None)
+
+        resp = await _post_token(proxy=_make_proxy(config), assertion=assertion)
+
+        assert resp.status_code == 401
+        assert resp.json()["error"] == "invalid_grant"
+
+    async def test_assertion_for_other_resource_rejected(
+        self, idp_key: RSAKeyPair, config: IdentityAssertion
+    ):
+        # The signed resource claim governs: an assertion minted for server A
+        # must not be redeemable at server B behind the same IdP.
+        assertion = _mint_id_jag(
+            idp_key, resource="https://other-server.example.com/mcp"
+        )
+
+        resp = await _post_token(proxy=_make_proxy(config), assertion=assertion)
+
+        assert resp.status_code == 401
+        assert resp.json()["error"] == "invalid_grant"
+
+    async def test_assertion_without_resource_rejected(
+        self, idp_key: RSAKeyPair, config: IdentityAssertion
+    ):
+        # When the proxy knows its resource URL, an assertion that names no
+        # resource cannot be audience-restricted per SEP-990 and is rejected.
+        assertion = _mint_id_jag(idp_key, resource=None)
+
+        resp = await _post_token(proxy=_make_proxy(config), assertion=assertion)
+
+        assert resp.status_code == 401
+        assert resp.json()["error"] == "invalid_grant"
+
     async def test_resource_mismatch_rejected(
         self,
         idp_key: RSAKeyPair,
@@ -582,6 +644,8 @@ class TestAlgorithmConfig:
             "exp": now + 120,
             "iat": now,
             "jti": "jti-es256-1",
+            "client_id": "mcp-client",
+            "resource": RESOURCE,
         }
         assertion = jwt.encode(header, payload, ec_key, algorithms=["ES256"])
 
