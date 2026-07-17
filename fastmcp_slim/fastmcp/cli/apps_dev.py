@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
-import httpcore
+import httpcore2
 import httpx2
 import uvicorn
 from starlette.applications import Starlette
@@ -1577,7 +1577,7 @@ def _make_dev_app(
                 httpx2.RemoteProtocolError,
                 httpx2.ReadError,
                 httpx2.ReadTimeout,
-                httpcore.RemoteProtocolError,
+                httpcore2.RemoteProtocolError,
             ):
                 pass  # Connection closed during shutdown — not an error
             finally:
