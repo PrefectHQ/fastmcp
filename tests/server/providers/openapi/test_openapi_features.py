@@ -15,7 +15,6 @@ from fastmcp.server.providers.openapi.components import (
     _redact_headers,
 )
 from fastmcp.server.providers.openapi.routing import MCPType, RouteMap
-
 from fastmcp.utilities.openapi.models import HTTPRoute, ResponseInfo
 
 # Real client used only to delegate build_request on mocked clients - never sends.
