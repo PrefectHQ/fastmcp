@@ -547,7 +547,11 @@ def read_doc(path: str) -> str:
 Some parameters legitimately carry values that look like traversal — a git ref, a version range, an opaque token. Exempt them by name with `ResourceSecurity`:
 
 ```python
+from fastmcp import FastMCP
 from fastmcp.resources import ResourceSecurity
+
+mcp = FastMCP(name="DocsServer")
+
 
 @mcp.resource(
     "git://diff/{ref}",
@@ -560,25 +564,32 @@ def git_diff(ref: str) -> str:
 
 ##### Disabling screening
 
-Pass `security=None` to turn screening off for a single component, or set a server-wide default with `resource_security`:
+Pass `security=None` to turn screening off for a single component:
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP(name="DocsServer")
+
+
+@mcp.resource("raw://{value}", security=None)
+def raw(value: str) -> str: ...
+```
+
+Or set a server-wide default with `resource_security`, which applies to every templated resource that does not set its own `security`:
 
 ```python
 from fastmcp import FastMCP
 from fastmcp.resources import ResourceSecurity
 
-# Per-component: this template is not screened
-@mcp.resource("raw://{value}", security=None)
-def raw(value: str) -> str: ...
-
-# Server-wide default (applies to every templated resource that
-# does not set its own `security`):
-mcp = FastMCP(
+# Relax one check across the whole server:
+relaxed = FastMCP(
     name="DocsServer",
     resource_security=ResourceSecurity(reject_absolute_paths=False),
 )
 
 # Or disable screening entirely across the server:
-mcp = FastMCP(name="DocsServer", resource_security=None)
+unscreened = FastMCP(name="DocsServer", resource_security=None)
 ```
 
 A per-component `security` always overrides the server default.
