@@ -42,6 +42,7 @@ from fastmcp.server.middleware.caching import (
 )
 from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext
 from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.utilities.tasks import TaskConfig
 
 TEST_URI = AnyUrl("https://test_uri")
 
@@ -351,6 +352,37 @@ class TestResponseCachingMiddlewareIntegration:
             assert len(post_tool_list) == 5
 
             assert pre_tool_list == post_tool_list
+
+    async def test_list_operations_preserve_component_metadata(self):
+        """Base component fields should survive conversion through the cache."""
+        icon = mcp_types.Icon(src="https://example.com/component.png")
+        mcp = FastMCP("MetadataServer")
+        mcp.add_middleware(ResponseCachingMiddleware())
+
+        @mcp.tool(icons=[icon], task=TaskConfig(mode="optional"))
+        async def greet() -> str:
+            return "hello"
+
+        @mcp.resource("resource://metadata", icons=[icon])
+        def metadata_resource() -> str:
+            return "resource"
+
+        @mcp.prompt(icons=[icon])
+        def metadata_prompt() -> str:
+            return "prompt"
+
+        async with Client(mcp) as client:
+            for _ in range(2):
+                tools = await client.list_tools()
+                resources = await client.list_resources()
+                prompts = await client.list_prompts()
+
+                assert tools[0].icons == [icon]
+                assert tools[0].execution == mcp_types.ToolExecution(
+                    task_support="optional"
+                )
+                assert resources[0].icons == [icon]
+                assert prompts[0].icons == [icon]
 
     async def test_call_tool(
         self,

@@ -314,18 +314,8 @@ class ResponseCachingMiddleware(Middleware):
         tools: Sequence[Tool] = await call_next(context)
 
         # Turn any subclass of Tool into a Tool
-        cachable_tools: list[Tool] = [
-            Tool(
-                name=tool.name,
-                title=tool.title,
-                description=tool.description,
-                parameters=tool.parameters,
-                output_schema=tool.output_schema,
-                annotations=tool.annotations,
-                meta=tool.meta,
-                tags=tool.tags,
-            )
-            for tool in tools
+        cachable_tools = [
+            Tool.model_validate(tool.model_dump(), extra="ignore") for tool in tools
         ]
 
         await self._list_tools_cache.put(
@@ -355,17 +345,8 @@ class ResponseCachingMiddleware(Middleware):
         resources: Sequence[Resource] = await call_next(context)
 
         # Turn any subclass of Resource into a Resource
-        cachable_resources: list[Resource] = [
-            Resource(
-                name=resource.name,
-                title=resource.title,
-                description=resource.description,
-                tags=resource.tags,
-                meta=resource.meta,
-                mime_type=resource.mime_type,
-                annotations=resource.annotations,
-                uri=resource.uri,
-            )
+        cachable_resources = [
+            Resource.model_validate(resource.model_dump(), extra="ignore")
             for resource in resources
         ]
 
@@ -396,15 +377,8 @@ class ResponseCachingMiddleware(Middleware):
         prompts: Sequence[Prompt] = await call_next(context)
 
         # Turn any subclass of Prompt into a Prompt
-        cachable_prompts: list[Prompt] = [
-            Prompt(
-                name=prompt.name,
-                title=prompt.title,
-                description=prompt.description,
-                tags=prompt.tags,
-                meta=prompt.meta,
-                arguments=prompt.arguments,
-            )
+        cachable_prompts = [
+            Prompt.model_validate(prompt.model_dump(), extra="ignore")
             for prompt in prompts
         ]
 
