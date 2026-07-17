@@ -6,7 +6,7 @@ icon: chart-line
 tag: NEW
 ---
 
-FastMCP includes native OpenTelemetry instrumentation for observability. Traces are automatically generated for tool, prompt, resource, and resource template operations, providing visibility into server behavior, request handling, and provider delegation chains.
+FastMCP includes native OpenTelemetry instrumentation for observability. Traces are automatically generated for tool, prompt, resource, resource template, and task management operations, providing visibility into server behavior, request handling, and provider delegation chains.
 
 ## How It Works
 
@@ -69,12 +69,13 @@ The server creates spans for each operation using [MCP semantic conventions](htt
 | `tools/call {name}` | Tool execution (e.g., `tools/call get_weather`) |
 | `resources/read` | Resource read (URI in `mcp.resource.uri` attribute, not span name) |
 | `prompts/get {name}` | Prompt render (e.g., `prompts/get greeting`) |
+| `tasks/{operation}` | Task management (`tasks/get`, `tasks/result`, `tasks/list`, or `tasks/cancel`) |
 
 For mounted servers, an additional `delegate {name}` span shows the delegation to the child server.
 
 ### Client Spans
 
-The FastMCP client creates spans for outgoing requests with the same naming pattern (`tools/call {name}`, `resources/read`, `prompts/get {name}`).
+The FastMCP client creates spans for outgoing requests with the same naming pattern (`tools/call {name}`, `resources/read`, `prompts/get {name}`, and `tasks/{operation}`).
 
 ### Span Hierarchy
 
@@ -94,6 +95,54 @@ tools/call remote_search (CLIENT)
   └── tools/call remote_search (SERVER, provider=ProxyProvider)
         └── [remote server spans via trace context propagation]
 ```
+
+### Background tasks
+
+Background task traces have two parts:
+
+- Task submission and management requests use normal client-to-server context propagation. `tasks/get`, `tasks/result`, `tasks/list`, and `tasks/cancel` server spans are descendants of the corresponding FastMCP client spans.
+- Deferred execution runs in a Docket worker. Docket records its `CONSUMER` span as a new trace root with a span link to the submission context, rather than making it a child of the submission span. Custom spans created inside the task are children of that worker span.
+
+Span links preserve the causal relationship without forcing worker sampling to inherit the submit trace's sampling decision. Some tracing backends do not display links prominently, so the worker trace may look disconnected even though the link is present.
+
+Frequent status and list polling can produce more detail than you need. You can drop those client and server spans with a sampler that checks the span name before delegating to `ParentBased`:
+
+```python
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.sampling import (
+    ALWAYS_ON,
+    Decision,
+    ParentBased,
+    Sampler,
+    SamplingResult,
+)
+
+
+class DropTaskPolls(Sampler):
+    def __init__(self):
+        self._delegate = ParentBased(ALWAYS_ON)
+
+    def should_sample(self, parent_context, trace_id, name, *args, **kwargs):
+        if name in {"tasks/get", "tasks/list"}:
+            return SamplingResult(Decision.DROP)
+        return self._delegate.should_sample(
+            parent_context,
+            trace_id,
+            name,
+            *args,
+            **kwargs,
+        )
+
+    def get_description(self):
+        return "DropTaskPolls"
+
+
+provider = TracerProvider(sampler=DropTaskPolls())
+trace.set_tracer_provider(provider)
+```
+
+The name check must happen before `ParentBased` delegates. If the name-based sampler is nested inside `ParentBased`, it is not consulted for child spans whose parent was already sampled.
 
 ## Programmatic Configuration
 
@@ -276,7 +325,7 @@ FastMCP implements the [OpenTelemetry MCP semantic conventions](https://opentele
 
 | Attribute | Description |
 |-----------|-------------|
-| `mcp.method.name` | The MCP method being called (`tools/call`, `resources/read`, `prompts/get`) |
+| `mcp.method.name` | The MCP method being called (`tools/call`, `resources/read`, `prompts/get`, `tasks/get`, etc.) |
 | `mcp.protocol.version` | The negotiated MCP protocol version for the request |
 | `mcp.session.id` | Session identifier for the MCP connection |
 | `mcp.resource.uri` | The resource URI (for resource operations) |
