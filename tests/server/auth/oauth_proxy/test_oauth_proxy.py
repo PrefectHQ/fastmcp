@@ -5,12 +5,12 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx2
 import pytest
-from authlib.integrations.httpx_client import AsyncOAuth2Client
 from key_value.aio.stores.memory import MemoryStore
 from starlette.applications import Starlette
 
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.oauth_proxy.models import OAuthTransaction
+from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client
 
 
 class TestOAuthProxyInitialization:
