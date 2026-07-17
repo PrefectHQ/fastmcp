@@ -128,6 +128,7 @@ async def _post_token(
     assertion: str,
     *,
     request_scope: str | None = None,
+    resource: str | None = None,
     register: bool = True,
 ) -> httpx.Response:
     """POST a jwt-bearer grant to the proxy's /token endpoint via an ASGI app.
@@ -147,6 +148,8 @@ async def _post_token(
     }
     if request_scope is not None:
         data["scope"] = request_scope
+    if resource is not None:
+        data["resource"] = resource
     async with httpx.AsyncClient(transport=transport, base_url=BASE_URL) as client:
         return await client.post("/token", data=data)
 
@@ -486,6 +489,51 @@ class TestValidationMatrix:
         assert resp.status_code == 401
         assert resp.json()["error"] == "invalid_grant"
 
+    async def test_non_object_header_rejected(
+        self, idp_key: RSAKeyPair, config: IdentityAssertion
+    ):
+        # Same class of bug as the payload case: a JSON-array JOSE header must
+        # map to invalid_grant, not a 500 from `.get()` on a list.
+        header = _b64url_json([])
+        payload = _b64url_json({"iss": ISSUER, "sub": "x"})
+        assertion = f"{header}.{payload}.signature"
+
+        resp = await _post_token(proxy=_make_proxy(config), assertion=assertion)
+
+        assert resp.status_code == 401
+        assert resp.json()["error"] == "invalid_grant"
+
+    async def test_resource_mismatch_rejected(
+        self,
+        idp_key: RSAKeyPair,
+        config: IdentityAssertion,
+    ):
+        # RFC 8707: a token request naming a different resource must get
+        # invalid_target (mirrors the authorize() invariant), not a token
+        # for this server. Rejection happens before any JWKS fetch.
+        proxy = _make_proxy(config)
+        assertion = _mint_id_jag(idp_key)
+
+        resp = await _post_token(
+            proxy, assertion, resource="https://other-server.example.com/mcp"
+        )
+
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "invalid_target"
+
+    async def test_matching_resource_accepted(
+        self,
+        idp_key: RSAKeyPair,
+        config: IdentityAssertion,
+    ):
+        # JWKS served by the class's autouse _mock_jwks fixture.
+        proxy = _make_proxy(config)
+        assertion = _mint_id_jag(idp_key)
+
+        resp = await _post_token(proxy, assertion, resource=f"{BASE_URL}/mcp")
+
+        assert resp.status_code == 200
+
     async def test_jti_cache_does_not_grow_past_capacity(
         self, idp_key: RSAKeyPair, config: IdentityAssertion
     ):
@@ -506,6 +554,44 @@ class TestValidationMatrix:
             assert resp.json()["error"] == "invalid_grant"
 
         assert len(validator._jti_cache) == 2
+
+
+class TestAlgorithmConfig:
+    """Non-RS256 issuers work when `algorithm` is configured.
+
+    Lives outside TestValidationMatrix because that class's autouse
+    `_mock_jwks` fixture pre-registers an RSA JWKS for the same URL, and
+    pytest-httpx serves first-registered responses first.
+    """
+
+    async def test_es256_issuer_supported_via_algorithm_config(
+        self, httpx_mock: HTTPXMock
+    ):
+        ec_key = jwk.ECKey.generate_key("P-256")
+        jwks_entry = ec_key.as_dict(private=False)
+        jwks_entry["kid"] = "idp-ec-1"
+        jwks_entry["alg"] = "ES256"
+        httpx_mock.add_response(url=JWKS_URI, json={"keys": [jwks_entry]})
+
+        now = int(time.time())
+        header = {"alg": "ES256", "typ": ID_JAG_TYP, "kid": "idp-ec-1"}
+        payload = {
+            "iss": ISSUER,
+            "aud": BASE_URL,
+            "sub": "employee@acme-corp.com",
+            "exp": now + 120,
+            "iat": now,
+            "jti": "jti-es256-1",
+        }
+        assertion = jwt.encode(header, payload, ec_key, algorithms=["ES256"])
+
+        es_config = IdentityAssertion(
+            trusted_issuers=[ISSUER],
+            jwks_uris={ISSUER: JWKS_URI},
+            algorithm="ES256",
+        )
+        resp = await _post_token(proxy=_make_proxy(es_config), assertion=assertion)
+        assert resp.status_code == 200
 
 
 class TestIssuerKeyDiscovery:

@@ -1372,6 +1372,29 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 "The JWT bearer grant is not supported by this authorization server",
             )
 
+        # RFC 8707: when the request names a resource, it must be this server —
+        # the same invariant (and the same skip-when-unconfigured behavior)
+        # authorize() enforces for authorization requests.
+        if params.resource and self._resource_url:
+            server_url = str(self._resource_url)
+            client_url = str(params.resource)
+            if _server_url_has_query(server_url):
+                # Server has query params - require exact match for security
+                resource_matches = client_url.rstrip("/") == server_url.rstrip("/")
+            else:
+                resource_matches = _normalize_resource_url(
+                    client_url
+                ) == _normalize_resource_url(server_url)
+            if not resource_matches:
+                logger.warning(
+                    "ID-JAG resource mismatch: client requested %s but server is %s",
+                    client_url,
+                    self._resource_url,
+                )
+                raise TokenError(
+                    "invalid_target", "Resource does not match this server"
+                )
+
         try:
             claims = await self._identity_assertion_validator.validate(params.assertion)
         except IdentityAssertionError as e:

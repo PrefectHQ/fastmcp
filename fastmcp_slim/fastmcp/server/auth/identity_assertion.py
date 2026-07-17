@@ -102,6 +102,14 @@ class IdentityAssertion(BaseModel):
         default=None,
         description="Scopes that must be present on the issued access token.",
     )
+    algorithm: str | None = Field(
+        default=None,
+        description=(
+            "JWS signing algorithm the trusted issuers use (e.g. `ES256`, "
+            "`PS256`). When omitted, verification defaults to `RS256`; IdPs "
+            "signing with another algorithm must set this explicitly."
+        ),
+    )
     access_token_expiry_seconds: int = Field(
         default=300,
         gt=0,
@@ -226,6 +234,7 @@ class IdentityAssertionValidator:
             jwks_uri=jwks_uri,
             issuer=issuer,
             audience=self.audience,
+            algorithm=self.config.algorithm,
         )
         self._verifiers[issuer] = verifier
         return verifier
@@ -249,6 +258,10 @@ class IdentityAssertionValidator:
             header = decode_jwt_header(assertion)
         except (ValueError, KeyError, IndexError) as e:
             raise IdentityAssertionError(f"Malformed assertion header: {e}") from e
+        if not isinstance(header, dict):
+            # A JSON-array/scalar header is valid JSON but not a JOSE header;
+            # guard before .get() so this maps to invalid_grant, not a 500.
+            raise IdentityAssertionError("Assertion JOSE header must be a JSON object")
         if header.get("typ") != ID_JAG_TYP:
             raise IdentityAssertionError(
                 f"Assertion typ must be {ID_JAG_TYP!r}, got {header.get('typ')!r}"
