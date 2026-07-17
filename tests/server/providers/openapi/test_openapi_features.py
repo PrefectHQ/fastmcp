@@ -1343,3 +1343,71 @@ class TestRedactHeaders:
         headers = httpx2.Headers({"Content-Type": "application/json"})
         redacted = _redact_headers(headers)
         assert redacted == {"content-type": "application/json"}
+
+
+class TestMultipartUpload:
+    """Multipart request bodies must survive the build_request rebuild.
+
+    The director constructs multipart bodies with ``files=``, which yields a
+    streaming request body; the rebuild through the user's client must
+    materialize it (``read()``) rather than access ``.content``, which raises
+    ``RequestNotRead`` on unread streams.
+    """
+
+    MULTIPART_SPEC = {
+        "openapi": "3.0.0",
+        "info": {"title": "Upload API", "version": "1.0.0"},
+        "servers": [{"url": "https://api.example.com"}],
+        "paths": {
+            "/upload": {
+                "post": {
+                    "operationId": "upload_file",
+                    "summary": "Upload a file",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "multipart/form-data": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"file": {"type": "string"}},
+                                }
+                            }
+                        },
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "Uploaded",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {"ok": {"type": "boolean"}},
+                                    }
+                                }
+                            },
+                        }
+                    },
+                }
+            }
+        },
+    }
+
+    async def test_multipart_tool_call_sends_materialized_body(self):
+        received: dict[str, Any] = {}
+
+        def handler(request):
+            received["content_type"] = request.headers.get("content-type", "")
+            received["body"] = request.read()
+            return httpx2.Response(200, json={"ok": True})
+
+        transport = httpx2.MockTransport(handler)
+        async with httpx2.AsyncClient(
+            transport=transport, base_url="https://api.example.com"
+        ) as client:
+            server = create_openapi_server(self.MULTIPART_SPEC, client)
+            async with Client(server) as mcp_client:
+                result = await mcp_client.call_tool("upload_file", {"file": "data"})
+                assert result.structured_content == {"ok": True}
+
+        assert "multipart/form-data" in received["content_type"]
+        assert b"data" in received["body"]

@@ -187,7 +187,10 @@ class OpenAPITool(Tool):
                 url=str(directed_request.url.copy_with(query=None)),
                 params=list(directed_request.url.params.multi_items()),
                 headers=list(directed_request.headers.raw),
-                content=directed_request.content,
+                # read() materializes streaming bodies (multipart files=)
+                # that .content would refuse with RequestNotRead; idempotent
+                # for plain byte bodies.
+                content=directed_request.read(),
             )
 
             mcp_headers = get_http_headers()
@@ -302,7 +305,10 @@ class OpenAPIResource(Resource):
                 url=str(directed_request.url.copy_with(query=None)),
                 params=list(directed_request.url.params.multi_items()),
                 headers=list(directed_request.headers.raw),
-                content=directed_request.content,
+                # read() materializes streaming bodies (multipart files=)
+                # that .content would refuse with RequestNotRead; idempotent
+                # for plain byte bodies.
+                content=directed_request.read(),
             )
             mcp_headers = get_http_headers()
             if mcp_headers:
