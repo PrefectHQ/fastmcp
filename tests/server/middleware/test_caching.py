@@ -371,6 +371,16 @@ class TestResponseCachingMiddlewareIntegration:
         def metadata_prompt() -> str:
             return "prompt"
 
+        cached_tools = await mcp.list_tools()
+        cached_resources = await mcp.list_resources()
+        cached_prompts = await mcp.list_prompts()
+        assert type(cached_tools[0]) is Tool
+        assert type(cached_resources[0]) is Resource
+        assert type(cached_prompts[0]) is Prompt
+        assert not hasattr(cached_tools[0], "fn")
+        assert not hasattr(cached_resources[0], "fn")
+        assert not hasattr(cached_prompts[0], "fn")
+
         async with Client(mcp) as client:
             for _ in range(2):
                 tools = await client.list_tools()
@@ -627,13 +637,16 @@ class TestCachingWithImportedServerPrefixes:
     ):
         """Resource URIs should retain prefix after being served from cache."""
         async with Client(parent_with_imported_child) as client:
-            # First call populates cache
-            resources_first = await client.list_resources()
-            resource_uris_first = [str(r.uri) for r in resources_first]
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", UserWarning)
 
-            # Second call should come from cache
-            resources_cached = await client.list_resources()
-            resource_uris_cached = [str(r.uri) for r in resources_cached]
+                # First call populates cache
+                resources_first = await client.list_resources()
+                resource_uris_first = [str(r.uri) for r in resources_first]
+
+                # Second call should come from cache
+                resources_cached = await client.list_resources()
+                resource_uris_cached = [str(r.uri) for r in resources_cached]
 
             # All resources should have prefix in URI path in both calls
             # Resources get path-style prefix: resource://child/path
