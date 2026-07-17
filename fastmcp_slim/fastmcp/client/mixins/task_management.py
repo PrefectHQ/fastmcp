@@ -128,7 +128,9 @@ class ClientTaskManagementMixin:
             MCPError: If the request results in a TimeoutError | JSONRPCError
         """
         # Send protocol request
-        params = PaginatedRequestParams(cursor=cursor, limit=limit)  # type: ignore[call-arg]  # Optional field in MCP SDK  # ty:ignore[unknown-argument]
+        params = PaginatedRequestParams.model_validate(
+            {"cursor": cursor, "limit": limit}
+        )
         request = ListTasksRequest(params=params)
         server_response = await self._await_with_session_monitoring(
             self.session.send_request(

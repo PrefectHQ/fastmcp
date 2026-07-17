@@ -100,7 +100,7 @@ logger = get_logger(__name__)
 
 def _version_request_meta(
     version: VersionSpec | None,
-) -> dict[str, Any] | None:
+) -> mcp_types.RequestParamsMeta | None:
     if version is None:
         return None
 
@@ -120,9 +120,8 @@ def _version_request_meta(
     if not version_value:
         return None
 
-    # SDK v2: request `_meta` is a plain dict (the `Meta` type alias), not the
-    # old `RequestParams.Meta` nested model.
-    return {"fastmcp": {"version": version_value}}
+    # RequestParamsMeta does not declare application-specific extension keys.
+    return cast(mcp_types.RequestParamsMeta, {"fastmcp": {"version": version_value}})
 
 
 # The MCP SDK warns "Tool X not listed, no validation will be performed"
@@ -1230,9 +1229,7 @@ class FastMCP(
                     message=mcp_types.CallToolRequestParams(
                         name=name,
                         arguments=arguments or {},
-                        # `_meta` carries the app-level `fastmcp` version key, which the
-                        # reserved-key RequestParamsMeta TypedDict can't express statically.
-                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # ty: ignore[invalid-argument-type]
+                        _meta=_version_request_meta(version),
                     ),
                     source="client",
                     type="request",
@@ -1400,9 +1397,7 @@ class FastMCP(
                 mw_context = MiddlewareContext(
                     message=mcp_types.ReadResourceRequestParams(
                         uri=str(uri),
-                        # `_meta` carries the app-level `fastmcp` version key, which the
-                        # reserved-key RequestParamsMeta TypedDict can't express statically.
-                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # ty: ignore[invalid-argument-type]
+                        _meta=_version_request_meta(version),
                     ),
                     source="client",
                     type="request",
@@ -1579,9 +1574,7 @@ class FastMCP(
                     message=mcp_types.GetPromptRequestParams(
                         name=name,
                         arguments=arguments,
-                        # `_meta` carries the app-level `fastmcp` version key, which the
-                        # reserved-key RequestParamsMeta TypedDict can't express statically.
-                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # ty: ignore[invalid-argument-type]
+                        _meta=_version_request_meta(version),
                     ),
                     source="client",
                     type="request",
