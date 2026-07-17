@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx2
 from mcp_types import ToolAnnotations
@@ -19,6 +19,11 @@ from fastmcp.resources import (
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.utilities.exceptions import (
+    HTTP_STATUS_ERRORS,
+    REQUEST_ERRORS,
+    TIMEOUT_ERRORS,
+)
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.openapi import HTTPRoute
 from fastmcp.utilities.openapi.director import RequestDirector
@@ -230,22 +235,24 @@ class OpenAPITool(Tool):
             except json.JSONDecodeError:
                 return ToolResult(content=response.text)
 
-        except httpx2.HTTPStatusError as e:
+        except HTTP_STATUS_ERRORS as e:
+            status_error = cast("httpx2.HTTPStatusError", e)
             error_message = (
-                f"HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+                f"HTTP error {status_error.response.status_code}: "
+                f"{status_error.response.reason_phrase}"
             )
             try:
-                error_data = e.response.json()
+                error_data = status_error.response.json()
                 error_message += f" - {error_data}"
             except (json.JSONDecodeError, ValueError):
-                if e.response.text:
-                    error_message += f" - {e.response.text}"
+                if status_error.response.text:
+                    error_message += f" - {status_error.response.text}"
             raise ValueError(error_message) from e
 
-        except httpx2.TimeoutException as e:
+        except TIMEOUT_ERRORS as e:
             raise ValueError(f"HTTP request timed out ({type(e).__name__})") from e
 
-        except httpx2.RequestError as e:
+        except REQUEST_ERRORS as e:
             raise ValueError(f"Request error ({type(e).__name__}): {e!s}") from e
 
 
@@ -330,22 +337,24 @@ class OpenAPIResource(Resource):
                     ]
                 )
 
-        except httpx2.HTTPStatusError as e:
+        except HTTP_STATUS_ERRORS as e:
+            status_error = cast("httpx2.HTTPStatusError", e)
             error_message = (
-                f"HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+                f"HTTP error {status_error.response.status_code}: "
+                f"{status_error.response.reason_phrase}"
             )
             try:
-                error_data = e.response.json()
+                error_data = status_error.response.json()
                 error_message += f" - {error_data}"
             except (json.JSONDecodeError, ValueError):
-                if e.response.text:
-                    error_message += f" - {e.response.text}"
+                if status_error.response.text:
+                    error_message += f" - {status_error.response.text}"
             raise ValueError(error_message) from e
 
-        except httpx2.TimeoutException as e:
+        except TIMEOUT_ERRORS as e:
             raise ValueError(f"HTTP request timed out ({type(e).__name__})") from e
 
-        except httpx2.RequestError as e:
+        except REQUEST_ERRORS as e:
             raise ValueError(f"Request error ({type(e).__name__}): {e!s}") from e
 
 

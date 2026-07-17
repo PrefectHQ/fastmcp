@@ -78,6 +78,7 @@ from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.tools.tool_transform import ToolTransformConfig
 from fastmcp.utilities.components import FastMCPComponent, _coerce_version
+from fastmcp.utilities.exceptions import HTTP_STATUS_ERRORS, TIMEOUT_ERRORS
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import AnyFunction, FastMCPBaseModel, NotSet, NotSetT
 from fastmcp.utilities.versions import (
@@ -97,25 +98,10 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-# FastMCP uses httpx2 internally, but user-supplied tools, resources, and OpenAPI
-# clients may still raise exceptions from the legacy httpx package. Build the
-# actionable-error catch tuples defensively so that a user who keeps httpx
-# installed continues to get 429/timeout mapping, without making httpx a
-# dependency of FastMCP.
-try:
-    import httpx
-
-    _ACTIONABLE_HTTP_STATUS_ERRORS: tuple[type[BaseException], ...] = (
-        httpx2.HTTPStatusError,
-        httpx.HTTPStatusError,
-    )
-    _ACTIONABLE_TIMEOUT_ERRORS: tuple[type[BaseException], ...] = (
-        httpx2.TimeoutException,
-        httpx.TimeoutException,
-    )
-except ImportError:
-    _ACTIONABLE_HTTP_STATUS_ERRORS = (httpx2.HTTPStatusError,)
-    _ACTIONABLE_TIMEOUT_ERRORS = (httpx2.TimeoutException,)
+# Both-library catch tuples for user-supplied code that may still raise legacy
+# httpx exceptions; see fastmcp.utilities.exceptions for the defensive import.
+_ACTIONABLE_HTTP_STATUS_ERRORS = HTTP_STATUS_ERRORS
+_ACTIONABLE_TIMEOUT_ERRORS = TIMEOUT_ERRORS
 
 
 def _version_request_meta(
