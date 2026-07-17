@@ -16,9 +16,10 @@ from fastmcp.server.providers.openapi.components import (
 )
 from fastmcp.server.providers.openapi.routing import MCPType, RouteMap
 
+from fastmcp.utilities.openapi.models import HTTPRoute, ResponseInfo
+
 # Real client used only to delegate build_request on mocked clients - never sends.
 _request_builder = httpx2.AsyncClient()
-from fastmcp.utilities.openapi.models import HTTPRoute, ResponseInfo
 
 
 def create_openapi_server(
