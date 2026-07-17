@@ -169,12 +169,21 @@ class OpenAPITool(Tool):
         # not HTTP failures, so we catch them separately.
         try:
             base_url = str(self._client.base_url) or "http://localhost"
-            request = self._director.build(self._route, arguments, base_url)
+            directed_request = self._director.build(self._route, arguments, base_url)
 
-            if self._client.headers:
-                for key, value in self._client.headers.items():
-                    if key not in request.headers:
-                        request.headers[key] = value
+            # Rebuild through the user's client so the request object comes
+            # from whichever httpx library the client belongs to (a legacy
+            # httpx.AsyncClient cannot send an httpx2.Request). Primitive
+            # values (str/bytes/tuples) cross that boundary safely; client
+            # default headers merge in with directed headers taking priority,
+            # matching the previous manual merge.
+            request = self._client.build_request(
+                method=directed_request.method,
+                url=str(directed_request.url.copy_with(query=None)),
+                params=list(directed_request.url.params.multi_items()),
+                headers=list(directed_request.headers.raw),
+                content=directed_request.content,
+            )
 
             mcp_headers = get_http_headers()
             if mcp_headers:
@@ -279,13 +288,14 @@ class OpenAPIResource(Resource):
             directed_request = self._director.build(
                 self._route, self._arguments, base_url
             )
+            # Primitive values only: a legacy httpx.AsyncClient cannot accept
+            # httpx2 URL/QueryParams/Headers objects.
             request = self._client.build_request(
                 method=directed_request.method,
-                url=directed_request.url.copy_with(query=None),
-                params=directed_request.url.params,
-                headers=directed_request.headers,
+                url=str(directed_request.url.copy_with(query=None)),
+                params=list(directed_request.url.params.multi_items()),
+                headers=list(directed_request.headers.raw),
                 content=directed_request.content,
-                extensions=directed_request.extensions,
             )
             mcp_headers = get_http_headers()
             if mcp_headers:

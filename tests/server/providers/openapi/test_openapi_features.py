@@ -15,6 +15,9 @@ from fastmcp.server.providers.openapi.components import (
     _redact_headers,
 )
 from fastmcp.server.providers.openapi.routing import MCPType, RouteMap
+
+# Real client used only to delegate build_request on mocked clients - never sends.
+_request_builder = httpx2.AsyncClient()
 from fastmcp.utilities.openapi.models import HTTPRoute, ResponseInfo
 
 
@@ -1215,6 +1218,7 @@ class TestValidateOutput:
         mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = "https://api.example.com"
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         # Return extra fields not in the schema
         mock_response = Mock(spec=Response)
@@ -1251,6 +1255,7 @@ class TestValidateOutput:
         mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = "https://api.example.com"
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         # Backend returns an array even though schema says object
         mock_response = Mock(spec=Response)
@@ -1280,6 +1285,7 @@ class TestValidateOutput:
         mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = "https://api.example.com"
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         server = FastMCP.from_openapi(
             openapi_spec=spec_with_output_schema,

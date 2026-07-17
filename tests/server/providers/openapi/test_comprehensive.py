@@ -11,6 +11,9 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.server.providers.openapi import OpenAPIProvider
 
+# Real client used only to delegate build_request on mocked clients - never sends.
+_request_builder = httpx2.AsyncClient()
+
 
 def create_openapi_server(
     openapi_spec: dict,
@@ -478,6 +481,7 @@ class TestOpenAPIComprehensive:
         mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = "https://api.example.com"
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         # Mock successful response
         mock_response = Mock(spec=Response)
@@ -519,6 +523,7 @@ class TestOpenAPIComprehensive:
         mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = httpx2.URL("")  # Empty URL, same as httpx default
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         mock_response = Mock(spec=Response)
         mock_response.status_code = 200
@@ -551,6 +556,7 @@ class TestOpenAPIComprehensive:
         mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = "https://api.example.com"
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         mock_response = Mock(spec=Response)
         mock_response.status_code = 201
@@ -599,6 +605,7 @@ class TestOpenAPIComprehensive:
         mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = "https://api.example.com"
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         mock_response = Mock(spec=Response)
         mock_response.status_code = 200
@@ -637,6 +644,7 @@ class TestOpenAPIComprehensive:
         mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = "https://api.example.com"
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         # Mock HTTP error response
         mock_response = Mock(spec=Response)
@@ -749,6 +757,7 @@ class TestOpenAPIComprehensive:
         mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = "https://api.example.com"
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         # httpx internally raises ReadTimeout with an empty message
         mock_client.send = AsyncMock(side_effect=httpx2.ReadTimeout(""))
@@ -867,6 +876,7 @@ class TestOpenAPIPostEdgeCases:
         mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = "https://api.example.com"
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         mock_response = Mock(spec=Response)
         mock_response.status_code = 201
@@ -899,6 +909,7 @@ class TestOpenAPIPostEdgeCases:
         mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = "https://api.example.com"
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         mock_response = Mock(spec=Response)
         mock_response.status_code = 200
@@ -936,6 +947,7 @@ class TestOpenAPIPostEdgeCases:
         mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = "https://api.example.com"
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         route = HTTPRoute(
             path="/test",
