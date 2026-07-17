@@ -522,11 +522,85 @@ Wildcard parameters are useful when:
 
 Note that like regular parameters, each wildcard parameter must still be a named parameter in your function signature, and all required function parameters must appear in the URI template.
 
-#### Filesystem Path Safety
+#### Path Security
 
-Template parameters are decoded before your function receives them. A standard `{filename}` parameter matches one URI segment before decoding, so a request like `files://a%2Fb` passes `filename="a/b"` to the handler. Treat template values as untrusted decoded URI data whenever they determine filesystem paths.
+Template parameters are extracted from the request URI and decoded before your function receives them, so a path-traversal payload like `../` or an absolute path can reach a handler that builds filesystem paths or upstream URLs. FastMCP screens every templated resource's parameter values **before the handler runs**, and this screening is **on by default**.
 
-Validate the final resolved path against an allowed root before reading:
+By default, a parameter value is rejected if its `..` path segments would escape the value's own starting depth, if it looks like an absolute path, or if it contains a null byte. A rejected read surfaces a clean "resource not found" error to the client and logs the reason at debug level, so the failing parameter and policy are never revealed on the wire.
+
+The traversal check is component-based and tracks net depth: `..` only counts against you when it climbs above where the value starts. `../secret`, a bare `..`, and `a/../../b` are rejected; `foo/../bar` is allowed because it never leaves the starting directory, and values that merely *contain* dots — `HEAD~3..HEAD`, `v1..v2`, `file.tar.gz`, dotfiles like `.env` — all pass. Screening runs on the decoded value, so `..%2F` is caught the same as a literal `../`. This bounds relative escapes; anchoring the *final* path inside a root directory is still your handler's job (for example with `safe_join`), since only the handler knows what the value is joined to.
+
+```python
+from pathlib import Path
+
+from fastmcp import FastMCP
+
+mcp = FastMCP(name="DocsServer")
+
+DOCS_ROOT = Path("/srv/docs")
+
+
+@mcp.resource("docs://{path*}")
+def read_doc(path: str) -> str:
+    # A request for docs://../secret is rejected before this runs.
+    return (DOCS_ROOT / path).read_text(encoding="utf-8")
+```
+
+##### Exempting parameters
+
+Some parameters legitimately carry values that look like traversal — a git ref, a version range, an opaque token. Exempt them by name with `ResourceSecurity`:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.resources import ResourceSecurity
+
+mcp = FastMCP(name="DocsServer")
+
+
+@mcp.resource(
+    "git://diff/{ref}",
+    security=ResourceSecurity(exempt_params={"ref"}),
+)
+def git_diff(ref: str) -> str:
+    # ref="HEAD~3..HEAD" is allowed
+    ...
+```
+
+##### Disabling screening
+
+Pass `security=None` to turn screening off for a single component:
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP(name="DocsServer")
+
+
+@mcp.resource("raw://{value}", security=None)
+def raw(value: str) -> str: ...
+```
+
+Or set a server-wide default with `resource_security`, which applies to every templated resource that does not set its own `security`:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.resources import ResourceSecurity
+
+# Relax one check across the whole server:
+relaxed = FastMCP(
+    name="DocsServer",
+    resource_security=ResourceSecurity(reject_absolute_paths=False),
+)
+
+# Or disable screening entirely across the server:
+unscreened = FastMCP(name="DocsServer", resource_security=None)
+```
+
+A per-component `security` always overrides the server default.
+
+<Warning>
+Screening rejects the obvious injection shapes, but it does not know your filesystem root. When a parameter determines a real path, still resolve it against an allowed root and confirm containment before reading — screening and containment are complementary layers.
+</Warning>
 
 ```python
 from pathlib import Path
@@ -547,8 +621,6 @@ def read_doc(filename: str) -> str:
 
     return requested_path.read_text(encoding="utf-8")
 ```
-
-Use wildcard parameters (`{path*}`) for resources whose URI shape intentionally includes slashes, and apply the same containment check before accessing the filesystem.
 
 #### Query Parameters
 

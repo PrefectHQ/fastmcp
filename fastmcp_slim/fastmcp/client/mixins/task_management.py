@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import mcp_types
 from mcp import MCPError
@@ -23,6 +23,8 @@ from mcp_types import (
     PaginatedRequestParams,
 )
 
+from fastmcp.client.telemetry import client_span
+from fastmcp.telemetry import inject_trace_context
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -64,13 +66,27 @@ class ClientTaskManagementMixin:
             RuntimeError: If client not connected
             MCPError: If the request results in a TimeoutError | JSONRPCError
         """
-        request = GetTaskRequest(params=GetTaskRequestParams(task_id=task_id))
-        return await self._await_with_session_monitoring(
-            self.session.send_request(
-                request=request,  # type: ignore[arg-type]
-                result_type=GetTaskResult,
+        with client_span(
+            "tasks/get",
+            "tasks/get",
+            task_id,
+            session_id=self.transport.get_session_id(),
+        ):
+            request_meta = cast(
+                "mcp_types.RequestParamsMeta | None", inject_trace_context()
             )
-        )
+            request = GetTaskRequest(
+                params=GetTaskRequestParams(
+                    task_id=task_id,
+                    _meta=request_meta,  # type: ignore[unknown-argument]
+                )
+            )
+            return await self._await_with_session_monitoring(
+                self.session.send_request(
+                    request=request,  # type: ignore[arg-type]
+                    result_type=GetTaskResult,
+                )
+            )
 
     async def get_task_result(self: Client, task_id: str) -> Any:
         """Retrieve the raw result of a completed background task.
@@ -88,20 +104,32 @@ class ClientTaskManagementMixin:
             RuntimeError: If client not connected, task not found, or task failed
             MCPError: If the request results in a TimeoutError | JSONRPCError
         """
-        request = GetTaskPayloadRequest(
-            params=GetTaskPayloadRequestParams(task_id=task_id)
-        )
-        # Return raw result - Task classes handle type-specific parsing
-        result = await self._await_with_session_monitoring(
-            self.session.send_request(
-                request=request,  # type: ignore[arg-type]
-                result_type=_RawTaskPayloadResult,
+        with client_span(
+            "tasks/result",
+            "tasks/result",
+            task_id,
+            session_id=self.transport.get_session_id(),
+        ):
+            request_meta = cast(
+                "mcp_types.RequestParamsMeta | None", inject_trace_context()
             )
-        )
-        # Return as dict for compatibility with Task class parsing. The payload
-        # fields (content, structuredContent, messages, contents, ...) survive
-        # via the permissive result type's extra="allow".
-        return result.model_dump(exclude_none=True, by_alias=True)
+            request = GetTaskPayloadRequest(
+                params=GetTaskPayloadRequestParams(
+                    task_id=task_id,
+                    _meta=request_meta,  # type: ignore[unknown-argument]
+                )
+            )
+            # Return raw result - Task classes handle type-specific parsing
+            result = await self._await_with_session_monitoring(
+                self.session.send_request(
+                    request=request,  # type: ignore[arg-type]
+                    result_type=_RawTaskPayloadResult,
+                )
+            )
+            # Return as dict for compatibility with Task class parsing. The payload
+            # fields (content, structuredContent, messages, contents, ...) survive
+            # via the permissive result type's extra="allow".
+            return result.model_dump(exclude_none=True, by_alias=True)
 
     async def list_tasks(
         self: Client,
@@ -127,31 +155,45 @@ class ClientTaskManagementMixin:
             RuntimeError: If client not connected
             MCPError: If the request results in a TimeoutError | JSONRPCError
         """
-        # Send protocol request
-        params = PaginatedRequestParams(cursor=cursor, limit=limit)  # type: ignore[call-arg]  # Optional field in MCP SDK  # ty:ignore[unknown-argument]
-        request = ListTasksRequest(params=params)
-        server_response = await self._await_with_session_monitoring(
-            self.session.send_request(
-                request=request,  # type: ignore[invalid-argument-type]
-                result_type=mcp_types.ListTasksResult,
+        with client_span(
+            "tasks/list",
+            "tasks/list",
+            "",
+            session_id=self.transport.get_session_id(),
+        ):
+            request_meta = cast(
+                "mcp_types.RequestParamsMeta | None", inject_trace_context()
             )
-        )
 
-        # If server returned tasks, use those
-        if server_response.tasks:
-            return server_response.model_dump(by_alias=True)
+            # Send protocol request
+            params = PaginatedRequestParams(
+                cursor=cursor,
+                limit=limit,  # type: ignore[call-arg]  # Optional field in MCP SDK  # ty:ignore[unknown-argument]
+                _meta=request_meta,  # type: ignore[unknown-argument]
+            )
+            request = ListTasksRequest(params=params)
+            server_response = await self._await_with_session_monitoring(
+                self.session.send_request(
+                    request=request,  # type: ignore[invalid-argument-type]
+                    result_type=mcp_types.ListTasksResult,
+                )
+            )
 
-        # Server returned empty - fall back to client-side tracking
-        tasks = []
-        for task_id in list(self._submitted_task_ids)[:limit]:
-            try:
-                status = await self.get_task_status(task_id)
-                tasks.append(status.model_dump(by_alias=True))
-            except MCPError:
-                # Task may have expired or been deleted, skip it
-                continue
+            # If server returned tasks, use those
+            if server_response.tasks:
+                return server_response.model_dump(by_alias=True)
 
-        return {"tasks": tasks, "nextCursor": None}
+            # Server returned empty - fall back to client-side tracking
+            tasks = []
+            for task_id in list(self._submitted_task_ids)[:limit]:
+                try:
+                    status = await self.get_task_status(task_id)
+                    tasks.append(status.model_dump(by_alias=True))
+                except MCPError:
+                    # Task may have expired or been deleted, skip it
+                    continue
+
+            return {"tasks": tasks, "nextCursor": None}
 
     async def cancel_task(self: Client, task_id: str) -> mcp_types.CancelTaskResult:
         """Cancel a task, transitioning it to cancelled state.
@@ -169,10 +211,24 @@ class ClientTaskManagementMixin:
             RuntimeError: If task doesn't exist
             MCPError: If the request results in a TimeoutError | JSONRPCError
         """
-        request = CancelTaskRequest(params=CancelTaskRequestParams(task_id=task_id))
-        return await self._await_with_session_monitoring(
-            self.session.send_request(
-                request=request,  # type: ignore[invalid-argument-type]
-                result_type=mcp_types.CancelTaskResult,
+        with client_span(
+            "tasks/cancel",
+            "tasks/cancel",
+            task_id,
+            session_id=self.transport.get_session_id(),
+        ):
+            request_meta = cast(
+                "mcp_types.RequestParamsMeta | None", inject_trace_context()
             )
-        )
+            request = CancelTaskRequest(
+                params=CancelTaskRequestParams(
+                    task_id=task_id,
+                    _meta=request_meta,  # type: ignore[unknown-argument]
+                )
+            )
+            return await self._await_with_session_monitoring(
+                self.session.send_request(
+                    request=request,  # type: ignore[invalid-argument-type]
+                    result_type=mcp_types.CancelTaskResult,
+                )
+            )

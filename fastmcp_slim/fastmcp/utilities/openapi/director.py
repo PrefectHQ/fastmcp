@@ -313,13 +313,13 @@ class RequestDirector:
                     if not value:
                         continue
                     if explode:
-                        # form,explode=true on objects: each property becomes
-                        # a separate query parameter.
-                        # e.g. {"R": 100, "G": 200} → R=100&G=200
                         for k, v in value.items():
-                            serialized[_query_scalar_to_str(k)] = _query_scalar_to_str(
-                                v
-                            )
+                            # deepObject keeps the parent parameter name;
+                            # form style emits each property as a bare key.
+                            property_name = _query_scalar_to_str(k)
+                            if param_info.style == "deepObject":
+                                property_name = f"{key}[{property_name}]"
+                            serialized[property_name] = _query_scalar_to_str(v)
                     else:
                         style = param_info.style or "form"
                         delimiter = self._STYLE_DELIMITERS.get(style, ",")

@@ -1,6 +1,6 @@
 import time
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Any, cast
 from unittest.mock import patch
 
 import pytest
@@ -558,6 +558,85 @@ class TestBearerTokenJWKS:
         assert access_token.claims.get("sub") == username
         assert access_token.claims.get("iss") == issuer
         assert access_token.claims.get("aud") == audience
+
+    async def test_jwks_skips_unsupported_key_types(
+        self,
+        rsa_key_pair: RSAKeyPair,
+        jwks_provider: JWTVerifier,
+        mock_jwks_data: JWKSData,
+        httpx_mock: HTTPXMock,
+        mock_dns,
+    ):
+        """An unsupported key type in the JWKS (e.g. OKP/Ed25519) must be
+        skipped, not poison the whole key set - #4515.
+
+        Some authorization servers (e.g. Rauthy, Ory Hydra) publish an
+        Ed25519 key alongside RSA keys; tokens signed by the RSA keys must
+        still verify.
+        """
+        okp_key = cast(
+            "JWKData",
+            {
+                "kty": "OKP",
+                "crv": "Ed25519",
+                "kid": "ed25519-key",
+                "alg": "EdDSA",
+                "use": "sig",
+                "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+            },
+        )
+        mock_jwks_data["keys"][0]["kid"] = "test-key-1"
+        # Unsupported key FIRST, so an unguarded conversion loop would
+        # abort before reaching the RSA key the token needs
+        mock_jwks_data["keys"].insert(0, okp_key)
+        httpx_mock.add_response(json=mock_jwks_data)
+
+        token = rsa_key_pair.create_token(
+            subject="test-user",
+            issuer="https://test.example.com",
+            audience="https://api.example.com",
+            kid="test-key-1",
+        )
+
+        access_token = await jwks_provider.load_access_token(token)
+        assert access_token is not None
+        assert access_token.client_id == "test-user"
+
+    async def test_jwks_with_only_unsupported_keys_rejects_cleanly(
+        self,
+        rsa_key_pair: RSAKeyPair,
+        jwks_provider: JWTVerifier,
+        httpx_mock: HTTPXMock,
+        mock_dns,
+    ):
+        """If every key in the JWKS is unsupported, verification fails
+        cleanly (returns None) rather than crashing - #4515."""
+        okp_only = {
+            "keys": [
+                cast(
+                    "JWKData",
+                    {
+                        "kty": "OKP",
+                        "crv": "Ed25519",
+                        "kid": "ed25519-key",
+                        "alg": "EdDSA",
+                        "use": "sig",
+                        "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+                    },
+                )
+            ]
+        }
+        httpx_mock.add_response(json=okp_only)
+
+        token = rsa_key_pair.create_token(
+            subject="test-user",
+            issuer="https://test.example.com",
+            audience="https://api.example.com",
+            kid="ed25519-key",
+        )
+
+        access_token = await jwks_provider.load_access_token(token)
+        assert access_token is None
 
     async def test_jwks_token_validation_with_invalid_key(
         self,

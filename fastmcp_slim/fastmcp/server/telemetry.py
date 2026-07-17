@@ -58,6 +58,21 @@ def get_session_span_attributes() -> dict[str, str]:
     return attrs
 
 
+def get_protocol_span_attributes() -> dict[str, str]:
+    """Get the negotiated MCP protocol version for the current request.
+
+    Mirrors the `mcp.protocol.version` attribute the SDK's own
+    `OpenTelemetryMiddleware` sets — FastMCP drops that middleware to avoid a
+    duplicate SERVER span, so this restores the attribute on FastMCP's span.
+    """
+    from fastmcp.server.dependencies import fastmcp_request_ctx
+
+    req_ctx = fastmcp_request_ctx.get()
+    if req_ctx is not None and req_ctx.protocol_version:
+        return {"mcp.protocol.version": req_ctx.protocol_version}
+    return {}
+
+
 def _get_parent_trace_context() -> Context | None:
     """Get parent trace context from request meta for distributed tracing."""
     from fastmcp.server.dependencies import fastmcp_request_ctx
@@ -84,6 +99,7 @@ def _build_server_span_attrs(
         "fastmcp.server.name": server_name,
         "fastmcp.component.type": component_type,
         "fastmcp.component.key": component_key,
+        **get_protocol_span_attributes(),
         **get_auth_span_attributes(),
         **get_session_span_attributes(),
     }
@@ -131,6 +147,7 @@ def seam_span(method: str, server_name: str) -> Generator[Span, None, None]:
                 {
                     "mcp.method.name": method,
                     "fastmcp.server.name": server_name,
+                    **get_protocol_span_attributes(),
                     **get_auth_span_attributes(),
                     **get_session_span_attributes(),
                 }
@@ -244,6 +261,7 @@ __all__ = [
     "SEAM_SPAN_MARKER",
     "delegate_span",
     "get_auth_span_attributes",
+    "get_protocol_span_attributes",
     "get_session_span_attributes",
     "record_span_exception",
     "seam_span",

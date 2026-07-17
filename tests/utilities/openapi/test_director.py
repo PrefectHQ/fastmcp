@@ -890,6 +890,45 @@ class TestQueryParameterSerialization:
         assert "myAttribute=true" in url
         assert "data=" not in url
 
+    def test_deep_object_explode_true_uses_bracket_notation(self, director):
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="filter",
+                    location="query",
+                    required=True,
+                    schema={
+                        "type": "object",
+                        "properties": {
+                            "eq": {"type": "string"},
+                            "display name": {"type": "string"},
+                        },
+                    },
+                    explode=True,
+                    style="deepObject",
+                )
+            ],
+            parameter_map={
+                "filter": {"location": "query", "openapi_name": "filter"},
+            },
+        )
+
+        request = director.build(
+            route,
+            {"filter": {"eq": "foo/bar", "display name": "active & ready"}},
+            "https://example.com",
+        )
+
+        assert request.url.params["filter[eq]"] == "foo/bar"
+        assert request.url.params["filter[display name]"] == "active & ready"
+        assert "filter%5Beq%5D=foo%2Fbar" in str(request.url)
+        assert "filter%5Bdisplay+name%5D=active+%26+ready" in str(request.url)
+        assert "eq" not in request.url.params
+        assert "display name" not in request.url.params
+
     def test_explode_default_dict_expands_to_separate_params(self, director):
         """Default explode (None → true) on objects expands properties."""
         route = HTTPRoute(

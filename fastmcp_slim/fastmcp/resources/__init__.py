@@ -2,6 +2,7 @@ import sys
 
 from .function_resource import FunctionResource, resource
 from .base import Resource, ResourceContent, ResourceResult
+from .security import ResourceSecurity
 from .template import ResourceTemplate
 from .types import (
     BinaryResource,
@@ -20,6 +21,7 @@ __all__ = [
     "Resource",
     "ResourceContent",
     "ResourceResult",
+    "ResourceSecurity",
     "ResourceTemplate",
     "TextResource",
     "resource",

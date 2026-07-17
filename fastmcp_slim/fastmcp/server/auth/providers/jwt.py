@@ -347,11 +347,26 @@ class JWTVerifier(TokenVerifier):
         try:
             jwks_data = await self._fetch_jwks()
 
-            # Cache all keys
+            # Cache all usable keys. A key that cannot be converted (e.g. an
+            # unsupported kty like OKP/Ed25519) is skipped rather than failing
+            # the whole set — per RFC 7517 §5, clients should ignore JWKs they
+            # don't understand. Otherwise one exotic key published by the
+            # authorization server would reject every token, including ones
+            # signed by supported keys in the same set (#4515).
             self._jwks_cache = {}
+            skipped_kids: set[str] = set()
             for key_data in jwks_data.get("keys", []):
+                if not isinstance(key_data, dict):
+                    self.logger.debug("Skipping non-object JWKS entry: %r", key_data)
+                    continue
                 key_kid = key_data.get("kid")
-                public_key = _jwk_to_pem(key_data)
+                try:
+                    public_key = _jwk_to_pem(key_data)
+                except (JoseError, TypeError, KeyError, ValueError) as e:
+                    self.logger.debug("Skipping unusable JWKS key %r: %s", key_kid, e)
+                    if key_kid:
+                        skipped_kids.add(key_kid)
+                    continue
 
                 if key_kid:
                     self._jwks_cache[key_kid] = public_key
@@ -364,6 +379,16 @@ class JWTVerifier(TokenVerifier):
             # Select the appropriate key
             if kid:
                 if kid not in self._jwks_cache:
+                    if kid in skipped_kids:
+                        self.logger.debug(
+                            "JWKS key lookup failed: key ID '%s' is present "
+                            "but its key type is unsupported",
+                            kid,
+                        )
+                        raise ValueError(
+                            f"Key ID '{kid}' found in JWKS but its key type "
+                            "is unsupported"
+                        )
                     self.logger.debug(
                         "JWKS key lookup failed: key ID '%s' not found", kid
                     )

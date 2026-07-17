@@ -14,6 +14,11 @@ import mcp_types
 from mcp_types import Annotations
 
 from fastmcp.resources.base import Resource
+from fastmcp.resources.security import (
+    INHERIT_SECURITY,
+    InheritSecurity,
+    ResourceSecurity,
+)
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth.authorization import AuthCheck
 from fastmcp.server.tasks.config import TaskConfig
@@ -70,6 +75,7 @@ class ResourceDecoratorMixin:
                         meta=meta.meta,
                         task=resolved_task,
                         auth=meta.auth,
+                        security=meta.security,
                     )
                 else:
                     resource = Resource.from_function(
@@ -119,6 +125,7 @@ class ResourceDecoratorMixin:
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
+        security: ResourceSecurity | None | InheritSecurity = INHERIT_SECURITY,
     ) -> Callable[[F], F]:
         """Decorator to register a function as a resource.
 
@@ -202,6 +209,7 @@ class ResourceDecoratorMixin:
                 task=task,
                 auth=auth,
                 enabled=enabled,
+                security=security,
             )
             target = fn.__func__ if hasattr(fn, "__func__") else fn
             target.__fastmcp__ = metadata  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
