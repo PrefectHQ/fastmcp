@@ -12,10 +12,16 @@ FastMCP includes native OpenTelemetry instrumentation for observability. Traces 
 
 FastMCP uses the OpenTelemetry API for instrumentation. This means:
 
-- **Zero configuration required** - Instrumentation is always active
+- **On by default** - Instrumentation is active out of the box, no opt-in required
 - **No overhead when unused** - Without an SDK, all operations are no-ops
 - **Bring your own SDK** - You control collection, export, and sampling
 - **Works with any OTEL backend** - Jaeger, Zipkin, Datadog, New Relic, etc.
+
+Because FastMCP only depends on the OpenTelemetry API, span creation is a no-op until you configure an SDK and exporter — so being on by default costs nothing until you opt into collection.
+
+### Turning Telemetry Off
+
+To disable FastMCP's instrumentation entirely, set `FASTMCP_ENABLE_TELEMETRY=false` (or `fastmcp.settings.enable_telemetry = False`). When disabled, FastMCP creates no spans even if an SDK is configured.
 
 ## Enabling Telemetry
 
@@ -271,6 +277,7 @@ FastMCP implements the [OpenTelemetry MCP semantic conventions](https://opentele
 | Attribute | Description |
 |-----------|-------------|
 | `mcp.method.name` | The MCP method being called (`tools/call`, `resources/read`, `prompts/get`) |
+| `mcp.protocol.version` | The negotiated MCP protocol version for the request |
 | `mcp.session.id` | Session identifier for the MCP connection |
 | `mcp.resource.uri` | The resource URI (for resource operations) |
 | `gen_ai.tool.name` | Tool name (on `tools/call` spans) |
