@@ -15,7 +15,7 @@ from fastmcp.utilities.tests import HeadlessOAuth, run_server_async
 
 PROJECT_LEVEL_OPENID_CONFIGURATION = {
     "issuer": "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU",
-    "scopes_supported": ["mcp:skyflow"],
+    "scopes_supported": ["mcp:read"],
     "jwks_uri": "https://api.descope.com/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/jwks.json",
 }
 
@@ -133,9 +133,9 @@ class TestDescopeProvider:
             # A second call returns the cached result without another fetch.
             scopes_again = await provider._get_scopes_supported()
 
-        assert scopes == ["mcp:skyflow"]
-        assert scopes_again == ["mcp:skyflow"]
-        assert provider._discovered_scopes == ["mcp:skyflow"]
+        assert scopes == ["mcp:read"]
+        assert scopes_again == ["mcp:read"]
+        assert provider._discovered_scopes == ["mcp:read"]
         assert provider._scopes_discovered is True
         mock_get.assert_awaited_once()
 
@@ -164,7 +164,7 @@ class TestDescopeProvider:
         with patch("httpx.AsyncClient.get", new=AsyncMock(return_value=mock_response)):
             second = await provider._get_scopes_supported()
 
-        assert second == ["mcp:skyflow"]
+        assert second == ["mcp:read"]
         assert provider._scopes_discovered is True
 
     def test_get_routes_is_network_free(self):
@@ -388,7 +388,7 @@ class TestDescopeProviderIntegration:
 
         with patch(
             "fastmcp.server.auth.providers.descope._discover_scopes",
-            new=AsyncMock(return_value=["mcp:skyflow"]),
+            new=AsyncMock(return_value=["mcp:read"]),
         ):
             async with run_server_async(mcp, transport="http") as url:
                 metadata_url = url.replace(
@@ -398,7 +398,7 @@ class TestDescopeProviderIntegration:
                     response = await client.get(metadata_url)
 
         response.raise_for_status()
-        assert response.json()["scopes_supported"] == ["mcp:skyflow"]
+        assert response.json()["scopes_supported"] == ["mcp:read"]
 
     async def test_unauthorized_access(self, mcp_server_url: str):
         # SDK v2 surfaces the server's 401 as a generic MCPError at the client
