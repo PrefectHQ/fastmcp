@@ -186,7 +186,7 @@ from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator, Sequence
 from fastmcp.server.providers import Provider
 from fastmcp.resources import Resource
-import httpx
+import httpx2
 
 class ApiResourceProvider(Provider):
     """Provides resources backed by an external API."""
@@ -199,7 +199,7 @@ class ApiResourceProvider(Provider):
 
     @asynccontextmanager
     async def lifespan(self) -> AsyncIterator[None]:
-        self.client = httpx.AsyncClient(
+        self.client = httpx2.AsyncClient(
             base_url=self.base_url,
             headers={"Authorization": f"Bearer {self.api_key}"}
         )

@@ -331,7 +331,7 @@ Deprecations that warned in 3.x are removed in 4.0. Each entry below is a hard r
 - **`fastmcp.experimental.server.openapi`** and **`fastmcp.experimental.utilities.openapi`** shims (deprecated 2.14) — Breaking. Import from `fastmcp.server.providers.openapi` and `fastmcp.utilities.openapi` respectively.
 - **`fastmcp.server.apps`** and **`fastmcp.server.app`** shims (deprecated 3.2) — Breaking. Import from `fastmcp.apps` (e.g. `AppConfig`) or `fastmcp` (`FastMCPApp`) instead.
 - **`PromptToolMiddleware`** and **`ResourceToolMiddleware`** (deprecated 3.1) — Breaking. Use the `PromptsAsTools` / `ResourcesAsTools` transforms from `fastmcp.server.transforms` instead. The non-deprecated `ToolInjectionMiddleware` base class is retained.
-- **`StreamableHttpTransport(sse_read_timeout=...)`** (deprecated no-op) — Breaking. The parameter had no effect under the SDK v2 client; configure timeouts via `read_timeout_seconds` in `session_kwargs` or on the httpx client via `httpx_client_factory`. `SSETransport` still accepts `sse_read_timeout`.
+- **`StreamableHttpTransport(sse_read_timeout=...)`** (deprecated no-op) — Breaking. The parameter had no effect under the SDK v2 client; configure timeouts via `read_timeout_seconds` in `session_kwargs` or on the httpx2 client via `httpx_client_factory`. `SSETransport` still accepts `sse_read_timeout`.
 
 ### `FastMCP` server methods and `mount()` kwargs
 
