@@ -336,7 +336,7 @@ class Settings(BaseSettings):
     stateless_http: bool = (
         False  # If True, uses true stateless mode (new transport per request)
     )
-    http_host_origin_protection: bool = True
+    http_host_origin_protection: bool | Literal["auto"] = False
     http_allowed_hosts: list[str] | None = None
     http_allowed_origins: list[str] | None = None
     http_session_idle_timeout: Annotated[
