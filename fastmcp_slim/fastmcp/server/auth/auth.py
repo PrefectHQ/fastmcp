@@ -157,6 +157,23 @@ class TokenHandler(_SDKTokenHandler):
                 headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
             )
 
+        # Dispatching the jwt-bearer grant ourselves bypasses the SDK's
+        # `grant_type not in client_info.grant_types` check, so enforce it here:
+        # a client may only use the ID-JAG grant if it registered for it. On the
+        # proxy, DCR adds this grant type to registered clients when identity
+        # assertion is enabled, so legitimately-registered clients are accepted
+        # while clients registered only for authorization_code/refresh_token are not.
+        if JWT_BEARER_GRANT_TYPE not in client_info.grant_types:
+            return self.response(
+                TokenErrorResponse(
+                    error="unsupported_grant_type",
+                    error_description=(
+                        "Unsupported grant type (supported grant types are "
+                        f"{client_info.grant_types})"
+                    ),
+                )
+            )
+
         assertion = form_data.get("assertion")
         if not isinstance(assertion, str) or not assertion:
             return self.response(

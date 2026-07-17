@@ -75,6 +75,7 @@ from fastmcp.server.auth.auth import (
 from fastmcp.server.auth.cimd import CIMDClientManager
 from fastmcp.server.auth.handlers.authorize import AuthorizationHandler
 from fastmcp.server.auth.identity_assertion import (
+    JWT_BEARER_GRANT_TYPE,
     IdentityAssertion,
     IdentityAssertionError,
     IdentityAssertionValidator,
@@ -857,11 +858,14 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 "Client %s matched upstream client_id — synthesizing client without DCR",
                 client_id,
             )
+            synthesized_grant_types = ["authorization_code", "refresh_token"]
+            if self._identity_assertion is not None:
+                synthesized_grant_types.append(JWT_BEARER_GRANT_TYPE)
             return ProxyDCRClient(
                 client_id=client_id,
                 client_secret=None,
                 redirect_uris=[AnyUrl("http://localhost")],
-                grant_types=["authorization_code", "refresh_token"],
+                grant_types=synthesized_grant_types,
                 scope=self._default_scope_str,
                 token_endpoint_auth_method="none",
                 allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
@@ -896,6 +900,20 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         redirect_uris = client_info.redirect_uris or [AnyUrl("http://localhost")]
 
+        # When identity assertion is enabled, registered clients are allowed to
+        # present the SEP-990 jwt-bearer (ID-JAG) grant. Add it to the client's
+        # registered grant types so the token endpoint's grant-type check accepts
+        # it — clients that never register (or register without it while identity
+        # assertion is disabled) remain unable to use the grant.
+        registered_grant_types = list(
+            client_info.grant_types or ["authorization_code", "refresh_token"]
+        )
+        if (
+            self._identity_assertion is not None
+            and JWT_BEARER_GRANT_TYPE not in registered_grant_types
+        ):
+            registered_grant_types.append(JWT_BEARER_GRANT_TYPE)
+
         # We use token_endpoint_auth_method="none" because the proxy handles
         # all upstream authentication. The client_secret must also be None
         # because the SDK requires secrets to be provided if they're set,
@@ -904,8 +922,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             client_id=client_info.client_id,
             client_secret=None,
             redirect_uris=redirect_uris,
-            grant_types=client_info.grant_types
-            or ["authorization_code", "refresh_token"],
+            grant_types=registered_grant_types,
             scope=client_info.scope or self._default_scope_str,
             token_endpoint_auth_method="none",
             allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
@@ -1365,11 +1382,22 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
         subject = str(claims["sub"])
 
-        # Granted scopes derive from the assertion (and policy), not from the
-        # client-controlled `params.scopes`.
-        granted_scopes = _assertion_granted_scopes(claims)
-        if not granted_scopes:
-            granted_scopes = list(params.scopes or [])
+        # Granted scopes are authoritative from the signed assertion (or, when the
+        # assertion omits them, from explicit server policy). The client-supplied
+        # request `scope` (`params.scopes`) is NOT covered by the signed assertion,
+        # so it may only NARROW the granted set — never widen it. A client cannot
+        # obtain a scope the assertion did not grant by asking for it at the token
+        # endpoint (e.g. an assertion granting `read` requesting `admin` gets nothing
+        # extra).
+        authoritative_scopes = _assertion_granted_scopes(claims)
+        if not authoritative_scopes:
+            authoritative_scopes = list(self._identity_assertion.required_scopes or [])
+
+        if params.scopes:
+            requested = set(params.scopes)
+            granted_scopes = [s for s in authoritative_scopes if s in requested]
+        else:
+            granted_scopes = list(authoritative_scopes)
 
         expires_in = self._identity_assertion.access_token_expiry_seconds
         access_jti = secrets.token_urlsafe(32)

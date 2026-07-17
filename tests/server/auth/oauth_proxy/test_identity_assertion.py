@@ -23,6 +23,7 @@ from fastmcp.server.auth.identity_assertion import (
     JWT_BEARER_GRANT_TYPE,
 )
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
+from fastmcp.server.auth.oauth_proxy.models import ProxyDCRClient
 from fastmcp.server.auth.providers.jwt import RSAKeyPair
 from tests.server.auth.oauth_proxy.conftest import MockTokenVerifier
 
@@ -110,21 +111,32 @@ async def _register_client(proxy: OAuthProxy) -> None:
     )
 
 
-async def _post_token(proxy: OAuthProxy, assertion: str) -> httpx.Response:
-    """POST a jwt-bearer grant to the proxy's /token endpoint via an ASGI app."""
-    await _register_client(proxy)
+async def _post_token(
+    proxy: OAuthProxy,
+    assertion: str,
+    *,
+    request_scope: str | None = None,
+    register: bool = True,
+) -> httpx.Response:
+    """POST a jwt-bearer grant to the proxy's /token endpoint via an ASGI app.
+
+    When ``register`` is True the standard test client is registered first; pass
+    ``register=False`` to exercise a client the caller has already stored.
+    """
+    if register:
+        await _register_client(proxy)
     app = FastMCP("ID-JAG Server", auth=proxy).http_app()
     transport = httpx.ASGITransport(app=app)
+    data = {
+        "grant_type": JWT_BEARER_GRANT_TYPE,
+        "assertion": assertion,
+        "client_id": "mcp-client",
+        "client_secret": "mcp-secret",
+    }
+    if request_scope is not None:
+        data["scope"] = request_scope
     async with httpx.AsyncClient(transport=transport, base_url=BASE_URL) as client:
-        return await client.post(
-            "/token",
-            data={
-                "grant_type": JWT_BEARER_GRANT_TYPE,
-                "assertion": assertion,
-                "client_id": "mcp-client",
-                "client_secret": "mcp-secret",
-            },
-        )
+        return await client.post("/token", data=data)
 
 
 class TestIdentityAssertionConfig:
@@ -242,6 +254,48 @@ class TestTokenEndpoint:
         assert resp.status_code == 400
         assert resp.json()["error"] == "unsupported_grant_type"
 
+    async def test_request_scope_cannot_widen_assertion_scope(
+        self,
+        idp_key: RSAKeyPair,
+        config: IdentityAssertion,
+        httpx_mock: HTTPXMock,
+    ):
+        """A client whose assertion grants only `readonly` cannot obtain `admin`
+        by asking for it at the token endpoint. The request `scope` is not covered
+        by the signed assertion, so it may only narrow the granted set."""
+        httpx_mock.add_response(url=JWKS_URI, json=_idp_jwks(idp_key))
+        proxy = _make_proxy(config)
+        proxy.set_mcp_path("/mcp")
+        assertion = _mint_id_jag(idp_key, scope="readonly")
+
+        resp = await _post_token(proxy, assertion, request_scope="admin")
+
+        assert resp.status_code == 200
+        verified = await proxy.verify_token(resp.json()["access_token"])
+        assert verified is not None
+        assert "admin" not in verified.scopes
+
+    async def test_request_scope_narrows_assertion_scope(
+        self,
+        idp_key: RSAKeyPair,
+        config: IdentityAssertion,
+        httpx_mock: HTTPXMock,
+    ):
+        """When the request `scope` is a subset of the assertion's granted scopes,
+        the issued token carries only the intersection."""
+        httpx_mock.add_response(url=JWKS_URI, json=_idp_jwks(idp_key))
+        proxy = _make_proxy(config)
+        proxy.set_mcp_path("/mcp")
+        assertion = _mint_id_jag(idp_key, scope="read write")
+
+        resp = await _post_token(proxy, assertion, request_scope="read")
+
+        assert resp.status_code == 200
+        verified = await proxy.verify_token(resp.json()["access_token"])
+        assert verified is not None
+        assert "read" in verified.scopes
+        assert "write" not in verified.scopes
+
 
 @pytest.mark.httpx_mock(assert_all_responses_were_requested=False)
 class TestValidationMatrix:
@@ -346,6 +400,95 @@ class TestIssuerKeyDiscovery:
         assertion = _mint_id_jag(idp_key)
 
         resp = await _post_token(proxy, assertion)
+
+        assert resp.status_code == 200
+        assert resp.json()["access_token"]
+
+
+class TestGrantTypeEnforcement:
+    """The proxy dispatches the jwt-bearer grant itself, so it must enforce the
+    registered-grant-type constraint the SDK would otherwise apply: only clients
+    registered for the jwt-bearer grant may present an ID-JAG. DCR adds the grant
+    to registered clients when identity assertion is enabled."""
+
+    async def test_client_not_registered_for_jwt_bearer_rejected(
+        self,
+        idp_key: RSAKeyPair,
+        config: IdentityAssertion,
+    ):
+        # The grant-type check rejects before any assertion validation, so no
+        # JWKS fetch occurs.
+        proxy = _make_proxy(config)
+        # A client registered only for the standard grants (e.g. before identity
+        # assertion was enabled). Stored directly so the DCR enabled-path does not
+        # add jwt-bearer for us.
+        await proxy._client_store.put(
+            key="mcp-client",
+            value=ProxyDCRClient(
+                client_id="mcp-client",
+                client_secret=None,
+                redirect_uris=[AnyUrl("http://localhost/callback")],
+                grant_types=["authorization_code", "refresh_token"],
+                token_endpoint_auth_method="none",
+            ),
+        )
+        assertion = _mint_id_jag(idp_key, scope="read")
+
+        resp = await _post_token(proxy, assertion, register=False)
+
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "unsupported_grant_type"
+
+    async def test_dcr_adds_jwt_bearer_when_enabled(self, config: IdentityAssertion):
+        proxy = _make_proxy(config)
+        await proxy.register_client(
+            OAuthClientInformationFull(
+                client_id="dcr-client",
+                redirect_uris=[AnyUrl("http://localhost/callback")],
+                grant_types=["authorization_code", "refresh_token"],
+            )
+        )
+
+        client = await proxy.get_client("dcr-client")
+
+        assert client is not None
+        assert JWT_BEARER_GRANT_TYPE in client.grant_types
+
+    async def test_dcr_does_not_add_jwt_bearer_when_disabled(self):
+        proxy = _make_proxy(None)
+        await proxy.register_client(
+            OAuthClientInformationFull(
+                client_id="dcr-client",
+                redirect_uris=[AnyUrl("http://localhost/callback")],
+                grant_types=["authorization_code", "refresh_token"],
+            )
+        )
+
+        client = await proxy.get_client("dcr-client")
+
+        assert client is not None
+        assert JWT_BEARER_GRANT_TYPE not in client.grant_types
+
+    async def test_dcr_registered_client_can_exchange(
+        self,
+        idp_key: RSAKeyPair,
+        config: IdentityAssertion,
+        httpx_mock: HTTPXMock,
+    ):
+        """A client that registers via DCR without the jwt-bearer grant can still
+        exchange an ID-JAG, because the enabled-path adds the grant on registration."""
+        httpx_mock.add_response(url=JWKS_URI, json=_idp_jwks(idp_key))
+        proxy = _make_proxy(config)
+        await proxy.register_client(
+            OAuthClientInformationFull(
+                client_id="mcp-client",
+                redirect_uris=[AnyUrl("http://localhost/callback")],
+                grant_types=["authorization_code", "refresh_token"],
+            )
+        )
+        assertion = _mint_id_jag(idp_key, scope="read")
+
+        resp = await _post_token(proxy, assertion, register=False)
 
         assert resp.status_code == 200
         assert resp.json()["access_token"]
