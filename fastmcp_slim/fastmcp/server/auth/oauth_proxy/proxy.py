@@ -2304,8 +2304,12 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
                 # Exchange IdP code for tokens (server-side)
                 async with self._upstream_oauth_client() as oauth_client:
+                    # url is passed by keyword: the _create_upstream_oauth_client
+                    # override point is duck-typed, and alternative clients may
+                    # declare it keyword-only (the refresh_token sites already
+                    # call by keyword).
                     idp_tokens: dict[str, Any] = await oauth_client.fetch_token(
-                        self._upstream_token_endpoint, **token_params
+                        url=self._upstream_token_endpoint, **token_params
                     )
 
                 logger.debug(
