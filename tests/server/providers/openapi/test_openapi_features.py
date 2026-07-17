@@ -762,14 +762,15 @@ class TestResourceTemplateRequestBuilding:
             mcp.add_provider(provider)
 
             async with Client(mcp) as mcp_client:
-                await mcp_client.read_resource(
-                    "resource://get_user/..%2F..%2Fadmin%2Fsecret"
-                )
+                # Reserved characters (encoded slash + space) must be
+                # re-encoded when building the outbound URL. A traversal
+                # payload (`..%2F...`) would be rejected by the default
+                # resource-security screening, so use a benign value that
+                # still exercises reserved-character encoding.
+                await mcp_client.read_resource("resource://get_user/a%2Fb%20c")
 
         assert seen_urls == [
-            httpx.URL(
-                "https://api.example.com/api/v1/users/%2E%2E%2F%2E%2E%2Fadmin%2Fsecret"
-            )
+            httpx.URL("https://api.example.com/api/v1/users/a%2Fb%20c")
         ]
 
     async def test_resource_template_ignores_unmatched_query_string(

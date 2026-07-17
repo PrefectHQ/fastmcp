@@ -182,8 +182,16 @@ class ParsedFunction:
     ) -> ParsedFunction:
         if validate:
             sig = inspect.signature(fn)
-            # Reject functions with *args or **kwargs
+            # Reject signatures that cannot be represented by MCP's
+            # object-shaped tool arguments.
             for param in sig.parameters.values():
+                if param.kind == inspect.Parameter.POSITIONAL_ONLY:
+                    raise ValueError(
+                        "Functions with positional-only parameters are not "
+                        "supported as tools because MCP passes tool arguments by "
+                        "name. Replace them with standard parameters that can be "
+                        "passed as keywords."
+                    )
                 if param.kind == inspect.Parameter.VAR_POSITIONAL:
                     raise ValueError("Functions with *args are not supported as tools")
                 if param.kind == inspect.Parameter.VAR_KEYWORD:

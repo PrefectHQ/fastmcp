@@ -5,9 +5,11 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
+from opentelemetry import trace
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from opentelemetry.trace import SpanKind, StatusCode
+from opentelemetry.trace import Span, SpanKind, StatusCode
 
+import fastmcp
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.server.auth import AccessToken
@@ -575,3 +577,187 @@ class TestFailurePathServerSpan:
             tool_call_server_spans[0].attributes is not None
             and tool_call_server_spans[0].attributes["mcp.method.name"] == "tools/call"
         )
+
+
+class TestTelemetryEnabledByDefault:
+    """Instrumentation is on by default and controllable via the off-switch.
+
+    FastMCP uses only the OpenTelemetry API, so spans are created unconditionally
+    and light up when an SDK is configured. `FASTMCP_ENABLE_TELEMETRY=false`
+    (`fastmcp.settings.enable_telemetry`) turns span creation off entirely, so no
+    FastMCP spans are exported even with an SDK configured.
+    """
+
+    async def test_spans_fire_by_default(self, trace_exporter: InMemorySpanExporter):
+        """No opt-in required: a tool call produces a span out of the box."""
+        assert fastmcp.settings.enable_telemetry is True
+
+        mcp = FastMCP("test-server")
+
+        @mcp.tool()
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        await mcp.call_tool("greet", {"name": "World"})
+
+        spans = trace_exporter.get_finished_spans()
+        assert len(spans) == 1
+        assert spans[0].name == "tools/call greet"
+
+    async def test_off_switch_suppresses_spans(
+        self,
+        trace_exporter: InMemorySpanExporter,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """With telemetry disabled, no spans are created even with an SDK
+        configured (the exporter fixture installs one)."""
+        monkeypatch.setattr(fastmcp.settings, "enable_telemetry", False)
+
+        mcp = FastMCP("test-server")
+
+        @mcp.tool()
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        result = await mcp.call_tool("greet", {"name": "World"})
+        assert "Hello, World!" in str(result)
+
+        spans = trace_exporter.get_finished_spans()
+        assert len(spans) == 0
+
+    async def test_off_switch_suppresses_spans_via_client(
+        self,
+        trace_exporter: InMemorySpanExporter,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """The off-switch suppresses every FastMCP span on the full request path
+        (seam SERVER span and FastMCP CLIENT span alike).
+
+        The SDK's own low-level `mcp-python-sdk` CLIENT spans ("MCP send ...")
+        are governed by the user's OpenTelemetry SDK, not FastMCP's off-switch,
+        so they may still appear — the assertion filters them out.
+        """
+        monkeypatch.setattr(fastmcp.settings, "enable_telemetry", False)
+
+        mcp = FastMCP("test-server")
+
+        @mcp.tool()
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        async with Client(mcp) as client:
+            await client.call_tool("greet", {"name": "World"})
+
+        spans = trace_exporter.get_finished_spans()
+        fastmcp_spans = [
+            s
+            for s in spans
+            if s.instrumentation_scope is not None
+            and s.instrumentation_scope.name == "fastmcp"
+        ]
+        assert fastmcp_spans == []
+        # In particular, no FastMCP SERVER span (FastMCP owns all SERVER spans).
+        assert [s for s in spans if s.kind == SpanKind.SERVER] == []
+
+    async def test_off_switch_leaves_enclosing_span_current(
+        self,
+        trace_exporter: InMemorySpanExporter,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """Disabling telemetry must be a transparent pass-through.
+
+        The stock OpenTelemetry `NoOpTracer.start_as_current_span` attaches a
+        `NonRecordingSpan` as the current span, which would hijack the trace
+        context from an enclosing application span. With FastMCP's off-switch,
+        `trace.get_current_span()` inside a handler must still return the
+        caller's enclosing span, and attributes written there must land on it.
+        """
+        monkeypatch.setattr(fastmcp.settings, "enable_telemetry", False)
+
+        tracer = trace.get_tracer("test-enclosing")
+        captured: dict[str, Span] = {}
+
+        mcp = FastMCP("test-server")
+
+        @mcp.tool()
+        def annotate() -> str:
+            current = trace.get_current_span()
+            captured["current"] = current
+            current.set_attribute("tool.touched", True)
+            return "ok"
+
+        with tracer.start_as_current_span("enclosing-app-span") as enclosing:
+            await mcp.call_tool("annotate", {})
+            # The tool ran with the enclosing span still current — FastMCP did
+            # not attach a replacement (non-recording) span.
+            assert captured["current"] is enclosing
+            assert enclosing.is_recording()
+
+        spans = trace_exporter.get_finished_spans()
+        app_spans = [s for s in spans if s.name == "enclosing-app-span"]
+        assert len(app_spans) == 1
+        assert app_spans[0].attributes is not None
+        assert app_spans[0].attributes["tool.touched"] is True
+        # No FastMCP spans were exported.
+        fastmcp_spans = [
+            s
+            for s in spans
+            if s.instrumentation_scope is not None
+            and s.instrumentation_scope.name == "fastmcp"
+        ]
+        assert fastmcp_spans == []
+
+
+class TestProtocolVersionAttribute:
+    """The SERVER span carries `mcp.protocol.version`, matching the SDK.
+
+    FastMCP drops the SDK's `OpenTelemetryMiddleware` to avoid a duplicate SERVER
+    span, so it re-emits the SDK's `mcp.protocol.version` attribute on its own
+    span for parity.
+    """
+
+    async def test_tool_call_span_has_protocol_version(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        mcp = FastMCP("test-server")
+
+        @mcp.tool()
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        async with Client(mcp) as client:
+            await client.call_tool("greet", {"name": "World"})
+
+        spans = trace_exporter.get_finished_spans()
+        server_span = next(
+            s
+            for s in spans
+            if s.kind == SpanKind.SERVER
+            and s.attributes is not None
+            and s.attributes.get("mcp.method.name") == "tools/call"
+        )
+        assert server_span.attributes is not None
+        version = server_span.attributes.get("mcp.protocol.version")
+        assert isinstance(version, str)
+        assert version
+
+    async def test_seam_span_has_protocol_version(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        """Seam-only methods (never reaching the high-level path) also carry the
+        protocol version."""
+        mcp = FastMCP("test-server")
+
+        async with Client(mcp) as client:
+            await client.set_logging_level("info")
+
+        spans = trace_exporter.get_finished_spans()
+        seam_span = next(
+            s
+            for s in spans
+            if s.kind == SpanKind.SERVER and s.name == "logging/setLevel"
+        )
+        assert seam_span.attributes is not None
+        version = seam_span.attributes.get("mcp.protocol.version")
+        assert isinstance(version, str)
+        assert version

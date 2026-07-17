@@ -290,7 +290,12 @@ def register_task_session(session_id: str, session: ServerSession) -> None:
     stored as a weakref so it doesn't prevent garbage collection when the
     client disconnects.
     """
-    _task_sessions[session_id] = weakref.ref(session)
+
+    def remove_session(ref: weakref.ref[ServerSession]) -> None:
+        if _task_sessions.get(session_id) is ref:
+            _task_sessions.pop(session_id)
+
+    _task_sessions[session_id] = weakref.ref(session, remove_session)
 
 
 def get_task_session(session_id: str) -> ServerSession | None:

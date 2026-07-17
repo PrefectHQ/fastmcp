@@ -170,9 +170,8 @@ class TestFastMCPComponent:
 
     def test_tags_deduplication(self):
         """Test that tags are deduplicated when passed as a sequence."""
-        component = FastMCPComponent(
-            name="test",
-            tags=["tag1", "tag2", "tag1", "tag2"],  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+        component = FastMCPComponent.model_validate(
+            {"name": "test", "tags": ["tag1", "tag2", "tag1", "tag2"]}
         )
         assert component.tags == {"tag1", "tag2"}
 

@@ -49,6 +49,7 @@ from fastmcp.exceptions import (
     NotFoundError,
     PromptError,
     ResourceError,
+    ResourceSecurityError,
     ToolError,
     ValidationError,
 )
@@ -57,6 +58,12 @@ from fastmcp.prompts import Prompt
 from fastmcp.prompts.base import PromptResult
 from fastmcp.prompts.function_prompt import FunctionPrompt
 from fastmcp.resources.base import Resource, ResourceResult
+from fastmcp.resources.security import (
+    DEFAULT_RESOURCE_SECURITY,
+    INHERIT_SECURITY,
+    InheritSecurity,
+    ResourceSecurity,
+)
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth import AuthCheck, AuthContext, AuthProvider, run_auth_checks
 from fastmcp.server.caching import build_cache_hints
@@ -100,7 +107,7 @@ logger = get_logger(__name__)
 
 def _version_request_meta(
     version: VersionSpec | None,
-) -> dict[str, Any] | None:
+) -> mcp_types.RequestParamsMeta | None:
     if version is None:
         return None
 
@@ -120,9 +127,8 @@ def _version_request_meta(
     if not version_value:
         return None
 
-    # SDK v2: request `_meta` is a plain dict (the `Meta` type alias), not the
-    # old `RequestParams.Meta` nested model.
-    return {"fastmcp": {"version": version_value}}
+    # RequestParamsMeta does not declare application-specific extension keys.
+    return cast(mcp_types.RequestParamsMeta, {"fastmcp": {"version": version_value}})
 
 
 # The MCP SDK warns "Tool X not listed, no validation will be performed"
@@ -330,6 +336,7 @@ class FastMCP(
         dereference_schemas: bool = True,
         strict_input_validation: bool | None = None,
         list_page_size: int | None = None,
+        resource_security: ResourceSecurity | None = DEFAULT_RESOURCE_SECURITY,
         cache_ttl: int | None = None,
         cache_scope: Literal["public", "private"] | None = None,
         tasks: bool | None = None,
@@ -389,6 +396,13 @@ class FastMCP(
         if list_page_size is not None and list_page_size <= 0:
             raise ValueError("list_page_size must be a positive integer")
         self._list_page_size: int | None = list_page_size
+
+        # Server-wide default path-security policy for templated resources.
+        # Applied before the handler runs to every templated read whose
+        # component does not override it. DEFAULT_RESOURCE_SECURITY screens
+        # traversal, absolute paths, and null bytes; None disables screening
+        # server-wide.
+        self._resource_security: ResourceSecurity | None = resource_security
 
         # Server-level SEP-2549 cache hints, applied uniformly to every
         # SDK-cacheable result by the low-level server's runner (raises on
@@ -1230,9 +1244,7 @@ class FastMCP(
                     message=mcp_types.CallToolRequestParams(
                         name=name,
                         arguments=arguments or {},
-                        # `_meta` carries the app-level `fastmcp` version key, which the
-                        # reserved-key RequestParamsMeta TypedDict can't express statically.
-                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # ty: ignore[invalid-argument-type]
+                        _meta=_version_request_meta(version),
                     ),
                     source="client",
                     type="request",
@@ -1400,9 +1412,7 @@ class FastMCP(
                 mw_context = MiddlewareContext(
                     message=mcp_types.ReadResourceRequestParams(
                         uri=str(uri),
-                        # `_meta` carries the app-level `fastmcp` version key, which the
-                        # reserved-key RequestParamsMeta TypedDict can't express statically.
-                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # ty: ignore[invalid-argument-type]
+                        _meta=_version_request_meta(version),
                     ),
                     source="client",
                     type="request",
@@ -1490,6 +1500,24 @@ class FastMCP(
                 span.set_attributes(template.get_span_attributes())
                 params = template.matches(uri)
                 assert params is not None
+
+                # Path-security screening: reject traversal / absolute-path /
+                # null-byte payloads in extracted parameter values BEFORE the
+                # handler runs. This is the single chokepoint for every
+                # templated read (local decorator and provider-sourced), so
+                # enforcement lives here rather than in any decorator.
+                security = template.resolve_security(self._resource_security)
+                if security is not None:
+                    failed = security.validate(params)
+                    if failed is not None:
+                        logger.debug(
+                            "Rejected resource %r: parameter %r failed "
+                            "path-security screening",
+                            uri,
+                            failed,
+                        )
+                        raise ResourceSecurityError(f"Unknown resource: {uri!r}")
+
                 if task_meta is not None and task_meta.fn_key is None:
                     task_meta = replace(task_meta, fn_key=template.key)
                 try:
@@ -1579,9 +1607,7 @@ class FastMCP(
                     message=mcp_types.GetPromptRequestParams(
                         name=name,
                         arguments=arguments,
-                        # `_meta` carries the app-level `fastmcp` version key, which the
-                        # reserved-key RequestParamsMeta TypedDict can't express statically.
-                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # ty: ignore[invalid-argument-type]
+                        _meta=_version_request_meta(version),
                     ),
                     source="client",
                     type="request",
@@ -1824,6 +1850,7 @@ class FastMCP(
         app: AppConfig | dict[str, Any] | bool | None = None,
         task: bool | TaskConfig | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
+        security: ResourceSecurity | None | InheritSecurity = INHERIT_SECURITY,
     ) -> Callable[[F], F]:
         """Decorator to register a function as a resource.
 
@@ -1923,6 +1950,7 @@ class FastMCP(
             meta=meta,
             task=task if task is not None else self._support_tasks_by_default,
             auth=auth,
+            security=security,
         )
 
         return inner_decorator
