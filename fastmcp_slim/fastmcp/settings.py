@@ -219,9 +219,10 @@ class Settings(BaseSettings):
                 Enabled by default: FastMCP uses only the OpenTelemetry API, so
                 span creation is a no-op with negligible overhead unless an
                 OpenTelemetry SDK and exporter are configured. Set to False to
-                turn instrumentation off entirely, in which case `get_tracer()`
-                returns a no-op tracer and no FastMCP spans are created even when
-                an SDK is configured.
+                turn instrumentation off entirely, in which case FastMCP's span
+                helpers become a transparent pass-through: no FastMCP spans are
+                created even when an SDK is configured, and the surrounding OTel
+                trace context is left untouched.
                 """
             )
         ),

@@ -5,8 +5,9 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
+from opentelemetry import trace
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from opentelemetry.trace import SpanKind, StatusCode
+from opentelemetry.trace import Span, SpanKind, StatusCode
 
 import fastmcp
 from fastmcp import Client, FastMCP
@@ -657,6 +658,54 @@ class TestTelemetryEnabledByDefault:
         assert fastmcp_spans == []
         # In particular, no FastMCP SERVER span (FastMCP owns all SERVER spans).
         assert [s for s in spans if s.kind == SpanKind.SERVER] == []
+
+    async def test_off_switch_leaves_enclosing_span_current(
+        self,
+        trace_exporter: InMemorySpanExporter,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """Disabling telemetry must be a transparent pass-through.
+
+        The stock OpenTelemetry `NoOpTracer.start_as_current_span` attaches a
+        `NonRecordingSpan` as the current span, which would hijack the trace
+        context from an enclosing application span. With FastMCP's off-switch,
+        `trace.get_current_span()` inside a handler must still return the
+        caller's enclosing span, and attributes written there must land on it.
+        """
+        monkeypatch.setattr(fastmcp.settings, "enable_telemetry", False)
+
+        tracer = trace.get_tracer("test-enclosing")
+        captured: dict[str, Span] = {}
+
+        mcp = FastMCP("test-server")
+
+        @mcp.tool()
+        def annotate() -> str:
+            current = trace.get_current_span()
+            captured["current"] = current
+            current.set_attribute("tool.touched", True)
+            return "ok"
+
+        with tracer.start_as_current_span("enclosing-app-span") as enclosing:
+            await mcp.call_tool("annotate", {})
+            # The tool ran with the enclosing span still current — FastMCP did
+            # not attach a replacement (non-recording) span.
+            assert captured["current"] is enclosing
+            assert enclosing.is_recording()
+
+        spans = trace_exporter.get_finished_spans()
+        app_spans = [s for s in spans if s.name == "enclosing-app-span"]
+        assert len(app_spans) == 1
+        assert app_spans[0].attributes is not None
+        assert app_spans[0].attributes["tool.touched"] is True
+        # No FastMCP spans were exported.
+        fastmcp_spans = [
+            s
+            for s in spans
+            if s.instrumentation_scope is not None
+            and s.instrumentation_scope.name == "fastmcp"
+        ]
+        assert fastmcp_spans == []
 
 
 class TestProtocolVersionAttribute:
