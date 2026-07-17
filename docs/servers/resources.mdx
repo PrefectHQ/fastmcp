@@ -526,14 +526,18 @@ Note that like regular parameters, each wildcard parameter must still be a named
 
 Template parameters are extracted from the request URI and decoded before your function receives them, so a path-traversal payload like `../` or an absolute path can reach a handler that builds filesystem paths or upstream URLs. FastMCP screens every templated resource's parameter values **before the handler runs**, and this screening is **on by default**.
 
-By default, a parameter value is rejected if it contains a `..` path segment, looks like an absolute path, or contains a null byte. A rejected read surfaces a clean "resource not found" error to the client and logs the reason at debug level, so the failing parameter and policy are never revealed on the wire.
+By default, a parameter value is rejected if its `..` path segments would escape the value's own starting depth, if it looks like an absolute path, or if it contains a null byte. A rejected read surfaces a clean "resource not found" error to the client and logs the reason at debug level, so the failing parameter and policy are never revealed on the wire.
 
-The check is component-based: only a standalone `..` segment counts as traversal. Values that merely *contain* dots pass — `HEAD~3..HEAD`, `v1..v2`, `file.tar.gz`, and dotfiles like `.env` are all allowed. Screening runs on the decoded value, so `..%2F` is caught the same as a literal `../`.
+The traversal check is component-based and tracks net depth: `..` only counts against you when it climbs above where the value starts. `../secret`, a bare `..`, and `a/../../b` are rejected; `foo/../bar` is allowed because it never leaves the starting directory, and values that merely *contain* dots — `HEAD~3..HEAD`, `v1..v2`, `file.tar.gz`, dotfiles like `.env` — all pass. Screening runs on the decoded value, so `..%2F` is caught the same as a literal `../`. This bounds relative escapes; anchoring the *final* path inside a root directory is still your handler's job (for example with `safe_join`), since only the handler knows what the value is joined to.
 
 ```python
+from pathlib import Path
+
 from fastmcp import FastMCP
 
 mcp = FastMCP(name="DocsServer")
+
+DOCS_ROOT = Path("/srv/docs")
 
 
 @mcp.resource("docs://{path*}")
