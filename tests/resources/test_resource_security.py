@@ -360,3 +360,45 @@ class TestProviderSourcedTemplates:
 
         with pytest.raises(ResourceSecurityError):
             await parent.read_resource("file:///../escape")
+
+    async def test_mounted_template_exempt_param_preserved(self):
+        """A child template's explicit per-param exemption survives the mount.
+
+        The child opts one parameter out of screening. That policy must be
+        carried through the provider-wrapped template so the parent's read
+        chokepoint honours it instead of falling back to the parent default.
+        """
+        child = FastMCP("child")
+
+        @child.resource(
+            "git://diff/{ref}/{path*}",
+            security=ResourceSecurity(exempt_params={"ref"}),
+        )
+        def git_diff(ref: str, path: str) -> str:
+            return f"child:{ref}:{path}"
+
+        parent = FastMCP("parent")  # default screening on
+        parent.mount(child)
+
+        # `..` in the exempt `ref` param is allowed through the mount.
+        result = await parent.read_resource("git://diff/../safe")
+        assert result.contents[0].content == "child:..:safe"
+
+        # A traversal on the NON-exempt `path` param is still rejected.
+        with pytest.raises(ResourceSecurityError):
+            await parent.read_resource("git://diff/main/../escape")
+
+    async def test_mounted_template_disabled_security_preserved(self):
+        """A child template that explicitly disables screening keeps that
+        opt-out through the mount rather than inheriting the parent default."""
+        child = FastMCP("child")
+
+        @child.resource("git://raw/{path*}", security=None)
+        def read_raw(path: str) -> str:
+            return f"child:{path}"
+
+        parent = FastMCP("parent")  # default screening on
+        parent.mount(child)
+
+        result = await parent.read_resource("git://raw/../escape")
+        assert result.contents[0].content == "child:../escape"
