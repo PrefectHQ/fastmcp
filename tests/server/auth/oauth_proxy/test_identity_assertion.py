@@ -32,6 +32,15 @@ ISSUER = "https://login.acme-corp.com"
 JWKS_URI = "https://login.acme-corp.com/jwks"
 
 
+def _b64url_json(value: object) -> str:
+    """Base64url-encode a JSON value as a JWT segment (no padding)."""
+    import base64
+    import json
+
+    raw = json.dumps(value).encode()
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+
 def _idp_jwks(key_pair: RSAKeyPair) -> dict:
     """Build a JWKS document from an RSA key pair's public key."""
     public_key = jwk.import_key(key_pair.public_key, "RSA")
@@ -52,6 +61,7 @@ def _mint_id_jag(
     expires_in: int = 120,
     scope: str | None = None,
     include_iat: bool = True,
+    nbf_offset: int | None = None,
 ) -> str:
     """Mint a fake ID-JAG JWT with full control over header and claims."""
     now = int(time.time())
@@ -65,6 +75,8 @@ def _mint_id_jag(
     }
     if include_iat:
         payload["iat"] = now
+    if nbf_offset is not None:
+        payload["nbf"] = now + nbf_offset
     if scope is not None:
         payload["scope"] = scope
     signing_key = jwk.import_key(key_pair.private_key.get_secret_value(), "RSA")
@@ -296,6 +308,56 @@ class TestTokenEndpoint:
         assert "read" in verified.scopes
         assert "write" not in verified.scopes
 
+    async def test_request_narrowing_preserves_required_scope(
+        self,
+        idp_key: RSAKeyPair,
+        httpx_mock: HTTPXMock,
+    ):
+        """A configured `required_scope` the assertion grants must always ride on
+        the issued token; the request `scope` may only narrow the optional
+        remainder. Requesting `read` must not drop the mandatory `admin`."""
+        httpx_mock.add_response(url=JWKS_URI, json=_idp_jwks(idp_key))
+        config = IdentityAssertion(
+            trusted_issuers=[ISSUER],
+            jwks_uris={ISSUER: JWKS_URI},
+            required_scopes=["admin"],
+        )
+        proxy = _make_proxy(config)
+        proxy.set_mcp_path("/mcp")
+        assertion = _mint_id_jag(idp_key, scope="admin read")
+
+        resp = await _post_token(proxy, assertion, request_scope="read")
+
+        assert resp.status_code == 200
+        verified = await proxy.verify_token(resp.json()["access_token"])
+        assert verified is not None
+        assert "admin" in verified.scopes
+        assert "read" in verified.scopes
+
+    async def test_request_for_required_scope_only(
+        self,
+        idp_key: RSAKeyPair,
+        httpx_mock: HTTPXMock,
+    ):
+        """Requesting only the required scope keeps it and narrows away the rest."""
+        httpx_mock.add_response(url=JWKS_URI, json=_idp_jwks(idp_key))
+        config = IdentityAssertion(
+            trusted_issuers=[ISSUER],
+            jwks_uris={ISSUER: JWKS_URI},
+            required_scopes=["admin"],
+        )
+        proxy = _make_proxy(config)
+        proxy.set_mcp_path("/mcp")
+        assertion = _mint_id_jag(idp_key, scope="admin read")
+
+        resp = await _post_token(proxy, assertion, request_scope="admin")
+
+        assert resp.status_code == 200
+        verified = await proxy.verify_token(resp.json()["access_token"])
+        assert verified is not None
+        assert "admin" in verified.scopes
+        assert "read" not in verified.scopes
+
 
 @pytest.mark.httpx_mock(assert_all_responses_were_requested=False)
 class TestValidationMatrix:
@@ -384,6 +446,66 @@ class TestValidationMatrix:
 
         assert resp.status_code == 401
         assert resp.json()["error"] == "invalid_grant"
+
+    async def test_future_nbf_rejected(
+        self, idp_key: RSAKeyPair, config: IdentityAssertion
+    ):
+        # An ID-JAG whose not-before (`nbf`) claim is in the future is not yet
+        # valid and must be rejected.
+        proxy = _make_proxy(config)
+        assertion = _mint_id_jag(idp_key, nbf_offset=300)
+
+        resp = await _post_token(proxy, assertion)
+
+        assert resp.status_code == 401
+        assert resp.json()["error"] == "invalid_grant"
+
+    async def test_past_nbf_accepted(
+        self, idp_key: RSAKeyPair, config: IdentityAssertion
+    ):
+        # An `nbf` in the past means the assertion is already valid.
+        proxy = _make_proxy(config)
+        assertion = _mint_id_jag(idp_key, nbf_offset=-60)
+
+        resp = await _post_token(proxy, assertion)
+
+        assert resp.status_code == 200
+        assert resp.json()["access_token"]
+
+    async def test_non_object_payload_rejected(
+        self, idp_key: RSAKeyPair, config: IdentityAssertion
+    ):
+        # A JWT with a valid typ header but a JSON-array payload must map to a
+        # clean invalid_grant, not an unhandled 500 from calling `.get()` on a list.
+        header = _b64url_json({"alg": "RS256", "typ": ID_JAG_TYP, "kid": "idp-key-1"})
+        payload = _b64url_json([])
+        assertion = f"{header}.{payload}.signature"
+
+        resp = await _post_token(proxy=_make_proxy(config), assertion=assertion)
+
+        assert resp.status_code == 401
+        assert resp.json()["error"] == "invalid_grant"
+
+    async def test_jti_cache_does_not_grow_past_capacity(
+        self, idp_key: RSAKeyPair, config: IdentityAssertion
+    ):
+        # Once the JTI cache is full of still-valid entries, further fresh
+        # assertions are rejected as overloaded WITHOUT being inserted, so the
+        # cache never grows beyond its cap.
+        proxy = _make_proxy(config)
+        validator = proxy._identity_assertion_validator
+        assert validator is not None
+        validator._jti_cache_max_size = 2
+        future = time.time() + 120
+        validator._jti_cache = {"filler-a": future, "filler-b": future}
+
+        for i in range(3):
+            assertion = _mint_id_jag(idp_key, jti=f"fresh-{i}")
+            resp = await _post_token(proxy, assertion)
+            assert resp.status_code == 401
+            assert resp.json()["error"] == "invalid_grant"
+
+        assert len(validator._jti_cache) == 2
 
 
 class TestIssuerKeyDiscovery:

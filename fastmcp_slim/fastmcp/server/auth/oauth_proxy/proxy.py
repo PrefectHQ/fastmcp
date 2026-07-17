@@ -1393,9 +1393,17 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         if not authoritative_scopes:
             authoritative_scopes = list(self._identity_assertion.required_scopes or [])
 
+        # Configured mandatory scopes that the assertion actually grants must always
+        # ride on the issued token — the client request may only narrow the
+        # remaining, optional scopes. Otherwise a request like `scope=read` could
+        # silently drop a required `admin` scope the assertion authorized.
+        required = set(self._identity_assertion.required_scopes or [])
+
         if params.scopes:
             requested = set(params.scopes)
-            granted_scopes = [s for s in authoritative_scopes if s in requested]
+            granted_scopes = [
+                s for s in authoritative_scopes if s in required or s in requested
+            ]
         else:
             granted_scopes = list(authoritative_scopes)
 

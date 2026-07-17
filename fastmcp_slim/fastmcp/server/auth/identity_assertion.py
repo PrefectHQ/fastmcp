@@ -141,7 +141,9 @@ class IdentityAssertionValidator:
 
     JTI replay protection mirrors :class:`CIMDAssertionValidator`: seen ``jti``
     values are cached until the assertion would expire anyway, with periodic
-    cleanup and an emergency size cap.
+    cleanup and an emergency size cap. Like CIMD, the cache is per-process, so
+    replay protection is not shared across horizontally-scaled workers or
+    replicas; see the identity-assertion docs for the deployment caveat.
     """
 
     #: RFC 7523 recommends short-lived assertions; reject anything longer.
@@ -257,6 +259,8 @@ class IdentityAssertionValidator:
             unverified_claims = _decode_unverified_claims(assertion)
         except (ValueError, KeyError, IndexError) as e:
             raise IdentityAssertionError(f"Malformed assertion payload: {e}") from e
+        if not isinstance(unverified_claims, dict):
+            raise IdentityAssertionError("Assertion payload is not a JSON object")
         iss = unverified_claims.get("iss")
         if not iss or iss not in self.config.trusted_issuers:
             raise IdentityAssertionError(f"Untrusted assertion issuer: {iss!r}")
@@ -273,8 +277,11 @@ class IdentityAssertionValidator:
         now = time.time()
         exp = claims.get("exp")
         iat = claims.get("iat")
+        nbf = claims.get("nbf")
         if not exp:
             raise IdentityAssertionError("Assertion must include exp claim")
+        if nbf is not None and nbf > now + self.CLOCK_SKEW_SECONDS:
+            raise IdentityAssertionError("Assertion is not yet valid (nbf in future)")
         if iat is not None:
             if iat > now + self.CLOCK_SKEW_SECONDS:
                 raise IdentityAssertionError("Assertion iat is in the future")
@@ -308,13 +315,19 @@ class IdentityAssertionValidator:
         cached_exp = self._jti_cache.get(jti)
         if cached_exp is not None and cached_exp > now:
             raise IdentityAssertionError(f"Assertion replay detected: jti {jti} reused")
-        self._jti_cache[jti] = exp
 
-        if len(self._jti_cache) > self._jti_cache_max_size:
+        # Enforce the cap BEFORE inserting so a rejected assertion never grows the
+        # cache. A fresh jti that would exceed capacity is rejected outright (after
+        # a cleanup pass to reclaim any expired entries first).
+        if (
+            jti not in self._jti_cache
+            and len(self._jti_cache) >= self._jti_cache_max_size
+        ):
             self._cleanup_expired_jtis()
-            if len(self._jti_cache) > self._jti_cache_max_size:
+            if len(self._jti_cache) >= self._jti_cache_max_size:
                 logger.warning("ID-JAG jti cache at capacity, possible attack")
                 raise IdentityAssertionError("Server overloaded, please retry")
+        self._jti_cache[jti] = exp
 
         logger.debug("ID-JAG validated for subject=%s issuer=%s", sub, iss)
         return claims
