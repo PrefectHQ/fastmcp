@@ -559,3 +559,77 @@ class TestTokenStorageTTL:
 
         await adapter.clear()
         assert await adapter.get_token_expiry() is None
+
+
+class TestClientInfoStorageTTL:
+    async def test_expired_client_info_removes_stale_registration(self):
+        from key_value.aio.stores.memory import MemoryStore
+        from mcp.shared.auth import OAuthClientInformationFull
+        from pydantic import AnyUrl
+
+        from fastmcp.client.auth.oauth import TokenStorageAdapter
+
+        storage = MemoryStore()
+        adapter = TokenStorageAdapter(
+            async_key_value=storage, server_url="https://test"
+        )
+        current = OAuthClientInformationFull(
+            client_id="current-client",
+            client_secret="current-secret",
+            client_secret_expires_at=0,
+            redirect_uris=[AnyUrl("http://localhost/callback")],
+        )
+        await adapter.set_client_info(current)
+        assert await adapter.get_client_info() == current
+
+        expired = current.model_copy(
+            update={
+                "client_id": "expired-client",
+                "client_secret_expires_at": int(time.time()) - 1,
+            }
+        )
+        await adapter.set_client_info(expired)
+
+        assert await adapter.get_client_info() is None
+
+    async def test_never_expiring_client_info_is_stored(self):
+        from key_value.aio.stores.memory import MemoryStore
+        from mcp.shared.auth import OAuthClientInformationFull
+        from pydantic import AnyUrl
+
+        from fastmcp.client.auth.oauth import TokenStorageAdapter
+
+        adapter = TokenStorageAdapter(
+            async_key_value=MemoryStore(), server_url="https://test"
+        )
+        client_info = OAuthClientInformationFull(
+            client_id="never-expiring-client",
+            client_secret="secret",
+            client_secret_expires_at=0,
+            redirect_uris=[AnyUrl("http://localhost/callback")],
+        )
+
+        await adapter.set_client_info(client_info)
+
+        assert await adapter.get_client_info() == client_info
+
+    async def test_future_expiring_client_info_is_stored(self):
+        from key_value.aio.stores.memory import MemoryStore
+        from mcp.shared.auth import OAuthClientInformationFull
+        from pydantic import AnyUrl
+
+        from fastmcp.client.auth.oauth import TokenStorageAdapter
+
+        adapter = TokenStorageAdapter(
+            async_key_value=MemoryStore(), server_url="https://test"
+        )
+        client_info = OAuthClientInformationFull(
+            client_id="future-expiring-client",
+            client_secret="secret",
+            client_secret_expires_at=int(time.time()) + 60,
+            redirect_uris=[AnyUrl("http://localhost/callback")],
+        )
+
+        await adapter.set_client_info(client_info)
+
+        assert await adapter.get_client_info() == client_info

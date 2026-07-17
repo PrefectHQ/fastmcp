@@ -166,6 +166,11 @@ class TokenStorageAdapter(TokenStorage):
 
         if client_info.client_secret_expires_at:
             ttl = client_info.client_secret_expires_at - int(time.time())
+            if ttl <= 0:
+                await self._storage_client_info.delete(
+                    key=self._get_client_info_cache_key()
+                )
+                return
 
         await self._storage_client_info.put(
             key=self._get_client_info_cache_key(),
