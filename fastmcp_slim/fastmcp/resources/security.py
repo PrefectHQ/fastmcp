@@ -18,15 +18,32 @@ value that merely *contains* dots (e.g. `HEAD~3..HEAD`, `v1..v2`,
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Set
+from collections.abc import Callable, Mapping, Set
 from dataclasses import dataclass, field
+from functools import cache
 from typing import Any
 
-from mcp.shared.path_security import contains_path_traversal, is_absolute_path
 from pydantic import GetCoreSchemaHandler
 from pydantic_core import core_schema
 
 __all__ = ["ResourceSecurity"]
+
+
+@cache
+def _path_checks() -> tuple[Callable[[str], bool], Callable[[str], bool]]:
+    """Lazily load the SDK's path-safety helpers.
+
+    The screening logic lives in the `mcp` SDK, which is an optional
+    dependency of `fastmcp-slim`. Importing it at module top would make
+    `from fastmcp.resources import Resource` require the SDK, so the
+    import is deferred to the point of first use (and cached).
+    """
+    from mcp.shared.path_security import (
+        contains_path_traversal,
+        is_absolute_path,
+    )
+
+    return contains_path_traversal, is_absolute_path
 
 
 class InheritSecurity:
@@ -111,6 +128,7 @@ class ResourceSecurity:
             The name of the first parameter that fails, or `None` if all
             values pass.
         """
+        contains_path_traversal, is_absolute_path = _path_checks()
         for name, value in params.items():
             if name in self.exempt_params:
                 continue

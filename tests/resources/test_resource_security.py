@@ -12,6 +12,10 @@ internal callers use. Over the in-memory `Client`, URIs are wrapped in
 they reach the server — a separate layer of defense.
 """
 
+import subprocess
+import sys
+import textwrap
+
 import pytest
 
 from fastmcp import Client, FastMCP
@@ -115,6 +119,57 @@ class TestResourceSecurityModel:
         # dict order preserved; first failing name returned
         result = ResourceSecurity().validate({"safe": "ok", "bad": ".."})
         assert result == "bad"
+
+
+# ---------------------------------------------------------------------------
+# Bare-slim import: the module must not eagerly require the optional SDK
+# ---------------------------------------------------------------------------
+
+
+class TestBareSlimImport:
+    """`fastmcp-slim` installs the `mcp` SDK only under the `[mcp]` extra.
+
+    The path-safety helpers live in `mcp.shared.path_security`, so importing
+    them at module top would make `from fastmcp.resources import Resource`
+    require the SDK — regressing a previously dependency-free import path.
+    The import must be deferred to the point of actual screening.
+    """
+
+    def test_resources_import_without_sdk(self):
+        code = textwrap.dedent(
+            """
+            import sys, builtins
+            _real_import = builtins.__import__
+
+            def blocked_import(name, *args, **kwargs):
+                if name == "mcp" or name.startswith("mcp."):
+                    raise ModuleNotFoundError(f"No module named '{name}'")
+                return _real_import(name, *args, **kwargs)
+
+            builtins.__import__ = blocked_import
+            for mod in list(sys.modules):
+                if mod == "mcp" or mod.startswith("mcp."):
+                    del sys.modules[mod]
+
+            from fastmcp.resources import Resource, ResourceSecurity  # noqa: F401
+            import fastmcp.resources  # noqa: F401
+            print("OK")
+            """
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "OK" in result.stdout
+
+    def test_screening_still_works_with_sdk(self):
+        # With the SDK present (the normal test environment), the deferred
+        # import resolves and screening behaves exactly as before.
+        assert ResourceSecurity().validate({"path": "../etc/passwd"}) == "path"
+        assert ResourceSecurity().validate({"path": "/etc/passwd"}) == "path"
+        assert ResourceSecurity().validate({"path": "safe/file.txt"}) is None
 
 
 # ---------------------------------------------------------------------------
