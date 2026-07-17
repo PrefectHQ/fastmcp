@@ -1,7 +1,5 @@
-/* Banner styling -- improve readability with better contrast */
+/* Banner animation and layout; theme colors are configured in docs.json. */
 #banner {
-  background: #f1f5f9 !important;
-  color: #1e293b !important;
   font-size: 0.95rem !important;
   font-weight: 600 !important;
   padding-top: 12px !important;
@@ -29,11 +27,6 @@
   pointer-events: none;
 }
 
-.dark #banner {
-  background: #475569 !important;
-  color: #f1f5f9 !important;
-}
-
 .dark #banner::before {
   background: linear-gradient(
     90deg,
@@ -56,12 +49,7 @@
 }
 
 #banner * {
-  color: #1e293b !important;
   margin: 0 !important;
-}
-
-.dark #banner * {
-  color: #f1f5f9 !important;
 }
 
 @media (max-width: 767px) {
@@ -71,4 +59,3 @@
     padding-bottom: 8px !important;
   }
 }
-
