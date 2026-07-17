@@ -7,11 +7,16 @@ for seamless MCP client authentication.
 
 from __future__ import annotations
 
+import asyncio
 from urllib.parse import urlparse
 
 import httpx
+from mcp.server.auth.json_response import PydanticJSONResponse
+from mcp.server.auth.routes import build_resource_metadata_url, cors_middleware
+from mcp.shared.auth import ProtectedResourceMetadata
 from pydantic import AnyHttpUrl
-from starlette.responses import JSONResponse
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
 from fastmcp.server.auth import RemoteAuthProvider, TokenVerifier
@@ -52,10 +57,11 @@ def _parse_descope_config_url(config_url: str) -> tuple[str, str, str, str]:
     return descope_base_url, project_id, issuer_url, openid_url
 
 
-def _discover_scopes(openid_configuration_url: str) -> list[str] | None:
+async def _discover_scopes(openid_configuration_url: str) -> list[str] | None:
     try:
-        response = httpx.get(openid_configuration_url, timeout=10.0)
-        response.raise_for_status()
+        async with httpx.AsyncClient() as client:
+            response = await client.get(openid_configuration_url, timeout=10.0)
+            response.raise_for_status()
         scopes = response.json().get("scopes_supported")
         if isinstance(scopes, list):
             parsed = [scope for scope in scopes if isinstance(scope, str)]
@@ -153,11 +159,18 @@ class DescopeProvider(RemoteAuthProvider):
             self.openid_configuration_url.replace(_OPENID_WK, _OAUTH_WK)
         )
 
-        if (
-            parsed_scopes_supported is None
-            and parsed_required_scopes is None
-        ):
-            parsed_scopes_supported = _discover_scopes(self.openid_configuration_url)
+        # Advertised scopes are discovered from Descope's OpenID configuration
+        # only when the caller supplied neither explicit advertised scopes nor
+        # required scopes. Discovery is deferred to the first protected resource
+        # metadata request (see get_routes) so construction never performs I/O
+        # and a transient failure can be retried instead of being frozen for the
+        # provider's lifetime.
+        self._scopes_discovery_enabled = (
+            parsed_scopes_supported is None and parsed_required_scopes is None
+        )
+        self._discovered_scopes: list[str] | None = None
+        self._scopes_discovered = False
+        self._scopes_discovery_lock = asyncio.Lock()
 
         if token_verifier is None:
             token_verifier = JWTVerifier(
@@ -177,11 +190,71 @@ class DescopeProvider(RemoteAuthProvider):
             resource_documentation=resource_documentation,
         )
 
+    async def _get_scopes_supported(self) -> list[str] | None:
+        """Return the advertised scopes, discovering them lazily if enabled.
+
+        The result of a successful discovery is cached for the provider's
+        lifetime. Transient failures return ``None`` without caching, so the
+        next protected resource metadata request retries discovery.
+        """
+        if self._scopes_discovered:
+            return self._discovered_scopes
+
+        async with self._scopes_discovery_lock:
+            if self._scopes_discovered:
+                return self._discovered_scopes
+
+            scopes = await _discover_scopes(self.openid_configuration_url)
+            if scopes is not None:
+                self._discovered_scopes = scopes
+                self._scopes_discovered = True
+            return scopes
+
+    def _create_protected_resource_route(self, resource_url: AnyHttpUrl) -> Route:
+        """Build a protected resource metadata route that discovers scopes lazily.
+
+        Mirrors ``create_protected_resource_routes`` (RFC 9728) but resolves
+        ``scopes_supported`` per request so the value can be discovered from
+        Descope after construction.
+        """
+
+        async def protected_resource_metadata(request: Request) -> Response:
+            metadata = ProtectedResourceMetadata(
+                resource=resource_url,
+                authorization_servers=self.authorization_servers,
+                scopes_supported=await self._get_scopes_supported(),
+                resource_name=self.resource_name,
+                resource_documentation=self.resource_documentation,
+            )
+            return PydanticJSONResponse(
+                content=metadata,
+                headers={"Cache-Control": "public, max-age=3600"},
+            )
+
+        well_known_path = urlparse(str(build_resource_metadata_url(resource_url))).path
+        return Route(
+            well_known_path,
+            endpoint=cors_middleware(protected_resource_metadata, ["GET", "OPTIONS"]),
+            methods=["GET", "OPTIONS"],
+        )
+
     def get_routes(
         self,
         mcp_path: str | None = None,
     ) -> list[Route]:
-        routes = super().get_routes(mcp_path)
+        if self._scopes_discovery_enabled:
+            # Serve protected resource metadata from an async handler that
+            # discovers scopes_supported lazily. The parent's static route would
+            # freeze the (as-yet-unknown) scopes at startup.
+            self.set_mcp_path(mcp_path)
+            routes = []
+            resource_url = self._get_resource_url(mcp_path)
+            if resource_url:
+                routes.append(self._create_protected_resource_route(resource_url))
+        else:
+            # Advertised scopes are already known; the parent builds the static
+            # protected resource metadata route with no network access.
+            routes = super().get_routes(mcp_path)
 
         async def oauth_authorization_server_metadata(request):
             metadata_urls = [

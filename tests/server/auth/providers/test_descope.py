@@ -1,7 +1,7 @@
 """Tests for Descope OAuth provider."""
 
 import os
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -94,24 +94,94 @@ class TestDescopeProvider:
             "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/oauth-authorization-server"
         )
 
-    def test_discover_scopes_supported_from_well_known(self):
-        """Test that scopes_supported are discovered from Descope well-known metadata."""
+    def test_construction_is_network_free(self):
+        """Construction must not perform discovery I/O, even when it is enabled."""
         config_url = "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/openid-configuration"
+
+        no_network = AsyncMock(side_effect=AssertionError("no network during init"))
+        with patch("httpx.AsyncClient.get", new=no_network):
+            provider = DescopeProvider(
+                config_url=config_url,
+                base_url="https://myserver.com",
+            )
+
+        # Discovery is enabled but deferred; nothing has been fetched yet.
+        assert provider._scopes_discovery_enabled is True
+        assert provider._scopes_supported is None
+        assert provider._discovered_scopes is None
+        assert provider._scopes_discovered is False
+        assert provider.token_verifier.required_scopes == []
+
+    async def test_discover_scopes_supported_lazily(self):
+        """scopes_supported are discovered lazily and cached after first fetch."""
+        config_url = "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/openid-configuration"
+        provider = DescopeProvider(
+            config_url=config_url,
+            base_url="https://myserver.com",
+        )
+
         mock_response = httpx.Response(
             200,
             json=PROJECT_LEVEL_OPENID_CONFIGURATION,
             request=httpx.Request("GET", config_url),
         )
 
-        with patch("httpx.get", return_value=mock_response) as mock_get:
-            provider = DescopeProvider(
-                config_url=config_url,
-                base_url="https://myserver.com",
-            )
+        with patch(
+            "httpx.AsyncClient.get", new=AsyncMock(return_value=mock_response)
+        ) as mock_get:
+            scopes = await provider._get_scopes_supported()
+            # A second call returns the cached result without another fetch.
+            scopes_again = await provider._get_scopes_supported()
 
-        mock_get.assert_called_once_with(config_url, timeout=10.0)
-        assert provider._scopes_supported == ["mcp:skyflow"]
-        assert provider.token_verifier.required_scopes == []
+        assert scopes == ["mcp:skyflow"]
+        assert scopes_again == ["mcp:skyflow"]
+        assert provider._discovered_scopes == ["mcp:skyflow"]
+        assert provider._scopes_discovered is True
+        mock_get.assert_awaited_once()
+
+    async def test_scope_discovery_retries_after_transient_failure(self):
+        """A transient discovery failure is not cached and is retried."""
+        config_url = "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/openid-configuration"
+        provider = DescopeProvider(
+            config_url=config_url,
+            base_url="https://myserver.com",
+        )
+
+        failing = AsyncMock(side_effect=httpx.ConnectError("boom"))
+        with patch("httpx.AsyncClient.get", new=failing):
+            first = await provider._get_scopes_supported()
+
+        # Failure yields no scopes and is not frozen for the provider's lifetime.
+        assert first is None
+        assert provider._scopes_discovered is False
+        assert provider._discovered_scopes is None
+
+        mock_response = httpx.Response(
+            200,
+            json=PROJECT_LEVEL_OPENID_CONFIGURATION,
+            request=httpx.Request("GET", config_url),
+        )
+        with patch("httpx.AsyncClient.get", new=AsyncMock(return_value=mock_response)):
+            second = await provider._get_scopes_supported()
+
+        assert second == ["mcp:skyflow"]
+        assert provider._scopes_discovered is True
+
+    def test_get_routes_is_network_free(self):
+        """get_routes must not perform discovery I/O when building routes."""
+        config_url = "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/openid-configuration"
+        provider = DescopeProvider(
+            config_url=config_url,
+            base_url="https://myserver.com",
+        )
+
+        no_network = AsyncMock(side_effect=AssertionError("no network at get_routes"))
+        with patch("httpx.AsyncClient.get", new=no_network):
+            routes = provider.get_routes("/mcp")
+
+        paths = [route.path for route in routes]
+        assert any("oauth-protected-resource" in path for path in paths)
+        assert any("oauth-authorization-server" in path for path in paths)
 
     def test_scopes_supported_and_required_scopes_can_differ(self):
         """Test that scopes_supported and required_scopes can be configured independently."""
@@ -126,32 +196,30 @@ class TestDescopeProvider:
         assert provider.token_verifier.required_scopes == ["mcp:read"]
 
     def test_explicit_required_scopes_skip_discovery(self):
-        """Test that explicit required_scopes skip well-known discovery."""
+        """Test that explicit required_scopes disable well-known discovery."""
         config_url = "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/openid-configuration"
 
-        with patch("httpx.get") as mock_get:
-            provider = DescopeProvider(
-                config_url=config_url,
-                base_url="https://myserver.com",
-                required_scopes=["custom:scope"],
-            )
+        provider = DescopeProvider(
+            config_url=config_url,
+            base_url="https://myserver.com",
+            required_scopes=["custom:scope"],
+        )
 
-        mock_get.assert_not_called()
+        assert provider._scopes_discovery_enabled is False
         assert provider.token_verifier.required_scopes == ["custom:scope"]
         assert provider._scopes_supported is None
 
     def test_explicit_scopes_supported_skip_discovery(self):
-        """Test that explicit scopes_supported skip well-known discovery."""
+        """Test that explicit scopes_supported disable well-known discovery."""
         config_url = "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/openid-configuration"
 
-        with patch("httpx.get") as mock_get:
-            provider = DescopeProvider(
-                config_url=config_url,
-                base_url="https://myserver.com",
-                scopes_supported=["custom:advertised"],
-            )
+        provider = DescopeProvider(
+            config_url=config_url,
+            base_url="https://myserver.com",
+            scopes_supported=["custom:advertised"],
+        )
 
-        mock_get.assert_not_called()
+        assert provider._scopes_discovery_enabled is False
         assert provider._scopes_supported == ["custom:advertised"]
         assert provider.token_verifier.required_scopes == []
 
@@ -310,6 +378,28 @@ def client_with_headless_oauth(mcp_server_url: str) -> Client:
 
 
 class TestDescopeProviderIntegration:
+    async def test_protected_resource_metadata_serves_discovered_scopes(self):
+        """The protected resource metadata endpoint advertises discovered scopes."""
+        provider = DescopeProvider(
+            config_url="https://api.descope.com/v1/apps/agentic/P2test123/M123/.well-known/openid-configuration",
+            base_url="http://localhost:4321",
+        )
+        mcp = FastMCP(auth=provider)
+
+        with patch(
+            "fastmcp.server.auth.providers.descope._discover_scopes",
+            new=AsyncMock(return_value=["mcp:skyflow"]),
+        ):
+            async with run_server_async(mcp, transport="http") as url:
+                metadata_url = url.replace(
+                    "/mcp", "/.well-known/oauth-protected-resource/mcp"
+                )
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(metadata_url)
+
+        response.raise_for_status()
+        assert response.json()["scopes_supported"] == ["mcp:skyflow"]
+
     async def test_unauthorized_access(self, mcp_server_url: str):
         # SDK v2 surfaces the server's 401 as a generic MCPError at the client
         # boundary rather than re-raising httpx.HTTPStatusError.
