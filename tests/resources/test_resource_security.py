@@ -101,6 +101,20 @@ class TestResourceSecurityModel:
         # A non-exempt param is still screened.
         assert security.validate({"path": "../x", "ref": "../y"}) == "path"
 
+    def test_hyphenated_exemption_matches_normalized_param(self):
+        """`{git-ref}` extracts as `git_ref`; an exemption written with the
+        URI-template (hyphen) spelling must still match it."""
+        security = ResourceSecurity(exempt_params={"git-ref"})
+        assert security.validate({"git_ref": "HEAD~3../x"}) is None
+        assert security.validate({"git_ref": "../x"}) is None
+        # The underscore spelling keeps working too.
+        assert (
+            ResourceSecurity(exempt_params={"git_ref"}).validate({"git_ref": "../x"})
+            is None
+        )
+        # An unrelated hyphenated exemption does not leak onto other params.
+        assert security.validate({"path": "../x"}) == "path"
+
     def test_wildcard_segments_screened_element_wise(self):
         """List values (from wildcard {path*}) are screened per element."""
         assert ResourceSecurity().validate({"path": ["a", "..", "b"]}) == "path"

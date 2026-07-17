@@ -112,7 +112,17 @@ class ResourceSecurity:
     extensions or subprocess calls."""
 
     exempt_params: Set[str] = field(default_factory=frozenset)
-    """Parameter names to skip all checks for."""
+    """Parameter names to skip all checks for. Hyphenated URI-template
+    spellings are accepted: `{git-ref}` is extracted as `git_ref`, and an
+    exemption written either way matches it."""
+
+    def _exempt(self, name: str) -> bool:
+        """True if `name` is exempted under either its extracted or its
+        URI-template spelling (hyphens normalize to underscores on
+        extraction, so `exempt_params={"git-ref"}` must match `git_ref`)."""
+        if name in self.exempt_params:
+            return True
+        return any(exempt.replace("-", "_") == name for exempt in self.exempt_params)
 
     def validate(self, params: Mapping[str, object]) -> str | None:
         """Check all parameter values against the configured policy.
@@ -130,7 +140,7 @@ class ResourceSecurity:
         """
         contains_path_traversal, is_absolute_path = _path_checks()
         for name, value in params.items():
-            if name in self.exempt_params:
+            if self._exempt(name):
                 continue
             if isinstance(value, str):
                 candidates = [value]
