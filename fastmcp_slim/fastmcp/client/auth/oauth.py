@@ -51,6 +51,10 @@ class ClientNotFoundError(Exception):
     """Raised when OAuth client credentials are not found on the server."""
 
 
+class ExpiredClientRegistrationError(Exception):
+    """Raised when dynamic registration returns an expired client secret."""
+
+
 async def check_if_auth_required(
     mcp_url: str, httpx_kwargs: dict[str, Any] | None = None
 ) -> bool:
@@ -345,6 +349,20 @@ class OAuth(OAuthClientProvider):
             else:
                 self.context.update_token_expiry(self.context.current_tokens)
 
+    async def _perform_authorization(self) -> httpx.Request:
+        """Reject expired registrations before attempting authorization."""
+        client_info = self.context.client_info
+        if (
+            client_info is not None
+            and client_info.client_secret is not None
+            and client_info.client_secret_expires_at
+            and client_info.client_secret_expires_at <= int(time.time())
+        ):
+            raise ExpiredClientRegistrationError(
+                "OAuth dynamic registration returned an expired client secret"
+            )
+        return await super()._perform_authorization()
+
     async def redirect_handler(self, authorization_url: str) -> None:
         """Open browser for authorization, with pre-flight check for invalid client."""
         # Pre-flight check to detect invalid client_id before opening browser
@@ -434,7 +452,7 @@ class OAuth(OAuthClientProvider):
                     except StopAsyncIteration:
                         break
 
-        except ClientNotFoundError:
+        except (ClientNotFoundError, ExpiredClientRegistrationError) as exc:
             # Static credentials are fixed — retrying won't help. Surface the
             # error so the user can correct their client_id / client_secret.
             if self._static_client_info is not None:
@@ -442,10 +460,10 @@ class OAuth(OAuthClientProvider):
                     "OAuth server rejected the static client credentials. "
                     "Verify that the client_id (and client_secret, if provided) "
                     "are correct and that the client is registered with the server."
-                ) from None
+                ) from exc
 
             logger.debug(
-                "OAuth client not found on server, clearing cache and retrying..."
+                "OAuth client registration is invalid, clearing cache and retrying..."
             )
             # Clear cached state and retry once
             self._initialized = False

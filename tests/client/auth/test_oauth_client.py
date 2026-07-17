@@ -5,13 +5,17 @@ from urllib.parse import urlparse
 
 import httpx
 import pytest
+from key_value.aio.stores.memory import MemoryStore
 from mcp import MCPError
+from mcp.shared.auth import OAuthClientInformationFull
 from mcp_types import TextResourceContents
+from pydantic import AnyUrl
 
 import fastmcp.client.auth.oauth as oauth_module
 import fastmcp.utilities.http as http_module
 from fastmcp.client import Client
 from fastmcp.client.auth import OAuth
+from fastmcp.client.auth.oauth import TokenStorageAdapter
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.server.auth.auth import ClientRegistrationOptions
 from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
@@ -43,6 +47,23 @@ def fastmcp_server(issuer_url: str):
         return "Hello from authenticated resource!"
 
     return server
+
+
+class ExpiredFirstRegistrationProvider(InMemoryOAuthProvider):
+    def __init__(self, base_url: str):
+        super().__init__(
+            base_url=base_url,
+            client_registration_options=ClientRegistrationOptions(enabled=True),
+        )
+        self.registration_count = 0
+
+    async def register_client(self, client_info: OAuthClientInformationFull) -> None:
+        self.registration_count += 1
+        if self.registration_count == 1:
+            client_info.client_secret = "expired-secret"
+            client_info.client_secret_expires_at = int(time.time()) - 1
+            client_info.token_endpoint_auth_method = "client_secret_post"
+        await super().register_client(client_info)
 
 
 @pytest.fixture
@@ -137,6 +158,23 @@ async def test_oauth_server_metadata_discovery(streamable_http_server: str):
         # The endpoints should be properly formed URLs
         assert metadata["authorization_endpoint"].startswith(server_base_url)
         assert metadata["token_endpoint"].startswith(server_base_url)
+
+
+async def test_expired_dynamic_registration_is_retried():
+    port = find_available_port()
+    base_url = f"http://127.0.0.1:{port}"
+    provider = ExpiredFirstRegistrationProvider(base_url)
+    server = FastMCP("TestServer", auth=provider)
+
+    async with run_server_async(server, port=port, transport="http") as url:
+        client = Client(
+            transport=StreamableHttpTransport(url),
+            auth=HeadlessOAuth(mcp_url=url),
+        )
+        async with client:
+            assert await client.ping()
+
+    assert provider.registration_count == 2
 
 
 class TestOAuthClientUrlHandling:
@@ -563,12 +601,6 @@ class TestTokenStorageTTL:
 
 class TestClientInfoStorageTTL:
     async def test_expired_client_info_removes_stale_registration(self):
-        from key_value.aio.stores.memory import MemoryStore
-        from mcp.shared.auth import OAuthClientInformationFull
-        from pydantic import AnyUrl
-
-        from fastmcp.client.auth.oauth import TokenStorageAdapter
-
         storage = MemoryStore()
         adapter = TokenStorageAdapter(
             async_key_value=storage, server_url="https://test"
@@ -593,12 +625,6 @@ class TestClientInfoStorageTTL:
         assert await adapter.get_client_info() is None
 
     async def test_never_expiring_client_info_is_stored(self):
-        from key_value.aio.stores.memory import MemoryStore
-        from mcp.shared.auth import OAuthClientInformationFull
-        from pydantic import AnyUrl
-
-        from fastmcp.client.auth.oauth import TokenStorageAdapter
-
         adapter = TokenStorageAdapter(
             async_key_value=MemoryStore(), server_url="https://test"
         )
@@ -614,12 +640,6 @@ class TestClientInfoStorageTTL:
         assert await adapter.get_client_info() == client_info
 
     async def test_future_expiring_client_info_is_stored(self):
-        from key_value.aio.stores.memory import MemoryStore
-        from mcp.shared.auth import OAuthClientInformationFull
-        from pydantic import AnyUrl
-
-        from fastmcp.client.auth.oauth import TokenStorageAdapter
-
         adapter = TokenStorageAdapter(
             async_key_value=MemoryStore(), server_url="https://test"
         )
