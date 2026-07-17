@@ -326,9 +326,17 @@ FastMCP keeps its own DCR redirect-URI hardening (PRs #4419, #4408) regardless o
 
 ### Identity assertion (SEP-990 ID-JAG) — Added (beta)
 
-`OAuthProxy` (and `OIDCProxy`, which inherits it) accepts an optional `identity_assertion=IdentityAssertion(trusted_issuers=[...])`. When configured, the token endpoint accepts the RFC 7523 `urn:ietf:params:oauth:grant-type:jwt-bearer` grant carrying an enterprise IdP-issued ID-JAG, validates it (signature against the trusted issuer's JWKS, `iss`/`aud`/`exp`, `typ` of `oauth-id-jag+jwt`, mandatory `sub`, and `jti` replay rejection), and mints a short-lived FastMCP access token carrying the asserted subject with no refresh token. Authorization server metadata advertises the `jwt-bearer` grant type and the `urn:ietf:params:oauth:grant-profile:id-jag` profile when enabled. This is server-side only; the client-side wrapper ships separately. See [Identity Assertion](/servers/auth/oauth-proxy#identity-assertion-sep-990).
+`OAuthProxy` (and `OIDCProxy`, which inherits it) accepts an optional `identity_assertion=IdentityAssertion(trusted_issuers=[...])`. When configured, the token endpoint accepts the RFC 7523 `urn:ietf:params:oauth:grant-type:jwt-bearer` grant carrying an enterprise IdP-issued ID-JAG, validates it (signature against the trusted issuer's JWKS, `iss`/`aud`/`exp`, `typ` of `oauth-id-jag+jwt`, mandatory `sub`, signed `client_id`/`resource` binding, and `jti` replay rejection), and mints a short-lived FastMCP access token carrying the asserted subject with no refresh token. Authorization server metadata advertises the `jwt-bearer` grant type and the `urn:ietf:params:oauth:grant-profile:id-jag` profile when enabled. This is server-side only; the client-side wrapper ships separately. See [Identity Assertion](/servers/auth/oauth-proxy#identity-assertion-sep-990).
 
 *Verify:* `fastmcp_slim/fastmcp/server/auth/identity_assertion.py`, the `exchange_identity_assertion` and `get_routes` changes in `fastmcp_slim/fastmcp/server/auth/oauth_proxy/proxy.py`, and the jwt-bearer dispatch in `fastmcp_slim/fastmcp/server/auth/auth.py` (`TokenHandler._maybe_handle_id_jag`).
+
+### Templated resource parameters are path-screened by default — Breaking (behavior)
+
+Every templated resource now has its extracted parameter values screened for path-traversal (`..` segments), absolute paths, and null bytes **before the handler runs** — on by default, at the server's read chokepoint, covering local and provider-sourced (mounted/proxied) templates alike. Previously these payloads reached handlers raw; a template whose parameter flowed into a filesystem path or upstream URL was exposed unless the author added their own check. A rejected read now surfaces a non-leaky "resource not found" error (`-32602`) and a debug log.
+
+The check is component-based, matching the SDK's `contains_path_traversal`: only a standalone `..` segment is traversal, so values that merely contain dots (`HEAD~3..HEAD`, `file.tar.gz`) and dotfiles (`.env`) still pass. This can break a template that legitimately accepts `..`-bearing or absolute values — exempt the parameter with `ResourceSecurity(exempt_params={...})`, disable per-component with `security=None`, or set a server-wide default with `FastMCP(resource_security=...)`. See [Resources → Path Security](/servers/resources#path-security).
+
+*Verify:* `fastmcp_slim/fastmcp/resources/security.py` (`ResourceSecurity`), the screening block in `FastMCP.read_resource` (`fastmcp_slim/fastmcp/server/server.py`), and `tests/resources/test_resource_security.py`.
 
 ## Removed in 4.0
 

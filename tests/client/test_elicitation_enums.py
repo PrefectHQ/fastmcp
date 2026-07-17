@@ -514,3 +514,13 @@ class TestElicitationDefaults:
 
         assert "default" in props["string_field"]
         assert "default" in props["integer_field"]
+
+
+def test_scalar_elicitation_schema_omits_wrapper_title() -> None:
+    """Scalar/list wrappers must not leak the internal class name on the wire."""
+    from fastmcp.server.elicitation import parse_elicit_response_type
+
+    schema = parse_elicit_response_type(["yes", "no"]).schema
+
+    assert "title" not in schema
+    assert schema["properties"]["value"]["enum"] == ["yes", "no"]

@@ -49,13 +49,16 @@ jobs:
           PROMPT<<PROMPT_END
           You're an issue triage assistant for FastMCP, a Python framework for building Model Context Protocol servers and clients. Your task is to analyze issues/PRs and apply appropriate labels.
 
-          IMPORTANT: Your primary action should be to apply labels using mcp__github__update_issue. DO NOT post comments EXCEPT when applying the too-long label (see below).
+          IMPORTANT: Your primary action should be to apply labels using the locked-down helper `.github/scripts/triage-label.sh`. DO NOT post comments EXCEPT when applying the too-long label (see below).
 
           CRITICAL — LABEL MECHANICS:
-          - `mcp__github__update_issue` REPLACES all labels on the issue — it does not add to them.
-          - Before applying labels, read the issue's current labels with `mcp__github__get_issue`.
-          - Always include any existing labels you want to keep alongside the new ones.
+          - Apply labels ONLY through the helper, which adds or removes repository labels on THIS issue/PR. It already knows the target repo and number (from the workflow environment) — you never pass them:
+            add:    `bash .github/scripts/triage-label.sh add "label1" "label2"`
+            remove: `bash .github/scripts/triage-label.sh remove "label1"`
+          - The helper uses the additive REST labels endpoint, so it works for both issues and PRs and never clobbers labels applied by other workflows — notably the Require Issue Link workflow's `missing-issue-link` control label, which must survive or an auto-closed PR won't reopen when its author is assigned.
+          - The helper is your ONLY GitHub write access. Do NOT use raw `gh api`, `gh issue edit`, `gh pr edit`, or any other mutation — they are not available to you.
           - Only apply labels that exist in the repository (from `gh label list` in step 1). Never invent labels.
+          - Use `remove` only to correct a label you believe is wrong, and never remove the control labels `missing-issue-link`, `bypass-issue-check`, or `trusted-contributor`.
 
           Issue/PR Information:
           - REPO: ${{ github.repository }}
@@ -131,7 +134,7 @@ jobs:
           - DON'T MERGE: Only if PR author explicitly states it's not ready
 
           4. Apply selected labels:
-             Use mcp__github__update_issue to apply your selected labels
+             Add them with `bash .github/scripts/triage-label.sh add "label1" "label2"`.
              DO NOT post any comments unless applying too-long (see above)
           PROMPT_END
           EOF
@@ -149,11 +152,13 @@ jobs:
           allowed_non_write_users: "*"
           allowed_bots: "marvin-context-protocol"
           claude_args: |
-            --allowedTools Bash(gh label list),mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__update_issue,mcp__github__add_issue_comment,mcp__github__get_pull_request_files
+            --allowedTools Bash(gh label list),Bash(bash .github/scripts/triage-label.sh:*),mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__add_issue_comment,mcp__github__get_pull_request_files
           settings: |
             {
               "model": "claude-sonnet-4-6",
               "env": {
-                "GH_TOKEN": "${{ steps.marvin-token.outputs.token }}"
+                "GH_TOKEN": "${{ steps.marvin-token.outputs.token }}",
+                "TRIAGE_REPO": "${{ github.repository }}",
+                "TRIAGE_NUMBER": "${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}"
               }
             }

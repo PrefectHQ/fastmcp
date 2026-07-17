@@ -106,6 +106,7 @@ class ProxyInitializeMiddleware(Middleware):
         ],
     ) -> mcp_types.InitializeResult | None:
         client = await self.proxy._get_client()
+        upstream_instructions: str | None = None
         try:
             if isinstance(client, ProxyClient):
                 ctx = context.fastmcp_context
@@ -116,6 +117,11 @@ class ProxyInitializeMiddleware(Middleware):
                     )
             async with client:
                 await client.initialize()
+                # Capture the upstream's instructions while the session is live;
+                # `initialize_result` clears once the client context exits.
+                init_result = client.initialize_result
+                if init_result is not None:
+                    upstream_instructions = init_result.instructions
         except MCPError:
             raise
         except (
@@ -128,7 +134,20 @@ class ProxyInitializeMiddleware(Middleware):
         ) as error:
             raise _proxy_upstream_error(error) from error
 
-        return await call_next(context)
+        result = await call_next(context)
+
+        # Forward the upstream server's instructions unless the proxy defines its
+        # own. `instructions` is part of the MCP InitializeResult and is meant to
+        # steer the model, so a proxy that dropped it would silently degrade any
+        # downstream consumer relying on upstream guidance.
+        if (
+            result is not None
+            and self.proxy.instructions is None
+            and upstream_instructions is not None
+        ):
+            result.instructions = upstream_instructions
+
+        return result
 
 
 # -----------------------------------------------------------------------------
