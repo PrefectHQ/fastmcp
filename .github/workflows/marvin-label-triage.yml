@@ -49,13 +49,15 @@ jobs:
           PROMPT<<PROMPT_END
           You're an issue triage assistant for FastMCP, a Python framework for building Model Context Protocol servers and clients. Your task is to analyze issues/PRs and apply appropriate labels.
 
-          IMPORTANT: Your primary action should be to apply labels additively with `gh issue edit`. DO NOT post comments EXCEPT when applying the too-long label (see below).
+          IMPORTANT: Your primary action should be to apply labels additively via the REST labels endpoint (`gh api`). DO NOT post comments EXCEPT when applying the too-long label (see below).
 
           CRITICAL — LABEL MECHANICS:
-          - Apply labels ADDITIVELY: `gh issue edit <NUMBER> --add-label "label1,label2"`. This ONLY adds the labels you name and leaves every existing label untouched.
-          - NEVER use a replace-all label operation. Other workflows apply their own labels concurrently — notably the Require Issue Link workflow's `missing-issue-link` control label, which must survive or an auto-closed PR won't reopen when its author is assigned. `--add-label` cannot clobber those; a replace can. So never reason about which existing labels to "keep" — additive means they all stay.
-          - Only apply labels that exist in the repository (from `gh label list` in step 1). Never invent labels — `--add-label` errors on unknown labels.
-          - If (and only if) you must correct a label you believe is wrong, remove just that one with `gh issue edit <NUMBER> --remove-label "wrong-label"`. Never remove a label you didn't set out to change, and never touch the control labels above.
+          - Apply labels ADDITIVELY through the REST labels endpoint, which works for BOTH issues and PRs and only adds the labels you name (existing labels are left untouched):
+            `gh api --method POST /repos/${{ github.repository }}/issues/<NUMBER>/labels -f "labels[]=label1" -f "labels[]=label2"`
+            `<NUMBER>` is the issue/PR number from the info block above; use one `-f "labels[]=..."` per label.
+          - Do NOT use `gh issue edit`, `gh pr edit`, or any replace-all operation. `gh issue edit` cannot resolve PR numbers, and a replace-all would clobber labels applied concurrently by other workflows — notably the Require Issue Link workflow's `missing-issue-link` control label, which must survive or an auto-closed PR won't reopen when its author is assigned. The POST endpoint above is additive and works on both issues and PRs, so it avoids both problems.
+          - Only apply labels that exist in the repository (from `gh label list` in step 1). Never invent labels.
+          - If (and only if) you must correct a label you believe is wrong, remove just that one: `gh api --method DELETE /repos/${{ github.repository }}/issues/<NUMBER>/labels/<label-name>`. Never remove a label you didn't set out to change, and never touch the control labels above.
 
           Issue/PR Information:
           - REPO: ${{ github.repository }}
@@ -131,7 +133,7 @@ jobs:
           - DON'T MERGE: Only if PR author explicitly states it's not ready
 
           4. Apply selected labels:
-             Add them with `gh issue edit <NUMBER> --add-label "..."` (comma-separated). Additive only — never replace.
+             Add them with `gh api --method POST /repos/${{ github.repository }}/issues/<NUMBER>/labels -f "labels[]=..."` (one `-f "labels[]=..."` per label). Additive and works on both issues and PRs — never replace.
              DO NOT post any comments unless applying too-long (see above)
           PROMPT_END
           EOF
@@ -149,7 +151,7 @@ jobs:
           allowed_non_write_users: "*"
           allowed_bots: "marvin-context-protocol"
           claude_args: |
-            --allowedTools Bash(gh label list),Bash(gh issue edit:*),mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__add_issue_comment,mcp__github__get_pull_request_files
+            --allowedTools Bash(gh label list),Bash(gh api:*),mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__add_issue_comment,mcp__github__get_pull_request_files
           settings: |
             {
               "model": "claude-sonnet-4-6",
