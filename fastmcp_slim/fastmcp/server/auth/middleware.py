@@ -86,9 +86,7 @@ class RequireAuthMiddleware(SDKRequireAuthMiddleware):
         Args:
             send: ASGI send callable
         """
-        www_auth_parts = []
-        if self.resource_metadata_url:
-            www_auth_parts.append(f'resource_metadata="{self.resource_metadata_url}"')
+        www_auth_parts = self._challenge_context()
 
         www_authenticate = (
             ("Bearer " + ", ".join(www_auth_parts)) if www_auth_parts else "Bearer"
@@ -109,6 +107,16 @@ class RequireAuthMiddleware(SDKRequireAuthMiddleware):
         logger.debug(
             "Missing auth: sent 401 without error attribute (RFC 6750 §3.1 compliant)"
         )
+
+    def _challenge_context(self) -> list[str]:
+        """Build shared scope and resource metadata challenge parameters."""
+        parts = []
+        if self.required_scopes:
+            scope_value = " ".join(self.required_scopes)
+            parts.append(f'scope="{scope_value}"')
+        if self.resource_metadata_url:
+            parts.append(f'resource_metadata="{self.resource_metadata_url}"')
+        return parts
 
     async def _send_auth_error(
         self, send: Send, status_code: int, error: str, description: str
@@ -144,8 +152,7 @@ class RequireAuthMiddleware(SDKRequireAuthMiddleware):
             f'error="{error}"',
             f'error_description="{enhanced_description}"',
         ]
-        if self.resource_metadata_url:
-            www_auth_parts.append(f'resource_metadata="{self.resource_metadata_url}"')
+        www_auth_parts.extend(self._challenge_context())
 
         www_authenticate = f"Bearer {', '.join(www_auth_parts)}"
 

@@ -9,13 +9,23 @@ This test suite covers:
 
 import pytest
 from mcp.shared.auth import OAuthClientInformationFull
-from pydantic import AnyUrl
+from pydantic import AnyHttpUrl, AnyUrl
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
 from fastmcp import FastMCP
+from fastmcp.server.auth import RemoteAuthProvider, TokenVerifier
+from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
+
+
+class _UnderScopedTokenVerifier(TokenVerifier):
+    def __init__(self, required_scopes: list[str]):
+        super().__init__(required_scopes=required_scopes)
+
+    async def verify_token(self, token: str) -> AccessToken:
+        return AccessToken(token=token, client_id="test-client", scopes=["other"])
 
 
 class TestEnhancedAuthorizationHandler:
@@ -187,6 +197,15 @@ class TestEnhancedAuthorizationHandler:
 class TestEnhancedRequireAuthMiddleware:
     """Tests for enhanced authentication middleware error messages."""
 
+    @staticmethod
+    def create_scoped_app(required_scopes: list[str]) -> Starlette:
+        auth = RemoteAuthProvider(
+            token_verifier=_UnderScopedTokenVerifier(required_scopes),
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="http://localhost:8000",
+        )
+        return FastMCP("Test Server", auth=auth).http_app()
+
     @pytest.fixture
     def rsa_key_pair(self) -> RSAKeyPair:
         """Generate RSA key pair for testing."""
@@ -229,6 +248,46 @@ class TestEnhancedRequireAuthMiddleware:
             www_auth = response.headers["www-authenticate"]
             assert "error=" not in www_auth
             assert response.content == b""
+
+    def test_missing_auth_challenge_includes_required_scopes(self):
+        app = self.create_scoped_app(["api.read", "api.write"])
+
+        with TestClient(app) as client:
+            response = client.post("/mcp")
+
+        assert response.status_code == 401
+        assert response.headers["www-authenticate"] == (
+            'Bearer scope="api.read api.write", '
+            'resource_metadata="http://localhost:8000/'
+            '.well-known/oauth-protected-resource/mcp"'
+        )
+
+    def test_insufficient_scope_challenge_includes_required_scopes(self):
+        app = self.create_scoped_app(["api.read", "api.write"])
+
+        with TestClient(app) as client:
+            response = client.post("/mcp", headers={"Authorization": "Bearer narrow"})
+
+        assert response.status_code == 403
+        assert response.headers["www-authenticate"] == (
+            'Bearer error="insufficient_scope", '
+            'error_description="Required scope: api.read", '
+            'scope="api.read api.write", '
+            'resource_metadata="http://localhost:8000/'
+            '.well-known/oauth-protected-resource/mcp"'
+        )
+
+    def test_missing_auth_challenge_omits_empty_scope(self):
+        app = self.create_scoped_app([])
+
+        with TestClient(app) as client:
+            response = client.post("/mcp")
+
+        assert response.status_code == 401
+        assert response.headers["www-authenticate"] == (
+            'Bearer resource_metadata="http://localhost:8000/'
+            '.well-known/oauth-protected-resource/mcp"'
+        )
 
     def test_invalid_token_enhanced_error_message(self, jwt_verifier):
         """Test that invalid_token errors have enhanced error messages."""
