@@ -46,6 +46,20 @@ for label in "$@"; do
   fi
 done
 
+# Never let triage add or remove the Require Issue Link control labels. Those
+# govern PR enforcement (bypass-issue-check / trusted-contributor are sticky
+# exemptions) and reopening (missing-issue-link is how closed PRs are found),
+# so a prompt-injected triage run must not be able to grant an exemption or
+# break recovery. Enforced here — in code — not merely in the prompt.
+protected=" missing-issue-link bypass-issue-check trusted-contributor "
+for label in "$@"; do
+  lower="${label,,}"
+  if [[ "$protected" == *" $lower "* ]]; then
+    echo "refusing to touch protected control label: $label" >&2
+    exit 1
+  fi
+done
+
 if [[ "$method" == POST ]]; then
   args=()
   for label in "$@"; do
