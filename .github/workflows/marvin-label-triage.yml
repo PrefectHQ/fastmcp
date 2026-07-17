@@ -57,6 +57,7 @@ jobs:
           - Always include any existing labels you want to keep alongside the new ones.
           - Only apply labels that exist in the repository (from `gh label list` in step 1). Never invent labels.
           - NEVER strip these workflow-control labels: `missing-issue-link`, `bypass-issue-check`, `trusted-contributor`. If any are present on the issue/PR, you MUST carry them forward unchanged in your update, in addition to the category/area labels you apply. They are managed by the Require Issue Link workflow — not category labels — so don't reason about whether they fit; just preserve them. Removing `missing-issue-link` in particular prevents an auto-closed PR from reopening once its author is assigned to the linked issue.
+          - IMMEDIATELY before you call `mcp__github__update_issue`, re-read the current labels with `mcp__github__get_issue` and merge them into the set you send — do not rely on a snapshot from earlier in your run. The Require Issue Link workflow runs concurrently and may add a control label to this PR while you work; since `update_issue` replaces the whole set, a stale snapshot would silently drop it.
 
           Issue/PR Information:
           - REPO: ${{ github.repository }}

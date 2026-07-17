@@ -359,12 +359,11 @@ jobs:
                 : "you aren't assigned to the issue it references";
               const steps = kind === 'no-link'
                 ? [
-                    `1. Find or [open an issue](https://github.com/${owner}/${repo}/issues/new/choose) describing the change.`,
-                    '2. Comment on that issue to ask a maintainer to assign it to you.',
-                    "3. Add `Fixes #<issue>`, `Closes #<issue>`, or `Resolves #<issue>` to **this** PR's description — edit it in place.",
+                    `1. Find or [open an issue](https://github.com/${owner}/${repo}/issues/new/choose) describing the change — if you open it, you have first claim on it.`,
+                    "2. Add `Fixes #<issue>`, `Closes #<issue>`, or `Resolves #<issue>` to **this** PR's description — edit it in place, don't open a new PR.",
                   ]
                 : [
-                    '1. Comment on the linked issue to ask a maintainer to assign it to you.',
+                    "1. If you opened the linked issue, a maintainer will assign you when they pick it up and this PR reopens automatically. If someone else opened it, the PR reopens only if a maintainer chooses to assign it to you — please don't comment to ask.",
                   ];
 
               const commentBody = [
