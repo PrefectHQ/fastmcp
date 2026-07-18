@@ -8,7 +8,7 @@ import ssl
 from collections.abc import AsyncIterator
 from typing import Any, Literal, cast
 
-import httpx
+import httpx2
 from mcp import ClientSession
 from mcp.client.sse import sse_client
 from mcp.shared._httpx_utils import McpHttpClientFactory
@@ -29,7 +29,7 @@ class SSETransport(ClientTransport):
         self,
         url: str | AnyUrl,
         headers: dict[str, str] | None = None,
-        auth: httpx.Auth | Literal["oauth"] | str | None = None,
+        auth: httpx2.Auth | Literal["oauth"] | str | None = None,
         sse_read_timeout: datetime.timedelta | float | int | None = None,
         httpx_client_factory: McpHttpClientFactory | None = None,
         verify: ssl.SSLContext | bool | str | None = None,
@@ -65,8 +65,8 @@ class SSETransport(ClientTransport):
 
         self.sse_read_timeout = normalize_timeout_to_timedelta(sse_read_timeout)
 
-    def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
-        resolved: httpx.Auth | None
+    def _set_auth(self, auth: httpx2.Auth | Literal["oauth"] | str | None):
+        resolved: httpx2.Auth | None
         if auth == "oauth":
             resolved = OAuth(
                 self.url,
@@ -77,7 +77,7 @@ class SSETransport(ClientTransport):
             auth._bind(self.url)
             # Only inject the transport's factory into OAuth if OAuth still
             # has the bare default — preserve any factory the caller attached
-            if auth.httpx_client_factory is httpx.AsyncClient:
+            if auth.httpx_client_factory is httpx2.AsyncClient:
                 factory = self.httpx_client_factory or self._make_verify_factory()
                 if factory is not None:
                     auth.httpx_client_factory = factory
@@ -86,7 +86,7 @@ class SSETransport(ClientTransport):
             resolved = BearerAuth(auth)
         else:
             resolved = auth
-        self.auth: httpx.Auth | None = resolved
+        self.auth: httpx2.Auth | None = resolved
 
     def _make_verify_factory(self) -> McpHttpClientFactory | None:
         if self.verify is None:
@@ -95,11 +95,11 @@ class SSETransport(ClientTransport):
 
         def factory(
             headers: dict[str, str] | None = None,
-            timeout: httpx.Timeout | None = None,
-            auth: httpx.Auth | None = None,
-        ) -> httpx.AsyncClient:
+            timeout: httpx2.Timeout | None = None,
+            auth: httpx2.Auth | None = None,
+        ) -> httpx2.AsyncClient:
             if timeout is None:
-                timeout = httpx.Timeout(30.0, read=300.0)
+                timeout = httpx2.Timeout(30.0, read=300.0)
             kwargs: dict[str, Any] = {
                 "follow_redirects": True,
                 "timeout": timeout,
@@ -109,7 +109,7 @@ class SSETransport(ClientTransport):
                 kwargs["headers"] = headers
             if auth is not None:
                 kwargs["auth"] = auth
-            return httpx.AsyncClient(**kwargs)
+            return httpx2.AsyncClient(**kwargs)
 
         return cast(McpHttpClientFactory, factory)
 

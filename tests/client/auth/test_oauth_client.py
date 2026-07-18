@@ -3,7 +3,7 @@ import time
 from unittest.mock import patch
 from urllib.parse import urlparse
 
-import httpx
+import httpx2
 import pytest
 from mcp import MCPError
 from mcp_types import TextResourceContents
@@ -72,7 +72,7 @@ async def test_unauthorized(client_unauthorized: Client):
     """Test that unauthenticated requests are rejected.
 
     SDK v2 surfaces the server's 401 as an MCPError ("Server returned an error
-    response") rather than re-raising the raw httpx.HTTPStatusError.
+    response") rather than re-raising the raw httpx2.HTTPStatusError.
     """
     with pytest.raises(MCPError, match="error response"):
         async with client_unauthorized:
@@ -123,7 +123,7 @@ async def test_oauth_server_metadata_discovery(streamable_http_server: str):
     parsed_url = urlparse(streamable_http_server)
     server_base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
 
-    async with httpx.AsyncClient() as client:
+    async with httpx2.AsyncClient() as client:
         # Test OAuth discovery endpoint
         metadata_url = f"{server_base_url}/.well-known/oauth-authorization-server"
         response = await client.get(metadata_url)
@@ -305,13 +305,13 @@ class TestOAuthGeneratorCleanup:
                 if self._exhausted:
                     raise StopAsyncIteration
                 self._exhausted = True
-                return httpx.Request("GET", "https://example.com")
+                return httpx2.Request("GET", "https://example.com")
 
             async def asend(self, value):
                 if self._exhausted:
                     raise StopAsyncIteration
                 self._exhausted = True
-                return httpx.Request("GET", "https://example.com")
+                return httpx2.Request("GET", "https://example.com")
 
             async def athrow(self, exc_type, exc_val=None, exc_tb=None):
                 raise StopAsyncIteration
@@ -326,12 +326,12 @@ class TestOAuthGeneratorCleanup:
             OAuth.__bases__[0], "async_auth_flow", return_value=tracked_gen
         ):
             # Drive the OAuth flow
-            flow = oauth.async_auth_flow(httpx.Request("GET", "https://example.com"))
+            flow = oauth.async_auth_flow(httpx2.Request("GET", "https://example.com"))
             try:
                 # First asend(None) starts the generator per async generator protocol
                 await flow.asend(None)  # ty: ignore[invalid-argument-type]
                 try:
-                    await flow.asend(httpx.Response(200))
+                    await flow.asend(httpx2.Response(200))
                 except StopAsyncIteration:
                     pass
             except StopAsyncIteration:
@@ -359,7 +359,7 @@ class TestOAuthGeneratorCleanup:
             async def asend(self, value):
                 if self._first_call:
                     self._first_call = False
-                    return httpx.Request("GET", "https://example.com")
+                    return httpx2.Request("GET", "https://example.com")
                 raise ValueError("Simulated failure")
 
             async def athrow(self, exc_type, exc_val=None, exc_tb=None):
@@ -373,10 +373,10 @@ class TestOAuthGeneratorCleanup:
         with patch.object(
             OAuth.__bases__[0], "async_auth_flow", return_value=tracked_gen
         ):
-            flow = oauth.async_auth_flow(httpx.Request("GET", "https://example.com"))
+            flow = oauth.async_auth_flow(httpx2.Request("GET", "https://example.com"))
             with pytest.raises(ValueError, match="Simulated failure"):
                 await flow.asend(None)  # ty: ignore[invalid-argument-type]
-                await flow.asend(httpx.Response(200))
+                await flow.asend(httpx2.Response(200))
 
         assert tracked_gen.aclose_called, (
             "Generator aclose() was not called after exception"

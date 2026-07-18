@@ -1,5 +1,5 @@
 import anyio
-import httpx
+import httpx2
 
 from fastmcp.client.oauth_callback import (
     OAuthCallbackResult,
@@ -24,7 +24,7 @@ async def test_oauth_callback_result_ignores_subsequent_callbacks():
 
         await anyio.sleep(0.05)
 
-        async with httpx.AsyncClient() as client:
+        async with httpx2.AsyncClient() as client:
             first = await client.get(
                 f"http://127.0.0.1:{port}/callback?code=good&state=s1"
             )

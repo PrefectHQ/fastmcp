@@ -5,6 +5,22 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 3.4.4" description="July 8, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v3.4.4: Host in Translation"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v3.4.4"
+cta="Read the release notes"
+>
+A compatibility patch for HTTP deployments affected by the 3.4.3 Host/Origin guard defaults. FastMCP 3.x now keeps strict Host and Origin validation available for explicit opt-in deployments without rejecting existing ASGI, serverless, and reverse-proxy traffic by default.
+
+🌐 **HTTP compatibility restored** — existing hosted deployments keep accepting their public Host headers unless strict host/origin protection is configured.
+
+🔐 **Guard remains available** — deployments that know their public host and browser origins can still enable strict validation with `host_origin_protection=True`, `allowed_hosts`, and `allowed_origins`.
+
+🤗 **Hugging Face auth** — new OAuth provider support covers public and private Hugging Face apps, with docs and examples for PKCE, Dynamic Client Registration, and CIMD.
+</Card>
+</Update>
+
 <Update label="FastMCP 3.4.3" description="July 5, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v3.4.3: The Fast and the Secure-ious"
@@ -725,4 +741,3 @@ Because life's too short for boilerplate.
 This is where it all started. FastMCP’s launch post introduced a clean, Pythonic way to build MCP servers without the protocol overhead. Just write functions; FastMCP handles the rest. What began as a weekend project quickly became the foundation of a growing ecosystem.
 </Card>
 </Update>
-

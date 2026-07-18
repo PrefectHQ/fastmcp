@@ -189,6 +189,36 @@ async def test_create_proxy_with_transport(fastmcp_server):
         assert result.data == "Hello, Test!"
 
 
+async def test_proxy_forwards_upstream_instructions():
+    """A proxy should surface the upstream server's instructions in the handshake."""
+    upstream = FastMCP(name="upstream", instructions="USE_THIS_MARKER_123")
+    proxy = create_proxy(upstream, name="proxy")
+
+    async with Client(proxy) as client:
+        assert client.initialize_result is not None
+        assert client.initialize_result.instructions == "USE_THIS_MARKER_123"
+
+
+async def test_proxy_own_instructions_take_precedence():
+    """Instructions explicitly set on the proxy override the upstream's."""
+    upstream = FastMCP(name="upstream", instructions="upstream instructions")
+    proxy = create_proxy(upstream, name="proxy", instructions="proxy instructions")
+
+    async with Client(proxy) as client:
+        assert client.initialize_result is not None
+        assert client.initialize_result.instructions == "proxy instructions"
+
+
+async def test_proxy_instructions_none_when_upstream_has_none():
+    """A proxy over an upstream without instructions reports no instructions."""
+    upstream = FastMCP(name="upstream")
+    proxy = create_proxy(upstream, name="proxy")
+
+    async with Client(proxy) as client:
+        assert client.initialize_result is not None
+        assert client.initialize_result.instructions is None
+
+
 def test_create_proxy_with_url():
     """create_proxy should accept a URL without connecting."""
     proxy = create_proxy("http://example.com/mcp/")

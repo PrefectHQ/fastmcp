@@ -5,7 +5,7 @@ This module tests the ssrf.py module which provides SSRF-protected HTTP fetching
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
+import httpx2
 import pytest
 
 from fastmcp.server.auth.ssrf import (
@@ -175,7 +175,7 @@ class TestSSRFSafeFetch:
                 "fastmcp.server.auth.ssrf.resolve_hostname",
                 return_value=[resolved_ip],
             ),
-            patch("httpx.AsyncClient") as mock_client_class,
+            patch("httpx2.AsyncClient") as mock_client_class,
         ):
             mock_stream = MagicMock()
             mock_stream.status_code = 200
@@ -210,13 +210,13 @@ class TestSSRFSafeFetch:
                 "fastmcp.server.auth.ssrf.resolve_hostname",
                 return_value=resolved_ips,
             ),
-            patch("httpx.AsyncClient") as mock_client_class,
+            patch("httpx2.AsyncClient") as mock_client_class,
         ):
-            request = httpx.Request("GET", "https://example.com/api")
+            request = httpx2.Request("GET", "https://example.com/api")
 
             first_client = AsyncMock()
             first_client.stream = MagicMock(
-                side_effect=httpx.RequestError("boom", request=request)
+                side_effect=httpx2.RequestError("boom", request=request)
             )
             first_client.__aenter__.return_value = first_client
             first_client.__aexit__ = AsyncMock(return_value=None)
@@ -256,7 +256,7 @@ class TestSSRFSafeFetch:
                 "fastmcp.server.auth.ssrf.resolve_hostname",
                 return_value=[resolved_ip],
             ),
-            patch("httpx.AsyncClient") as mock_client_class,
+            patch("httpx2.AsyncClient") as mock_client_class,
         ):
             mock_stream = MagicMock()
             mock_stream.status_code = 200
@@ -288,7 +288,7 @@ class TestSSRFSafeFetch:
                 "fastmcp.server.auth.ssrf.resolve_hostname",
                 return_value=["93.184.216.34"],
             ),
-            patch("httpx.AsyncClient") as mock_client_class,
+            patch("httpx2.AsyncClient") as mock_client_class,
         ):
             # Response larger than default 5KB (no Content-Length, so streaming enforces)
             mock_stream = MagicMock()
@@ -404,7 +404,7 @@ class TestIPv6URLFormatting:
                 "fastmcp.server.auth.ssrf.resolve_hostname",
                 return_value=[resolved_ipv6],
             ),
-            patch("httpx.AsyncClient") as mock_client_class,
+            patch("httpx2.AsyncClient") as mock_client_class,
         ):
             mock_stream = MagicMock()
             mock_stream.status_code = 200
@@ -445,7 +445,7 @@ class TestStreamingResponseSizeLimit:
                 "fastmcp.server.auth.ssrf.resolve_hostname",
                 return_value=["93.184.216.34"],
             ),
-            patch("httpx.AsyncClient") as mock_client_class,
+            patch("httpx2.AsyncClient") as mock_client_class,
         ):
             chunks_yielded = []
 
@@ -485,7 +485,7 @@ class TestStreamingResponseSizeLimit:
                 "fastmcp.server.auth.ssrf.resolve_hostname",
                 return_value=["93.184.216.34"],
             ),
-            patch("httpx.AsyncClient") as mock_client_class,
+            patch("httpx2.AsyncClient") as mock_client_class,
         ):
             mock_stream = MagicMock()
             mock_stream.status_code = 200

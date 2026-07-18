@@ -234,9 +234,9 @@ async def test_elicitation_tool(streamable_http_server: str, request):
 @pytest.mark.parametrize("streamable_http_server", [True], indirect=True)
 async def test_stateless_http_rejects_get_sse(streamable_http_server: str):
     """Stateless servers should reject GET SSE requests with 405."""
-    import httpx
+    import httpx2
 
-    async with httpx.AsyncClient() as http_client:
+    async with httpx2.AsyncClient() as http_client:
         response = await http_client.get(streamable_http_server)
         assert response.status_code == 405
 

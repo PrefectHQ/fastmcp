@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-import httpx
+import httpx2
 from pydantic import AnyHttpUrl
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -181,7 +181,7 @@ class DescopeProvider(RemoteAuthProvider):
         async def oauth_authorization_server_metadata(request):
             """Forward Descope OAuth authorization server metadata with FastMCP customizations."""
             try:
-                async with httpx.AsyncClient() as client:
+                async with httpx2.AsyncClient() as client:
                     response = await client.get(
                         f"{self.descope_base_url}/v1/apps/{self.project_id}/.well-known/oauth-authorization-server"
                     )

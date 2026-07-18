@@ -5,7 +5,6 @@ from urllib.parse import urlparse
 import pytest
 from key_value.aio.stores.memory import MemoryStore
 from mcp import MCPError
-from pytest_httpx import HTTPXMock
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
@@ -16,6 +15,7 @@ from fastmcp.server.auth.providers.workos import (
     WorkOSTokenVerifier,
 )
 from fastmcp.utilities.tests import HeadlessOAuth, run_server_async
+from tests.utilities.httpx2_mock import HTTPXMock
 
 
 @pytest.fixture
@@ -234,7 +234,7 @@ class TestAuthKitProvider:
         self, memory_storage: MemoryStore, mcp_server_url: str
     ):
         # SDK v2 surfaces the server's 401 as a generic MCPError at the client
-        # boundary rather than re-raising httpx.HTTPStatusError.
+        # boundary rather than re-raising httpx2.HTTPStatusError.
         with pytest.raises(MCPError):
             async with Client(mcp_server_url) as client:
                 tools = await client.list_tools()  # noqa: F841

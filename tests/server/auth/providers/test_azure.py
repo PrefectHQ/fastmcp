@@ -445,6 +445,25 @@ class TestAzureProvider:
         assert "Mail.Read" in upstream_url
         assert "User.Read" in upstream_url
 
+    def test_prepare_scopes_for_token_exchange_falls_back_to_required_scopes(
+        self, memory_storage: MemoryStore
+    ):
+        """Clients may omit scope; Azure still needs an API scope with offline_access."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="test-tenant",
+            base_url="https://myserver.com",
+            identifier_uri="api://my-api",
+            required_scopes=["read"],
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+        )
+
+        result = provider._prepare_scopes_for_token_exchange([])
+
+        assert result == ["api://my-api/read", "offline_access"]
+
     def test_base_authority_defaults_to_public_cloud(self, memory_storage: MemoryStore):
         """Test that base_authority defaults to login.microsoftonline.com."""
         provider = AzureProvider(
@@ -724,10 +743,10 @@ class TestAzureProvider:
             "https://graph.microsoft.com/.default" in result
         )  # Not prefixed (contains ://)
 
-    def test_prepare_scopes_for_upstream_refresh_empty_scopes(
+    def test_prepare_scopes_for_upstream_refresh_empty_scopes_falls_back_to_required(
         self, memory_storage: MemoryStore
     ):
-        """Test behavior with empty scopes list."""
+        """Clients may omit scope; refresh should still request the configured API scope."""
         provider = AzureProvider(
             client_id="test_client",
             client_secret="test_secret",
@@ -740,13 +759,13 @@ class TestAzureProvider:
             client_storage=memory_storage,
         )
 
-        # Empty scopes should still add OIDC scopes (not User.Read)
         result = provider._prepare_scopes_for_upstream_refresh([])
 
+        assert "api://my-api/read" in result
         assert "User.Read" not in result  # Not OIDC
         assert "openid" in result
         assert "offline_access" in result  # Auto-included
-        assert len(result) == 2  # Only OIDC scopes: openid + offline_access
+        assert len(result) == 3
 
     def test_prepare_scopes_for_upstream_refresh_no_additional_scopes(
         self, memory_storage: MemoryStore
