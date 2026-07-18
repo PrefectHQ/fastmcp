@@ -65,7 +65,8 @@ async def _discover_scopes(openid_configuration_url: str) -> list[str] | None:
         scopes = response.json().get("scopes_supported")
         if isinstance(scopes, list):
             parsed = [scope for scope in scopes if isinstance(scope, str)]
-            return parsed or None
+            if not scopes or parsed:
+                return parsed
     except Exception:
         logger.warning(
             "Failed to fetch Descope OpenID configuration from %s",

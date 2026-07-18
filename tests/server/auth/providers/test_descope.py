@@ -167,6 +167,33 @@ class TestDescopeProvider:
         assert second == ["mcp:read"]
         assert provider._scopes_discovered is True
 
+    async def test_empty_scope_discovery_is_cached_as_success(self):
+        """An explicitly empty Descope scope list is a successful discovery."""
+        config_url = (
+            "https://api.descope.com/v1/apps/P2abc123/.well-known/openid-configuration"
+        )
+        provider = DescopeProvider(
+            config_url=config_url,
+            base_url="https://myserver.com",
+        )
+        mock_response = httpx2.Response(
+            200,
+            json={"scopes_supported": []},
+            request=httpx2.Request("GET", config_url),
+        )
+
+        with patch(
+            "httpx2.AsyncClient.get", new=AsyncMock(return_value=mock_response)
+        ) as mock_get:
+            first = await provider._get_scopes_supported()
+            second = await provider._get_scopes_supported()
+
+        assert first == []
+        assert second == []
+        assert provider._scopes_discovered is True
+        assert provider._discovered_scopes == []
+        mock_get.assert_awaited_once()
+
     def test_get_routes_is_network_free(self):
         """get_routes must not perform discovery I/O when building routes."""
         config_url = "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/openid-configuration"
