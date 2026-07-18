@@ -461,6 +461,22 @@ class TestFile:
         if isinstance(resource.resource, BlobResourceContents):
             assert resource.resource.blob == base64.b64encode(test_data).decode()
 
+    def test_to_resource_content_with_data_and_name_without_extension(self):
+        """Test data-backed File URI with a custom name that needs an extension."""
+        file = File(data=b"test file data", format="pdf", name="report")
+        resource = file.to_resource_content()
+
+        assert resource.resource.mime_type == "application/pdf"
+        assert str(resource.resource.uri) == "file:///report.pdf"
+
+    def test_to_resource_content_with_data_preserves_name_extension(self):
+        """Test data-backed File URI preserves a custom name with an extension."""
+        file = File(data=b"test file data", format="pdf", name="report.pdf")
+        resource = file.to_resource_content()
+
+        assert resource.resource.mime_type == "application/pdf"
+        assert str(resource.resource.uri) == "file:///report.pdf"
+
     def test_to_resource_content_with_text_data(self):
         """Test conversion to ResourceContent with text data (TextResourceContents)."""
         test_data = b"hello world"
