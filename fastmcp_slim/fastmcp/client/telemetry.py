@@ -42,6 +42,16 @@ def client_span(
     with tracer.start_as_current_span(
         name, kind=SpanKind.CLIENT, attributes=attrs
     ) as span:
+        # Reapply: `attributes=attrs` above lets on_start hooks and the
+        # sampler see these values at creation time. But OTel's
+        # Tracer.start_span builds the span from
+        # `sampling_result.attributes`, not the `attributes` kwarg directly —
+        # a custom Sampler whose SamplingResult.attributes defaults to None
+        # silently drops everything we passed. Reapplying here (additive,
+        # can't clobber anything a sampler legitimately added) guarantees
+        # FastMCP's attributes survive regardless of sampler behavior.
+        if span.is_recording():
+            span.set_attributes(attrs)
         try:
             yield span
         except Exception as e:

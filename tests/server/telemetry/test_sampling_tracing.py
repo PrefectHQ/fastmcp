@@ -14,6 +14,7 @@ from opentelemetry.context import Context as OTelContext
 from opentelemetry.sdk.trace import Span, SpanProcessor, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.sdk.trace.sampling import Decision, Sampler, SamplingResult
 from opentelemetry.trace import StatusCode
 
 from fastmcp import Client, Context, FastMCP
@@ -26,6 +27,33 @@ class OnStartRecorder(SpanProcessor):
 
     def on_start(self, span: Span, parent_context: OTelContext | None = None) -> None:
         self.attributes[span.name] = dict(span.attributes or {})
+
+
+class NonForwardingSampler(Sampler):
+    """Samples every span but never forwards the attributes it was handed.
+
+    See `tests/telemetry/test_span_attributes.py` for the full explanation:
+    OTel's `Tracer.start_span` builds the finished span from
+    `sampling_result.attributes`, not from the `attributes` kwarg passed to
+    `start_as_current_span`, so a custom sampler like this one reproduces the
+    regression where a non-forwarding sampler silently drops FastMCP's
+    attributes.
+    """
+
+    def should_sample(
+        self,
+        parent_context: OTelContext | None,
+        trace_id: int,
+        name: str,
+        kind: object = None,
+        attributes: object = None,
+        links: object = None,
+        trace_state: object = None,
+    ) -> SamplingResult:
+        return SamplingResult(Decision.RECORD_AND_SAMPLE)
+
+    def get_description(self) -> str:
+        return "NonForwardingSampler"
 
 
 @pytest.fixture
@@ -187,3 +215,116 @@ class TestSamplingToolSpan:
         # Tool spans catch-and-convert (no re-raise), so OTel auto-recording
         # never fires; the manual record_exception must fire exactly once.
         assert len(_exception_events(span)) == 1
+
+
+class TestAttributesSurviveANonForwardingSampler:
+    """Regression: `sampling create_message` and `sampling tool ...` spans
+    must keep FastMCP's attributes even when the configured Sampler doesn't
+    forward the `attributes` it was handed to its `SamplingResult`.
+    """
+
+    @pytest.fixture
+    def non_forwarding_recorder(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        trace_exporter: InMemorySpanExporter,
+    ) -> OnStartRecorder:
+        recorder = OnStartRecorder()
+        provider = TracerProvider(sampler=NonForwardingSampler())
+        provider.add_span_processor(recorder)
+        provider.add_span_processor(SimpleSpanProcessor(trace_exporter))
+        tracer = provider.get_tracer("test")
+        monkeypatch.setattr("fastmcp.server.sampling.run.get_tracer", lambda: tracer)
+        return recorder
+
+    async def test_create_message_span_keeps_attributes(
+        self,
+        trace_exporter: InMemorySpanExporter,
+        non_forwarding_recorder: OnStartRecorder,
+    ):
+        def sampling_handler(
+            messages: list[SamplingMessage],
+            params: SamplingParams,
+            ctx: RequestContext,
+        ) -> str:
+            return "sampled-text"
+
+        mcp = FastMCP("sampling-server")
+
+        @mcp.tool
+        async def ask(question: str, context: Context) -> str:
+            result = await context.sample(messages=question)
+            return result.text or ""
+
+        async with Client(mcp, sampling_handler=sampling_handler) as client:
+            await client.call_tool("ask", {"question": "hi"})
+
+        spans = _spans_named(trace_exporter, "sampling create_message")
+        assert len(spans) == 1
+        span = spans[0]
+        assert span.attributes is not None
+        assert span.attributes["mcp.method.name"] == "sampling/createMessage"
+        assert span.attributes["fastmcp.server.name"] == "sampling-server"
+        # The sampler never forwards attributes, so on_start legitimately sees
+        # none — this documents that limitation rather than asserting around it.
+        assert non_forwarding_recorder.attributes["sampling create_message"] == {}
+
+    async def test_sampling_tool_span_keeps_attributes(
+        self,
+        trace_exporter: InMemorySpanExporter,
+        non_forwarding_recorder: OnStartRecorder,
+    ):
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
+
+        def echo_tool(text: str) -> str:
+            return text
+
+        call_count = 0
+
+        def sampling_handler(
+            messages: list[SamplingMessage],
+            params: SamplingParams,
+            ctx: RequestContext,
+        ) -> CreateMessageResultWithTools:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return CreateMessageResultWithTools(
+                    role="assistant",
+                    content=[
+                        ToolUseContent(
+                            type="tool_use",
+                            id="call_1",
+                            name="echo_tool",
+                            input={"text": "hi"},
+                        )
+                    ],
+                    model="test-model",
+                    stop_reason="toolUse",
+                )
+            return CreateMessageResultWithTools(
+                role="assistant",
+                content=[TextContent(type="text", text="done")],
+                model="test-model",
+                stop_reason="endTurn",
+            )
+
+        mcp = FastMCP(sampling_handler=sampling_handler)
+
+        @mcp.tool
+        async def driver(context: Context) -> str:
+            result = await context.sample(messages="go", tools=[echo_tool])
+            return result.text or ""
+
+        async with Client(mcp) as client:
+            await client.call_tool("driver", {})
+
+        spans = _spans_named(trace_exporter, "sampling tool echo_tool")
+        assert len(spans) == 1
+        span = spans[0]
+        assert span.attributes is not None
+        assert span.attributes["gen_ai.tool.name"] == "echo_tool"
+        assert span.attributes["fastmcp.tool.use_id"] == "call_1"
+        # The sampler never forwards attributes, so on_start legitimately sees
+        # none — this documents that limitation rather than asserting around it.
+        assert non_forwarding_recorder.attributes["sampling tool echo_tool"] == {}
