@@ -17,7 +17,7 @@ import time
 from collections.abc import AsyncGenerator
 from urllib.parse import parse_qs, urlencode, urlparse
 
-import httpx
+import httpx2
 import pytest
 
 from fastmcp import FastMCP
@@ -216,7 +216,7 @@ async def test_github_oauth_authorization_redirect(github_server: str):
     parsed = urlparse(github_server)
     base_url = f"{parsed.scheme}://{parsed.netloc}"
 
-    async with httpx.AsyncClient() as http_client:
+    async with httpx2.AsyncClient() as http_client:
         # Step 1: Register OAuth client (DCR)
         register_response = await http_client.post(
             f"{base_url}/register",
@@ -311,13 +311,13 @@ async def test_github_oauth_server_metadata(github_server: str):
     """Test OAuth server metadata discovery."""
     from urllib.parse import urlparse
 
-    import httpx
+    import httpx2
 
     # Extract base URL from server URL
     parsed = urlparse(github_server)
     base_url = f"{parsed.scheme}://{parsed.netloc}"
 
-    async with httpx.AsyncClient() as http_client:
+    async with httpx2.AsyncClient() as http_client:
         # Test OAuth authorization server metadata
         metadata_response = await http_client.get(
             f"{base_url}/.well-known/oauth-authorization-server"
@@ -340,7 +340,7 @@ async def test_github_oauth_unauthorized_access(github_server: str):
     """Test that unauthenticated requests are rejected.
 
     SDK v2 surfaces the server's 401 as an MCPError ("Server returned an error
-    response") rather than re-raising the raw httpx.HTTPStatusError.
+    response") rather than re-raising the raw httpx2.HTTPStatusError.
     """
     from mcp.shared.exceptions import MCPError
 
@@ -375,13 +375,13 @@ async def test_github_oauth_mock_only_accepts_mock_tokens(github_server_with_moc
     """Test that the mock token verifier only accepts mock tokens, not real ones."""
     from urllib.parse import urlparse
 
-    import httpx
+    import httpx2
 
     # Extract base URL
     parsed = urlparse(github_server_with_mock)
     base_url = f"{parsed.scheme}://{parsed.netloc}"
 
-    async with httpx.AsyncClient() as http_client:
+    async with httpx2.AsyncClient() as http_client:
         # Test that a fake "real" GitHub token is rejected
         fake_real_token = "gho_real_token_should_be_rejected"
 

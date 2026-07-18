@@ -1,6 +1,6 @@
 """Tests for nullable field handling in OpenAPI schemas."""
 
-import httpx
+import httpx2
 import pytest
 from jsonschema import ValidationError, validate
 
@@ -488,7 +488,7 @@ class TestNullableInputSchemaIntegration:
                 }
             },
         }
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             provider = OpenAPIProvider(openapi_spec=spec, client=client)
             mcp = FastMCP("test")
             mcp.add_provider(provider)
@@ -537,7 +537,7 @@ class TestNullableInputSchemaIntegration:
                 }
             },
         }
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             provider = OpenAPIProvider(openapi_spec=spec, client=client)
             mcp = FastMCP("test")
             mcp.add_provider(provider)

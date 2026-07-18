@@ -341,6 +341,32 @@ class TestToolFromFunction:
         ):
             Tool.from_function(func)
 
+    def test_tool_with_positional_only_parameters_not_allowed(self):
+        def func(a: int, /, b: int) -> int:
+            return a + b
+
+        with pytest.raises(
+            ValueError,
+            match=(
+                "Functions with positional-only parameters are not supported as "
+                "tools.*standard parameters"
+            ),
+        ):
+            Tool.from_function(func)
+
+    def test_tool_with_keyword_capable_parameters(self):
+        def func(a: int, *, b: int) -> int:
+            return a + b
+
+        tool = Tool.from_function(func)
+
+        assert tool.parameters["type"] == "object"
+        assert tool.parameters["required"] == ["a", "b"]
+        assert tool.parameters["properties"] == {
+            "a": {"type": "integer"},
+            "b": {"type": "integer"},
+        }
+
     def test_tool_with_varkwargs_not_allowed(self):
         def func(a: int, b: int, **kwargs: int) -> int:
             """Add two numbers."""

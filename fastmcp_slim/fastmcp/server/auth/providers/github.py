@@ -24,7 +24,7 @@ from __future__ import annotations
 import contextlib
 from typing import Literal
 
-import httpx
+import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl
 
@@ -56,7 +56,7 @@ class GitHubTokenVerifier(TokenVerifier):
         timeout_seconds: int = 10,
         cache_ttl_seconds: int | None = None,
         max_cache_size: int | None = None,
-        http_client: httpx.AsyncClient | None = None,
+        http_client: httpx2.AsyncClient | None = None,
     ):
         """Initialize the GitHub token verifier.
 
@@ -67,7 +67,7 @@ class GitHubTokenVerifier(TokenVerifier):
                 Caching is disabled by default (None).  Set to a positive integer
                 to enable (e.g., 300 for 5 minutes).
             max_cache_size: Maximum number of tokens to cache.  Default: 10 000.
-            http_client: Optional httpx.AsyncClient for connection pooling. When provided,
+            http_client: Optional httpx2.AsyncClient for connection pooling. When provided,
                 the client is reused across calls and the caller is responsible for its
                 lifecycle. When None (default), a fresh client is created per call.
         """
@@ -90,7 +90,7 @@ class GitHubTokenVerifier(TokenVerifier):
             async with (
                 contextlib.nullcontext(self._http_client)
                 if self._http_client is not None
-                else httpx.AsyncClient(timeout=self.timeout_seconds)
+                else httpx2.AsyncClient(timeout=self.timeout_seconds)
             ) as client:
                 # Get token info from GitHub API
                 response = await client.get(
@@ -167,7 +167,7 @@ class GitHubTokenVerifier(TokenVerifier):
                     self._cache.set(token, result)
                 return result
 
-        except httpx.RequestError as e:
+        except httpx2.RequestError as e:
             logger.debug("Failed to verify GitHub token: %s", e)
             return None
         except Exception as e:
@@ -225,7 +225,7 @@ class GitHubProvider(OAuthProxy):
         fallback_refresh_token_expiry_seconds: int | None = None,
         fastmcp_access_token_expiry_seconds: int | None = None,
         token_expiry_threshold_seconds: int = 0,
-        http_client: httpx.AsyncClient | None = None,
+        http_client: httpx2.AsyncClient | None = None,
         enable_cimd: bool = True,
     ):
         """Initialize GitHub OAuth provider.
@@ -259,7 +259,7 @@ class GitHubProvider(OAuthProxy):
                 When "external", the built-in consent screen is skipped but no warning is
                 logged, indicating that consent is handled externally (e.g. by the upstream IdP).
                 SECURITY WARNING: Only set to False for local development or testing environments.
-            http_client: Optional httpx.AsyncClient for connection pooling in token verification.
+            http_client: Optional httpx2.AsyncClient for connection pooling in token verification.
                 When provided, the client is reused across verify_token calls and the caller
                 is responsible for its lifecycle. When None (default), a fresh client is created per call.
             enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based

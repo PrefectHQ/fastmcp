@@ -26,7 +26,7 @@ import time
 from datetime import datetime
 from typing import Literal
 
-import httpx
+import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl
 
@@ -52,7 +52,7 @@ class DiscordTokenVerifier(TokenVerifier):
         expected_client_id: str,
         required_scopes: list[str] | None = None,
         timeout_seconds: int = 10,
-        http_client: httpx.AsyncClient | None = None,
+        http_client: httpx2.AsyncClient | None = None,
     ):
         """Initialize the Discord token verifier.
 
@@ -60,7 +60,7 @@ class DiscordTokenVerifier(TokenVerifier):
             expected_client_id: Expected Discord OAuth client ID for audience binding
             required_scopes: Required OAuth scopes (e.g., ['email'])
             timeout_seconds: HTTP request timeout
-            http_client: Optional httpx.AsyncClient for connection pooling. When provided,
+            http_client: Optional httpx2.AsyncClient for connection pooling. When provided,
                 the client is reused across calls and the caller is responsible for its
                 lifecycle. When None (default), a fresh client is created per call.
         """
@@ -75,7 +75,7 @@ class DiscordTokenVerifier(TokenVerifier):
             async with (
                 contextlib.nullcontext(self._http_client)
                 if self._http_client is not None
-                else httpx.AsyncClient(timeout=self.timeout_seconds)
+                else httpx2.AsyncClient(timeout=self.timeout_seconds)
             ) as client:
                 # Use Discord's tokeninfo endpoint to validate the token
                 headers = {
@@ -154,7 +154,7 @@ class DiscordTokenVerifier(TokenVerifier):
                 logger.debug("Discord token verified successfully")
                 return access_token
 
-        except httpx.RequestError as e:
+        except httpx2.RequestError as e:
             logger.debug("Failed to verify Discord token: %s", e)
             return None
         except Exception as e:
@@ -210,7 +210,7 @@ class DiscordProvider(OAuthProxy):
         fallback_refresh_token_expiry_seconds: int | None = None,
         fastmcp_access_token_expiry_seconds: int | None = None,
         token_expiry_threshold_seconds: int = 0,
-        http_client: httpx.AsyncClient | None = None,
+        http_client: httpx2.AsyncClient | None = None,
         enable_cimd: bool = True,
     ):
         """Initialize Discord OAuth provider.
@@ -243,7 +243,7 @@ class DiscordProvider(OAuthProxy):
                 When "external", the built-in consent screen is skipped but no warning is
                 logged, indicating that consent is handled externally (e.g. by the upstream IdP).
                 SECURITY WARNING: Only set to False for local development or testing environments.
-            http_client: Optional httpx.AsyncClient for connection pooling in token verification.
+            http_client: Optional httpx2.AsyncClient for connection pooling in token verification.
                 When provided, the client is reused across verify_token calls and the caller
                 is responsible for its lifecycle. When None (default), a fresh client is created per call.
             enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based

@@ -3,8 +3,8 @@
 from collections.abc import Callable
 from typing import Any
 
-import httpx
-from httpx import ASGITransport
+import httpx2
+from httpx2 import ASGITransport
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -72,7 +72,7 @@ async def test_sse_app_with_custom_middleware():
 
     # Create a test client
     transport = ASGITransport(app=app)
-    async with httpx.AsyncClient(
+    async with httpx2.AsyncClient(
         transport=transport, base_url="http://testserver"
     ) as client:
         response = await client.get("/test")
@@ -104,7 +104,7 @@ async def test_streamable_http_app_with_custom_middleware():
 
     # Create a test client
     transport = ASGITransport(app=app)
-    async with httpx.AsyncClient(
+    async with httpx2.AsyncClient(
         transport=transport, base_url="http://testserver"
     ) as client:
         response = await client.get("/test")
@@ -141,7 +141,7 @@ async def test_create_sse_app_with_custom_middleware():
 
     # Create a test client
     transport = ASGITransport(app=app)
-    async with httpx.AsyncClient(
+    async with httpx2.AsyncClient(
         transport=transport, base_url="http://testserver"
     ) as client:
         response = await client.get("/test")
@@ -179,7 +179,7 @@ async def test_create_streamable_http_app_with_custom_middleware():
 
     # Create a test client
     transport = ASGITransport(app=app)
-    async with httpx.AsyncClient(
+    async with httpx2.AsyncClient(
         transport=transport, base_url="http://testserver"
     ) as client:
         response = await client.get("/test")
@@ -218,7 +218,7 @@ async def test_multiple_middleware_ordering():
 
     # Create a test client
     transport = ASGITransport(app=app)
-    async with httpx.AsyncClient(
+    async with httpx2.AsyncClient(
         transport=transport, base_url="http://testserver"
     ) as client:
         response = await client.get("/test")
