@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from json import JSONDecodeError
 from typing import Any, Literal
 
-import httpx
+import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl
 
@@ -65,7 +65,7 @@ class HuggingFaceTokenVerifier(TokenVerifier):
         *,
         required_scopes: list[str] | None = None,
         timeout_seconds: int = 10,
-        http_client: httpx.AsyncClient | None = None,
+        http_client: httpx2.AsyncClient | None = None,
     ):
         super().__init__(required_scopes=required_scopes)
         self.timeout_seconds = timeout_seconds
@@ -77,7 +77,7 @@ class HuggingFaceTokenVerifier(TokenVerifier):
             async with (
                 contextlib.nullcontext(self._http_client)
                 if self._http_client is not None
-                else httpx.AsyncClient(timeout=self.timeout_seconds)
+                else httpx2.AsyncClient(timeout=self.timeout_seconds)
             ) as client:
                 userinfo_response = await client.get(
                     HUGGINGFACE_USERINFO_ENDPOINT,
@@ -148,7 +148,7 @@ class HuggingFaceTokenVerifier(TokenVerifier):
                     },
                 )
 
-        except httpx.RequestError as e:
+        except httpx2.RequestError as e:
             logger.debug("Failed to verify Hugging Face token: %s", e)
             return None
         except JSONDecodeError as e:
@@ -156,7 +156,7 @@ class HuggingFaceTokenVerifier(TokenVerifier):
             return None
 
     async def _fetch_whoami(
-        self, client: httpx.AsyncClient, token: str
+        self, client: httpx2.AsyncClient, token: str
     ) -> dict[str, Any] | None:
         response = await client.get(
             HUGGINGFACE_WHOAMI_ENDPOINT,
@@ -197,7 +197,7 @@ class HuggingFaceProvider(OAuthProxy):
         token_expiry_threshold_seconds: int = 0,
         extra_authorize_params: dict[str, str] | None = None,
         extra_token_params: dict[str, str] | None = None,
-        http_client: httpx.AsyncClient | None = None,
+        http_client: httpx2.AsyncClient | None = None,
         enable_cimd: bool = True,
     ):
         """Initialize Hugging Face OAuth provider.

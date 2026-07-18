@@ -20,7 +20,7 @@ Visit https://surgemsg.com/ and click "Get Started" to obtain these values.
 
 from typing import Annotated
 
-import httpx
+import httpx2
 from pydantic import BeforeValidator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -49,7 +49,7 @@ surge_settings = SurgeSettings()  # type: ignore
 @mcp.tool(name="textme", description="Send a text message to me")
 def text_me(text_content: str) -> str:
     """Send a text message to a phone number via https://surgemsg.com/"""
-    with httpx.Client() as client:
+    with httpx2.Client() as client:
         response = client.post(
             "https://api.surgemsg.com/messages",
             headers={

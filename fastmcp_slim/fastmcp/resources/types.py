@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import httpx
+import httpx2
 import pydantic.json
 from anyio import Path as AsyncPath
 from pydantic import Field, ValidationInfo
@@ -121,7 +121,7 @@ class HttpResource(Resource):
     @override
     async def read(self) -> ResourceResult:
         """Read the HTTP content."""
-        async with httpx.AsyncClient() as client:
+        async with httpx2.AsyncClient() as client:
             response = await client.get(self.url)
             _ = response.raise_for_status()
             return ResourceResult(

@@ -191,7 +191,7 @@ client = Client("my_mcp_server.py", timeout=30.0)  # also works
 
 ### `get_session_id` via header sniff — Bridged
 
-The SDK dropped `get_session_id` from the streamable-HTTP transport with no replacement (the SDK source has an author TODO acknowledging it breaks the Transport protocol). FastMCP reconstructs it by registering an httpx response event hook on the client it owns, capturing the `mcp-session-id` response header. The removal trigger is the upstream TODO.
+The SDK dropped `get_session_id` from the streamable-HTTP transport with no replacement (the SDK source has an author TODO acknowledging it breaks the Transport protocol). FastMCP reconstructs it by registering an httpx2 response event hook on the client it owns, capturing the `mcp-session-id` response header (httpx2 preserves httpx's `event_hooks` API). The removal trigger is the upstream TODO.
 
 *Verify:* `fastmcp_slim/fastmcp/client/transports/http.py` (`_capture_session_id`, `get_session_id`).
 
@@ -261,6 +261,23 @@ FastMCP owns DNS-rebinding protection through its `HostOriginGuardMiddleware`, w
 
 *Verify:* `fastmcp_slim/fastmcp/server/http.py` (`enable_dns_rebinding_protection=False`, `HostOriginGuardMiddleware`).
 
+### httpx2 replaces httpx — Breaking (custom client/factory, typing) / Absorbed (everything else)
+
+SDK v2.0.0b2 replaces `httpx` + `httpx-sse` with [httpx2](https://pypi.org/project/httpx2/) (`>=2.5.0`), a next-generation httpx fork with built-in SSE. httpx2 is a near drop-in fork: the public API (`AsyncClient`, `Auth`, `Request`, `Response`, `Timeout`, `MockTransport`, exception hierarchy, `event_hooks`) matches httpx name-for-name. The SDK duck-types the client you hand it — `streamable_http_client(http_client=...)` and `sse_client(httpx_client_factory=...)` are type-hinted `httpx2.AsyncClient` with no `isinstance` gate — but the objects that cross into the SDK must be httpx2.
+
+FastMCP now uses **httpx2 exclusively** and no longer depends on `httpx`. Every FastMCP-owned HTTP path moves to httpx2: the client transports (`client/transports/{base,http,sse}.py`), client auth (`client/auth/{oauth,bearer}.py` — `BearerAuth`/`OAuth` subclass `httpx2.Auth`), the client-side exception-group handler (`utilities/exceptions.py`), the proxy's upstream client (`server/providers/proxy.py`), the `MCPConfig` client-auth field (`mcp_config.py`), **and** all the server-side code that the earlier seam pass had left on httpx — the ~15 server auth providers' upstream IdP calls, the OpenAPI provider, `from_openapi`/`from_fastapi`, `version_check`, `resources/types.py`, the SSRF download guard, and the `apps_dev` CLI. `httpx` is dropped from the `mcp` extra entirely (it may still arrive transitively via other libraries, but FastMCP never imports it). The ~170 `httpx_mock` calls across the security-critical server-auth test files are ported to a local httpx2-backed `httpx_mock` fixture (`tests/utilities/httpx2_mock.py`) that preserves the `add_response`/`add_exception`/`get_request(s)` API verbatim, so `pytest-httpx` is dropped too.
+
+User-visible deltas:
+
+- **Custom client factory / client.** `StreamableHttpTransport(httpx_client_factory=...)`, `SSETransport(httpx_client_factory=...)`, and `OAuth(httpx_client_factory=...)` factories must now return `httpx2.AsyncClient`; a custom `httpx.Auth` passed as `Client(auth=...)` should become `httpx2.Auth`. httpx2 is a drop-in fork, so the change is an import swap (`import httpx` → `import httpx2`). This is a typing break; at runtime a duck-compatible httpx client still satisfies the SDK, but mixing `httpx.Timeout`/`httpx.Auth` with an httpx2 client is unsupported.
+- **OpenAPI client.** `FastMCP.from_openapi(client=...)` and `OpenAPIProvider(client=...)` are now type-hinted `httpx2.AsyncClient`. There is no `isinstance` gate, so an existing `httpx.AsyncClient` still works at runtime via duck-typing this release; the typing nudges you to httpx2.
+- **TLS trust store.** httpx2 verifies TLS against the OS trust store via `truststore` (honoring `SSL_CERT_FILE`/`SSL_CERT_DIR` first) instead of the bundled certifi CA set. This now applies to **all** FastMCP HTTP, including server-auth upstream IdP calls — not just the client path. Corporate-CA and certifi-pinned setups may see different trust behavior.
+- **Logger renames.** FastMCP HTTP now logs under `httpx2` and `httpcore2.*` (was `httpx`/`httpcore.*`). Anyone filtering FastMCP HTTP logs by logger name must update the names.
+
+The session-id header hook (below) works unchanged: httpx2 keeps httpx's `event_hooks` API. FastMCP's tool/resource/prompt handlers still map upstream 429/timeout errors to actionable `ToolError`/`ResourceError`; because a user's own tool may raise from either library, `server/server.py` catches both `httpx2` and (if installed) legacy `httpx` `HTTPStatusError`/`TimeoutException` via a defensive `try: import httpx` shim.
+
+*Verify:* `fastmcp_slim/pyproject.toml` (`mcp` extra lists only `httpx2`); no FastMCP source imports `httpx` except the documented defensive shim in `server/server.py`.
+
 ## Protocol eras
 
 The SDK v2 serves multiple protocol eras from one server, and FastMCP formally embraces this.
@@ -324,6 +341,14 @@ FastMCP keeps its own DCR redirect-URI hardening (PRs #4419, #4408) regardless o
 
 *Verify:* recent commits `67527c1f` (block unsafe OAuth redirect schemes), `57a27992` (DNS rebinding), `cccb529f` (DCR redirect URI validation) on `main`.
 
+### Templated resource parameters are path-screened by default — Breaking (behavior)
+
+Every templated resource now has its extracted parameter values screened for path-traversal (`..` segments), absolute paths, and null bytes **before the handler runs** — on by default, at the server's read chokepoint, covering local and provider-sourced (mounted/proxied) templates alike. Previously these payloads reached handlers raw; a template whose parameter flowed into a filesystem path or upstream URL was exposed unless the author added their own check. A rejected read now surfaces a non-leaky "resource not found" error (`-32602`) and a debug log.
+
+The check is component-based, matching the SDK's `contains_path_traversal`: only a standalone `..` segment is traversal, so values that merely contain dots (`HEAD~3..HEAD`, `file.tar.gz`) and dotfiles (`.env`) still pass. This can break a template that legitimately accepts `..`-bearing or absolute values — exempt the parameter with `ResourceSecurity(exempt_params={...})`, disable per-component with `security=None`, or set a server-wide default with `FastMCP(resource_security=...)`. See [Resources → Path Security](/servers/resources#path-security).
+
+*Verify:* `fastmcp_slim/fastmcp/resources/security.py` (`ResourceSecurity`), the screening block in `FastMCP.read_resource` (`fastmcp_slim/fastmcp/server/server.py`), and `tests/resources/test_resource_security.py`.
+
 ## Removed in 4.0
 
 Deprecations that warned in 3.x are removed in 4.0. Each entry below is a hard removal — the old surface raises `TypeError` / `AttributeError` rather than warning, unless noted otherwise.
@@ -335,7 +360,7 @@ Deprecations that warned in 3.x are removed in 4.0. Each entry below is a hard r
 - **`fastmcp.experimental.server.openapi`** and **`fastmcp.experimental.utilities.openapi`** shims (deprecated 2.14) — Breaking. Import from `fastmcp.server.providers.openapi` and `fastmcp.utilities.openapi` respectively.
 - **`fastmcp.server.apps`** and **`fastmcp.server.app`** shims (deprecated 3.2) — Breaking. Import from `fastmcp.apps` (e.g. `AppConfig`) or `fastmcp` (`FastMCPApp`) instead.
 - **`PromptToolMiddleware`** and **`ResourceToolMiddleware`** (deprecated 3.1) — Breaking. Use the `PromptsAsTools` / `ResourcesAsTools` transforms from `fastmcp.server.transforms` instead. The non-deprecated `ToolInjectionMiddleware` base class is retained.
-- **`StreamableHttpTransport(sse_read_timeout=...)`** (deprecated no-op) — Breaking. The parameter had no effect under the SDK v2 client; configure timeouts via `read_timeout_seconds` in `session_kwargs` or on the httpx client via `httpx_client_factory`. `SSETransport` still accepts `sse_read_timeout`.
+- **`StreamableHttpTransport(sse_read_timeout=...)`** (deprecated no-op) — Breaking. The parameter had no effect under the SDK v2 client; configure timeouts via `read_timeout_seconds` in `session_kwargs` or on the httpx2 client via `httpx_client_factory`. `SSETransport` still accepts `sse_read_timeout`.
 
 ### `FastMCP` server methods and `mount()` kwargs
 

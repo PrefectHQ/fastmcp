@@ -42,8 +42,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
-import httpcore
-import httpx
+import httpcore2
+import httpx2
 import uvicorn
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -1300,7 +1300,7 @@ def _fetch_app_bridge_bundle_sync(
     # We do this before the (potentially cached) app-bridge download so that
     # any network error is surfaced early and clearly.
     types_url = f"{sdk_base}/types.js"
-    with httpx.Client(timeout=30.0) as client:
+    with httpx2.Client(timeout=30.0) as client:
         resp = client.get(types_url, follow_redirects=True)
         resp.raise_for_status()
         types_content = resp.text
@@ -1314,7 +1314,7 @@ def _fetch_app_bridge_bundle_sync(
     zod_wrapper_path = zod_wrapper_match.group(1)  # e.g. /zod@^4.3.5/v4?target=es2022
 
     zod_wrapper_url = f"https://esm.sh{zod_wrapper_path}"
-    with httpx.Client(timeout=30.0) as client:
+    with httpx2.Client(timeout=30.0) as client:
         resp = client.get(zod_wrapper_url, follow_redirects=True)
         resp.raise_for_status()
         wrapper_content = resp.text
@@ -1344,7 +1344,7 @@ def _fetch_app_bridge_bundle_sync(
         return app_bridge_js, import_map_json
 
     npm_url = f"https://registry.npmjs.org/@modelcontextprotocol/ext-apps/-/ext-apps-{version}.tgz"
-    with httpx.Client(timeout=30.0) as client:
+    with httpx2.Client(timeout=30.0) as client:
         resp = client.get(npm_url, follow_redirects=True)
         resp.raise_for_status()
         data = resp.content
@@ -1545,11 +1545,11 @@ def _make_dev_app(
 
         # Use a reasonable default timeout to prevent the proxy from hanging
         # if the backend server is unresponsive.
-        client = httpx.AsyncClient(
-            timeout=httpx.Timeout(60.0, read=None), trust_env=False
+        client = httpx2.AsyncClient(
+            timeout=httpx2.Timeout(60.0, read=None), trust_env=False
         )
 
-        async def _stream_and_cleanup(resp: httpx.Response) -> Any:
+        async def _stream_and_cleanup(resp: httpx2.Response) -> Any:
             is_sse = "text/event-stream" in resp.headers.get("content-type", "")
             buf: list[bytes] = []
             sse_buf = ""
@@ -1574,10 +1574,10 @@ def _make_dev_app(
                     else:
                         buf.append(chunk)
             except (
-                httpx.RemoteProtocolError,
-                httpx.ReadError,
-                httpx.ReadTimeout,
-                httpcore.RemoteProtocolError,
+                httpx2.RemoteProtocolError,
+                httpx2.ReadError,
+                httpx2.ReadTimeout,
+                httpcore2.RemoteProtocolError,
             ):
                 pass  # Connection closed during shutdown — not an error
             finally:
@@ -1617,7 +1617,7 @@ def _make_dev_app(
                 headers=fwd_headers,
                 media_type=content_type or "application/octet-stream",
             )
-        except (httpx.ConnectError, httpx.ConnectTimeout):
+        except (httpx2.ConnectError, httpx2.ConnectTimeout):
             await client.aclose()
             return Response(
                 content=json.dumps({"error": "MCP server not reachable"}).encode(),
@@ -1709,15 +1709,15 @@ async def _wait_for_server(url: str, timeout: float = 15.0) -> bool:
     """Poll until the server is accepting connections."""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
-    async with httpx.AsyncClient(trust_env=False) as client:
+    async with httpx2.AsyncClient(trust_env=False) as client:
         while loop.time() < deadline:
             try:
                 await client.get(url, timeout=1.0)
                 return True
             except (
-                httpx.ConnectError,
-                httpx.RemoteProtocolError,
-                httpx.TimeoutException,
+                httpx2.ConnectError,
+                httpx2.RemoteProtocolError,
+                httpx2.TimeoutException,
             ):
                 await asyncio.sleep(0.25)
     return False

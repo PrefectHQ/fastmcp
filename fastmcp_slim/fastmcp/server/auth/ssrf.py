@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
-import httpx
+import httpx2
 
 from fastmcp.utilities.logging import get_logger
 
@@ -333,8 +333,8 @@ async def ssrf_safe_fetch_response(
         try:
             # Use httpx with streaming to enforce size limit during download
             async with (
-                httpx.AsyncClient(
-                    timeout=httpx.Timeout(
+                httpx2.AsyncClient(
+                    timeout=httpx2.Timeout(
                         connect=min(timeout, remaining),
                         read=min(timeout, remaining),
                         write=min(timeout, remaining),
@@ -387,15 +387,15 @@ async def ssrf_safe_fetch_response(
                     headers=dict(response.headers),
                 )
 
-        except httpx.TimeoutException as e:
+        except httpx2.TimeoutException as e:
             last_error = e
             continue
-        except httpx.RequestError as e:
+        except httpx2.RequestError as e:
             last_error = e
             continue
 
     if last_error is not None:
-        if isinstance(last_error, httpx.TimeoutException):
+        if isinstance(last_error, httpx2.TimeoutException):
             raise SSRFFetchError(f"Timeout fetching {url}") from last_error
         raise SSRFFetchError(f"Error fetching {url}: {last_error}") from last_error
 

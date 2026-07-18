@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast, overload
 
 import anyio
 import anyio.lowlevel
-import httpx
+import httpx2
 import mcp_types
 from exceptiongroup import catch
 from mcp import ClientSession, MCPError
@@ -362,7 +362,7 @@ class Client(
         auto_initialize: bool = True,
         init_timeout: datetime.timedelta | float | int | None = None,
         client_info: mcp_types.Implementation | None = None,
-        auth: httpx.Auth | Literal["oauth"] | str | None = None,
+        auth: httpx2.Auth | Literal["oauth"] | str | None = None,
         verify: ssl.SSLContext | bool | str | None = None,
         mode: ConnectMode = "legacy",
         prior_discover: mcp_types.DiscoverResult | None = None,
@@ -896,7 +896,7 @@ class Client(
                             "Session task completed without exception but connection failed"
                         )
                     # Preserve specific exception types that clients may want to handle
-                    if isinstance(exception, httpx.HTTPStatusError | MCPError):
+                    if isinstance(exception, httpx2.HTTPStatusError | MCPError):
                         raise exception
                     raise RuntimeError(
                         f"Client failed to connect: {exception}"

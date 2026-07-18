@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager, contextmanager, suppress
 from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import parse_qs, urlparse
 
-import httpx
+import httpx2
 import uvicorn
 from mcp.shared.auth import AuthorizationCodeResult
 
@@ -238,7 +238,7 @@ class HeadlessOAuth(OAuth):
 
     async def redirect_handler(self, authorization_url: str) -> None:
         """Make HTTP request to authorization URL and store response for callback handler."""
-        async with httpx.AsyncClient() as client:
+        async with httpx2.AsyncClient() as client:
             response = await client.get(authorization_url, follow_redirects=False)
             self._stored_response = response
 
