@@ -341,6 +341,12 @@ FastMCP keeps its own DCR redirect-URI hardening (PRs #4419, #4408) regardless o
 
 *Verify:* recent commits `67527c1f` (block unsafe OAuth redirect schemes), `57a27992` (DNS rebinding), `cccb529f` (DCR redirect URI validation) on `main`.
 
+### Identity assertion (SEP-990 ID-JAG) — Added (beta)
+
+`OAuthProxy` (and `OIDCProxy`, which inherits it) accepts an optional `identity_assertion=IdentityAssertion(trusted_issuers=[...])`. When configured, the token endpoint accepts the RFC 7523 `urn:ietf:params:oauth:grant-type:jwt-bearer` grant carrying an enterprise IdP-issued ID-JAG, validates it (signature against the trusted issuer's JWKS, `iss`/`aud`/`exp`, `typ` of `oauth-id-jag+jwt`, mandatory `sub`, signed `client_id`/`resource` binding, and `jti` replay rejection), and mints a short-lived FastMCP access token carrying the asserted subject with no refresh token. Authorization server metadata advertises the `jwt-bearer` grant type and the `urn:ietf:params:oauth:grant-profile:id-jag` profile when enabled. This is server-side only; the client-side wrapper ships separately. See [Identity Assertion](/servers/auth/oauth-proxy#identity-assertion-sep-990).
+
+*Verify:* `fastmcp_slim/fastmcp/server/auth/identity_assertion.py`, the `exchange_identity_assertion` and `get_routes` changes in `fastmcp_slim/fastmcp/server/auth/oauth_proxy/proxy.py`, and the jwt-bearer dispatch in `fastmcp_slim/fastmcp/server/auth/auth.py` (`TokenHandler._maybe_handle_id_jag`).
+
 ### Templated resource parameters are path-screened by default — Breaking (behavior)
 
 Every templated resource now has its extracted parameter values screened for path-traversal (`..` segments), absolute paths, and null bytes **before the handler runs** — on by default, at the server's read chokepoint, covering local and provider-sourced (mounted/proxied) templates alike. Previously these payloads reached handlers raw; a template whose parameter flowed into a filesystem path or upstream URL was exposed unless the author added their own check. A rejected read now surfaces a non-leaky "resource not found" error (`-32602`) and a debug log.

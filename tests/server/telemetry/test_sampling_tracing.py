@@ -10,11 +10,36 @@ from __future__ import annotations
 
 import pytest
 from mcp_types import TextContent
+from opentelemetry.context import Context as OTelContext
+from opentelemetry.sdk.trace import Span, SpanProcessor, TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import StatusCode
 
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.sampling import RequestContext, SamplingMessage, SamplingParams
+
+
+class OnStartRecorder(SpanProcessor):
+    def __init__(self) -> None:
+        self.attributes: dict[str, dict[str, object]] = {}
+
+    def on_start(self, span: Span, parent_context: OTelContext | None = None) -> None:
+        self.attributes[span.name] = dict(span.attributes or {})
+
+
+@pytest.fixture
+def on_start_recorder(
+    monkeypatch: pytest.MonkeyPatch,
+    trace_exporter: InMemorySpanExporter,
+) -> OnStartRecorder:
+    recorder = OnStartRecorder()
+    provider = TracerProvider()
+    provider.add_span_processor(recorder)
+    provider.add_span_processor(SimpleSpanProcessor(trace_exporter))
+    tracer = provider.get_tracer("test")
+    monkeypatch.setattr("fastmcp.server.sampling.run.get_tracer", lambda: tracer)
+    return recorder
 
 
 def _spans_named(exporter: InMemorySpanExporter, name: str):
@@ -27,7 +52,9 @@ def _exception_events(span):
 
 class TestSamplingCreateMessageSpan:
     async def test_success_creates_span_with_attributes(
-        self, trace_exporter: InMemorySpanExporter
+        self,
+        trace_exporter: InMemorySpanExporter,
+        on_start_recorder: OnStartRecorder,
     ):
         def sampling_handler(
             messages: list[SamplingMessage],
@@ -52,6 +79,10 @@ class TestSamplingCreateMessageSpan:
         assert span.attributes is not None
         assert span.attributes["mcp.method.name"] == "sampling/createMessage"
         assert span.attributes["fastmcp.server.name"] == "sampling-server"
+        assert on_start_recorder.attributes["sampling create_message"] == {
+            "mcp.method.name": "sampling/createMessage",
+            "fastmcp.server.name": "sampling-server",
+        }
         # Success path must not record any exception.
         assert _exception_events(span) == []
         assert span.status.status_code != StatusCode.ERROR
@@ -93,7 +124,9 @@ class TestSamplingCreateMessageSpan:
 
 class TestSamplingToolSpan:
     async def test_tool_error_span_records_exception_once(
-        self, trace_exporter: InMemorySpanExporter
+        self,
+        trace_exporter: InMemorySpanExporter,
+        on_start_recorder: OnStartRecorder,
     ):
         from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
@@ -146,6 +179,10 @@ class TestSamplingToolSpan:
         assert span.status.status_code == StatusCode.ERROR
         assert span.attributes is not None
         assert span.attributes["gen_ai.tool.name"] == "boom_tool"
+        assert on_start_recorder.attributes["sampling tool boom_tool"] == {
+            "gen_ai.tool.name": "boom_tool",
+            "fastmcp.tool.use_id": "call_1",
+        }
         assert "error.type" in span.attributes
         # Tool spans catch-and-convert (no re-raise), so OTel auto-recording
         # never fires; the manual record_exception must fire exactly once.

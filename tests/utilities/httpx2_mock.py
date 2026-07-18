@@ -55,9 +55,11 @@ class _Matcher:
         self,
         url: str | re.Pattern[str] | httpx2.URL | None,
         method: str | None,
+        is_optional: bool = False,
     ) -> None:
         self.url = httpx2.URL(url) if isinstance(url, str) else url
         self.method = method.upper() if method else method
+        self.is_optional = is_optional
         self.nb_calls = 0
 
     def match(self, request: httpx2.Request) -> bool:
@@ -105,6 +107,7 @@ class HTTPXMock:
         *,
         url: str | re.Pattern[str] | httpx2.URL | None = None,
         method: str | None = None,
+        is_optional: bool = False,
     ) -> None:
         json = copy.deepcopy(json) if json is not None else None
 
@@ -119,7 +122,7 @@ class HTTPXMock:
                 stream=stream,
             )
 
-        self._callbacks.append((_Matcher(url, method), callback))
+        self._callbacks.append((_Matcher(url, method, is_optional), callback))
 
     def add_exception(
         self,
@@ -203,7 +206,9 @@ class HTTPXMock:
 
     def _assert_options(self) -> None:
         not_requested = [
-            str(matcher) for matcher, _ in self._callbacks if not matcher.nb_calls
+            str(matcher)
+            for matcher, _ in self._callbacks
+            if not matcher.nb_calls and not matcher.is_optional
         ]
         assert not not_requested, (
             "The following responses are mocked but not requested:\n"
