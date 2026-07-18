@@ -631,12 +631,16 @@ class MultiAuth(AuthProvider):
     def get_challenge_scopes(
         self, required_scopes: list[str] | None = None
     ) -> list[str]:
-        """Translate effective scopes through the delegated auth server."""
+        """Translate effective scopes through an unambiguous auth source."""
         effective_scopes = (
             self.required_scopes if required_scopes is None else required_scopes
         )
         if self.server is not None:
             return self.server.get_challenge_scopes(effective_scopes)
+        if len(self.verifiers) == 1:
+            translator = getattr(self.verifiers[0], "get_challenge_scopes", None)
+            if translator is not None:
+                return translator(effective_scopes)
         return effective_scopes
 
     async def verify_token(self, token: str) -> AccessToken | None:
