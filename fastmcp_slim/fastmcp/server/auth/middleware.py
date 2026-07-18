@@ -41,11 +41,11 @@ class RequireAuthMiddleware(SDKRequireAuthMiddleware):
         app: Any,
         required_scopes: list[str],
         resource_metadata_url: AnyHttpUrl | None = None,
-        scopes_supported: list[str] | None = None,
+        challenge_scopes: list[str] | None = None,
     ) -> None:
         super().__init__(app, required_scopes, resource_metadata_url)
-        self.scopes_supported = (
-            required_scopes if scopes_supported is None else scopes_supported
+        self.challenge_scopes = (
+            required_scopes if challenge_scopes is None else challenge_scopes
         )
 
     async def __call__(
@@ -125,8 +125,8 @@ class RequireAuthMiddleware(SDKRequireAuthMiddleware):
     def _challenge_context(self) -> list[str]:
         """Build shared scope and resource metadata challenge parameters."""
         parts = []
-        if self.scopes_supported:
-            scope_value = " ".join(self.scopes_supported)
+        if self.challenge_scopes:
+            scope_value = " ".join(self.challenge_scopes)
             parts.append(f'scope="{scope_value}"')
         if self.resource_metadata_url:
             parts.append(f'resource_metadata="{self.resource_metadata_url}"')

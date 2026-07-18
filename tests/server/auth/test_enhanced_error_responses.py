@@ -28,6 +28,11 @@ class _UnderScopedTokenVerifier(TokenVerifier):
         return AccessToken(token=token, client_id="test-client", scopes=["other"])
 
 
+class _UnderScopedOAuthProxy(OAuthProxy):
+    async def verify_token(self, token: str) -> AccessToken:
+        return AccessToken(token=token, client_id="test-client", scopes=["other"])
+
+
 class TestEnhancedAuthorizationHandler:
     """Tests for enhanced authorization handler error responses."""
 
@@ -209,6 +214,23 @@ class TestEnhancedRequireAuthMiddleware:
         )
         return FastMCP("Test Server", auth=auth).http_app()
 
+    @staticmethod
+    def create_oauth_app() -> Starlette:
+        from key_value.aio.stores.memory import MemoryStore
+
+        auth = _UnderScopedOAuthProxy(
+            upstream_authorization_endpoint="https://auth.example.com/authorize",
+            upstream_token_endpoint="https://auth.example.com/token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="test-client-secret",
+            token_verifier=_UnderScopedTokenVerifier(["openid"]),
+            base_url="http://localhost:8000",
+            valid_scopes=["openid", "email", "calendar"],
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+        )
+        return FastMCP("Test Server", auth=auth).http_app()
+
     @pytest.fixture
     def rsa_key_pair(self) -> RSAKeyPair:
         """Generate RSA key pair for testing."""
@@ -297,6 +319,30 @@ class TestEnhancedRequireAuthMiddleware:
             'Bearer resource_metadata="http://localhost:8000/'
             '.well-known/oauth-protected-resource/mcp"'
         )
+
+    def test_oauth_missing_auth_challenge_excludes_optional_scopes(self):
+        app = self.create_oauth_app()
+
+        with TestClient(app) as client:
+            response = client.post("/mcp")
+            metadata = client.get("/.well-known/oauth-protected-resource/mcp").json()
+
+        assert response.status_code == 401
+        assert 'scope="openid"' in response.headers["www-authenticate"]
+        assert "email" not in response.headers["www-authenticate"]
+        assert "calendar" not in response.headers["www-authenticate"]
+        assert metadata["scopes_supported"] == ["openid", "email", "calendar"]
+
+    def test_oauth_insufficient_scope_challenge_excludes_optional_scopes(self):
+        app = self.create_oauth_app()
+
+        with TestClient(app) as client:
+            response = client.post("/mcp", headers={"Authorization": "Bearer narrow"})
+
+        assert response.status_code == 403
+        assert 'scope="openid"' in response.headers["www-authenticate"]
+        assert "email" not in response.headers["www-authenticate"]
+        assert "calendar" not in response.headers["www-authenticate"]
 
     def test_invalid_token_enhanced_error_message(self, jwt_verifier):
         """Test that invalid_token errors have enhanced error messages."""

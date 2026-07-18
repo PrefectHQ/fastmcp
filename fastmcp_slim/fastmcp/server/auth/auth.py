@@ -259,7 +259,12 @@ class AuthProvider(TokenVerifierProtocol):
 
     @property
     def scopes_supported(self) -> list[str]:
-        """Scopes clients should request from the authorization server."""
+        """Scopes advertised in protected resource metadata."""
+        return self.required_scopes
+
+    @property
+    def challenge_scopes(self) -> list[str]:
+        """Scopes clients must request to access this resource."""
         return self.required_scopes
 
     def set_mcp_path(self, mcp_path: str | None) -> None:
@@ -461,10 +466,15 @@ class RemoteAuthProvider(AuthProvider):
 
     @property
     def scopes_supported(self) -> list[str]:
-        """Scopes clients should request from the authorization server."""
+        """Scopes advertised in protected resource metadata."""
         if self._scopes_supported is not None:
             return self._scopes_supported
         return self.token_verifier.scopes_supported
+
+    @property
+    def challenge_scopes(self) -> list[str]:
+        """Request-facing scopes required to access this resource."""
+        return self.scopes_supported
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify token using the configured token verifier."""
@@ -587,9 +597,19 @@ class MultiAuth(AuthProvider):
 
     @property
     def scopes_supported(self) -> list[str]:
-        """Scopes clients should request from the delegated auth server."""
+        """Scopes advertised by the delegated auth server."""
         if self.server is not None:
             return self.server.scopes_supported
+        return self.required_scopes
+
+    @property
+    def challenge_scopes(self) -> list[str]:
+        """Effective request-facing scopes for the composed resource."""
+        if (
+            self.server is not None
+            and self.required_scopes == self.server.required_scopes
+        ):
+            return self.server.challenge_scopes
         return self.required_scopes
 
     async def verify_token(self, token: str) -> AccessToken | None:
@@ -726,7 +746,7 @@ class OAuthProvider(
 
     @property
     def scopes_supported(self) -> list[str]:
-        """Scopes clients should request from this authorization server."""
+        """Scopes advertised by this authorization server."""
         if (
             self.client_registration_options
             and self.client_registration_options.valid_scopes

@@ -130,6 +130,7 @@ class TestMultiAuthInit:
 
         assert auth.required_scopes == ["read"]
         assert auth.scopes_supported == ["api://client-id/read"]
+        assert auth.challenge_scopes == ["api://client-id/read"]
 
     def test_supported_scopes_from_verifier_only_configuration(self):
         verifier = StaticTokenVerifier(
@@ -139,6 +140,24 @@ class TestMultiAuthInit:
         auth = MultiAuth(verifiers=[verifier], required_scopes=["read"])
 
         assert auth.scopes_supported == ["read"]
+        assert auth.challenge_scopes == ["read"]
+
+    def test_challenge_scopes_respect_required_scopes_override(self):
+        verifier = StaticTokenVerifier(
+            tokens={"t": {"client_id": "c", "scopes": ["read"]}},
+            required_scopes=["read"],
+        )
+        provider = RemoteAuthProvider(
+            token_verifier=verifier,
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://api.example.com",
+            scopes_supported=["api://client-id/read"],
+        )
+
+        auth = MultiAuth(server=provider, required_scopes=["admin"])
+
+        assert auth.scopes_supported == ["api://client-id/read"]
+        assert auth.challenge_scopes == ["admin"]
 
 
 class TestMultiAuthVerifyToken:
@@ -446,6 +465,37 @@ class TestMultiAuthIntegration:
             'scope="api://client-id/read"'
             in narrow_response.headers["www-authenticate"]
         )
+
+    async def test_multi_auth_scope_override_wins_in_auth_challenges(self):
+        """Outer validation overrides must also drive 401 and 403 challenges."""
+        verifier = UnderScopedVerifier(required_scopes=["read"])
+        server = RemoteAuthProvider(
+            token_verifier=verifier,
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://api.example.com",
+            scopes_supported=["api://client-id/read"],
+        )
+
+        auth = MultiAuth(server=server, required_scopes=["admin"])
+        app = FastMCP("test", auth=auth).http_app(path="/mcp")
+
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
+            base_url="https://api.example.com",
+        ) as client:
+            missing_response = await client.get("/mcp")
+            narrow_response = await client.get(
+                "/mcp", headers={"Authorization": "Bearer narrow"}
+            )
+
+        assert missing_response.status_code == 401
+        assert 'scope="admin"' in missing_response.headers["www-authenticate"]
+        assert (
+            "api://client-id/read" not in missing_response.headers["www-authenticate"]
+        )
+        assert narrow_response.status_code == 403
+        assert 'scope="admin"' in narrow_response.headers["www-authenticate"]
+        assert "api://client-id/read" not in narrow_response.headers["www-authenticate"]
 
     async def test_multi_auth_override_propagates_to_served_metadata(self):
         """Override on MultiAuth must propagate so served metadata matches the challenge."""
