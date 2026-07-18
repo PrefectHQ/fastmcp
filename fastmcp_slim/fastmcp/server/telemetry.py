@@ -135,23 +135,21 @@ def seam_span(method: str, server_name: str) -> Generator[Span, None, None]:
     rejections *before* the high-level path (auth, not-found, middleware vetoes)
     that would otherwise produce no SERVER span at all — are recorded here.
     """
+    attrs = {
+        SEAM_SPAN_MARKER: True,
+        "mcp.method.name": method,
+        "fastmcp.server.name": server_name,
+        **get_protocol_span_attributes(),
+        **get_auth_span_attributes(),
+        **get_session_span_attributes(),
+    }
     tracer = get_tracer()
     with tracer.start_as_current_span(
         method,
         context=_get_parent_trace_context(),
         kind=SpanKind.SERVER,
+        attributes=attrs,
     ) as span:
-        if span.is_recording():
-            span.set_attribute(SEAM_SPAN_MARKER, True)
-            span.set_attributes(
-                {
-                    "mcp.method.name": method,
-                    "fastmcp.server.name": server_name,
-                    **get_protocol_span_attributes(),
-                    **get_auth_span_attributes(),
-                    **get_session_span_attributes(),
-                }
-            )
         token = _active_seam_span.set(span)
         try:
             yield span
@@ -218,9 +216,8 @@ def server_span(
         name,
         context=_get_parent_trace_context(),
         kind=SpanKind.SERVER,
+        attributes=attrs,
     ) as span:
-        if span.is_recording():
-            span.set_attributes(attrs)
         try:
             yield span
         except Exception as e:
@@ -240,16 +237,15 @@ def delegate_span(
     Used by FastMCPProvider when delegating to mounted servers.
     Automatically records any exception on the span and sets error status.
     """
+    attrs: dict[str, str] = {
+        "fastmcp.provider.type": provider_type,
+        "fastmcp.component.key": component_key,
+    }
+    if method is not None:
+        attrs["mcp.method.name"] = method
+
     tracer = get_tracer()
-    with tracer.start_as_current_span(f"delegate {name}") as span:
-        if span.is_recording():
-            attrs: dict[str, str] = {
-                "fastmcp.provider.type": provider_type,
-                "fastmcp.component.key": component_key,
-            }
-            if method is not None:
-                attrs["mcp.method.name"] = method
-            span.set_attributes(attrs)
+    with tracer.start_as_current_span(f"delegate {name}", attributes=attrs) as span:
         try:
             yield span
         except Exception as e:

@@ -51,6 +51,7 @@ async def plan_dinner(ctx: Context) -> str:
         return "Dinner cancelled!"
 
     prefs = result.data
+    assert isinstance(prefs, DinnerPrefs)
     await ctx.report_progress(1, 2, "Planning your menu...")
     await asyncio.sleep(1)
     await ctx.report_progress(2, 2, "Done!")

@@ -12,6 +12,10 @@
     "decoration": "gradient"
   },
   "banner": {
+    "color": {
+      "dark": "#475569",
+      "light": "#1e3a5f"
+    },
     "content": "Meet [Prefect Horizon](https://prefect.io/horizon?utm_source=gofastmcp&utm_medium=docs&utm_campaign=docs_banner&utm_content=sitewide_banner), the enterprise MCP gateway built by the team behind FastMCP"
   },
   "colors": {
@@ -372,6 +376,7 @@
                           "development/v4-notes/index",
                           "development/v4-notes/change-register",
                           "development/v4-notes/feature-program",
+                          "development/v4-notes/protocol-2026",
                           "development/v4-notes/known-gaps"
                         ]
                       }

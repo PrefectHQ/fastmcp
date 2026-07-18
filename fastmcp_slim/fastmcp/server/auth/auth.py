@@ -21,8 +21,10 @@ from mcp.server.auth.provider import (
 )
 from mcp.server.auth.provider import (
     AuthorizationCode,
+    IdentityAssertionParams,
     OAuthAuthorizationServerProvider,
     RefreshToken,
+    TokenError,
 )
 from mcp.server.auth.provider import (
     TokenVerifier as TokenVerifierProtocol,
@@ -36,7 +38,7 @@ from mcp.server.auth.settings import (
     ClientRegistrationOptions,
     RevocationOptions,
 )
-from mcp.shared.auth import OAuthClientInformationFull
+from mcp.shared.auth import JWT_BEARER_GRANT_TYPE, OAuthClientInformationFull
 from pydantic import AnyHttpUrl, Field
 from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
@@ -74,7 +76,22 @@ class TokenHandler(_SDKTokenHandler):
     """
 
     async def handle(self, request: Any):
-        """Wrap SDK handle() and transform auth error responses."""
+        """Wrap SDK handle() and transform auth error responses.
+
+        The SEP-990 jwt-bearer (ID-JAG) grant is dispatched here rather than by
+        the SDK. The SDK requires a confidential client (a stored client_secret)
+        before it will call `exchange_identity_assertion`. FastMCP OAuth-proxy
+        clients are always public (`token_endpoint_auth_method="none"`, no stored
+        secret), and in the proxy trust model the ID-JAG — validated against a
+        trusted issuer — is the authoritative grant, not a per-client secret.
+        So when identity assertion is enabled we authenticate the client and
+        dispatch the grant ourselves, without the SDK's confidential precondition.
+        """
+        if self.identity_assertion_enabled:
+            id_jag_response = await self._maybe_handle_id_jag(request)
+            if id_jag_response is not None:
+                return id_jag_response
+
         response = await super().handle(request)
 
         # Transform 401 unauthorized_client -> invalid_client
@@ -117,6 +134,80 @@ class TokenHandler(_SDKTokenHandler):
                 pass  # Not JSON or unexpected format, return as-is
 
         return response
+
+    async def _maybe_handle_id_jag(self, request: Request):
+        """Dispatch the SEP-990 jwt-bearer grant, or None to fall through.
+
+        Returns a response for the jwt-bearer grant (ID-JAG), or None when the
+        request is not a jwt-bearer grant so the SDK handler runs normally.
+        """
+        form_data = await request.form()
+        if form_data.get("grant_type") != JWT_BEARER_GRANT_TYPE:
+            return None
+
+        try:
+            client_info = await self.client_authenticator.authenticate_request(request)
+        except AuthenticationError as e:
+            return PydanticJSONResponse(
+                content=TokenErrorResponse(
+                    error="invalid_client",
+                    error_description=e.message,
+                ),
+                status_code=401,
+                headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+            )
+
+        # Dispatching the jwt-bearer grant ourselves bypasses the SDK's
+        # `grant_type not in client_info.grant_types` check, so enforce it here:
+        # a client may only use the ID-JAG grant if it registered for it. On the
+        # proxy, DCR adds this grant type to registered clients when identity
+        # assertion is enabled, so legitimately-registered clients are accepted
+        # while clients registered only for authorization_code/refresh_token are not.
+        if JWT_BEARER_GRANT_TYPE not in client_info.grant_types:
+            return self.response(
+                TokenErrorResponse(
+                    error="unsupported_grant_type",
+                    error_description=(
+                        "Unsupported grant type (supported grant types are "
+                        f"{client_info.grant_types})"
+                    ),
+                )
+            )
+
+        assertion = form_data.get("assertion")
+        if not isinstance(assertion, str) or not assertion:
+            return self.response(
+                TokenErrorResponse(
+                    error="invalid_request",
+                    error_description="Missing assertion",
+                )
+            )
+
+        scope = form_data.get("scope")
+        resource = form_data.get("resource")
+        params = IdentityAssertionParams(
+            assertion=assertion,
+            scopes=scope.split(" ") if isinstance(scope, str) and scope else None,
+            resource=resource if isinstance(resource, str) else None,
+        )
+
+        try:
+            tokens = await self.provider.exchange_identity_assertion(
+                client_info, params
+            )
+        except TokenError as e:
+            # Per MCP spec, invalid/expired grants MUST return 401 (the SDK path is
+            # transformed the same way in handle()).
+            status_code = 401 if e.error == "invalid_grant" else 400
+            return PydanticJSONResponse(
+                content=TokenErrorResponse(
+                    error=e.error, error_description=e.error_description
+                ),
+                status_code=status_code,
+                headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+            )
+
+        return self.response(tokens)
 
 
 # Expected assertion type for private_key_jwt

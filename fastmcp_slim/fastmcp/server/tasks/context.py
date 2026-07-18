@@ -281,6 +281,13 @@ async def restore_task_snapshot(key: str = TaskKey()) -> None:
 # process boundaries (see notifications.py and elicitation.py).
 
 _task_sessions: dict[str, weakref.ref[ServerSession]] = {}
+_TASK_SESSION_CONNECTION_REF = "_fastmcp_task_session_ref"
+_TASK_SESSION_CLEANUP_REGISTERED = "_fastmcp_task_session_cleanup_registered"
+
+
+def _remove_task_session(session_id: str, ref: weakref.ref[ServerSession]) -> None:
+    if _task_sessions.get(session_id) is ref:
+        _task_sessions.pop(session_id)
 
 
 def register_task_session(session_id: str, session: ServerSession) -> None:
@@ -291,11 +298,28 @@ def register_task_session(session_id: str, session: ServerSession) -> None:
     client disconnects.
     """
 
-    def remove_session(ref: weakref.ref[ServerSession]) -> None:
-        if _task_sessions.get(session_id) is ref:
-            _task_sessions.pop(session_id)
+    session_ref = weakref.ref(
+        session, lambda ref: _remove_task_session(session_id, ref)
+    )
+    _task_sessions[session_id] = session_ref
 
-    _task_sessions[session_id] = weakref.ref(session, remove_session)
+    connection = getattr(session, "_connection", None)
+    if connection is None:
+        return
+
+    state = connection.state
+    state[_TASK_SESSION_CONNECTION_REF] = (session_id, session_ref)
+    if state.get(_TASK_SESSION_CLEANUP_REGISTERED):
+        return
+
+    def remove_connection_session() -> None:
+        registered = state.pop(_TASK_SESSION_CONNECTION_REF, None)
+        if registered is not None:
+            registered_session_id, registered_ref = registered
+            _remove_task_session(registered_session_id, registered_ref)
+
+    connection.exit_stack.callback(remove_connection_session)
+    state[_TASK_SESSION_CLEANUP_REGISTERED] = True
 
 
 def get_task_session(session_id: str) -> ServerSession | None:
