@@ -5,11 +5,11 @@ import time
 from typing import Any
 
 import pytest
-from pytest_httpx import HTTPXMock
 
 from fastmcp.server.auth.providers.introspection import (
     IntrospectionTokenVerifier,
 )
+from tests.utilities.httpx2_mock import HTTPXMock
 
 
 class TestIntrospectionTokenVerifier:
@@ -287,7 +287,7 @@ class TestIntrospectionTokenVerifier:
         self, verifier: IntrospectionTokenVerifier, httpx_mock: HTTPXMock
     ):
         """Test that timeouts return None."""
-        from httpx import TimeoutException
+        from httpx2 import TimeoutException
 
         httpx_mock.add_exception(
             TimeoutException("Request timed out"),
@@ -820,7 +820,7 @@ class TestIntrospectionCaching:
         self, verifier_with_cache: IntrospectionTokenVerifier, httpx_mock: HTTPXMock
     ):
         """Test that timeout errors are not cached (transient failures)."""
-        from httpx import TimeoutException
+        from httpx2 import TimeoutException
 
         # First call - timeout
         httpx_mock.add_exception(

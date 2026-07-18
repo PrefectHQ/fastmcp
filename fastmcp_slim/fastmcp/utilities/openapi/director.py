@@ -5,7 +5,7 @@ import json as _json
 from typing import Any, ClassVar
 from urllib.parse import quote, urljoin
 
-import httpx
+import httpx2
 from jsonschema_path import SchemaPath
 
 from fastmcp.utilities.logging import get_logger
@@ -27,7 +27,7 @@ def _query_scalar_to_str(value: Any) -> str:
 
 
 class RequestDirector:
-    """Builds httpx.Request objects from HTTPRoute and arguments using openapi-core."""
+    """Builds httpx2.Request objects from HTTPRoute and arguments using openapi-core."""
 
     def __init__(self, spec: SchemaPath):
         """Initialize with a parsed SchemaPath object."""
@@ -38,9 +38,9 @@ class RequestDirector:
         route: HTTPRoute,
         flat_args: dict[str, Any],
         base_url: str = "http://localhost",
-    ) -> httpx.Request:
+    ) -> httpx2.Request:
         """
-        Constructs a final httpx.Request object, handling all OpenAPI serialization.
+        Constructs a final httpx2.Request object, handling all OpenAPI serialization.
 
         Args:
             route: HTTPRoute containing OpenAPI operation details
@@ -48,7 +48,7 @@ class RequestDirector:
             base_url: Base URL for the request
 
         Returns:
-            httpx.Request: Properly formatted HTTP request
+            httpx2.Request: Properly formatted HTTP request
         """
         logger.debug(
             f"Building request for {route.method} {route.path} with args: {flat_args}"
@@ -140,8 +140,8 @@ class RequestDirector:
             else:
                 content = body
 
-        # Step 7: Create httpx.Request
-        return httpx.Request(
+        # Step 7: Create httpx2.Request
+        return httpx2.Request(
             method=method,
             url=url,
             params=params,

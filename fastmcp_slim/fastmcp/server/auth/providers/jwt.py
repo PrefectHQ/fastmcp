@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, TypeAlias, cast
 
-import httpx
+import httpx2
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from joserfc import jwk, jwt
@@ -222,7 +222,7 @@ class JWTVerifier(TokenVerifier):
         required_scopes: list[str] | None = None,
         base_url: AnyHttpUrl | str | None = None,
         ssrf_safe: bool = False,
-        http_client: httpx.AsyncClient | None = None,
+        http_client: httpx2.AsyncClient | None = None,
     ):
         """
         Initialize a JWTVerifier configured to validate JWTs using either a static key or a JWKS endpoint.
@@ -239,7 +239,7 @@ class JWTVerifier(TokenVerifier):
                 public IPs, DNS pinning). Enable when the JWKS URI comes from
                 untrusted input (e.g. CIMD documents). Defaults to False so
                 operator-configured JWKS URIs (including localhost) work normally.
-            http_client: Optional httpx.AsyncClient for connection pooling. When provided,
+            http_client: Optional httpx2.AsyncClient for connection pooling. When provided,
                 the client is reused for JWKS fetches and the caller is responsible for
                 its lifecycle. When None (default), a fresh client is created per fetch.
                 Cannot be used with ssrf_safe=True.
@@ -408,7 +408,7 @@ class JWTVerifier(TokenVerifier):
         except (SSRFError, SSRFFetchError) as e:
             self.logger.debug("JWKS fetch blocked by SSRF protection: %s", e)
             raise ValueError(f"Failed to fetch JWKS: {e}") from e
-        except httpx.HTTPError as e:
+        except httpx2.HTTPError as e:
             raise ValueError(f"Failed to fetch JWKS: {e}") from e
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JWKS JSON: {e}") from e
@@ -433,7 +433,7 @@ class JWTVerifier(TokenVerifier):
             async with (
                 contextlib.nullcontext(self._http_client)
                 if self._http_client is not None
-                else httpx.AsyncClient(timeout=httpx.Timeout(10.0))
+                else httpx2.AsyncClient(timeout=httpx2.Timeout(10.0))
             ) as client:
                 response = await client.get(self.jwks_uri)
                 response.raise_for_status()

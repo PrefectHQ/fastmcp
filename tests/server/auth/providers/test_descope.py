@@ -3,7 +3,7 @@
 import os
 from unittest.mock import AsyncMock, patch
 
-import httpx
+import httpx2
 import pytest
 from mcp import MCPError
 
@@ -99,7 +99,7 @@ class TestDescopeProvider:
         config_url = "https://api.descope.com/v1/apps/P2v9EBlmO4XTrOwMRfsY1jeUONxU/.well-known/openid-configuration"
 
         no_network = AsyncMock(side_effect=AssertionError("no network during init"))
-        with patch("httpx.AsyncClient.get", new=no_network):
+        with patch("httpx2.AsyncClient.get", new=no_network):
             provider = DescopeProvider(
                 config_url=config_url,
                 base_url="https://myserver.com",
@@ -120,14 +120,14 @@ class TestDescopeProvider:
             base_url="https://myserver.com",
         )
 
-        mock_response = httpx.Response(
+        mock_response = httpx2.Response(
             200,
             json=PROJECT_LEVEL_OPENID_CONFIGURATION,
-            request=httpx.Request("GET", config_url),
+            request=httpx2.Request("GET", config_url),
         )
 
         with patch(
-            "httpx.AsyncClient.get", new=AsyncMock(return_value=mock_response)
+            "httpx2.AsyncClient.get", new=AsyncMock(return_value=mock_response)
         ) as mock_get:
             scopes = await provider._get_scopes_supported()
             # A second call returns the cached result without another fetch.
@@ -147,8 +147,8 @@ class TestDescopeProvider:
             base_url="https://myserver.com",
         )
 
-        failing = AsyncMock(side_effect=httpx.ConnectError("boom"))
-        with patch("httpx.AsyncClient.get", new=failing):
+        failing = AsyncMock(side_effect=httpx2.ConnectError("boom"))
+        with patch("httpx2.AsyncClient.get", new=failing):
             first = await provider._get_scopes_supported()
 
         # Failure yields no scopes and is not frozen for the provider's lifetime.
@@ -156,12 +156,12 @@ class TestDescopeProvider:
         assert provider._scopes_discovered is False
         assert provider._discovered_scopes is None
 
-        mock_response = httpx.Response(
+        mock_response = httpx2.Response(
             200,
             json=PROJECT_LEVEL_OPENID_CONFIGURATION,
-            request=httpx.Request("GET", config_url),
+            request=httpx2.Request("GET", config_url),
         )
-        with patch("httpx.AsyncClient.get", new=AsyncMock(return_value=mock_response)):
+        with patch("httpx2.AsyncClient.get", new=AsyncMock(return_value=mock_response)):
             second = await provider._get_scopes_supported()
 
         assert second == ["mcp:read"]
@@ -176,7 +176,7 @@ class TestDescopeProvider:
         )
 
         no_network = AsyncMock(side_effect=AssertionError("no network at get_routes"))
-        with patch("httpx.AsyncClient.get", new=no_network):
+        with patch("httpx2.AsyncClient.get", new=no_network):
             routes = provider.get_routes("/mcp")
 
         paths = [route.path for route in routes]
@@ -394,7 +394,7 @@ class TestDescopeProviderIntegration:
                 metadata_url = url.replace(
                     "/mcp", "/.well-known/oauth-protected-resource/mcp"
                 )
-                async with httpx.AsyncClient() as client:
+                async with httpx2.AsyncClient() as client:
                     response = await client.get(metadata_url)
 
         response.raise_for_status()
@@ -402,7 +402,7 @@ class TestDescopeProviderIntegration:
 
     async def test_unauthorized_access(self, mcp_server_url: str):
         # SDK v2 surfaces the server's 401 as a generic MCPError at the client
-        # boundary rather than re-raising httpx.HTTPStatusError.
+        # boundary rather than re-raising httpx2.HTTPStatusError.
         with pytest.raises(MCPError):
             async with Client(mcp_server_url) as client:
                 tools = await client.list_tools()  # noqa: F841

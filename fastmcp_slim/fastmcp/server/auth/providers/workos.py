@@ -13,7 +13,7 @@ from __future__ import annotations
 import contextlib
 from typing import Literal
 
-import httpx
+import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl
 from starlette.responses import JSONResponse
@@ -41,7 +41,7 @@ class WorkOSTokenVerifier(TokenVerifier):
         authkit_domain: str,
         required_scopes: list[str] | None = None,
         timeout_seconds: int = 10,
-        http_client: httpx.AsyncClient | None = None,
+        http_client: httpx2.AsyncClient | None = None,
     ):
         """Initialize the WorkOS token verifier.
 
@@ -49,7 +49,7 @@ class WorkOSTokenVerifier(TokenVerifier):
             authkit_domain: WorkOS AuthKit domain (e.g., "https://your-app.authkit.app")
             required_scopes: Required OAuth scopes
             timeout_seconds: HTTP request timeout
-            http_client: Optional httpx.AsyncClient for connection pooling. When provided,
+            http_client: Optional httpx2.AsyncClient for connection pooling. When provided,
                 the client is reused across calls and the caller is responsible for its
                 lifecycle. When None (default), a fresh client is created per call.
         """
@@ -64,7 +64,7 @@ class WorkOSTokenVerifier(TokenVerifier):
             async with (
                 contextlib.nullcontext(self._http_client)
                 if self._http_client is not None
-                else httpx.AsyncClient(timeout=self.timeout_seconds)
+                else httpx2.AsyncClient(timeout=self.timeout_seconds)
             ) as client:
                 # Use WorkOS AuthKit userinfo endpoint to validate token
                 response = await client.get(
@@ -115,7 +115,7 @@ class WorkOSTokenVerifier(TokenVerifier):
                     },
                 )
 
-        except httpx.RequestError as e:
+        except httpx2.RequestError as e:
             logger.debug("Failed to verify WorkOS token: %s", e)
             return None
         except Exception as e:
@@ -180,7 +180,7 @@ class WorkOSProvider(OAuthProxy):
         fastmcp_access_token_expiry_seconds: int | None = None,
         token_expiry_threshold_seconds: int = 0,
         extra_authorize_params: dict[str, str] | None = None,
-        http_client: httpx.AsyncClient | None = None,
+        http_client: httpx2.AsyncClient | None = None,
         enable_cimd: bool = True,
     ):
         """Initialize WorkOS OAuth provider.
@@ -230,7 +230,7 @@ class WorkOSProvider(OAuthProxy):
             token_expiry_threshold_seconds: Number of seconds before actual expiry to consider
                 a token as expired (default 0). Prevents race conditions where a token
                 passes the expiry check but expires before the next operation completes.
-            http_client: Optional httpx.AsyncClient for connection pooling in token verification.
+            http_client: Optional httpx2.AsyncClient for connection pooling in token verification.
                 When provided, the client is reused across verify_token calls and the caller
                 is responsible for its lifecycle. When None (default), a fresh client is created per call.
             enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
@@ -432,7 +432,7 @@ class AuthKitProvider(RemoteAuthProvider):
         async def oauth_authorization_server_metadata(request):
             """Forward AuthKit OAuth authorization server metadata with FastMCP customizations."""
             try:
-                async with httpx.AsyncClient() as client:
+                async with httpx2.AsyncClient() as client:
                     response = await client.get(
                         f"{self.authkit_domain}/.well-known/oauth-authorization-server"
                     )

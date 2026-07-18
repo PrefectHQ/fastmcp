@@ -1,6 +1,6 @@
 import re
 
-import httpx
+import httpx2
 import pytest
 from pydantic import AnyHttpUrl
 
@@ -64,8 +64,8 @@ class TestAuthProviderBase:
         # Mount MCP at a non-root path
         mcp_http_app = mcp.http_app(path="/api/v1/mcp")
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=mcp_http_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=mcp_http_app),
             base_url="https://my-server.com",
         ) as client:
             # Make unauthorized request to MCP endpoint
@@ -96,8 +96,8 @@ class TestAuthProviderBase:
         # Mount MCP at a specific path
         mcp_http_app = mcp.http_app(path="/mcp")
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=mcp_http_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=mcp_http_app),
             base_url="https://my-server.com",
         ) as client:
             # The .well-known metadata is at a path-aware location per RFC 9728
@@ -113,8 +113,8 @@ class TestAuthProviderBase:
         mcp = FastMCP("test-server", auth=basic_remote_provider)
         mcp_http_app = mcp.http_app(path="/api/v2/services/mcp")
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=mcp_http_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=mcp_http_app),
             base_url="https://my-server.com",
         ) as client:
             # The .well-known metadata includes the resource path per RFC 9728

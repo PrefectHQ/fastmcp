@@ -15,6 +15,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from fastmcp.utilities.tests import temporary_settings
+from tests.utilities.httpx2_mock import httpx_mock as httpx_mock
 
 # Use SelectorEventLoop on Windows to avoid ProactorEventLoop crashes
 # See: https://github.com/python/cpython/issues/116773

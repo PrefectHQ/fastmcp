@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 from urllib.parse import urlparse
 
-import httpx
+import httpx2
 from mcp.server.auth.json_response import PydanticJSONResponse
 from mcp.server.auth.routes import build_resource_metadata_url, cors_middleware
 from mcp.shared.auth import ProtectedResourceMetadata
@@ -59,7 +59,7 @@ def _parse_descope_config_url(config_url: str) -> tuple[str, str, str, str]:
 
 async def _discover_scopes(openid_configuration_url: str) -> list[str] | None:
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx2.AsyncClient() as client:
             response = await client.get(openid_configuration_url, timeout=10.0)
             response.raise_for_status()
         scopes = response.json().get("scopes_supported")
@@ -76,41 +76,36 @@ async def _discover_scopes(openid_configuration_url: str) -> list[str] | None:
 
 
 class DescopeProvider(RemoteAuthProvider):
-    """Descope metadata provider for DCR (Dynamic Client Registration).
+    """Descope metadata provider for Dynamic Client Registration (DCR).
 
-    This provider implements Descope integration using metadata forwarding.
-    This is the recommended approach for Descope DCR
-    as it allows Descope to handle the OAuth flow directly while FastMCP acts
-    as a resource server.
+    The provider accepts either a resource-specific Descope MCP Server URL such
+    as `/v1/apps/agentic/P.../M.../.well-known/openid-configuration` or a
+    project-level inbound app URL such as
+    `/v1/apps/P.../.well-known/openid-configuration`.
 
-    IMPORTANT SETUP REQUIREMENTS:
-
-    1. Create an MCP Server in Descope Console:
-       - Go to the [MCP Servers page](https://app.descope.com/mcp-servers) of the Descope Console
-       - Create a new MCP Server
-       - Ensure that **Dynamic Client Registration (DCR)** is enabled
-       - Note your Well-Known URL
-
-    2. Note your Well-Known URL:
-       - Save your Well-Known URL from [MCP Server Settings](https://app.descope.com/mcp-servers)
-       - Format: ``https://.../v1/apps/agentic/P.../M.../.well-known/openid-configuration``
-
-    For detailed setup instructions, see:
-    https://docs.descope.com/identity-federation/inbound-apps/creating-inbound-apps#method-2-dynamic-client-registration-dcr
+    When neither `scopes_supported` nor `required_scopes` is provided, advertised
+    scopes are discovered lazily from the OpenID configuration. Use
+    `scopes_supported` and `required_scopes` together when the scopes clients
+    should request differ from the scopes enforced during token validation.
 
     Example:
         ```python
+        from fastmcp import FastMCP
         from fastmcp.server.auth.providers.descope import DescopeProvider
 
-        # Create Descope metadata provider (JWT verifier created automatically)
-        descope_auth = DescopeProvider(
-            config_url="https://.../v1/apps/agentic/P.../M.../.well-known/openid-configuration",
+        auth = DescopeProvider(
+            config_url=(
+                "https://api.descope.com/v1/apps/P.../"
+                ".well-known/openid-configuration"
+            ),
             base_url="https://your-fastmcp-server.com",
         )
 
-        # Use with FastMCP
-        mcp = FastMCP("My App", auth=descope_auth)
+        mcp = FastMCP("My App", auth=auth)
         ```
+
+    See [Descope's inbound app documentation](https://docs.descope.com/identity-federation/inbound-apps/creating-inbound-apps#method-2-dynamic-client-registration-dcr)
+    for DCR setup instructions.
     """
 
     def __init__(
@@ -126,6 +121,27 @@ class DescopeProvider(RemoteAuthProvider):
         resource_documentation: AnyHttpUrl | None = None,
         token_verifier: TokenVerifier | None = None,
     ):
+        """Initialize the Descope provider.
+
+        Args:
+            base_url: Public URL of this FastMCP server.
+            config_url: A resource-specific or project-level Descope OpenID
+                configuration URL. When provided, `project_id` and
+                `descope_base_url` are ignored.
+            project_id: Descope project ID. Used with `descope_base_url` for
+                backwards compatibility.
+            descope_base_url: Descope API base URL. Used with `project_id` for
+                backwards compatibility.
+            required_scopes: Scopes required during token validation. When
+                `scopes_supported` is omitted, these are also advertised to clients.
+            scopes_supported: Scopes advertised to OAuth clients. When both this
+                and `required_scopes` are omitted, scopes are discovered lazily
+                from `config_url`.
+            resource_name: Optional protected resource name.
+            resource_documentation: Optional protected resource documentation URL.
+            token_verifier: Optional custom token verifier. A Descope JWT verifier
+                is created when omitted.
+        """
         self.base_url = AnyHttpUrl(str(base_url).rstrip("/"))
 
         parsed_required_scopes = (
@@ -262,7 +278,7 @@ class DescopeProvider(RemoteAuthProvider):
                 f"{self.descope_base_url}/v1/apps/{self.project_id}{_OAUTH_WK}",
             ]
             try:
-                async with httpx.AsyncClient() as client:
+                async with httpx2.AsyncClient() as client:
                     for metadata_url in metadata_urls:
                         try:
                             response = await client.get(metadata_url)

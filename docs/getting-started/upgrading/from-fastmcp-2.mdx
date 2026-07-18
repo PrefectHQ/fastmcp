@@ -68,7 +68,7 @@ BREAKING CHANGES (will crash at import or runtime):
 
 6. WSTRANSPORT: Removed. Use StreamableHttpTransport.
 
-7. OPENAPI: timeout parameter removed from OpenAPIProvider. Set timeout on the httpx.AsyncClient instead.
+7. OPENAPI: timeout parameter removed from OpenAPIProvider. Set timeout on the httpx2.AsyncClient instead.
 
 8. METADATA: Namespace changed from "_fastmcp" to "fastmcp" in tool.meta. The include_fastmcp_meta parameter is removed (always included).
 
@@ -276,14 +276,14 @@ transport = StreamableHttpTransport("http://localhost:8000/mcp")
 
 **OpenAPI `timeout` parameter removed**
 
-`OpenAPIProvider` no longer accepts a `timeout` parameter. Configure timeout on the httpx client directly. The `client` parameter is also now optional — when omitted, a default client is created from the spec's `servers` URL with a 30-second timeout:
+`OpenAPIProvider` no longer accepts a `timeout` parameter. Configure timeout on the httpx2 client directly. The `client` parameter is also now optional — when omitted, a default client is created from the spec's `servers` URL with a 30-second timeout:
 
 ```python
 # Before
 provider = OpenAPIProvider(spec, client, timeout=60)
 
 # After
-client = httpx.AsyncClient(base_url="https://api.example.com", timeout=60)
+client = httpx2.AsyncClient(base_url="https://api.example.com", timeout=60)
 provider = OpenAPIProvider(spec, client)
 ```
 
