@@ -198,11 +198,14 @@ class TestEnhancedRequireAuthMiddleware:
     """Tests for enhanced authentication middleware error messages."""
 
     @staticmethod
-    def create_scoped_app(required_scopes: list[str]) -> Starlette:
+    def create_scoped_app(
+        required_scopes: list[str], scopes_supported: list[str]
+    ) -> Starlette:
         auth = RemoteAuthProvider(
             token_verifier=_UnderScopedTokenVerifier(required_scopes),
             authorization_servers=[AnyHttpUrl("https://auth.example.com")],
             base_url="http://localhost:8000",
+            scopes_supported=scopes_supported,
         )
         return FastMCP("Test Server", auth=auth).http_app()
 
@@ -249,21 +252,27 @@ class TestEnhancedRequireAuthMiddleware:
             assert "error=" not in www_auth
             assert response.content == b""
 
-    def test_missing_auth_challenge_includes_required_scopes(self):
-        app = self.create_scoped_app(["api.read", "api.write"])
+    def test_missing_auth_challenge_includes_supported_scopes(self):
+        app = self.create_scoped_app(
+            required_scopes=["read"],
+            scopes_supported=["api://client-id/read"],
+        )
 
         with TestClient(app) as client:
             response = client.post("/mcp")
 
         assert response.status_code == 401
         assert response.headers["www-authenticate"] == (
-            'Bearer scope="api.read api.write", '
+            'Bearer scope="api://client-id/read", '
             'resource_metadata="http://localhost:8000/'
             '.well-known/oauth-protected-resource/mcp"'
         )
 
-    def test_insufficient_scope_challenge_includes_required_scopes(self):
-        app = self.create_scoped_app(["api.read", "api.write"])
+    def test_insufficient_scope_challenge_includes_supported_scopes(self):
+        app = self.create_scoped_app(
+            required_scopes=["read"],
+            scopes_supported=["api://client-id/read"],
+        )
 
         with TestClient(app) as client:
             response = client.post("/mcp", headers={"Authorization": "Bearer narrow"})
@@ -271,14 +280,14 @@ class TestEnhancedRequireAuthMiddleware:
         assert response.status_code == 403
         assert response.headers["www-authenticate"] == (
             'Bearer error="insufficient_scope", '
-            'error_description="Required scope: api.read", '
-            'scope="api.read api.write", '
+            'error_description="Required scope: read", '
+            'scope="api://client-id/read", '
             'resource_metadata="http://localhost:8000/'
             '.well-known/oauth-protected-resource/mcp"'
         )
 
     def test_missing_auth_challenge_omits_empty_scope(self):
-        app = self.create_scoped_app([])
+        app = self.create_scoped_app(required_scopes=["read"], scopes_supported=[])
 
         with TestClient(app) as client:
             response = client.post("/mcp")

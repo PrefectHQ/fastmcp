@@ -11,10 +11,12 @@ authentication (no error attribute) and invalid authentication (with error).
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from mcp.server.auth.middleware.bearer_auth import (
     RequireAuthMiddleware as SDKRequireAuthMiddleware,
 )
+from pydantic import AnyHttpUrl
 from starlette.types import Receive, Scope, Send
 
 from fastmcp.utilities.logging import get_logger
@@ -33,6 +35,18 @@ class RequireAuthMiddleware(SDKRequireAuthMiddleware):
     missing authentication (initial discovery) and invalid authentication
     (token validation failure).
     """
+
+    def __init__(
+        self,
+        app: Any,
+        required_scopes: list[str],
+        resource_metadata_url: AnyHttpUrl | None = None,
+        scopes_supported: list[str] | None = None,
+    ) -> None:
+        super().__init__(app, required_scopes, resource_metadata_url)
+        self.scopes_supported = (
+            required_scopes if scopes_supported is None else scopes_supported
+        )
 
     async def __call__(
         self,
@@ -111,8 +125,8 @@ class RequireAuthMiddleware(SDKRequireAuthMiddleware):
     def _challenge_context(self) -> list[str]:
         """Build shared scope and resource metadata challenge parameters."""
         parts = []
-        if self.required_scopes:
-            scope_value = " ".join(self.required_scopes)
+        if self.scopes_supported:
+            scope_value = " ".join(self.scopes_supported)
             parts.append(f'scope="{scope_value}"')
         if self.resource_metadata_url:
             parts.append(f'resource_metadata="{self.resource_metadata_url}"')

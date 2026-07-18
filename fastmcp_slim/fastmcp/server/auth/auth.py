@@ -257,6 +257,11 @@ class AuthProvider(TokenVerifierProtocol):
         """
         raise NotImplementedError("Subclasses must implement verify_token")
 
+    @property
+    def scopes_supported(self) -> list[str]:
+        """Scopes clients should request from the authorization server."""
+        return self.required_scopes
+
     def set_mcp_path(self, mcp_path: str | None) -> None:
         """Set the MCP endpoint path and compute resource URL.
 
@@ -394,17 +399,6 @@ class TokenVerifier(AuthProvider):
             required_scopes=required_scopes,
         )
 
-    @property
-    def scopes_supported(self) -> list[str]:
-        """Scopes to advertise in OAuth metadata.
-
-        Defaults to required_scopes. Override in subclasses when the
-        advertised scopes differ from the validation scopes (e.g., Azure AD
-        where tokens contain short-form scopes but clients request full URI
-        scopes).
-        """
-        return self.required_scopes or []
-
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify a bearer token and return access info if valid."""
         raise NotImplementedError("Subclasses must implement verify_token")
@@ -465,6 +459,13 @@ class RemoteAuthProvider(AuthProvider):
         self.resource_name = resource_name
         self.resource_documentation = resource_documentation
 
+    @property
+    def scopes_supported(self) -> list[str]:
+        """Scopes clients should request from the authorization server."""
+        if self._scopes_supported is not None:
+            return self._scopes_supported
+        return self.token_verifier.scopes_supported
+
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify token using the configured token verifier."""
         return await self.token_verifier.verify_token(token)
@@ -494,11 +495,7 @@ class RemoteAuthProvider(AuthProvider):
                 create_protected_resource_routes(
                     resource_url=resource_url,
                     authorization_servers=self.authorization_servers,
-                    scopes_supported=(
-                        self._scopes_supported
-                        if self._scopes_supported is not None
-                        else self.token_verifier.scopes_supported
-                    ),
+                    scopes_supported=self.scopes_supported,
                     resource_name=self.resource_name,
                     resource_documentation=self.resource_documentation,
                 )
@@ -720,6 +717,16 @@ class OAuthProvider(
         """
         return await self.load_access_token(token)
 
+    @property
+    def scopes_supported(self) -> list[str]:
+        """Scopes clients should request from this authorization server."""
+        if (
+            self.client_registration_options
+            and self.client_registration_options.valid_scopes
+        ):
+            return self.client_registration_options.valid_scopes
+        return self.required_scopes
+
     def get_routes(
         self,
         mcp_path: str | None = None,
@@ -781,16 +788,10 @@ class OAuthProvider(
 
         # Add protected resource routes if this server is also acting as a resource server
         if self._resource_url:
-            supported_scopes = (
-                self.client_registration_options.valid_scopes
-                if self.client_registration_options
-                and self.client_registration_options.valid_scopes
-                else self.required_scopes
-            )
             protected_routes = create_protected_resource_routes(
                 resource_url=self._resource_url,
                 authorization_servers=[self.issuer_url],
-                scopes_supported=supported_scopes,
+                scopes_supported=self.scopes_supported,
             )
             oauth_routes.extend(protected_routes)
 
