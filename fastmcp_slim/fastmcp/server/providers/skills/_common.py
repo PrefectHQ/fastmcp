@@ -39,6 +39,8 @@ def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     Returns:
         Tuple of (frontmatter dict, remaining content)
     """
+    content = content.removeprefix("\ufeff")
+
     if not content.startswith("---"):
         return {}, content
 

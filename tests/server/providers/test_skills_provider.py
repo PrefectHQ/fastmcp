@@ -92,6 +92,26 @@ This is my skill content.
         assert provider.skill_info.description == "A test skill"
         assert len(provider.skill_info.files) == 3
 
+    def test_loads_frontmatter_from_utf8_bom_skill(self, tmp_path: Path):
+        skill_dir = tmp_path / "bom-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "\ufeff---\n"
+            "name: bom-skill\n"
+            "description: Skill saved with a UTF-8 BOM\n"
+            "---\n"
+            "# BOM Skill\n",
+            encoding="utf-8",
+        )
+
+        provider = SkillProvider(skill_path=skill_dir)
+
+        assert provider.skill_info.description == "Skill saved with a UTF-8 BOM"
+        assert provider.skill_info.frontmatter == {
+            "name": "bom-skill",
+            "description": "Skill saved with a UTF-8 BOM",
+        }
+
     def test_raises_if_directory_missing(self, tmp_path: Path):
         with pytest.raises(FileNotFoundError, match="Skill directory not found"):
             SkillProvider(skill_path=tmp_path / "nonexistent")
