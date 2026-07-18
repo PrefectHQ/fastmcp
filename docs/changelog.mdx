@@ -5,6 +5,25 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v3.4.4" description="2026-07-08">
+
+**[v3.4.4: Host in Translation](https://github.com/PrefectHQ/fastmcp/releases/tag/v3.4.4)**
+
+FastMCP 3.4.4 restores HTTP deployment compatibility after the 3.4.3 Host/Origin guard changed default behavior for existing ASGI, serverless, and reverse-proxy deployments. The guard implementation remains available for deployments that opt in with explicit trusted hosts and origins, while 3.x returns to accepting traffic that worked before the patch. This release also adds Hugging Face OAuth provider support, with docs and examples for public and private apps, PKCE, Dynamic Client Registration, and CIMD.
+
+### Enhancements ✨
+* Hugging Face Auth Integration by [@evalstate](https://github.com/evalstate) in [#4385](https://github.com/PrefectHQ/fastmcp/pull/4385)
+### Fixes 🐞
+* Relax host origin guard defaults by [@jlowin](https://github.com/jlowin) in [#4439](https://github.com/PrefectHQ/fastmcp/pull/4439)
+* Restore HTTP host guard compatibility by [@jlowin](https://github.com/jlowin) in [#4472](https://github.com/PrefectHQ/fastmcp/pull/4472)
+
+## New Contributors
+* @evalstate made their first contribution in [#4385](https://github.com/PrefectHQ/fastmcp/pull/4385)
+
+**Full Changelog**: [v3.4.3...v3.4.4](https://github.com/PrefectHQ/fastmcp/compare/v3.4.3...v3.4.4)
+
+</Update>
+
 <Update label="v3.4.3" description="2026-07-05">
 
 **[v3.4.3: The Fast and the Secure-ious](https://github.com/PrefectHQ/fastmcp/releases/tag/v3.4.3)**
