@@ -111,6 +111,26 @@ def oauth_proxy_https_remember():
     )
 
 
+@pytest.fixture
+def oauth_proxy_https_path():
+    """OAuthProxy with a path component in base_url (no trailing slash).
+
+    Exercises the RFC 9207 issuer consistency across a base_url shape where
+    naive normalization (e.g. force-appending a trailing slash) would produce
+    an `iss` value that no longer matches the discovery document's `issuer`.
+    """
+    return OAuthProxy(
+        upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
+        upstream_token_endpoint="https://github.com/login/oauth/access_token",
+        upstream_client_id="client-id",
+        upstream_client_secret="client-secret",
+        token_verifier=_Verifier(),
+        base_url="https://myserver.example/oauth",
+        client_storage=MemoryStore(),
+        jwt_signing_key="test-secret",
+    )
+
+
 async def _start_flow(
     proxy: OAuthProxy, client_id: str, redirect: str
 ) -> tuple[str, str]:
@@ -636,6 +656,40 @@ class TestConsentSecurity:
             assert "MCP_DENIED_CLIENTS" in ";\n".join(
                 r.headers.get("set-cookie", "").splitlines()
             )
+
+    async def test_deny_redirect_issuer_matches_path_base_url_metadata(
+        self, oauth_proxy_https_path
+    ):
+        """Consent-denial `iss` must match the discovery document exactly.
+
+        Regression test for a base_url with a path and no trailing slash
+        (`https://myserver.example/oauth`): the metadata `issuer` is the
+        unmodified base_url, so the denial redirect's `iss` must match it
+        byte-for-byte rather than force-appending a trailing slash.
+        """
+        client_redirect = "http://localhost:5008/callback"
+        txn_id, _ = await _start_flow(
+            oauth_proxy_https_path, "client-path", client_redirect
+        )
+        app = Starlette(routes=oauth_proxy_https_path.get_routes())
+        with TestClient(app) as c:
+            metadata = c.get("/.well-known/oauth-authorization-server").json()
+            assert metadata["issuer"] == "https://myserver.example/oauth"
+
+            consent = c.get(f"/consent?txn_id={txn_id}")
+            csrf = _extract_csrf(consent.text)
+            assert csrf
+            for k, v in consent.cookies.items():
+                c.cookies.set(k, v)
+            r = c.post(
+                "/consent",
+                data={"action": "deny", "txn_id": txn_id, "csrf_token": csrf},
+                follow_redirects=False,
+            )
+            assert r.status_code in (302, 303)
+            q = parse_qs(urlparse(r.headers.get("location", "")).query)
+            assert q.get("error") == ["access_denied"]
+            assert q.get("iss") == [metadata["issuer"]]
 
     async def test_remembered_denial_redirects_with_issuer(
         self, oauth_proxy_https_remember

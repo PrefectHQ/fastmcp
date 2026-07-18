@@ -191,6 +191,9 @@ class AuthorizationHandler(SDKAuthorizationHandler):
             server_icon_url: Optional server icon URL for branding
         """
         super().__init__(provider)
+        # Unnormalized on purpose: this must match the discovery document's
+        # `issuer` field byte-for-byte per RFC 9207, and that field is built
+        # from the same unmodified base_url (see OAuthProxy.get_routes()).
         self._issuer = str(base_url)
         self._base_url = str(base_url).rstrip("/")
         self._server_name = server_name
