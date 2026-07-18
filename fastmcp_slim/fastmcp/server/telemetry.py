@@ -150,6 +150,16 @@ def seam_span(method: str, server_name: str) -> Generator[Span, None, None]:
         kind=SpanKind.SERVER,
         attributes=attrs,
     ) as span:
+        # Reapply: `attributes=attrs` above is what makes on_start hooks and
+        # the sampler see these values at creation time (the whole point of
+        # this helper). But OTel's Tracer.start_span builds the span from
+        # `sampling_result.attributes`, not the `attributes` kwarg directly —
+        # a custom Sampler whose SamplingResult.attributes defaults to None
+        # silently drops everything we passed. Reapplying here (additive,
+        # can't clobber anything a sampler legitimately added) guarantees
+        # FastMCP's attributes survive regardless of sampler behavior.
+        if span.is_recording():
+            span.set_attributes(attrs)
         token = _active_seam_span.set(span)
         try:
             yield span
@@ -218,6 +228,11 @@ def server_span(
         kind=SpanKind.SERVER,
         attributes=attrs,
     ) as span:
+        # Reapply for the same reason as `seam_span`: OTel builds the span
+        # from `sampling_result.attributes`, which a custom Sampler may not
+        # forward even though it was handed `attributes=attrs` above.
+        if span.is_recording():
+            span.set_attributes(attrs)
         try:
             yield span
         except Exception as e:
@@ -246,6 +261,11 @@ def delegate_span(
 
     tracer = get_tracer()
     with tracer.start_as_current_span(f"delegate {name}", attributes=attrs) as span:
+        # Reapply for the same reason as `seam_span`: OTel builds the span
+        # from `sampling_result.attributes`, which a custom Sampler may not
+        # forward even though it was handed `attributes=attrs` above.
+        if span.is_recording():
+            span.set_attributes(attrs)
         try:
             yield span
         except Exception as e:

@@ -310,14 +310,26 @@ async def execute_tools(
             )
 
         tracer = get_tracer()
+        span_attrs = {
+            "gen_ai.tool.name": tool_use.name,
+            "fastmcp.tool.use_id": tool_use.id,
+        }
         with tracer.start_as_current_span(
             f"sampling tool {tool_use.name}",
             kind=SpanKind.INTERNAL,
-            attributes={
-                "gen_ai.tool.name": tool_use.name,
-                "fastmcp.tool.use_id": tool_use.id,
-            },
+            attributes=span_attrs,
         ) as span:
+            # Reapply: `attributes=span_attrs` above lets on_start hooks and
+            # the sampler see these values at creation time. But OTel's
+            # Tracer.start_span builds the span from
+            # `sampling_result.attributes`, not the `attributes` kwarg
+            # directly — a custom Sampler whose SamplingResult.attributes
+            # defaults to None silently drops everything we passed.
+            # Reapplying here (additive, can't clobber anything a sampler
+            # legitimately added) guarantees FastMCP's attributes survive
+            # regardless of sampler behavior.
+            if span.is_recording():
+                span.set_attributes(span_attrs)
             try:
                 result_value = await tool.run(tool_use.input)
                 return ToolResultContent(
@@ -554,16 +566,27 @@ async def sample_step_impl(
 
     # Make the LLM call
     tracer = get_tracer()
+    span_attrs = {
+        "mcp.method.name": "sampling/createMessage",
+        "fastmcp.server.name": context.fastmcp.name,
+    }
     with tracer.start_as_current_span(
         "sampling create_message",
         kind=SpanKind.CLIENT,
-        attributes={
-            "mcp.method.name": "sampling/createMessage",
-            "fastmcp.server.name": context.fastmcp.name,
-        },
+        attributes=span_attrs,
         record_exception=False,
         set_status_on_exception=False,
     ) as span:
+        # Reapply: `attributes=span_attrs` above lets on_start hooks and the
+        # sampler see these values at creation time. But OTel's
+        # Tracer.start_span builds the span from
+        # `sampling_result.attributes`, not the `attributes` kwarg directly —
+        # a custom Sampler whose SamplingResult.attributes defaults to None
+        # silently drops everything we passed. Reapplying here (additive,
+        # can't clobber anything a sampler legitimately added) guarantees
+        # FastMCP's attributes survive regardless of sampler behavior.
+        if span.is_recording():
+            span.set_attributes(span_attrs)
         try:
             if use_fallback:
                 response = await call_sampling_handler(
