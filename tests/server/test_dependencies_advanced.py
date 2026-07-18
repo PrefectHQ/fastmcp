@@ -2,13 +2,13 @@
 
 import inspect
 
-import mcp.types as mcp_types
 import pytest
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
+from tests.conftest import make_server_request_context
 
 
 class Connection:
@@ -170,11 +170,11 @@ class TestTransformContextAnnotations:
             return f"same={ctx1 is ctx2}"
 
         # Both ctx params should be excluded from schema
-        result = await mcp._list_tools_mcp(mcp_types.ListToolsRequest())
+        result = await mcp._on_list_tools(make_server_request_context(), None)
         tool = next(t for t in result.tools if t.name == "tool_with_multiple_ctx")
-        assert "name" in tool.inputSchema["properties"]
-        assert "ctx1" not in tool.inputSchema["properties"]
-        assert "ctx2" not in tool.inputSchema["properties"]
+        assert "name" in tool.input_schema["properties"]
+        assert "ctx1" not in tool.input_schema["properties"]
+        assert "ctx2" not in tool.input_schema["properties"]
 
     async def test_context_in_class_method(self, mcp: FastMCP):
         """Test Context transformation works with bound methods."""

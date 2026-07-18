@@ -3,7 +3,7 @@
 from collections.abc import Iterator, Sequence
 from typing import Any
 
-from mcp.types import (
+from mcp_types import (
     AudioContent,
     CreateMessageResult,
     CreateMessageResultWithTools,
@@ -18,7 +18,7 @@ from mcp.types import (
     ToolResultContent,
     ToolUseContent,
 )
-from mcp.types import CreateMessageRequestParams as SamplingParams
+from mcp_types import CreateMessageRequestParams as SamplingParams
 
 try:
     from anthropic import AsyncAnthropic
@@ -54,16 +54,16 @@ _ANTHROPIC_IMAGE_MEDIA_TYPES = frozenset(
 
 def _image_content_to_anthropic_block(content: ImageContent) -> ImageBlockParam:
     """Convert MCP ImageContent to Anthropic ImageBlockParam."""
-    if content.mimeType not in _ANTHROPIC_IMAGE_MEDIA_TYPES:
+    if content.mime_type not in _ANTHROPIC_IMAGE_MEDIA_TYPES:
         raise ValueError(
-            f"Unsupported image MIME type for Anthropic: {content.mimeType!r}. "
+            f"Unsupported image MIME type for Anthropic: {content.mime_type!r}. "
             f"Supported types: {', '.join(sorted(_ANTHROPIC_IMAGE_MEDIA_TYPES))}"
         )
     return ImageBlockParam(
         type="image",
         source=Base64ImageSourceParam(
             type="base64",
-            media_type=content.mimeType,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+            media_type=content.mime_type,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
             data=content.data,
         ),
     )
@@ -103,7 +103,9 @@ class AnthropicSamplingHandler:
             messages=messages,
         )
 
-        model: ModelParam = self._select_model_from_preferences(params.modelPreferences)
+        model: ModelParam = self._select_model_from_preferences(
+            params.model_preferences
+        )
 
         # Convert MCP tools to Anthropic format
         anthropic_tools: list[ToolParam] | None = None
@@ -113,8 +115,8 @@ class AnthropicSamplingHandler:
         # Convert tool_choice to Anthropic format
         # Returns None if mode is "none", signaling tools should be omitted
         anthropic_tool_choice: ToolChoiceParam | None = None
-        if params.toolChoice:
-            converted = self._convert_tool_choice_to_anthropic(params.toolChoice)
+        if params.tool_choice:
+            converted = self._convert_tool_choice_to_anthropic(params.tool_choice)
             if converted is None:
                 # tool_choice="none" means don't use tools
                 anthropic_tools = None
@@ -126,14 +128,14 @@ class AnthropicSamplingHandler:
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": anthropic_messages,
-            "max_tokens": params.maxTokens,
+            "max_tokens": params.max_tokens,
         }
-        if params.systemPrompt is not None:
-            kwargs["system"] = params.systemPrompt
+        if params.system_prompt is not None:
+            kwargs["system"] = params.system_prompt
         if params.temperature is not None:
             kwargs["temperature"] = params.temperature
-        if params.stopSequences is not None:
-            kwargs["stop_sequences"] = params.stopSequences
+        if params.stop_sequences is not None:
+            kwargs["stop_sequences"] = params.stop_sequences
         if anthropic_tools is not None:
             kwargs["tools"] = anthropic_tools
         if anthropic_tool_choice is not None:
@@ -229,9 +231,9 @@ class AnthropicSamplingHandler:
                         content_blocks.append(
                             ToolResultBlockParam(
                                 type="tool_result",
-                                tool_use_id=item.toolUseId,
+                                tool_use_id=item.tool_use_id,
                                 content=result_content,
-                                is_error=item.isError if item.isError else False,
+                                is_error=item.is_error if item.is_error else False,
                             )
                         )
                     else:
@@ -285,9 +287,11 @@ class AnthropicSamplingHandler:
                         content=[
                             ToolResultBlockParam(
                                 type="tool_result",
-                                tool_use_id=content.toolUseId,
+                                tool_use_id=content.tool_use_id,
                                 content=result_content_str,
-                                is_error=content.isError if content.isError else False,
+                                is_error=content.is_error
+                                if content.is_error
+                                else False,
                             )
                         ],
                     )
@@ -364,7 +368,7 @@ class AnthropicSamplingHandler:
         anthropic_tools: list[ToolParam] = []
         for tool in tools:
             # Build input_schema dict, ensuring required fields
-            input_schema: dict[str, Any] = dict(tool.inputSchema)
+            input_schema: dict[str, Any] = dict(tool.input_schema)
             if "type" not in input_schema:
                 input_schema["type"] = "object"
 
@@ -445,5 +449,5 @@ class AnthropicSamplingHandler:
             content=content,
             role="assistant",
             model=message.model,
-            stopReason=stop_reason,
+            stop_reason=stop_reason,
         )

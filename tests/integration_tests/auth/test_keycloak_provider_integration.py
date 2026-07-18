@@ -3,7 +3,7 @@
 import os
 from unittest.mock import AsyncMock, Mock, patch
 
-import httpx
+import httpx2
 import pytest
 
 from fastmcp import FastMCP
@@ -19,7 +19,7 @@ class TestKeycloakProviderIntegration:
 
     async def test_oauth_discovery_endpoints_integration(self):
         """Test OAuth discovery endpoints work correctly together."""
-        with patch("httpx.get") as mock_get:
+        with patch("httpx2.get") as mock_get:
             mock_response = Mock()
             mock_response.json.return_value = {
                 "issuer": TEST_REALM_URL,
@@ -40,8 +40,8 @@ class TestKeycloakProviderIntegration:
             mcp = FastMCP("test-server", auth=provider)
             mcp_http_app = mcp.http_app()
 
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=mcp_http_app),
+            async with httpx2.AsyncClient(
+                transport=httpx2.ASGITransport(app=mcp_http_app),
                 base_url=TEST_BASE_URL,
             ) as client:
                 # Test protected resource metadata
@@ -73,8 +73,8 @@ class TestKeycloakProviderIntegration:
         mcp = FastMCP("test-server", auth=provider)
         mcp_http_app = mcp.http_app()
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=mcp_http_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=mcp_http_app),
             base_url=TEST_BASE_URL,
         ) as client:
             response = await client.post(
@@ -91,11 +91,11 @@ class TestKeycloakProviderIntegration:
     async def test_authorization_server_metadata_forwards_keycloak(self):
         """Test that authorization server metadata is forwarded from Keycloak.
 
-        Note: This test is skipped because mocking httpx.AsyncClient conflicts with the
+        Note: This test is skipped because mocking httpx2.AsyncClient conflicts with the
         ASGI transport used by the test client. The functionality has been verified to
         work correctly in production (see user testing logs showing successful DCR proxy).
         """
-        with patch("httpx.get") as mock_get:
+        with patch("httpx2.get") as mock_get:
             # Mock OIDC discovery
             mock_discovery = Mock()
             mock_discovery.json.return_value = {
@@ -118,7 +118,7 @@ class TestKeycloakProviderIntegration:
             mcp_http_app = mcp.http_app()
 
             # Mock the metadata forwarding request
-            with patch("httpx.AsyncClient") as mock_client_class:
+            with patch("httpx2.AsyncClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value.__aenter__.return_value = mock_client
 
@@ -136,8 +136,8 @@ class TestKeycloakProviderIntegration:
                 mock_metadata_response.raise_for_status = Mock()
                 mock_client.get.return_value = mock_metadata_response
 
-                async with httpx.AsyncClient(
-                    transport=httpx.ASGITransport(app=mcp_http_app),
+                async with httpx2.AsyncClient(
+                    transport=httpx2.ASGITransport(app=mcp_http_app),
                     base_url=TEST_BASE_URL,
                 ) as client:
                     # Test authorization server metadata forwarding
@@ -190,10 +190,10 @@ class TestKeycloakProviderIntegration:
     async def test_metadata_forwarding_error_handling(self):
         """Test error handling when metadata forwarding fails.
 
-        Note: This test is skipped because mocking httpx.AsyncClient conflicts with the
+        Note: This test is skipped because mocking httpx2.AsyncClient conflicts with the
         ASGI transport. Error handling code is present and follows standard patterns.
         """
-        with patch("httpx.get") as mock_get:
+        with patch("httpx2.get") as mock_get:
             mock_response = Mock()
             mock_response.json.return_value = {
                 "issuer": TEST_REALM_URL,
@@ -212,15 +212,15 @@ class TestKeycloakProviderIntegration:
             mcp = FastMCP("test-server", auth=provider)
             mcp_http_app = mcp.http_app()
 
-            with patch("httpx.AsyncClient") as mock_client_class:
+            with patch("httpx2.AsyncClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value.__aenter__.return_value = mock_client
 
                 # Simulate Keycloak error
-                mock_client.get.side_effect = httpx.RequestError("Connection failed")
+                mock_client.get.side_effect = httpx2.RequestError("Connection failed")
 
-                async with httpx.AsyncClient(
-                    transport=httpx.ASGITransport(app=mcp_http_app),
+                async with httpx2.AsyncClient(
+                    transport=httpx2.ASGITransport(app=mcp_http_app),
                     base_url=TEST_BASE_URL,
                 ) as client:
                     response = await client.get(
@@ -247,7 +247,7 @@ class TestKeycloakProviderEnvironmentConfiguration:
 
         with (
             patch.dict(os.environ, env_vars),
-            patch("httpx.get") as mock_get,
+            patch("httpx2.get") as mock_get,
         ):
             mock_response = Mock()
             mock_response.json.return_value = {
@@ -283,7 +283,7 @@ class TestKeycloakProviderEnvironmentConfiguration:
     async def test_provider_works_in_production_like_environment(self):
         """Test provider configuration that mimics production deployment.
 
-        Note: This test is skipped because mocking httpx.AsyncClient conflicts with the
+        Note: This test is skipped because mocking httpx2.AsyncClient conflicts with the
         ASGI transport used by the test client. The functionality has been verified to
         work correctly in production (see user testing logs showing successful DCR proxy).
         """
@@ -295,7 +295,7 @@ class TestKeycloakProviderEnvironmentConfiguration:
 
         with (
             patch.dict(os.environ, production_env),
-            patch("httpx.get") as mock_get,
+            patch("httpx2.get") as mock_get,
         ):
             mock_response = Mock()
             mock_response.json.return_value = {
@@ -319,7 +319,7 @@ class TestKeycloakProviderEnvironmentConfiguration:
             mcp = FastMCP("production-server", auth=provider)
             mcp_http_app = mcp.http_app()
 
-            with patch("httpx.AsyncClient") as mock_client_class:
+            with patch("httpx2.AsyncClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value.__aenter__.return_value = mock_client
 
@@ -335,8 +335,8 @@ class TestKeycloakProviderEnvironmentConfiguration:
                 mock_metadata.raise_for_status = Mock()
                 mock_client.get.return_value = mock_metadata
 
-                async with httpx.AsyncClient(
-                    transport=httpx.ASGITransport(app=mcp_http_app),
+                async with httpx2.AsyncClient(
+                    transport=httpx2.ASGITransport(app=mcp_http_app),
                     base_url="https://api.company.com",
                 ) as client:
                     # Test discovery endpoints work

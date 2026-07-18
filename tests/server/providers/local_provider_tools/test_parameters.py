@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 import pytest
-from mcp.types import (
+from mcp_types import (
     ImageContent,
 )
 from pydantic import BaseModel, Field
@@ -105,11 +105,11 @@ class TestToolParameters:
         assert result.structured_content is None
         assert isinstance(result.content, list)
         assert isinstance(result.content[0], ImageContent)
-        assert result.content[0].mimeType == "image/png"
+        assert result.content[0].mime_type == "image/png"
         assert result.content[0].data == base64.b64encode(b"fake png data").decode()
 
     async def test_tool_with_invalid_input(self):
-        from pydantic import ValidationError
+        from fastmcp.exceptions import ValidationError
 
         mcp = FastMCP()
 
@@ -149,7 +149,7 @@ class TestToolParameters:
         assert result.structured_content == {"result": True}
 
     async def test_annotated_field_validation(self):
-        from pydantic import ValidationError
+        from fastmcp.exceptions import ValidationError
 
         mcp = FastMCP()
 
@@ -164,7 +164,7 @@ class TestToolParameters:
             await mcp.call_tool("analyze", {"x": 0})
 
     async def test_default_field_validation(self):
-        from pydantic import ValidationError
+        from fastmcp.exceptions import ValidationError
 
         mcp = FastMCP()
 
@@ -179,7 +179,7 @@ class TestToolParameters:
             await mcp.call_tool("analyze", {"x": 0})
 
     async def test_default_field_is_still_required_if_no_default_specified(self):
-        from pydantic import ValidationError
+        from fastmcp.exceptions import ValidationError
 
         mcp = FastMCP()
 
@@ -191,7 +191,7 @@ class TestToolParameters:
             await mcp.call_tool("analyze", {})
 
     async def test_literal_type_validation_error(self):
-        from pydantic import ValidationError
+        from fastmcp.exceptions import ValidationError
 
         mcp = FastMCP()
 
@@ -216,7 +216,7 @@ class TestToolParameters:
         assert result.structured_content == {"result": "a"}
 
     async def test_enum_type_validation_error(self):
-        from pydantic import ValidationError
+        from fastmcp.exceptions import ValidationError
 
         mcp = FastMCP()
 
@@ -251,7 +251,7 @@ class TestToolParameters:
         assert result.structured_content == {"result": "red"}
 
     async def test_union_type_validation(self):
-        from pydantic import ValidationError
+        from fastmcp.exceptions import ValidationError
 
         mcp = FastMCP()
 
@@ -285,7 +285,7 @@ class TestToolParameters:
         assert result.structured_content == {"result": str(test_path)}
 
     async def test_path_type_error(self):
-        from pydantic import ValidationError
+        from fastmcp.exceptions import ValidationError
 
         mcp = FastMCP()
 
@@ -310,7 +310,7 @@ class TestToolParameters:
         assert result.structured_content == {"result": str(test_uuid)}
 
     async def test_uuid_type_error(self):
-        from pydantic import ValidationError
+        from fastmcp.exceptions import ValidationError
 
         mcp = FastMCP()
 
@@ -344,7 +344,7 @@ class TestToolParameters:
         assert result.structured_content == {"result": "2021-01-01T00:00:00"}
 
     async def test_datetime_type_error(self):
-        from pydantic import ValidationError
+        from fastmcp.exceptions import ValidationError
 
         mcp = FastMCP()
 

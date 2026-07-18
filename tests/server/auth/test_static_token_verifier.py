@@ -1,6 +1,6 @@
 """Tests for StaticTokenVerifier integration with FastMCP."""
 
-import httpx
+import httpx2
 
 from fastmcp.server import FastMCP
 from fastmcp.server.auth import AccessToken
@@ -66,8 +66,8 @@ class TestStaticTokenVerifier:
         app = server.http_app(transport="http")
 
         # Test unauthenticated request gets 401 (use exact path match to avoid redirect)
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app), base_url="http://test"
         ) as client:
             response = await client.post("/mcp")
             assert response.status_code == 401
@@ -89,8 +89,8 @@ class TestStaticTokenVerifier:
         app = server.http_app(transport="http")
 
         # Test that non-matching path gets 307 redirect
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app), base_url="http://test"
         ) as client:
             response = await client.post("/mcp/", follow_redirects=False)
             assert response.status_code == 307

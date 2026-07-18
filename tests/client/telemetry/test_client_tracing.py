@@ -56,6 +56,7 @@ class TestClientToolTracing:
                 if s.name == "tools/call add"
                 and s.attributes is not None
                 and "fastmcp.server.name" not in s.attributes
+                and "fastmcp.component.key" in s.attributes
             ),
             None,
         )
@@ -95,6 +96,7 @@ class TestClientToolTracing:
             if s.name == "tools/call failing_tool"
             and s.attributes is not None
             and "fastmcp.server.name" not in s.attributes
+            and "fastmcp.component.key" in s.attributes
         ]
 
         # Exactly one client span should exist (no duplicate from call_tool)
@@ -154,6 +156,7 @@ class TestClientResourceTracing:
                 if s.name == "resources/read"
                 and s.attributes is not None
                 and "fastmcp.server.name" not in s.attributes
+                and "fastmcp.component.key" in s.attributes
             ),
             None,
         )
@@ -214,6 +217,7 @@ class TestClientPromptTracing:
                 if s.name == "prompts/get welcome"
                 and s.attributes is not None
                 and "fastmcp.server.name" not in s.attributes
+                and "fastmcp.component.key" in s.attributes
             ),
             None,
         )
@@ -257,6 +261,7 @@ class TestClientServerSpanHierarchy:
                 if s.name == "tools/call echo"
                 and s.attributes is not None
                 and "fastmcp.server.name" not in s.attributes
+                and "fastmcp.component.key" in s.attributes
             ),
             None,
         )
@@ -309,6 +314,7 @@ class TestClientServerSpanHierarchy:
                 if s.name == "tools/call add"
                 and s.attributes is not None
                 and "fastmcp.server.name" not in s.attributes
+                and "fastmcp.component.key" in s.attributes
             ),
             None,
         )
@@ -326,16 +332,30 @@ class TestClientServerSpanHierarchy:
         assert client_span is not None, "Client span should exist"
         assert server_span is not None, "Server span should exist"
 
-        # Verify trace context propagation: server span should be child of client span
-        # Both should share the same trace_id
+        # Verify trace context propagation: server span should be a descendant
+        # of the client span, sharing the same trace_id. SDK v2 emits its own
+        # intermediate spans (e.g. "MCP send tools/call add") between the FastMCP
+        # client span and the server span, so the server span's parent is one of
+        # those SDK spans rather than the client span directly. Assert descendant
+        # relationship by walking the parent chain instead of a direct parent.
         assert server_span.context.trace_id == client_span.context.trace_id, (
             "Server and client spans should share the same trace_id"
         )
 
-        # Server span's parent should be the client span
+        spans_by_id = {s.context.span_id: s for s in spans}
         assert server_span.parent is not None, "Server span should have a parent"
-        assert server_span.parent.span_id == client_span.context.span_id, (
-            "Server span's parent should be the client span"
+        current = server_span
+        found_client_ancestor = False
+        while current.parent is not None:
+            parent = spans_by_id.get(current.parent.span_id)
+            if parent is None:
+                break
+            if parent.context.span_id == client_span.context.span_id:
+                found_client_ancestor = True
+                break
+            current = parent
+        assert found_client_ancestor, (
+            "Server span should be a descendant of the client span"
         )
 
 
@@ -376,6 +396,7 @@ class TestClientErrorTracing:
                 if s.name == "tools/call failing_tool"
                 and s.attributes is not None
                 and "fastmcp.server.name" not in s.attributes
+                and "fastmcp.component.key" in s.attributes
             ),
             None,
         )
@@ -423,6 +444,7 @@ class TestClientErrorTracing:
                 if s.name == "resources/read"
                 and s.attributes is not None
                 and "fastmcp.server.name" not in s.attributes
+                and "fastmcp.component.key" in s.attributes
             ),
             None,
         )
@@ -470,6 +492,7 @@ class TestClientErrorTracing:
                 if s.name == "prompts/get failing_prompt"
                 and s.attributes is not None
                 and "fastmcp.server.name" not in s.attributes
+                and "fastmcp.component.key" in s.attributes
             ),
             None,
         )
@@ -513,6 +536,7 @@ class TestClientErrorTracing:
                 if s.name == "tools/call nonexistent"
                 and s.attributes is not None
                 and "fastmcp.server.name" not in s.attributes
+                and "fastmcp.component.key" in s.attributes
             ),
             None,
         )
@@ -571,14 +595,18 @@ class TestSessionIdOnSpans:
 
         spans = trace_exporter.get_finished_spans()
 
-        # Find client-side span
+        # Find the FastMCP client-side span. SDK v2 emits its own native OTel
+        # spans (also lacking `fastmcp.server.name`), so select on the
+        # `fastmcp.component.key` attribute that only our client_span sets.
         client_span = next(
             (
                 s
                 for s in spans
                 if s.name == "tools/call echo"
                 and s.attributes is not None
+                and "fastmcp.component.key" in s.attributes
                 and "fastmcp.server.name" not in s.attributes
+                and "fastmcp.component.key" in s.attributes
             ),
             None,
         )
@@ -635,14 +663,17 @@ class TestSessionIdOnSpans:
 
         spans = trace_exporter.get_finished_spans()
 
-        # Find both spans
+        # Find both spans. Select the FastMCP client span on
+        # `fastmcp.component.key` to avoid matching SDK v2's native OTel span.
         client_span = next(
             (
                 s
                 for s in spans
                 if s.name == "tools/call echo"
                 and s.attributes is not None
+                and "fastmcp.component.key" in s.attributes
                 and "fastmcp.server.name" not in s.attributes
+                and "fastmcp.component.key" in s.attributes
             ),
             None,
         )

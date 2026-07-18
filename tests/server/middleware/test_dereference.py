@@ -32,7 +32,7 @@ class TestDereferenceRefsMiddleware:
         async with Client(mcp) as client:
             tools = await client.list_tools()
 
-        schema = tools[0].inputSchema
+        schema = tools[0].input_schema
         # $defs should be removed — everything inlined
         assert "$defs" not in schema
         # The Color enum should be inlined into the request property
@@ -49,7 +49,7 @@ class TestDereferenceRefsMiddleware:
         async with Client(mcp) as client:
             tools = await client.list_tools()
 
-        schema = tools[0].inputSchema
+        schema = tools[0].input_schema
         # $defs should still be present
         assert "$defs" in schema
 
@@ -64,7 +64,7 @@ class TestDereferenceRefsMiddleware:
         async with Client(mcp) as client:
             tools = await client.list_tools()
 
-        schema = tools[0].inputSchema
+        schema = tools[0].input_schema
         assert "$defs" not in schema
 
     async def test_does_not_mutate_original_tool(self):
@@ -100,9 +100,9 @@ class TestDereferenceRefsMiddleware:
 
         tool = tools[0]
         # Both input and output schemas should be dereferenced
-        assert "$defs" not in tool.inputSchema
-        if tool.outputSchema is not None:
-            assert "$defs" not in tool.outputSchema
+        assert "$defs" not in tool.input_schema
+        if tool.output_schema is not None:
+            assert "$defs" not in tool.output_schema
 
     async def test_resource_templates_dereferenced(self):
         """Middleware dereferences resource template schemas."""
@@ -130,7 +130,7 @@ class TestDereferenceRefsMiddleware:
         async with Client(mcp) as client:
             tools = await client.list_tools()
 
-        schema = tools[0].inputSchema
+        schema = tools[0].input_schema
         # Simple schema should not have $defs regardless
         assert "$defs" not in schema
         assert schema["properties"]["a"]["type"] == "integer"

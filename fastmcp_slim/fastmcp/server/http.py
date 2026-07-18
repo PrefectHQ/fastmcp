@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Callable, Generator
+from collections.abc import AsyncGenerator, Callable, Generator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
-from typing import TYPE_CHECKING
+from fnmatch import fnmatchcase
+from ipaddress import ip_address
+from typing import TYPE_CHECKING, Any, Literal
+from urllib.parse import urlsplit
+from uuid import uuid4
 
 from mcp.server.auth.routes import build_resource_metadata_url
 from mcp.server.lowlevel.server import LifespanResultT
@@ -12,21 +16,65 @@ from mcp.server.streamable_http import (
     EventStore,
 )
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
+from starlette.datastructures import Headers
 from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import BaseRoute, Mount, Route
-from starlette.types import Lifespan, Receive, Scope, Send
+from starlette.types import ASGIApp, Lifespan, Receive, Scope, Send
 
 from fastmcp.server.auth import AuthProvider
 from fastmcp.server.auth.middleware import RequireAuthMiddleware
+from fastmcp.server.event_store import SessionScopedEventStore
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
 
 logger = get_logger(__name__)
+
+DEFAULT_HOSTS = ("127.0.0.1", "localhost", "::1")
+HostOriginProtection = bool | Literal["auto"]
+HostOriginProtectionMode = Literal["auto", "strict"]
+
+
+class FastMCPStreamableHTTPSessionManager(StreamableHTTPSessionManager):
+    """Session manager that scopes resumability storage per transport session."""
+
+    def __init__(
+        self,
+        app: Any,
+        event_store: EventStore | None = None,
+        json_response: bool = False,
+        stateless: bool = False,
+        security_settings: TransportSecuritySettings | None = None,
+        retry_interval: int | None = None,
+        session_idle_timeout: float | None = None,
+    ) -> None:
+        self._shared_event_store: EventStore | None = None
+        super().__init__(
+            app=app,
+            event_store=event_store,
+            json_response=json_response,
+            stateless=stateless,
+            security_settings=security_settings,
+            retry_interval=retry_interval,
+            session_idle_timeout=session_idle_timeout,
+        )
+
+    @property
+    def event_store(self) -> EventStore | None:
+        if self._shared_event_store is None:
+            return None
+        # The SDK reads `self.event_store` once when constructing each transport.
+        # A fresh adapter gives that transport a private stream namespace.
+        return SessionScopedEventStore(self._shared_event_store, session_id=uuid4().hex)
+
+    @event_store.setter
+    def event_store(self, event_store: EventStore | None) -> None:
+        self._shared_event_store = event_store
 
 
 class StreamableHTTPASGIApp:
@@ -63,6 +111,232 @@ class StreamableHTTPASGIApp:
             else:
                 # Re-raise other RuntimeErrors if they don't match the specific message
                 raise
+
+
+def _normalize_host(host: str) -> str:
+    host = host.strip().lower()
+    if not host:
+        return ""
+
+    if host.startswith("["):
+        end = host.find("]")
+        if end == -1:
+            return host
+        return host[1:end]
+
+    if host.count(":") == 1:
+        return host.rsplit(":", 1)[0]
+
+    return host
+
+
+def _is_loopback_host(host: str) -> bool:
+    host = _normalize_host(host)
+    if host == "localhost":
+        return True
+
+    try:
+        return ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_unspecified_host(host: str) -> bool:
+    host = _normalize_host(host)
+    if not host:
+        return True
+
+    try:
+        return ip_address(host).is_unspecified
+    except ValueError:
+        return False
+
+
+def _host_matches(host: str, allowed_hosts: Sequence[str]) -> bool:
+    host = _normalize_host(host)
+    for allowed_host in allowed_hosts:
+        pattern = _normalize_host(allowed_host)
+        if pattern == "*" or fnmatchcase(host, pattern):
+            return True
+
+    return False
+
+
+def _origin_host(origin: str) -> str:
+    try:
+        parsed = urlsplit(origin)
+    except ValueError:
+        return ""
+
+    return parsed.hostname or ""
+
+
+def _origin_port(scheme: str, port: int | None) -> int | None:
+    if port is not None:
+        return port
+    if scheme == "http":
+        return 80
+    if scheme == "https":
+        return 443
+    return None
+
+
+def _format_origin_host(host: str) -> str:
+    if ":" in host and not host.startswith("["):
+        return f"[{host}]"
+    return host
+
+
+def _normalize_origin(origin: str) -> str:
+    origin = origin.strip().rstrip("/")
+    try:
+        parsed = urlsplit(origin)
+        port = parsed.port
+    except ValueError:
+        return origin.lower()
+
+    if not parsed.scheme or not parsed.hostname:
+        return origin.lower()
+
+    if parsed.path or parsed.query or parsed.fragment:
+        return origin.lower()
+
+    scheme = parsed.scheme.lower()
+    host = _format_origin_host(_normalize_host(parsed.hostname))
+    normalized_port = _origin_port(scheme, port)
+    if normalized_port is None:
+        return f"{scheme}://{host}"
+
+    return f"{scheme}://{host}:{normalized_port}"
+
+
+def _request_origin(scope: Scope, host: str) -> str:
+    return _normalize_origin(f"{scope.get('scheme', 'http')}://{host}")
+
+
+def _origin_matches(origin: str, allowed_origins: Sequence[str]) -> bool:
+    origin = _normalize_origin(origin)
+    for allowed_origin in allowed_origins:
+        pattern = _normalize_origin(allowed_origin)
+        if pattern == "*" or fnmatchcase(origin, pattern):
+            return True
+
+    return False
+
+
+class HostOriginGuardMiddleware:
+    """Validate Host and Origin headers before requests reach MCP sessions."""
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        allowed_hosts: Sequence[str] | None = None,
+        allowed_origins: Sequence[str] | None = None,
+        mode: HostOriginProtectionMode = "auto",
+    ) -> None:
+        self.app = app
+        self.allowed_hosts = tuple(allowed_hosts or ())
+        self.allowed_origins = tuple(allowed_origins or ())
+        self.mode = mode
+        self.has_explicit_allowed_hosts = allowed_hosts is not None
+        self.has_explicit_allowed_origins = allowed_origins is not None
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers = Headers(scope=scope)
+        host = headers.get("host", "")
+
+        if self._should_validate_host(scope) and not _host_matches(
+            host,
+            self._allowed_hosts_for_scope(scope),
+        ):
+            response = Response("Misdirected Request", status_code=421)
+            await response(scope, receive, send)
+            return
+
+        origin = headers.get("origin")
+        request_origin = _request_origin(scope, host)
+        if (
+            origin
+            and self._should_validate_origin(scope, host)
+            and not self._origin_allowed(
+                origin,
+                request_origin,
+                host,
+                allow_same_origin_fallback=self._allow_same_origin_fallback(
+                    scope,
+                    host,
+                ),
+            )
+        ):
+            response = Response("Forbidden Origin", status_code=403)
+            await response(scope, receive, send)
+            return
+
+        await self.app(scope, receive, send)
+
+    def _should_validate_host(self, scope: Scope) -> bool:
+        if self.mode == "strict" or self.has_explicit_allowed_hosts:
+            return True
+
+        server = scope.get("server")
+        return bool(server and _is_loopback_host(server[0]))
+
+    def _should_validate_origin(self, scope: Scope, host: str) -> bool:
+        if (
+            self.mode == "strict"
+            or self.has_explicit_allowed_hosts
+            or self.has_explicit_allowed_origins
+            or _is_loopback_host(host)
+        ):
+            return True
+
+        server = scope.get("server")
+        return bool(server and _is_loopback_host(server[0]))
+
+    def _allow_same_origin_fallback(self, scope: Scope, host: str) -> bool:
+        if not self.has_explicit_allowed_origins:
+            return True
+
+        if self.mode == "strict" or self.has_explicit_allowed_hosts:
+            return True
+
+        server = scope.get("server")
+        return _is_loopback_host(host) or bool(server and _is_loopback_host(server[0]))
+
+    def _allowed_hosts_for_scope(self, scope: Scope) -> tuple[str, ...]:
+        allowed_hosts = list(DEFAULT_HOSTS)
+        allowed_hosts.extend(self.allowed_hosts)
+
+        server = scope.get("server")
+        if server:
+            server_host = server[0]
+            if not _is_unspecified_host(server_host):
+                allowed_hosts.append(server_host)
+
+        return tuple(allowed_hosts)
+
+    def _origin_allowed(
+        self,
+        origin: str,
+        request_origin: str,
+        host: str,
+        allow_same_origin_fallback: bool,
+    ) -> bool:
+        if _origin_matches(origin, self.allowed_origins):
+            return True
+
+        if not allow_same_origin_fallback:
+            return False
+
+        origin_host = _origin_host(origin)
+        if _is_loopback_host(origin_host) and _is_loopback_host(host):
+            return True
+
+        return _normalize_origin(origin) == request_origin
 
 
 _current_http_request: ContextVar[Request | None] = ContextVar(
@@ -277,6 +551,10 @@ def create_streamable_http_app(
     debug: bool = False,
     routes: list[BaseRoute] | None = None,
     middleware: list[Middleware] | None = None,
+    host_origin_protection: HostOriginProtection = False,
+    allowed_hosts: Sequence[str] | None = None,
+    allowed_origins: Sequence[str] | None = None,
+    session_idle_timeout: float | None = None,
 ) -> StarletteWithLifespan:
     """Return an instance of the StreamableHTTP server app.
 
@@ -293,6 +571,18 @@ def create_streamable_http_app(
         debug: Whether to enable debug mode
         routes: Optional list of custom routes
         middleware: Optional list of middleware
+        host_origin_protection: Whether to validate Host and Origin headers
+            before requests reach the MCP endpoint. Defaults to False for
+            compatibility. "auto" protects localhost-bound servers and explicit
+            host/origin allowlists.
+        allowed_hosts: Additional hostnames that may appear in the Host header.
+        allowed_origins: Additional browser origins trusted by the request guard.
+            Configure CORS separately when browser JavaScript must read
+            cross-origin responses.
+        session_idle_timeout: Maximum time in seconds a session may remain idle
+            before it is terminated. The deadline is pushed forward on every
+            request. When None, sessions never expire from inactivity. Not
+            supported in stateless mode.
 
     Returns:
         A Starlette application with StreamableHTTP support
@@ -353,23 +643,45 @@ def create_streamable_http_app(
     server_routes.extend(server._get_additional_http_routes())
 
     # Add middleware
+    if host_origin_protection not in (True, False, "auto"):
+        raise ValueError("host_origin_protection must be True, False, or 'auto'.")
+
+    if host_origin_protection is not False:
+        server_middleware.insert(
+            0,
+            Middleware(
+                HostOriginGuardMiddleware,
+                allowed_hosts=allowed_hosts,
+                allowed_origins=allowed_origins,
+                mode="strict" if host_origin_protection is True else "auto",
+            ),
+        )
     if middleware:
         server_middleware.extend(middleware)
 
     # Create a lifespan manager to start and stop the session manager
     @asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncGenerator[None, None]:
-        streamable_http_app.session_manager = StreamableHTTPSessionManager(
+        streamable_http_app.session_manager = FastMCPStreamableHTTPSessionManager(
             app=server._mcp_server,
             event_store=event_store,
             retry_interval=retry_interval,
             json_response=json_response,
             stateless=stateless_http,
+            session_idle_timeout=session_idle_timeout,
+            # FastMCP owns DNS-rebinding protection via HostOriginGuardMiddleware,
+            # which is more expressive and already the documented surface. Always
+            # disable the SDK's own protection so the two layers don't
+            # double-block with confusing errors from two allowlists.
+            security_settings=TransportSecuritySettings(
+                enable_dns_rebinding_protection=False
+            ),
         )
-        async with (
-            server._lifespan_manager(),
-            streamable_http_app.session_manager.run(),
-        ):
+        # The session manager's `run()` enters `server._mcp_server.lifespan`
+        # (our `_lifespan_proxy`), which now drives `server._lifespan_manager()`.
+        # Entering it here too would double-stack the same lifespan, so we let
+        # the manager own the single entry.
+        async with streamable_http_app.session_manager.run():
             try:
                 yield
             finally:

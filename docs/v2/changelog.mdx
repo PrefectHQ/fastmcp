@@ -4,6 +4,20 @@ icon: "list-check"
 rss: true
 ---
 
+<Update label="v2.14.7" description="2026-04-13">
+
+**[v2.14.7: Fake It Till You Break It](https://github.com/PrefectHQ/fastmcp/releases/tag/v2.14.7)**
+
+A 2.x backport of the fakeredis pin: fakeredis 2.35.0 renamed a connection class that pydocket's `memory://` backend depended on, crashing `fastmcp[tasks]` installs at startup. This caps `fakeredis<2.35.0` on the 2.x line.
+
+## What's Changed
+### Fixes 🐞
+* fix(deps): cap fakeredis to `<2.35.0` to prevent startup crash on 2.x by [@vincent067](https://github.com/vincent067) in [#3883](https://github.com/PrefectHQ/fastmcp/pull/3883)
+
+**Full Changelog**: [v2.14.6...v2.14.7](https://github.com/PrefectHQ/fastmcp/compare/v2.14.6...v2.14.7)
+
+</Update>
+
 <Update label="v2.14.6" description="2026-03-27">
 
 **[v2.14.6: $Ref Dead Redemption](https://github.com/PrefectHQ/fastmcp/releases/tag/v2.14.6)**

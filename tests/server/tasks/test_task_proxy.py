@@ -7,12 +7,12 @@ Proxy servers explicitly forbid task-augmented execution. All proxy components
 Clients connecting through proxies can:
 - Execute tools/prompts/resources normally (sync execution)
 - NOT use task-augmented execution (task=True fails gracefully for tools,
-  raises McpError for prompts/resources)
+  raises MCPError for prompts/resources)
 """
 
 import pytest
-from mcp.shared.exceptions import McpError
-from mcp.types import TextContent, TextResourceContents
+from mcp.shared.exceptions import MCPError
+from mcp_types import TextContent, TextResourceContents
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -127,10 +127,16 @@ class TestProxyPromptsSyncExecution:
 class TestProxyPromptsTaskForbidden:
     """Test that prompts with task=True are forbidden through proxy."""
 
+    @pytest.mark.xfail(
+        reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+        "ReadResourceRequestParams; prompt/resource task submission is not "
+        "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+        strict=True,
+    )
     async def test_prompt_task_raises_mcp_error(self, proxy_server: FastMCP):
-        """Prompt called with task=True through proxy raises McpError."""
+        """Prompt called with task=True through proxy raises MCPError."""
         async with Client(proxy_server) as client:
-            with pytest.raises(McpError) as exc_info:
+            with pytest.raises(MCPError) as exc_info:
                 await client.get_prompt("greeting_prompt", {"name": "Alice"}, task=True)
 
             assert "does not support task-augmented execution" in str(exc_info.value)
@@ -157,18 +163,30 @@ class TestProxyResourcesSyncExecution:
 class TestProxyResourcesTaskForbidden:
     """Test that resources with task=True are forbidden through proxy."""
 
+    @pytest.mark.xfail(
+        reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+        "ReadResourceRequestParams; prompt/resource task submission is not "
+        "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+        strict=True,
+    )
     async def test_resource_task_raises_mcp_error(self, proxy_server: FastMCP):
-        """Resource read with task=True through proxy raises McpError."""
+        """Resource read with task=True through proxy raises MCPError."""
         async with Client(proxy_server) as client:
-            with pytest.raises(McpError) as exc_info:
+            with pytest.raises(MCPError) as exc_info:
                 await client.read_resource("data://info.txt", task=True)
 
             assert "does not support task-augmented execution" in str(exc_info.value)
 
+    @pytest.mark.xfail(
+        reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+        "ReadResourceRequestParams; prompt/resource task submission is not "
+        "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+        strict=True,
+    )
     async def test_resource_template_task_raises_mcp_error(self, proxy_server: FastMCP):
-        """Resource template with task=True through proxy raises McpError."""
+        """Resource template with task=True through proxy raises MCPError."""
         async with Client(proxy_server) as client:
-            with pytest.raises(McpError) as exc_info:
+            with pytest.raises(MCPError) as exc_info:
                 await client.read_resource("data://user/42.json", task=True)
 
             assert "does not support task-augmented execution" in str(exc_info.value)

@@ -2,7 +2,7 @@
 
 import importlib.metadata
 
-from mcp.server.fastmcp import FastMCP as FastMCP1x
+from mcp.server.mcpserver import MCPServer as SDKServer
 
 import fastmcp
 from fastmcp import Client, FastMCP
@@ -467,7 +467,7 @@ class TestFastMCP1xCompatibility:
 
     async def test_fastmcp1x_empty_server(self):
         """Test get_fastmcp_info_v1 with an empty FastMCP1x server."""
-        mcp = FastMCP1x("Test1x")
+        mcp = SDKServer("Test1x")
 
         info = await inspect_fastmcp_v1(mcp)
 
@@ -485,7 +485,7 @@ class TestFastMCP1xCompatibility:
 
     async def test_fastmcp1x_with_tools(self):
         """Test get_fastmcp_info_v1 with a FastMCP1x server that has tools."""
-        mcp = FastMCP1x("Test1x")
+        mcp = SDKServer("Test1x")
 
         @mcp.tool()
         def add_numbers(a: int, b: int) -> int:
@@ -505,7 +505,7 @@ class TestFastMCP1xCompatibility:
 
     async def test_fastmcp1x_with_resources(self):
         """Test get_fastmcp_info_v1 with a FastMCP1x server that has resources."""
-        mcp = FastMCP1x("Test1x")
+        mcp = SDKServer("Test1x")
 
         @mcp.resource("resource://data")
         def get_data() -> str:
@@ -522,7 +522,7 @@ class TestFastMCP1xCompatibility:
 
     async def test_fastmcp1x_with_prompts(self):
         """Test get_fastmcp_info_v1 with a FastMCP1x server that has prompts."""
-        mcp = FastMCP1x("Test1x")
+        mcp = SDKServer("Test1x")
 
         @mcp.prompt("analyze")
         def analyze_data(data: str) -> list:
@@ -537,7 +537,7 @@ class TestFastMCP1xCompatibility:
 
     async def test_dispatcher_with_fastmcp1x(self):
         """Test that the main get_fastmcp_info function correctly dispatches to v1."""
-        mcp = FastMCP1x("Test1x")
+        mcp = SDKServer("Test1x")
 
         @mcp.tool()
         def test_tool() -> str:
@@ -569,7 +569,7 @@ class TestFastMCP1xCompatibility:
 
     async def test_fastmcp1x_vs_fastmcp2x_comparison(self):
         """Test that both versions can be inspected and compared."""
-        mcp1x = FastMCP1x("Test1x")
+        mcp1x = SDKServer("Test1x")
         mcp2x = FastMCP("Test2x")
 
         @mcp1x.tool()

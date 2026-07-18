@@ -1,5 +1,6 @@
 """Tests for OAuth proxy token endpoint and handling."""
 
+import logging
 import time
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -247,6 +248,51 @@ class TestOAuthProxyTokenEndpointAuth:
         assert response.status_code == 302
         mock_client.fetch_token.assert_awaited_once()
         mock_client.aclose.assert_awaited_once()
+
+    async def test_callback_rejects_unsafe_transaction_redirect(self, jwt_verifier):
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://oauth.example.com/authorize",
+            upstream_token_endpoint="https://oauth.example.com/token",
+            upstream_client_id="client-id",
+            upstream_client_secret="client-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+            require_authorization_consent=False,
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+        )
+
+        await proxy._transaction_store.put(
+            key="txn-id",
+            value=OAuthTransaction(
+                txn_id="txn-id",
+                client_id="test-client",
+                client_redirect_uri="javascript:alert(document.cookie)//",
+                client_state="client-state",
+                code_challenge="",
+                code_challenge_method="S256",
+                scopes=["read"],
+                created_at=time.time(),
+            ),
+        )
+
+        mock_request = Mock()
+        mock_request.query_params = {"code": "idp-code", "state": "txn-id"}
+        mock_request.cookies = {}
+
+        mock_client = AsyncMock()
+        mock_client.fetch_token = AsyncMock()
+
+        with patch.object(
+            proxy, "_create_upstream_oauth_client", return_value=mock_client
+        ) as create_upstream_oauth_client:
+            response = await proxy._handle_idp_callback(mock_request)
+
+        assert response.status_code == 400
+        assert "location" not in response.headers
+        assert "Invalid redirect URI" in bytes(response.body).decode()
+        create_upstream_oauth_client.assert_not_called()
+        mock_client.fetch_token.assert_not_called()
 
 
 class TestTokenHandlerErrorTransformation:
@@ -1883,3 +1929,30 @@ class TestTransparentUpstreamRefresh:
         assert result is not None
         assert result.token == "refreshed-upstream-access"
         mock_oauth_client.refresh_token.assert_called_once()
+
+
+class TestRefreshTokenMissLogging:
+    """A refresh-token miss forces a user-visible reconnect, so it must not be silent."""
+
+    async def test_unknown_refresh_token_logs_warning(self, oauth_proxy, caplog):
+        client = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+
+        proxy_logger = logging.getLogger("fastmcp.server.auth.oauth_proxy.proxy")
+        caplog.set_level(logging.WARNING)
+        proxy_logger.addHandler(caplog.handler)
+        try:
+            result = await oauth_proxy.load_refresh_token(client, "nonexistent-token")
+        finally:
+            proxy_logger.removeHandler(caplog.handler)
+
+        assert result is None
+        assert any(
+            record.levelno == logging.WARNING
+            and "Refresh token not found" in record.getMessage()
+            and "test-client" in record.getMessage()
+            for record in caplog.records
+        )

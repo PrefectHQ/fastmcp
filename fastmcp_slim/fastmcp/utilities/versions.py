@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import total_ordering
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from packaging.version import InvalidVersion, Version
 
@@ -325,7 +325,7 @@ def dedupe_with_versions(
 
     result: list[C] = []
     for versions in by_key.values():
-        highest: C = cast(C, max(versions, key=version_sort_key))
+        highest: C = max(versions, key=version_sort_key)
         if any(c.version is not None for c in versions):
             all_versions = sorted(
                 [c.version for c in versions if c.version is not None],

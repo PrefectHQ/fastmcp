@@ -5,7 +5,7 @@ This module tests the ssrf.py module which provides SSRF-protected HTTP fetching
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
+import httpx2
 import pytest
 
 from fastmcp.server.auth.ssrf import (
@@ -51,6 +51,48 @@ class TestIsIPAllowed:
         assert is_ip_allowed("::ffff:127.0.0.1") is False
         assert is_ip_allowed("::ffff:192.168.1.1") is False
 
+    @pytest.mark.parametrize(
+        "address",
+        [
+            pytest.param("64:ff9b::7f00:1", id="nat64-loopback"),
+            pytest.param("64:ff9b::0a00:1", id="nat64-private"),
+            pytest.param("64:ff9b::a9fe:a9fe", id="nat64-link-local"),
+            pytest.param("64:ff9b::6440:1", id="nat64-cgnat"),
+            pytest.param("64:ff9b:1::a9fe:a9fe", id="nat64-local-use-low32"),
+            pytest.param("64:ff9b:1:a9fe:a9:fe00::", id="nat64-local-use-48"),
+            pytest.param("::ffff:0:7f00:1", id="ipv4-translated-loopback"),
+            pytest.param("::ffff:0:0a00:1", id="ipv4-translated-private"),
+            pytest.param("::ffff:0:a9fe:a9fe", id="ipv4-translated-link-local"),
+            pytest.param("::ffff:0:6440:1", id="ipv4-translated-cgnat"),
+            pytest.param("::7f00:1", id="ipv4-compatible-loopback"),
+            pytest.param("::0a00:1", id="ipv4-compatible-private"),
+            pytest.param("::a9fe:a9fe", id="ipv4-compatible-link-local"),
+            pytest.param("::6440:1", id="ipv4-compatible-cgnat"),
+            pytest.param("2002:a9fe:a9fe::1", id="6to4-link-local"),
+            pytest.param("2606:4700::5efe:192.168.1.1", id="isatap-private"),
+            pytest.param(
+                "2606:4700::200:5efe:169.254.169.254",
+                id="isatap-link-local",
+            ),
+        ],
+    )
+    def test_ipv6_transition_blocked_if_embedded_ipv4_blocked(self, address: str):
+        """IPv6 transition addresses should check the embedded IPv4."""
+        assert is_ip_allowed(address) is False
+
+    @pytest.mark.parametrize(
+        "address",
+        [
+            pytest.param("64:ff9b::0808:0808", id="nat64"),
+            pytest.param("::ffff:0:0808:0808", id="ipv4-translated"),
+            pytest.param("::0808:0808", id="ipv4-compatible"),
+            pytest.param("2606:4700::5efe:8.8.8.8", id="isatap"),
+        ],
+    )
+    def test_ipv6_transition_allowed_if_embedded_ipv4_allowed(self, address: str):
+        """IPv6 transition addresses should allow public embedded IPv4."""
+        assert is_ip_allowed(address) is True
+
 
 class TestValidateURL:
     """Tests for validate_url function."""
@@ -79,6 +121,25 @@ class TestValidateURL:
         with patch(
             "fastmcp.server.auth.ssrf.resolve_hostname",
             return_value=["192.168.1.1"],
+        ):
+            with pytest.raises(SSRFError, match="blocked IP"):
+                await validate_url("https://example.com/path")
+
+    @pytest.mark.parametrize(
+        "address",
+        [
+            pytest.param("64:ff9b::0a00:1", id="nat64"),
+            pytest.param("64:ff9b:1:a9fe:a9:fe00::", id="nat64-local-use"),
+            pytest.param("::ffff:0:a9fe:a9fe", id="ipv4-translated"),
+            pytest.param("::a9fe:a9fe", id="ipv4-compatible"),
+            pytest.param("2606:4700::5efe:169.254.169.254", id="isatap"),
+        ],
+    )
+    async def test_ipv6_transition_private_ip_rejected(self, address: str):
+        """URLs resolving to IPv6-wrapped private IPs should be rejected."""
+        with patch(
+            "fastmcp.server.auth.ssrf.resolve_hostname",
+            return_value=[address],
         ):
             with pytest.raises(SSRFError, match="blocked IP"):
                 await validate_url("https://example.com/path")
@@ -114,7 +175,7 @@ class TestSSRFSafeFetch:
                 "fastmcp.server.auth.ssrf.resolve_hostname",
                 return_value=[resolved_ip],
             ),
-            patch("httpx.AsyncClient") as mock_client_class,
+            patch("httpx2.AsyncClient") as mock_client_class,
         ):
             mock_stream = MagicMock()
             mock_stream.status_code = 200
@@ -149,13 +210,13 @@ class TestSSRFSafeFetch:
                 "fastmcp.server.auth.ssrf.resolve_hostname",
                 return_value=resolved_ips,
             ),
-            patch("httpx.AsyncClient") as mock_client_class,
+            patch("httpx2.AsyncClient") as mock_client_class,
         ):
-            request = httpx.Request("GET", "https://example.com/api")
+            request = httpx2.Request("GET", "https://example.com/api")
 
             first_client = AsyncMock()
             first_client.stream = MagicMock(
-                side_effect=httpx.RequestError("boom", request=request)
+                side_effect=httpx2.RequestError("boom", request=request)
             )
             first_client.__aenter__.return_value = first_client
             first_client.__aexit__ = AsyncMock(return_value=None)
@@ -195,7 +256,7 @@ class TestSSRFSafeFetch:
                 "fastmcp.server.auth.ssrf.resolve_hostname",
                 return_value=[resolved_ip],
             ),
-            patch("httpx.AsyncClient") as mock_client_class,
+            patch("httpx2.AsyncClient") as mock_client_class,
         ):
             mock_stream = MagicMock()
             mock_stream.status_code = 200
@@ -227,7 +288,7 @@ class TestSSRFSafeFetch:
                 "fastmcp.server.auth.ssrf.resolve_hostname",
                 return_value=["93.184.216.34"],
             ),
-            patch("httpx.AsyncClient") as mock_client_class,
+            patch("httpx2.AsyncClient") as mock_client_class,
         ):
             # Response larger than default 5KB (no Content-Length, so streaming enforces)
             mock_stream = MagicMock()
@@ -343,7 +404,7 @@ class TestIPv6URLFormatting:
                 "fastmcp.server.auth.ssrf.resolve_hostname",
                 return_value=[resolved_ipv6],
             ),
-            patch("httpx.AsyncClient") as mock_client_class,
+            patch("httpx2.AsyncClient") as mock_client_class,
         ):
             mock_stream = MagicMock()
             mock_stream.status_code = 200
@@ -384,7 +445,7 @@ class TestStreamingResponseSizeLimit:
                 "fastmcp.server.auth.ssrf.resolve_hostname",
                 return_value=["93.184.216.34"],
             ),
-            patch("httpx.AsyncClient") as mock_client_class,
+            patch("httpx2.AsyncClient") as mock_client_class,
         ):
             chunks_yielded = []
 
@@ -424,7 +485,7 @@ class TestStreamingResponseSizeLimit:
                 "fastmcp.server.auth.ssrf.resolve_hostname",
                 return_value=["93.184.216.34"],
             ),
-            patch("httpx.AsyncClient") as mock_client_class,
+            patch("httpx2.AsyncClient") as mock_client_class,
         ):
             mock_stream = MagicMock()
             mock_stream.status_code = 200

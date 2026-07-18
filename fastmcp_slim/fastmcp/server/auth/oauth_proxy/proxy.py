@@ -29,9 +29,8 @@ from typing import Any, Literal
 from urllib.parse import urlencode, urlparse, urlunparse
 
 import anyio
-import httpx
+import httpx2
 from authlib.common.security import generate_token
-from authlib.integrations.httpx_client import AsyncOAuth2Client
 from cryptography.fernet import Fernet
 from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
@@ -48,6 +47,7 @@ from mcp.server.auth.provider import (
     AuthorizationParams,
     AuthorizeError,
     RefreshToken,
+    RegistrationError,
     TokenError,
 )
 from mcp.server.auth.routes import build_metadata, cors_middleware
@@ -91,6 +91,8 @@ from fastmcp.server.auth.oauth_proxy.models import (
     _hash_token,
 )
 from fastmcp.server.auth.oauth_proxy.ui import create_error_html
+from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client
+from fastmcp.server.auth.redirect_validation import validate_redirect_uri
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 
@@ -195,7 +197,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
        - Clean up one-time use authorization code
 
     5. Token Refresh:
-       - Forward refresh requests to upstream using authlib
+       - Forward refresh requests to upstream
        - Handle token rotation if upstream issues new refresh token
        - Update local token mappings
 
@@ -300,7 +302,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             service_documentation_url: Optional service documentation URL
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 Patterns support wildcards (e.g., "http://localhost:*", "https://*.example.com/*").
-                If None (default), all redirect URIs are allowed (for DCR compatibility).
+                If None (default), DCR clients use registered redirect URIs, with loopback
+                ports allowed to vary for MCP compatibility. Unsafe browser schemes are rejected.
                 If empty list, no redirect URIs are allowed.
                 These are for MCP clients performing loopback redirects, NOT for the upstream OAuth app.
             valid_scopes: List of all the possible valid scopes for a client.
@@ -310,7 +313,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 Disable only if upstream provider doesn't support PKCE.
             token_endpoint_auth_method: Token endpoint authentication method for upstream server.
                 Common values: "client_secret_basic", "client_secret_post", "none".
-                If None, authlib will use its default (typically "client_secret_basic").
+                Defaults to "client_secret_basic".
             extra_authorize_params: Additional parameters to forward to the upstream authorization endpoint.
                 Useful for provider-specific parameters like Auth0's "audience".
                 Example: {"audience": "https://api.example.com"}
@@ -820,6 +823,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 scope=self._default_scope_str,
                 token_endpoint_auth_method="none",
                 allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
+                allow_unregistered_redirect_uris=True,
             )
 
         return None
@@ -837,6 +841,19 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Create a ProxyDCRClient with configured redirect URI validation
         if client_info.client_id is None:
             raise ValueError("client_id is required for client registration")
+        if client_info.redirect_uris:
+            for redirect_uri in client_info.redirect_uris:
+                if not validate_redirect_uri(
+                    redirect_uri=redirect_uri,
+                    allowed_patterns=self._allowed_client_redirect_uris,
+                ):
+                    raise RegistrationError(
+                        "invalid_redirect_uri",
+                        f"Redirect URI '{redirect_uri}' is not allowed.",
+                    )
+
+        redirect_uris = client_info.redirect_uris or [AnyUrl("http://localhost")]
+
         # We use token_endpoint_auth_method="none" because the proxy handles
         # all upstream authentication. The client_secret must also be None
         # because the SDK requires secrets to be provided if they're set,
@@ -844,7 +861,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         proxy_client: ProxyDCRClient = ProxyDCRClient(
             client_id=client_info.client_id,
             client_secret=None,
-            redirect_uris=client_info.redirect_uris or [AnyUrl("http://localhost")],
+            redirect_uris=redirect_uris,
             grant_types=client_info.grant_types
             or ["authorization_code", "refresh_token"],
             scope=client_info.scope or self._default_scope_str,
@@ -930,7 +947,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     self._resource_url,
                 )
                 raise AuthorizeError(
-                    error="invalid_target",  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+                    error="invalid_target",  # type: ignore[arg-type]
                     error_description="Resource does not match this server",
                 )
 
@@ -1371,6 +1388,13 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         token_hash = _hash_token(refresh_token)
         metadata = await self._refresh_token_store.get(key=token_hash)
         if not metadata:
+            logger.warning(
+                "Refresh token not found for client=%s (token_hash=%s); it was "
+                "already rotated, expired, or revoked. Rejecting with invalid_grant, "
+                "which forces the client to re-authenticate.",
+                client.client_id,
+                token_hash[:8],
+            )
             return None
         # Verify token belongs to this client (prevents cross-client token usage)
         if metadata.client_id != client.client_id:
@@ -1943,7 +1967,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Attempt upstream revocation if endpoint is configured
         if self._upstream_revocation_endpoint:
             try:
-                async with httpx.AsyncClient(
+                async with httpx2.AsyncClient(
                     timeout=HTTP_TIMEOUT_SECONDS
                 ) as http_client:
                     revocation_data: dict[str, str] = {"token": token.token}
@@ -2068,6 +2092,12 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     revocation_options,
                 )
                 metadata.client_id_metadata_document_supported = True
+                existing = metadata.token_endpoint_auth_methods_supported or []
+                metadata.token_endpoint_auth_methods_supported = [
+                    *existing,
+                    "private_key_jwt",
+                    "none",
+                ]
                 handler = MetadataHandler(metadata)
                 methods = route.methods or ["GET", "OPTIONS"]
 
@@ -2123,22 +2153,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             txn_id = request.query_params.get("state")
             error = request.query_params.get("error")
 
-            if error:
-                error_description = request.query_params.get("error_description")
-                logger.error(
-                    "IdP callback error: %s - %s",
-                    error,
-                    error_description,
-                )
-                # Show error page to user
-                html_content = create_error_html(
-                    error_title="OAuth Error",
-                    error_message=f"Authentication failed: {error_description or 'Unknown error'}",
-                    error_details={"Error Code": error} if error else None,
-                )
-                return HTMLResponse(content=html_content, status_code=400)
-
-            if not idp_code or not txn_id:
+            if not idp_code and not error:
                 logger.error("IdP callback missing code or transaction ID")
                 html_content = create_error_html(
                     error_title="OAuth Error",
@@ -2147,14 +2162,71 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 return HTMLResponse(content=html_content, status_code=400)
 
             # Look up transaction data
-            transaction_model = await self._transaction_store.get(key=txn_id)
-            if not transaction_model:
+            transaction_model = (
+                await self._transaction_store.get(key=txn_id) if txn_id else None
+            )
+
+            if error:
+                error_description = request.query_params.get("error_description")
+                logger.error(
+                    "IdP callback error: %s - %s",
+                    error,
+                    error_description,
+                )
+                if transaction_model:
+                    # Forward the error to the client's redirect_uri (RFC 6749 §4.1.2.1)
+                    client_redirect_uri = transaction_model.client_redirect_uri
+                    if not self._validate_client_redirect_uri(client_redirect_uri):
+                        logger.warning(
+                            "Blocked IdP callback error redirect to disallowed URI "
+                            "for transaction %s",
+                            txn_id,
+                        )
+                        html_content = create_error_html(
+                            error_title="OAuth Error",
+                            error_message="Invalid redirect URI",
+                        )
+                        return HTMLResponse(content=html_content, status_code=400)
+
+                    error_params: dict[str, str] = {
+                        "error": error,
+                        "state": transaction_model.client_state,
+                    }
+                    if error_description:
+                        error_params["error_description"] = error_description
+                    separator = "&" if "?" in client_redirect_uri else "?"
+                    return RedirectResponse(
+                        url=f"{client_redirect_uri}{separator}{urlencode(error_params)}",
+                        status_code=302,
+                    )
+                # No trusted redirect_uri available — show local error page
+                html_content = create_error_html(
+                    error_title="OAuth Error",
+                    error_message=f"Authentication failed: {error_description or 'Unknown error'}",
+                    error_details={"Error Code": error},
+                )
+                return HTMLResponse(content=html_content, status_code=400)
+            if not txn_id or not transaction_model:
                 logger.error("IdP callback with invalid transaction ID: %s", txn_id)
                 html_content = create_error_html(
                     error_title="OAuth Error",
                     error_message="Invalid or expired authorization transaction. Please try authenticating again.",
                 )
                 return HTMLResponse(content=html_content, status_code=400)
+
+            if not self._validate_client_redirect_uri(
+                transaction_model.client_redirect_uri
+            ):
+                logger.warning(
+                    "Blocked IdP callback redirect to disallowed URI for transaction %s",
+                    txn_id,
+                )
+                html_content = create_error_html(
+                    error_title="OAuth Error",
+                    error_message="Invalid redirect URI",
+                )
+                return HTMLResponse(content=html_content, status_code=400)
+
             # Verify consent binding cookie to prevent confused deputy attacks.
             # When consent is enabled, the browser that approved consent receives
             # a signed cookie. A different browser (e.g., a victim lured to the
@@ -2200,8 +2272,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 )
 
                 # Build token exchange parameters
-                token_params = {
-                    "url": self._upstream_token_endpoint,
+                token_params: dict[str, Any] = {
                     "code": idp_code,
                     "redirect_uri": idp_redirect_uri,
                 }
@@ -2233,8 +2304,12 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
                 # Exchange IdP code for tokens (server-side)
                 async with self._upstream_oauth_client() as oauth_client:
+                    # url is passed by keyword: the _create_upstream_oauth_client
+                    # override point is duck-typed, and alternative clients may
+                    # declare it keyword-only (the refresh_token sites already
+                    # call by keyword).
                     idp_tokens: dict[str, Any] = await oauth_client.fetch_token(
-                        **token_params
+                        url=self._upstream_token_endpoint, **token_params
                     )
 
                 logger.debug(

@@ -5,6 +5,16 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 2.14.7" description="April 13, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP 2.14.7: Fake It Till You Break It"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v2.14.7"
+cta="Read the release notes"
+>
+A 2.x backport of the fakeredis pin: fakeredis 2.35.0 renamed a connection class that pydocket's `memory://` backend relied on, crashing `fastmcp[tasks]` installs at startup. Caps `fakeredis<2.35.0` on the 2.x line.
+</Card>
+</Update>
+
 <Update label="FastMCP 2.14.6" description="March 27, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP 2.14.6: $Ref Dead Redemption"

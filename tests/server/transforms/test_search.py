@@ -6,9 +6,9 @@ from collections.abc import Sequence
 from typing import Any
 from unittest.mock import MagicMock
 
-import mcp.types as mcp_types
+import mcp_types
 import pytest
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.context import Context

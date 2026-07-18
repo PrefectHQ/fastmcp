@@ -9,7 +9,7 @@ therefore produce exactly ONE exception event, not two.
 from __future__ import annotations
 
 import pytest
-from mcp.types import TextContent
+from mcp_types import TextContent
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import StatusCode
 
@@ -95,7 +95,7 @@ class TestSamplingToolSpan:
     async def test_tool_error_span_records_exception_once(
         self, trace_exporter: InMemorySpanExporter
     ):
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
         call_count = 0
 
@@ -121,13 +121,13 @@ class TestSamplingToolSpan:
                         )
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             return CreateMessageResultWithTools(
                 role="assistant",
                 content=[TextContent(type="text", text="done")],
                 model="test-model",
-                stopReason="endTurn",
+                stop_reason="endTurn",
             )
 
         mcp = FastMCP(sampling_handler=sampling_handler)

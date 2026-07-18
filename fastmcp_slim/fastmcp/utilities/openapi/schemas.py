@@ -1,5 +1,6 @@
 """Schema manipulation utilities for OpenAPI operations."""
 
+from collections import Counter
 from typing import Any
 
 from fastmcp.utilities.logging import get_logger
@@ -294,13 +295,17 @@ def _combine_schemas_and_map_params(
 
         body_props = body_schema.get("properties", {})
 
-    # Detect collisions: parameters that exist in both body and path/query/header
+    # Detect collisions: parameters that exist in multiple non-body locations
+    # or between body and path/query/header/cookie.
     all_non_body_params = set()
     for location_params in param_names_by_location.values():
         all_non_body_params.update(location_params)
 
     body_param_names = set(body_props.keys())
-    colliding_params = all_non_body_params & body_param_names
+    non_body_param_counts = Counter(param.name for param in route.parameters)
+    colliding_params = (all_non_body_params & body_param_names) | {
+        name for name, count in non_body_param_counts.items() if count > 1
+    }
 
     # Add parameters with suffixes for collisions
     for param in route.parameters:

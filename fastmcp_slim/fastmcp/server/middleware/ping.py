@@ -1,5 +1,7 @@
 """Ping middleware for keeping client connections alive."""
 
+import asyncio
+import contextlib
 from typing import Any
 
 import anyio
@@ -40,7 +42,7 @@ class PingMiddleware(Middleware):
         self._lock = anyio.Lock()
 
     async def on_message(self, context: MiddlewareContext, call_next: CallNext) -> Any:
-        """Start ping task on first message from a session."""
+        """Start ping task on first message from a connection."""
         if (
             context.fastmcp_context is None
             or context.fastmcp_context.request_context is None
@@ -48,26 +50,40 @@ class PingMiddleware(Middleware):
             return await call_next(context)
 
         session = context.fastmcp_context.session
-        session_id = id(session)
+        # SDK v2 constructs a ServerSession per request; the stable per-connection
+        # identity lives on the underlying Connection. Key the keepalive loop off
+        # it so one ping task runs for the whole connection and is torn down when
+        # the connection closes.
+        connection = getattr(session, "_connection", None)
+        connection_id = id(connection) if connection is not None else id(session)
 
         async with self._lock:
-            if session_id not in self._active_sessions:
-                # _subscription_task_group is added by MiddlewareServerSession
-                tg = session._subscription_task_group  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-                if tg is not None:
-                    self._active_sessions.add(session_id)
-                    tg.start_soon(self._ping_loop, session, session_id)
+            if connection_id not in self._active_sessions:
+                self._active_sessions.add(connection_id)
+                ping_task = asyncio.create_task(
+                    self._ping_loop(session, connection_id),
+                    name=f"ping-keepalive-{connection_id}",
+                )
+
+                if connection is not None:
+
+                    async def _cancel_ping() -> None:
+                        ping_task.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await ping_task
+
+                    connection.exit_stack.push_async_callback(_cancel_ping)
 
         return await call_next(context)
 
-    async def _ping_loop(self, session: Any, session_id: int) -> None:
-        """Send periodic pings until session ends."""
+    async def _ping_loop(self, session: Any, connection_id: int) -> None:
+        """Send periodic pings until the connection ends."""
         try:
             while True:
                 await anyio.sleep(self.interval_ms / 1000)
                 try:
                     await session.send_ping()
-                except anyio.ClosedResourceError:
+                except (anyio.ClosedResourceError, anyio.BrokenResourceError):
                     return
         finally:
-            self._active_sessions.discard(session_id)
+            self._active_sessions.discard(connection_id)

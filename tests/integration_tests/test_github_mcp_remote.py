@@ -2,8 +2,8 @@ import json
 import os
 
 import pytest
-from mcp import McpError
-from mcp.types import Resource, TextContent, Tool
+from mcp import MCPError
+from mcp_types import Resource, TextContent, Tool
 
 from fastmcp import Client
 from fastmcp.client import StreamableHttpTransport
@@ -64,8 +64,8 @@ class TestGithubMCPRemote:
                 assert isinstance(tool, Tool)
                 assert len(tool.name) > 0
                 assert tool.description is not None and len(tool.description) > 0
-                assert isinstance(tool.inputSchema, dict)
-                assert len(tool.inputSchema) > 0
+                assert isinstance(tool.input_schema, dict)
+                assert len(tool.input_schema) > 0
 
     async def test_list_resources(
         self, streamable_http_client: Client[StreamableHttpTransport]
@@ -96,7 +96,7 @@ class TestGithubMCPRemote:
         """Test calling a non-existing tool"""
         async with streamable_http_client:
             assert streamable_http_client.is_connected()
-            with pytest.raises(McpError, match=r"unknown tool|tool not found"):
+            with pytest.raises(MCPError, match=r"unknown tool|tool not found"):
                 await streamable_http_client.call_tool("foo")
 
     async def test_call_tool_list_commits(

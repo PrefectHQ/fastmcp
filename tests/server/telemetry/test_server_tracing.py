@@ -5,12 +5,15 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
+from opentelemetry import trace
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from opentelemetry.trace import SpanKind, StatusCode
+from opentelemetry.trace import Span, SpanKind, StatusCode
 
-from fastmcp import FastMCP
+import fastmcp
+from fastmcp import Client, FastMCP
 from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.server.auth import AccessToken
+from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 
 
 class TestToolTracing:
@@ -350,3 +353,411 @@ class TestAuthAttributesOnSpans:
         assert span.attributes["enduser.id"] == "client-no-scopes"
         # Scope attribute should not be present when scopes list is empty
         assert "enduser.scope" not in span.attributes
+
+
+class TestSingleServerSpan:
+    """Full-dispatch tests guarding against duplicate SERVER spans.
+
+    The SDK seeds its own `OpenTelemetryMiddleware` into every lowlevel server,
+    which would emit a second SERVER span per request alongside FastMCP's. These
+    tests exercise the real request path (through a `Client`) so a regression
+    that re-enables the SDK middleware would surface as an extra SERVER span.
+    Note the in-process `mcp.call_tool` tests above bypass the dispatcher and so
+    cannot catch this.
+    """
+
+    async def test_tool_call_emits_single_server_span(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        mcp = FastMCP("test-server")
+
+        @mcp.tool()
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        async with Client(mcp) as client:
+            await client.call_tool("greet", {"name": "World"})
+
+        spans = trace_exporter.get_finished_spans()
+        # Exactly one SERVER span for the tools/call request. Match by method name
+        # (not just the "tools/call greet" name) so a seam-level span accidentally
+        # opened for this high-level method — which would be named "tools/call" —
+        # is also counted and would trip the assertion.
+        tool_call_server_spans = [
+            s
+            for s in spans
+            if s.kind == SpanKind.SERVER
+            and s.attributes is not None
+            and s.attributes.get("mcp.method.name") == "tools/call"
+        ]
+        assert len(tool_call_server_spans) == 1
+        span = tool_call_server_spans[0]
+        assert span.name == "tools/call greet"
+        # The single span carries the rich component attributes that the
+        # high-level path enriches the seam span with (attribute parity: the
+        # enrichment must not lose the component context by opening a second
+        # span or by leaving the seam span bare).
+        assert span.attributes is not None
+        assert span.attributes["fastmcp.component.key"] == "tool:greet@"
+        assert span.attributes["gen_ai.tool.name"] == "greet"
+        assert span.attributes["fastmcp.component.type"] == "tool"
+
+    async def test_server_span_shares_client_trace(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        """FastMCP extracts inbound W3C trace context from `_meta`, so the single
+        SERVER span must still join the client's distributed trace."""
+        mcp = FastMCP("test-server")
+
+        @mcp.tool()
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        async with Client(mcp) as client:
+            await client.call_tool("greet", {"name": "World"})
+
+        spans = trace_exporter.get_finished_spans()
+        server_span = next(
+            s
+            for s in spans
+            if s.kind == SpanKind.SERVER and s.name == "tools/call greet"
+        )
+        client_span = next(
+            s
+            for s in spans
+            if s.kind == SpanKind.CLIENT and s.name == "MCP send tools/call greet"
+        )
+        assert server_span.context is not None
+        assert client_span.context is not None
+        assert server_span.context.trace_id == client_span.context.trace_id
+        assert server_span.parent is not None
+
+
+class TestSeamServerSpan:
+    """SERVER spans for methods outside the high-level tool/resource/prompt path.
+
+    FastMCP's rich SERVER spans are created deep in the high-level path, so
+    methods like `logging/setLevel`, `tasks/*`, `ping`, and `initialize` — which
+    never reach that code — would have no span at all once the SDK's
+    `OpenTelemetryMiddleware` is removed. The FastMCP middleware seam
+    (`FastMCPServerMiddleware`) emits a span for exactly those methods, so every
+    request method carries a SERVER span again.
+    """
+
+    async def test_set_logging_level_emits_seam_span(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        mcp = FastMCP("test-server")
+
+        async with Client(mcp) as client:
+            await client.set_logging_level("info")
+
+        spans = trace_exporter.get_finished_spans()
+        seam_spans = [
+            s
+            for s in spans
+            if s.kind == SpanKind.SERVER and s.name == "logging/setLevel"
+        ]
+        assert len(seam_spans) == 1
+        span = seam_spans[0]
+        assert span.attributes is not None
+        assert span.attributes["mcp.method.name"] == "logging/setLevel"
+        assert span.attributes["fastmcp.server.name"] == "test-server"
+
+    async def test_seam_method_emits_single_server_span(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        """A seam-spanned method must produce exactly one SERVER span, not two."""
+        mcp = FastMCP("test-server")
+
+        async with Client(mcp) as client:
+            await client.set_logging_level("info")
+
+        spans = trace_exporter.get_finished_spans()
+        set_level_server_spans = [
+            s
+            for s in spans
+            if s.kind == SpanKind.SERVER
+            and s.attributes is not None
+            and s.attributes.get("mcp.method.name") == "logging/setLevel"
+        ]
+        assert len(set_level_server_spans) == 1
+
+
+class TestFailurePathServerSpan:
+    """A tools/call rejected before the high-level handler must still be traced.
+
+    The rich SERVER span for tools/call is created deep in the high-level path,
+    after FastMCP middleware runs. A request rejected *before* that point (a
+    raising middleware, a not-found tool) never reaches it, so without the seam
+    span such failures would produce no SERVER span at all — the failure-path
+    observability regression this guards against. The seam span opened by
+    `FastMCPServerMiddleware` wraps the whole request, so every tools/call
+    carries a SERVER span with `mcp.method.name=tools/call`, and an exception
+    that propagates past the handler marks that span's status as an error.
+    """
+
+    async def test_middleware_error_before_handler_emits_error_span(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        """An unexpected error raised in FastMCP middleware, before the
+        high-level path, propagates to the seam span, which records it as an
+        error — where previously this method produced no SERVER span at all."""
+
+        class RaisingMiddleware(Middleware):
+            async def on_call_tool(
+                self,
+                context: MiddlewareContext,
+                call_next: CallNext,
+            ):
+                raise RuntimeError("rejected before handler")
+
+        mcp = FastMCP("test-server", middleware=[RaisingMiddleware()])
+
+        @mcp.tool()
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        async with Client(mcp) as client:
+            with pytest.raises(Exception):
+                await client.call_tool("greet", {"name": "World"})
+
+        spans = trace_exporter.get_finished_spans()
+        tool_call_server_spans = [
+            s
+            for s in spans
+            if s.kind == SpanKind.SERVER
+            and s.attributes is not None
+            and s.attributes.get("mcp.method.name") == "tools/call"
+        ]
+        assert len(tool_call_server_spans) == 1
+        span = tool_call_server_spans[0]
+        assert span.status.status_code == StatusCode.ERROR
+        assert span.attributes is not None
+        assert span.attributes["mcp.method.name"] == "tools/call"
+        assert span.attributes["error.type"] == "RuntimeError"
+        assert len(span.events) > 0  # exception recorded
+
+    async def test_tool_visible_rejection_before_handler_still_spans(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        """A tool-visible error raised in middleware is returned as an error
+        result (correct MCP semantics, so the span status is unset), but the
+        seam span still guarantees exactly one SERVER span for the tools/call —
+        the request is no longer invisible to tracing."""
+
+        class RejectingMiddleware(Middleware):
+            async def on_call_tool(
+                self,
+                context: MiddlewareContext,
+                call_next: CallNext,
+            ):
+                raise ToolError("rejected before handler")
+
+        mcp = FastMCP("test-server", middleware=[RejectingMiddleware()])
+
+        @mcp.tool()
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool("greet", {"name": "World"})
+
+        spans = trace_exporter.get_finished_spans()
+        tool_call_server_spans = [
+            s
+            for s in spans
+            if s.kind == SpanKind.SERVER
+            and s.attributes is not None
+            and s.attributes.get("mcp.method.name") == "tools/call"
+        ]
+        assert len(tool_call_server_spans) == 1
+        assert (
+            tool_call_server_spans[0].attributes is not None
+            and tool_call_server_spans[0].attributes["mcp.method.name"] == "tools/call"
+        )
+
+
+class TestTelemetryEnabledByDefault:
+    """Instrumentation is on by default and controllable via the off-switch.
+
+    FastMCP uses only the OpenTelemetry API, so spans are created unconditionally
+    and light up when an SDK is configured. `FASTMCP_ENABLE_TELEMETRY=false`
+    (`fastmcp.settings.enable_telemetry`) turns span creation off entirely, so no
+    FastMCP spans are exported even with an SDK configured.
+    """
+
+    async def test_spans_fire_by_default(self, trace_exporter: InMemorySpanExporter):
+        """No opt-in required: a tool call produces a span out of the box."""
+        assert fastmcp.settings.enable_telemetry is True
+
+        mcp = FastMCP("test-server")
+
+        @mcp.tool()
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        await mcp.call_tool("greet", {"name": "World"})
+
+        spans = trace_exporter.get_finished_spans()
+        assert len(spans) == 1
+        assert spans[0].name == "tools/call greet"
+
+    async def test_off_switch_suppresses_spans(
+        self,
+        trace_exporter: InMemorySpanExporter,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """With telemetry disabled, no spans are created even with an SDK
+        configured (the exporter fixture installs one)."""
+        monkeypatch.setattr(fastmcp.settings, "enable_telemetry", False)
+
+        mcp = FastMCP("test-server")
+
+        @mcp.tool()
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        result = await mcp.call_tool("greet", {"name": "World"})
+        assert "Hello, World!" in str(result)
+
+        spans = trace_exporter.get_finished_spans()
+        assert len(spans) == 0
+
+    async def test_off_switch_suppresses_spans_via_client(
+        self,
+        trace_exporter: InMemorySpanExporter,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """The off-switch suppresses every FastMCP span on the full request path
+        (seam SERVER span and FastMCP CLIENT span alike).
+
+        The SDK's own low-level `mcp-python-sdk` CLIENT spans ("MCP send ...")
+        are governed by the user's OpenTelemetry SDK, not FastMCP's off-switch,
+        so they may still appear — the assertion filters them out.
+        """
+        monkeypatch.setattr(fastmcp.settings, "enable_telemetry", False)
+
+        mcp = FastMCP("test-server")
+
+        @mcp.tool()
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        async with Client(mcp) as client:
+            await client.call_tool("greet", {"name": "World"})
+
+        spans = trace_exporter.get_finished_spans()
+        fastmcp_spans = [
+            s
+            for s in spans
+            if s.instrumentation_scope is not None
+            and s.instrumentation_scope.name == "fastmcp"
+        ]
+        assert fastmcp_spans == []
+        # In particular, no FastMCP SERVER span (FastMCP owns all SERVER spans).
+        assert [s for s in spans if s.kind == SpanKind.SERVER] == []
+
+    async def test_off_switch_leaves_enclosing_span_current(
+        self,
+        trace_exporter: InMemorySpanExporter,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """Disabling telemetry must be a transparent pass-through.
+
+        The stock OpenTelemetry `NoOpTracer.start_as_current_span` attaches a
+        `NonRecordingSpan` as the current span, which would hijack the trace
+        context from an enclosing application span. With FastMCP's off-switch,
+        `trace.get_current_span()` inside a handler must still return the
+        caller's enclosing span, and attributes written there must land on it.
+        """
+        monkeypatch.setattr(fastmcp.settings, "enable_telemetry", False)
+
+        tracer = trace.get_tracer("test-enclosing")
+        captured: dict[str, Span] = {}
+
+        mcp = FastMCP("test-server")
+
+        @mcp.tool()
+        def annotate() -> str:
+            current = trace.get_current_span()
+            captured["current"] = current
+            current.set_attribute("tool.touched", True)
+            return "ok"
+
+        with tracer.start_as_current_span("enclosing-app-span") as enclosing:
+            await mcp.call_tool("annotate", {})
+            # The tool ran with the enclosing span still current — FastMCP did
+            # not attach a replacement (non-recording) span.
+            assert captured["current"] is enclosing
+            assert enclosing.is_recording()
+
+        spans = trace_exporter.get_finished_spans()
+        app_spans = [s for s in spans if s.name == "enclosing-app-span"]
+        assert len(app_spans) == 1
+        assert app_spans[0].attributes is not None
+        assert app_spans[0].attributes["tool.touched"] is True
+        # No FastMCP spans were exported.
+        fastmcp_spans = [
+            s
+            for s in spans
+            if s.instrumentation_scope is not None
+            and s.instrumentation_scope.name == "fastmcp"
+        ]
+        assert fastmcp_spans == []
+
+
+class TestProtocolVersionAttribute:
+    """The SERVER span carries `mcp.protocol.version`, matching the SDK.
+
+    FastMCP drops the SDK's `OpenTelemetryMiddleware` to avoid a duplicate SERVER
+    span, so it re-emits the SDK's `mcp.protocol.version` attribute on its own
+    span for parity.
+    """
+
+    async def test_tool_call_span_has_protocol_version(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        mcp = FastMCP("test-server")
+
+        @mcp.tool()
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
+
+        async with Client(mcp) as client:
+            await client.call_tool("greet", {"name": "World"})
+
+        spans = trace_exporter.get_finished_spans()
+        server_span = next(
+            s
+            for s in spans
+            if s.kind == SpanKind.SERVER
+            and s.attributes is not None
+            and s.attributes.get("mcp.method.name") == "tools/call"
+        )
+        assert server_span.attributes is not None
+        version = server_span.attributes.get("mcp.protocol.version")
+        assert isinstance(version, str)
+        assert version
+
+    async def test_seam_span_has_protocol_version(
+        self, trace_exporter: InMemorySpanExporter
+    ):
+        """Seam-only methods (never reaching the high-level path) also carry the
+        protocol version."""
+        mcp = FastMCP("test-server")
+
+        async with Client(mcp) as client:
+            await client.set_logging_level("info")
+
+        spans = trace_exporter.get_finished_spans()
+        seam_span = next(
+            s
+            for s in spans
+            if s.kind == SpanKind.SERVER and s.name == "logging/setLevel"
+        )
+        assert seam_span.attributes is not None
+        version = seam_span.attributes.get("mcp.protocol.version")
+        assert isinstance(version, str)
+        assert version

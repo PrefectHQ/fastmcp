@@ -130,7 +130,7 @@ class TestInferTransport:
 
     def test_infer_fastmcp_v1_server(self):
         """FastMCP 1.0 server instances should infer to FastMCPTransport."""
-        from mcp.server.fastmcp import FastMCP as FastMCP1
+        from mcp.server.mcpserver import MCPServer as FastMCP1
 
         server = FastMCP1()
         transport = infer_transport(server)

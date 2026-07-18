@@ -19,7 +19,9 @@ from starlette.routing import BaseRoute, Route
 import fastmcp
 from fastmcp.server.event_store import EventStore
 from fastmcp.server.http import (
+    HostOriginProtection,
     StarletteWithLifespan,
+    _is_loopback_host,
     create_sse_app,
     create_streamable_http_app,
 )
@@ -33,6 +35,35 @@ if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP, Transport
 
 logger = get_logger(__name__)
+
+
+def _format_host_for_url(host: str) -> str:
+    """Format a host for inclusion in a URL, bracketing IPv6 addresses.
+
+    A bare IPv6 address like ``::1`` must be wrapped in brackets when placed
+    before a ``:port`` suffix, otherwise the result (``http://::1:8000``) is an
+    invalid URL. Hostnames and IPv4 addresses are returned unchanged, as are
+    addresses that are already bracketed.
+    """
+    if ":" in host and not host.startswith("["):
+        return f"[{host}]"
+    return host
+
+
+def _resolve_allowed_hosts_for_run(
+    *,
+    host: str,
+    host_origin_protection: HostOriginProtection,
+    allowed_hosts: list[str] | None,
+    configured_allowed_hosts: list[str] | None,
+) -> list[str] | None:
+    if allowed_hosts is not None:
+        return allowed_hosts
+
+    if host_origin_protection == "auto" and _is_loopback_host(host):
+        return [*(configured_allowed_hosts or []), host]
+
+    return configured_allowed_hosts
 
 
 class TransportMixin:
@@ -219,7 +250,6 @@ class TransportMixin:
                                     tools_changed=True
                                 ),
                             ),
-                            stateless=stateless,
                         )
         finally:
             reset_transport(token)
@@ -237,6 +267,9 @@ class TransportMixin:
         json_response: bool | None = None,
         stateless_http: bool | None = None,
         stateless: bool | None = None,
+        host_origin_protection: HostOriginProtection | None = None,
+        allowed_hosts: list[str] | None = None,
+        allowed_origins: list[str] | None = None,
         sockets: list[socket.socket] | None = None,
     ) -> None:
         """Run the server using HTTP transport.
@@ -252,6 +285,14 @@ class TransportMixin:
             json_response: Whether to use JSON response format (defaults to settings.json_response)
             stateless_http: Whether to use stateless HTTP (defaults to settings.stateless_http)
             stateless: Alias for stateless_http for CLI consistency
+            host_origin_protection: Whether to validate Host and Origin headers
+                before requests reach the MCP endpoint. Defaults to
+                settings.http_host_origin_protection. "auto" protects
+                localhost-bound servers and explicit host/origin allowlists.
+            allowed_hosts: Additional hostnames that may appear in the Host header.
+            allowed_origins: Additional browser origins trusted by the request guard.
+                Configure CORS separately when browser JavaScript must read
+                cross-origin responses.
             sockets: Pre-bound sockets to pass to Uvicorn
         """
         # Allow stateless as alias for stateless_http
@@ -268,6 +309,17 @@ class TransportMixin:
 
         host = host if host is not None else fastmcp.settings.host
         port = port if port is not None else fastmcp.settings.port
+        resolved_host_origin_protection = (
+            host_origin_protection
+            if host_origin_protection is not None
+            else fastmcp.settings.http_host_origin_protection
+        )
+        resolved_allowed_hosts = _resolve_allowed_hosts_for_run(
+            host=host,
+            host_origin_protection=resolved_host_origin_protection,
+            allowed_hosts=allowed_hosts,
+            configured_allowed_hosts=fastmcp.settings.http_allowed_hosts,
+        )
         default_log_level_to_use = (
             log_level if log_level is not None else fastmcp.settings.log_level
         ).lower()
@@ -278,6 +330,9 @@ class TransportMixin:
             middleware=middleware,
             json_response=json_response,
             stateless_http=stateless_http,
+            host_origin_protection=resolved_host_origin_protection,
+            allowed_hosts=resolved_allowed_hosts,
+            allowed_origins=allowed_origins,
         )
 
         # Display server banner
@@ -301,8 +356,9 @@ class TransportMixin:
                 server = uvicorn.Server(config)
                 path = getattr(app.state, "path", "").lstrip("/")
                 mode = " (stateless)" if stateless_http else ""
+                display_host = _format_host_for_url(host)
                 logger.info(
-                    f"Starting MCP server {self.name!r} with transport {transport!r}{mode} on http://{host}:{port}/{path}"
+                    f"Starting MCP server {self.name!r} with transport {transport!r}{mode} on http://{display_host}:{port}/{path}"
                 )
 
                 if sockets is not None:
@@ -319,6 +375,10 @@ class TransportMixin:
         transport: Literal["http", "streamable-http", "sse"] = "http",
         event_store: EventStore | None = None,
         retry_interval: int | None = None,
+        host_origin_protection: HostOriginProtection | None = None,
+        allowed_hosts: list[str] | None = None,
+        allowed_origins: list[str] | None = None,
+        session_idle_timeout: float | None = None,
     ) -> StarletteWithLifespan:
         """Create a Starlette app using the specified HTTP transport.
 
@@ -335,6 +395,17 @@ class TransportMixin:
                 Controls how quickly clients should reconnect after server-initiated
                 disconnections. Requires event_store to be set. Only used with
                 streamable-http transport.
+            host_origin_protection: Whether to validate Host and Origin headers
+                before requests reach the MCP endpoint. Defaults to
+                settings.http_host_origin_protection. "auto" protects
+                localhost-bound servers and explicit host/origin allowlists.
+            allowed_hosts: Additional hostnames that may appear in the Host header.
+            allowed_origins: Additional browser origins trusted by the request guard.
+                Configure CORS separately when browser JavaScript must read
+                cross-origin responses.
+            session_idle_timeout: Maximum time in seconds a streamable-HTTP
+                session may remain idle before it is terminated. When None,
+                falls back to the ``http_session_idle_timeout`` setting.
 
         Returns:
             A Starlette application configured with the specified transport
@@ -361,6 +432,26 @@ class TransportMixin:
                 ),
                 debug=fastmcp.settings.debug,
                 middleware=middleware,
+                host_origin_protection=(
+                    host_origin_protection
+                    if host_origin_protection is not None
+                    else fastmcp.settings.http_host_origin_protection
+                ),
+                allowed_hosts=(
+                    allowed_hosts
+                    if allowed_hosts is not None
+                    else fastmcp.settings.http_allowed_hosts
+                ),
+                allowed_origins=(
+                    allowed_origins
+                    if allowed_origins is not None
+                    else fastmcp.settings.http_allowed_origins
+                ),
+                session_idle_timeout=(
+                    session_idle_timeout
+                    if session_idle_timeout is not None
+                    else fastmcp.settings.http_session_idle_timeout
+                ),
             )
         elif transport == "sse":
             return create_sse_app(

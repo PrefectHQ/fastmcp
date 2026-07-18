@@ -7,13 +7,13 @@ CurrentWorker) and background task execution require fastmcp[tasks].
 
 from __future__ import annotations
 
-import contextlib
 import importlib.metadata
 import inspect
 import weakref
-from collections.abc import AsyncGenerator, Callable
-from contextlib import AsyncExitStack, asynccontextmanager
+from collections.abc import AsyncGenerator, Callable, Generator, Mapping
+from contextlib import AsyncExitStack, asynccontextmanager, contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
 from types import TracebackType
@@ -26,7 +26,8 @@ from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from mcp.server.auth.provider import (
     AccessToken as _SDKAccessToken,
 )
-from mcp.server.lowlevel.server import request_ctx
+from mcp.server.context import ServerRequestContext
+from mcp.server.session import ServerSession
 from packaging.version import Version
 from starlette.requests import Request
 from uncalled_for import Dependency, get_dependency_parameters
@@ -49,6 +50,95 @@ if TYPE_CHECKING:
     from fastmcp.server.server import FastMCP
 
 
+@dataclass
+class FastMCPRequestContext:
+    """FastMCP-owned wrapper around the SDK's per-request context.
+
+    The SDK v2 runner hands each handler a fresh ``ServerRequestContext`` as an
+    argument rather than exposing it through a ContextVar. FastMCP owns this
+    ContextVar (``fastmcp_request_ctx``) and each request adapter binds a
+    ``FastMCPRequestContext`` at the top of the handler (and the initialize
+    middleware binds it too).
+
+    A wrapper rather than the raw context because the SDK's
+    ``ServerRequestContext.meta`` is a bare ``RequestParamsMeta`` TypedDict that
+    only carries ``progress_token`` — it does not carry ``_meta.fastmcp`` or the
+    distributed-trace parent. Those live in the raw params dict under ``_meta``,
+    which this wrapper lifts once so downstream consumers have a stable surface.
+    """
+
+    session: ServerSession
+    request_id: str | None
+    meta: dict[str, Any] | None
+    """The raw ``_meta`` block lifted from the request params, if any."""
+    request: Request | None
+    protocol_version: str
+    close_sse_stream: Any | None
+    lifespan_context: Any
+    _srctx: ServerRequestContext
+    """Escape hatch to the underlying SDK request context."""
+
+
+fastmcp_request_ctx: ContextVar[FastMCPRequestContext | None] = ContextVar(
+    "fastmcp_request_ctx", default=None
+)
+
+
+def _lift_meta(ctx: ServerRequestContext) -> dict[str, Any] | None:
+    """Lift the raw ``_meta`` block from the request params.
+
+    ``ctx.params`` is the raw params mapping (or None); its ``_meta`` key holds
+    the full metadata block (``fastmcp.version``, traceparent, progressToken,
+    ...). ``ctx.meta`` (a TypedDict) only carries ``progress_token``, so version
+    and trace extraction must read from here.
+    """
+    if ctx.params and isinstance(ctx.params, Mapping):
+        meta = ctx.params.get("_meta")
+        if isinstance(meta, Mapping):
+            return dict(meta)
+    return None
+
+
+@contextmanager
+def bind_request_context(
+    ctx: ServerRequestContext,
+) -> Generator[FastMCPRequestContext, None, None]:
+    """Bind a ``FastMCPRequestContext`` for the duration of a handler.
+
+    Constructs the wrapper from the SDK's per-request context and sets/resets
+    the ``fastmcp_request_ctx`` ContextVar. Every request adapter and the
+    initialize middleware enters this so ``Context`` and dependency helpers can
+    read the active request from the ContextVar.
+    """
+    wrapper = FastMCPRequestContext(
+        session=ctx.session,
+        request_id=str(ctx.request_id) if ctx.request_id is not None else None,
+        meta=_lift_meta(ctx),
+        request=ctx.request,
+        protocol_version=ctx.protocol_version,
+        close_sse_stream=ctx.close_sse_stream,
+        lifespan_context=ctx.lifespan_context,
+        _srctx=ctx,
+    )
+    token = fastmcp_request_ctx.set(wrapper)
+    try:
+        yield wrapper
+    finally:
+        fastmcp_request_ctx.reset(token)
+
+
+def extract_version_spec(meta: dict[str, Any] | None) -> str | None:
+    """Extract the FastMCP component version from a lifted ``_meta`` block."""
+    if not meta:
+        return None
+    fastmcp_meta = meta.get("fastmcp")
+    if isinstance(fastmcp_meta, Mapping):
+        version = fastmcp_meta.get("version")
+        if isinstance(version, str):
+            return version
+    return None
+
+
 __all__ = [
     "AccessToken",
     "CurrentAccessToken",
@@ -58,10 +148,14 @@ __all__ = [
     "CurrentHeaders",
     "CurrentRequest",
     "CurrentWorker",
+    "FastMCPRequestContext",
     "Progress",
     "TaskContextInfo",
     "TaskContextSnapshot",
     "TokenClaim",
+    "bind_request_context",
+    "extract_version_spec",
+    "fastmcp_request_ctx",
     "get_access_token",
     "get_context",
     "get_http_headers",
@@ -81,7 +175,7 @@ __all__ = [
 
 # Task context lives in fastmcp.server.tasks.context; public symbols are
 # re-exported here so existing imports from dependencies continue to work.
-from fastmcp.server.tasks.context import (
+from fastmcp.server.tasks.context import (  # noqa: E402
     TaskContextInfo,
     TaskContextSnapshot,
     _recall_snapshot,
@@ -365,10 +459,11 @@ def get_http_request() -> Request:
     In background tasks, returns a synthetic request populated with the
     snapshotted headers from the originating HTTP request.
     """
-    # Try MCP SDK's request_ctx first (set during normal MCP request handling)
+    # Try FastMCP's request context first (set during normal MCP request handling)
     request = None
-    with contextlib.suppress(LookupError):
-        request = request_ctx.get().request
+    fastmcp_ctx = fastmcp_request_ctx.get()
+    if fastmcp_ctx is not None:
+        request = fastmcp_ctx.request
 
     # Fallback to FastMCP's HTTP context variable
     # This is needed during `on_initialize` middleware where request_ctx isn't set yet

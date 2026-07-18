@@ -18,7 +18,7 @@ async def test_progress_in_immediate_execution():
 
     async with Client(mcp) as client:
         result = await client.call_tool("test_tool", {})
-        from mcp.types import TextContent
+        from mcp_types import TextContent
 
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "done"
@@ -38,7 +38,7 @@ async def test_progress_in_background_task():
     async with Client(mcp) as client:
         task = await client.call_tool("test_task", {}, task=True)
         result = await task.result()
-        from mcp.types import TextContent
+        from mcp_types import TextContent
 
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "done"
@@ -57,7 +57,7 @@ async def test_progress_tracks_multiple_increments():
 
     async with Client(mcp) as client:
         result = await client.call_tool("count_to_ten", {})
-        from mcp.types import TextContent
+        from mcp_types import TextContent
 
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "counted"
@@ -97,12 +97,12 @@ async def test_progress_status_message_in_background_task():
 
         # Verify statusMessage field is accessible and contains progress info
         # Should not raise AttributeError
-        msg = status.statusMessage
+        msg = status.status_message
         assert msg is None or msg.startswith("Step")
 
         # Wait for completion
         result = await task.result()
-        from mcp.types import TextContent
+        from mcp_types import TextContent
 
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "done"
@@ -143,7 +143,7 @@ async def test_inmemory_progress_state():
 
     async with Client(mcp) as client:
         result = await client.call_tool("test_tool", {})
-        from mcp.types import TextContent
+        from mcp_types import TextContent
 
         assert isinstance(result.content[0], TextContent)
         # The tool returns a dict showing the final state

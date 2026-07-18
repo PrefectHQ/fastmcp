@@ -6,8 +6,9 @@ import uuid
 import weakref
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
 
-import mcp.types
+import mcp_types
 import pydantic_core
+from mcp.client.caching import CacheMode
 from pydantic import RootModel
 
 if TYPE_CHECKING:
@@ -24,7 +25,7 @@ AUTO_PAGINATION_MAX_PAGES = 250
 
 # Type alias for task response union (SEP-1686 graceful degradation)
 PromptTaskResponseUnion = RootModel[
-    mcp.types.CreateTaskResult | mcp.types.GetPromptResult
+    mcp_types.CreateTaskResult | mcp_types.GetPromptResult
 ]
 
 
@@ -34,20 +35,25 @@ class ClientPromptsMixin:
     # --- Prompts ---
 
     async def list_prompts_mcp(
-        self: Client, *, cursor: str | None = None
-    ) -> mcp.types.ListPromptsResult:
+        self: Client,
+        *,
+        cursor: str | None = None,
+        cache_mode: CacheMode = "use",
+    ) -> mcp_types.ListPromptsResult:
         """Send a prompts/list request and return the complete MCP protocol result.
 
         Args:
             cursor: Optional pagination cursor from a previous request's nextCursor.
+            cache_mode: Response-cache behavior (only active with a cache and a modern
+                connection). See `list_tools_mcp`.
 
         Returns:
-            mcp.types.ListPromptsResult: The complete response object from the protocol,
+            mcp_types.ListPromptsResult: The complete response object from the protocol,
                 containing the list of prompts and any additional metadata.
 
         Raises:
             RuntimeError: If called while the client is not connected.
-            McpError: If the request results in a TimeoutError | JSONRPCError
+            MCPError: If the request results in a TimeoutError | JSONRPCError
         """
         with client_span(
             "prompts/list",
@@ -57,15 +63,25 @@ class ClientPromptsMixin:
         ):
             logger.debug(f"[{self.name}] called list_prompts")
 
-            result = await self._await_with_session_monitoring(
-                self.session.list_prompts(cursor=cursor)
+            params = (
+                mcp_types.PaginatedRequestParams(cursor=cursor)
+                if cursor is not None
+                else None
             )
-            return result
+
+            async def _send() -> mcp_types.ListPromptsResult:
+                return await self._await_with_session_monitoring(
+                    self.session.list_prompts(params=params)
+                )
+
+            return await self._cached_fetch(
+                "prompts/list", cursor=cursor, cache_mode=cache_mode, send=_send
+            )
 
     async def list_prompts(
         self: Client,
         max_pages: int = AUTO_PAGINATION_MAX_PAGES,
-    ) -> list[mcp.types.Prompt]:
+    ) -> list[mcp_types.Prompt]:
         """Retrieve all prompts available on the server.
 
         This method automatically fetches all pages if the server paginates results,
@@ -76,29 +92,29 @@ class ClientPromptsMixin:
             max_pages: Maximum number of pages to fetch before raising. Defaults to 250.
 
         Returns:
-            list[mcp.types.Prompt]: A list of all Prompt objects.
+            list[mcp_types.Prompt]: A list of all Prompt objects.
 
         Raises:
             RuntimeError: If the page limit is reached before pagination completes.
-            McpError: If the request results in a TimeoutError | JSONRPCError
+            MCPError: If the request results in a TimeoutError | JSONRPCError
         """
-        all_prompts: list[mcp.types.Prompt] = []
+        all_prompts: list[mcp_types.Prompt] = []
         cursor: str | None = None
         seen_cursors: set[str] = set()
 
         for _ in range(max_pages):
             result = await self.list_prompts_mcp(cursor=cursor)
             all_prompts.extend(result.prompts)
-            if not result.nextCursor:
+            if not result.next_cursor:
                 break
-            if result.nextCursor in seen_cursors:
+            if result.next_cursor in seen_cursors:
                 logger.warning(
                     f"[{self.name}] Server returned duplicate pagination cursor"
-                    f" {result.nextCursor!r} for list_prompts; stopping pagination"
+                    f" {result.next_cursor!r} for list_prompts; stopping pagination"
                 )
                 break
-            seen_cursors.add(result.nextCursor)
-            cursor = result.nextCursor
+            seen_cursors.add(result.next_cursor)
+            cursor = result.next_cursor
         else:
             raise RuntimeError(
                 f"[{self.name}] Reached auto-pagination limit"
@@ -115,7 +131,7 @@ class ClientPromptsMixin:
         name: str,
         arguments: dict[str, Any] | None = None,
         meta: dict[str, Any] | None = None,
-    ) -> mcp.types.GetPromptResult:
+    ) -> mcp_types.GetPromptResult:
         """Send a prompts/get request and return the complete MCP protocol result.
 
         Args:
@@ -124,12 +140,12 @@ class ClientPromptsMixin:
             meta (dict[str, Any] | None, optional): Request metadata (e.g., for SEP-1686 tasks). Defaults to None.
 
         Returns:
-            mcp.types.GetPromptResult: The complete response object from the protocol,
+            mcp_types.GetPromptResult: The complete response object from the protocol,
                 containing the prompt messages and any additional metadata.
 
         Raises:
             RuntimeError: If called while the client is not connected.
-            McpError: If the request results in a TimeoutError | JSONRPCError
+            MCPError: If the request results in a TimeoutError | JSONRPCError
         """
         with client_span(
             f"prompts/get {name}",
@@ -155,29 +171,25 @@ class ClientPromptsMixin:
 
             # Inject trace context into meta for propagation to server
             propagated_meta = inject_trace_context(meta)
-            request_meta = cast(mcp.types.RequestParams.Meta | None, propagated_meta)
+            request_meta = cast("mcp_types.RequestParamsMeta | None", propagated_meta)
 
-            # If meta provided, use send_request for SEP-1686 task support
-            if propagated_meta:
-                task_dict = propagated_meta.get("modelcontextprotocol.io/task")
-                request = mcp.types.GetPromptRequest(
-                    params=mcp.types.GetPromptRequestParams(
-                        name=name,
-                        arguments=serialized_arguments,
-                        task=mcp.types.TaskMetadata(**task_dict) if task_dict else None,
-                        _meta=request_meta,  # type: ignore[unknown-argument]  # pydantic alias
-                    )
+            async def _retry(
+                input_responses: mcp_types.InputResponses | None,
+                request_state: str | None,
+            ) -> mcp_types.GetPromptResult | mcp_types.InputRequiredResult:
+                return await self.session.get_prompt(
+                    name=name,
+                    arguments=serialized_arguments,
+                    meta=request_meta,
+                    input_responses=input_responses,
+                    request_state=request_state,
+                    allow_input_required=True,
                 )
-                result = await self._await_with_session_monitoring(
-                    self.session.send_request(
-                        request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
-                        result_type=mcp.types.GetPromptResult,
-                    )
-                )
-            else:
-                result = await self._await_with_session_monitoring(
-                    self.session.get_prompt(name=name, arguments=serialized_arguments)
-                )
+
+            first = await self._await_with_session_monitoring(_retry(None, None))
+            result = await self._await_with_session_monitoring(
+                self._drive_input_required(first, _retry)
+            )
             return result
 
     @overload
@@ -189,7 +201,7 @@ class ClientPromptsMixin:
         version: str | None = None,
         meta: dict[str, Any] | None = None,
         task: Literal[False] = False,
-    ) -> mcp.types.GetPromptResult: ...
+    ) -> mcp_types.GetPromptResult: ...
 
     @overload
     async def get_prompt(
@@ -214,7 +226,7 @@ class ClientPromptsMixin:
         task: bool = False,
         task_id: str | None = None,
         ttl: int = 60000,
-    ) -> mcp.types.GetPromptResult | PromptTask:
+    ) -> mcp_types.GetPromptResult | PromptTask:
         """Retrieve a rendered prompt message list from the server.
 
         Args:
@@ -227,12 +239,12 @@ class ClientPromptsMixin:
             ttl (int): Time to keep results available in milliseconds (default 60s).
 
         Returns:
-            mcp.types.GetPromptResult | PromptTask: The complete response object if task=False,
+            mcp_types.GetPromptResult | PromptTask: The complete response object if task=False,
                 or a PromptTask object if task=True.
 
         Raises:
             RuntimeError: If called while the client is not connected.
-            McpError: If the request results in a TimeoutError | JSONRPCError
+            MCPError: If the request results in a TimeoutError | JSONRPCError
         """
         # Merge version into request-level meta (not arguments)
         request_meta = dict(meta) if meta else {}
@@ -275,9 +287,14 @@ class ClientPromptsMixin:
             PromptTask: Future-like object for accessing task status and results
         """
         # Per SEP-1686 final spec: client sends only ttl, server generates taskId
-        # Inject trace context into meta for propagation to server
+        # Inject trace context into meta for propagation to server.
+        # SDK v2: request `_meta` is `RequestParamsMeta` (a TypedDict), not
+        # the old `RequestParams.Meta` nested model.
         propagated_meta = inject_trace_context(meta)
-        request_meta = cast(mcp.types.RequestParams.Meta | None, propagated_meta)
+        request_meta = cast(
+            "mcp_types.RequestParamsMeta | None",
+            propagated_meta if propagated_meta else None,
+        )
 
         # Serialize arguments for MCP protocol
         serialized_arguments: dict[str, str] | None = None
@@ -291,11 +308,14 @@ class ClientPromptsMixin:
                         "utf-8"
                     )
 
-        request = mcp.types.GetPromptRequest(
-            params=mcp.types.GetPromptRequestParams(
+        # SDK v2: GetPromptRequestParams has no `task` field, so this request
+        # cannot carry task metadata over the wire and the server graceful-
+        # degrades to immediate execution (sdk-feedback #3). `ttl` is retained on
+        # the public API but has no wire representation here.
+        request = mcp_types.GetPromptRequest(
+            params=mcp_types.GetPromptRequestParams(
                 name=name,
                 arguments=serialized_arguments,
-                task=mcp.types.TaskMetadata(ttl=ttl),
                 _meta=request_meta,  # type: ignore[unknown-argument]  # pydantic alias
             )
         )
@@ -303,15 +323,15 @@ class ClientPromptsMixin:
         # Server returns CreateTaskResult (task accepted) or GetPromptResult (graceful degradation)
         wrapped_result = await self._await_with_session_monitoring(
             self.session.send_request(
-                request=request,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+                request=request,  # type: ignore[arg-type]
                 result_type=PromptTaskResponseUnion,
             )
         )
         raw_result = wrapped_result.root
 
-        if isinstance(raw_result, mcp.types.CreateTaskResult):
+        if isinstance(raw_result, mcp_types.CreateTaskResult):
             # Task was accepted - extract task info from CreateTaskResult
-            server_task_id = raw_result.task.taskId
+            server_task_id = raw_result.task.task_id
             self._submitted_task_ids.add(server_task_id)
 
             task_obj = PromptTask(

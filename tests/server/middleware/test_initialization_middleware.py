@@ -3,10 +3,10 @@
 from collections.abc import Sequence
 from typing import Any
 
-import mcp.types as mt
+import mcp_types as mt
 import pytest
-from mcp import McpError
-from mcp.types import ErrorData, TextContent
+from mcp import MCPError
+from mcp_types import TextContent
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
@@ -39,7 +39,7 @@ class InitializationMiddleware(Middleware):
         if hasattr(context.message, "params") and hasattr(
             context.message.params, "clientInfo"
         ):
-            self.client_info = context.message.params.clientInfo
+            self.client_info = context.message.params.client_info
 
         # Store in instance for cross-request access
         # (session state is not available during on_initialize)
@@ -96,7 +96,7 @@ class ClientDetectionMiddleware(Middleware):
                 if tool.annotations is None:
                     tool.annotations = mt.ToolAnnotations()
                 # Mark as read-only for test clients
-                tool.annotations.readOnlyHint = True
+                tool.annotations.read_only_hint = True
             self.tools_modified = True
 
         return tools
@@ -173,7 +173,7 @@ async def test_client_detection_middleware():
         # Check that the tool has the modified annotation
         tool = tools[0]
         assert tool.annotations is not None
-        assert tool.annotations.readOnlyHint is True
+        assert tool.annotations.read_only_hint is True
 
 
 async def test_multiple_middleware_initialization():
@@ -293,13 +293,13 @@ async def test_middleware_can_access_initialize_result():
         assert isinstance(middleware.initialize_result, mt.InitializeResult)
 
         # Verify the result contains expected server info
-        assert middleware.initialize_result.serverInfo.name == "TestServer"
-        assert middleware.initialize_result.protocolVersion is not None
+        assert middleware.initialize_result.server_info.name == "TestServer"
+        assert middleware.initialize_result.protocol_version is not None
         assert middleware.initialize_result.capabilities is not None
 
 
 async def test_middleware_mcp_error_during_initialization():
-    """Test that McpError raised in middleware during initialization is sent to client."""
+    """Test that MCPError raised in middleware during initialization is sent to client."""
     server = FastMCP("TestServer")
 
     class ErrorThrowingMiddleware(Middleware):
@@ -308,15 +308,13 @@ async def test_middleware_mcp_error_during_initialization():
             context: MiddlewareContext[mt.InitializeRequest],
             call_next: CallNext[mt.InitializeRequest, mt.InitializeResult | None],
         ) -> mt.InitializeResult | None:
-            raise McpError(
-                ErrorData(
-                    code=mt.INVALID_PARAMS, message="Invalid initialization parameters"
-                )
+            raise MCPError(
+                code=mt.INVALID_PARAMS, message="Invalid initialization parameters"
             )
 
     server.add_middleware(ErrorThrowingMiddleware())
 
-    with pytest.raises(McpError) as exc_info:
+    with pytest.raises(MCPError) as exc_info:
         async with Client(server):
             pass
 
@@ -325,7 +323,7 @@ async def test_middleware_mcp_error_during_initialization():
 
 
 async def test_middleware_mcp_error_before_call_next():
-    """Test McpError raised before calling next middleware."""
+    """Test MCPError raised before calling next middleware."""
     server = FastMCP("TestServer")
 
     class EarlyErrorMiddleware(Middleware):
@@ -334,13 +332,11 @@ async def test_middleware_mcp_error_before_call_next():
             context: MiddlewareContext[mt.InitializeRequest],
             call_next: CallNext[mt.InitializeRequest, mt.InitializeResult | None],
         ) -> mt.InitializeResult | None:
-            raise McpError(
-                ErrorData(code=mt.INVALID_REQUEST, message="Request validation failed")
-            )
+            raise MCPError(code=mt.INVALID_REQUEST, message="Request validation failed")
 
     server.add_middleware(EarlyErrorMiddleware())
 
-    with pytest.raises(McpError) as exc_info:
+    with pytest.raises(MCPError) as exc_info:
         async with Client(server):
             pass
 
@@ -349,7 +345,7 @@ async def test_middleware_mcp_error_before_call_next():
 
 
 async def test_middleware_mcp_error_after_call_next():
-    """Test that McpError raised after call_next doesn't break the connection.
+    """Test that MCPError raised after call_next doesn't break the connection.
 
     When an error is raised after call_next, the responder has already completed,
     so the error is caught but not sent to the responder (checked via _completed flag).
@@ -368,9 +364,7 @@ async def test_middleware_mcp_error_after_call_next():
         ) -> mt.InitializeResult | None:
             await call_next(context)
             self.error_raised = True
-            raise McpError(
-                ErrorData(code=mt.INTERNAL_ERROR, message="Post-processing failed")
-            )
+            raise MCPError(code=mt.INTERNAL_ERROR, message="Post-processing failed")
 
     middleware = PostProcessingErrorMiddleware()
     server.add_middleware(middleware)

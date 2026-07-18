@@ -7,12 +7,12 @@
 
 from typing import Annotated, Any, Literal, TypedDict
 
-from mcp.types import ToolAnnotations
 from phue.exceptions import PhueException
 from pydantic import Field
 from typing_extensions import NotRequired
 
 from fastmcp import FastMCP
+from fastmcp.types import ToolAnnotations
 from smart_home.lights.hue_utils import _get_bridge, handle_phue_error
 
 

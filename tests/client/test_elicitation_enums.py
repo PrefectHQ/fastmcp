@@ -170,7 +170,7 @@ async def test_dict_based_titled_single_select():
 
     async def elicitation_handler(message, response_type, params, ctx):
         # Verify schema follows SEP-1330 pattern with type: "string"
-        schema = params.requestedSchema
+        schema = params.requested_schema
         assert schema["type"] == "object"
         assert "value" in schema["properties"]
         value_schema = schema["properties"]["value"]
@@ -200,12 +200,12 @@ async def test_list_list_multi_select_untitled():
         if result.action == "accept":
             assert isinstance(result, AcceptedElicitation)
             assert isinstance(result.data, list)
-            return ",".join(result.data)  # type: ignore[no-matching-overload]  # ty:ignore[no-matching-overload]
+            return ",".join(result.data)  # type: ignore[no-matching-overload]
         return "declined"
 
     async def elicitation_handler(message, response_type, params, ctx):
         # Verify schema has array with enum pattern
-        schema = params.requestedSchema
+        schema = params.requested_schema
         assert schema["type"] == "object"
         assert "value" in schema["properties"]
         value_schema = schema["properties"]["value"]
@@ -238,12 +238,12 @@ async def test_list_dict_multi_select_titled():
         if result.action == "accept":
             assert isinstance(result, AcceptedElicitation)
             assert isinstance(result.data, list)
-            return ",".join(result.data)  # type: ignore[no-matching-overload]  # ty:ignore[no-matching-overload]
+            return ",".join(result.data)  # type: ignore[no-matching-overload]
         return "declined"
 
     async def elicitation_handler(message, response_type, params, ctx):
         # Verify schema has array with SEP-1330 compliant items (anyOf pattern)
-        schema = params.requestedSchema
+        schema = params.requested_schema
         assert schema["type"] == "object"
         assert "value" in schema["properties"]
         value_schema = schema["properties"]["value"]
@@ -310,7 +310,7 @@ async def test_list_enum_multi_select_direct():
 
     async def elicitation_handler(message, response_type, params, ctx):
         # Verify schema has array with enum pattern
-        schema = params.requestedSchema
+        schema = params.requested_schema
         assert schema["type"] == "object"
         assert "value" in schema["properties"]
         value_schema = schema["properties"]["value"]
@@ -514,3 +514,13 @@ class TestElicitationDefaults:
 
         assert "default" in props["string_field"]
         assert "default" in props["integer_field"]
+
+
+def test_scalar_elicitation_schema_omits_wrapper_title() -> None:
+    """Scalar/list wrappers must not leak the internal class name on the wire."""
+    from fastmcp.server.elicitation import parse_elicit_response_type
+
+    schema = parse_elicit_response_type(["yes", "no"]).schema
+
+    assert "title" not in schema
+    assert schema["properties"]["value"]["enum"] == ["yes", "no"]

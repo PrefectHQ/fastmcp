@@ -407,7 +407,7 @@ async def media_server(tmp_path):
             lambda r: (
                 len(r.content) == 1
                 and r.content[0].type == "image"
-                and r.content[0].mimeType == "image/png"
+                and r.content[0].mime_type == "image/png"
             ),
         ),
         (
@@ -558,8 +558,7 @@ async def mcp_content_server(tmp_path):
     """Server with tools returning MCP content blocks."""
     import base64
 
-    from mcp.types import (
-        AnyUrl,
+    from mcp_types import (
         EmbeddedResource,
         ImageContent,
         ResourceLink,
@@ -581,22 +580,20 @@ async def mcp_content_server(tmp_path):
         return ImageContent(
             type="image",
             data=base64.b64encode(test_image.read_bytes()).decode(),
-            mimeType="image/png",
+            mime_type="image/png",
         )
 
     @mcp.tool(task=True)
     async def return_embedded_resource() -> EmbeddedResource:
         return EmbeddedResource(
             type="resource",
-            resource=TextResourceContents(
-                uri=AnyUrl("test://resource"), text="embedded"
-            ),
+            resource=TextResourceContents(uri="test://resource", text="embedded"),
         )
 
     @mcp.tool(task=True)
     async def return_resource_link() -> ResourceLink:
         return ResourceLink(
-            type="resource_link", uri=AnyUrl("test://linked"), name="Test Resource"
+            type="resource_link", uri="test://linked", name="Test Resource"
         )
 
     @mcp.tool(task=True)
@@ -606,7 +603,7 @@ async def mcp_content_server(tmp_path):
             ImageContent(
                 type="image",
                 data=base64.b64encode(test_image.read_bytes()).decode(),
-                mimeType="image/png",
+                mime_type="image/png",
             ),
             TextContent(type="text", text="Third block"),
         ]
@@ -630,7 +627,7 @@ async def mcp_content_server(tmp_path):
             lambda r: (
                 len(r.content) == 1
                 and r.content[0].type == "image"
-                and r.content[0].mimeType == "image/png"
+                and r.content[0].mime_type == "image/png"
             ),
         ),
         (

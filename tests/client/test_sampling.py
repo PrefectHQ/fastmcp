@@ -3,7 +3,7 @@ from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
-from mcp.types import TextContent
+from mcp_types import TextContent
 from pydantic_core import to_json
 
 from fastmcp import Client, Context, FastMCP
@@ -85,8 +85,8 @@ async def test_sampling_with_system_prompt(fastmcp_server: FastMCP):
     def sampling_handler(
         messages: list[SamplingMessage], params: SamplingParams, ctx: RequestContext
     ) -> str:
-        assert params.systemPrompt is not None
-        return params.systemPrompt
+        assert params.system_prompt is not None
+        return params.system_prompt
 
     async with Client(fastmcp_server, sampling_handler=sampling_handler) as client:
         result = await client.call_tool(
@@ -185,7 +185,7 @@ class TestSamplingDefaultCapabilities:
         {"sampling": {"tools": {}}}, ensuring compatibility with servers
         that don't recognize the tools sub-field (e.g. older Java MCP SDK).
         """
-        import mcp.types as mcp_types
+        import mcp_types
 
         server = FastMCP()
 
@@ -201,7 +201,7 @@ class TestSamplingDefaultCapabilities:
 
     async def test_set_sampling_callback_default_capabilities_omit_tools(self):
         """set_sampling_callback should also default to no tools capability."""
-        import mcp.types as mcp_types
+        import mcp_types
 
         server = FastMCP()
         client = Client(server)
@@ -212,7 +212,7 @@ class TestSamplingDefaultCapabilities:
 
     async def test_explicit_tools_capability_is_preserved(self):
         """Explicitly passing tools capability should be respected."""
-        import mcp.types as mcp_types
+        import mcp_types
 
         server = FastMCP()
 
@@ -237,7 +237,7 @@ class TestSamplingWithTools:
 
     async def test_sampling_with_tools_requires_capability(self):
         """Test that sampling with tools raises error when client lacks capability."""
-        import mcp.types as mcp_types
+        import mcp_types
 
         from fastmcp.exceptions import ToolError
 

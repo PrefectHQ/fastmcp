@@ -1,7 +1,7 @@
 import json
 
 import pytest
-from mcp.types import TextContent, TextResourceContents
+from mcp_types import TextContent, TextResourceContents
 from starlette.requests import Request
 
 from fastmcp.client import Client

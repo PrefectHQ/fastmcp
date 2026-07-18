@@ -15,11 +15,11 @@ Icons provide visual representations for your MCP servers and components, helpin
 Icons use the standard MCP Icon type from the MCP protocol specification. Each icon specifies a source URL or data URI, and optionally includes MIME type and size information.
 
 ```python
-from mcp.types import Icon
+from fastmcp.types import Icon
 
 icon = Icon(
     src="https://example.com/icon.png",
-    mimeType="image/png",
+    mime_type="image/png",
     sizes=["48x48"]
 )
 ```
@@ -27,7 +27,7 @@ icon = Icon(
 The fields serve different purposes:
 
 - **src**: URL or data URI pointing to the icon image
-- **mimeType** (optional): MIME type of the image (e.g., "image/png", "image/svg+xml")
+- **mime_type** (optional): MIME type of the image (e.g., "image/png", "image/svg+xml")
 - **sizes** (optional): Array of size descriptors (e.g., ["48x48"], ["any"])
 
 ## Server Icons
@@ -36,7 +36,7 @@ Add icons and a website URL to your server for display in client applications. M
 
 ```python
 from fastmcp import FastMCP
-from mcp.types import Icon
+from fastmcp.types import Icon
 
 mcp = FastMCP(
     name="WeatherService",
@@ -44,12 +44,12 @@ mcp = FastMCP(
     icons=[
         Icon(
             src="https://weather.example.com/icon-48.png",
-            mimeType="image/png",
+            mime_type="image/png",
             sizes=["48x48"]
         ),
         Icon(
             src="https://weather.example.com/icon-96.png",
-            mimeType="image/png",
+            mime_type="image/png",
             sizes=["96x96"]
         ),
     ]
@@ -65,7 +65,7 @@ Icons can be added to individual tools, resources, resource templates, and promp
 ### Tool Icons
 
 ```python
-from mcp.types import Icon
+from fastmcp.types import Icon
 
 @mcp.tool(
     icons=[Icon(src="https://example.com/calculator-icon.png")]
@@ -115,13 +115,13 @@ def analyze_code(code: str):
 For small icons or when you want to embed the icon directly without external dependencies, use data URIs. This approach eliminates the need for hosting and ensures the icon is always available.
 
 ```python
-from mcp.types import Icon
+from fastmcp.types import Icon
 from fastmcp.utilities.types import Image
 
 # SVG icon as data URI
 svg_icon = Icon(
     src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCI+PHBhdGggZD0iTTEyIDJDNi40OCAyIDIgNi40OCAyIDEyczQuNDggMTAgMTAgMTAgMTAtNC40OCAxMC0xMFMxNy41MiAyIDEyIDJ6Ii8+PC9zdmc+",
-    mimeType="image/svg+xml"
+    mime_type="image/svg+xml"
 )
 
 @mcp.tool(icons=[svg_icon])
@@ -135,7 +135,7 @@ def my_tool() -> str:
 FastMCP provides the `Image` utility class to convert local image files into data URIs.
 
 ```python
-from mcp.types import Icon
+from fastmcp.types import Icon
 from fastmcp.utilities.types import Image
 
 # Generate a data URI from a local image file

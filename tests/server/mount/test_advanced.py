@@ -1,7 +1,7 @@
 """Advanced mounting scenarios."""
 
 import pytest
-from mcp.types import TextContent
+from mcp_types import TextContent
 from starlette.routing import Route
 
 from fastmcp import FastMCP

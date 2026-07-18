@@ -27,6 +27,7 @@ You can change which `.env` file is loaded by setting the `FASTMCP_ENV_FILE` env
 | `FASTMCP_ENABLE_RICH_LOGGING` | `bool` | `true` | Use rich formatting for log output. Set to `false` for plain Python logging. |
 | `FASTMCP_ENABLE_RICH_TRACEBACKS` | `bool` | `true` | Use rich tracebacks for errors. |
 | `FASTMCP_DEPRECATION_WARNINGS` | `bool` | `true` | Show deprecation warnings. |
+| `FASTMCP_MCP_CAMELCASE_COMPAT` | `bool` | `true` | Bridge legacy camelCase reads on MCP SDK objects (e.g. `tool.inputSchema`, `result.isError`) to their snake_case fields after the SDK v2 rename. Each bridged read emits a `FastMCPDeprecationWarning`. Set to `false` to disable the shims, in which case only the snake_case names resolve. |
 
 ## Transport & HTTP
 
@@ -42,6 +43,10 @@ These control how the server listens when running with an HTTP transport.
 | `FASTMCP_STREAMABLE_HTTP_PATH` | `str` | `/mcp` | Path for Streamable HTTP endpoint. |
 | `FASTMCP_STATELESS_HTTP` | `bool` | `false` | Enable stateless HTTP mode (new transport per request). Useful for multi-worker deployments. |
 | `FASTMCP_JSON_RESPONSE` | `bool` | `false` | Use JSON responses instead of SSE for Streamable HTTP. |
+| `FASTMCP_HTTP_HOST_ORIGIN_PROTECTION` | `bool \| "auto"` | `false` | Validate `Host` and browser `Origin` headers for Streamable HTTP requests. `auto` protects localhost-bound servers and explicit host/origin allowlists. |
+| `FASTMCP_HTTP_ALLOWED_HOSTS` | `list[str] \| null` | `null` | Additional trusted hostnames when Host and Origin protection is enabled. Use a JSON array, such as `["mcp.example.com"]`. |
+| `FASTMCP_HTTP_ALLOWED_ORIGINS` | `list[str] \| null` | `null` | Browser origins trusted when Host and Origin protection is enabled. Configure CORS separately for cross-origin browser reads. Use a JSON array, such as `["https://app.example.com"]`. |
+| `FASTMCP_HTTP_SESSION_IDLE_TIMEOUT` | `float \| null` | `null` | Seconds a Streamable HTTP session may remain idle before it is terminated. The deadline resets on every request. When `null`, sessions never expire from inactivity. Not supported in stateless mode. |
 | `FASTMCP_DEBUG` | `bool` | `false` | Enable debug mode. |
 
 ## Error Handling
@@ -66,6 +71,12 @@ These control how the server listens when running with an HTTP transport.
 |---|---|---|---|
 | `FASTMCP_SHOW_SERVER_BANNER` | `bool` | `true` | Show the server banner on startup. Also controllable via `--no-banner` or `server.run(show_banner=False)`. |
 | `FASTMCP_CHECK_FOR_UPDATES` | `Literal["stable", "prerelease", "off"]` | `stable` | Update checking on CLI startup. `stable` checks stable releases only, `prerelease` includes pre-releases, `off` disables checking. |
+
+## Telemetry
+
+| Environment Variable | Type | Default | Description |
+|---|---|---|---|
+| `FASTMCP_ENABLE_TELEMETRY` | `bool` | `true` | Whether FastMCP's native [OpenTelemetry instrumentation](/servers/telemetry) is active. Enabled by default; FastMCP uses only the OpenTelemetry API, so span creation is a no-op with negligible overhead unless an OpenTelemetry SDK and exporter are configured. Set to `false` to turn instrumentation off entirely, in which case no FastMCP spans are created even when an SDK is configured. |
 
 ## Tasks (Docket)
 
@@ -92,5 +103,4 @@ When setting Docket values in a `.env` file, use a **double** underscore: `FASTM
 | `FASTMCP_HOME` | `Path` | Platform default | Data directory for FastMCP. Defaults to the platform-specific user data directory. |
 | `FASTMCP_ENV_FILE` | `str` | `.env` | Path to the `.env` file to load settings from. Must be set as an environment variable (see above). |
 | `FASTMCP_SERVER_DEPENDENCIES` | `list[str]` | `[]` | Additional dependencies to install in the server environment. |
-| `FASTMCP_DECORATOR_MODE` | `Literal["function", "object"]` | `function` | Controls what `@tool`, `@resource`, and `@prompt` decorators return. `function` returns the original function (default); `object` returns component objects (deprecated, will be removed). |
 | `FASTMCP_TEST_MODE` | `bool` | `false` | Enable test mode. |

@@ -401,7 +401,7 @@ FastMCP implements [RFC 6570 URI Templates](https://datatracker.ietf.org/doc/htm
 
 <VersionBadge version="2.2.4" />
 
-Resource templates support wildcard parameters that can match multiple path segments. While standard parameters (`{param}`) only match a single path segment and don't cross "/" boundaries, wildcard parameters (`{param*}`) can capture multiple segments including slashes. Wildcards capture all subsequent path segments *up until* the defined part of the URI template (whether literal or another parameter). This allows you to have multiple wildcard parameters in a single URI template.
+Resource templates support wildcard parameters that can match multiple path segments. Standard parameters (`{param}`) match a single URI segment before decoding and do not cross literal "/" boundaries in the request URI. Wildcard parameters (`{param*}`) can capture multiple segments including slashes. Wildcards capture all subsequent path segments *up until* the defined part of the URI template (whether literal or another parameter). This allows you to have multiple wildcard parameters in a single URI template.
 
 ```python {15, 23}
 from fastmcp import FastMCP
@@ -445,6 +445,34 @@ Wildcard parameters are useful when:
 - Building URL-like patterns similar to REST APIs
 
 Note that like regular parameters, each wildcard parameter must still be a named parameter in your function signature, and all required function parameters must appear in the URI template.
+
+#### Filesystem Path Safety
+
+Template parameters are decoded before your function receives them. A standard `{filename}` parameter matches one URI segment before decoding, so a request like `files://a%2Fb` passes `filename="a/b"` to the handler. Treat template values as untrusted decoded URI data whenever they determine filesystem paths.
+
+Validate the final resolved path against an allowed root before reading:
+
+```python
+from pathlib import Path
+
+from fastmcp import FastMCP
+from fastmcp.exceptions import ResourceError
+
+mcp = FastMCP(name="DocsServer")
+DOCS_ROOT = Path("docs").resolve()
+
+
+@mcp.resource("docs://{filename}")
+def read_doc(filename: str) -> str:
+    requested_path = (DOCS_ROOT / filename).resolve()
+
+    if not requested_path.is_relative_to(DOCS_ROOT) or not requested_path.is_file():
+        raise ResourceError("Document not found")
+
+    return requested_path.read_text(encoding="utf-8")
+```
+
+Use wildcard parameters (`{path*}`) for resources whose URI shape intentionally includes slashes, and apply the same containment check before accessing the filesystem.
 
 #### Query Parameters
 

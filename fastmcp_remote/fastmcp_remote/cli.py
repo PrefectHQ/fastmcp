@@ -45,6 +45,7 @@ class RemoteConfig:
     ignore_tools: tuple[str, ...]
     show_banner: bool
     log_level: str | None
+    verify: bool | str | None
 
 
 class IgnoreTools(Transform):
@@ -82,6 +83,16 @@ def parse_header(value: str) -> tuple[str, str]:
             f"Environment variable {exc.args[0]} is not set."
         ) from exc
     return name.strip(), expanded_value.strip()
+
+
+def parse_verify(value: str) -> bool | str:
+    """Interpret the --verify value as a boolean toggle or a CA bundle path."""
+    lowered = value.strip().lower()
+    if lowered in {"false", "0", "no", "off"}:
+        return False
+    if lowered in {"true", "1", "yes", "on"}:
+        return True
+    return value
 
 
 def default_storage_dir(resource: str | None = None) -> Path:
@@ -148,6 +159,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Hide tools matching this glob pattern. Repeat for multiple patterns.",
     )
     parser.add_argument(
+        "--verify",
+        type=parse_verify,
+        default=None,
+        metavar="VERIFY",
+        help=(
+            "SSL certificate verification. Pass a path to a CA bundle file, or "
+            "'false' to disable verification (insecure, for self-signed "
+            "certificates). Defaults to verification enabled."
+        ),
+    )
+    parser.add_argument(
         "--debug",
         action="store_true",
         help="Enable debug logging.",
@@ -190,6 +212,7 @@ def parse_args(argv: Sequence[str] | None = None) -> RemoteConfig:
         ignore_tools=tuple(args.ignore_tool),
         show_banner=not args.silent,
         log_level=log_level,
+        verify=args.verify,
     )
 
 
@@ -228,8 +251,12 @@ def resolve_auth(config: RemoteConfig) -> OAuth | None:
 def build_transport(config: RemoteConfig) -> SSETransport | StreamableHttpTransport:
     auth = resolve_auth(config)
     if config.transport == "sse":
-        return SSETransport(config.url, headers=config.headers, auth=auth)
-    return StreamableHttpTransport(config.url, headers=config.headers, auth=auth)
+        return SSETransport(
+            config.url, headers=config.headers, auth=auth, verify=config.verify
+        )
+    return StreamableHttpTransport(
+        config.url, headers=config.headers, auth=auth, verify=config.verify
+    )
 
 
 async def run(config: RemoteConfig) -> None:

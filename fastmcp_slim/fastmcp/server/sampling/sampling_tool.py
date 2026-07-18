@@ -6,8 +6,8 @@ import inspect
 from collections.abc import Callable
 from typing import Any
 
-from mcp.types import TextContent
-from mcp.types import Tool as SDKTool
+from mcp_types import TextContent
+from mcp_types import Tool as SDKTool
 from pydantic import ConfigDict
 
 from fastmcp.exceptions import AuthorizationError
@@ -69,7 +69,7 @@ class SamplingTool(FastMCPBaseModel):
         return result
 
     def _to_sdk_tool(self) -> SDKTool:
-        """Convert to an mcp.types.Tool for SDK compatibility.
+        """Convert to an mcp_types.Tool for SDK compatibility.
 
         This is used internally when passing tools to the MCP SDK's
         create_message() method.
@@ -77,7 +77,7 @@ class SamplingTool(FastMCPBaseModel):
         return SDKTool(
             name=self.name,
             description=self.description,
-            inputSchema=self.parameters,
+            input_schema=self.parameters,
         )
 
     @classmethod
