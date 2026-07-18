@@ -349,7 +349,7 @@ class OAuth(OAuthClientProvider):
             else:
                 self.context.update_token_expiry(self.context.current_tokens)
 
-    async def _perform_authorization(self) -> httpx.Request:
+    async def _perform_authorization(self) -> httpx2.Request:
         """Reject expired registrations before attempting authorization."""
         client_info = self.context.client_info
         if (
