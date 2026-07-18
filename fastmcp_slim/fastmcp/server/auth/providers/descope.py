@@ -181,8 +181,13 @@ class DescopeProvider(RemoteAuthProvider):
         # metadata request (see get_routes) so construction never performs I/O
         # and a transient failure can be retried instead of being frozen for the
         # provider's lifetime.
+        custom_verifier_scopes = (
+            token_verifier.scopes_supported if token_verifier is not None else []
+        )
         self._scopes_discovery_enabled = (
-            parsed_scopes_supported is None and parsed_required_scopes is None
+            parsed_scopes_supported is None
+            and parsed_required_scopes is None
+            and not custom_verifier_scopes
         )
         self._discovered_scopes: list[str] | None = None
         self._scopes_discovered = False
@@ -235,16 +240,20 @@ class DescopeProvider(RemoteAuthProvider):
         """
 
         async def protected_resource_metadata(request: Request) -> Response:
+            scopes_supported = await self._get_scopes_supported()
             metadata = ProtectedResourceMetadata(
                 resource=resource_url,
                 authorization_servers=self.authorization_servers,
-                scopes_supported=await self._get_scopes_supported(),
+                scopes_supported=scopes_supported,
                 resource_name=self.resource_name,
                 resource_documentation=self.resource_documentation,
             )
+            cache_control = (
+                "public, max-age=3600" if self._scopes_discovered else "no-store"
+            )
             return PydanticJSONResponse(
                 content=metadata,
-                headers={"Cache-Control": "public, max-age=3600"},
+                headers={"Cache-Control": cache_control},
             )
 
         well_known_path = urlparse(str(build_resource_metadata_url(resource_url))).path

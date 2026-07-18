@@ -223,6 +223,23 @@ class TestDescopeProvider:
         assert provider._scopes_supported == ["custom:advertised"]
         assert provider.token_verifier.required_scopes == []
 
+    def test_custom_token_verifier_scopes_skip_discovery(self):
+        """Scopes supplied by a custom verifier retain the parent behavior."""
+        token_verifier = JWTVerifier(
+            public_key="secret",
+            algorithm="HS256",
+            required_scopes=["custom:scope"],
+        )
+        provider = DescopeProvider(
+            config_url="https://api.descope.com/v1/apps/P2abc123/.well-known/openid-configuration",
+            base_url="https://myserver.com",
+            token_verifier=token_verifier,
+        )
+
+        assert provider._scopes_discovery_enabled is False
+        assert provider._scopes_supported is None
+        assert provider.token_verifier.scopes_supported == ["custom:scope"]
+
     def test_requires_config_url_or_project_id_and_descope_base_url(self):
         """Test that either config_url or both project_id and descope_base_url are required."""
         # Should raise error when neither API is provided
@@ -399,6 +416,30 @@ class TestDescopeProviderIntegration:
 
         response.raise_for_status()
         assert response.json()["scopes_supported"] == ["mcp:read"]
+        assert response.headers["cache-control"] == "public, max-age=3600"
+
+    async def test_failed_scope_discovery_is_not_cached(self):
+        """Clients can retry metadata discovery immediately after a failure."""
+        provider = DescopeProvider(
+            config_url="https://api.descope.com/v1/apps/agentic/P2test123/M123/.well-known/openid-configuration",
+            base_url="http://localhost:4321",
+        )
+        mcp = FastMCP(auth=provider)
+
+        with patch(
+            "fastmcp.server.auth.providers.descope._discover_scopes",
+            new=AsyncMock(return_value=None),
+        ):
+            async with run_server_async(mcp, transport="http") as url:
+                metadata_url = url.replace(
+                    "/mcp", "/.well-known/oauth-protected-resource/mcp"
+                )
+                async with httpx2.AsyncClient() as client:
+                    response = await client.get(metadata_url)
+
+        response.raise_for_status()
+        assert "scopes_supported" not in response.json()
+        assert response.headers["cache-control"] == "no-store"
 
     async def test_unauthorized_access(self, mcp_server_url: str):
         # SDK v2 surfaces the server's 401 as a generic MCPError at the client
