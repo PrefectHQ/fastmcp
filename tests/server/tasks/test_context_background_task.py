@@ -8,6 +8,7 @@ no mocking of Redis, Docket, or session internals.
 import asyncio
 import gc
 import json
+from contextlib import AsyncExitStack
 from datetime import datetime, timezone
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
@@ -95,6 +96,51 @@ async def test_task_session_is_released_after_client_disconnect():
         assert len(_task_sessions) == 1
 
     assert _task_sessions == {}
+
+
+async def test_live_task_session_is_released_on_connection_disconnect():
+    _task_sessions.clear()
+
+    class MockConnection:
+        def __init__(self) -> None:
+            self.state: dict[str, object] = {}
+            self.exit_stack = AsyncExitStack()
+
+    class MockSession:
+        def __init__(self, connection: MockConnection) -> None:
+            self._connection = connection
+
+    connection = MockConnection()
+    session = MockSession(connection)
+    async with connection.exit_stack:
+        register_task_session("session", cast(ServerSession, session))
+        session_ref = _task_sessions["session"]
+
+    assert session_ref() is session
+    assert _task_sessions == {}
+
+
+async def test_connection_cleanup_does_not_remove_replacement_session():
+    _task_sessions.clear()
+
+    class MockConnection:
+        def __init__(self) -> None:
+            self.state: dict[str, object] = {}
+            self.exit_stack = AsyncExitStack()
+
+    class MockSession:
+        def __init__(self, connection: MockConnection | None = None) -> None:
+            self._connection = connection
+
+    connection = MockConnection()
+    old_session = MockSession(connection)
+    new_session = MockSession()
+    async with connection.exit_stack:
+        register_task_session("shared", cast(ServerSession, old_session))
+        register_task_session("shared", cast(ServerSession, new_session))
+
+    assert get_task_session("shared") is new_session
+    _task_sessions.clear()
 
 
 def test_replaced_task_session_is_not_removed_by_old_weakref():
