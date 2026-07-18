@@ -136,14 +136,32 @@ python_functions = ["test_*"]
 addopts = ["--inline-snapshot=disable"]
 
 [tool.ty.src]
-include = ["fastmcp_slim", "fastmcp_remote", "tests"]
-exclude = ["**/node_modules", "**/__pycache__", ".venv", ".git", "dist"]
+include = ["fastmcp_slim", "fastmcp_remote", "tests", "examples"]
+exclude = [
+    "**/node_modules",
+    "**/__pycache__",
+    ".venv",
+    ".git",
+    "dist",
+    # Example subtrees excluded from the ty gate. Each either pins its own
+    # fastmcp (resolved against a different install) or requires a third-party
+    # dependency not installed in this tree.
+    "examples/testing_demo",             # own uv.lock, targets fastmcp v1 on purpose
+    "examples/atproto_mcp",              # needs atproto (+ its own package)
+    "examples/smart_home",              # needs phue
+    "examples/apps/qr_server",          # needs qrcode
+    "examples/providers/sqlite",        # needs aiosqlite
+    "examples/memory.py",               # needs asyncpg, numpy, pydantic_ai, pgvector
+    "examples/get_file.py",             # needs aiohttp
+]
 
 [tool.ty.environment]
 python-version = "3.10"
 
 [tool.ty.analysis]
-replace-imports-with-any = ["prefab_ui.**"]
+# prefab_ui is the apps SDK; pyautogui/PIL are optional runtime deps used only
+# inside example tool bodies (screenshot demos) and are not installed here.
+replace-imports-with-any = ["prefab_ui.**", "pyautogui", "PIL", "PIL.**"]
 
 [tool.ty.rules]
 division-by-zero = "warn"

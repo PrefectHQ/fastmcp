@@ -28,9 +28,7 @@ from fastmcp import FastMCP
 
 
 class SurgeSettings(BaseSettings):
-    model_config: SettingsConfigDict = SettingsConfigDict(
-        env_prefix="SURGE_", env_file=".env"
-    )
+    model_config = SettingsConfigDict(env_prefix="SURGE_", env_file=".env")
 
     api_key: str
     account_id: str

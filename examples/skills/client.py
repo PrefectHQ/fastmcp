@@ -41,7 +41,7 @@ async def main():
         print("=== Resource Templates ===")
         templates = await client.list_resource_templates()
         for t in templates:
-            print(f"  {t.uriTemplate}")
+            print(f"  {t.uri_template}")
         print()
 
         # Read a skill's main file

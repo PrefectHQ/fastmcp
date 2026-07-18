@@ -1,67 +1,53 @@
-/* Banner styling -- improve readability with better contrast */
+/* Banner: an animated brand-rainbow wash behind Mintlify's white text.
+   Mintlify always renders banner text white, so every gradient stop is a
+   deep, saturated shade (all >=7:1 on white) — the colors evoke the FastMCP
+   watercolor logo while keeping the announcement legible in both themes.
+   A dark fallback color is configured in docs.json for the no-CSS case. */
 #banner {
-  background: #f1f5f9 !important;
-  color: #1e293b !important;
   font-size: 0.95rem !important;
   font-weight: 600 !important;
   padding-top: 12px !important;
   padding-bottom: 12px !important;
   overflow: hidden !important;
+  position: relative;
 }
 
 #banner::before {
   content: "";
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  inset: 0;
+  z-index: 0;
   background: linear-gradient(
     90deg,
-    rgba(6, 182, 212, 0.25) 0%,
-    rgba(6, 182, 212, 0.05) 25%,
-    rgba(6, 182, 212, 0.35) 50%,
-    rgba(6, 182, 212, 0.08) 75%,
-    rgba(6, 182, 212, 0.28) 100%
+    #1e40af 0%,
+    #5b21b6 22%,
+    #115e59 44%,
+    #9a3412 66%,
+    #9d174d 88%,
+    #1e40af 100%
   );
-  background-size: 300% 100%;
-  animation: colorWave 14s ease-in-out infinite alternate;
+  background-size: 250% 100%;
+  animation: colorWave 18s ease-in-out infinite alternate;
   pointer-events: none;
 }
 
-.dark #banner {
-  background: #475569 !important;
-  color: #f1f5f9 !important;
-}
-
-.dark #banner::before {
-  background: linear-gradient(
-    90deg,
-    rgba(247, 37, 133, 0.35) 0%,
-    rgba(247, 37, 133, 0.08) 25%,
-    rgba(247, 37, 133, 0.45) 50%,
-    rgba(247, 37, 133, 0.12) 75%,
-    rgba(247, 37, 133, 0.38) 100%
-  );
-  background-size: 300% 100%;
+/* Keep the announcement text above the animated wash. */
+#banner > * {
+  position: relative;
+  z-index: 1;
 }
 
 @keyframes colorWave {
   0% {
-    background-position: 0% 0%;
+    background-position: 0% 50%;
   }
   100% {
-    background-position: 100% 0%;
+    background-position: 100% 50%;
   }
 }
 
 #banner * {
-  color: #1e293b !important;
   margin: 0 !important;
-}
-
-.dark #banner * {
-  color: #f1f5f9 !important;
 }
 
 @media (max-width: 767px) {
@@ -71,4 +57,3 @@
     padding-bottom: 8px !important;
   }
 }
-

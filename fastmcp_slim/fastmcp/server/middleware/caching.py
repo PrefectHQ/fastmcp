@@ -16,7 +16,7 @@ from key_value.aio.wrappers.statistics.wrapper import (
     KVStoreCollectionStatistics,
 )
 from pydantic import Field
-from typing_extensions import NotRequired, Self, override
+from typing_extensions import NotRequired, Self, TypeVar, override
 
 from fastmcp.prompts.base import Message, Prompt, PromptResult
 from fastmcp.resources.base import Resource, ResourceContent, ResourceResult
@@ -35,6 +35,18 @@ FIVE_MINUTES_IN_SECONDS = 300
 ONE_MB_IN_BYTES = 1024 * 1024
 
 ANONYMOUS_AUTH_KEY = "__anonymous__"
+
+BaseModelT = TypeVar("BaseModelT", bound=FastMCPBaseModel)
+
+
+def _to_base_model(value: FastMCPBaseModel, model_type: type[BaseModelT]) -> BaseModelT:
+    """Validate a component's public base fields without serializing its subclass."""
+    field_values = {
+        name: getattr(value, name)
+        for name, field in model_type.model_fields.items()
+        if not field.exclude
+    }
+    return model_type.model_validate(field_values)
 
 
 class CachableResourceContent(FastMCPBaseModel):
@@ -314,19 +326,7 @@ class ResponseCachingMiddleware(Middleware):
         tools: Sequence[Tool] = await call_next(context)
 
         # Turn any subclass of Tool into a Tool
-        cachable_tools: list[Tool] = [
-            Tool(
-                name=tool.name,
-                title=tool.title,
-                description=tool.description,
-                parameters=tool.parameters,
-                output_schema=tool.output_schema,
-                annotations=tool.annotations,
-                meta=tool.meta,
-                tags=tool.tags,
-            )
-            for tool in tools
-        ]
+        cachable_tools = [_to_base_model(tool, Tool) for tool in tools]
 
         await self._list_tools_cache.put(
             key=cache_key,
@@ -355,18 +355,8 @@ class ResponseCachingMiddleware(Middleware):
         resources: Sequence[Resource] = await call_next(context)
 
         # Turn any subclass of Resource into a Resource
-        cachable_resources: list[Resource] = [
-            Resource(
-                name=resource.name,
-                title=resource.title,
-                description=resource.description,
-                tags=resource.tags,
-                meta=resource.meta,
-                mime_type=resource.mime_type,
-                annotations=resource.annotations,
-                uri=resource.uri,
-            )
-            for resource in resources
+        cachable_resources = [
+            _to_base_model(resource, Resource) for resource in resources
         ]
 
         await self._list_resources_cache.put(
@@ -396,17 +386,7 @@ class ResponseCachingMiddleware(Middleware):
         prompts: Sequence[Prompt] = await call_next(context)
 
         # Turn any subclass of Prompt into a Prompt
-        cachable_prompts: list[Prompt] = [
-            Prompt(
-                name=prompt.name,
-                title=prompt.title,
-                description=prompt.description,
-                tags=prompt.tags,
-                meta=prompt.meta,
-                arguments=prompt.arguments,
-            )
-            for prompt in prompts
-        ]
+        cachable_prompts = [_to_base_model(prompt, Prompt) for prompt in prompts]
 
         await self._list_prompts_cache.put(
             key=cache_key,
