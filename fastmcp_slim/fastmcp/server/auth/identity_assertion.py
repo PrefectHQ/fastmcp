@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import time
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 from pydantic import BaseModel, Field, field_validator
@@ -130,6 +131,22 @@ class IdentityAssertion(BaseModel):
                 raise ValueError("trusted_issuers entries must be non-empty strings")
         return v
 
+    @field_validator("algorithm")
+    @classmethod
+    def _validate_algorithm(cls, v: str | None) -> str | None:
+        # Trusted issuers are verified via JWKS (public keys only), so the
+        # algorithm must be asymmetric — HS* (shared-secret) has no JWKS
+        # equivalent here, and anything JWTVerifier can't import (e.g. EdDSA)
+        # would otherwise surface as a 500 on the first exchange instead of a
+        # clean config error now.
+        if v is not None and not v.startswith(("RS", "PS", "ES")):
+            raise ValueError(
+                f"Unsupported algorithm {v!r} for identity assertion: trusted "
+                "issuers are verified via JWKS, so algorithm must be an "
+                "asymmetric JWS algorithm (RS*, PS*, or ES*), e.g. 'ES256'"
+            )
+        return v
+
 
 class IdentityAssertionError(Exception):
     """Raised when an ID-JAG fails validation.
@@ -211,6 +228,13 @@ class IdentityAssertionValidator:
             raise IdentityAssertionError(
                 f"OIDC discovery for issuer {issuer!r} failed: {e}"
             ) from e
+        if not isinstance(body, dict):
+            # Valid JSON that isn't an object (e.g. `[]` or a bare string) —
+            # guard before .get() so a misbehaving discovery endpoint maps to
+            # invalid_grant, not a 500 on every subsequent exchange.
+            raise IdentityAssertionError(
+                f"OIDC discovery document for issuer {issuer!r} is not a JSON object"
+            )
 
         jwks_uri = body.get("jwks_uri")
         if not jwks_uri or not isinstance(jwks_uri, str):
@@ -239,11 +263,20 @@ class IdentityAssertionValidator:
         self._verifiers[issuer] = verifier
         return verifier
 
-    async def validate(self, assertion: str) -> dict:
+    async def validate(
+        self, assertion: str, *, client_id: str, resource_url: str | None
+    ) -> dict:
         """Validate an ID-JAG and return its claims.
 
         Args:
             assertion: The compact-serialized ID-JAG JWT.
+            client_id: The authenticated client presenting the assertion. Must
+                match the assertion's signed `client_id` claim — checked before
+                the jti is recorded as consumed, so an assertion presented by
+                the wrong client is rejected without burning it for the right
+                one.
+            resource_url: This server's resource URL, if configured. Must match
+                the assertion's signed `resource` claim, for the same reason.
 
         Returns:
             The verified claims (including `sub`, `iss`, and any `resource`/`scope`).
@@ -288,10 +321,10 @@ class IdentityAssertionValidator:
         claims = access_token.claims
 
         now = time.time()
-        exp = claims.get("exp")
-        iat = claims.get("iat")
-        nbf = claims.get("nbf")
-        if not exp:
+        exp = _numeric_date_claim(claims, "exp")
+        iat = _numeric_date_claim(claims, "iat")
+        nbf = _numeric_date_claim(claims, "nbf")
+        if exp is None:
             raise IdentityAssertionError("Assertion must include exp claim")
         if nbf is not None and nbf > now + self.CLOCK_SKEW_SECONDS:
             raise IdentityAssertionError("Assertion is not yet valid (nbf in future)")
@@ -321,7 +354,36 @@ class IdentityAssertionValidator:
                     f"Assertion missing required scopes: {sorted(missing)}"
                 )
 
-        # 6. jti replay rejection (RFC 7523 §3).
+        # 6. The signed client_id and resource claims bind the assertion to the
+        # presenting client and this server. Checked here — before jti is
+        # recorded as consumed below — so an assertion presented with the
+        # wrong binding is rejected without burning replay protection for
+        # whichever client/server it actually belongs to.
+        assertion_client_id = claims.get("client_id")
+        if not assertion_client_id or assertion_client_id != client_id:
+            raise IdentityAssertionError(
+                f"Assertion client_id {assertion_client_id!r} does not match "
+                f"authenticated client {client_id!r}"
+            )
+        if resource_url is not None:
+            assertion_resource = claims.get("resource")
+            if not isinstance(assertion_resource, str) or not assertion_resource:
+                raise IdentityAssertionError("Assertion is missing resource claim")
+            if server_url_has_query(resource_url):
+                claim_matches = assertion_resource.rstrip("/") == resource_url.rstrip(
+                    "/"
+                )
+            else:
+                claim_matches = normalize_resource_url(
+                    assertion_resource
+                ) == normalize_resource_url(resource_url)
+            if not claim_matches:
+                raise IdentityAssertionError(
+                    f"Assertion resource {assertion_resource!r} does not match "
+                    f"this server {resource_url!r}"
+                )
+
+        # 7. jti replay rejection (RFC 7523 §3).
         jti = claims.get("jti")
         if not jti:
             raise IdentityAssertionError("Assertion must include jti claim")
@@ -344,6 +406,41 @@ class IdentityAssertionValidator:
 
         logger.debug("ID-JAG validated for subject=%s issuer=%s", sub, iss)
         return claims
+
+
+def normalize_resource_url(url: str) -> str:
+    """Normalize a resource URL by removing query parameters and trailing slashes.
+
+    RFC 8707 allows clients to include query parameters in resource URLs, but
+    the server's configured resource URL typically doesn't include them. This
+    normalizes both sides for comparison by stripping query and fragment.
+    """
+    parsed = urlparse(str(url))
+    return urlunparse(
+        (parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", "", "")
+    )
+
+
+def server_url_has_query(url: str) -> bool:
+    """Check if a URL has query parameters."""
+    return bool(urlparse(str(url)).query)
+
+
+def _numeric_date_claim(claims: dict, name: str) -> float | None:
+    """Read a NumericDate claim (RFC 7519 §2), rejecting non-numeric values.
+
+    A validly-signed assertion could still carry a malformed `exp`/`iat`/`nbf`
+    (e.g. a string, from a misbehaving IdP); comparing against it directly
+    would raise `TypeError` outside the validation-error path. `bool` is
+    excluded even though it subclasses `int` in Python — `true`/`false` are
+    not timestamps.
+    """
+    value = claims.get(name)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise IdentityAssertionError(f"Assertion {name} claim must be a number")
+    return float(value)
 
 
 def _assertion_scopes(claims: dict) -> list[str]:

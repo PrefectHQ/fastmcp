@@ -1395,53 +1395,21 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     "invalid_target", "Resource does not match this server"
                 )
 
+        # SEP-990: the assertion's signed client_id and resource claims (checked
+        # against the authenticated client and this server) bind the assertion
+        # before its jti is recorded as consumed — passed into validate() itself
+        # so that binding happens ahead of replay-tracking, not after.
         try:
-            claims = await self._identity_assertion_validator.validate(params.assertion)
+            claims = await self._identity_assertion_validator.validate(
+                params.assertion,
+                client_id=client.client_id or "",
+                resource_url=str(self._resource_url) if self._resource_url else None,
+            )
         except IdentityAssertionError as e:
             # Log detail server-side; return a generic error to the client so we
             # do not leak which validation step failed.
             logger.info("ID-JAG rejected: %s", e)
             raise TokenError("invalid_grant", "Invalid identity assertion") from e
-
-        # SEP-990: the ID-JAG's signed `client_id` must match the presenting
-        # client. Proxy DCR clients are public, so `client.client_id` alone is
-        # self-asserted — the IdP's signed binding is what stops client B from
-        # redeeming an assertion minted for client A.
-        assertion_client_id = claims.get("client_id")
-        if not assertion_client_id or assertion_client_id != client.client_id:
-            logger.info(
-                "ID-JAG rejected: assertion client_id %r does not match "
-                "authenticated client %r",
-                assertion_client_id,
-                client.client_id,
-            )
-            raise TokenError("invalid_grant", "Invalid identity assertion")
-
-        # SEP-990: the issued token is audience-restricted by the ID-JAG's
-        # signed `resource` claim, not merely the client-controlled request
-        # indicator. When this proxy knows its resource URL, the assertion must
-        # name it — otherwise an assertion minted for server A could be redeemed
-        # at server B behind the same identity provider.
-        if self._resource_url:
-            assertion_resource = claims.get("resource")
-            server_url = str(self._resource_url)
-            if not isinstance(assertion_resource, str) or not assertion_resource:
-                logger.info("ID-JAG rejected: missing resource claim")
-                raise TokenError("invalid_grant", "Invalid identity assertion")
-            if _server_url_has_query(server_url):
-                claim_matches = assertion_resource.rstrip("/") == server_url.rstrip("/")
-            else:
-                claim_matches = _normalize_resource_url(
-                    assertion_resource
-                ) == _normalize_resource_url(server_url)
-            if not claim_matches:
-                logger.info(
-                    "ID-JAG rejected: assertion resource %r does not match "
-                    "this server %r",
-                    assertion_resource,
-                    server_url,
-                )
-                raise TokenError("invalid_grant", "Invalid identity assertion")
 
         subject = str(claims["sub"])
 

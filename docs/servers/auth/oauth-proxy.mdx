@@ -714,6 +714,15 @@ identity_assertion=IdentityAssertion(
 )
 ```
 
+Verification assumes `RS256` unless the issuer signs with another algorithm, in which case set `algorithm` explicitly (any asymmetric JWS algorithm — `RS*`, `PS*`, or `ES*` — since assertions are verified against a published JWKS, not a shared secret):
+
+```python
+identity_assertion=IdentityAssertion(
+    trusted_issuers=["https://login.acme-corp.com"],
+    algorithm="ES256",
+)
+```
+
 The subject asserted in the ID-JAG flows into the normal FastMCP auth context. Tools read it through `get_access_token()` exactly as they would for any other token, because the proxy issues the access token through its own token factory.
 
 <Warning>

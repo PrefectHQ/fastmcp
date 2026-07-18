@@ -65,12 +65,14 @@ def _mint_id_jag(
     nbf_offset: int | None = None,
     client_id: str | None = "mcp-client",
     resource: str | None = RESOURCE,
+    claim_overrides: dict | None = None,
 ) -> str:
     """Mint a fake ID-JAG JWT with full control over header and claims.
 
     `client_id` and `resource` default to values matching the standard test
     client and this server's resource URL — SEP-990 binds the assertion to
     both, and the exchange enforces the bindings. Pass `None` to omit.
+    `claim_overrides` is merged in last, for injecting malformed values.
     """
     now = int(time.time())
     header = {"alg": "RS256", "typ": typ, "kid": "idp-key-1"}
@@ -91,6 +93,8 @@ def _mint_id_jag(
         payload["nbf"] = now + nbf_offset
     if scope is not None:
         payload["scope"] = scope
+    if claim_overrides:
+        payload.update(claim_overrides)
     signing_key = jwk.import_key(key_pair.private_key.get_secret_value(), "RSA")
     return jwt.encode(header, payload, signing_key, algorithms=["RS256"])
 
@@ -174,6 +178,18 @@ class TestIdentityAssertionConfig:
     def test_rejects_blank_issuer(self):
         with pytest.raises(ValueError):
             IdentityAssertion(trusted_issuers=["  "])
+
+    @pytest.mark.parametrize("algorithm", ["ES256", "PS256", "RS384"])
+    def test_accepts_asymmetric_algorithm(self, algorithm: str):
+        IdentityAssertion(trusted_issuers=[ISSUER], algorithm=algorithm)
+
+    @pytest.mark.parametrize("algorithm", ["HS256", "EdDSA", "none", ""])
+    def test_rejects_incompatible_or_unsupported_algorithm(self, algorithm: str):
+        # HS* has no JWKS equivalent (shared secret, not a public key); EdDSA
+        # and other unimportable algorithms would otherwise surface as a 500
+        # on the first exchange rather than a clean config error now.
+        with pytest.raises(ValueError):
+            IdentityAssertion(trusted_issuers=[ISSUER], algorithm=algorithm)
 
     def test_defaults(self):
         cfg = IdentityAssertion(trusted_issuers=[ISSUER])
@@ -487,6 +503,27 @@ class TestValidationMatrix:
         assert resp.status_code == 200
         assert resp.json()["access_token"]
 
+    @pytest.mark.parametrize("claim", ["exp", "iat", "nbf"])
+    @pytest.mark.parametrize("bad_value", ["not-a-number", [], {}, True])
+    async def test_non_numeric_temporal_claim_rejected(
+        self,
+        idp_key: RSAKeyPair,
+        config: IdentityAssertion,
+        claim: str,
+        bad_value: object,
+    ):
+        # A validly-signed assertion could still carry a malformed exp/iat/nbf
+        # (a misbehaving IdP); comparing against it must map to invalid_grant,
+        # not an unhandled TypeError. `True`/`False` are excluded even though
+        # bool subclasses int in Python.
+        proxy = _make_proxy(config)
+        assertion = _mint_id_jag(idp_key, claim_overrides={claim: bad_value})
+
+        resp = await _post_token(proxy, assertion)
+
+        assert resp.status_code == 401
+        assert resp.json()["error"] == "invalid_grant"
+
     async def test_non_object_payload_rejected(
         self, idp_key: RSAKeyPair, config: IdentityAssertion
     ):
@@ -528,6 +565,49 @@ class TestValidationMatrix:
 
         assert resp.status_code == 401
         assert resp.json()["error"] == "invalid_grant"
+
+    async def test_wrong_client_binding_does_not_consume_jti(
+        self, idp_key: RSAKeyPair, config: IdentityAssertion
+    ):
+        # An assertion presented by the wrong client must be rejected WITHOUT
+        # its jti being recorded as consumed -- otherwise the client it
+        # actually belongs to would find that same jti already "replayed"
+        # when it (or a retry) presents a correctly-bound assertion. Two
+        # distinct, validly-signed tokens sharing one jti value is exactly
+        # the scenario jti replay tracking cares about, regardless of what
+        # else differs between them.
+        proxy = _make_proxy(config)
+        shared_jti = "jti-shared-client"
+        wrong_client = _mint_id_jag(
+            idp_key, client_id="some-other-client", jti=shared_jti
+        )
+
+        rejected = await _post_token(proxy, wrong_client)
+        assert rejected.status_code == 401
+        assert rejected.json()["error"] == "invalid_grant"
+
+        correct_client = _mint_id_jag(idp_key, client_id="mcp-client", jti=shared_jti)
+        accepted = await _post_token(proxy, correct_client, register=False)
+        assert accepted.status_code == 200
+
+    async def test_wrong_resource_binding_does_not_consume_jti(
+        self, idp_key: RSAKeyPair, config: IdentityAssertion
+    ):
+        proxy = _make_proxy(config)
+        shared_jti = "jti-shared-resource"
+        wrong_resource = _mint_id_jag(
+            idp_key,
+            resource="https://other-server.example.com/mcp",
+            jti=shared_jti,
+        )
+
+        rejected = await _post_token(proxy, wrong_resource)
+        assert rejected.status_code == 401
+        assert rejected.json()["error"] == "invalid_grant"
+
+        correct_resource = _mint_id_jag(idp_key, jti=shared_jti)  # default = RESOURCE
+        accepted = await _post_token(proxy, correct_resource, register=False)
+        assert accepted.status_code == 200
 
     async def test_assertion_without_client_id_rejected(
         self, idp_key: RSAKeyPair, config: IdentityAssertion
@@ -675,6 +755,22 @@ class TestIssuerKeyDiscovery:
 
         assert resp.status_code == 200
         assert resp.json()["access_token"]
+
+    async def test_non_object_discovery_body_rejected(
+        self, idp_key: RSAKeyPair, httpx_mock: HTTPXMock
+    ):
+        # A discovery endpoint returning valid JSON that isn't an object (e.g.
+        # a bare array) must map to invalid_grant, not a 500 on `.get()`.
+        oidc_config_url = ISSUER.rstrip("/") + "/.well-known/openid-configuration"
+        httpx_mock.add_response(url=oidc_config_url, json=[])
+
+        proxy = _make_proxy(IdentityAssertion(trusted_issuers=[ISSUER]))
+        assertion = _mint_id_jag(idp_key)
+
+        resp = await _post_token(proxy, assertion)
+
+        assert resp.status_code == 401
+        assert resp.json()["error"] == "invalid_grant"
 
 
 class TestGrantTypeEnforcement:
