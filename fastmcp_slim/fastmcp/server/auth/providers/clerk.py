@@ -31,7 +31,7 @@ from __future__ import annotations
 import contextlib
 from typing import Literal
 
-import httpx
+import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl
 
@@ -67,7 +67,7 @@ class ClerkTokenVerifier(TokenVerifier):
         client_secret: str | None = None,
         required_scopes: list[str] | None = None,
         timeout_seconds: int = 10,
-        http_client: httpx.AsyncClient | None = None,
+        http_client: httpx2.AsyncClient | None = None,
     ):
         """Initialize the Clerk token verifier.
 
@@ -77,7 +77,7 @@ class ClerkTokenVerifier(TokenVerifier):
             client_secret: Clerk OAuth client secret, used for introspection endpoint authentication
             required_scopes: Required OAuth scopes (e.g., ["openid", "email", "profile"])
             timeout_seconds: HTTP request timeout
-            http_client: Optional httpx.AsyncClient for connection pooling. When provided,
+            http_client: Optional httpx2.AsyncClient for connection pooling. When provided,
                 the client is reused across calls and the caller is responsible for its
                 lifecycle. When None (default), a fresh client is created per call.
         """
@@ -107,7 +107,7 @@ class ClerkTokenVerifier(TokenVerifier):
             async with (
                 contextlib.nullcontext(self._http_client)
                 if self._http_client is not None
-                else httpx.AsyncClient(timeout=self.timeout_seconds)
+                else httpx2.AsyncClient(timeout=self.timeout_seconds)
             ) as client:
                 # Step 1: Validate token via introspection (RFC 7662).
                 # Security-critical checks (active, audience, scopes) come first.
@@ -229,7 +229,7 @@ class ClerkTokenVerifier(TokenVerifier):
                 logger.debug("Clerk token verified successfully for sub=%s", sub)
                 return access_token
 
-        except httpx.RequestError as e:
+        except httpx2.RequestError as e:
             logger.debug("Failed to verify Clerk token: %s", e)
             return None
         except Exception as e:
@@ -293,7 +293,7 @@ class ClerkProvider(OAuthProxy):
         fastmcp_access_token_expiry_seconds: int | None = None,
         token_expiry_threshold_seconds: int = 0,
         extra_authorize_params: dict[str, str] | None = None,
-        http_client: httpx.AsyncClient | None = None,
+        http_client: httpx2.AsyncClient | None = None,
         enable_cimd: bool = True,
     ):
         """Initialize Clerk OAuth provider.
@@ -331,7 +331,7 @@ class ClerkProvider(OAuthProxy):
             consent_csp_policy: Custom CSP policy for the consent page.
             extra_authorize_params: Additional parameters to forward to Clerk's authorization
                 endpoint. Example: {"prompt": "login"} to force re-authentication.
-            http_client: Optional httpx.AsyncClient for connection pooling in token verification.
+            http_client: Optional httpx2.AsyncClient for connection pooling in token verification.
                 When provided, the client is reused across verify_token calls and the caller
                 is responsible for its lifecycle. When None (default), a fresh client is created
                 per call.

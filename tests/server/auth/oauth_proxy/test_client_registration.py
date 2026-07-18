@@ -1,6 +1,6 @@
 """Tests for OAuth proxy client registration (DCR)."""
 
-import httpx
+import httpx2
 import pytest
 from mcp.server.auth.provider import RegistrationError
 from mcp.shared.auth import OAuthClientInformationFull
@@ -175,9 +175,9 @@ class TestOAuthProxyClientRegistration:
         oauth_proxy.update_default_scopes(["read", "write", "calendar"])
 
         app = Starlette(routes=oauth_proxy.get_routes())
-        transport = httpx.ASGITransport(app=app)
+        transport = httpx2.ASGITransport(app=app)
 
-        async with httpx.AsyncClient(
+        async with httpx2.AsyncClient(
             transport=transport,
             base_url="https://myserver.com",
         ) as client:

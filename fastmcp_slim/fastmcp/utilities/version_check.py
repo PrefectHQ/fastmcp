@@ -6,7 +6,7 @@ import json
 import time
 from pathlib import Path
 
-import httpx
+import httpx2
 from packaging.version import Version
 
 from fastmcp.utilities.logging import get_logger
@@ -66,7 +66,7 @@ def _fetch_latest_version(include_prereleases: bool = False) -> str | None:
         The latest version string, or None if the fetch failed.
     """
     try:
-        response = httpx.get(PYPI_URL, timeout=REQUEST_TIMEOUT_SECONDS)
+        response = httpx2.get(PYPI_URL, timeout=REQUEST_TIMEOUT_SECONDS)
         response.raise_for_status()
         data = response.json()
 
@@ -91,7 +91,7 @@ def _fetch_latest_version(include_prereleases: bool = False) -> str | None:
 
         return str(max(versions))
 
-    except (httpx.HTTPError, json.JSONDecodeError, KeyError):
+    except (httpx2.HTTPError, json.JSONDecodeError, KeyError):
         return None
 
 

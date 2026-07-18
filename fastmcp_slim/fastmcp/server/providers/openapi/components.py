@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
-import httpx
+import httpx2
 from mcp_types import ToolAnnotations
 from pydantic.networks import AnyUrl
 
@@ -19,6 +19,11 @@ from fastmcp.resources import (
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.utilities.exceptions import (
+    HTTP_STATUS_ERRORS,
+    REQUEST_ERRORS,
+    TIMEOUT_ERRORS,
+)
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.openapi import HTTPRoute
 from fastmcp.utilities.openapi.director import RequestDirector
@@ -41,7 +46,7 @@ _SAFE_HEADERS = frozenset(
 )
 
 
-def _redact_headers(headers: httpx.Headers) -> dict[str, str]:
+def _redact_headers(headers: httpx2.Headers) -> dict[str, str]:
     return {k: v if k.lower() in _SAFE_HEADERS else "***" for k, v in headers.items()}
 
 
@@ -138,7 +143,7 @@ class OpenAPITool(Tool):
 
     def __init__(
         self,
-        client: httpx.AsyncClient,
+        client: httpx2.AsyncClient,
         route: HTTPRoute,
         director: RequestDirector,
         name: str,
@@ -169,12 +174,24 @@ class OpenAPITool(Tool):
         # not HTTP failures, so we catch them separately.
         try:
             base_url = str(self._client.base_url) or "http://localhost"
-            request = self._director.build(self._route, arguments, base_url)
+            directed_request = self._director.build(self._route, arguments, base_url)
 
-            if self._client.headers:
-                for key, value in self._client.headers.items():
-                    if key not in request.headers:
-                        request.headers[key] = value
+            # Rebuild through the user's client so the request object comes
+            # from whichever httpx library the client belongs to (a legacy
+            # httpx.AsyncClient cannot send an httpx2.Request). Primitive
+            # values (str/bytes/tuples) cross that boundary safely; client
+            # default headers merge in with directed headers taking priority,
+            # matching the previous manual merge.
+            request = self._client.build_request(
+                method=directed_request.method,
+                url=str(directed_request.url.copy_with(query=None)),
+                params=list(directed_request.url.params.multi_items()),
+                headers=list(directed_request.headers.raw),
+                # read() materializes streaming bodies (multipart files=)
+                # that .content would refuse with RequestNotRead; idempotent
+                # for plain byte bodies.
+                content=directed_request.read(),
+            )
 
             mcp_headers = get_http_headers()
             if mcp_headers:
@@ -221,22 +238,24 @@ class OpenAPITool(Tool):
             except json.JSONDecodeError:
                 return ToolResult(content=response.text)
 
-        except httpx.HTTPStatusError as e:
+        except HTTP_STATUS_ERRORS as e:
+            status_error = cast("httpx2.HTTPStatusError", e)
             error_message = (
-                f"HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+                f"HTTP error {status_error.response.status_code}: "
+                f"{status_error.response.reason_phrase}"
             )
             try:
-                error_data = e.response.json()
+                error_data = status_error.response.json()
                 error_message += f" - {error_data}"
             except (json.JSONDecodeError, ValueError):
-                if e.response.text:
-                    error_message += f" - {e.response.text}"
+                if status_error.response.text:
+                    error_message += f" - {status_error.response.text}"
             raise ValueError(error_message) from e
 
-        except httpx.TimeoutException as e:
+        except TIMEOUT_ERRORS as e:
             raise ValueError(f"HTTP request timed out ({type(e).__name__})") from e
 
-        except httpx.RequestError as e:
+        except REQUEST_ERRORS as e:
             raise ValueError(f"Request error ({type(e).__name__}): {e!s}") from e
 
 
@@ -247,7 +266,7 @@ class OpenAPIResource(Resource):
 
     def __init__(
         self,
-        client: httpx.AsyncClient,
+        client: httpx2.AsyncClient,
         route: HTTPRoute,
         director: RequestDirector,
         uri: str,
@@ -279,13 +298,17 @@ class OpenAPIResource(Resource):
             directed_request = self._director.build(
                 self._route, self._arguments, base_url
             )
+            # Primitive values only: a legacy httpx.AsyncClient cannot accept
+            # httpx2 URL/QueryParams/Headers objects.
             request = self._client.build_request(
                 method=directed_request.method,
-                url=directed_request.url.copy_with(query=None),
-                params=directed_request.url.params,
-                headers=directed_request.headers,
-                content=directed_request.content,
-                extensions=directed_request.extensions,
+                url=str(directed_request.url.copy_with(query=None)),
+                params=list(directed_request.url.params.multi_items()),
+                headers=list(directed_request.headers.raw),
+                # read() materializes streaming bodies (multipart files=)
+                # that .content would refuse with RequestNotRead; idempotent
+                # for plain byte bodies.
+                content=directed_request.read(),
             )
             mcp_headers = get_http_headers()
             if mcp_headers:
@@ -320,22 +343,24 @@ class OpenAPIResource(Resource):
                     ]
                 )
 
-        except httpx.HTTPStatusError as e:
+        except HTTP_STATUS_ERRORS as e:
+            status_error = cast("httpx2.HTTPStatusError", e)
             error_message = (
-                f"HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+                f"HTTP error {status_error.response.status_code}: "
+                f"{status_error.response.reason_phrase}"
             )
             try:
-                error_data = e.response.json()
+                error_data = status_error.response.json()
                 error_message += f" - {error_data}"
             except (json.JSONDecodeError, ValueError):
-                if e.response.text:
-                    error_message += f" - {e.response.text}"
+                if status_error.response.text:
+                    error_message += f" - {status_error.response.text}"
             raise ValueError(error_message) from e
 
-        except httpx.TimeoutException as e:
+        except TIMEOUT_ERRORS as e:
             raise ValueError(f"HTTP request timed out ({type(e).__name__})") from e
 
-        except httpx.RequestError as e:
+        except REQUEST_ERRORS as e:
             raise ValueError(f"Request error ({type(e).__name__}): {e!s}") from e
 
 
@@ -353,7 +378,7 @@ class OpenAPIResourceTemplate(ResourceTemplate):
 
     def __init__(
         self,
-        client: httpx.AsyncClient,
+        client: httpx2.AsyncClient,
         route: HTTPRoute,
         director: RequestDirector,
         uri_template: str,

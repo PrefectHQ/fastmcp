@@ -172,7 +172,7 @@ class TestRequestDirector:
         assert request.url == "https://api.example.com/users/123"
         assert (
             request.content == b""
-        )  # httpx.Request sets content to empty bytes for GET
+        )  # httpx2.Request sets content to empty bytes for GET
 
     def test_build_complex_request(self, director, complex_route):
         """Test building a complex request with multiple parameter types."""

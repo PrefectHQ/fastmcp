@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import TypedDict
 
-import httpx
+import httpx2
 from pydantic import AnyHttpUrl, SecretStr
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -37,7 +37,7 @@ class PropelAuthTokenIntrospectionOverrides(TypedDict, total=False):
     timeout_seconds: int
     cache_ttl_seconds: int | None
     max_cache_size: int | None
-    http_client: httpx.AsyncClient | None
+    http_client: httpx2.AsyncClient | None
 
 
 class PropelAuthProvider(RemoteAuthProvider):
@@ -156,7 +156,7 @@ class PropelAuthProvider(RemoteAuthProvider):
         async def oauth_authorization_server_metadata(request):
             """Forward PropelAuth OAuth authorization server metadata"""
             try:
-                async with httpx.AsyncClient() as client:
+                async with httpx2.AsyncClient() as client:
                     response = await client.get(
                         f"{self._normalized_auth_url}/.well-known/oauth-authorization-server/oauth/2.1"
                     )

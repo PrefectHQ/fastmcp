@@ -19,7 +19,7 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast, overload
 
-import httpx
+import httpx2
 import mcp_types
 from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
@@ -85,6 +85,7 @@ from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.tools.tool_transform import ToolTransformConfig
 from fastmcp.utilities.components import FastMCPComponent, _coerce_version
+from fastmcp.utilities.exceptions import HTTP_STATUS_ERRORS, TIMEOUT_ERRORS
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import AnyFunction, FastMCPBaseModel, NotSet, NotSetT
 from fastmcp.utilities.versions import (
@@ -104,10 +105,15 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+# Both-library catch tuples for user-supplied code that may still raise legacy
+# httpx exceptions; see fastmcp.utilities.exceptions for the defensive import.
+_ACTIONABLE_HTTP_STATUS_ERRORS = HTTP_STATUS_ERRORS
+_ACTIONABLE_TIMEOUT_ERRORS = TIMEOUT_ERRORS
+
 
 def _version_request_meta(
     version: VersionSpec | None,
-) -> dict[str, Any] | None:
+) -> mcp_types.RequestParamsMeta | None:
     if version is None:
         return None
 
@@ -127,9 +133,8 @@ def _version_request_meta(
     if not version_value:
         return None
 
-    # SDK v2: request `_meta` is a plain dict (the `Meta` type alias), not the
-    # old `RequestParams.Meta` nested model.
-    return {"fastmcp": {"version": version_value}}
+    # RequestParamsMeta does not declare application-specific extension keys.
+    return cast(mcp_types.RequestParamsMeta, {"fastmcp": {"version": version_value}})
 
 
 # The MCP SDK warns "Tool X not listed, no validation will be performed"
@@ -1245,9 +1250,7 @@ class FastMCP(
                     message=mcp_types.CallToolRequestParams(
                         name=name,
                         arguments=arguments or {},
-                        # `_meta` carries the app-level `fastmcp` version key, which the
-                        # reserved-key RequestParamsMeta TypedDict can't express statically.
-                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # ty: ignore[invalid-argument-type]
+                        _meta=_version_request_meta(version),
                     ),
                     source="client",
                     type="request",
@@ -1339,12 +1342,15 @@ class FastMCP(
                     logger.exception(f"Error calling tool {name!r}")
                     # Handle actionable errors that should reach the LLM
                     # even when masking is enabled
-                    if isinstance(e, httpx.HTTPStatusError):
-                        if e.response.status_code == 429:
+                    if isinstance(e, _ACTIONABLE_HTTP_STATUS_ERRORS):
+                        if (
+                            cast("httpx2.HTTPStatusError", e).response.status_code
+                            == 429
+                        ):
                             raise ToolError(
                                 "Rate limited by upstream API, please retry later"
                             ) from e
-                    if isinstance(e, httpx.TimeoutException):
+                    if isinstance(e, _ACTIONABLE_TIMEOUT_ERRORS):
                         raise ToolError(
                             "Upstream request timed out, please retry"
                         ) from e
@@ -1415,9 +1421,7 @@ class FastMCP(
                 mw_context = MiddlewareContext(
                     message=mcp_types.ReadResourceRequestParams(
                         uri=str(uri),
-                        # `_meta` carries the app-level `fastmcp` version key, which the
-                        # reserved-key RequestParamsMeta TypedDict can't express statically.
-                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # ty: ignore[invalid-argument-type]
+                        _meta=_version_request_meta(version),
                     ),
                     source="client",
                     type="request",
@@ -1476,12 +1480,15 @@ class FastMCP(
                     except Exception as e:
                         logger.exception(f"Error reading resource {uri!r}")
                         # Handle actionable errors that should reach the LLM
-                        if isinstance(e, httpx.HTTPStatusError):
-                            if e.response.status_code == 429:
+                        if isinstance(e, _ACTIONABLE_HTTP_STATUS_ERRORS):
+                            if (
+                                cast("httpx2.HTTPStatusError", e).response.status_code
+                                == 429
+                            ):
                                 raise ResourceError(
                                     "Rate limited by upstream API, please retry later"
                                 ) from e
-                        if isinstance(e, httpx.TimeoutException):
+                        if isinstance(e, _ACTIONABLE_TIMEOUT_ERRORS):
                             raise ResourceError(
                                 "Upstream request timed out, please retry"
                             ) from e
@@ -1538,12 +1545,15 @@ class FastMCP(
                 except Exception as e:
                     logger.exception(f"Error reading resource {uri!r}")
                     # Handle actionable errors that should reach the LLM
-                    if isinstance(e, httpx.HTTPStatusError):
-                        if e.response.status_code == 429:
+                    if isinstance(e, _ACTIONABLE_HTTP_STATUS_ERRORS):
+                        if (
+                            cast("httpx2.HTTPStatusError", e).response.status_code
+                            == 429
+                        ):
                             raise ResourceError(
                                 "Rate limited by upstream API, please retry later"
                             ) from e
-                    if isinstance(e, httpx.TimeoutException):
+                    if isinstance(e, _ACTIONABLE_TIMEOUT_ERRORS):
                         raise ResourceError(
                             "Upstream request timed out, please retry"
                         ) from e
@@ -1612,9 +1622,7 @@ class FastMCP(
                     message=mcp_types.GetPromptRequestParams(
                         name=name,
                         arguments=arguments,
-                        # `_meta` carries the app-level `fastmcp` version key, which the
-                        # reserved-key RequestParamsMeta TypedDict can't express statically.
-                        _meta=_version_request_meta(version),  # type: ignore[unknown-argument]  # ty: ignore[invalid-argument-type]
+                        _meta=_version_request_meta(version),
                     ),
                     source="client",
                     type="request",
@@ -2179,7 +2187,7 @@ class FastMCP(
     def from_openapi(
         cls,
         openapi_spec: dict[str, Any],
-        client: httpx.AsyncClient | None = None,
+        client: httpx2.AsyncClient | None = None,
         name: str = "OpenAPI Server",
         route_maps: list[RouteMap] | None = None,
         route_map_fn: OpenAPIRouteMapFn | None = None,
@@ -2194,8 +2202,10 @@ class FastMCP(
 
         Args:
             openapi_spec: OpenAPI schema as a dictionary
-            client: Optional httpx AsyncClient for making HTTP requests.
-                If not provided, a default client is created using the first
+            client: Optional httpx2 AsyncClient for making HTTP requests.
+                An httpx (v1) AsyncClient is also accepted and works via
+                duck-typing. If not provided, a default client is created
+                using the first
                 server URL from the OpenAPI spec with a 30-second timeout.
             name: Name for the MCP server
             route_maps: Optional list of RouteMap objects defining route mappings
@@ -2249,7 +2259,7 @@ class FastMCP(
             route_map_fn: Optional callable for advanced route type mapping
             mcp_component_fn: Optional callable for component customization
             mcp_names: Optional dictionary mapping operationId to component names
-            httpx_client_kwargs: Optional kwargs passed to httpx.AsyncClient.
+            httpx_client_kwargs: Optional kwargs passed to httpx2.AsyncClient.
                 Use this to configure timeout and other client settings.
             tags: Optional set of tags to add to all components
             **settings: Additional settings passed to FastMCP
@@ -2263,8 +2273,8 @@ class FastMCP(
             httpx_client_kwargs = {}
         httpx_client_kwargs.setdefault("base_url", "http://fastapi")
 
-        client = httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
+        client = httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
             **httpx_client_kwargs,
         )
 

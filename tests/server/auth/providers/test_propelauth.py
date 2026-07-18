@@ -3,7 +3,7 @@
 from typing import cast
 from unittest.mock import AsyncMock
 
-import httpx
+import httpx2
 import pytest
 from mcp import MCPError
 from pydantic import SecretStr
@@ -139,7 +139,7 @@ class TestPropelAuthProvider:
 
     def test_token_introspection_overrides_http_client(self):
         """Test that http_client override is passed to the verifier."""
-        client = httpx.AsyncClient()
+        client = httpx2.AsyncClient()
         provider = PropelAuthProvider(
             auth_url="https://auth.example.com",
             introspection_client_id="client_id_123",
@@ -271,7 +271,7 @@ async def mcp_server_url():
 class TestPropelAuthProviderIntegration:
     async def test_unauthorized_access(self, mcp_server_url: str):
         # SDK v2 surfaces the server's 401 as a generic MCPError at the client
-        # boundary rather than re-raising httpx.HTTPStatusError.
+        # boundary rather than re-raising httpx2.HTTPStatusError.
         with pytest.raises(MCPError):
             async with Client(mcp_server_url) as client:
                 tools = await client.list_tools()  # noqa: F841
@@ -315,10 +315,10 @@ class TestPropelAuthProviderIntegration:
                 DummyAsyncClient.last_url = url
                 return DummyResponse(metadata_payload)
 
-        real_httpx_client = httpx.AsyncClient
+        real_httpx_client = httpx2.AsyncClient
 
         monkeypatch.setattr(
-            "fastmcp.server.auth.providers.propelauth.httpx.AsyncClient",
+            "fastmcp.server.auth.providers.propelauth.httpx2.AsyncClient",
             DummyAsyncClient,
         )
 

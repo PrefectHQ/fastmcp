@@ -8,11 +8,11 @@ from joserfc import jwk as jose_jwk
 from joserfc import jwt
 from joserfc.jws import JWSRegistry
 from joserfc.registry import HeaderParameter
-from pytest_httpx import HTTPXMock
 
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.jwt import JWKData, JWKSData, JWTVerifier, RSAKeyPair
 from fastmcp.utilities.tests import run_server_async
+from tests.utilities.httpx2_mock import HTTPXMock
 
 # Standard public IP used for DNS mocking in tests
 TEST_PUBLIC_IP = "93.184.216.34"

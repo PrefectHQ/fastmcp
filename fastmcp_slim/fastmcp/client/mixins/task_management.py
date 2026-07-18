@@ -166,10 +166,8 @@ class ClientTaskManagementMixin:
             )
 
             # Send protocol request
-            params = PaginatedRequestParams(
-                cursor=cursor,
-                limit=limit,  # type: ignore[call-arg]  # Optional field in MCP SDK  # ty:ignore[unknown-argument]
-                _meta=request_meta,  # type: ignore[unknown-argument]
+            params = PaginatedRequestParams.model_validate(
+                {"cursor": cursor, "limit": limit, "_meta": request_meta}
             )
             request = ListTasksRequest(params=params)
             server_response = await self._await_with_session_monitoring(

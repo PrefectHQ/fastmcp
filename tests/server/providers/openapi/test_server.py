@@ -1,6 +1,6 @@
 """Unit tests for OpenAPIProvider."""
 
-import httpx
+import httpx2
 import pytest
 
 from fastmcp import FastMCP
@@ -146,7 +146,7 @@ class TestOpenAPIProviderBasicFunctionality:
 
     def test_provider_initialization(self, simple_openapi_spec):
         """Test provider initialization with OpenAPI spec."""
-        client = httpx.AsyncClient(base_url="https://api.example.com")
+        client = httpx2.AsyncClient(base_url="https://api.example.com")
         provider = OpenAPIProvider(openapi_spec=simple_openapi_spec, client=client)
 
         # Should have initialized RequestDirector successfully
@@ -155,7 +155,7 @@ class TestOpenAPIProviderBasicFunctionality:
 
     def test_server_with_provider(self, simple_openapi_spec):
         """Test server initialization with OpenAPIProvider."""
-        client = httpx.AsyncClient(base_url="https://api.example.com")
+        client = httpx2.AsyncClient(base_url="https://api.example.com")
         provider = OpenAPIProvider(openapi_spec=simple_openapi_spec, client=client)
 
         mcp = FastMCP("Test Server")
@@ -165,7 +165,7 @@ class TestOpenAPIProviderBasicFunctionality:
 
     async def test_provider_creates_tools_from_spec(self, simple_openapi_spec):
         """Test that provider creates tools from OpenAPI spec."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             provider = OpenAPIProvider(openapi_spec=simple_openapi_spec, client=client)
 
             mcp = FastMCP("Test Server")
@@ -183,7 +183,7 @@ class TestOpenAPIProviderBasicFunctionality:
 
     async def test_provider_tool_execution(self, simple_openapi_spec):
         """Test tool execution uses RequestDirector."""
-        mock_client = httpx.AsyncClient()
+        mock_client = httpx2.AsyncClient()
         provider = OpenAPIProvider(openapi_spec=simple_openapi_spec, client=mock_client)
 
         mcp = FastMCP("Test Server")
@@ -203,7 +203,7 @@ class TestOpenAPIProviderBasicFunctionality:
         """Test that omitting client creates one from the spec's servers URL."""
         provider = OpenAPIProvider(openapi_spec=simple_openapi_spec)
         assert str(provider._client.base_url).rstrip("/") == "https://api.example.com"
-        assert provider._client.timeout == httpx.Timeout(DEFAULT_TIMEOUT)
+        assert provider._client.timeout == httpx2.Timeout(DEFAULT_TIMEOUT)
 
     def test_provider_default_client_requires_servers(self):
         """Test that omitting client without servers in spec raises."""
@@ -223,7 +223,7 @@ class TestOpenAPIProviderBasicFunctionality:
             "paths": {},
         }
 
-        client = httpx.AsyncClient(base_url="https://api.example.com")
+        client = httpx2.AsyncClient(base_url="https://api.example.com")
         provider = OpenAPIProvider(openapi_spec=minimal_spec, client=client)
 
         # Should handle empty paths gracefully
@@ -325,7 +325,7 @@ class TestOpenAPIProviderBasicFunctionality:
             },
         }
 
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             provider = OpenAPIProvider(
                 openapi_spec=spec_with_unused_defs, client=client
             )

@@ -3,14 +3,14 @@
 import time
 from urllib.parse import parse_qs, urlparse
 
-import httpx
+import httpx2
 import pytest
-from authlib.integrations.httpx_client import AsyncOAuth2Client
 from key_value.aio.stores.memory import MemoryStore
 from starlette.applications import Starlette
 
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.oauth_proxy.models import OAuthTransaction
+from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client
 
 
 class TestOAuthProxyInitialization:
@@ -221,9 +221,9 @@ class TestOAuthProxyInitialization:
         )
 
         app = Starlette(routes=proxy.get_routes())
-        transport = httpx.ASGITransport(app=app)
+        transport = httpx2.ASGITransport(app=app)
 
-        async with httpx.AsyncClient(
+        async with httpx2.AsyncClient(
             transport=transport, base_url="https://api.example.com"
         ) as client:
             response = await client.get("/.well-known/oauth-authorization-server")
@@ -339,9 +339,9 @@ class TestIdpCallbackErrorForwarding:
         await oauth_proxy._transaction_store.put(key=txn_id, value=transaction)
 
         app = Starlette(routes=oauth_proxy.get_routes())
-        transport = httpx.ASGITransport(app=app)
+        transport = httpx2.ASGITransport(app=app)
 
-        async with httpx.AsyncClient(
+        async with httpx2.AsyncClient(
             transport=transport,
             base_url="https://myserver.com",
             follow_redirects=False,
@@ -380,9 +380,9 @@ class TestIdpCallbackErrorForwarding:
         await oauth_proxy._transaction_store.put(key=txn_id, value=transaction)
 
         app = Starlette(routes=oauth_proxy.get_routes())
-        transport = httpx.ASGITransport(app=app)
+        transport = httpx2.ASGITransport(app=app)
 
-        async with httpx.AsyncClient(
+        async with httpx2.AsyncClient(
             transport=transport,
             base_url="https://myserver.com",
             follow_redirects=False,
@@ -400,9 +400,9 @@ class TestIdpCallbackErrorForwarding:
         expired, the proxy must return a local HTML error page — there is no
         trusted client redirect_uri to forward to."""
         app = Starlette(routes=oauth_proxy.get_routes())
-        transport = httpx.ASGITransport(app=app)
+        transport = httpx2.ASGITransport(app=app)
 
-        async with httpx.AsyncClient(
+        async with httpx2.AsyncClient(
             transport=transport,
             base_url="https://myserver.com",
             follow_redirects=False,

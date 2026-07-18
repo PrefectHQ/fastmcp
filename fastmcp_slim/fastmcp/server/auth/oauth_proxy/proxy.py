@@ -29,9 +29,8 @@ from typing import Any, Literal
 from urllib.parse import urlencode, urlparse, urlunparse
 
 import anyio
-import httpx
+import httpx2
 from authlib.common.security import generate_token
-from authlib.integrations.httpx_client import AsyncOAuth2Client
 from cryptography.fernet import Fernet
 from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
@@ -100,6 +99,7 @@ from fastmcp.server.auth.oauth_proxy.models import (
     _hash_token,
 )
 from fastmcp.server.auth.oauth_proxy.ui import create_error_html
+from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client
 from fastmcp.server.auth.redirect_validation import validate_redirect_uri
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
@@ -223,7 +223,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
        - Clean up one-time use authorization code
 
     5. Token Refresh:
-       - Forward refresh requests to upstream using authlib
+       - Forward refresh requests to upstream
        - Handle token rotation if upstream issues new refresh token
        - Update local token mappings
 
@@ -341,7 +341,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 Disable only if upstream provider doesn't support PKCE.
             token_endpoint_auth_method: Token endpoint authentication method for upstream server.
                 Common values: "client_secret_basic", "client_secret_post", "none".
-                If None, authlib will use its default (typically "client_secret_basic").
+                Defaults to "client_secret_basic".
             extra_authorize_params: Additional parameters to forward to the upstream authorization endpoint.
                 Useful for provider-specific parameters like Auth0's "audience".
                 Example: {"audience": "https://api.example.com"}
@@ -2165,7 +2165,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Attempt upstream revocation if endpoint is configured
         if self._upstream_revocation_endpoint:
             try:
-                async with httpx.AsyncClient(
+                async with httpx2.AsyncClient(
                     timeout=HTTP_TIMEOUT_SECONDS
                 ) as http_client:
                     revocation_data: dict[str, str] = {"token": token.token}
@@ -2480,8 +2480,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 )
 
                 # Build token exchange parameters
-                token_params = {
-                    "url": self._upstream_token_endpoint,
+                token_params: dict[str, Any] = {
                     "code": idp_code,
                     "redirect_uri": idp_redirect_uri,
                 }
@@ -2513,8 +2512,12 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
                 # Exchange IdP code for tokens (server-side)
                 async with self._upstream_oauth_client() as oauth_client:
+                    # url is passed by keyword: the _create_upstream_oauth_client
+                    # override point is duck-typed, and alternative clients may
+                    # declare it keyword-only (the refresh_token sites already
+                    # call by keyword).
                     idp_tokens: dict[str, Any] = await oauth_client.fetch_token(
-                        **token_params
+                        url=self._upstream_token_endpoint, **token_params
                     )
 
                 logger.debug(

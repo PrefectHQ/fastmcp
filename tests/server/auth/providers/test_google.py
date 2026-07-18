@@ -5,7 +5,6 @@ import time
 
 import pytest
 from key_value.aio.stores.memory import MemoryStore
-from pytest_httpx import HTTPXMock
 
 from fastmcp.server.auth.providers.google import (
     GOOGLE_SCOPE_ALIASES,
@@ -13,6 +12,7 @@ from fastmcp.server.auth.providers.google import (
     GoogleTokenVerifier,
     _normalize_google_scope,
 )
+from tests.utilities.httpx2_mock import HTTPXMock
 
 
 @pytest.fixture

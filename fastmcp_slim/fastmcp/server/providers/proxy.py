@@ -14,7 +14,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any, cast
 
 import anyio
-import httpx
+import httpx2
 import mcp_types
 from mcp.server.connection import Connection
 from mcp.server.context import ServerRequestContext
@@ -127,7 +127,7 @@ class ProxyInitializeMiddleware(Middleware):
         except (
             RuntimeError,
             TimeoutError,
-            httpx.HTTPError,
+            httpx2.HTTPError,
             anyio.ClosedResourceError,
             anyio.EndOfStream,
             anyio.BrokenResourceError,
