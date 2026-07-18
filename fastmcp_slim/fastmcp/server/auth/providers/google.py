@@ -176,6 +176,7 @@ class GoogleTokenVerifier(TokenVerifier):
                     client_id=sub,
                     scopes=token_scopes,
                     expires_at=expires_at,
+                    subject=sub,
                     claims={
                         "sub": sub,
                         "aud": aud,

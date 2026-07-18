@@ -154,6 +154,7 @@ class GitHubTokenVerifier(TokenVerifier):
                     client_id=str(user_data.get("id", "unknown")),  # Use GitHub user ID
                     scopes=token_scopes,
                     expires_at=None,  # GitHub tokens don't typically expire
+                    subject=str(user_data["id"]),
                     claims={
                         "sub": str(user_data["id"]),
                         "login": user_data.get("login"),

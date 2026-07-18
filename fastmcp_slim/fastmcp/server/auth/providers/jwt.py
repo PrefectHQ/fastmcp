@@ -588,6 +588,7 @@ class JWTVerifier(TokenVerifier):
                 client_id=str(client_id),
                 scopes=scopes,
                 expires_at=int(exp) if exp is not None else None,
+                subject=claims.get("sub"),
                 claims=claims,
             )
 
@@ -676,5 +677,6 @@ class StaticTokenVerifier(TokenVerifier):
             client_id=token_data["client_id"],
             scopes=scopes,
             expires_at=expires_at,
+            subject=token_data.get("sub"),
             claims=token_data,
         )

@@ -105,6 +105,7 @@ class WorkOSTokenVerifier(TokenVerifier):
                     client_id=str(user_data.get("sub", "unknown")),
                     scopes=token_scopes,
                     expires_at=None,  # Will be set from token introspection if needed
+                    subject=user_data.get("sub"),
                     claims={
                         "sub": user_data.get("sub"),
                         "email": user_data.get("email"),

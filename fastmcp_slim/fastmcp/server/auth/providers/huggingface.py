@@ -134,6 +134,7 @@ class HuggingFaceTokenVerifier(TokenVerifier):
                     client_id=str(sub),
                     scopes=token_scopes,
                     expires_at=None,
+                    subject=str(sub),
                     claims={
                         "sub": str(sub),
                         "name": userinfo.get("name"),
