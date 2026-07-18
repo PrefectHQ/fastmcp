@@ -14,6 +14,7 @@ import yaml
 
 from fastmcp import Client, FastMCP
 from fastmcp.tools import ToolResult
+from fastmcp.types import TextContent
 
 
 def with_serializer(serializer: Callable[[Any], str]):
@@ -59,7 +60,8 @@ async def example_usage():
         # YAML serialized tool
         yaml_result = await client.call_tool("get_example_data", {})
         print("YAML Tool Result:")
-        print(yaml_result.data)
+        if yaml_result.content and isinstance(yaml_result.content[0], TextContent):
+            print(yaml_result.content[0].text)
         print()
 
         # Default JSON serialized tool
