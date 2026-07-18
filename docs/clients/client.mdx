@@ -234,6 +234,27 @@ async with client:
     fresh = await client.list_tools_mcp(cache_mode="refresh")
 ```
 
+### Sharing a cache across clients
+
+The default cache lives in each client's process. To share cached responses across a fleet — a set of proxy replicas backed by one Redis, for example — pass a `KeyValueResponseCacheStore`, FastMCP's adapter over the same `AsyncKeyValue` key-value abstraction the event store and OAuth proxy use. It accepts any compatible backend (memory, Redis, and more).
+
+A shared store mingles responses from different principals, so it requires an explicit `partition` that isolates them. Derive the partition from a verified credential — never from request data or the server URL — and construct a new client when the principal changes. Only responses the server marks `"public"` are ever served across partitions.
+
+```python
+from fastmcp import Client
+from fastmcp.client.caching import KeyValueResponseCacheStore
+from mcp.client.caching import CacheConfig
+from key_value.aio.stores.redis import RedisStore
+
+backend = RedisStore(url="redis://localhost")
+store = KeyValueResponseCacheStore(storage=backend)
+
+config = CacheConfig(store=store, partition="tenant-a", target_id="weather-api")
+client = Client("https://example.com/mcp", mode="auto", cache=config)
+```
+
+The adapter serializes each result through a type-tagged envelope validated against an allowlist of cacheable result models, so a value naming an unknown type is treated as a cache miss rather than deserialized blindly. Each store instance owns its own collection namespace; `clear()` affects only that namespace, never another tenant's entries.
+
 ## Operations
 
 FastMCP clients interact with three types of server components.

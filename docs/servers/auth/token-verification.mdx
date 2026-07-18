@@ -327,21 +327,21 @@ This pattern enables comprehensive testing of JWT validation logic without depen
 
 <VersionBadge version="2.18.0" />
 
-All token verifiers that make HTTP calls accept an optional `http_client` parameter. This lets you provide your own `httpx.AsyncClient` for connection pooling, custom TLS configuration, or proxy settings.
+All token verifiers that make HTTP calls accept an optional `http_client` parameter. This lets you provide your own `httpx2.AsyncClient` for connection pooling, custom TLS configuration, or proxy settings.
 
 ### Connection Pooling
 
 By default, each token verification call creates a fresh HTTP client. Under high load, this means repeated TCP connections and TLS handshakes. Providing a shared client enables connection pooling across calls:
 
 ```python
-import httpx
+import httpx2
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.introspection import IntrospectionTokenVerifier
 
 # Create a shared client with connection pooling
-http_client = httpx.AsyncClient(
+http_client = httpx2.AsyncClient(
     timeout=10,
-    limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+    limits=httpx2.Limits(max_connections=20, max_keepalive_connections=10),
 )
 
 verifier = IntrospectionTokenVerifier(
@@ -378,7 +378,7 @@ from contextlib import asynccontextmanager
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.introspection import IntrospectionTokenVerifier
 
-http_client = httpx.AsyncClient(timeout=10)
+http_client = httpx2.AsyncClient(timeout=10)
 
 verifier = IntrospectionTokenVerifier(
     introspection_url="https://auth.example.com/introspect",

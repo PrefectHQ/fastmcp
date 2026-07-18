@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 from urllib.parse import urlparse
 
-import httpx
+import httpx2
 from pydantic import (
     AnyUrl,
     BaseModel,
@@ -229,9 +229,9 @@ class RemoteMCPServer(BaseModel):
 
     # Authentication
     auth: Annotated[
-        str | Literal["oauth"] | httpx.Auth | None,
+        str | Literal["oauth"] | httpx2.Auth | None,
         Field(
-            description='Either a string representing a Bearer token, the literal "oauth" to use OAuth authentication, or an httpx.Auth instance for custom authentication.',
+            description='Either a string representing a Bearer token, the literal "oauth" to use OAuth authentication, or an httpx2.Auth instance for custom authentication.',
         ),
     ] = None
 

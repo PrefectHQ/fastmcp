@@ -1,6 +1,6 @@
 """Tests for Scalekit OAuth provider."""
 
-import httpx
+import httpx2
 import pytest
 from mcp import MCPError
 
@@ -155,7 +155,7 @@ def client_with_headless_oauth(mcp_server_url: str) -> Client:
 class TestScalekitProviderIntegration:
     async def test_unauthorized_access(self, mcp_server_url: str):
         # SDK v2 surfaces the server's 401 as a generic MCPError at the client
-        # boundary rather than re-raising httpx.HTTPStatusError.
+        # boundary rather than re-raising httpx2.HTTPStatusError.
         with pytest.raises(MCPError):
             async with Client(mcp_server_url) as client:
                 tools = await client.list_tools()  # noqa: F841
@@ -199,10 +199,10 @@ class TestScalekitProviderIntegration:
                 DummyAsyncClient.last_url = url
                 return DummyResponse(metadata_payload)
 
-        real_httpx_client = httpx.AsyncClient
+        real_httpx_client = httpx2.AsyncClient
 
         monkeypatch.setattr(
-            "fastmcp.server.auth.providers.scalekit.httpx.AsyncClient",
+            "fastmcp.server.auth.providers.scalekit.httpx2.AsyncClient",
             DummyAsyncClient,
         )
 

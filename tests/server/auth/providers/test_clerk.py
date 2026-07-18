@@ -2,12 +2,12 @@
 
 import re
 
-import httpx
+import httpx2
 import pytest
 from key_value.aio.stores.memory import MemoryStore
-from pytest_httpx import HTTPXMock
 
 from fastmcp.server.auth.providers.clerk import ClerkProvider, ClerkTokenVerifier
+from tests.utilities.httpx2_mock import HTTPXMock
 
 CLERK_DOMAIN = "test-instance.clerk.accounts.dev"
 
@@ -496,7 +496,7 @@ class TestClerkTokenVerifier:
     async def test_network_error_returns_none(self, httpx_mock: HTTPXMock):
         """Network errors during introspection return None instead of raising."""
         httpx_mock.add_exception(
-            httpx.ConnectError("Connection refused"),
+            httpx2.ConnectError("Connection refused"),
             url=_INTROSPECTION_RE,
         )
 

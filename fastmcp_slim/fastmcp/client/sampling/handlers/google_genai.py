@@ -2,6 +2,7 @@
 
 import base64
 from collections.abc import Sequence
+from typing import Any, cast
 from uuid import uuid4
 
 try:
@@ -123,7 +124,7 @@ class GoogleGenaiSamplingHandler:
                     max_output_tokens=params.max_tokens,
                     stop_sequences=params.stop_sequences,
                     thinking_config=thinking_config,
-                    tools=google_tools,  # ty: ignore[invalid-argument-type]
+                    tools=cast(Any, google_tools),
                     tool_config=tool_config,
                 ),
             )

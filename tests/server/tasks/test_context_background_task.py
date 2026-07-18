@@ -6,7 +6,9 @@ no mocking of Redis, Docket, or session internals.
 """
 
 import asyncio
+import gc
 import json
+from contextlib import AsyncExitStack
 from datetime import datetime, timezone
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
@@ -40,7 +42,10 @@ from fastmcp.server.tasks.context import (
     TaskContextInfo,
     TaskContextSnapshot,
     _remember_snapshot,
+    _task_sessions,
     get_task_scope,
+    get_task_session,
+    register_task_session,
 )
 from fastmcp.server.tasks.elicitation import handle_task_input
 from fastmcp.server.tasks.keys import (
@@ -75,6 +80,86 @@ class TestContextBackgroundTaskSupport:
         ctx = Context(mcp, task_id="test-task-123")
         with pytest.raises(AttributeError):
             setattr(ctx, "task_id", "new-id")
+
+
+async def test_task_session_is_released_after_client_disconnect():
+    _task_sessions.clear()
+    mcp = FastMCP("test")
+
+    @mcp.tool(task=True)
+    async def work() -> str:
+        return "done"
+
+    async with Client(mcp) as client:
+        task = await client.call_tool("work", task=True)
+        await task.result()
+        assert len(_task_sessions) == 1
+
+    assert _task_sessions == {}
+
+
+async def test_live_task_session_is_released_on_connection_disconnect():
+    _task_sessions.clear()
+
+    class MockConnection:
+        def __init__(self) -> None:
+            self.state: dict[str, object] = {}
+            self.exit_stack = AsyncExitStack()
+
+    class MockSession:
+        def __init__(self, connection: MockConnection) -> None:
+            self._connection = connection
+
+    connection = MockConnection()
+    session = MockSession(connection)
+    async with connection.exit_stack:
+        register_task_session("session", cast(ServerSession, session))
+        session_ref = _task_sessions["session"]
+
+    assert session_ref() is session
+    assert _task_sessions == {}
+
+
+async def test_connection_cleanup_does_not_remove_replacement_session():
+    _task_sessions.clear()
+
+    class MockConnection:
+        def __init__(self) -> None:
+            self.state: dict[str, object] = {}
+            self.exit_stack = AsyncExitStack()
+
+    class MockSession:
+        def __init__(self, connection: MockConnection | None = None) -> None:
+            self._connection = connection
+
+    connection = MockConnection()
+    old_session = MockSession(connection)
+    new_session = MockSession()
+    async with connection.exit_stack:
+        register_task_session("shared", cast(ServerSession, old_session))
+        register_task_session("shared", cast(ServerSession, new_session))
+
+    assert get_task_session("shared") is new_session
+    _task_sessions.clear()
+
+
+def test_replaced_task_session_is_not_removed_by_old_weakref():
+    _task_sessions.clear()
+
+    class MockSession:
+        pass
+
+    old_session = MockSession()
+    new_session = MockSession()
+    register_task_session("shared", cast(ServerSession, old_session))
+    old_ref = _task_sessions["shared"]
+    register_task_session("shared", cast(ServerSession, new_session))
+
+    del old_session
+    gc.collect()
+
+    assert old_ref() is None
+    assert get_task_session("shared") is new_session
 
 
 class TestContextSessionProperty:

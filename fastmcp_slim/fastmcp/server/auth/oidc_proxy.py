@@ -12,7 +12,7 @@ This implementation is based on:
 from collections.abc import Sequence
 from typing import Any, Literal
 
-import httpx
+import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl, BaseModel, model_validator
 from typing_extensions import Self
@@ -162,7 +162,7 @@ class OIDCConfiguration(BaseModel):
             get_kwargs["timeout"] = timeout_seconds
 
         try:
-            response = httpx.get(str(config_url), **get_kwargs)
+            response = httpx2.get(str(config_url), **get_kwargs)
             response.raise_for_status()
 
             config_data = response.json()
@@ -289,7 +289,7 @@ class OIDCProxy(OAuthProxy):
                 provided, the upstream client secret will be used to derive a 32-byte key using PBKDF2.
             token_endpoint_auth_method: Token endpoint authentication method for upstream server.
                 Common values: "client_secret_basic", "client_secret_post", "none".
-                If None, authlib will use its default (typically "client_secret_basic").
+                Defaults to "client_secret_basic".
             require_authorization_consent: Whether to require user consent before authorizing clients (default True).
                 When True, users see a consent screen before being redirected to the upstream IdP.
                 When False, authorization proceeds directly without user confirmation.

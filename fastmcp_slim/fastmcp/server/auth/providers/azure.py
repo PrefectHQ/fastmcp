@@ -10,7 +10,7 @@ import hashlib
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-import httpx
+import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 
 from fastmcp.dependencies import Dependency
@@ -120,7 +120,7 @@ class AzureProvider(OAuthProxy):
         token_expiry_threshold_seconds: int = 0,
         base_authority: str = "login.microsoftonline.com",
         token_issuer: str | None = None,
-        http_client: httpx.AsyncClient | None = None,
+        http_client: httpx2.AsyncClient | None = None,
         enable_cimd: bool = True,
     ) -> None:
         """Initialize Azure OAuth provider.
@@ -176,7 +176,7 @@ class AzureProvider(OAuthProxy):
                 When "external", the built-in consent screen is skipped but no warning is
                 logged, indicating that consent is handled externally (e.g. by the upstream IdP).
                 SECURITY WARNING: Only set to False for local development or testing environments.
-            http_client: Optional httpx.AsyncClient for connection pooling in JWKS fetches.
+            http_client: Optional httpx2.AsyncClient for connection pooling in JWKS fetches.
                 When provided, the client is reused for JWT key fetches and the caller
                 is responsible for its lifecycle. When None (default), a fresh client is created per fetch.
             enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
@@ -881,13 +881,13 @@ def EntraOBOToken(scopes: list[str]) -> str:
     Example:
         ```python
         from fastmcp.server.auth.providers.azure import EntraOBOToken
-        import httpx
+        import httpx2
 
         @mcp.tool()
         async def get_my_emails(
             graph_token: str = EntraOBOToken(["https://graph.microsoft.com/Mail.Read"])
         ):
-            async with httpx.AsyncClient() as client:
+            async with httpx2.AsyncClient() as client:
                 resp = await client.get(
                     "https://graph.microsoft.com/v1.0/me/messages",
                     headers={"Authorization": f"Bearer {graph_token}"}

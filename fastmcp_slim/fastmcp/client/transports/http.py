@@ -7,7 +7,7 @@ import ssl
 from collections.abc import AsyncIterator
 from typing import Any, Literal, cast
 
-import httpx
+import httpx2
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared._httpx_utils import McpHttpClientFactory, create_mcp_http_client
@@ -27,7 +27,7 @@ class StreamableHttpTransport(ClientTransport):
         self,
         url: str | AnyUrl,
         headers: dict[str, str] | None = None,
-        auth: httpx.Auth | Literal["oauth"] | str | None = None,
+        auth: httpx2.Auth | Literal["oauth"] | str | None = None,
         httpx_client_factory: McpHttpClientFactory | None = None,
         verify: ssl.SSLContext | bool | str | None = None,
     ):
@@ -36,9 +36,9 @@ class StreamableHttpTransport(ClientTransport):
         Args:
             url: The MCP server endpoint URL.
             headers: Optional headers to include in requests.
-            auth: Authentication method - httpx.Auth, "oauth" for OAuth flow,
+            auth: Authentication method - httpx2.Auth, "oauth" for OAuth flow,
                 or a bearer token string.
-            httpx_client_factory: Optional factory for creating httpx.AsyncClient.
+            httpx_client_factory: Optional factory for creating httpx2.AsyncClient.
                 If provided, must accept keyword arguments: headers, auth,
                 follow_redirects, and optionally timeout. Using **kwargs is
                 recommended to ensure forward compatibility.
@@ -82,7 +82,7 @@ class StreamableHttpTransport(ClientTransport):
         # client we own (see connect_session / _capture_session_id).
         self._session_id: str | None = None
 
-    async def _capture_session_id(self, response: httpx.Response) -> None:
+    async def _capture_session_id(self, response: httpx2.Response) -> None:
         """httpx response event hook: record the server's `mcp-session-id`.
 
         The streamable HTTP server assigns the session id in the response to
@@ -93,8 +93,8 @@ class StreamableHttpTransport(ClientTransport):
         if sid:
             self._session_id = sid
 
-    def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
-        resolved: httpx.Auth | None
+    def _set_auth(self, auth: httpx2.Auth | Literal["oauth"] | str | None):
+        resolved: httpx2.Auth | None
         if auth == "oauth":
             resolved = OAuth(
                 self.url,
@@ -105,7 +105,7 @@ class StreamableHttpTransport(ClientTransport):
             auth._bind(self.url)
             # Only inject the transport's factory into OAuth if OAuth still
             # has the bare default — preserve any factory the caller attached
-            if auth.httpx_client_factory is httpx.AsyncClient:
+            if auth.httpx_client_factory is httpx2.AsyncClient:
                 factory = self.httpx_client_factory or self._make_verify_factory()
                 if factory is not None:
                     auth.httpx_client_factory = factory
@@ -114,7 +114,7 @@ class StreamableHttpTransport(ClientTransport):
             resolved = BearerAuth(auth)
         else:
             resolved = auth
-        self.auth: httpx.Auth | None = resolved
+        self.auth: httpx2.Auth | None = resolved
 
     def _make_verify_factory(self) -> McpHttpClientFactory | None:
         if self.verify is None:
@@ -123,11 +123,11 @@ class StreamableHttpTransport(ClientTransport):
 
         def factory(
             headers: dict[str, str] | None = None,
-            timeout: httpx.Timeout | None = None,
-            auth: httpx.Auth | None = None,
-        ) -> httpx.AsyncClient:
+            timeout: httpx2.Timeout | None = None,
+            auth: httpx2.Auth | None = None,
+        ) -> httpx2.AsyncClient:
             if timeout is None:
-                timeout = httpx.Timeout(30.0, read=300.0)
+                timeout = httpx2.Timeout(30.0, read=300.0)
             kwargs: dict[str, Any] = {
                 "follow_redirects": True,
                 "timeout": timeout,
@@ -137,7 +137,7 @@ class StreamableHttpTransport(ClientTransport):
                 kwargs["headers"] = headers
             if auth is not None:
                 kwargs["auth"] = auth
-            return httpx.AsyncClient(**kwargs)
+            return httpx2.AsyncClient(**kwargs)
 
         return cast(McpHttpClientFactory, factory)
 
@@ -156,10 +156,10 @@ class StreamableHttpTransport(ClientTransport):
 
         # Configure timeout if provided, preserving MCP's 30s connect default.
         # SDK v2 session read timeouts are float seconds (see SessionKwargs).
-        timeout: httpx.Timeout | None = None
+        timeout: httpx2.Timeout | None = None
         read_timeout_seconds = session_kwargs.get("read_timeout_seconds")
         if read_timeout_seconds is not None:
-            timeout = httpx.Timeout(30.0, read=read_timeout_seconds)
+            timeout = httpx2.Timeout(30.0, read=read_timeout_seconds)
 
         # Create httpx client from factory or use default with MCP-appropriate
         # timeouts. Note: create_mcp_http_client enables follow_redirects, but

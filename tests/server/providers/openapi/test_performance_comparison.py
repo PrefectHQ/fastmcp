@@ -3,7 +3,7 @@
 import gc
 import time
 
-import httpx
+import httpx2
 import pytest
 
 from fastmcp import FastMCP
@@ -173,7 +173,7 @@ class TestPerformance:
         # Measure provider initialization
         times = []
         for _ in range(num_iterations):
-            client = httpx.AsyncClient(base_url="https://api.example.com")
+            client = httpx2.AsyncClient(base_url="https://api.example.com")
             start_time = time.time()
             provider = OpenAPIProvider(
                 openapi_spec=comprehensive_spec,
@@ -201,7 +201,7 @@ class TestPerformance:
 
         times = []
         for _ in range(num_iterations):
-            client = httpx.AsyncClient(base_url="https://api.example.com")
+            client = httpx2.AsyncClient(base_url="https://api.example.com")
             start_time = time.time()
             server = create_openapi_server(
                 openapi_spec=comprehensive_spec,
@@ -224,7 +224,7 @@ class TestPerformance:
 
     async def test_functionality_after_optimization(self, comprehensive_spec):
         """Verify that performance optimization doesn't break functionality."""
-        client = httpx.AsyncClient(base_url="https://api.example.com")
+        client = httpx2.AsyncClient(base_url="https://api.example.com")
 
         server = create_openapi_server(
             openapi_spec=comprehensive_spec,
@@ -265,7 +265,7 @@ class TestPerformance:
 
         servers = []
         for i in range(10):
-            client = httpx.AsyncClient(base_url="https://api.example.com")
+            client = httpx2.AsyncClient(base_url="https://api.example.com")
             server = create_openapi_server(
                 openapi_spec=comprehensive_spec,
                 client=client,

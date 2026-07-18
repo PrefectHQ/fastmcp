@@ -28,7 +28,7 @@ import contextlib
 import time
 from typing import Any, Literal, get_args
 
-import httpx
+import httpx2
 from pydantic import AnyHttpUrl, SecretStr
 
 from fastmcp.server.auth import AccessToken, TokenVerifier
@@ -89,7 +89,7 @@ class IntrospectionTokenVerifier(TokenVerifier):
         base_url: AnyHttpUrl | str | None = None,
         cache_ttl_seconds: int | None = None,
         max_cache_size: int | None = None,
-        http_client: httpx.AsyncClient | None = None,
+        http_client: httpx2.AsyncClient | None = None,
     ):
         """
         Initialize the introspection token verifier.
@@ -109,7 +109,7 @@ class IntrospectionTokenVerifier(TokenVerifier):
                 (e.g., 300 for 5 minutes).
             max_cache_size: Maximum number of tokens to cache when caching is
                 enabled. Default: 10000.
-            http_client: Optional httpx.AsyncClient for connection pooling. When provided,
+            http_client: Optional httpx2.AsyncClient for connection pooling. When provided,
                 the client is reused across calls and the caller is responsible for its
                 lifecycle. When None (default), a fresh client is created per call.
         """
@@ -203,7 +203,7 @@ class IntrospectionTokenVerifier(TokenVerifier):
             async with (
                 contextlib.nullcontext(self._http_client)
                 if self._http_client is not None
-                else httpx.AsyncClient(timeout=self.timeout_seconds)
+                else httpx2.AsyncClient(timeout=self.timeout_seconds)
             ) as client:
                 # Prepare introspection request per RFC 7662
                 # Build request data with token and token_type_hint
@@ -292,12 +292,12 @@ class IntrospectionTokenVerifier(TokenVerifier):
                 self._cache.set(token, result)
                 return result
 
-        except httpx.TimeoutException:
+        except httpx2.TimeoutException:
             self.logger.debug(
                 "Token introspection timed out after %d seconds", self.timeout_seconds
             )
             return None
-        except httpx.RequestError as e:
+        except httpx2.RequestError as e:
             self.logger.debug("Token introspection request failed: %s", e)
             return None
         except Exception as e:

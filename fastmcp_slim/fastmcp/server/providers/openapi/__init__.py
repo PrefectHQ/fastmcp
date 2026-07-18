@@ -6,9 +6,9 @@ Example:
     ```python
     from fastmcp import FastMCP
     from fastmcp.server.providers.openapi import OpenAPIProvider
-    import httpx
+    import httpx2
 
-    client = httpx.AsyncClient(base_url="https://api.example.com")
+    client = httpx2.AsyncClient(base_url="https://api.example.com")
     provider = OpenAPIProvider(openapi_spec=spec, client=client)
     mcp = FastMCP("API Server", providers=[provider])
     ```

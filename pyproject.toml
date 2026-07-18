@@ -72,7 +72,7 @@ members = ["fastmcp_slim", "fastmcp_remote"]
 [tool.uv]
 default-groups = ["dev"]
 exclude-newer = "1 week"
-exclude-newer-package = { prefab-ui = false, mcp = false, mcp-types = false }
+exclude-newer-package = { prefab-ui = false, mcp = false, mcp-types = false, httpx2 = false, httpcore2 = false, truststore = false }
 
 [dependency-groups]
 dev = [
@@ -92,7 +92,6 @@ dev = [
     "pytest-cov>=6.1.1",
     "pytest-env>=1.1.5",
     "pytest-flakefinder>=1.1.0",
-    "pytest-httpx>=0.35.0",
     "pytest-report>=0.2.1",
     "pytest-retry>=1.7.0",
     "pytest-timeout>=2.4.0",

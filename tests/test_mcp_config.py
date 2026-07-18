@@ -715,26 +715,28 @@ async def test_canonical_multi_client_with_transforms(tmp_path: Path):
     script_path = tmp_path / "test.py"
     script_path.write_text(server_script)
 
-    config = CanonicalMCPConfig(
-        mcpServers={
-            "test_1": {
-                "command": "python",
-                "args": [str(script_path)],
-                "tools": {  # <--- Will be ignored as it's not valid for a canonical MCPConfig
-                    "add": {
-                        "name": "transformed_add",
-                        "arguments": {
-                            "a": {"name": "transformed_a"},
-                            "b": {"name": "transformed_b"},
-                        },
-                    }
+    config = CanonicalMCPConfig.model_validate(
+        {
+            "mcpServers": {
+                "test_1": {
+                    "command": "python",
+                    "args": [str(script_path)],
+                    "tools": {  # <--- Will be ignored as it's not valid for a canonical MCPConfig
+                        "add": {
+                            "name": "transformed_add",
+                            "arguments": {
+                                "a": {"name": "transformed_a"},
+                                "b": {"name": "transformed_b"},
+                            },
+                        }
+                    },
                 },
-            },
-            "test_2": {
-                "command": "python",
-                "args": [str(script_path)],
-            },
-        }  # type: ignore[reportUnknownArgumentType]  # ty:ignore[invalid-argument-type]
+                "test_2": {
+                    "command": "python",
+                    "args": [str(script_path)],
+                },
+            }
+        }
     )
 
     client = Client(config)

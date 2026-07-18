@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import httpx
+import httpx2
 import pytest
 
 from fastmcp.utilities.version_check import (
@@ -105,14 +105,14 @@ class TestFetchLatestVersion:
             }
         }
 
-        with patch("httpx.get", return_value=mock_response) as mock_get:
+        with patch("httpx2.get", return_value=mock_response) as mock_get:
             version = _fetch_latest_version()
             assert version == "2.5.0"
             mock_get.assert_called_once()
 
     def test_fetch_network_error(self):
         """Network error returns None."""
-        with patch("httpx.get", side_effect=httpx.HTTPError("Network error")):
+        with patch("httpx2.get", side_effect=httpx2.HTTPError("Network error")):
             version = _fetch_latest_version()
             assert version is None
 
@@ -121,7 +121,7 @@ class TestFetchLatestVersion:
         mock_response = MagicMock()
         mock_response.json.return_value = {"unexpected": "format"}
 
-        with patch("httpx.get", return_value=mock_response):
+        with patch("httpx2.get", return_value=mock_response):
             version = _fetch_latest_version()
             assert version is None
 
@@ -138,7 +138,7 @@ class TestFetchLatestVersion:
             },
         }
 
-        with patch("httpx.get", return_value=mock_response):
+        with patch("httpx2.get", return_value=mock_response):
             version = _fetch_latest_version(include_prereleases=True)
             assert version == "2.6.0b2"
 
@@ -154,7 +154,7 @@ class TestFetchLatestVersion:
             },
         }
 
-        with patch("httpx.get", return_value=mock_response):
+        with patch("httpx2.get", return_value=mock_response):
             version = _fetch_latest_version(include_prereleases=True)
             assert version == "2.5.0"
 
