@@ -25,7 +25,7 @@ def _mock_httpx_client(
     headers: dict[str, str] | None = None,
     body_chunks: list[bytes] | None = None,
 ) -> AsyncMock:
-    """Build a mock httpx.AsyncClient whose stream() yields a canned response.
+    """Build a mock httpx2.AsyncClient whose stream() yields a canned response.
 
     The returned client's ``.stream.call_args`` exposes the request that was made.
     """
@@ -667,7 +667,7 @@ class TestProxyMode:
         with (
             temporary_settings(ssrf_trust_proxy=True),
             patch("fastmcp.server.auth.ssrf.getproxies", return_value={}),
-            patch("httpx.AsyncClient") as mock_client_class,
+            patch("httpx2.AsyncClient") as mock_client_class,
         ):
             with pytest.raises(SSRFError, match="no HTTPS_PROXY/ALL_PROXY"):
                 await ssrf_safe_fetch("https://example.com/api")
@@ -680,7 +680,7 @@ class TestProxyMode:
         with (
             temporary_settings(ssrf_trust_proxy=True),
             patch("fastmcp.server.auth.ssrf.resolve_hostname") as mock_resolve,
-            patch("httpx.AsyncClient", return_value=mock_client) as mock_client_class,
+            patch("httpx2.AsyncClient", return_value=mock_client) as mock_client_class,
         ):
             content = await ssrf_safe_fetch("https://example.com/api")
 
@@ -710,7 +710,7 @@ class TestProxyMode:
         with (
             temporary_settings(ssrf_trust_proxy=True),
             patch("fastmcp.server.auth.ssrf.resolve_hostname"),
-            patch("httpx.AsyncClient", return_value=mock_client),
+            patch("httpx2.AsyncClient", return_value=mock_client),
         ):
             await ssrf_safe_fetch_response(
                 "https://example.com/api",
@@ -728,7 +728,7 @@ class TestProxyMode:
         with (
             temporary_settings(ssrf_trust_proxy=True),
             patch("fastmcp.server.auth.ssrf.resolve_hostname"),
-            patch("httpx.AsyncClient", return_value=mock_client),
+            patch("httpx2.AsyncClient", return_value=mock_client),
         ):
             with pytest.raises(SSRFFetchError, match="too large"):
                 await ssrf_safe_fetch("https://example.com/api", max_size=5120)
@@ -739,7 +739,7 @@ class TestProxyMode:
         with (
             temporary_settings(ssrf_trust_proxy=True),
             patch("fastmcp.server.auth.ssrf.resolve_hostname"),
-            patch("httpx.AsyncClient", return_value=mock_client),
+            patch("httpx2.AsyncClient", return_value=mock_client),
         ):
             with pytest.raises(SSRFFetchError, match="HTTP 404"):
                 await ssrf_safe_fetch("https://example.com/api")
@@ -753,7 +753,7 @@ class TestProxyMode:
                 "fastmcp.server.auth.ssrf.resolve_hostname",
                 return_value=[resolved_ip],
             ) as mock_resolve,
-            patch("httpx.AsyncClient", return_value=mock_client),
+            patch("httpx2.AsyncClient", return_value=mock_client),
         ):
             assert fastmcp.settings.ssrf_trust_proxy is False
             await ssrf_safe_fetch("https://example.com/api")
