@@ -7,13 +7,12 @@ served via httpx_mock, so no real network calls are made.
 
 import time
 
-import httpx
+import httpx2
 import pytest
 from joserfc import jwk, jwt
 from key_value.aio.stores.memory import MemoryStore
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
-from pytest_httpx import HTTPXMock
 
 from fastmcp import FastMCP
 from fastmcp.server.auth import IdentityAssertion
@@ -26,6 +25,7 @@ from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.oauth_proxy.models import ProxyDCRClient
 from fastmcp.server.auth.providers.jwt import RSAKeyPair
 from tests.server.auth.oauth_proxy.conftest import MockTokenVerifier
+from tests.utilities.httpx2_mock import HTTPXMock
 
 BASE_URL = "https://myserver.com"
 ISSUER = "https://login.acme-corp.com"
@@ -146,7 +146,7 @@ async def _post_token(
     request_scope: str | None = None,
     resource: str | None = None,
     register: bool = True,
-) -> httpx.Response:
+) -> httpx2.Response:
     """POST a jwt-bearer grant to the proxy's /token endpoint via an ASGI app.
 
     When ``register`` is True the standard test client is registered first; pass
@@ -155,7 +155,7 @@ async def _post_token(
     if register:
         await _register_client(proxy)
     app = FastMCP("ID-JAG Server", auth=proxy).http_app()
-    transport = httpx.ASGITransport(app=app)
+    transport = httpx2.ASGITransport(app=app)
     data = {
         "grant_type": JWT_BEARER_GRANT_TYPE,
         "assertion": assertion,
@@ -166,7 +166,7 @@ async def _post_token(
         data["scope"] = request_scope
     if resource is not None:
         data["resource"] = resource
-    async with httpx.AsyncClient(transport=transport, base_url=BASE_URL) as client:
+    async with httpx2.AsyncClient(transport=transport, base_url=BASE_URL) as client:
         return await client.post("/token", data=data)
 
 
@@ -183,11 +183,14 @@ class TestIdentityAssertionConfig:
     def test_accepts_asymmetric_algorithm(self, algorithm: str):
         IdentityAssertion(trusted_issuers=[ISSUER], algorithm=algorithm)
 
-    @pytest.mark.parametrize("algorithm", ["HS256", "EdDSA", "none", ""])
+    @pytest.mark.parametrize(
+        "algorithm", ["HS256", "EdDSA", "none", "", "RS999", "ES999"]
+    )
     def test_rejects_incompatible_or_unsupported_algorithm(self, algorithm: str):
-        # HS* has no JWKS equivalent (shared secret, not a public key); EdDSA
-        # and other unimportable algorithms would otherwise surface as a 500
-        # on the first exchange rather than a clean config error now.
+        # HS* has no JWKS equivalent (shared secret, not a public key); EdDSA,
+        # typo'd variants like RS999, and other unimportable algorithms would
+        # otherwise surface as a 500 on the first exchange rather than a clean
+        # config error now. The allowlist is exactly what JWTVerifier supports.
         with pytest.raises(ValueError):
             IdentityAssertion(trusted_issuers=[ISSUER], algorithm=algorithm)
 
@@ -201,8 +204,8 @@ class TestIdentityAssertionConfig:
 class TestMetadataAdvertisement:
     async def _metadata(self, proxy: OAuthProxy) -> dict:
         app = FastMCP("ID-JAG Server", auth=proxy).http_app()
-        transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url=BASE_URL) as client:
+        transport = httpx2.ASGITransport(app=app)
+        async with httpx2.AsyncClient(transport=transport, base_url=BASE_URL) as client:
             resp = await client.get("/.well-known/oauth-authorization-server")
             return resp.json()
 
@@ -394,7 +397,8 @@ class TestTokenEndpoint:
 class TestValidationMatrix:
     @pytest.fixture(autouse=True)
     def _mock_jwks(self, idp_key: RSAKeyPair, httpx_mock: HTTPXMock):
-        httpx_mock.add_response(url=JWKS_URI, json=_idp_jwks(idp_key))
+        # Optional: several matrix tests reject before any JWKS fetch happens.
+        httpx_mock.add_response(url=JWKS_URI, json=_idp_jwks(idp_key), is_optional=True)
 
     async def test_untrusted_issuer_rejected(
         self, idp_key: RSAKeyPair, config: IdentityAssertion
@@ -518,6 +522,23 @@ class TestValidationMatrix:
         # bool subclasses int in Python.
         proxy = _make_proxy(config)
         assertion = _mint_id_jag(idp_key, claim_overrides={claim: bad_value})
+
+        resp = await _post_token(proxy, assertion)
+
+        assert resp.status_code == 401
+        assert resp.json()["error"] == "invalid_grant"
+
+    @pytest.mark.parametrize("bad_jti", [["a", "b"], {"x": 1}, 42])
+    async def test_non_string_jti_rejected(
+        self,
+        idp_key: RSAKeyPair,
+        config: IdentityAssertion,
+        bad_jti: object,
+    ):
+        # An array/object jti is unhashable — the cache lookup would raise
+        # TypeError (a 500) instead of a clean invalid_grant.
+        proxy = _make_proxy(config)
+        assertion = _mint_id_jag(idp_key, claim_overrides={"jti": bad_jti})
 
         resp = await _post_token(proxy, assertion)
 
@@ -771,6 +792,31 @@ class TestIssuerKeyDiscovery:
 
         assert resp.status_code == 401
         assert resp.json()["error"] == "invalid_grant"
+
+
+class TestRevocation:
+    async def test_revoked_id_jag_token_rejected(
+        self,
+        idp_key: RSAKeyPair,
+        httpx_mock: HTTPXMock,
+    ):
+        # ID-JAG access tokens are self-contained — nothing upstream knows
+        # them, so revocation must be tracked locally. After revoke_token,
+        # load_access_token rejects the token for its remaining lifetime.
+        httpx_mock.add_response(url=JWKS_URI, json=_idp_jwks(idp_key))
+        proxy = _make_proxy(
+            IdentityAssertion(trusted_issuers=[ISSUER], jwks_uris={ISSUER: JWKS_URI})
+        )
+        resp = await _post_token(proxy, _mint_id_jag(idp_key))
+        assert resp.status_code == 200
+        issued = resp.json()["access_token"]
+
+        loaded = await proxy.load_access_token(issued)
+        assert loaded is not None
+
+        await proxy.revoke_token(loaded)
+
+        assert await proxy.load_access_token(issued) is None
 
 
 class TestGrantTypeEnforcement:

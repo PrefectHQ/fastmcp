@@ -26,12 +26,13 @@ from collections import OrderedDict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, Literal
-from urllib.parse import urlencode, urlparse, urlunparse
+from urllib.parse import urlencode
 
 import anyio
 import httpx2
 from authlib.common.security import generate_token
 from cryptography.fernet import Fernet
+from joserfc.errors import JoseError
 from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.stores.filetree import (
@@ -78,6 +79,8 @@ from fastmcp.server.auth.identity_assertion import (
     IdentityAssertion,
     IdentityAssertionError,
     IdentityAssertionValidator,
+    normalize_resource_url,
+    server_url_has_query,
 )
 from fastmcp.server.auth.jwt_issuer import (
     JWTIssuer,
@@ -125,30 +128,6 @@ def _assertion_granted_scopes(claims: dict[str, Any]) -> list[str]:
     if isinstance(scp, str):
         return scp.split()
     return []
-
-
-def _normalize_resource_url(url: str) -> str:
-    """Normalize a resource URL by removing query parameters and trailing slashes.
-
-    RFC 8707 allows clients to include query parameters in resource URLs, but the
-    server's configured resource URL typically doesn't include them. This function
-    normalizes URLs for comparison by stripping query params and fragments.
-
-    Args:
-        url: The URL to normalize
-
-    Returns:
-        Normalized URL with scheme, host, and path only (no query/fragment)
-    """
-    parsed = urlparse(str(url))
-    return urlunparse(
-        (parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", "", "")
-    )
-
-
-def _server_url_has_query(url: str) -> bool:
-    """Check if a URL has query parameters."""
-    return bool(urlparse(str(url)).query)
 
 
 class OAuthProxy(OAuthProvider, ConsentMixin):
@@ -662,6 +641,10 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 config=identity_assertion,
                 audience=str(self.base_url),
             )
+        # ID-JAG access tokens are self-contained (no upstream token or JTI
+        # mapping to delete), so revocation tracks their jtis here until the
+        # token would expire anyway. Per-process, like ID-JAG replay tracking.
+        self._revoked_id_jag_jtis: dict[str, float] = {}
 
         # Advisory locks for transparent upstream token refresh, keyed by
         # upstream_token_id. Prevents concurrent async tasks from racing to
@@ -990,14 +973,14 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             server_url = str(self._resource_url)
             client_url = str(client_resource)
 
-            if _server_url_has_query(server_url):
+            if server_url_has_query(server_url):
                 # Server has query params - require exact match for security
                 urls_match = client_url.rstrip("/") == server_url.rstrip("/")
             else:
                 # Server has no query params - normalize both for comparison
-                urls_match = _normalize_resource_url(
+                urls_match = normalize_resource_url(
                     client_url
-                ) == _normalize_resource_url(server_url)
+                ) == normalize_resource_url(server_url)
 
             if not urls_match:
                 logger.warning(
@@ -1378,13 +1361,13 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         if params.resource and self._resource_url:
             server_url = str(self._resource_url)
             client_url = str(params.resource)
-            if _server_url_has_query(server_url):
+            if server_url_has_query(server_url):
                 # Server has query params - require exact match for security
                 resource_matches = client_url.rstrip("/") == server_url.rstrip("/")
             else:
-                resource_matches = _normalize_resource_url(
+                resource_matches = normalize_resource_url(
                     client_url
-                ) == _normalize_resource_url(server_url)
+                ) == normalize_resource_url(server_url)
             if not resource_matches:
                 logger.warning(
                     "ID-JAG resource mismatch: client requested %s but server is %s",
@@ -1994,8 +1977,12 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
 
             # SEP-990: ID-JAG tokens are self-contained — the asserted subject
             # is carried in the token itself, and there is no upstream token to
-            # swap for. Return directly from the verified claims.
+            # swap for. Return directly from the verified claims, unless the
+            # token was revoked (tracked by jti until natural expiry).
             if payload.get("fastmcp_grant") == _ID_JAG_GRANT_MARKER:
+                if jti in self._revoked_id_jag_jtis:
+                    logger.info("Rejected revoked ID-JAG access token jti=%s", jti[:16])
+                    return None
                 scope = payload.get("scope", "")
                 return AccessToken(
                     token=token,
@@ -2161,6 +2148,28 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # For refresh tokens, delete from local storage by hash
         if isinstance(token, RefreshToken):
             await self._refresh_token_store.delete(key=_hash_token(token.token))
+
+        # ID-JAG access tokens are self-contained and never known upstream, so
+        # upstream revocation cannot invalidate them. Track the jti locally so
+        # load_access_token() rejects the token for its remaining lifetime.
+        try:
+            payload = self.jwt_issuer.verify_token(token.token)
+        except (JoseError, ValueError, KeyError):
+            # Not a (valid) FastMCP-issued JWT — nothing to track locally.
+            payload = None
+        if payload is not None and payload.get("fastmcp_grant") == _ID_JAG_GRANT_MARKER:
+            now = time.time()
+            self._revoked_id_jag_jtis = {
+                jti: exp for jti, exp in self._revoked_id_jag_jtis.items() if exp > now
+            }
+            exp = payload.get("exp")
+            jti = payload.get("jti")
+            if isinstance(jti, str) and jti:
+                self._revoked_id_jag_jtis[jti] = (
+                    float(exp) if isinstance(exp, (int, float)) else now + 3600
+                )
+                logger.debug("Revoked ID-JAG access token jti=%s", jti[:16])
+            return
 
         # Attempt upstream revocation if endpoint is configured
         if self._upstream_revocation_endpoint:

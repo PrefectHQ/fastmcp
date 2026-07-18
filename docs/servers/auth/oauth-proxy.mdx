@@ -726,7 +726,7 @@ identity_assertion=IdentityAssertion(
 The subject asserted in the ID-JAG flows into the normal FastMCP auth context. Tools read it through `get_access_token()` exactly as they would for any other token, because the proxy issues the access token through its own token factory.
 
 <Warning>
-Replay protection is per-process. Each server process tracks seen `jti` values in memory, so a horizontally-scaled deployment running multiple workers or replicas could accept the same assertion once per process. For deployments that require strict single-use enforcement across replicas, configure sticky routing so a given client's requests reach the same process, or place a shared store in front of the token endpoint. This mirrors the posture of CIMD `private_key_jwt` replay protection, which is also per-process.
+Replay protection is per-process. Each server process tracks seen `jti` values in memory, so a horizontally-scaled deployment running multiple workers or replicas could accept the same assertion once per process. The same applies to revocation of ID-JAG access tokens: they are self-contained, so revocation is tracked in-process until the token's (short, 5-minute default) natural expiry. For deployments that require strict single-use enforcement across replicas, configure sticky routing so a given client's requests reach the same process, or place a shared store in front of the token endpoint. This mirrors the posture of CIMD `private_key_jwt` replay protection, which is also per-process.
 </Warning>
 
 ## Security

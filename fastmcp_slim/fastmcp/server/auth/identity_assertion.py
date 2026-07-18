@@ -30,7 +30,7 @@ import time
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse, urlunparse
 
-import httpx
+import httpx2
 from pydantic import BaseModel, Field, field_validator
 
 from fastmcp.utilities.auth import decode_jwt_header
@@ -49,6 +49,11 @@ ID_JAG_GRANT_PROFILE = "urn:ietf:params:oauth:grant-profile:id-jag"
 
 #: SEP-990 §5.1: the ID-JAG's JOSE header ``typ`` MUST be this media type.
 ID_JAG_TYP = "oauth-id-jag+jwt"
+
+#: Asymmetric JWS algorithms JWTVerifier supports for JWKS-based verification.
+SUPPORTED_ASSERTION_ALGORITHMS = frozenset(
+    {"RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512"}
+)
 
 
 class IdentityAssertion(BaseModel):
@@ -135,15 +140,16 @@ class IdentityAssertion(BaseModel):
     @classmethod
     def _validate_algorithm(cls, v: str | None) -> str | None:
         # Trusted issuers are verified via JWKS (public keys only), so the
-        # algorithm must be asymmetric — HS* (shared-secret) has no JWKS
-        # equivalent here, and anything JWTVerifier can't import (e.g. EdDSA)
-        # would otherwise surface as a 500 on the first exchange instead of a
-        # clean config error now.
-        if v is not None and not v.startswith(("RS", "PS", "ES")):
+        # algorithm must be one of the asymmetric JWS algorithms JWTVerifier
+        # actually supports — HS* (shared-secret) has no JWKS equivalent, and
+        # anything else (EdDSA, or a typo like RS999) would otherwise surface
+        # as a 500 on the first exchange instead of a clean config error now.
+        if v is not None and v not in SUPPORTED_ASSERTION_ALGORITHMS:
+            supported = ", ".join(sorted(SUPPORTED_ASSERTION_ALGORITHMS))
             raise ValueError(
                 f"Unsupported algorithm {v!r} for identity assertion: trusted "
-                "issuers are verified via JWKS, so algorithm must be an "
-                "asymmetric JWS algorithm (RS*, PS*, or ES*), e.g. 'ES256'"
+                f"issuers are verified via JWKS, so algorithm must be one of "
+                f"{supported}"
             )
         return v
 
@@ -220,11 +226,11 @@ class IdentityAssertionValidator:
         """
         config_url = issuer.rstrip("/") + "/.well-known/openid-configuration"
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx2.AsyncClient() as client:
                 response = await client.get(config_url, timeout=10.0)
                 response.raise_for_status()
                 body = response.json()
-        except (httpx.HTTPError, ValueError) as e:
+        except (httpx2.HTTPError, ValueError) as e:
             raise IdentityAssertionError(
                 f"OIDC discovery for issuer {issuer!r} failed: {e}"
             ) from e
@@ -383,10 +389,12 @@ class IdentityAssertionValidator:
                     f"this server {resource_url!r}"
                 )
 
-        # 7. jti replay rejection (RFC 7523 §3).
+        # 7. jti replay rejection (RFC 7523 §3). Must be a non-empty string —
+        # an array/object jti is unhashable and would raise TypeError on the
+        # cache lookup (a 500) instead of a clean invalid_grant.
         jti = claims.get("jti")
-        if not jti:
-            raise IdentityAssertionError("Assertion must include jti claim")
+        if not jti or not isinstance(jti, str):
+            raise IdentityAssertionError("Assertion must include a string jti claim")
         cached_exp = self._jti_cache.get(jti)
         if cached_exp is not None and cached_exp > now:
             raise IdentityAssertionError(f"Assertion replay detected: jti {jti} reused")
