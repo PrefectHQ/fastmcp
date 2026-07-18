@@ -4,7 +4,7 @@ dynamic = ["version", "optional-dependencies"]
 description = "The dependency-slim FastMCP package."
 authors = [{ name = "Jeremiah Lowin" }]
 dependencies = [
-    "mcp-types==2.0.0b1",
+    "mcp-types==2.0.0b2",
     "platformdirs>=4.0.0",
     "pydantic[email]>=2.12.0",
     "pydantic-settings>=2.0.0",
@@ -78,8 +78,11 @@ code-mode = ["pydantic-monty==0.0.17"]
 gemini = ["google-genai>=1.18.0", "jsonref>=1.1.0"]
 mcp = [
     "exceptiongroup>=1.2.2",
-    "httpx>=0.28.1,<1.0",
-    "mcp==2.0.0b1",
+    # FastMCP uses httpx2 exclusively: the MCP SDK boundary (client transports,
+    # client auth) requires it, and all FastMCP-owned HTTP (server auth provider
+    # upstream calls, OpenAPI provider, version check, etc.) uses it too.
+    "httpx2>=2.5.0",
+    "mcp==2.0.0b2",
     "opentelemetry-api>=1.28.0",
     # starlette floor: transitive via mcp (which only requires >=0.27).
     # Pin past CVE-2026-48710, which was patched in 1.0.1.

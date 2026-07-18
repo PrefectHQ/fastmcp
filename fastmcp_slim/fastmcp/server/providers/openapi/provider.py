@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from typing import Any, Literal, cast
 
-import httpx
+import httpx2
 from jsonschema_path import SchemaPath
 
 from fastmcp.prompts import Prompt
@@ -58,9 +58,9 @@ class OpenAPIProvider(Provider):
         ```python
         from fastmcp import FastMCP
         from fastmcp.server.providers.openapi import OpenAPIProvider
-        import httpx
+        import httpx2
 
-        client = httpx.AsyncClient(base_url="https://api.example.com")
+        client = httpx2.AsyncClient(base_url="https://api.example.com")
         provider = OpenAPIProvider(openapi_spec=spec, client=client)
 
         mcp = FastMCP("API Server")
@@ -71,7 +71,7 @@ class OpenAPIProvider(Provider):
     def __init__(
         self,
         openapi_spec: dict[str, Any],
-        client: httpx.AsyncClient | None = None,
+        client: httpx2.AsyncClient | None = None,
         *,
         route_maps: list[RouteMap] | None = None,
         route_map_fn: RouteMapFn | None = None,
@@ -166,19 +166,19 @@ class OpenAPIProvider(Provider):
         logger.debug(f"Created OpenAPIProvider with {len(http_routes)} routes")
 
     @classmethod
-    def _create_default_client(cls, openapi_spec: dict[str, Any]) -> httpx.AsyncClient:
+    def _create_default_client(cls, openapi_spec: dict[str, Any]) -> httpx2.AsyncClient:
         """Create a default httpx client from the OpenAPI spec's server URL."""
         servers = openapi_spec.get("servers", [])
         if not servers or not servers[0].get("url"):
             raise ValueError(
                 "No server URL found in OpenAPI spec. Either add a 'servers' "
-                "entry to the spec or provide an httpx.AsyncClient explicitly."
+                "entry to the spec or provide an httpx2.AsyncClient explicitly."
             )
         base_url = servers[0]["url"]
         variables = servers[0].get("variables", {})
         for name, var in variables.items():
             base_url = base_url.replace(f"{{{name}}}", var.get("default", ""))
-        return httpx.AsyncClient(base_url=base_url, timeout=DEFAULT_TIMEOUT)
+        return httpx2.AsyncClient(base_url=base_url, timeout=DEFAULT_TIMEOUT)
 
     @asynccontextmanager
     async def lifespan(self) -> AsyncIterator[None]:

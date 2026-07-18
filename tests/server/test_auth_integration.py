@@ -5,7 +5,7 @@ import time
 import unittest.mock
 from urllib.parse import parse_qs, urlparse
 
-import httpx
+import httpx2
 import pytest
 from mcp.server.auth.provider import (
     AccessToken,
@@ -227,14 +227,14 @@ def auth_app(mock_oauth_provider):
 
 @pytest.fixture
 async def test_client(auth_app):
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=auth_app), base_url="https://mcptest.com"
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=auth_app), base_url="https://mcptest.com"
     ) as client:
         yield client
 
 
 @pytest.fixture
-async def registered_client(test_client: httpx.AsyncClient, request):
+async def registered_client(test_client: httpx2.AsyncClient, request):
     """Create and register a test client.
 
     Parameters can be customized via indirect parameterization:
@@ -347,7 +347,7 @@ async def tokens(test_client, registered_client, auth_code, pkce_challenge, requ
 
 
 class TestAuthEndpoints:
-    async def test_metadata_endpoint(self, test_client: httpx.AsyncClient):
+    async def test_metadata_endpoint(self, test_client: httpx2.AsyncClient):
         """Test the OAuth 2.1 metadata endpoint."""
         print("Sending request to metadata endpoint")
         response = await test_client.get("/.well-known/oauth-authorization-server")
@@ -376,7 +376,7 @@ class TestAuthEndpoints:
         ]
         assert metadata["service_documentation"] == "https://docs.example.com/"
 
-    async def test_token_validation_error(self, test_client: httpx.AsyncClient):
+    async def test_token_validation_error(self, test_client: httpx2.AsyncClient):
         """Test token endpoint error - missing client_id returns auth error."""
         # Missing required fields - SDK validates client_id first
         response = await test_client.post(
@@ -625,7 +625,7 @@ class TestAuthEndpoints:
         assert "cannot request scope" in error_response["error_description"]
 
     async def test_client_registration(
-        self, test_client: httpx.AsyncClient, mock_oauth_provider: MockOAuthProvider
+        self, test_client: httpx2.AsyncClient, mock_oauth_provider: MockOAuthProvider
     ):
         """Test client registration."""
         client_metadata = {
@@ -652,7 +652,7 @@ class TestAuthEndpoints:
         # ) is not None
 
     async def test_client_registration_missing_required_fields(
-        self, test_client: httpx.AsyncClient
+        self, test_client: httpx2.AsyncClient
     ):
         """Test client registration with missing required fields."""
         # Missing redirect_uris which is a required field
@@ -672,7 +672,7 @@ class TestAuthEndpoints:
         assert error_data["error_description"] == "redirect_uris: Field required"
 
     async def test_client_registration_invalid_uri(
-        self, test_client: httpx.AsyncClient
+        self, test_client: httpx2.AsyncClient
     ):
         """Test client registration with invalid URIs."""
         # Invalid redirect_uri format
@@ -694,7 +694,7 @@ class TestAuthEndpoints:
         )
 
     async def test_client_registration_empty_redirect_uris(
-        self, test_client: httpx.AsyncClient
+        self, test_client: httpx2.AsyncClient
     ):
         """Test client registration with empty redirect_uris array."""
         client_metadata = {
@@ -717,7 +717,7 @@ class TestAuthEndpoints:
 
     async def test_authorize_form_post(
         self,
-        test_client: httpx.AsyncClient,
+        test_client: httpx2.AsyncClient,
         mock_oauth_provider: MockOAuthProvider,
         pkce_challenge,
     ):
@@ -760,7 +760,7 @@ class TestAuthEndpoints:
 
     async def test_authorization_get(
         self,
-        test_client: httpx.AsyncClient,
+        test_client: httpx2.AsyncClient,
         mock_oauth_provider: MockOAuthProvider,
         pkce_challenge,
     ):
@@ -901,7 +901,7 @@ class TestAuthEndpoints:
         assert "token_type_hint" in error_response["error_description"]
 
     async def test_client_registration_disallowed_scopes(
-        self, test_client: httpx.AsyncClient
+        self, test_client: httpx2.AsyncClient
     ):
         """Test client registration with scopes that are not allowed."""
         client_metadata = {
@@ -922,7 +922,7 @@ class TestAuthEndpoints:
         assert "admin" in error_data["error_description"]
 
     async def test_client_registration_default_scopes(
-        self, test_client: httpx.AsyncClient, mock_oauth_provider: MockOAuthProvider
+        self, test_client: httpx2.AsyncClient, mock_oauth_provider: MockOAuthProvider
     ):
         client_metadata = {
             "redirect_uris": ["https://client.example.com/callback"],
@@ -950,7 +950,7 @@ class TestAuthEndpoints:
         assert registered_client.scope == "read write"
 
     async def test_client_registration_invalid_grant_type(
-        self, test_client: httpx.AsyncClient
+        self, test_client: httpx2.AsyncClient
     ):
         # The SDK requires `authorization_code` to be present in grant_types;
         # a set that omits it is rejected. (`refresh_token` alone is invalid.)

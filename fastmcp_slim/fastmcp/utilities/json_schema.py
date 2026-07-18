@@ -498,6 +498,11 @@ def _single_pass_optimize(
     if not (prune_defs or prune_titles or prune_additional_properties):
         return schema  # Nothing to do
 
+    # Work on a copy so the caller's schema is never mutated (see docstring). The
+    # pruning phases below pop keys/$defs in place, which would otherwise corrupt a
+    # shared dict such as a live Tool.input_schema passed straight to compress_schema.
+    schema = copy.deepcopy(schema)
+
     # Phase 1: Collect references and apply simple cleanups
     # Track which $defs are referenced from the main schema and from other $defs
     root_refs: set[str] = set()  # $defs referenced directly from main schema

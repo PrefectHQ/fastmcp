@@ -2,6 +2,7 @@ import os
 
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.huggingface import HuggingFaceProvider
+from fastmcp.server.dependencies import get_access_token
 
 auth_provider = HuggingFaceProvider(
     # Your Hugging Face OAuth app client ID
@@ -21,9 +22,9 @@ mcp = FastMCP(name="Hugging Face Secured App", auth=auth_provider)
 @mcp.tool
 async def get_user_info() -> dict:
     """Returns information about the authenticated Hugging Face user."""
-    from fastmcp.server.dependencies import get_access_token
-
     token = get_access_token()
+    if token is None:
+        return {"error": "Not authenticated"}
     return {
         "subject": token.claims.get("sub"),
         "username": token.claims.get("preferred_username"),

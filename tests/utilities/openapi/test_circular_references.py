@@ -1,6 +1,6 @@
 """Tests for circular and self-referential schema serialization (Issues #1016, #1206, #3242)."""
 
-import httpx
+import httpx2
 
 from fastmcp import FastMCP
 from fastmcp.utilities.openapi.models import (
@@ -247,7 +247,7 @@ class TestCircularReferencesSerialization:
             },
         }
 
-        server = FastMCP.from_openapi(spec, httpx.AsyncClient())
+        server = FastMCP.from_openapi(spec, httpx2.AsyncClient())
         tools = await server.list_tools()
         assert len(tools) >= 3
 

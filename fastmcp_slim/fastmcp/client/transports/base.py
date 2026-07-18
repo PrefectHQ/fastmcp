@@ -3,7 +3,7 @@ import contextlib
 from collections.abc import AsyncIterator, Sequence
 from typing import Any, Literal, TypeVar
 
-import httpx
+import httpx2
 import mcp_types
 from mcp import ClientSession
 from mcp.client.extension import NotificationBinding
@@ -78,6 +78,6 @@ class ClientTransport(abc.ABC):
         """Get the session ID for this transport, if available."""
         return None
 
-    def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
+    def _set_auth(self, auth: httpx2.Auth | Literal["oauth"] | str | None):
         if auth is not None:
             raise ValueError("This transport does not support auth")

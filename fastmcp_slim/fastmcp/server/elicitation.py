@@ -378,6 +378,13 @@ def get_elicitation_schema(response_type: type[T]) -> dict[str, Any]:
     )
     schema = compress_schema(schema)
 
+    # Pydantic emits the internal wrapper class name as a top-level title for
+    # ScalarElicitationType schemas. That value is not meaningful on the wire and
+    # breaks strict clients (e.g. Codex) that reject unknown top-level fields.
+    origin = get_origin(response_type)
+    if origin is ScalarElicitationType or response_type is ScalarElicitationType:
+        schema.pop("title", None)
+
     # Validate the schema to ensure it follows MCP elicitation requirements
     validate_elicitation_json_schema(schema)
 
