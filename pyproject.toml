@@ -219,4 +219,4 @@ known-first-party = ["fastmcp", "fastmcp_remote"]
 ]
 
 [tool.codespell]
-ignore-words-list = "asend,shttp,te"
+ignore-words-list = "asend,shttp,te,cachable"
