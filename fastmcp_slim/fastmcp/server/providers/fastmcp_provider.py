@@ -363,6 +363,7 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
             meta=template.get_meta(),
             title=template.title,
             icons=template.icons,
+            security=template.security,
         )
 
     async def create_resource(self, uri: str, params: dict[str, Any]) -> Resource:

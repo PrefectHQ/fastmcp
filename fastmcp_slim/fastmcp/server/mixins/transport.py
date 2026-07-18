@@ -19,7 +19,9 @@ from starlette.routing import BaseRoute, Route
 import fastmcp
 from fastmcp.server.event_store import EventStore
 from fastmcp.server.http import (
+    HostOriginProtection,
     StarletteWithLifespan,
+    _is_loopback_host,
     create_sse_app,
     create_streamable_http_app,
 )
@@ -46,6 +48,22 @@ def _format_host_for_url(host: str) -> str:
     if ":" in host and not host.startswith("["):
         return f"[{host}]"
     return host
+
+
+def _resolve_allowed_hosts_for_run(
+    *,
+    host: str,
+    host_origin_protection: HostOriginProtection,
+    allowed_hosts: list[str] | None,
+    configured_allowed_hosts: list[str] | None,
+) -> list[str] | None:
+    if allowed_hosts is not None:
+        return allowed_hosts
+
+    if host_origin_protection == "auto" and _is_loopback_host(host):
+        return [*(configured_allowed_hosts or []), host]
+
+    return configured_allowed_hosts
 
 
 class TransportMixin:
@@ -249,7 +267,7 @@ class TransportMixin:
         json_response: bool | None = None,
         stateless_http: bool | None = None,
         stateless: bool | None = None,
-        host_origin_protection: bool | None = None,
+        host_origin_protection: HostOriginProtection | None = None,
         allowed_hosts: list[str] | None = None,
         allowed_origins: list[str] | None = None,
         sockets: list[socket.socket] | None = None,
@@ -268,7 +286,9 @@ class TransportMixin:
             stateless_http: Whether to use stateless HTTP (defaults to settings.stateless_http)
             stateless: Alias for stateless_http for CLI consistency
             host_origin_protection: Whether to validate Host and Origin headers
-                before requests reach the MCP endpoint.
+                before requests reach the MCP endpoint. Defaults to
+                settings.http_host_origin_protection. "auto" protects
+                localhost-bound servers and explicit host/origin allowlists.
             allowed_hosts: Additional hostnames that may appear in the Host header.
             allowed_origins: Additional browser origins trusted by the request guard.
                 Configure CORS separately when browser JavaScript must read
@@ -289,6 +309,17 @@ class TransportMixin:
 
         host = host if host is not None else fastmcp.settings.host
         port = port if port is not None else fastmcp.settings.port
+        resolved_host_origin_protection = (
+            host_origin_protection
+            if host_origin_protection is not None
+            else fastmcp.settings.http_host_origin_protection
+        )
+        resolved_allowed_hosts = _resolve_allowed_hosts_for_run(
+            host=host,
+            host_origin_protection=resolved_host_origin_protection,
+            allowed_hosts=allowed_hosts,
+            configured_allowed_hosts=fastmcp.settings.http_allowed_hosts,
+        )
         default_log_level_to_use = (
             log_level if log_level is not None else fastmcp.settings.log_level
         ).lower()
@@ -299,8 +330,8 @@ class TransportMixin:
             middleware=middleware,
             json_response=json_response,
             stateless_http=stateless_http,
-            host_origin_protection=host_origin_protection,
-            allowed_hosts=allowed_hosts,
+            host_origin_protection=resolved_host_origin_protection,
+            allowed_hosts=resolved_allowed_hosts,
             allowed_origins=allowed_origins,
         )
 
@@ -344,7 +375,7 @@ class TransportMixin:
         transport: Literal["http", "streamable-http", "sse"] = "http",
         event_store: EventStore | None = None,
         retry_interval: int | None = None,
-        host_origin_protection: bool | None = None,
+        host_origin_protection: HostOriginProtection | None = None,
         allowed_hosts: list[str] | None = None,
         allowed_origins: list[str] | None = None,
         session_idle_timeout: float | None = None,
@@ -365,7 +396,9 @@ class TransportMixin:
                 disconnections. Requires event_store to be set. Only used with
                 streamable-http transport.
             host_origin_protection: Whether to validate Host and Origin headers
-                before requests reach the MCP endpoint.
+                before requests reach the MCP endpoint. Defaults to
+                settings.http_host_origin_protection. "auto" protects
+                localhost-bound servers and explicit host/origin allowlists.
             allowed_hosts: Additional hostnames that may appear in the Host header.
             allowed_origins: Additional browser origins trusted by the request guard.
                 Configure CORS separately when browser JavaScript must read

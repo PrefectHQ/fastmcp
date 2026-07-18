@@ -107,11 +107,9 @@ async def test_elicitation_handler_parameters():
         await client.call_tool("test_tool", {})
 
         assert captured_params["message"] == "Test message"
-        assert "ScalarElicitationType" in str(captured_params["response_type"])
         assert captured_params["params"].requested_schema == {
             "properties": {"value": {"title": "Value", "type": "integer"}},
             "required": ["value"],
-            "title": "ScalarElicitationType",
             "type": "object",
         }
         assert captured_params["ctx"] is not None

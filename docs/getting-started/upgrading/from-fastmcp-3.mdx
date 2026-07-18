@@ -114,6 +114,43 @@ Catching and `err.error.code` are unchanged — only construction moved.
 
 **Raw session access sees v2 objects.** If you reach past FastMCP's client and server surfaces into `client.session`, `ctx.session`, or the internals of `ctx.request_context`, you're now holding raw SDK v2 objects with snake_case fields and the v2 method signatures. FastMCP does not wrap these; code that depends on their v1 shape needs updating.
 
+**FastMCP now uses httpx2 exclusively.** FastMCP has replaced `httpx` with [httpx2](https://pypi.org/project/httpx2/), a next-generation httpx fork, across its entire HTTP stack — client transports and every server-side path (auth providers, the OpenAPI integration, the version check). `httpx` is no longer a FastMCP dependency. If you pass a custom client or factory into a FastMCP client transport — `StreamableHttpTransport(httpx_client_factory=...)`, `SSETransport(httpx_client_factory=...)`, `OAuth(httpx_client_factory=...)`, or a custom `httpx.Auth` as `Client(auth=...)` — those objects must now be httpx2. httpx2 is a drop-in fork with the same public API, so the change is an import swap:
+
+```python
+# Before
+import httpx
+
+transport = StreamableHttpTransport(
+    "https://example.com/mcp",
+    httpx_client_factory=lambda **kwargs: httpx.AsyncClient(verify=False, **kwargs),
+)
+
+# After
+import httpx2
+
+transport = StreamableHttpTransport(
+    "https://example.com/mcp",
+    httpx_client_factory=lambda **kwargs: httpx2.AsyncClient(verify=False, **kwargs),
+)
+```
+
+The `client` you pass to `FastMCP.from_openapi(client=...)` (and `OpenAPIProvider(client=...)`) is now type-hinted `httpx2.AsyncClient`. FastMCP does not gate on the type, so an existing `httpx.AsyncClient` keeps working at runtime via duck-typing this release — but switching it to `httpx2.AsyncClient` clears the type hint and is the supported path going forward. HTTP made inside your own tools is entirely yours and is unaffected either way.
+
+**The subtlest break is exception handlers, and no type checker will catch it.** `httpx` very likely remains installed in your environment (the Anthropic, OpenAI, and Google SDKs all depend on it), so code that catches old-httpx exceptions around FastMCP calls still imports and still type-checks — it just never matches, because FastMCP now raises `httpx2` exceptions. The handler silently becomes dead code:
+
+```python
+import httpx  # still installed transitively — this import works
+
+try:
+    result = await client.call_tool("fetch", {"url": url})
+except httpx.ConnectError:  # dead code: FastMCP now raises httpx2.ConnectError
+    return fallback()
+```
+
+Grep your codebase for `except httpx.` and move those handlers to `httpx2`. The exception hierarchies match name-for-name, so the fix is an import swap — the hard part is remembering to look. One place you are covered automatically: exceptions raised *inside your tools and resources* (for example, a tool whose own old-httpx call gets a 429) are still mapped to `ToolError`/`ResourceError` by FastMCP's error boundary, which recognizes both libraries' exceptions during the transition.
+
+Two runtime behaviors shift with httpx2, and because the switch is now wholesale they apply to **all** FastMCP HTTP — including server-auth upstream calls, not just the client path. TLS verification uses the operating system's trust store (via `truststore`, honoring `SSL_CERT_FILE`/`SSL_CERT_DIR`) instead of the bundled certifi CA set, so corporate-CA or certifi-pinned setups may verify differently. And the FastMCP HTTP loggers are renamed from `httpx`/`httpcore.*` to `httpx2`/`httpcore2.*` — update any logging filters that select the HTTP stack by logger name.
+
 ## Deprecation timeline
 
 The camelCase bridge is a migration aid, not a permanent fixture. It works today and warns on every bridged read so you can find and update the affected call sites. Plan to migrate your reads to snake_case: the shims will be removed in a future release, after which only the snake_case names resolve — the same state you get today by setting `mcp_camelcase_compat = False`. Turning the setting off is a good way to surface every remaining camelCase read in your code as a hard `AttributeError` before the shims go away.

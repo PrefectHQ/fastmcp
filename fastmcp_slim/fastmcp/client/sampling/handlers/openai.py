@@ -2,7 +2,7 @@
 
 import json
 from collections.abc import Iterator, Sequence
-from typing import Any, Literal, get_args
+from typing import Any, Literal, cast, get_args
 
 from mcp import ClientSession, ServerSession
 from mcp_types import (
@@ -507,7 +507,7 @@ class OpenAISamplingHandler:
             raise ValueError("No content in response from completion")
 
         return CreateMessageResultWithTools(
-            content=content,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+            content=cast(Any, content),
             role="assistant",
             model=chat_completion.model,
             stop_reason=stop_reason,

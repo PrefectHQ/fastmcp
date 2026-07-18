@@ -103,11 +103,11 @@ If you're mounting an authenticated server under a path prefix, see [Mounting Au
 
 ### Host and Origin Protection
 
-FastMCP validates `Host` and browser `Origin` headers for Streamable HTTP requests by default. This protects localhost-bound servers from DNS rebinding attacks and rejects browser requests from origins you have not trusted.
+FastMCP can validate `Host` and browser `Origin` headers for Streamable HTTP requests before they reach MCP session handling. This request guard protects localhost-bound servers from DNS rebinding attacks, and it remains opt-in in FastMCP 3.x to preserve compatibility with existing ASGI, serverless, and reverse-proxy deployments.
 
 Think of this as a request guard rather than CORS middleware. It decides whether a request can reach MCP session handling. CORS remains a separate browser response-header policy; configure CORS middleware separately when browser JavaScript must read cross-origin responses.
 
-When you deploy behind a public hostname, add the hostname clients use to reach your MCP endpoint. If a browser-based MCP client runs on a separate origin, add that origin as well:
+Enable strict validation with `host_origin_protection=True`. When you deploy behind a public hostname, add the hostname clients use to reach your MCP endpoint. If a browser-based MCP client runs on a separate origin, add that origin as well:
 
 ```python
 from fastmcp import FastMCP
@@ -115,6 +115,7 @@ from fastmcp import FastMCP
 mcp = FastMCP("My Server")
 
 app = mcp.http_app(
+    host_origin_protection=True,
     allowed_hosts=["mcp.example.com"],
     allowed_origins=["https://app.example.com"],
 )
@@ -132,6 +133,7 @@ if __name__ == "__main__":
         transport="http",
         host="0.0.0.0",
         port=8000,
+        host_origin_protection=True,
         allowed_hosts=["mcp.example.com"],
         allowed_origins=["https://app.example.com"],
     )
@@ -140,11 +142,12 @@ if __name__ == "__main__":
 You can also configure these values with environment variables:
 
 ```bash
+export FASTMCP_HTTP_HOST_ORIGIN_PROTECTION=true
 export FASTMCP_HTTP_ALLOWED_HOSTS='["mcp.example.com"]'
 export FASTMCP_HTTP_ALLOWED_ORIGINS='["https://app.example.com"]'
 ```
 
-Use `host_origin_protection=False` only for trusted internal deployments that provide equivalent validation at another layer, such as an ingress proxy.
+Use `host_origin_protection="auto"` to protect localhost-bound direct servers while allowing ASGI, serverless, and reverse-proxy deployments to keep their existing Host handling unless they configure explicit trust rules. Use `host_origin_protection=False` to keep the request guard disabled.
 
 ### Health Checks
 
@@ -201,7 +204,7 @@ Most MCP clients, including those that you access through a browser like ChatGPT
 
 CORS (Cross-Origin Resource Sharing) is needed when JavaScript running in a web browser connects directly to your MCP server. This is different from using an LLM through a browser—in that case, the browser connects to the LLM service, and the LLM service connects to your MCP server (no CORS needed).
 
-Host and Origin protection runs before CORS. Add browser client origins to `allowed_origins` so trusted browser requests reach the CORS middleware, then configure CORS to let browser JavaScript read the MCP response headers it needs. Setting `allowed_origins` trusts the request; it does not emit `Access-Control-Allow-Origin` or other CORS response headers.
+Host and Origin protection runs before CORS when it is active for a request. Add browser client origins to `allowed_origins` so trusted browser requests reach the CORS middleware, then configure CORS to let browser JavaScript read the MCP response headers it needs. Setting `allowed_origins` trusts the request; it does not emit `Access-Control-Allow-Origin` or other CORS response headers.
 
 Browser-based MCP clients that need CORS include:
 

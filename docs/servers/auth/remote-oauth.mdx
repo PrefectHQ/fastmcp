@@ -147,7 +147,7 @@ When not set, `scopes_supported` defaults to the token verifier's `required_scop
 You can extend `RemoteAuthProvider` to add additional endpoints beyond the standard OAuth protected resource metadata. These don't have to be OAuth-specific - you can add any endpoints your authentication integration requires.
 
 ```python
-import httpx
+import httpx2
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
@@ -173,7 +173,7 @@ class CompanyAuthProvider(RemoteAuthProvider):
         
         # Add authorization server metadata forwarding for client convenience
         async def authorization_server_metadata(request):
-            async with httpx.AsyncClient() as client:
+            async with httpx2.AsyncClient() as client:
                 response = await client.get(
                     "https://auth.yourcompany.com/.well-known/oauth-authorization-server"
                 )

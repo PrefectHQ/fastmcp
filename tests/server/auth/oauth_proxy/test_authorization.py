@@ -16,11 +16,13 @@ class TestOAuthProxyAuthorization:
 
     async def test_authorize_creates_transaction(self, oauth_proxy):
         """Test that authorize creates transaction and redirects to consent."""
-        client = OAuthClientInformationFull(
-            client_id="test-client",
-            client_secret="test-secret",
-            redirect_uris=[AnyUrl("http://localhost:54321/callback")],
-            jwt_signing_key="test-secret",  # type: ignore[call-arg]  # Optional field in MCP SDK  # ty:ignore[unknown-argument]
+        client = OAuthClientInformationFull.model_validate(
+            {
+                "client_id": "test-client",
+                "client_secret": "test-secret",
+                "redirect_uris": ["http://localhost:54321/callback"],
+                "jwt_signing_key": "test-secret",
+            }
         )
 
         # Register client first (required for consent flow)

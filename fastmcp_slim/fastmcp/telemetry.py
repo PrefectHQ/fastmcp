@@ -21,13 +21,24 @@ Example usage with SDK:
     ```
 """
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from opentelemetry import context as otel_context
 from opentelemetry import propagate, trace
 from opentelemetry.context import Context
-from opentelemetry.trace import Span, Status, StatusCode, Tracer
+from opentelemetry.trace import (
+    INVALID_SPAN,
+    NoOpTracer,
+    Span,
+    SpanKind,
+    Status,
+    StatusCode,
+    Tracer,
+)
 from opentelemetry.trace import get_tracer as otel_get_tracer
+from opentelemetry.util import types as otel_types
 
 INSTRUMENTATION_NAME = "fastmcp"
 
@@ -35,15 +46,60 @@ TRACE_PARENT_KEY = "traceparent"
 TRACE_STATE_KEY = "tracestate"
 
 
+class _DisabledTracer(NoOpTracer):
+    """A tracer that neither records spans nor touches the OTel context.
+
+    When telemetry is disabled FastMCP must be fully transparent. The stock
+    `NoOpTracer.start_as_current_span` still *attaches* a `NonRecordingSpan` to
+    the current OTel context, so an enclosing application span (from ASGI/HTTP
+    instrumentation or a user-created span) is hidden while a FastMCP span
+    helper is active — `trace.get_current_span()` inside a handler would then
+    return that non-recording span instead of the caller's span. This tracer
+    yields the invalid span *without* entering it as current, leaving the
+    surrounding trace context untouched.
+    """
+
+    @contextmanager
+    def start_as_current_span(
+        self,
+        name: str,
+        context: Context | None = None,
+        kind: SpanKind = SpanKind.INTERNAL,
+        attributes: otel_types.Attributes = None,
+        links: Any = None,
+        start_time: int | None = None,
+        record_exception: bool = True,
+        set_status_on_exception: bool = True,
+        end_on_exit: bool = True,
+    ) -> Iterator[Span]:
+        yield INVALID_SPAN
+
+
+_DISABLED_TRACER = _DisabledTracer()
+
+
 def get_tracer(version: str | None = None) -> Tracer:
     """Get the FastMCP tracer for creating spans.
+
+    Instrumentation is on by default. FastMCP uses only the OpenTelemetry API,
+    so span creation is a no-op with negligible overhead unless an OpenTelemetry
+    SDK and exporter are configured. Set `fastmcp.settings.enable_telemetry` to
+    False (env `FASTMCP_ENABLE_TELEMETRY=false`) to turn instrumentation off
+    entirely, in which case this returns a pass-through tracer that leaves the
+    current OTel context untouched even when an SDK is configured.
 
     Args:
         version: Optional version string for the instrumentation
 
     Returns:
-        A tracer instance. Returns a no-op tracer if no SDK is configured.
+        A tracer instance. Returns a non-attaching pass-through tracer if
+        telemetry is disabled; span creation is otherwise a no-op unless an SDK
+        is configured.
     """
+    import fastmcp
+
+    if not fastmcp.settings.enable_telemetry:
+        return _DISABLED_TRACER
     return otel_get_tracer(INSTRUMENTATION_NAME, version)
 
 

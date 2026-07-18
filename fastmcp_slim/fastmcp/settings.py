@@ -210,6 +210,24 @@ class Settings(BaseSettings):
         ),
     ] = True
 
+    enable_telemetry: Annotated[
+        bool,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Whether FastMCP's native OpenTelemetry instrumentation is active.
+                Enabled by default: FastMCP uses only the OpenTelemetry API, so
+                span creation is a no-op with negligible overhead unless an
+                OpenTelemetry SDK and exporter are configured. Set to False to
+                turn instrumentation off entirely, in which case FastMCP's span
+                helpers become a transparent pass-through: no FastMCP spans are
+                created even when an SDK is configured, and the surrounding OTel
+                trace context is left untouched.
+                """
+            )
+        ),
+    ] = True
+
     deprecation_warnings: Annotated[
         bool,
         Field(
@@ -336,7 +354,7 @@ class Settings(BaseSettings):
     stateless_http: bool = (
         False  # If True, uses true stateless mode (new transport per request)
     )
-    http_host_origin_protection: bool = True
+    http_host_origin_protection: bool | Literal["auto"] = False
     http_allowed_hosts: list[str] | None = None
     http_allowed_origins: list[str] | None = None
     http_session_idle_timeout: Annotated[

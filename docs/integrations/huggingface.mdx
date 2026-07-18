@@ -1,0 +1,304 @@
+---
+title: Hugging Face OAuth 🤝 FastMCP
+sidebarTitle: Hugging Face
+description: Secure your FastMCP server with Hugging Face OAuth
+icon: hugging-face
+iconType: brands
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="3.4.3" />
+
+This guide shows you how to secure your FastMCP server using **Hugging Face OAuth**.
+The `HuggingFaceProvider` uses FastMCP's [OAuth Proxy](/servers/auth/oauth-proxy)
+pattern with Hugging Face's OAuth and OpenID Connect endpoints. It works with
+manually created confidential apps, public PKCE apps, and Client ID Metadata
+Documents (CIMD).
+
+When deploying your MCP server to Hugging Face Spaces, Spaces can create and
+manage the OAuth app for you.
+
+## Configuration
+
+### Prerequisites
+
+Before you begin, you will need:
+
+1. A **[Hugging Face account](https://huggingface.co/join)** with access to create OAuth apps
+2. Your FastMCP server's URL (can be localhost for development, e.g., `http://localhost:8000`)
+
+### Step 1: Create a Hugging Face OAuth app
+
+Create an OAuth app from your [Hugging Face application settings](https://huggingface.co/settings/applications/new).
+For details, see Hugging Face's [OAuth documentation](https://huggingface.co/docs/hub/oauth).
+
+<Steps>
+<Step title="Create the OAuth app">
+    Go to your [Hugging Face application settings](https://huggingface.co/settings/applications/new)
+    and create a new OAuth application.
+
+    Choose a name users will recognize, then configure the redirect URL for
+    your FastMCP server:
+
+    - Development: `http://localhost:8000/auth/callback`
+    - Production: `https://your-domain.com/auth/callback`
+
+    <Warning>
+    The redirect URL must match exactly. The default path is `/auth/callback`,
+    but you can customize it using the `redirect_path` parameter. For
+    production, use HTTPS.
+    </Warning>
+</Step>
+
+<Step title="Save your credentials">
+    After creating the app, save:
+
+    - **Client ID**: The public identifier for your Hugging Face OAuth app
+    - **Client Secret**: The app secret, if you created a confidential app
+
+    <Tip>
+    Store the client secret securely. Never commit it to version control. Use
+    environment variables or a secrets manager in production.
+    </Tip>
+</Step>
+</Steps>
+
+### Step 2: Configure FastMCP
+
+```python server.py
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.huggingface import HuggingFaceProvider
+
+# The HuggingFaceProvider handles Hugging Face's opaque OAuth access tokens
+# and stores user data in token claims.
+auth_provider = HuggingFaceProvider(
+    client_id="your-huggingface-client-id",        # Your Hugging Face OAuth app client ID
+    client_secret="your-huggingface-client-secret", # Your Hugging Face OAuth app client secret
+    base_url="http://localhost:8000",              # Must match your OAuth configuration
+    required_scopes=["openid", "profile"],         # Default value
+    # redirect_path="/auth/callback"               # Default value, customize if needed
+)
+
+mcp = FastMCP(name="Hugging Face Secured App", auth=auth_provider)
+
+
+# Add a protected tool to test authentication
+@mcp.tool
+async def get_user_info() -> dict:
+    """Returns information about the authenticated Hugging Face user."""
+    from fastmcp.server.dependencies import get_access_token
+
+    token = get_access_token()
+    return {
+        "subject": token.claims.get("sub"),
+        "username": token.claims.get("preferred_username"),
+        "profile": token.claims.get("profile"),
+    }
+```
+
+## Public OAuth apps, DCR, and CIMD
+
+Hugging Face supports public OAuth apps (no client secret). For public apps,
+omit `client_secret` and provide a `jwt_signing_key` so FastMCP can sign its
+own proxy tokens:
+
+```python
+auth_provider = HuggingFaceProvider(
+    client_id="your-public-huggingface-client-id",
+    base_url="http://localhost:8000",
+    jwt_signing_key="replace-with-a-secure-secret",
+)
+```
+
+MCP clients can use Dynamic Client Registration with your FastMCP server. The
+`HuggingFaceProvider` inherits FastMCP's OAuth Proxy behavior, which handles
+client registration locally and forwards authorization to Hugging Face using
+your configured Hugging Face OAuth app. In other words, MCP clients register
+with FastMCP, while FastMCP uses your Hugging Face `client_id` and optional
+`client_secret` for the upstream OAuth flow.
+
+You can also use a Client ID Metadata Document URL as the `client_id` when your
+client metadata is hosted at a stable HTTPS URL:
+
+```python
+auth_provider = HuggingFaceProvider(
+    client_id="https://your-client.example/.well-known/oauth-cimd",
+    base_url="http://localhost:8000",
+    jwt_signing_key="replace-with-a-secure-secret",
+)
+```
+
+## Testing
+
+### Running the Server
+
+Start your server with HTTP transport:
+
+```bash
+fastmcp run server.py --transport http --port 8000
+```
+
+Your server is now running and protected by Hugging Face OAuth authentication.
+
+### Testing with a Client
+
+Create a test client that authenticates with your Hugging Face-protected server:
+
+```python test_client.py
+import asyncio
+from fastmcp import Client
+
+
+async def main():
+    async with Client("http://localhost:8000/mcp", auth="oauth") as client:
+        result = await client.call_tool("get_user_info")
+        print(result)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+When you run the client for the first time:
+
+1. Your browser will open to Hugging Face's authorization page
+2. Sign in with your Hugging Face account and grant the requested permissions
+3. After authorization, you'll be redirected back
+4. The client receives the token and can make authenticated requests
+
+<Info>
+The client caches tokens locally, so you won't need to re-authenticate for
+subsequent runs unless the token expires or you explicitly clear the cache.
+</Info>
+
+## Hugging Face Spaces
+
+When deploying to [Hugging Face Spaces](https://huggingface.co/docs/hub/spaces-oauth),
+Spaces can create and manage the OAuth app for you. Add OAuth metadata to your
+Space README:
+
+```yaml
+---
+title: FastMCP Hugging Face OAuth
+sdk: docker
+hf_oauth: true
+hf_oauth_expiration_minutes: 480
+hf_oauth_scopes:
+  - email
+  - inference-api
+---
+```
+
+Spaces provide `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET`, `OAUTH_SCOPES`,
+`OPENID_PROVIDER_URL`, and `SPACE_HOST` environment variables:
+
+```python
+import os
+
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.huggingface import HuggingFaceProvider
+from fastmcp.utilities.auth import parse_scopes
+
+base_url = f"https://{os.environ['SPACE_HOST']}"
+
+auth_provider = HuggingFaceProvider(
+    client_id=os.environ["OAUTH_CLIENT_ID"],
+    client_secret=os.environ["OAUTH_CLIENT_SECRET"],
+    base_url=base_url,
+    jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+    required_scopes=parse_scopes(os.environ.get("OAUTH_SCOPES")) or ["openid", "profile"],
+)
+
+mcp = FastMCP(name="Hugging Face Space App", auth=auth_provider)
+```
+
+Set `JWT_SIGNING_KEY` as a Space secret.
+
+## Hugging Face scopes
+
+The default scopes are `openid` and `profile`. Add more scopes when your tools
+need Hub capabilities:
+
+| Scope | Description |
+|-------|-------------|
+| `email` | Access the user's email address |
+| `read-billing` | Know whether the user has a payment method set up |
+| `read-repos` | Read the user's personal repositories |
+| `gated-repos` | Read public gated repositories the user can access |
+| `contribute-repos` | Create repositories and access app-created repositories |
+| `write-repos` | Read and write the user's personal repositories |
+| `manage-repos` | Full repository access, including creation and deletion |
+| `read-collections` | Read the user's personal collections |
+| `write-collections` | Read and write the user's personal collections, including collection creation and deletion |
+| `inference-api` | Use Hugging Face Inference Providers as the user |
+| `jobs` | Run Hugging Face Jobs |
+| `webhooks` | Manage webhooks |
+| `write-discussions` | Open discussions and pull requests, and interact with discussions |
+
+```python
+auth_provider = HuggingFaceProvider(
+    client_id="your-huggingface-client-id",
+    client_secret="your-huggingface-client-secret",
+    base_url="https://your-domain.com",
+    required_scopes=["openid", "profile", "inference-api", "jobs"],
+)
+```
+
+For organization resources, use Hugging Face's normal OAuth organization grant
+flow. If you need a specific organization, pass Hugging Face's `orgIds`
+authorization parameter. The value is the organization ID from the
+`organizations.sub` field in the Hugging Face userinfo response:
+
+```python
+auth_provider = HuggingFaceProvider(
+    client_id="your-huggingface-client-id",
+    client_secret="your-huggingface-client-secret",
+    base_url="https://your-domain.com",
+    extra_authorize_params={"orgIds": "your-org-id"},
+)
+```
+
+## Production Configuration
+
+For production deployments with persistent token management across server
+restarts, configure `jwt_signing_key` and `client_storage`:
+
+```python server.py
+import os
+from cryptography.fernet import Fernet
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.huggingface import HuggingFaceProvider
+from key_value.aio.stores.redis import RedisStore
+from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+
+# Production setup with encrypted persistent token storage
+auth_provider = HuggingFaceProvider(
+    client_id="your-huggingface-client-id",
+    client_secret=os.environ["HUGGINGFACE_CLIENT_SECRET"],
+    base_url="https://your-production-domain.com",
+    required_scopes=["openid", "profile", "email"],
+
+    # Production token management
+    jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+    client_storage=FernetEncryptionWrapper(
+        key_value=RedisStore(
+            host=os.environ["REDIS_HOST"],
+            port=int(os.environ["REDIS_PORT"])
+        ),
+        fernet=Fernet(os.environ["STORAGE_ENCRYPTION_KEY"])
+    )
+)
+
+mcp = FastMCP(name="Production Hugging Face App", auth=auth_provider)
+```
+
+<Note>
+Parameters (`jwt_signing_key` and `client_storage`) work together to ensure
+tokens and client registrations survive server restarts. **Wrap your storage in
+`FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest** - without
+it, tokens are stored in plaintext. Store secrets in environment variables and
+use a persistent storage backend like Redis for distributed deployments.
+
+For complete details on these parameters, see the [OAuth Proxy documentation](/servers/auth/oauth-proxy#configuration-parameters).
+</Note>

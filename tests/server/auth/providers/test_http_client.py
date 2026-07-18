@@ -1,28 +1,28 @@
 """Tests for http_client parameter on token verifiers.
 
-Verifies that all token verifiers accept an optional httpx.AsyncClient for
+Verifies that all token verifiers accept an optional httpx2.AsyncClient for
 connection pooling (issues #3287 and #3293).
 """
 
 import time
 
-import httpx
+import httpx2
 import pytest
 from joserfc import jwk
-from pytest_httpx import HTTPXMock
 
 from fastmcp.server.auth.providers.introspection import IntrospectionTokenVerifier
 from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
+from tests.utilities.httpx2_mock import HTTPXMock
 
 
 class TestIntrospectionHttpClient:
     """Test http_client parameter on IntrospectionTokenVerifier."""
 
     @pytest.fixture
-    def shared_client(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(timeout=30)
+    def shared_client(self) -> httpx2.AsyncClient:
+        return httpx2.AsyncClient(timeout=30)
 
-    def test_stores_http_client(self, shared_client: httpx.AsyncClient):
+    def test_stores_http_client(self, shared_client: httpx2.AsyncClient):
         verifier = IntrospectionTokenVerifier(
             introspection_url="https://auth.example.com/introspect",
             client_id="test",
@@ -40,7 +40,7 @@ class TestIntrospectionHttpClient:
         assert verifier._http_client is None
 
     async def test_uses_provided_client(
-        self, shared_client: httpx.AsyncClient, httpx_mock: HTTPXMock
+        self, shared_client: httpx2.AsyncClient, httpx_mock: HTTPXMock
     ):
         """When http_client is provided, it should be used for requests."""
         httpx_mock.add_response(
@@ -66,7 +66,7 @@ class TestIntrospectionHttpClient:
         assert result.client_id == "user-1"
 
     async def test_client_not_closed_after_call(
-        self, shared_client: httpx.AsyncClient, httpx_mock: HTTPXMock
+        self, shared_client: httpx2.AsyncClient, httpx_mock: HTTPXMock
     ):
         """User-provided client must not be closed by the verifier."""
         httpx_mock.add_response(
@@ -92,7 +92,7 @@ class TestIntrospectionHttpClient:
         assert not shared_client.is_closed
 
     async def test_reuses_client_across_calls(
-        self, shared_client: httpx.AsyncClient, httpx_mock: HTTPXMock
+        self, shared_client: httpx2.AsyncClient, httpx_mock: HTTPXMock
     ):
         """Same client instance should be reused across multiple verify_token calls."""
         for _ in range(3):
@@ -129,10 +129,10 @@ class TestJWTVerifierHttpClient:
         return RSAKeyPair.generate()
 
     @pytest.fixture
-    def shared_client(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(timeout=30)
+    def shared_client(self) -> httpx2.AsyncClient:
+        return httpx2.AsyncClient(timeout=30)
 
-    def test_stores_http_client(self, shared_client: httpx.AsyncClient):
+    def test_stores_http_client(self, shared_client: httpx2.AsyncClient):
         verifier = JWTVerifier(
             jwks_uri="https://auth.example.com/.well-known/jwks.json",
             http_client=shared_client,
@@ -148,7 +148,7 @@ class TestJWTVerifierHttpClient:
     async def test_jwks_fetch_uses_provided_client(
         self,
         rsa_key_pair: RSAKeyPair,
-        shared_client: httpx.AsyncClient,
+        shared_client: httpx2.AsyncClient,
         httpx_mock: HTTPXMock,
     ):
         """When http_client is provided, JWKS fetches should use it."""
@@ -181,7 +181,7 @@ class TestJWTVerifierHttpClient:
 
     def test_ssrf_safe_rejects_http_client_with_jwks(
         self,
-        shared_client: httpx.AsyncClient,
+        shared_client: httpx2.AsyncClient,
     ):
         """ssrf_safe=True and http_client cannot be used together with JWKS."""
         with pytest.raises(ValueError, match="cannot be used with ssrf_safe=True"):
@@ -194,7 +194,7 @@ class TestJWTVerifierHttpClient:
     def test_ssrf_safe_allows_http_client_with_static_key(
         self,
         rsa_key_pair: RSAKeyPair,
-        shared_client: httpx.AsyncClient,
+        shared_client: httpx2.AsyncClient,
     ):
         """ssrf_safe with http_client is allowed when using static public_key (no HTTP)."""
         # This should NOT raise — static key means no JWKS fetching
@@ -213,14 +213,14 @@ class TestGitHubHttpClient:
     def test_stores_http_client(self):
         from fastmcp.server.auth.providers.github import GitHubTokenVerifier
 
-        client = httpx.AsyncClient()
+        client = httpx2.AsyncClient()
         verifier = GitHubTokenVerifier(http_client=client)
         assert verifier._http_client is client
 
     async def test_uses_provided_client(self, httpx_mock: HTTPXMock):
         from fastmcp.server.auth.providers.github import GitHubTokenVerifier
 
-        client = httpx.AsyncClient()
+        client = httpx2.AsyncClient()
         httpx_mock.add_response(
             url="https://api.github.com/user",
             json={"id": 123, "login": "testuser"},
@@ -243,7 +243,7 @@ class TestDiscordHttpClient:
     def test_stores_http_client(self):
         from fastmcp.server.auth.providers.discord import DiscordTokenVerifier
 
-        client = httpx.AsyncClient()
+        client = httpx2.AsyncClient()
         verifier = DiscordTokenVerifier(
             expected_client_id="test-client-id",
             http_client=client,
@@ -257,7 +257,7 @@ class TestGoogleHttpClient:
     def test_stores_http_client(self):
         from fastmcp.server.auth.providers.google import GoogleTokenVerifier
 
-        client = httpx.AsyncClient()
+        client = httpx2.AsyncClient()
         verifier = GoogleTokenVerifier(http_client=client)
         assert verifier._http_client is client
 
@@ -268,7 +268,7 @@ class TestWorkOSHttpClient:
     def test_stores_http_client(self):
         from fastmcp.server.auth.providers.workos import WorkOSTokenVerifier
 
-        client = httpx.AsyncClient()
+        client = httpx2.AsyncClient()
         verifier = WorkOSTokenVerifier(
             authkit_domain="https://test.authkit.app",
             http_client=client,
@@ -285,7 +285,7 @@ class TestProviderHttpClientPassthrough:
             GitHubTokenVerifier,
         )
 
-        client = httpx.AsyncClient()
+        client = httpx2.AsyncClient()
         provider = GitHubProvider(
             client_id="test",
             client_secret="secret",
@@ -303,7 +303,7 @@ class TestProviderHttpClientPassthrough:
             DiscordTokenVerifier,
         )
 
-        client = httpx.AsyncClient()
+        client = httpx2.AsyncClient()
         provider = DiscordProvider(
             client_id="test",
             client_secret="secret",
@@ -320,7 +320,7 @@ class TestProviderHttpClientPassthrough:
             GoogleTokenVerifier,
         )
 
-        client = httpx.AsyncClient()
+        client = httpx2.AsyncClient()
         provider = GoogleProvider(
             client_id="test",
             client_secret="secret",
@@ -337,7 +337,7 @@ class TestProviderHttpClientPassthrough:
             WorkOSTokenVerifier,
         )
 
-        client = httpx.AsyncClient()
+        client = httpx2.AsyncClient()
         provider = WorkOSProvider(
             client_id="test",
             client_secret="secret",
@@ -353,7 +353,7 @@ class TestProviderHttpClientPassthrough:
         from fastmcp.server.auth.providers.azure import AzureProvider
         from fastmcp.server.auth.providers.jwt import JWTVerifier
 
-        client = httpx.AsyncClient()
+        client = httpx2.AsyncClient()
         provider = AzureProvider(
             client_id="test-client-id",
             client_secret="secret",
