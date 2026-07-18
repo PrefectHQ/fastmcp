@@ -5,6 +5,8 @@ fake IdP JWT (a keypair is generated per test). The proxy's JWKS lookup is
 served via httpx_mock, so no real network calls are made.
 """
 
+import subprocess
+import sys
 import time
 
 import httpx2
@@ -199,6 +201,28 @@ class TestIdentityAssertionConfig:
         assert cfg.access_token_expiry_seconds == 300
         assert cfg.audience is None
         assert cfg.jwks_uris is None
+
+    def test_per_issuer_algorithms_validated(self):
+        IdentityAssertion(trusted_issuers=[ISSUER], algorithms={ISSUER: "ES256"})
+        with pytest.raises(ValueError):
+            IdentityAssertion(trusted_issuers=[ISSUER], algorithms={ISSUER: "HS256"})
+
+    def test_lazy_reexport_does_not_import_module(self):
+        # fastmcp.server.auth must not load identity_assertion (and its
+        # httpx2 dependency) eagerly — the re-export is lazy via __getattr__.
+        code = (
+            "import sys\n"
+            "import fastmcp.server.auth\n"
+            "loaded = [m for m in sys.modules if 'identity_assertion' in m]\n"
+            "assert not loaded, f'eagerly loaded: {loaded}'\n"
+            "from fastmcp.server.auth import IdentityAssertion\n"
+            "print('OK')\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True
+        )
+        assert result.returncode == 0, result.stderr
+        assert "OK" in result.stdout
 
 
 class TestMetadataAdvertisement:
@@ -529,6 +553,19 @@ class TestValidationMatrix:
         assert resp.status_code == 200
         assert resp.json()["access_token"]
 
+    async def test_aud_matching_advertised_issuer_with_trailing_slash(
+        self, idp_key: RSAKeyPair, config: IdentityAssertion
+    ):
+        # Metadata advertises the issuer exactly as pydantic renders base_url —
+        # a bare domain gains a trailing slash. An IdP that sets `aud` to that
+        # advertised value verbatim must be accepted, not rejected on the slash.
+        proxy = _make_proxy(config)
+        assertion = _mint_id_jag(idp_key, audience=f"{BASE_URL}/")
+
+        resp = await _post_token(proxy, assertion)
+
+        assert resp.status_code == 200
+
     @pytest.mark.parametrize("claim", ["exp", "iat", "nbf"])
     @pytest.mark.parametrize("bad_value", ["not-a-number", [], {}, True])
     async def test_non_numeric_temporal_claim_rejected(
@@ -814,6 +851,31 @@ class TestIssuerKeyDiscovery:
 
         assert resp.status_code == 401
         assert resp.json()["error"] == "invalid_grant"
+
+    async def test_failed_discovery_backs_off(
+        self, idp_key: RSAKeyPair, httpx_mock: HTTPXMock
+    ):
+        # Discovery runs before signature verification, so repeated garbage
+        # with a trusted iss must not turn into an outbound HTTP call per
+        # request: after a failure, subsequent requests fast-fail without
+        # fetching until the cooldown elapses.
+        oidc_config_url = ISSUER.rstrip("/") + "/.well-known/openid-configuration"
+        httpx_mock.add_exception(
+            httpx2.ConnectError("connection refused"), url=oidc_config_url
+        )
+
+        proxy = _make_proxy(IdentityAssertion(trusted_issuers=[ISSUER]))
+
+        first = await _post_token(proxy, _mint_id_jag(idp_key, jti="jti-d1"))
+        assert first.status_code == 401
+
+        second = await _post_token(
+            proxy, _mint_id_jag(idp_key, jti="jti-d2"), register=False
+        )
+        assert second.status_code == 401
+        # Only the FIRST request hit the network; the second fast-failed
+        # inside the cooldown window.
+        assert len(httpx_mock.get_requests()) == 1
 
 
 class TestRevocation:

@@ -714,12 +714,13 @@ identity_assertion=IdentityAssertion(
 )
 ```
 
-Verification assumes `RS256` unless the issuer signs with another algorithm, in which case set `algorithm` explicitly (any asymmetric JWS algorithm — `RS*`, `PS*`, or `ES*` — since assertions are verified against a published JWKS, not a shared secret):
+Verification assumes `RS256` unless the issuer signs with another algorithm, in which case set `algorithm` explicitly (any asymmetric JWS algorithm — `RS*`, `PS*`, or `ES*` — since assertions are verified against a published JWKS, not a shared secret). When trusted issuers use different algorithms, override per issuer with `algorithms`, keyed the same way as `jwks_uris`:
 
 ```python
 identity_assertion=IdentityAssertion(
-    trusted_issuers=["https://login.acme-corp.com"],
+    trusted_issuers=["https://login.acme-corp.com", "https://sso.other-corp.com"],
     algorithm="ES256",
+    algorithms={"https://sso.other-corp.com": "RS256"},
 )
 ```
 

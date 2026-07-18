@@ -26,6 +26,7 @@ This module provides:
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse, urlunparse
@@ -113,7 +114,17 @@ class IdentityAssertion(BaseModel):
         description=(
             "JWS signing algorithm the trusted issuers use (e.g. `ES256`, "
             "`PS256`). When omitted, verification defaults to `RS256`; IdPs "
-            "signing with another algorithm must set this explicitly."
+            "signing with another algorithm must set this explicitly. When "
+            "issuers use different algorithms, override per issuer with "
+            "`algorithms`."
+        ),
+    )
+    algorithms: dict[str, str] | None = Field(
+        default=None,
+        description=(
+            "Optional per-issuer signing-algorithm override, keyed by the "
+            "issuer string (mirroring `jwks_uris`). Issuers absent here fall "
+            "back to `algorithm`."
         ),
     )
     access_token_expiry_seconds: int = Field(
@@ -151,6 +162,19 @@ class IdentityAssertion(BaseModel):
                 f"issuers are verified via JWKS, so algorithm must be one of "
                 f"{supported}"
             )
+        return v
+
+    @field_validator("algorithms")
+    @classmethod
+    def _validate_algorithms(cls, v: dict[str, str] | None) -> dict[str, str] | None:
+        if v is not None:
+            for issuer, algorithm in v.items():
+                if algorithm not in SUPPORTED_ASSERTION_ALGORITHMS:
+                    supported = ", ".join(sorted(SUPPORTED_ASSERTION_ALGORITHMS))
+                    raise ValueError(
+                        f"Unsupported algorithm {algorithm!r} for issuer "
+                        f"{issuer!r}: must be one of {supported}"
+                    )
         return v
 
 
@@ -191,9 +215,15 @@ class IdentityAssertionValidator:
                 must match this unless `config.audience` overrides it.
         """
         self.config = config
-        # Normalize away any trailing slash so an ID-JAG `aud` of
-        # "https://server.com" matches a base URL rendered as "https://server.com/".
-        self.audience = config.audience or audience.rstrip("/")
+        # Accept the audience both with and without a trailing slash: metadata
+        # advertises the issuer exactly as pydantic renders base_url (a bare
+        # domain gains a trailing slash), so an IdP that sets `aud` to the
+        # advertised value verbatim must match, and so must one that strips it.
+        if config.audience:
+            self.audience: str | list[str] = config.audience
+        else:
+            base = audience.rstrip("/")
+            self.audience = [base, base + "/"]
 
         self._jti_cache: dict[str, float] = {}
         self._jti_cache_max_size = 10000
@@ -201,6 +231,13 @@ class IdentityAssertionValidator:
         self._cleanup_interval = 60
         # One JWTVerifier per issuer, created lazily once the JWKS URI is known.
         self._verifiers: dict[str, JWTVerifier] = {}
+        # OIDC discovery hardening: discovery runs before signature verification,
+        # so a malformed-but-trusted-iss assertion can trigger an outbound HTTP
+        # call. Serialize per-issuer lookups and back off after a failure so
+        # concurrent or repeated garbage cannot amplify into request floods.
+        self._discovery_locks: dict[str, asyncio.Lock] = {}
+        self._discovery_failures: dict[str, float] = {}
+        self._discovery_failure_cooldown = 30.0
 
     def _cleanup_expired_jtis(self) -> None:
         now = time.time()
@@ -224,6 +261,20 @@ class IdentityAssertionValidator:
         plain fetch (consistent with how operator-configured JWKS URIs are
         treated elsewhere, including localhost issuers in development).
         """
+        lock = self._discovery_locks.setdefault(issuer, asyncio.Lock())
+        async with lock:
+            failed_at = self._discovery_failures.get(issuer)
+            if (
+                failed_at is not None
+                and time.monotonic() - failed_at < self._discovery_failure_cooldown
+            ):
+                raise IdentityAssertionError(
+                    f"OIDC discovery for issuer {issuer!r} recently failed; backing off"
+                )
+            return await self._fetch_discovery(issuer)
+
+    async def _fetch_discovery(self, issuer: str) -> str:
+        """Perform the actual discovery fetch; caller holds the issuer lock."""
         config_url = issuer.rstrip("/") + "/.well-known/openid-configuration"
         try:
             async with httpx2.AsyncClient() as client:
@@ -231,6 +282,7 @@ class IdentityAssertionValidator:
                 response.raise_for_status()
                 body = response.json()
         except (httpx2.HTTPError, ValueError) as e:
+            self._discovery_failures[issuer] = time.monotonic()
             raise IdentityAssertionError(
                 f"OIDC discovery for issuer {issuer!r} failed: {e}"
             ) from e
@@ -260,11 +312,12 @@ class IdentityAssertionValidator:
         if not jwks_uri:
             jwks_uri = await self._discover_jwks_uri(issuer)
 
+        algorithm = (self.config.algorithms or {}).get(issuer, self.config.algorithm)
         verifier = _JWTVerifier(
             jwks_uri=jwks_uri,
             issuer=issuer,
             audience=self.audience,
-            algorithm=self.config.algorithm,
+            algorithm=algorithm,
         )
         self._verifiers[issuer] = verifier
         return verifier

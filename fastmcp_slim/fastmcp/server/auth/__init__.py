@@ -15,9 +15,9 @@ from .authorization import (
     restrict_tag,
     run_auth_checks,
 )
-from .identity_assertion import IdentityAssertion
 
 if TYPE_CHECKING:
+    from .identity_assertion import IdentityAssertion as IdentityAssertion
     from .oauth_proxy import OAuthProxy as OAuthProxy
     from .oidc_proxy import OIDCProxy as OIDCProxy
     from .providers.debug import DebugTokenVerifier as DebugTokenVerifier
@@ -45,6 +45,10 @@ def __getattr__(name: str) -> object:
         from .providers.jwt import StaticTokenVerifier
 
         return StaticTokenVerifier
+    if name == "IdentityAssertion":
+        from .identity_assertion import IdentityAssertion
+
+        return IdentityAssertion
     if name == "OAuthProxy":
         from .oauth_proxy import OAuthProxy
 
