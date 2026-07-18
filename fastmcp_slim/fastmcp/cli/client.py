@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import cyclopts
-import mcp.types
+import mcp_types
 from rich.console import Console
 from rich.markup import escape as escape_rich_markup
 
@@ -177,7 +177,7 @@ async def _terminal_elicitation_handler(
     Prints the server's message and prompts for each field in the schema.
     The user can type 'decline' or 'cancel' instead of a value to abort.
     """
-    from mcp.types import ElicitRequestFormParams
+    from mcp_types import ElicitRequestFormParams
 
     console.print(f"\n[bold yellow]Server asks:[/bold yellow] {message}")
 
@@ -191,7 +191,7 @@ async def _terminal_elicitation_handler(
             return ElicitResult(action="cancel")
         return ElicitResult(action="accept", content={})
 
-    schema = params.requestedSchema
+    schema = params.requested_schema
     properties = schema.get("properties", {})
     required = set(schema.get("required", []))
 
@@ -367,11 +367,11 @@ def _json_schema_type_to_str(schema: dict[str, Any]) -> str:
     return _JSON_SCHEMA_TYPE_MAP.get(schema_type, schema_type)
 
 
-def format_tool_signature(tool: mcp.types.Tool) -> str:
+def format_tool_signature(tool: mcp_types.Tool) -> str:
     """Build ``name(param: type, ...) -> return_type`` from a tool's JSON schemas."""
 
     params: list[str] = []
-    schema = tool.inputSchema
+    schema = tool.input_schema
     properties = schema.get("properties", {})
     required = set(schema.get("required", []))
 
@@ -386,8 +386,8 @@ def format_tool_signature(tool: mcp.types.Tool) -> str:
 
     sig = f"{tool.name}({', '.join(params)})"
 
-    if tool.outputSchema:
-        ret = _json_schema_type_to_str(tool.outputSchema)
+    if tool.output_schema:
+        ret = _json_schema_type_to_str(tool.output_schema)
         sig += f" -> {ret}"
 
     return sig
@@ -422,7 +422,7 @@ def _format_call_result_text(result: CallToolResult) -> None:
 
     if result.is_error:
         for block in result.content:
-            if isinstance(block, mcp.types.TextContent):
+            if isinstance(block, mcp_types.TextContent):
                 console.print(
                     f"[bold red]Error:[/bold red] {_sanitize_untrusted_text(block.text)}"
                 )
@@ -437,26 +437,26 @@ def _format_call_result_text(result: CallToolResult) -> None:
         return
 
     for block in result.content:
-        if isinstance(block, mcp.types.TextContent):
+        if isinstance(block, mcp_types.TextContent):
             console.print(_sanitize_untrusted_text(block.text))
-        elif isinstance(block, mcp.types.ImageContent):
+        elif isinstance(block, mcp_types.ImageContent):
             size = len(block.data) * 3 // 4  # rough decoded size
-            console.print(f"[dim][Image: {block.mimeType}, ~{size} bytes][/dim]")
-        elif isinstance(block, mcp.types.AudioContent):
+            console.print(f"[dim][Image: {block.mime_type}, ~{size} bytes][/dim]")
+        elif isinstance(block, mcp_types.AudioContent):
             size = len(block.data) * 3 // 4
-            console.print(f"[dim][Audio: {block.mimeType}, ~{size} bytes][/dim]")
+            console.print(f"[dim][Audio: {block.mime_type}, ~{size} bytes][/dim]")
         else:
             console.print(_sanitize_untrusted_text(str(block)))
 
 
-def _content_block_to_dict(block: mcp.types.ContentBlock) -> dict[str, Any]:
+def _content_block_to_dict(block: mcp_types.ContentBlock) -> dict[str, Any]:
     """Serialize a single content block to a JSON-safe dict."""
-    if isinstance(block, mcp.types.TextContent):
+    if isinstance(block, mcp_types.TextContent):
         return {"type": "text", "text": block.text}
-    if isinstance(block, mcp.types.ImageContent):
-        return {"type": "image", "mimeType": block.mimeType, "data": block.data}
-    if isinstance(block, mcp.types.AudioContent):
-        return {"type": "audio", "mimeType": block.mimeType, "data": block.data}
+    if isinstance(block, mcp_types.ImageContent):
+        return {"type": "image", "mimeType": block.mime_type, "data": block.data}
+    if isinstance(block, mcp_types.AudioContent):
+        return {"type": "audio", "mimeType": block.mime_type, "data": block.data}
     return {"type": "unknown", "value": str(block)}
 
 
@@ -470,15 +470,15 @@ def _call_result_to_dict(result: CallToolResult) -> dict[str, Any]:
     return out
 
 
-def _tools_to_json(tools: list[mcp.types.Tool]) -> list[dict[str, Any]]:
+def _tools_to_json(tools: list[mcp_types.Tool]) -> list[dict[str, Any]]:
     """Serialize a list of tools to JSON-safe dicts."""
 
     return [
         {
             "name": t.name,
             "description": t.description,
-            "inputSchema": t.inputSchema,
-            **({"outputSchema": t.outputSchema} if t.outputSchema else {}),
+            "inputSchema": t.input_schema,
+            **({"outputSchema": t.output_schema} if t.output_schema else {}),
         }
         for t in tools
     ]
@@ -512,9 +512,9 @@ async def _handle_tool_call(
         sys.exit(1)
 
     tool = tool_map[tool_name]
-    parsed_args = parse_tool_arguments(arguments, input_json, tool.inputSchema)
+    parsed_args = parse_tool_arguments(arguments, input_json, tool.input_schema)
 
-    required = set(tool.inputSchema.get("required", []))
+    required = set(tool.input_schema.get("required", []))
     provided = set(parsed_args.keys())
     missing = required - provided
     if missing:
@@ -549,19 +549,19 @@ async def _handle_resource(
     if json_output:
         data = []
         for block in contents:
-            if isinstance(block, mcp.types.TextResourceContents):
+            if isinstance(block, mcp_types.TextResourceContents):
                 data.append(
                     {
                         "uri": str(block.uri),
-                        "mimeType": block.mimeType,
+                        "mimeType": block.mime_type,
                         "text": block.text,
                     }
                 )
-            elif isinstance(block, mcp.types.BlobResourceContents):
+            elif isinstance(block, mcp_types.BlobResourceContents):
                 data.append(
                     {
                         "uri": str(block.uri),
-                        "mimeType": block.mimeType,
+                        "mimeType": block.mime_type,
                         "blob": block.blob,
                     }
                 )
@@ -569,11 +569,11 @@ async def _handle_resource(
         return
 
     for block in contents:
-        if isinstance(block, mcp.types.TextResourceContents):
+        if isinstance(block, mcp_types.TextResourceContents):
             console.print(_sanitize_untrusted_text(block.text))
-        elif isinstance(block, mcp.types.BlobResourceContents):
+        elif isinstance(block, mcp_types.BlobResourceContents):
             size = len(block.blob) * 3 // 4
-            console.print(f"[dim][Blob: {block.mimeType}, ~{size} bytes][/dim]")
+            console.print(f"[dim][Blob: {block.mime_type}, ~{size} bytes][/dim]")
 
 
 async def _handle_prompt(
@@ -621,12 +621,12 @@ async def _handle_prompt(
 
     for msg in result.messages:
         console.print(f"[bold]{_sanitize_untrusted_text(msg.role)}:[/bold]")
-        if isinstance(msg.content, mcp.types.TextContent):
+        if isinstance(msg.content, mcp_types.TextContent):
             console.print(f"  {_sanitize_untrusted_text(msg.content.text)}")
-        elif isinstance(msg.content, mcp.types.ImageContent):
+        elif isinstance(msg.content, mcp_types.ImageContent):
             size = len(msg.content.data) * 3 // 4
             console.print(
-                f"  [dim][Image: {msg.content.mimeType}, ~{size} bytes][/dim]"
+                f"  [dim][Image: {msg.content.mime_type}, ~{size} bytes][/dim]"
             )
         else:
             console.print(f"  {_sanitize_untrusted_text(str(msg.content))}")
@@ -718,7 +718,7 @@ async def list_command(
                             "uri": str(r.uri),
                             "name": r.name,
                             "description": r.description,
-                            "mimeType": r.mimeType,
+                            "mimeType": r.mime_type,
                         }
                         for r in res
                     ]
@@ -749,9 +749,9 @@ async def list_command(
                             f"    {_sanitize_untrusted_text(tool.description)}"
                         )
                     if input_schema:
-                        _print_schema("Input", tool.inputSchema)
-                    if output_schema and tool.outputSchema:
-                        _print_schema("Output", tool.outputSchema)
+                        _print_schema("Input", tool.input_schema)
+                    if output_schema and tool.output_schema:
+                        _print_schema("Output", tool.output_schema)
                     console.print()
 
             if resources:

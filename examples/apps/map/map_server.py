@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from textwrap import dedent
 
-import httpx
+import httpx2
 from prefab_ui.app import PrefabApp
 from prefab_ui.components import (
     Badge,
@@ -32,7 +32,7 @@ NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 
 def _geocode(query: str) -> dict | None:
     """Geocode an address using OpenStreetMap Nominatim (free, no key)."""
-    resp = httpx.get(
+    resp = httpx2.get(
         NOMINATIM_URL,
         params={"q": query, "format": "json", "limit": 1},
         headers={"User-Agent": "fastmcp-map-example/1.0"},

@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from docket.execution import ExecutionState
-from mcp.types import TaskStatusNotification, TaskStatusNotificationParams
+from mcp_types import TaskStatusNotification, TaskStatusNotificationParams
 
 from fastmcp.server.tasks.config import DEFAULT_TTL_MS
 from fastmcp.server.tasks.keys import parse_task_key, task_redis_prefix

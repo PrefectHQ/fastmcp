@@ -24,9 +24,10 @@ Example:
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
-import mcp.types as mt
+import mcp_types as mt
 
 from fastmcp.exceptions import AuthorizationError
 from fastmcp.prompts.base import Prompt, PromptResult
@@ -44,8 +45,36 @@ from fastmcp.server.middleware.middleware import (
     MiddlewareContext,
 )
 from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.utilities.versions import VersionSpec
 
 logger = logging.getLogger(__name__)
+
+
+def _requested_version(meta: Mapping[str, Any] | None) -> VersionSpec | None:
+    # SDK v2: request `_meta` is a plain dict (the `Meta` type alias), not the
+    # old `RequestParams.Meta` nested model.
+    if not meta:
+        return None
+
+    fastmcp_meta = meta.get("fastmcp")
+    if not isinstance(fastmcp_meta, dict):
+        return None
+
+    version = fastmcp_meta.get("version")
+    if isinstance(version, str):
+        return VersionSpec(eq=version)
+
+    if isinstance(version, dict):
+        gte = version.get("gte")
+        lt = version.get("lt")
+        eq = version.get("eq")
+
+        if not all(value is None or isinstance(value, str) for value in (gte, lt, eq)):
+            return None
+
+        return VersionSpec(gte=gte, lt=lt, eq=eq)
+
+    return None
 
 
 class AuthMiddleware(Middleware):
@@ -140,7 +169,8 @@ class AuthMiddleware(Middleware):
         # component-level auth denied access, so the two cases are
         # indistinguishable here. Keep the message ambiguous to avoid
         # disclosing existence of tools the caller is not authorized to see.
-        tool = await fastmcp.fastmcp.get_tool(tool_name)
+        version = _requested_version(context.message.meta)
+        tool = await fastmcp.fastmcp.get_tool(tool_name, version=version)
         if tool is None:
             raise AuthorizationError(
                 f"Authorization failed for tool '{tool_name}': "
@@ -212,9 +242,13 @@ class AuthMiddleware(Middleware):
         # does not exist and when component-level auth denied access, so the two
         # cases are indistinguishable here. Keep the message ambiguous to avoid
         # disclosing existence of resources the caller is not authorized to see.
-        component = await fastmcp.fastmcp.get_resource(str(uri))
+        version = _requested_version(context.message.meta)
+        component = await fastmcp.fastmcp.get_resource(str(uri), version=version)
         if component is None:
-            component = await fastmcp.fastmcp.get_resource_template(str(uri))
+            component = await fastmcp.fastmcp.get_resource_template(
+                str(uri),
+                version=version,
+            )
         if component is None:
             raise AuthorizationError(
                 f"Authorization failed for resource '{uri}': "
@@ -315,7 +349,8 @@ class AuthMiddleware(Middleware):
         # component-level auth denied access, so the two cases are
         # indistinguishable here. Keep the message ambiguous to avoid
         # disclosing existence of prompts the caller is not authorized to see.
-        prompt = await fastmcp.fastmcp.get_prompt(prompt_name)
+        version = _requested_version(context.message.meta)
+        prompt = await fastmcp.fastmcp.get_prompt(prompt_name, version=version)
         if prompt is None:
             raise AuthorizationError(
                 f"Authorization failed for prompt '{prompt_name}': "

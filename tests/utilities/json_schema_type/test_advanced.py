@@ -497,6 +497,34 @@ class TestEdgeCases:
         assert result.node.value == "default"  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
         assert result.node.next is None  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
 
+    def test_recursive_ref_in_anyof_does_not_recurse_forever(self):
+        schema = {
+            "type": "object",
+            "properties": {
+                "items": {"type": "array", "items": {"$ref": "#/$defs/JSONValue"}},
+            },
+            "$defs": {
+                "JSONValue": {
+                    "anyOf": [
+                        {"type": "string"},
+                        {"type": "array", "items": {"$ref": "#/$defs/JSONValue"}},
+                        {
+                            "type": "object",
+                            "additionalProperties": {"$ref": "#/$defs/JSONValue"},
+                        },
+                    ]
+                }
+            },
+        }
+
+        Type = json_schema_to_type(schema)
+        validator = TypeAdapter(Type)
+        result = validator.validate_python(
+            {"items": ["value", ["nested"], {"key": ["leaf"]}]}
+        )
+
+        assert result.items == ["value", ["nested"], {"key": ["leaf"]}]  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+
     def test_mixed_type_array(self):
         schema = {
             "type": "array",

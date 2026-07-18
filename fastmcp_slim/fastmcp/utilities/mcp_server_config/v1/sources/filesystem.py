@@ -117,7 +117,7 @@ class FileSystemSource(Source):
             The server object (or result of calling a factory function)
         """
         # Avoid circular import by importing here
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as SDKServer
 
         from fastmcp.server.server import FastMCP
 
@@ -154,7 +154,7 @@ class FileSystemSource(Source):
         for name in ["mcp", "server", "app"]:
             if hasattr(module, name):
                 obj = getattr(module, name)
-                if isinstance(obj, FastMCP | FastMCP1x):
+                if isinstance(obj, FastMCP | SDKServer):
                     return await self._resolve_factory(obj, file_path, name)
 
         # No server found
@@ -178,7 +178,7 @@ class FileSystemSource(Source):
             A server instance
         """
         # Avoid circular import by importing here
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as SDKServer
 
         from fastmcp.server.server import FastMCP
 
@@ -195,7 +195,7 @@ class FileSystemSource(Source):
                     server = obj()
 
                 # Validate the result is a FastMCP server
-                if not isinstance(server, FastMCP | FastMCP1x):
+                if not isinstance(server, FastMCP | SDKServer):
                     logger.error(
                         f"Factory function '{name}' must return a FastMCP server instance, "
                         f"got {type(server).__name__}",

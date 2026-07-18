@@ -125,7 +125,7 @@ class TestSamplingToolSDKConversion:
 
         assert sdk_tool.name == "search"
         assert sdk_tool.description == "Search the web."
-        assert "query" in sdk_tool.inputSchema.get("properties", {})
+        assert "query" in sdk_tool.input_schema.get("properties", {})
 
 
 class TestSamplingToolFromCallableTool:

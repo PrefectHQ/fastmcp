@@ -1,6 +1,6 @@
 """Tests for icon support across all MCP object types."""
 
-from mcp.types import Icon
+from mcp_types import Icon
 
 from fastmcp import Client, FastMCP
 from fastmcp.prompts import Message, Prompt
@@ -17,12 +17,12 @@ class TestServerIcons:
         icons = [
             Icon(
                 src="https://example.com/icon.png",
-                mimeType="image/png",
+                mime_type="image/png",
                 sizes=["48x48"],
             ),
             Icon(
                 src="data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=",
-                mimeType="image/svg+xml",
+                mime_type="image/svg+xml",
                 sizes=["any"],
             ),
         ]
@@ -36,8 +36,8 @@ class TestServerIcons:
 
         # Verify that icons and website_url are passed to the underlying server
         async with Client(mcp) as client:
-            server_info = client.initialize_result.serverInfo
-            assert server_info.websiteUrl == "https://example.com"
+            server_info = client.initialize_result.server_info
+            assert server_info.website_url == "https://example.com"
             assert server_info.icons == icons
 
     async def test_server_without_icons_and_website_url(self):
@@ -45,8 +45,8 @@ class TestServerIcons:
         mcp = FastMCP(name="TestServer")
 
         async with Client(mcp) as client:
-            server_info = client.initialize_result.serverInfo
-            assert server_info.websiteUrl is None
+            server_info = client.initialize_result.server_info
+            assert server_info.website_url is None
             assert server_info.icons is None
 
 
@@ -58,7 +58,7 @@ class TestToolIcons:
         mcp = FastMCP("TestServer")
 
         icons = [
-            Icon(src="https://example.com/tool-icon.png", mimeType="image/png"),
+            Icon(src="https://example.com/tool-icon.png", mime_type="image/png"),
         ]
 
         @mcp.tool(icons=icons)
@@ -272,17 +272,17 @@ class TestIconTypes:
         icons = [
             Icon(
                 src="https://example.com/icon-48.png",
-                mimeType="image/png",
+                mime_type="image/png",
                 sizes=["48x48"],
             ),
             Icon(
                 src="https://example.com/icon-96.png",
-                mimeType="image/png",
+                mime_type="image/png",
                 sizes=["96x96"],
             ),
             Icon(
                 src="https://example.com/icon.svg",
-                mimeType="image/svg+xml",
+                mime_type="image/svg+xml",
                 sizes=["any"],
             ),
         ]
@@ -290,7 +290,7 @@ class TestIconTypes:
         mcp = FastMCP("TestServer", icons=icons)
 
         async with Client(mcp) as client:
-            server_info = client.initialize_result.serverInfo
+            server_info = client.initialize_result.server_info
             assert len(server_info.icons) == 3
             assert server_info.icons == icons
 
@@ -299,7 +299,7 @@ class TestIconTypes:
         # Simple SVG data URI
         data_uri = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCI+PHBhdGggZD0iTTEyIDJDNi40OCAyIDIgNi40OCAyIDEyczQuNDggMTAgMTAgMTAgMTAtNC40OCAxMC0xMFMxNy41MiAyIDEyIDJ6Ii8+PC9zdmc+"
 
-        icons = [Icon(src=data_uri, mimeType="image/svg+xml")]
+        icons = [Icon(src=data_uri, mime_type="image/svg+xml")]
 
         mcp = FastMCP("TestServer")
 
@@ -319,14 +319,14 @@ class TestIconTypes:
         mcp = FastMCP("TestServer", icons=icons)
 
         async with Client(mcp) as client:
-            server_info = client.initialize_result.serverInfo
+            server_info = client.initialize_result.server_info
             assert server_info.icons[0].src == "https://example.com/icon.png"
-            assert server_info.icons[0].mimeType is None
+            assert server_info.icons[0].mime_type is None
             assert server_info.icons[0].sizes is None
 
 
 class TestIconImport:
-    """Test that Icon must be imported from mcp.types."""
+    """Test that Icon must be imported from mcp_types."""
 
     def test_icon_import(self):
         """Test that Icon must be imported from mcp.types, not fastmcp."""
@@ -336,7 +336,7 @@ class TestIconImport:
         assert not hasattr(fastmcp, "Icon")
 
         # Icon should be imported from mcp.types
-        from mcp.types import Icon as MCPIcon
+        from mcp_types import Icon as MCPIcon
 
         icon = MCPIcon(src="https://example.com/icon.png")
         assert icon.src == "https://example.com/icon.png"

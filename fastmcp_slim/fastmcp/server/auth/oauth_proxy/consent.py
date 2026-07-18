@@ -23,6 +23,7 @@ from starlette.responses import HTMLResponse, RedirectResponse
 
 from fastmcp.server.auth.oauth_proxy.models import ProxyDCRClient
 from fastmcp.server.auth.oauth_proxy.ui import create_consent_html
+from fastmcp.server.auth.redirect_validation import validate_redirect_uri
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.ui import create_secure_html_response
 
@@ -59,6 +60,16 @@ class ConsentMixin:
         """Create a stable key for consent tracking from client_id and redirect_uri."""
         normalized = self._normalize_uri(str(redirect_uri))
         return f"{client_id}:{normalized}"
+
+    def _validate_client_redirect_uri(
+        self: OAuthProxy,
+        redirect_uri: str,
+    ) -> bool:
+        """Validate a stored transaction redirect URI before sending a browser to it."""
+        return validate_redirect_uri(
+            redirect_uri=redirect_uri,
+            allowed_patterns=self._allowed_client_redirect_uris,
+        )
 
     def _cookie_name(self: OAuthProxy, base_name: str) -> str:
         """Return secure cookie name for HTTPS, fallback for HTTP development."""
@@ -361,6 +372,18 @@ class ConsentMixin:
                     return response
 
                 if client_key in denied:
+                    if not self._validate_client_redirect_uri(
+                        txn["client_redirect_uri"]
+                    ):
+                        logger.warning(
+                            "Blocked consent denial redirect to disallowed URI for transaction %s",
+                            txn_id,
+                        )
+                        return create_secure_html_response(
+                            "<h1>Error</h1><p>Invalid redirect URI</p>",
+                            status_code=400,
+                        )
+
                     callback_params = {
                         "error": "access_denied",
                         "state": txn.get("client_state") or "",
@@ -526,6 +549,16 @@ class ConsentMixin:
             return response
 
         elif action == "deny":
+            if not self._validate_client_redirect_uri(txn["client_redirect_uri"]):
+                logger.warning(
+                    "Blocked consent denial redirect to disallowed URI for transaction %s",
+                    txn_id,
+                )
+                return create_secure_html_response(
+                    "<h1>Error</h1><p>Invalid redirect URI</p>",
+                    status_code=400,
+                )
+
             callback_params = {
                 "error": "access_denied",
                 "state": txn.get("client_state") or "",

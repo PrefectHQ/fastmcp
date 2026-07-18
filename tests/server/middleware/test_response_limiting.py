@@ -1,7 +1,7 @@
 """Tests for ResponseLimitingMiddleware."""
 
 import pytest
-from mcp.types import ImageContent, TextContent
+from mcp_types import ImageContent, TextContent
 from pydantic import BaseModel
 
 from fastmcp import Client, FastMCP
@@ -127,7 +127,7 @@ class TestResponseLimitingMiddleware:
         def binary_tool() -> ToolResult:
             return ToolResult(
                 content=[
-                    ImageContent(type="image", data="x" * 10_000, mimeType="image/png")
+                    ImageContent(type="image", data="x" * 10_000, mime_type="image/png")
                 ]
             )
 

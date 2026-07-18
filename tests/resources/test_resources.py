@@ -1,4 +1,4 @@
-import mcp.types
+import mcp_types
 import pytest
 from pydantic import AnyUrl, BaseModel
 
@@ -174,9 +174,9 @@ class TestResourceContent:
             content="hello", mime_type="text/plain", meta={"k": "v"}
         )
         mcp_content = content.to_mcp_resource_contents("resource://test")
-        assert isinstance(mcp_content, mcp.types.TextResourceContents)
+        assert isinstance(mcp_content, mcp_types.TextResourceContents)
         assert mcp_content.text == "hello"
-        assert mcp_content.mimeType == "text/plain"
+        assert mcp_content.mime_type == "text/plain"
         assert str(mcp_content.uri) == "resource://test"
         assert mcp_content.meta == {"k": "v"}
 
@@ -186,9 +186,9 @@ class TestResourceContent:
             content=b"\x00\x01\x02", mime_type="application/octet-stream"
         )
         mcp_content = content.to_mcp_resource_contents("resource://binary")
-        assert isinstance(mcp_content, mcp.types.BlobResourceContents)
+        assert isinstance(mcp_content, mcp_types.BlobResourceContents)
         assert mcp_content.blob == "AAEC"  # base64 of \x00\x01\x02
-        assert mcp_content.mimeType == "application/octet-stream"
+        assert mcp_content.mime_type == "application/octet-stream"
 
 
 class TestResourceResult:
@@ -250,9 +250,9 @@ class TestResourceResult:
             meta={"source": "test"},
         )
         mcp_result = result.to_mcp_result("resource://test")
-        assert isinstance(mcp_result, mcp.types.ReadResourceResult)
+        assert isinstance(mcp_result, mcp_types.ReadResourceResult)
         assert len(mcp_result.contents) == 1
-        assert isinstance(mcp_result.contents[0], mcp.types.TextResourceContents)
+        assert isinstance(mcp_result.contents[0], mcp_types.TextResourceContents)
         assert mcp_result.contents[0].text == "hello"
         assert str(mcp_result.contents[0].uri) == "resource://test"
         assert mcp_result.meta == {"source": "test"}

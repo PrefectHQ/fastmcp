@@ -1,20 +1,18 @@
 from __future__ import annotations
 
-import warnings
 from collections.abc import Callable
 from typing import (
     TYPE_CHECKING,
     Annotated,
     Any,
     ClassVar,
-    TypeAlias,
     overload,
 )
 
-import mcp.types
+import mcp_types
 import pydantic_core
 from mcp.shared.tool_name_validation import validate_and_warn_tool_name
-from mcp.types import (
+from mcp_types import (
     CallToolResult,
     ContentBlock,
     Icon,
@@ -22,11 +20,10 @@ from mcp.types import (
     ToolAnnotations,
     ToolExecution,
 )
-from mcp.types import Tool as MCPTool
+from mcp_types import Tool as MCPTool
 from pydantic import BaseModel, Field, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
-from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
@@ -59,11 +56,34 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-ToolResultSerializerType: TypeAlias = Callable[[Any], str]
+def resolve_serialize_by_alias(value: Any) -> bool:
+    """Resolve the effective ``by_alias`` setting for serializing *value*.
+
+    Pydantic's low-level serialization helpers (``to_json``,
+    ``to_jsonable_python``) default ``by_alias`` to ``True``, which silently
+    ignores a model's ``serialize_by_alias`` config. When *value* is a Pydantic
+    model we consult that config instead, falling back to ``True`` to preserve
+    FastMCP's longstanding default of emitting aliases when no preference is
+    declared.
+    """
+    if isinstance(value, type):
+        model = value if issubclass(value, BaseModel) else None
+    elif isinstance(value, BaseModel):
+        model = type(value)
+    else:
+        model = None
+
+    if model is None:
+        return True
+
+    configured = model.model_config.get("serialize_by_alias")
+    return True if configured is None else configured
 
 
 def default_serializer(data: Any) -> str:
-    return pydantic_core.to_json(data, fallback=str).decode()
+    return pydantic_core.to_json(
+        data, fallback=str, by_alias=resolve_serialize_by_alias(data)
+    ).decode()
 
 
 class ToolResult(BaseModel):
@@ -79,7 +99,7 @@ class ToolResult(BaseModel):
     is_error: bool = Field(
         default=False,
         description="Whether this result represents a tool execution error. "
-        "When True, it maps to CallToolResult.isError so the error is returned "
+        "When True, it maps to CallToolResult.is_error so the error is returned "
         "to the client rather than raised.",
     )
 
@@ -110,7 +130,8 @@ class ToolResult(BaseModel):
 
             try:
                 structured_content = pydantic_core.to_jsonable_python(
-                    value=structured_content
+                    value=structured_content,
+                    by_alias=resolve_serialize_by_alias(structured_content),
                 )
             except pydantic_core.PydanticSerializationError as e:
                 logger.error(
@@ -140,9 +161,9 @@ class ToolResult(BaseModel):
         # reaches the client; the plain content/tuple returns can't carry it.
         if self.meta is not None or self.is_error:
             return CallToolResult(
-                structuredContent=self.structured_content,
+                structured_content=self.structured_content,
                 content=self.content,
-                isError=self.is_error,
+                is_error=self.is_error,
                 _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
             )
         if self.structured_content is None:
@@ -168,12 +189,6 @@ class Tool(FastMCPComponent):
     execution: Annotated[
         ToolExecution | None,
         Field(description="Task execution configuration (SEP-1686)"),
-    ] = None
-    serializer: Annotated[
-        SkipJsonSchema[ToolResultSerializerType | None],
-        Field(
-            description="Deprecated. Return ToolResult from your tools for full control over serialization."
-        ),
     ] = None
     auth: Annotated[
         SkipJsonSchema[AuthCheck | list[AuthCheck] | None],
@@ -208,8 +223,8 @@ class Tool(FastMCPComponent):
             name=overrides.get("name", self.name),
             title=overrides.get("title", title),
             description=overrides.get("description", self.description),
-            inputSchema=overrides.get("inputSchema", self.parameters),
-            outputSchema=overrides.get("outputSchema", self.output_schema),
+            input_schema=overrides.get("inputSchema", self.parameters),
+            output_schema=overrides.get("outputSchema", self.output_schema),
             icons=overrides.get("icons", self.icons),
             annotations=overrides.get("annotations", self.annotations),
             execution=overrides.get("execution", self.execution),
@@ -223,7 +238,7 @@ class Tool(FastMCPComponent):
             and "execution" not in overrides
             and not self.execution
         ):
-            mcp_tool.execution = ToolExecution(taskSupport=self.task_config.mode)
+            mcp_tool.execution = ToolExecution(task_support=self.task_config.mode)
 
         return mcp_tool
 
@@ -239,9 +254,7 @@ class Tool(FastMCPComponent):
         icons: list[Icon] | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
-        exclude_args: list[str] | None = None,
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
-        serializer: ToolResultSerializerType | None = None,  # Deprecated
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
         timeout: float | None = None,
@@ -260,9 +273,7 @@ class Tool(FastMCPComponent):
             icons=icons,
             tags=tags,
             annotations=annotations,
-            exclude_args=exclude_args,
             output_schema=output_schema,
-            serializer=serializer,
             meta=meta,
             task=task,
             timeout=timeout,
@@ -286,7 +297,7 @@ class Tool(FastMCPComponent):
         """Convert a raw result to ToolResult.
 
         Handles ToolResult passthrough and converts raw values using the tool's
-        attributes (serializer, output_schema) for proper conversion.
+        attributes (output_schema) for proper conversion.
         """
         if isinstance(raw_value, ToolResult):
             return raw_value
@@ -303,7 +314,7 @@ class Tool(FastMCPComponent):
                     fastmcp_app_name=_get_fastmcp_app_name(self),
                 )
 
-        content = _convert_to_content(raw_value, serializer=self.serializer)
+        content = _convert_to_content(raw_value)
 
         # Bytes can't be represented as structured JSON content
         if isinstance(raw_value, bytes):
@@ -321,7 +332,9 @@ class Tool(FastMCPComponent):
             return ToolResult(content=content)
 
         try:
-            structured = pydantic_core.to_jsonable_python(raw_value)
+            structured = pydantic_core.to_jsonable_python(
+                raw_value, by_alias=resolve_serialize_by_alias(raw_value)
+            )
         except (pydantic_core.PydanticSerializationError, UnicodeDecodeError):
             return ToolResult(content=content)
 
@@ -351,13 +364,13 @@ class Tool(FastMCPComponent):
         self,
         arguments: dict[str, Any],
         task_meta: TaskMeta,
-    ) -> mcp.types.CreateTaskResult: ...
+    ) -> mcp_types.CreateTaskResult: ...
 
     async def _run(
         self,
         arguments: dict[str, Any],
         task_meta: TaskMeta | None = None,
-    ) -> ToolResult | mcp.types.CreateTaskResult:
+    ) -> ToolResult | mcp_types.CreateTaskResult:
         """Server entry point that handles task routing.
 
         This allows ANY Tool subclass to support background execution by setting
@@ -431,7 +444,6 @@ class Tool(FastMCPComponent):
         tags: set[str] | None = None,
         annotations: ToolAnnotations | NotSetT | None = NotSet,
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
-        serializer: ToolResultSerializerType | None = None,  # Deprecated
         meta: dict[str, Any] | NotSetT | None = NotSet,
         transform_args: dict[str, ArgTransform] | None = None,
         transform_fn: Callable[..., Any] | None = None,
@@ -450,7 +462,6 @@ class Tool(FastMCPComponent):
             tags=tags,
             annotations=annotations,
             output_schema=output_schema,
-            serializer=serializer,
             meta=meta,
         )
 
@@ -476,25 +487,8 @@ class Tool(FastMCPComponent):
         }
 
 
-def _serialize_with_fallback(
-    result: Any, serializer: ToolResultSerializerType | None = None
-) -> str:
-    if serializer is not None:
-        try:
-            return serializer(result)
-        except Exception as e:
-            logger.warning(
-                "Error serializing tool result: %s",
-                e,
-                exc_info=True,
-            )
-
-    return default_serializer(result)
-
-
 def _convert_to_single_content_block(
     item: Any,
-    serializer: ToolResultSerializerType | None = None,
 ) -> ContentBlock:
     if isinstance(item, ContentBlock):
         return item
@@ -519,7 +513,7 @@ def _convert_to_single_content_block(
 
             return TextContent(type="text", text=base64.b64encode(item).decode("ascii"))
 
-    return TextContent(type="text", text=_serialize_with_fallback(item, serializer))
+    return TextContent(type="text", text=default_serializer(item))
 
 
 _PREFAB_TEXT_FALLBACK = "[Rendered Prefab UI]"
@@ -570,7 +564,6 @@ def _prefab_to_tool_result(app: Any, fastmcp_app_name: str | None = None) -> Too
 
 def _convert_to_content(
     result: Any,
-    serializer: ToolResultSerializerType | None = None,
 ) -> list[ContentBlock]:
     """Convert a result to a sequence of content objects."""
 
@@ -578,7 +571,7 @@ def _convert_to_content(
         return []
 
     if not isinstance(result, (list | tuple)):
-        return [_convert_to_single_content_block(result, serializer)]
+        return [_convert_to_single_content_block(result)]
 
     # If all items are ContentBlocks, return them as is
     if all(isinstance(item, ContentBlock) for item in result):
@@ -588,38 +581,13 @@ def _convert_to_content(
     # without aggregating them
     if any(isinstance(item, ContentBlock | Image | Audio | File) for item in result):
         return [
-            _convert_to_single_content_block(item, serializer)
+            _convert_to_single_content_block(item)
             if not isinstance(item, ContentBlock)
             else item
             for item in result
         ]
     # If none of the items are ContentBlocks, aggregate all items into a single TextContent
-    return [TextContent(type="text", text=_serialize_with_fallback(result, serializer))]
+    return [TextContent(type="text", text=default_serializer(result))]
 
 
 __all__ = ["Tool", "ToolResult"]
-
-
-def __getattr__(name: str) -> Any:
-    """Deprecated re-exports for backwards compatibility."""
-    deprecated_exports = {
-        "FunctionTool": "FunctionTool",
-        "ParsedFunction": "ParsedFunction",
-        "tool": "tool",
-    }
-
-    if name in deprecated_exports:
-        import fastmcp
-
-        if fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                f"Importing {name} from fastmcp.tools.tool is deprecated. "
-                f"Import from fastmcp.tools.function_tool instead.",
-                FastMCPDeprecationWarning,
-                stacklevel=2,
-            )
-        from fastmcp.tools import function_tool
-
-        return getattr(function_tool, name)
-
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

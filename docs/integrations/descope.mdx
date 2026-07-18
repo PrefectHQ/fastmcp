@@ -23,11 +23,10 @@ Before you begin, you will need:
 ### Step 1: Configure Descope
 
 <Steps>
-<Step title="Create an MCP Server">
-    1. Go to the [MCP Servers page](https://app.descope.com/mcp-servers) of the Descope Console, and create a new MCP Server.
-    2. Give the MCP server a name and description.
-    3. Ensure that **Dynamic Client Registration (DCR)** is enabled. Then click **Create**.
-    4. Once you've created the MCP Server, note your Well-Known URL.
+<Step title="Configure a Descope application">
+    You can use either a resource-specific Descope MCP Server or a project-level inbound app.
+
+    To create an MCP Server, go to the [MCP Servers page](https://app.descope.com/mcp-servers) of the Descope Console, create a server, and enable **Dynamic Client Registration (DCR)**.
     
     
     <Warning>
@@ -35,10 +34,17 @@ Before you begin, you will need:
     </Warning>
 </Step>
 
-<Step title="Note Your Well-Known URL">
-    Save your Well-Known URL from [MCP Server Settings](https://app.descope.com/mcp-servers):
+<Step title="Copy the Well-Known URL">
+    `DescopeProvider` accepts both resource-specific MCP Server URLs:
+
     ```
-    Well-Known URL: https://.../v1/apps/agentic/P.../M.../.well-known/openid-configuration
+    https://api.descope.com/v1/apps/agentic/P.../M.../.well-known/openid-configuration
+    ```
+
+    and project-level inbound app URLs:
+
+    ```
+    https://api.descope.com/v1/apps/P.../.well-known/openid-configuration
     ```
 </Step>
 </Steps>
@@ -48,7 +54,7 @@ Before you begin, you will need:
 Create a `.env` file with your Descope configuration:
 
 ```bash
-DESCOPE_CONFIG_URL=https://.../v1/apps/agentic/P.../M.../.well-known/openid-configuration     # Your Descope Well-Known URL
+DESCOPE_CONFIG_URL=https://api.descope.com/v1/apps/P.../.well-known/openid-configuration
 SERVER_URL=http://localhost:3000     # Your server's base URL
 ```
 
@@ -60,17 +66,34 @@ Create your FastMCP server file and use the DescopeProvider to handle all the OA
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.descope import DescopeProvider
 
-# The DescopeProvider automatically discovers Descope endpoints
-# and configures JWT token validation
+# DescopeProvider accepts either supported Well-Known URL format.
 auth_provider = DescopeProvider(
-    config_url="https://.../.well-known/openid-configuration",  # Your MCP Server .well-known URL
-    base_url=SERVER_URL,                                        # Your server's public URL
+    config_url="https://api.descope.com/v1/apps/P.../.well-known/openid-configuration",
+    base_url="https://your-fastmcp-server.com",
 )
 
 # Create FastMCP server with auth
 mcp = FastMCP(name="My Descope Protected Server", auth=auth_provider)
-
 ```
+
+### Scope discovery and validation
+
+When both `scopes_supported` and `required_scopes` are omitted, `DescopeProvider` discovers `scopes_supported` lazily from the OpenID configuration and advertises them to MCP clients. Provider construction remains network-free, and a transient discovery failure is retried on a later metadata request.
+
+Set both options when clients should request a broader set of scopes than the server requires on every token:
+
+```python
+from fastmcp.server.auth.providers.descope import DescopeProvider
+
+auth_provider = DescopeProvider(
+    config_url="https://api.descope.com/v1/apps/P.../.well-known/openid-configuration",
+    base_url="https://your-fastmcp-server.com",
+    scopes_supported=["mcp:read", "mcp:write"],
+    required_scopes=["mcp:read"],
+)
+```
+
+`scopes_supported` controls what the protected resource metadata advertises. `required_scopes` controls what the JWT verifier requires during token validation. When only `required_scopes` is set, those scopes are also advertised to clients.
 
 ## Testing
 

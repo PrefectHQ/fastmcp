@@ -1,6 +1,6 @@
 """Test that streamable HTTP routes avoid 307 redirects."""
 
-import httpx
+import httpx2
 import pytest
 from starlette.routing import Route
 
@@ -51,8 +51,8 @@ async def test_streamable_http_redirect_behavior():
     app = mcp.http_app(transport="http", path="/mcp")
 
     # Test that /mcp/ gets redirected to /mcp
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=app), base_url="http://test"
     ) as client:
         response = await client.get("/mcp/", follow_redirects=False)
         assert response.status_code == 307

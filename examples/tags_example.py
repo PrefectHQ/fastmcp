@@ -10,7 +10,7 @@ import asyncio
 from fastapi import FastAPI
 
 from fastmcp import FastMCP
-from fastmcp.server.openapi import MCPType, RouteMap
+from fastmcp.server.providers.openapi import MCPType, RouteMap
 
 # Create a FastAPI app with tagged endpoints
 app = FastAPI(title="Tagged API Example")

@@ -11,12 +11,27 @@ from unittest.mock import MagicMock
 
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
-from mcp.server.lowlevel.server import request_ctx
-from mcp.shared.context import RequestContext
 from starlette.requests import Request
 
 from fastmcp.server.auth import AccessToken
-from fastmcp.server.dependencies import get_access_token
+from fastmcp.server.dependencies import (
+    FastMCPRequestContext,
+    fastmcp_request_ctx,
+    get_access_token,
+)
+
+
+def _make_ctx(request: Request | None) -> FastMCPRequestContext:
+    return FastMCPRequestContext(
+        session=MagicMock(),
+        request_id="0",
+        meta=None,
+        request=request,
+        protocol_version="2025-06-18",
+        close_sse_stream=None,
+        lifespan_context=MagicMock(),
+        _srctx=MagicMock(meta=None),
+    )
 
 
 class TestStaleAccessToken:
@@ -63,15 +78,11 @@ class TestStaleAccessToken:
         }
         mock_request = Request(scope)
 
-        # Create a mock RequestContext with the request
-        mock_request_context = MagicMock(spec=RequestContext)
-        mock_request_context.request = mock_request
-
         # Set up the context vars:
         # - auth_context_var has STALE token
-        # - request_ctx has request with FRESH token
+        # - fastmcp_request_ctx has request with FRESH token
         auth_token = auth_context_var.set(stale_user)
-        request_token = request_ctx.set(mock_request_context)
+        request_token = fastmcp_request_ctx.set(_make_ctx(mock_request))
 
         try:
             # Call get_access_token - should return FRESH token
@@ -87,7 +98,7 @@ class TestStaleAccessToken:
         finally:
             # Clean up context vars
             auth_context_var.reset(auth_token)
-            request_ctx.reset(request_token)
+            fastmcp_request_ctx.reset(request_token)
 
     def test_get_access_token_falls_back_to_context_var_when_no_request(self):
         """
@@ -142,11 +153,9 @@ class TestStaleAccessToken:
             "user": UnauthenticatedUser(),
         }
         mock_request = Request(scope)
-        mock_request_context = MagicMock(spec=RequestContext)
-        mock_request_context.request = mock_request
 
         auth_token = auth_context_var.set(user)
-        request_token = request_ctx.set(mock_request_context)
+        request_token = fastmcp_request_ctx.set(_make_ctx(mock_request))
 
         try:
             result = get_access_token()
@@ -156,4 +165,4 @@ class TestStaleAccessToken:
             assert result.token == "context-var-token"
         finally:
             auth_context_var.reset(auth_token)
-            request_ctx.reset(request_token)
+            fastmcp_request_ctx.reset(request_token)
