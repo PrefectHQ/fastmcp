@@ -204,13 +204,16 @@ class TestEnhancedRequireAuthMiddleware:
 
     @staticmethod
     def create_scoped_app(
-        required_scopes: list[str], scopes_supported: list[str]
+        required_scopes: list[str],
+        scopes_supported: list[str],
+        challenge_scopes: list[str] | None = None,
     ) -> Starlette:
         auth = RemoteAuthProvider(
             token_verifier=_UnderScopedTokenVerifier(required_scopes),
             authorization_servers=[AnyHttpUrl("https://auth.example.com")],
             base_url="http://localhost:8000",
             scopes_supported=scopes_supported,
+            challenge_scopes=challenge_scopes,
         )
         return FastMCP("Test Server", auth=auth).http_app()
 
@@ -278,6 +281,7 @@ class TestEnhancedRequireAuthMiddleware:
         app = self.create_scoped_app(
             required_scopes=["read"],
             scopes_supported=["api://client-id/read"],
+            challenge_scopes=["api://client-id/read"],
         )
 
         with TestClient(app) as client:
@@ -294,6 +298,7 @@ class TestEnhancedRequireAuthMiddleware:
         app = self.create_scoped_app(
             required_scopes=["read"],
             scopes_supported=["api://client-id/read"],
+            challenge_scopes=["api://client-id/read"],
         )
 
         with TestClient(app) as client:
@@ -308,7 +313,7 @@ class TestEnhancedRequireAuthMiddleware:
             '.well-known/oauth-protected-resource/mcp"'
         )
 
-    def test_missing_auth_challenge_omits_empty_scope(self):
+    def test_missing_auth_challenge_uses_required_scope_with_empty_catalog(self):
         app = self.create_scoped_app(required_scopes=["read"], scopes_supported=[])
 
         with TestClient(app) as client:
@@ -316,9 +321,39 @@ class TestEnhancedRequireAuthMiddleware:
 
         assert response.status_code == 401
         assert response.headers["www-authenticate"] == (
-            'Bearer resource_metadata="http://localhost:8000/'
+            'Bearer scope="read", resource_metadata="http://localhost:8000/'
             '.well-known/oauth-protected-resource/mcp"'
         )
+
+    def test_remote_missing_auth_challenge_excludes_optional_catalog_scopes(self):
+        app = self.create_scoped_app(
+            required_scopes=["read"],
+            scopes_supported=["read", "admin"],
+        )
+
+        with TestClient(app) as client:
+            response = client.post("/mcp")
+            metadata = client.get("/.well-known/oauth-protected-resource/mcp").json()
+
+        assert response.status_code == 401
+        assert 'scope="read"' in response.headers["www-authenticate"]
+        assert "admin" not in response.headers["www-authenticate"]
+        assert metadata["scopes_supported"] == ["read", "admin"]
+
+    def test_remote_insufficient_scope_challenge_excludes_optional_catalog_scopes(
+        self,
+    ):
+        app = self.create_scoped_app(
+            required_scopes=["read"],
+            scopes_supported=["read", "admin"],
+        )
+
+        with TestClient(app) as client:
+            response = client.post("/mcp", headers={"Authorization": "Bearer narrow"})
+
+        assert response.status_code == 403
+        assert 'scope="read"' in response.headers["www-authenticate"]
+        assert "admin" not in response.headers["www-authenticate"]
 
     def test_oauth_missing_auth_challenge_excludes_optional_scopes(self):
         app = self.create_oauth_app()

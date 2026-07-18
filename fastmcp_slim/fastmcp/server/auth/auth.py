@@ -265,7 +265,17 @@ class AuthProvider(TokenVerifierProtocol):
     @property
     def challenge_scopes(self) -> list[str]:
         """Scopes clients must request to access this resource."""
-        return self.required_scopes
+        return self.get_challenge_scopes()
+
+    def get_challenge_scopes(
+        self, required_scopes: list[str] | None = None
+    ) -> list[str]:
+        """Translate validation scopes into scopes clients should request.
+
+        Providers whose authorization server uses a different scope format can
+        override this method to translate any effective set of validation scopes.
+        """
+        return self.required_scopes if required_scopes is None else required_scopes
 
     def set_mcp_path(self, mcp_path: str | None) -> None:
         """Set the MCP endpoint path and compute resource URL.
@@ -433,6 +443,7 @@ class RemoteAuthProvider(AuthProvider):
         resource_base_url: AnyHttpUrl | str | None = None,
         resource_name: str | None = None,
         resource_documentation: AnyHttpUrl | None = None,
+        challenge_scopes: list[str] | None = None,
     ):
         """Initialize the remote auth provider.
 
@@ -450,6 +461,8 @@ class RemoteAuthProvider(AuthProvider):
                 uses the token verifier's scopes_supported property. Use this
                 when the scopes clients request differ from the scopes that
                 appear in tokens (e.g., Azure AD full URI scopes vs short-form).
+            challenge_scopes: Request-facing form of the required validation scopes.
+                When omitted, scope translation delegates to the token verifier.
             resource_name: Optional name for the protected resource
             resource_documentation: Optional documentation URL for the protected resource
         """
@@ -461,6 +474,7 @@ class RemoteAuthProvider(AuthProvider):
         self.token_verifier = token_verifier
         self.authorization_servers = authorization_servers
         self._scopes_supported = scopes_supported
+        self._challenge_scopes = challenge_scopes
         self.resource_name = resource_name
         self.resource_documentation = resource_documentation
 
@@ -471,10 +485,22 @@ class RemoteAuthProvider(AuthProvider):
             return self._scopes_supported
         return self.token_verifier.scopes_supported
 
-    @property
-    def challenge_scopes(self) -> list[str]:
-        """Request-facing scopes required to access this resource."""
-        return self.scopes_supported
+    def get_challenge_scopes(
+        self, required_scopes: list[str] | None = None
+    ) -> list[str]:
+        """Translate effective validation scopes for the authorization server."""
+        effective_scopes = (
+            self.required_scopes if required_scopes is None else required_scopes
+        )
+        if (
+            effective_scopes == self.required_scopes
+            and self._challenge_scopes is not None
+        ):
+            return self._challenge_scopes
+        translator = getattr(self.token_verifier, "get_challenge_scopes", None)
+        if translator is None:
+            return effective_scopes
+        return translator(effective_scopes)
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify token using the configured token verifier."""
@@ -602,15 +628,16 @@ class MultiAuth(AuthProvider):
             return self.server.scopes_supported
         return self.required_scopes
 
-    @property
-    def challenge_scopes(self) -> list[str]:
-        """Effective request-facing scopes for the composed resource."""
-        if (
-            self.server is not None
-            and self.required_scopes == self.server.required_scopes
-        ):
-            return self.server.challenge_scopes
-        return self.required_scopes
+    def get_challenge_scopes(
+        self, required_scopes: list[str] | None = None
+    ) -> list[str]:
+        """Translate effective scopes through the delegated auth server."""
+        effective_scopes = (
+            self.required_scopes if required_scopes is None else required_scopes
+        )
+        if self.server is not None:
+            return self.server.get_challenge_scopes(effective_scopes)
+        return effective_scopes
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify a token by trying the server, then each verifier in order.

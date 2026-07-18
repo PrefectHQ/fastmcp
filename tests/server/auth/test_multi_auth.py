@@ -5,6 +5,7 @@ from pydantic import AnyHttpUrl
 from fastmcp import FastMCP
 from fastmcp.server.auth import MultiAuth, RemoteAuthProvider, TokenVerifier
 from fastmcp.server.auth.auth import AccessToken
+from fastmcp.server.auth.providers.azure import AzureJWTVerifier
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 
 
@@ -17,6 +18,13 @@ class RaisingVerifier(TokenVerifier):
 
 class UnderScopedVerifier(TokenVerifier):
     """A verifier that returns a token missing its required scopes."""
+
+    async def verify_token(self, token: str) -> AccessToken:
+        return AccessToken(token=token, client_id="c", scopes=[])
+
+
+class UnderScopedAzureJWTVerifier(AzureJWTVerifier):
+    """An Azure verifier that returns a token missing its required scopes."""
 
     async def verify_token(self, token: str) -> AccessToken:
         return AccessToken(token=token, client_id="c", scopes=[])
@@ -124,6 +132,7 @@ class TestMultiAuthInit:
             authorization_servers=[AnyHttpUrl("https://auth.example.com")],
             base_url="https://api.example.com",
             scopes_supported=["api://client-id/read"],
+            challenge_scopes=["api://client-id/read"],
         )
 
         auth = MultiAuth(server=provider)
@@ -152,6 +161,7 @@ class TestMultiAuthInit:
             authorization_servers=[AnyHttpUrl("https://auth.example.com")],
             base_url="https://api.example.com",
             scopes_supported=["api://client-id/read"],
+            challenge_scopes=["api://client-id/read"],
         )
 
         auth = MultiAuth(server=provider, required_scopes=["admin"])
@@ -441,6 +451,7 @@ class TestMultiAuthIntegration:
             authorization_servers=[AnyHttpUrl("https://auth.example.com")],
             base_url="https://api.example.com",
             scopes_supported=["api://client-id/read"],
+            challenge_scopes=["api://client-id/read"],
         )
 
         auth = MultiAuth(server=server)
@@ -467,13 +478,16 @@ class TestMultiAuthIntegration:
         )
 
     async def test_multi_auth_scope_override_wins_in_auth_challenges(self):
-        """Outer validation overrides must also drive 401 and 403 challenges."""
-        verifier = UnderScopedVerifier(required_scopes=["read"])
+        """Outer overrides are translated for both 401 and 403 challenges."""
+        verifier = UnderScopedAzureJWTVerifier(
+            client_id="client-id",
+            tenant_id="test-tenant",
+            required_scopes=["read"],
+        )
         server = RemoteAuthProvider(
             token_verifier=verifier,
             authorization_servers=[AnyHttpUrl("https://auth.example.com")],
             base_url="https://api.example.com",
-            scopes_supported=["api://client-id/read"],
         )
 
         auth = MultiAuth(server=server, required_scopes=["admin"])
@@ -489,12 +503,18 @@ class TestMultiAuthIntegration:
             )
 
         assert missing_response.status_code == 401
-        assert 'scope="admin"' in missing_response.headers["www-authenticate"]
+        assert (
+            'scope="api://client-id/admin"'
+            in missing_response.headers["www-authenticate"]
+        )
         assert (
             "api://client-id/read" not in missing_response.headers["www-authenticate"]
         )
         assert narrow_response.status_code == 403
-        assert 'scope="admin"' in narrow_response.headers["www-authenticate"]
+        assert (
+            'scope="api://client-id/admin"'
+            in narrow_response.headers["www-authenticate"]
+        )
         assert "api://client-id/read" not in narrow_response.headers["www-authenticate"]
 
     async def test_multi_auth_override_propagates_to_served_metadata(self):
