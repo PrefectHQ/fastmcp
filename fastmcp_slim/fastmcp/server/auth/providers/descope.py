@@ -283,10 +283,12 @@ class DescopeProvider(RemoteAuthProvider):
             routes = super().get_routes(mcp_path)
 
         async def oauth_authorization_server_metadata(request):
-            metadata_urls = [
-                self.oauth_authorization_server_metadata_url,
-                f"{self.descope_base_url}/v1/apps/{self.project_id}{_OAUTH_WK}",
-            ]
+            metadata_urls = [self.oauth_authorization_server_metadata_url]
+            project_metadata_url = (
+                f"{self.descope_base_url}/v1/apps/{self.project_id}{_OAUTH_WK}"
+            )
+            if project_metadata_url != self.oauth_authorization_server_metadata_url:
+                metadata_urls.append(project_metadata_url)
             try:
                 async with httpx2.AsyncClient() as client:
                     for metadata_url in metadata_urls:

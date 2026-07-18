@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import httpx2
 import pytest
 from mcp import MCPError
+from starlette.requests import Request
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
@@ -209,6 +210,35 @@ class TestDescopeProvider:
         paths = [route.path for route in routes]
         assert any("oauth-protected-resource" in path for path in paths)
         assert any("oauth-authorization-server" in path for path in paths)
+
+    async def test_project_level_metadata_failure_is_not_retried(self):
+        """Identical project-level primary and fallback URLs are fetched once."""
+        provider = DescopeProvider(
+            config_url="https://api.descope.com/v1/apps/P2abc123/.well-known/openid-configuration",
+            base_url="https://myserver.com",
+        )
+        metadata_route = next(
+            route
+            for route in provider.get_routes("/mcp")
+            if route.path == "/.well-known/oauth-authorization-server"
+        )
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": metadata_route.path,
+                "headers": [],
+            }
+        )
+
+        failing = AsyncMock(side_effect=httpx2.ConnectError("boom"))
+        with patch("httpx2.AsyncClient.get", new=failing):
+            response = await metadata_route.endpoint(request)
+
+        assert response.status_code == 500
+        failing.assert_awaited_once_with(
+            provider.oauth_authorization_server_metadata_url
+        )
 
     def test_scopes_supported_and_required_scopes_can_differ(self):
         """Test that scopes_supported and required_scopes can be configured independently."""
