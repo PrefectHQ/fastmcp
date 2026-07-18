@@ -2315,6 +2315,18 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         "private_key_jwt",
                         "none",
                     ]
+                if self._identity_assertion is not None:
+                    # DCR clients are public (`token_endpoint_auth_method="none"`),
+                    # so a metadata consumer must see `none` advertised to use the
+                    # jwt-bearer grant — even when CIMD (which also adds it) is off.
+                    methods_supported = (
+                        metadata.token_endpoint_auth_methods_supported or []
+                    )
+                    if "none" not in methods_supported:
+                        metadata.token_endpoint_auth_methods_supported = [
+                            *methods_supported,
+                            "none",
+                        ]
                 handler = MetadataHandler(metadata)
                 methods = route.methods or ["GET", "OPTIONS"]
 

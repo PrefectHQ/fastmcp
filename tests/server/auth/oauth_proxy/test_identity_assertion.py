@@ -223,6 +223,28 @@ class TestMetadataAdvertisement:
         assert JWT_BEARER_GRANT_TYPE not in metadata["grant_types_supported"]
         assert metadata.get("authorization_grant_profiles_supported") is None
 
+    async def test_advertises_none_auth_method_without_cimd(
+        self, config: IdentityAssertion
+    ):
+        # DCR clients are public (token_endpoint_auth_method="none"), so when
+        # the jwt-bearer grant is advertised, `none` must be advertised too —
+        # even with CIMD (which also adds it) disabled.
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://login.acme-corp.com/authorize",
+            upstream_token_endpoint="https://login.acme-corp.com/token",
+            upstream_client_id="upstream-client",
+            upstream_client_secret="upstream-secret",
+            token_verifier=MockTokenVerifier(),
+            base_url=BASE_URL,
+            jwt_signing_key="test-signing-key",
+            client_storage=MemoryStore(),
+            identity_assertion=config,
+            enable_cimd=False,
+        )
+        metadata = await self._metadata(proxy)
+        assert JWT_BEARER_GRANT_TYPE in metadata["grant_types_supported"]
+        assert "none" in metadata["token_endpoint_auth_methods_supported"]
+
 
 class TestTokenEndpoint:
     async def test_happy_path_issues_token(
