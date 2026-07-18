@@ -15,6 +15,13 @@ class RaisingVerifier(TokenVerifier):
         raise RuntimeError("simulated failure")
 
 
+class UnderScopedVerifier(TokenVerifier):
+    """A verifier that returns a token missing its required scopes."""
+
+    async def verify_token(self, token: str) -> AccessToken:
+        return AccessToken(token=token, client_id="c", scopes=[])
+
+
 class TestMultiAuthInit:
     """Test MultiAuth initialization and validation."""
 
@@ -106,6 +113,32 @@ class TestMultiAuthInit:
         )
         auth = MultiAuth(server=provider)
         assert auth.required_scopes == ["read"]
+
+    def test_supported_scopes_from_server(self):
+        verifier = StaticTokenVerifier(
+            tokens={"t": {"client_id": "c", "scopes": ["read"]}},
+            required_scopes=["read"],
+        )
+        provider = RemoteAuthProvider(
+            token_verifier=verifier,
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://api.example.com",
+            scopes_supported=["api://client-id/read"],
+        )
+
+        auth = MultiAuth(server=provider)
+
+        assert auth.required_scopes == ["read"]
+        assert auth.scopes_supported == ["api://client-id/read"]
+
+    def test_supported_scopes_from_verifier_only_configuration(self):
+        verifier = StaticTokenVerifier(
+            tokens={"t": {"client_id": "c", "scopes": ["read"]}},
+        )
+
+        auth = MultiAuth(verifiers=[verifier], required_scopes=["read"])
+
+        assert auth.scopes_supported == ["read"]
 
 
 class TestMultiAuthVerifyToken:
@@ -380,6 +413,39 @@ class TestMultiAuthIntegration:
                 'resource_metadata="https://api.example.com/.well-known/oauth-protected-resource/mcp"'
                 in response.headers["www-authenticate"]
             )
+
+    async def test_multi_auth_uses_server_supported_scopes_in_auth_challenges(self):
+        """Challenges should match the request-facing scopes in delegated metadata."""
+        verifier = UnderScopedVerifier(required_scopes=["read"])
+        server = RemoteAuthProvider(
+            token_verifier=verifier,
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://api.example.com",
+            scopes_supported=["api://client-id/read"],
+        )
+
+        auth = MultiAuth(server=server)
+        app = FastMCP("test", auth=auth).http_app(path="/mcp")
+
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
+            base_url="https://api.example.com",
+        ) as client:
+            missing_response = await client.get("/mcp")
+            narrow_response = await client.get(
+                "/mcp", headers={"Authorization": "Bearer narrow"}
+            )
+
+        assert missing_response.status_code == 401
+        assert (
+            'scope="api://client-id/read"'
+            in missing_response.headers["www-authenticate"]
+        )
+        assert narrow_response.status_code == 403
+        assert (
+            'scope="api://client-id/read"'
+            in narrow_response.headers["www-authenticate"]
+        )
 
     async def test_multi_auth_override_propagates_to_served_metadata(self):
         """Override on MultiAuth must propagate so served metadata matches the challenge."""

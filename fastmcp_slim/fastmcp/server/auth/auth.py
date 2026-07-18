@@ -585,6 +585,13 @@ class MultiAuth(AuthProvider):
             self._sources.append(self.server)
         self._sources.extend(self.verifiers)
 
+    @property
+    def scopes_supported(self) -> list[str]:
+        """Scopes clients should request from the delegated auth server."""
+        if self.server is not None:
+            return self.server.scopes_supported
+        return self.required_scopes
+
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify a token by trying the server, then each verifier in order.
 
