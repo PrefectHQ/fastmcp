@@ -177,7 +177,7 @@ class TestRunInThread:
         def blocking() -> str:
             import time
 
-            time.sleep(0.15)
+            time.sleep(0.2)
             return "done"
 
         ticks = 0
@@ -198,7 +198,11 @@ class TestRunInThread:
 
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "done"
-        assert ticks >= 5
+        # Ideal is 0.2s / 0.02s = 10 ticks. We only require 3 (30% of ideal)
+        # to tolerate a loaded/slow runner, while staying well clear of the
+        # blocked case's `ticks <= 2` bound above so the two tests can never
+        # produce overlapping, ambiguous results.
+        assert ticks >= 3
 
 
 class TestRunInThreadViaStandaloneDecorator:

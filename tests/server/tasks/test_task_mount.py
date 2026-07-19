@@ -173,9 +173,18 @@ class TestMountedToolTasks:
             # Cancel the task
             await task.cancel()
 
-            # Check status
+            # Cancellation propagation isn't instantaneous, so poll for the
+            # terminal state rather than asserting immediately after cancel().
+            deadline = time.monotonic() + 5.0
             status = await task.status()
-            assert status.status == "cancelled"
+            while status.status != "cancelled" and time.monotonic() < deadline:
+                await asyncio.sleep(0.005)
+                status = await task.status()
+
+            assert status.status == "cancelled", (
+                f"task did not reach 'cancelled' within 5s of cancel() "
+                f"(last status: {status.status!r})"
+            )
 
     async def test_graceful_degradation_sync_mounted_tool(self, parent_server):
         """Sync-only mounted tool returns error with task=True."""
