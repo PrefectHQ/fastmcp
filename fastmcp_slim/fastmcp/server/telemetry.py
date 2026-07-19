@@ -8,7 +8,11 @@ from opentelemetry.context import Context
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode, get_current_span
 
 from fastmcp.exceptions import ToolError as _ToolError
-from fastmcp.telemetry import extract_trace_context, get_tracer
+from fastmcp.telemetry import (
+    extract_trace_context,
+    get_tracer,
+    restore_dropped_attributes,
+)
 
 # Marker attribute set on the SERVER span opened at the FastMCP middleware seam
 # (see `fastmcp.server.low_level.FastMCPServerMiddleware._seam_span`). The seam
@@ -150,6 +154,18 @@ def seam_span(method: str, server_name: str) -> Generator[Span, None, None]:
         kind=SpanKind.SERVER,
         attributes=attrs,
     ) as span:
+        # Restore: `attributes=attrs` above is what makes on_start hooks and
+        # the sampler see these values at creation time (the whole point of
+        # this helper). But OTel's Tracer.start_span builds the span from
+        # `sampling_result.attributes`, not the `attributes` kwarg directly —
+        # a custom Sampler whose SamplingResult.attributes defaults to None
+        # silently drops everything we passed. This only fires when the span
+        # ends up with no attributes at all, so any sampler that supplied
+        # attributes of its own — forwarding ours, redacting or replacing
+        # some, or substituting entirely its own — is left untouched, as is
+        # an SDK attribute limit that evicted some.
+        if span.is_recording():
+            restore_dropped_attributes(span, attrs)
         token = _active_seam_span.set(span)
         try:
             yield span
@@ -218,6 +234,12 @@ def server_span(
         kind=SpanKind.SERVER,
         attributes=attrs,
     ) as span:
+        # Restore for the same reason as `seam_span`: OTel builds the span
+        # from `sampling_result.attributes`, which a custom Sampler may not
+        # forward even though it was handed `attributes=attrs` above. Only
+        # fires when the span ends up with no attributes at all.
+        if span.is_recording():
+            restore_dropped_attributes(span, attrs)
         try:
             yield span
         except Exception as e:
@@ -246,6 +268,12 @@ def delegate_span(
 
     tracer = get_tracer()
     with tracer.start_as_current_span(f"delegate {name}", attributes=attrs) as span:
+        # Restore for the same reason as `seam_span`: OTel builds the span
+        # from `sampling_result.attributes`, which a custom Sampler may not
+        # forward even though it was handed `attributes=attrs` above. Only
+        # fires when the span ends up with no attributes at all.
+        if span.is_recording():
+            restore_dropped_attributes(span, attrs)
         try:
             yield span
         except Exception as e:

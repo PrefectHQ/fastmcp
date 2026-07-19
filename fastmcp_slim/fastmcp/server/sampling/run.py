@@ -33,7 +33,7 @@ from typing_extensions import TypeVar
 from fastmcp import settings
 from fastmcp.exceptions import ToolError
 from fastmcp.server.sampling.sampling_tool import SamplingTool
-from fastmcp.telemetry import get_tracer
+from fastmcp.telemetry import get_tracer, restore_dropped_attributes
 from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.tools.tool_transform import TransformedTool
 from fastmcp.utilities.async_utils import gather
@@ -310,14 +310,28 @@ async def execute_tools(
             )
 
         tracer = get_tracer()
+        span_attrs = {
+            "gen_ai.tool.name": tool_use.name,
+            "fastmcp.tool.use_id": tool_use.id,
+        }
         with tracer.start_as_current_span(
             f"sampling tool {tool_use.name}",
             kind=SpanKind.INTERNAL,
-            attributes={
-                "gen_ai.tool.name": tool_use.name,
-                "fastmcp.tool.use_id": tool_use.id,
-            },
+            attributes=span_attrs,
         ) as span:
+            # Restore: `attributes=span_attrs` above lets on_start hooks and
+            # the sampler see these values at creation time. But OTel's
+            # Tracer.start_span builds the span from
+            # `sampling_result.attributes`, not the `attributes` kwarg
+            # directly — a custom Sampler whose SamplingResult.attributes
+            # defaults to None silently drops everything we passed. This
+            # only fires when the span ends up with no attributes at all, so
+            # any sampler that supplied attributes of its own — forwarding
+            # ours, redacting or replacing some, or substituting entirely its
+            # own — is left untouched, as is an SDK attribute limit that
+            # evicted some.
+            if span.is_recording():
+                restore_dropped_attributes(span, span_attrs)
             try:
                 result_value = await tool.run(tool_use.input)
                 return ToolResultContent(
@@ -554,16 +568,29 @@ async def sample_step_impl(
 
     # Make the LLM call
     tracer = get_tracer()
+    span_attrs = {
+        "mcp.method.name": "sampling/createMessage",
+        "fastmcp.server.name": context.fastmcp.name,
+    }
     with tracer.start_as_current_span(
         "sampling create_message",
         kind=SpanKind.CLIENT,
-        attributes={
-            "mcp.method.name": "sampling/createMessage",
-            "fastmcp.server.name": context.fastmcp.name,
-        },
+        attributes=span_attrs,
         record_exception=False,
         set_status_on_exception=False,
     ) as span:
+        # Restore: `attributes=span_attrs` above lets on_start hooks and the
+        # sampler see these values at creation time. But OTel's
+        # Tracer.start_span builds the span from
+        # `sampling_result.attributes`, not the `attributes` kwarg directly —
+        # a custom Sampler whose SamplingResult.attributes defaults to None
+        # silently drops everything we passed. This only fires when the span
+        # ends up with no attributes at all, so any sampler that supplied
+        # attributes of its own — forwarding ours, redacting or replacing
+        # some, or substituting entirely its own — is left untouched, as is
+        # an SDK attribute limit that evicted some.
+        if span.is_recording():
+            restore_dropped_attributes(span, span_attrs)
         try:
             if use_fallback:
                 response = await call_sampling_handler(
