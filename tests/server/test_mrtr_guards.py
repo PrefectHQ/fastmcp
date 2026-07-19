@@ -1,11 +1,12 @@
 """Server-side guard-mode multi-round-trip (MRTR, SEP-2322).
 
-A FastMCP tool may *suspend* by returning an ``InputRequiredResult``: the call
-pauses, the client fulfils the embedded requests (elicitation / sampling /
-roots), and the same tool re-runs with the answers on ``ctx.input_responses``
-and the echoed opaque ``ctx.request_state``. This is the SDK's own base "guard"
-model — the tool re-runs per round and checks whether the client's answers are
-present — with FastMCP mirroring its semantics exactly.
+A FastMCP tool may return an ``InputRequiredResult`` as the full result of a
+call: the client fulfils the embedded requests (elicitation / sampling /
+roots) and calls again — a new, complete request-response cycle — with the
+answers on ``ctx.input_responses`` and the echoed opaque ``ctx.request_state``.
+This is the SDK's own base "guard" model — the tool runs per round and checks
+whether the client's answers are present — with FastMCP mirroring its
+semantics exactly.
 
 These tests exercise the *emission* side (a FastMCP server producing the
 ``InputRequiredResult`` and being driven to completion) over both in-memory and
