@@ -14,11 +14,19 @@ from typing import TYPE_CHECKING, Generic, TypeVar
 import mcp_types
 from mcp_types import GetTaskResult, TaskStatusNotification
 
+import fastmcp
 from fastmcp.client.messages import Message, MessageHandler
 from fastmcp.exceptions import ToolError
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Floor for the fallback poll interval in Task.wait() (seconds). When the server
+# does not advertise a pollInterval, each wait() call starts its backoff ramp
+# here so fast tasks resolve quickly even if a status notification is missed.
+# When the server does advertise one, this is only a safety floor that keeps a
+# server sending `pollInterval: 0` from spinning the client in a tight loop.
+MIN_POLL_INTERVAL = 0.02
 
 if TYPE_CHECKING:
     from fastmcp.client.client import CallToolResult, Client
@@ -217,6 +225,12 @@ class Task(abc.ABC, Generic[TaskResultT]):
         with fallback to polling (reliable). Optimally wakes up immediately
         on status changes when server sends notifications/tasks/status.
 
+        The fallback poll cadence has two modes. If the server advertises a
+        `pollInterval`, that interval is honored exactly (subject only to a
+        20ms safety floor), because it is a deliberate statement about how
+        much load the server wants to take. If it does not, the poll starts at
+        20ms and doubles up to the `client_task_poll_interval` setting.
+
         Args:
             state: Desired state ('working', 'input_required', 'completed', 'failed', 'cancelled').
                    If None, waits until the task exits the 'working' state (completed, failed, cancelled, input_required, etc.)
@@ -240,7 +254,10 @@ class Task(abc.ABC, Generic[TaskResultT]):
 
         start = time.time()
         in_progress_states = {"working"}
-        poll_interval = 0.5  # Fallback polling interval (500ms)
+        # Backoff state for the unadvertised-interval mode; resets per wait()
+        # call. Notifications still short-circuit the wait via the status event,
+        # so this only governs the fallback poll.
+        backoff = MIN_POLL_INTERVAL
 
         while True:
             # Check cached status first (updated by notifications)
@@ -260,16 +277,40 @@ class Task(abc.ABC, Generic[TaskResultT]):
                 )
 
             remaining = timeout - elapsed
+            interval, backoff = self._next_poll_delay(backoff)
 
             # Wait for notification event OR poll timeout
             try:
                 await asyncio.wait_for(
-                    self._status_event.wait(), timeout=min(poll_interval, remaining)
+                    self._status_event.wait(), timeout=min(interval, remaining)
                 )
                 self._status_event.clear()
             except asyncio.TimeoutError:
                 # Fallback: poll server (notification didn't arrive in time)
                 self._status_cache = await self._client.get_task_status(self._task_id)
+
+    def _next_poll_delay(self, backoff: float) -> tuple[float, float]:
+        """Delay before the next fallback poll, plus the backoff for the round after.
+
+        Advertised interval -> honor it; no advertised interval -> ramp.
+
+        A server that advertises `pollInterval` (milliseconds) is making a
+        deliberate statement about how much load it wants to take, so that
+        interval is used verbatim as the delay with no backoff ramp. The only
+        adjustment is `MIN_POLL_INTERVAL` as a safety floor, so a server sending
+        a zero or negative interval cannot spin this client in a tight request
+        loop.
+
+        When the server advertises nothing, there is no guidance to honor, so
+        the poll starts at `MIN_POLL_INTERVAL` and doubles each round up to the
+        `client_task_poll_interval` setting.
+        """
+        cache = self._status_cache
+        if cache is not None and cache.poll_interval is not None:
+            return max(cache.poll_interval / 1000, MIN_POLL_INTERVAL), backoff
+
+        ceiling = fastmcp.settings.client_task_poll_interval
+        return min(backoff, ceiling), min(backoff * 2, ceiling)
 
     async def _wait_terminal(self, timeout: float = 300.0) -> GetTaskResult:
         """Wait until task reaches a terminal state (completed, failed, cancelled).

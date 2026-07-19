@@ -287,6 +287,24 @@ class Settings(BaseSettings):
         ),
     ] = 5
 
+    client_task_poll_interval: Annotated[
+        float,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Ceiling, in seconds, for the fallback poll backoff while waiting on a
+                background task (SEP-1686). Applies only when the server does not
+                advertise its own pollInterval: in that case Task.wait() starts polling
+                fast (~20ms) and doubles up to this ceiling, so quick tasks resolve
+                promptly while long-running tasks don't hammer the server. When the
+                server does advertise a pollInterval, that interval is honored exactly
+                and this setting is ignored. Must be positive.
+                """
+            ),
+            gt=0,
+        ),
+    ] = 0.5
+
     # Transport settings
     transport: Literal["stdio", "http", "sse", "streamable-http"] = "stdio"
 

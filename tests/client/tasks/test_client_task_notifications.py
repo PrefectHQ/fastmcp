@@ -28,6 +28,11 @@ async def task_notification_server():
         return value * 2
 
     @mcp.tool(task=True)
+    async def instant_task(value: int) -> int:
+        """Background task that completes with no delay."""
+        return value * 2
+
+    @mcp.tool(task=True)
     async def slow_task(duration: float = 0.2) -> str:
         """Slow background task."""
         await asyncio.sleep(duration)
@@ -208,6 +213,36 @@ async def test_notification_with_failed_task(task_notification_server):
         assert (
             status.status_message is not None
         )  # Error details in statusMessage per spec
+
+
+async def test_fast_task_completion_delivered_via_notification(
+    task_notification_server,
+):
+    """A near-instant task still delivers its completion via a status notification.
+
+    Regression test for the Docket subscribe() setup-window race: a task that
+    finishes before the pub/sub subscription goes live had its terminal state
+    publish lost, so no completion notification ever reached the client and
+    wait() fell back to a full poll interval. The server now reconciles the
+    execution against Redis to close that gap.
+
+    Callbacks fire only for received notifications — client-side polling updates
+    the status cache directly without invoking them — so a "completed" callback
+    proves the notification path (not the poll fallback) was exercised.
+    """
+    received: list[str] = []
+
+    async with Client(task_notification_server) as client:
+        task = await client.call_tool("instant_task", {"value": 21}, task=True)
+        task.on_status_change(lambda status: received.append(status.status))
+
+        result = await task
+        assert result.data == 42
+
+        # Allow the completion notification to arrive and dispatch.
+        await asyncio.sleep(0.1)
+
+    assert "completed" in received
 
 
 async def test_wait_returns_on_input_required(task_notification_server):

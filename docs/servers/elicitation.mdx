@@ -543,7 +543,9 @@ If you need to support both eras, branch on `ctx.protocol_version`: return an `I
 
 ### Sampling and roots
 
-Elicitation is the most common request to carry this way, but the same mechanism carries **sampling** and **roots** requests too — the `input_requests` map can hold any of the three, and each answer comes back in `ctx.input_responses` under its key (an `ElicitResult`, `CreateMessageResult`, or `ListRootsResult`). See [Sampling](/servers/sampling) and [Client Roots](/clients/roots) for what those requests contain. `fastmcp.Client` answers all three from the handlers you already configured, so a guard tool that mixes them needs no extra client wiring.
+Elicitation is the most common request to carry this way, and **roots** requests work identically — the `input_requests` map holds them the same way, and each answer comes back in `ctx.input_responses` under its key (an `ElicitResult` or `ListRootsResult`). See [Client Roots](/clients/roots) for what a roots request contains. `fastmcp.Client` answers both from the handlers you already configured, so a guard tool that mixes them needs no extra client wiring.
+
+The map can structurally hold a **sampling** request too (its answer would be a `CreateMessageResult`), but SEP-2577 deprecated server-initiated sampling on the modern protocol, so reach for a direct server-side LLM call instead of routing generation through a guard round. See [Sampling](/servers/sampling).
 
 ### Middleware
 

@@ -128,7 +128,7 @@ async def slow_task() -> str:
     return "Eventually done"
 ```
 
-Shorter intervals give clients faster feedback but increase server load. Longer intervals reduce load but delay status updates.
+Shorter intervals give clients faster feedback but increase server load. Longer intervals reduce load but delay status updates. FastMCP clients honor the advertised interval exactly, so this is a real load control — but note that status notifications still wake a waiting client immediately, so the interval only governs how quickly a *missed* notification is noticed.
 
 ### Server-Wide Default
 

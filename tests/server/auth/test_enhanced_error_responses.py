@@ -21,7 +21,7 @@ from fastmcp import FastMCP
 from fastmcp.server.auth import RemoteAuthProvider, TokenVerifier
 from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
-from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
+from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.http import create_streamable_http_app
 
 
@@ -91,11 +91,6 @@ class _DirectClientRedirectWithIssOAuthProxy(OAuthProxy):
 
 class TestEnhancedAuthorizationHandler:
     """Tests for enhanced authorization handler error responses."""
-
-    @pytest.fixture
-    def rsa_key_pair(self) -> RSAKeyPair:
-        """Generate RSA key pair for testing."""
-        return RSAKeyPair.generate()
 
     @pytest.fixture
     def oauth_proxy(self, rsa_key_pair):
@@ -669,11 +664,6 @@ class TestEnhancedRequireAuthMiddleware:
         return FastMCP("Test Server", auth=auth).http_app()
 
     @pytest.fixture
-    def rsa_key_pair(self) -> RSAKeyPair:
-        """Generate RSA key pair for testing."""
-        return RSAKeyPair.generate()
-
-    @pytest.fixture
     def jwt_verifier(self, rsa_key_pair):
         """Create JWT verifier for testing."""
         return JWTVerifier(
@@ -899,7 +889,7 @@ class TestContentNegotiation:
     """Tests for content negotiation in error responses."""
 
     @pytest.fixture
-    def oauth_proxy(self):
+    def oauth_proxy(self, rsa_key_pair):
         """Create OAuth proxy for testing."""
         return OAuthProxy(
             upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
@@ -907,7 +897,7 @@ class TestContentNegotiation:
             upstream_client_id="test-client-id",
             upstream_client_secret="test-client-secret",
             token_verifier=JWTVerifier(
-                public_key=RSAKeyPair.generate().public_key,
+                public_key=rsa_key_pair.public_key,
                 issuer="https://test.com",
                 audience="https://test.com",
                 base_url="https://test.com",

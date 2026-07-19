@@ -124,10 +124,6 @@ class TestIntrospectionHttpClient:
 class TestJWTVerifierHttpClient:
     """Test http_client parameter on JWTVerifier."""
 
-    @pytest.fixture(scope="class")
-    def rsa_key_pair(self) -> RSAKeyPair:
-        return RSAKeyPair.generate()
-
     @pytest.fixture
     def shared_client(self) -> httpx2.AsyncClient:
         return httpx2.AsyncClient(timeout=30)

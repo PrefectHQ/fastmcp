@@ -49,8 +49,10 @@ class TestAuth0JWTVerifier:
         scopes = verifier._extract_scopes({"permissions": "tool:whoami tool:greet"})
         assert scopes == ["tool:whoami", "tool:greet"]
 
-    async def test_verify_token_accepts_permissions_as_required_scopes(self):
-        key_pair = RSAKeyPair.generate()
+    async def test_verify_token_accepts_permissions_as_required_scopes(
+        self, rsa_key_pair: RSAKeyPair
+    ):
+        key_pair = rsa_key_pair
         verifier = Auth0JWTVerifier(
             public_key=key_pair.public_key,
             issuer=TEST_ISSUER,
@@ -66,8 +68,10 @@ class TestAuth0JWTVerifier:
         assert access_token is not None
         assert access_token.client_id == "user_123"
 
-    async def test_verify_token_rejects_missing_permissions(self):
-        key_pair = RSAKeyPair.generate()
+    async def test_verify_token_rejects_missing_permissions(
+        self, rsa_key_pair: RSAKeyPair
+    ):
+        key_pair = rsa_key_pair
         verifier = Auth0JWTVerifier(
             public_key=key_pair.public_key,
             issuer=TEST_ISSUER,

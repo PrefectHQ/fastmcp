@@ -9,7 +9,7 @@ from starlette.testclient import TestClient
 from starlette.types import Receive, Scope, Send
 
 from fastmcp.server import FastMCP
-from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
+from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.http import HostOriginGuardMiddleware, create_streamable_http_app
 
 INITIALIZE_REQUEST = {
@@ -79,11 +79,6 @@ async def _guard_status(
 
 class TestStreamableHTTPAppResourceMetadataURL:
     """Test resource_metadata_url logic in create_streamable_http_app."""
-
-    @pytest.fixture
-    def rsa_key_pair(self) -> RSAKeyPair:
-        """Generate RSA key pair for testing."""
-        return RSAKeyPair.generate()
 
     @pytest.fixture
     def bearer_auth_provider(self, rsa_key_pair):

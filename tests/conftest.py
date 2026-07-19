@@ -14,6 +14,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
+from fastmcp.server.auth.providers.jwt import RSAKeyPair
 from fastmcp.utilities.tests import temporary_settings
 from tests.utilities.httpx2_mock import httpx_mock as httpx_mock
 
@@ -109,6 +110,31 @@ def isolate_settings_home(tmp_path: Path):
 
 def get_fn_name(fn: Callable[..., Any]) -> str:
     return fn.__name__  # ty: ignore[unresolved-attribute]
+
+
+@pytest.fixture(scope="session")
+def rsa_key_pair() -> RSAKeyPair:
+    """A shared RSA key pair for tests that just need *some* valid key material.
+
+    RSA key generation costs tens of milliseconds; hundreds of auth tests
+    generating a fresh key per test adds up to real wall time for no benefit,
+    since almost none of them care that the key is unique. Tests that must
+    prove verification fails against a *different* key should use
+    ``rsa_key_pair_2`` instead of calling ``RSAKeyPair.generate()`` directly.
+    Tests that specifically exercise key generation or rotation should still
+    call ``RSAKeyPair.generate()`` themselves.
+    """
+    return RSAKeyPair.generate()
+
+
+@pytest.fixture(scope="session")
+def rsa_key_pair_2() -> RSAKeyPair:
+    """A second shared RSA key pair, distinct from ``rsa_key_pair``.
+
+    For tests that sign a token with the "wrong" key to prove verification
+    against ``rsa_key_pair`` fails.
+    """
+    return RSAKeyPair.generate()
 
 
 @pytest.fixture
