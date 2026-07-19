@@ -287,6 +287,21 @@ class Settings(BaseSettings):
         ),
     ] = 5
 
+    client_task_poll_interval: Annotated[
+        float,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Maximum interval, in seconds, between fallback polls while waiting on a
+                background task (SEP-1686). Task.wait() starts polling fast (~20ms) and
+                backs off exponentially up to this ceiling, so quick tasks resolve
+                promptly while long-running tasks don't hammer the server. Used only when
+                the server does not advertise its own pollInterval.
+                """
+            ),
+        ),
+    ] = 0.5
+
     # Transport settings
     transport: Literal["stdio", "http", "sse", "streamable-http"] = "stdio"
 

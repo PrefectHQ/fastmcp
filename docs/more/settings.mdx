@@ -63,6 +63,7 @@ These control how the server listens when running with an HTTP transport.
 |---|---|---|---|
 | `FASTMCP_CLIENT_INIT_TIMEOUT` | `float \| None` | None | Timeout in seconds for the client initialization handshake. Set to `0` or leave unset to disable. |
 | `FASTMCP_CLIENT_DISCONNECT_TIMEOUT` | `float` | `5` | Maximum time in seconds to wait for a clean disconnect before giving up. |
+| `FASTMCP_CLIENT_TASK_POLL_INTERVAL` | `float` | `0.5` | Maximum interval in seconds between fallback polls while waiting on a [background task](/servers/tasks). `Task.wait()` starts polling fast (~20ms) and backs off exponentially up to this ceiling, so quick tasks resolve promptly while long-running tasks don't hammer the server. Used only when the server does not advertise its own `pollInterval`. |
 | `FASTMCP_CLIENT_RAISE_FIRST_EXCEPTIONGROUP_ERROR` | `bool` | `true` | When an `ExceptionGroup` is raised, re-raise the first error directly instead of the group. Simplifies debugging but may mask secondary errors. |
 
 ## CLI & Display

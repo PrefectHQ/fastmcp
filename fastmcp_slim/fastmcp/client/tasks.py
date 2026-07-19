@@ -14,11 +14,17 @@ from typing import TYPE_CHECKING, Generic, TypeVar
 import mcp_types
 from mcp_types import GetTaskResult, TaskStatusNotification
 
+import fastmcp
 from fastmcp.client.messages import Message, MessageHandler
 from fastmcp.exceptions import ToolError
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Initial fallback poll interval for Task.wait() (seconds). Each wait() call
+# starts here and doubles up to the steady-state ceiling, so fast tasks resolve
+# quickly even when a status notification is missed.
+MIN_POLL_INTERVAL = 0.02
 
 if TYPE_CHECKING:
     from fastmcp.client.client import CallToolResult, Client
@@ -240,7 +246,12 @@ class Task(abc.ABC, Generic[TaskResultT]):
 
         start = time.time()
         in_progress_states = {"working"}
-        poll_interval = 0.5  # Fallback polling interval (500ms)
+        # Fallback poll cadence uses exponential backoff: start fast so quick
+        # tasks resolve in ~20ms even when a status notification is missed, then
+        # back off toward the steady-state ceiling so long-running tasks don't
+        # hammer the server. Notifications still short-circuit the wait via the
+        # status event. Backoff resets on each wait() call.
+        backoff = MIN_POLL_INTERVAL
 
         while True:
             # Check cached status first (updated by notifications)
@@ -260,16 +271,32 @@ class Task(abc.ABC, Generic[TaskResultT]):
                 )
 
             remaining = timeout - elapsed
+            ceiling = self._poll_ceiling_seconds()
+            interval = min(backoff, ceiling)
 
             # Wait for notification event OR poll timeout
             try:
                 await asyncio.wait_for(
-                    self._status_event.wait(), timeout=min(poll_interval, remaining)
+                    self._status_event.wait(), timeout=min(interval, remaining)
                 )
                 self._status_event.clear()
             except asyncio.TimeoutError:
                 # Fallback: poll server (notification didn't arrive in time)
                 self._status_cache = await self._client.get_task_status(self._task_id)
+
+            backoff = min(backoff * 2, ceiling)
+
+    def _poll_ceiling_seconds(self) -> float:
+        """Steady-state ceiling for the fallback poll cadence, in seconds.
+
+        Prefers the server-advertised pollInterval (milliseconds) from the most
+        recent status, falling back to the configured client default when the
+        server does not supply one.
+        """
+        cache = self._status_cache
+        if cache is not None and cache.poll_interval:
+            return cache.poll_interval / 1000
+        return fastmcp.settings.client_task_poll_interval
 
     async def _wait_terminal(self, timeout: float = 300.0) -> GetTaskResult:
         """Wait until task reaches a terminal state (completed, failed, cancelled).

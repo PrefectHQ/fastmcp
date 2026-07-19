@@ -8,6 +8,7 @@ This module requires fastmcp[tasks] (pydocket). It is only imported when docket 
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import suppress
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -26,6 +27,18 @@ if TYPE_CHECKING:
     from mcp.server.session import ServerSession
 
 logger = get_logger(__name__)
+
+# States before a worker has claimed the execution. While the task is still in
+# one of these, Docket's pub/sub subscription may not yet be live, so we
+# reconcile against Redis to catch terminal transitions that would otherwise be
+# lost (see subscribe_to_task_updates).
+_PENDING_STATES = {ExecutionState.SCHEDULED, ExecutionState.QUEUED}
+
+# Initial interval for reconciling execution state against Redis while the task
+# is still un-claimed (seconds). The interval doubles on each idle reconcile up
+# to the task's poll_interval, so fast tasks are caught within the first ~20ms
+# checks while stalled tasks (no worker available) converge to a gentle cadence.
+_MIN_RECONCILE_INTERVAL_SECONDS = 0.02
 
 
 async def subscribe_to_task_updates(
@@ -47,44 +60,109 @@ async def subscribe_to_task_updates(
         session: MCP ServerSession for sending notifications
         docket: Docket instance for subscribing to execution events
         poll_interval_ms: Poll interval in milliseconds to include in notifications
+
+    Note: Docket's ``execution.subscribe()`` replays the current state and then
+    subscribes to Redis pub/sub. A task that completes during that (fire-and-forget)
+    subscribe window has its terminal state publish lost, so no live event ever
+    arrives — a common case for fast tasks. To close that gap we reconcile the
+    execution against Redis on a short interval while the task is still un-claimed,
+    and stop once a worker has clearly engaged (state leaves the pending set), at
+    which point pub/sub reliably delivers the remaining transitions.
     """
+    terminal_states = {
+        ExecutionState.COMPLETED,
+        ExecutionState.FAILED,
+        ExecutionState.CANCELLED,
+    }
     try:
         execution = await docket.get_execution(task_key)
         if execution is None:
             logger.warning(f"No execution found for task {task_id}")
             return
 
-        # Subscribe to state and progress events from Docket
-        terminal_states = {
-            ExecutionState.COMPLETED,
-            ExecutionState.FAILED,
-            ExecutionState.CANCELLED,
-        }
-        async for event in execution.subscribe():
-            if event["type"] == "state":
-                state = ExecutionState(event["state"])
-                # Send notifications/tasks/status when state changes
-                await _send_status_notification(
-                    session=session,
-                    task_id=task_id,
-                    task_key=task_key,
-                    docket=docket,
-                    state=state,
-                    poll_interval_ms=poll_interval_ms,
-                )
-                # Stop subscribing once the task reaches a terminal state
-                if state in terminal_states:
+        subscription = execution.subscribe()
+        # Keep a single outstanding __anext__ across reconcile timeouts. asyncio.wait
+        # returns on timeout without cancelling it, so the generator (and its pub/sub
+        # subscription) stays intact — unlike wait_for, which would cancel mid-iteration.
+        next_event = asyncio.ensure_future(subscription.__anext__())
+        reconcile = True
+        # Reconcile cadence backs off exponentially so a task no worker ever
+        # claims doesn't pin this loop at 50 syncs/sec forever; the task's
+        # advertised poll interval is the natural ceiling.
+        reconcile_backoff = _MIN_RECONCILE_INTERVAL_SECONDS
+        reconcile_ceiling = max(
+            poll_interval_ms / 1000, _MIN_RECONCILE_INTERVAL_SECONDS
+        )
+        try:
+            while True:
+                if reconcile:
+                    done, _ = await asyncio.wait(
+                        {next_event}, timeout=reconcile_backoff
+                    )
+                    if not done:
+                        # No live event yet: reconcile against Redis in case a
+                        # terminal transition was published before pub/sub went live.
+                        await execution.sync()
+                        if execution.state in terminal_states:
+                            await _send_status_notification(
+                                session=session,
+                                task_id=task_id,
+                                task_key=task_key,
+                                docket=docket,
+                                state=execution.state,
+                                poll_interval_ms=poll_interval_ms,
+                            )
+                            break
+                        if execution.state not in _PENDING_STATES:
+                            # Worker has claimed the task; pub/sub is now live and
+                            # will deliver the remaining transitions.
+                            reconcile = False
+                        reconcile_backoff = min(
+                            reconcile_backoff * 2, reconcile_ceiling
+                        )
+                        continue
+                else:
+                    await asyncio.wait({next_event})
+
+                try:
+                    event = next_event.result()
+                except StopAsyncIteration:
                     break
-            elif event["type"] == "progress":
-                # Send notification when progress message changes
-                await _send_progress_notification(
-                    session=session,
-                    task_id=task_id,
-                    task_key=task_key,
-                    docket=docket,
-                    execution=execution,
-                    poll_interval_ms=poll_interval_ms,
-                )
+
+                if event["type"] == "state":
+                    state = ExecutionState(event["state"])
+                    if state not in _PENDING_STATES:
+                        reconcile = False
+                    # Send notifications/tasks/status when state changes
+                    await _send_status_notification(
+                        session=session,
+                        task_id=task_id,
+                        task_key=task_key,
+                        docket=docket,
+                        state=state,
+                        poll_interval_ms=poll_interval_ms,
+                    )
+                    # Stop subscribing once the task reaches a terminal state
+                    if state in terminal_states:
+                        break
+                elif event["type"] == "progress":
+                    # Send notification when progress message changes
+                    await _send_progress_notification(
+                        session=session,
+                        task_id=task_id,
+                        task_key=task_key,
+                        docket=docket,
+                        execution=execution,
+                        poll_interval_ms=poll_interval_ms,
+                    )
+
+                next_event = asyncio.ensure_future(subscription.__anext__())
+        finally:
+            if not next_event.done():
+                next_event.cancel()
+            with suppress(asyncio.CancelledError, StopAsyncIteration):
+                await next_event
+            await subscription.aclose()
 
     except Exception as e:
         logger.warning(f"Subscription task failed for {task_id}: {e}", exc_info=True)
