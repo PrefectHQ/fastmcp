@@ -291,3 +291,41 @@ class TestAskVisibility:
         # The hook completed and observed the ask as the leg's result value.
         assert len(probe.results) == 1
         assert isinstance(probe.results[0], InputRequiredToolResult)
+
+    async def test_hooks_fire_once_per_round_across_a_continuation(self):
+        """The fires-once invariant holds across a continuation — the one place
+        seam dispatch and MRTR genuinely meet. Each round is its own complete
+        request→response cycle, so answering the ask runs the chain a second
+        time in full rather than double-firing at the seam on either round."""
+        server = _guard_server()
+        recorder = SeamRecorder()
+        server.add_middleware(recorder)
+
+        async with Client(server, mode="auto") as client:
+            ask = await client.session.call_tool("guard", {}, allow_input_required=True)
+            assert isinstance(ask, InputRequiredResult)
+
+            answered = await client.session.call_tool(
+                "guard",
+                {},
+                input_responses={
+                    "name": {"action": "accept", "content": {"name": "Ada"}}
+                },
+                request_state=ask.request_state,
+                allow_input_required=True,
+            )
+
+        assert isinstance(answered, mcp_types.CallToolResult)
+        # Two rounds — the ask and the answer — and exactly one chain per round.
+        on_message = [r for r in recorder.records if r == ("on_message", "tools/call")]
+        on_call_tool = [
+            r for r in recorder.records if r == ("on_call_tool", "tools/call")
+        ]
+        assert len(on_message) == 2
+        assert len(on_call_tool) == 2
+
+
+class TestSchedulingProbe:
+    async def test_trivial_noop(self):
+        """Temporary probe: does merely adding a 7th test destabilize the run?"""
+        assert True
