@@ -234,6 +234,21 @@ class TestOutputSchema:
         tool = FunctionTool.from_function(suspend_only)
         assert tool.output_schema is None
 
+    def test_annotated_bare_guard_returns_suppress_schema(self):
+        """The wholesale suppression also covers Annotated wrappings of a bare
+        guard return — including an aliased one — which exact-match replacement
+        would otherwise miss."""
+        from fastmcp.tools.function_tool import FunctionTool
+
+        def annotated_plain(x: int) -> Annotated[InputRequiredResult, Field()]:
+            raise NotImplementedError
+
+        def annotated_aliased(x: int) -> Annotated[_AliasedAskArm, Field()]:
+            raise NotImplementedError
+
+        assert FunctionTool.from_function(annotated_plain).output_schema is None
+        assert FunctionTool.from_function(annotated_aliased).output_schema is None
+
     def test_bare_input_required_return_suppresses_schema(self):
         from fastmcp.tools.function_tool import FunctionTool
 

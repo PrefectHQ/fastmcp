@@ -393,11 +393,13 @@ class ParsedFunction:
             if is_class_member_of_type(output_type, ToolResult):
                 output_type = _UnserializableType
 
-            # A bare InputRequiredResult subclass is a guard signal, not output
-            # data — `run()` treats its instances as control results (isinstance
-            # is subclass-aware), so suppress its schema too (replace_type below
-            # only matches the exact class).
-            if is_class_member_of_type(output_type, mcp_types.InputRequiredResult):
+            # If InputRequiredResult survives stripping in any wrapping — bare,
+            # via a `type X = ...` alias, Annotated, or a subclass — it is a
+            # guard-only return with no output data (a union would have had its
+            # guard arms stripped above). Suppress the schema wholesale; matching
+            # `run()`'s subclass-aware control handling and covering every alias
+            # shape that exact-match replace_type below would miss.
+            if _contains_input_required(output_type):
                 output_type = _UnserializableType
 
             # there are a variety of types that we don't want to attempt to
