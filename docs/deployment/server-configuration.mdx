@@ -401,8 +401,9 @@ The configuration file works with server-loading commands that explicitly accept
 - **`run`** - Start the server in production mode
 - **`dev inspector`** - Launch with the Inspector UI for development
 - **`inspect`** - View server capabilities and configuration
+- **`install`** - Install to Claude Desktop, Cursor, or another MCP client
 
-When no file argument is provided, FastMCP searches the current directory for `fastmcp.json`. This means you can simply navigate to your project directory and run `fastmcp run` to start your server with all its configured settings.
+`run`, `dev inspector`, and `inspect` search the current directory for a file named exactly `fastmcp.json` when you don't pass a file argument, so you can navigate to your project directory and run `fastmcp run` to start your server with all its configured settings. `install` requires an explicit path to the config file — it never searches.
 
 ### CLI Override Behavior
 
