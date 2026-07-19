@@ -141,8 +141,10 @@ def _strip_input_required(tp: Any) -> Any:
         inner, *metadata = get_args(unwrapped)
         return Annotated[(_strip_input_required(inner), *metadata)]
     if origin is not Union and origin is not types.UnionType:
-        # A bare InputRequiredResult: left intact, suppressed downstream.
-        return tp
+        # A bare InputRequiredResult (possibly via a `type X = ...` alias): left
+        # intact, but returned de-aliased so the downstream subclass/exact-type
+        # suppression recognizes it and emits no output schema.
+        return unwrapped
     residual = _residual_union_arms(unwrapped)
     if not residual:
         return tp

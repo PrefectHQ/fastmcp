@@ -222,6 +222,18 @@ class TestOutputSchema:
         tool = FunctionTool.from_function(suspend_only)
         assert tool.output_schema is None
 
+    def test_bare_aliased_input_required_suppresses_schema(self):
+        """A bare aliased guard return (`-> _AliasedAskArm` where the alias is
+        `InputRequiredResult`) is de-aliased so downstream suppression applies,
+        emitting no output schema."""
+        from fastmcp.tools.function_tool import FunctionTool
+
+        def suspend_only(x: int) -> _AliasedAskArm:
+            raise NotImplementedError
+
+        tool = FunctionTool.from_function(suspend_only)
+        assert tool.output_schema is None
+
     def test_bare_input_required_return_suppresses_schema(self):
         from fastmcp.tools.function_tool import FunctionTool
 
