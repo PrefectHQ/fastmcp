@@ -26,6 +26,7 @@ from mcp.server.request_state import RequestStateSecurity
 from mcp.shared.exceptions import MCPError
 from mcp_types import ElicitRequest, InputRequiredResult
 from pydantic import Field
+from typing_extensions import TypeAliasType
 
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.elicitation import ElicitResult
@@ -147,6 +148,14 @@ class TestContextProperties:
             assert ctx.request_state is None
 
 
+# PEP 695 `type X = ...` aliases, built portably (the `type` statement is 3.12+).
+# One factors out the whole guard union; the other is a lone aliased ask arm.
+_AliasedGuardUnion = TypeAliasType(
+    "_AliasedGuardUnion", str | InputRequiredResult
+)
+_AliasedAskArm = TypeAliasType("_AliasedAskArm", InputRequiredResult)
+
+
 class TestOutputSchema:
     """An `InputRequiredResult` return arm is control flow, not output data, so
     it is stripped from output-schema derivation."""
@@ -160,6 +169,30 @@ class TestOutputSchema:
         tool = FunctionTool.from_function(book)
         assert tool.output_schema is not None
         # Schema is derived from the residual `str` arm (wrapped as {"result": ...}).
+        assert tool.output_schema.get("x-fastmcp-wrap-result") is True
+
+    def test_aliased_guard_union_stripped(self):
+        """A `type Result = str | InputRequiredResult` alias is unwrapped before
+        stripping, so the ask arm never leaks into the output schema."""
+        from fastmcp.tools.function_tool import FunctionTool
+
+        def book(x: int) -> _AliasedGuardUnion:
+            return "ok"
+
+        tool = FunctionTool.from_function(book)
+        assert tool.output_schema is not None
+        assert tool.output_schema.get("x-fastmcp-wrap-result") is True
+
+    def test_aliased_ask_arm_stripped(self):
+        """A lone aliased arm (`str | AskAlias`) is recognized as a guard signal
+        and stripped, leaving the data arm's schema."""
+        from fastmcp.tools.function_tool import FunctionTool
+
+        def book(x: int) -> str | _AliasedAskArm:
+            return "ok"
+
+        tool = FunctionTool.from_function(book)
+        assert tool.output_schema is not None
         assert tool.output_schema.get("x-fastmcp-wrap-result") is True
 
     def test_bare_input_required_return_suppresses_schema(self):

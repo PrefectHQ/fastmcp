@@ -11,6 +11,7 @@ from typing import Annotated, Any, Generic, Union, get_args, get_origin, get_typ
 
 import mcp_types
 from pydantic import BaseModel, PydanticSchemaGenerationError
+from typing_extensions import TypeAliasType
 from typing_extensions import TypeVar as TypeVarExt
 
 from fastmcp.tools.base import ToolResult, resolve_serialize_by_alias
@@ -55,15 +56,30 @@ def _contains_prefab_type(tp: Any) -> bool:
     return False
 
 
+def _unwrap_type_alias(tp: Any) -> Any:
+    """Resolve a PEP 695 ``type X = ...`` alias to its underlying value.
+
+    ``get_origin()`` returns ``None`` for a ``TypeAliasType``, so an alias that
+    factors out a guard union (``type Result = str | InputRequiredResult``) — or
+    a lone aliased arm — would otherwise slip past union detection. Resolving to
+    ``__value__`` (repeatedly, for chained aliases) restores the concrete type.
+    """
+    while isinstance(tp, TypeAliasType):
+        tp = tp.__value__
+    return tp
+
+
 def _is_input_required_type(tp: Any) -> bool:
     """True when *tp* is the `InputRequiredResult` type (SEP-2322).
 
-    Peels an `Annotated` wrapper first, so a metadata-carrying arm such as
+    Resolves a `TypeAliasType` and peels an `Annotated` wrapper first, so an
+    aliased arm or a metadata-carrying arm such as
     ``Annotated[InputRequiredResult, Field(...)]`` is recognized as a guard
     signal, not just the bare class.
     """
+    tp = _unwrap_type_alias(tp)
     if get_origin(tp) is Annotated:
-        tp = get_args(tp)[0]
+        tp = _unwrap_type_alias(get_args(tp)[0])
     return isinstance(tp, type) and issubclass(tp, mcp_types.InputRequiredResult)
 
 
@@ -77,6 +93,7 @@ def _strip_input_required(tp: Any) -> Any:
     (no other arm) is left intact and suppressed downstream like other
     non-serializable return types.
     """
+    tp = _unwrap_type_alias(tp)
     origin = get_origin(tp)
     if origin is Annotated:
         # Annotated[X | InputRequiredResult, meta] — strip inside, keep metadata.
