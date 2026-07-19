@@ -296,9 +296,10 @@ class Settings(BaseSettings):
                 background task (SEP-1686). Task.wait() starts polling fast (~20ms) and
                 backs off exponentially up to this ceiling, so quick tasks resolve
                 promptly while long-running tasks don't hammer the server. Used only when
-                the server does not advertise its own pollInterval.
+                the server does not advertise its own pollInterval. Must be positive.
                 """
             ),
+            gt=0,
         ),
     ] = 0.5
 
