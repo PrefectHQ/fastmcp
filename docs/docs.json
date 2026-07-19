@@ -284,7 +284,6 @@
                       "integrations/eunomia-authorization",
                       "integrations/github",
                       "integrations/google",
-                      "integrations/huggingface",
                       "integrations/keycloak",
                       "integrations/oci",
                       "integrations/permit",
