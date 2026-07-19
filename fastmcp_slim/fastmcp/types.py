@@ -56,9 +56,6 @@ from mcp_types import (
     ErrorData as ErrorData,
 )
 from mcp_types import (
-    InputRequiredResult as InputRequiredResult,
-)
-from mcp_types import (
     GetPromptResult as GetPromptResult,
 )
 from mcp_types import (
@@ -66,6 +63,9 @@ from mcp_types import (
 )
 from mcp_types import (
     ImageContent as ImageContent,
+)
+from mcp_types import (
+    InputRequiredResult as InputRequiredResult,
 )
 from mcp_types import (
     Prompt as Prompt,

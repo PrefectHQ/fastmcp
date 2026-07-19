@@ -42,7 +42,9 @@ def _elicit(key: str, message: str, field: str) -> ElicitRequest:
     return ElicitRequest(method="elicitation/create", params=params)
 
 
-def _ask(request: ElicitRequest, key: str, request_state: str | None) -> InputRequiredResult:
+def _ask(
+    request: ElicitRequest, key: str, request_state: str | None
+) -> InputRequiredResult:
     return InputRequiredResult(
         result_type="input_required",
         input_requests={key: request},
@@ -102,7 +104,9 @@ def _two_answer_handler(asked: list[str]):
     async def handler(message, response_type, params, ctx):
         asked.append(message)
         if "Where" in message:
-            return ElicitResult(action="accept", content=response_type(destination="Paris"))
+            return ElicitResult(
+                action="accept", content=response_type(destination="Paris")
+            )
         return ElicitResult(action="accept", content=response_type(date="2026-08-01"))
 
     return handler
@@ -167,7 +171,9 @@ class TestInMemoryLoop:
         client's elicitation handler answers both rounds."""
         asked: list[str] = []
         async with Client(
-            two_question_server(), mode="auto", elicitation_handler=_two_answer_handler(asked)
+            two_question_server(),
+            mode="auto",
+            elicitation_handler=_two_answer_handler(asked),
         ) as client:
             assert client.protocol_version == "2026-07-28"
             result = await client.call_tool("book_flight", {})
@@ -215,7 +221,9 @@ class TestInMemoryLoop:
         async def decline_handler(message, response_type, params, ctx):
             return ElicitResult(action="decline", content=None)
 
-        async with Client(mcp, mode="auto", elicitation_handler=decline_handler) as client:
+        async with Client(
+            mcp, mode="auto", elicitation_handler=decline_handler
+        ) as client:
             result = await client.call_tool("ask", {})
 
         assert result.data == "action=decline content=None"
@@ -276,7 +284,9 @@ class TestRequestStateSealing:
         @mcp.tool
         async def guard(ctx: Context) -> str | InputRequiredResult:
             if ctx.input_responses is None:
-                return _ask(_elicit("x", "q", "x"), "x", request_state="PLAINTEXT-STATE")
+                return _ask(
+                    _elicit("x", "q", "x"), "x", request_state="PLAINTEXT-STATE"
+                )
             return f"state={ctx.request_state}"
 
         return mcp
