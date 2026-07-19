@@ -11,7 +11,7 @@ Progress reporting allows MCP tools to notify clients about the progress of long
 
 ## Basic Usage
 
-Use `ctx.report_progress()` to send progress updates to the client. The method accepts a `progress` value representing how much work is complete, and an optional `total` representing the full scope of work.
+Use `ctx.report_progress()` to send progress updates to the client. The method accepts a `progress` value representing how much work is complete, an optional `total` representing the full scope of work, and an optional `message` with human-readable status text.
 
 ```python
 from fastmcp import FastMCP, Context
@@ -26,7 +26,7 @@ async def process_items(items: list[str], ctx: Context) -> dict:
     results = []
 
     for i, item in enumerate(items):
-        await ctx.report_progress(progress=i, total=total)
+        await ctx.report_progress(progress=i, total=total, message=f"Processing {item}")
         await asyncio.sleep(0.1)
         results.append(item.upper())
 

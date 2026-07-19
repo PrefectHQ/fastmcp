@@ -21,6 +21,7 @@ from mcp.server.lowlevel.server import (
     Server as _Server,
 )
 from mcp.server.models import InitializationOptions
+from mcp.server.request_state import RequestStateBoundary, RequestStateSecurity
 from mcp.server.session import ServerSession
 from mcp.server.stdio import stdio_server as stdio_server
 from mcp.shared.exceptions import MCPError
@@ -254,6 +255,23 @@ class LowLevelServer(_Server[LifespanResultT]):
         # Route initialize through FastMCP middleware.
         self.middleware.append(
             cast("ServerMiddleware[LifespanResultT]", FastMCPServerMiddleware(fastmcp))
+        )
+
+        # Install the SDK's request-state boundary (SEP-2322): it seals every
+        # outgoing `InputRequiredResult.request_state` at the wire and unseals
+        # every inbound echo *before* any handler runs, so tool bodies only ever
+        # see plaintext `ctx.request_state`. Mirrors `MCPServer.__init__`. When
+        # the server was constructed without an explicit `request_state_security`
+        # policy, seal under a per-process ephemeral key (single-process
+        # deployments); multi-replica deployments pass a shared-key policy. The
+        # low-level server always has a name (FastMCP autogenerates one), so the
+        # audience claim is always populated.
+        security = fastmcp._request_state_security or RequestStateSecurity.ephemeral()
+        self.middleware.append(
+            cast(
+                "ServerMiddleware[LifespanResultT]",
+                RequestStateBoundary(security, default_audience=self.name),
+            )
         )
 
     @property

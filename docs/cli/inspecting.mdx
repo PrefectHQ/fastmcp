@@ -55,6 +55,11 @@ fastmcp inspect server.py --format mcp -o manifest.json
 | ------ | ---- | ----------- |
 | Format | `--format`, `-f` | `fastmcp` or `mcp` (required when using `-o`) |
 | Output File | `--output`, `-o` | Save to file instead of stdout |
+| Python | `--python` | Python version to use when running via `uv` |
+| Extra Packages | `--with` | Additional packages to install (repeatable) |
+| Project | `--project` | Run within a specific uv project directory |
+| Requirements | `--with-requirements` | Install from a requirements file |
+| Skip Env | `--skip-env` | Do not set up a uv environment |
 
 ## Entrypoints
 

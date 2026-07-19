@@ -23,6 +23,7 @@ from typing import (
 )
 
 import anyio
+import mcp_types
 from mcp.shared.exceptions import MCPError
 from mcp_types import Icon, ToolAnnotations
 from pydantic import Field, TypeAdapter
@@ -32,6 +33,7 @@ from pydantic.json_schema import SkipJsonSchema
 from fastmcp.decorators import get_fastmcp_meta
 from fastmcp.exceptions import ValidationError
 from fastmcp.tools.base import (
+    InputRequiredToolResult,
     Tool,
     ToolResult,
 )
@@ -369,7 +371,15 @@ class FunctionTool(Tool):
         )
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
-        """Run the tool with arguments."""
+        """Run the tool with arguments.
+
+        A tool body may return an `InputRequiredResult` (SEP-2322) to ask the
+        client for input. Under the stateless multi-round-trip protocol that ask
+        is the full result of this leg, so it is wrapped in an
+        `InputRequiredToolResult` (a `ToolResult` subclass) rather than
+        serialized as content; the ask flows through the middleware chain as an
+        ordinary result and the wire handler returns it to the client unmodified.
+        """
         from fastmcp.server.dependencies import without_injected_parameters
 
         wrapper_fn = without_injected_parameters(
@@ -417,6 +427,14 @@ class FunctionTool(Tool):
             original = e.__cause__
             assert original is not None
             raise original from original.__cause__
+
+        # An `InputRequiredResult` is the full result of this multi-round-trip
+        # leg (SEP-2322), not tool-output data: wrap it in an
+        # `InputRequiredToolResult` so it flows through the middleware chain as
+        # an ordinary result instead of being serialized as content. The wire
+        # handler reads it back out (see `_on_call_tool`).
+        if isinstance(result, mcp_types.InputRequiredResult):
+            return InputRequiredToolResult(result)
 
         return self.convert_result(result)
 

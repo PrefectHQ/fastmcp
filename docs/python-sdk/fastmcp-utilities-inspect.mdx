@@ -26,10 +26,10 @@ Extract information from a FastMCP v2.x instance.
 - FastMCPInfo dataclass containing the extracted information
 
 
-### `inspect_fastmcp_v1` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/inspect.py#L236" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `inspect_fastmcp_v1` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/inspect.py#L251" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-inspect_fastmcp_v1(mcp: FastMCP1x) -> FastMCPInfo
+inspect_fastmcp_v1(mcp: SDKServer) -> FastMCPInfo
 ```
 
 
@@ -42,10 +42,10 @@ Extract information from a FastMCP v1.x instance using a Client.
 - FastMCPInfo dataclass containing the extracted information
 
 
-### `inspect_fastmcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/inspect.py#L378" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `inspect_fastmcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/inspect.py#L410" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-inspect_fastmcp(mcp: FastMCP[Any] | FastMCP1x) -> FastMCPInfo
+inspect_fastmcp(mcp: FastMCP[Any] | SDKServer) -> FastMCPInfo
 ```
 
 
@@ -61,7 +61,7 @@ and uses the appropriate extraction method.
 - FastMCPInfo dataclass containing the extracted information
 
 
-### `format_fastmcp_info` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/inspect.py#L403" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `format_fastmcp_info` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/inspect.py#L435" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 format_fastmcp_info(info: FastMCPInfo) -> bytes
@@ -73,10 +73,10 @@ Format FastMCPInfo as FastMCP-specific JSON.
 This includes FastMCP-specific fields like tags, enabled, annotations, etc.
 
 
-### `format_mcp_info` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/inspect.py#L432" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `format_mcp_info` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/inspect.py#L464" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-format_mcp_info(mcp: FastMCP[Any] | FastMCP1x) -> bytes
+format_mcp_info(mcp: FastMCP[Any] | SDKServer) -> bytes
 ```
 
 
@@ -86,10 +86,10 @@ Uses Client to get the standard MCP protocol format with camelCase fields.
 Includes version metadata at the top level.
 
 
-### `format_info` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/inspect.py#L465" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `format_info` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/inspect.py#L497" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-format_info(mcp: FastMCP[Any] | FastMCP1x, format: InspectFormat | Literal['fastmcp', 'mcp'], info: FastMCPInfo | None = None) -> bytes
+format_info(mcp: FastMCP[Any] | SDKServer, format: InspectFormat | Literal['fastmcp', 'mcp'], info: FastMCPInfo | None = None) -> bytes
 ```
 
 
@@ -136,7 +136,7 @@ Information about a resource template.
 Information extracted from a FastMCP instance.
 
 
-### `InspectFormat` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/inspect.py#L396" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `InspectFormat` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/inspect.py#L428" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Output format for inspect command.

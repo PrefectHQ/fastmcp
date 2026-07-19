@@ -25,6 +25,7 @@ from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.stores.memory import MemoryStore
 from mcp.server.lowlevel.server import LifespanResultT
+from mcp.server.request_state import RequestStateSecurity
 from mcp.shared.exceptions import MCPError
 from mcp_types import (
     Annotations,
@@ -343,6 +344,7 @@ class FastMCP(
         strict_input_validation: bool | None = None,
         list_page_size: int | None = None,
         resource_security: ResourceSecurity | None = DEFAULT_RESOURCE_SECURITY,
+        request_state_security: RequestStateSecurity | None = None,
         cache_ttl: int | None = None,
         cache_scope: Literal["public", "private"] | None = None,
         tasks: bool | None = None,
@@ -409,6 +411,36 @@ class FastMCP(
         # traversal, absolute paths, and null bytes; None disables screening
         # server-wide.
         self._resource_security: ResourceSecurity | None = resource_security
+
+        # Server-level integrity policy for the multi-round-trip `requestState`
+        # (SEP-2322). Consumed by the low-level server, which installs the SDK's
+        # `RequestStateBoundary` middleware to seal every outgoing
+        # `InputRequiredResult.request_state` and unseal every inbound echo.
+        # None means "seal under a per-process ephemeral key" — correct for
+        # single-process deployments; multi-replica deployments must pass a
+        # policy carrying shared `keys=[...]`.
+        if (
+            request_state_security is not None
+            and request_state_security.audience is None
+            and not name  # None or "" both yield a random per-replica name
+        ):
+            # The request-state boundary stamps an audience claim, defaulting to
+            # the server name — which is auto-generated (random) when unnamed, so
+            # a shared-key multi-replica policy would mint tokens no other
+            # replica accepts. A policy object can't reveal whether its keys are
+            # shared (ephemeral and shared-key policies both collapse into a
+            # codec), so single-process customization stays allowed and the
+            # multi-replica footgun is a warning, not an error.
+            logger.warning(
+                "request_state_security was provided without an audience on an "
+                "unnamed server; if this policy's keys are shared across "
+                "replicas, sealed request state will not verify between them. "
+                "Pass FastMCP(name=...) or RequestStateSecurity(audience=...) "
+                "for a stable audience."
+            )
+        self._request_state_security: RequestStateSecurity | None = (
+            request_state_security
+        )
 
         # Server-level SEP-2549 cache hints, applied uniformly to every
         # SDK-cacheable result by the low-level server's runner (raises on
@@ -1223,6 +1255,11 @@ class FastMCP(
             ToolResult when task_meta is None.
             CreateTaskResult when task_meta is provided.
 
+        A guard tool that requests client input (SEP-2322 multi-round-trip)
+        returns an ``InputRequiredToolResult`` (a ``ToolResult`` subclass); it
+        flows back through the middleware chain as an ordinary result and the
+        wire handler unwraps it into an ``InputRequiredResult`` on the response.
+
         Raises:
             NotFoundError: If tool not found or disabled
             ToolError: If tool execution fails
@@ -1250,6 +1287,14 @@ class FastMCP(
                     message=mcp_types.CallToolRequestParams(
                         name=name,
                         arguments=arguments or {},
+                        # Reflect the continuation fields (SEP-2322) so middleware
+                        # reading `context.message` sees a continuation round as
+                        # such, not as an initial call. These are recovered from
+                        # the raw wire request (unsealed to plaintext by the
+                        # request-state boundary); they drive middleware
+                        # visibility only — `call_next` routes on name/arguments.
+                        input_responses=ctx.input_responses,
+                        request_state=ctx.request_state,
                         _meta=_version_request_meta(version),
                     ),
                     source="client",
@@ -2318,6 +2363,8 @@ def create_proxy(
         | dict[str, Any]
         | str
     ),
+    *,
+    mode: str | None = None,
     **settings: Any,
 ) -> FastMCPProxy:
     """Create a FastMCP proxy server for the given target.
@@ -2333,6 +2380,11 @@ def create_proxy(
             - A URL string or AnyUrl
             - A Path to a server script
             - An MCPConfig or dict
+        mode: Protocol-era negotiation for auto-created proxy clients (a
+            non-Client target). Defaults to the handshake era; pass
+            `"auto"` to negotiate the modern era so an upstream guard
+            tool's `InputRequiredResult` (SEP-2322) round-trips. Ignored
+            when `target` is already a `Client` (which carries its own mode).
         **settings: Additional settings passed to FastMCPProxy (name, etc.)
 
     Returns:
@@ -2354,7 +2406,7 @@ def create_proxy(
         _create_client_factory,
     )
 
-    client_factory = _create_client_factory(target)
+    client_factory = _create_client_factory(target, mode=mode)
     return FastMCPProxy(
         client_factory=client_factory,
         **settings,

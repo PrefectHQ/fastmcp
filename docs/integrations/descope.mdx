@@ -18,7 +18,7 @@ This guide shows you how to secure your FastMCP server using [**Descope**](https
 Before you begin, you will need:
 
 1. To [sign up](https://www.descope.com/sign-up) for a Free Forever Descope account
-2. Your FastMCP server's URL (can be localhost for development, e.g., `http://localhost:3000`)
+2. Your FastMCP server's URL (can be localhost for development, e.g., `http://localhost:8000`)
 
 ### Step 1: Configure Descope
 
@@ -55,21 +55,26 @@ Create a `.env` file with your Descope configuration:
 
 ```bash
 DESCOPE_CONFIG_URL=https://api.descope.com/v1/apps/P.../.well-known/openid-configuration
-SERVER_URL=http://localhost:3000     # Your server's base URL
+BASE_URL=http://localhost:8000
 ```
 
 ### Step 3: FastMCP Configuration
 
-Create your FastMCP server file and use the DescopeProvider to handle all the OAuth integration automatically:
+Create your FastMCP server file and use the DescopeProvider to handle all the OAuth integration automatically. Nothing reads `.env` automatically, so load it explicitly with [python-dotenv](https://pypi.org/project/python-dotenv/) (`pip install python-dotenv`) before constructing the provider — otherwise the values you just wrote stay invisible to `os.environ`.
 
 ```python server.py
+import os
+
+from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.descope import DescopeProvider
 
+load_dotenv()
+
 # DescopeProvider accepts either supported Well-Known URL format.
 auth_provider = DescopeProvider(
-    config_url="https://api.descope.com/v1/apps/P.../.well-known/openid-configuration",
-    base_url="https://your-fastmcp-server.com",
+    config_url=os.environ["DESCOPE_CONFIG_URL"],
+    base_url=os.environ.get("BASE_URL", "http://localhost:8000"),
 )
 
 # Create FastMCP server with auth

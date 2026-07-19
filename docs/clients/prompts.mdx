@@ -128,12 +128,12 @@ See [Metadata](/servers/versioning#version-discovery) for how to discover availa
 
 ## Multi-Server Clients
 
-When using multi-server clients, prompts are accessible directly without prefixing:
+When using multi-server clients, prompts are mounted with the server name as a prefix, just like tools:
 
 ```python
 async with client:  # Multi-server client
-    result1 = await client.get_prompt("weather_prompt", {"city": "London"})
-    result2 = await client.get_prompt("assistant_prompt", {"query": "help"})
+    result1 = await client.get_prompt("weather_weather_prompt", {"city": "London"})
+    result2 = await client.get_prompt("assistant_assistant_prompt", {"query": "help"})
 ```
 
 ## Raw Protocol Access

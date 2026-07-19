@@ -199,23 +199,28 @@ If low latency is critical, consider implementing caching strategies or limiting
 Custom HTTP routes defined with `@server.custom_route()` are also forwarded when mounting:
 
 ```python
+from fastmcp import FastMCP
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+
 subserver = FastMCP("Sub")
 
 @subserver.custom_route("/health", methods=["GET"])
-async def health_check():
-    return {"status": "ok"}
+async def health_check(request: Request) -> Response:
+    return JSONResponse({"status": "ok"})
 
 main = FastMCP("Main")
 main.mount(subserver, namespace="sub")
 
-# /health is now accessible through main's HTTP app
+# /health is now accessible through main's HTTP app.
+# Custom route paths are not namespaced by mount(namespace=...).
 ```
 
 ## Conflict Resolution
 
 <VersionBadge version="3.0.0" />
 
-When mounting multiple servers with the same namespace (or no namespace), the **most recently mounted** server takes precedence for conflicting component names:
+When mounting multiple servers with the same namespace (or no namespace), FastMCP queries all mounted providers for a requested component and returns the highest matching version. If two unversioned components (or two equal versions) use the same identifier, the provider registered first wins.
 
 ```python
 server_a = FastMCP("A")
@@ -233,5 +238,5 @@ main = FastMCP("Main")
 main.mount(server_a)
 main.mount(server_b)
 
-# shared_tool returns "From B" (most recently mounted)
+# shared_tool returns "From A" (first mounted, same unversioned key)
 ```

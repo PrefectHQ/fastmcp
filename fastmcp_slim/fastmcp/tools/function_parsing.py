@@ -11,6 +11,7 @@ from typing import Annotated, Any, Generic, Union, get_args, get_origin, get_typ
 
 import mcp_types
 from pydantic import BaseModel, PydanticSchemaGenerationError
+from typing_extensions import TypeAliasType
 from typing_extensions import TypeVar as TypeVarExt
 
 from fastmcp.tools.base import ToolResult, resolve_serialize_by_alias
@@ -53,6 +54,103 @@ def _contains_prefab_type(tp: Any) -> bool:
     if origin is Union or origin is types.UnionType or origin is Annotated:
         return any(_contains_prefab_type(a) for a in get_args(tp))
     return False
+
+
+def _unwrap_type_alias(tp: Any) -> Any:
+    """Resolve a PEP 695 ``type X = ...`` alias to its underlying value.
+
+    ``get_origin()`` returns ``None`` for a ``TypeAliasType``, so an alias that
+    factors out a guard union (``type Result = str | InputRequiredResult``) — or
+    a lone aliased arm — would otherwise slip past union detection. Resolving to
+    ``__value__`` (repeatedly, for chained aliases) restores the concrete type.
+    """
+    while isinstance(tp, TypeAliasType):
+        tp = tp.__value__
+    return tp
+
+
+def _is_input_required_type(tp: Any) -> bool:
+    """True when *tp* is the `InputRequiredResult` type (SEP-2322).
+
+    Resolves a `TypeAliasType` and peels an `Annotated` wrapper first, so an
+    aliased arm or a metadata-carrying arm such as
+    ``Annotated[InputRequiredResult, Field(...)]`` is recognized as a guard
+    signal, not just the bare class.
+    """
+    tp = _unwrap_type_alias(tp)
+    if get_origin(tp) is Annotated:
+        tp = _unwrap_type_alias(get_args(tp)[0])
+    return isinstance(tp, type) and issubclass(tp, mcp_types.InputRequiredResult)
+
+
+def _contains_input_required(tp: Any) -> bool:
+    """True when `InputRequiredResult` appears anywhere in *tp*.
+
+    Recurses through `TypeAliasType`, `Annotated`, and unions so a guard arm is
+    found even when factored through a composed alias (``str | Value`` where
+    ``Value = int | InputRequiredResult``).
+    """
+    tp = _unwrap_type_alias(tp)
+    if _is_input_required_type(tp):
+        return True
+    origin = get_origin(tp)
+    if origin is Union or origin is types.UnionType or origin is Annotated:
+        return any(_contains_input_required(a) for a in get_args(tp))
+    return False
+
+
+def _residual_union_arms(tp: Any) -> list[Any]:
+    """Flatten a (possibly aliased/nested) union into its non-guard arms.
+
+    Every `InputRequiredResult` arm is dropped at any depth, and aliased union
+    arms are flattened inline so the residual is a flat union of data arms.
+    """
+    arms: list[Any] = []
+    for arm in get_args(_unwrap_type_alias(tp)):
+        if _is_input_required_type(arm):
+            continue
+        unwrapped = _unwrap_type_alias(arm)
+        arm_origin = get_origin(unwrapped)
+        if arm_origin is Union or arm_origin is types.UnionType:
+            arms.extend(_residual_union_arms(unwrapped))
+        elif arm_origin is Annotated:
+            arms.append(_strip_input_required(arm))
+        else:
+            arms.append(arm)
+    return arms
+
+
+def _strip_input_required(tp: Any) -> Any:
+    """Remove `InputRequiredResult` arms from a union return annotation.
+
+    A guard tool typically annotates its return as ``X | InputRequiredResult``;
+    the ``InputRequiredResult`` arm is a suspend signal, not output data, so it
+    is dropped before schema derivation. Stripping recurses through
+    `TypeAliasType` and nested unions, so a guard arm factored through an alias
+    (even ``str | Value`` where ``Value = int | InputRequiredResult``) is still
+    removed. A non-union annotation, or one with no such arm, is returned
+    unchanged. A bare ``InputRequiredResult`` annotation (no other arm) is left
+    intact and suppressed downstream like other non-serializable return types.
+    """
+    if not _contains_input_required(tp):
+        return tp
+    unwrapped = _unwrap_type_alias(tp)
+    origin = get_origin(unwrapped)
+    if origin is Annotated:
+        # Annotated[X | InputRequiredResult, meta] — strip inside, keep metadata.
+        inner, *metadata = get_args(unwrapped)
+        return Annotated[(_strip_input_required(inner), *metadata)]
+    if origin is not Union and origin is not types.UnionType:
+        # A bare InputRequiredResult (possibly via a `type X = ...` alias): left
+        # intact, but returned de-aliased so the downstream subclass/exact-type
+        # suppression recognizes it and emits no output schema.
+        return unwrapped
+    residual = _residual_union_arms(unwrapped)
+    if not residual:
+        return tp
+    if len(residual) == 1:
+        return residual[0]
+    return Union[tuple(residual)]  # noqa: UP007
 
 
 def _unwrap_model(tp: Any) -> type[BaseModel] | None:
@@ -270,6 +368,13 @@ class ParsedFunction:
         # Save original for return_type before any schema-related replacement
         original_output_type = output_type
 
+        # An `InputRequiredResult` return arm (SEP-2322 guard tools) is a
+        # control-flow signal, not data: strip it so the residual arms drive
+        # output-schema derivation (mirrors the SDK's func_metadata). The tool
+        # body still returns it at runtime; the tool pipeline passes it through
+        # to the wire without touching the output schema.
+        output_type = _strip_input_required(output_type)
+
         if output_type not in (inspect._empty, None, Any, ...):
             # bytes can't be represented as structured JSON output — skip schema
             if _contains_bytes_type(output_type):
@@ -286,6 +391,15 @@ class ParsedFunction:
             # ToolResult subclasses should suppress schema generation just
             # like ToolResult itself — replace_type only does exact matching.
             if is_class_member_of_type(output_type, ToolResult):
+                output_type = _UnserializableType
+
+            # If InputRequiredResult survives stripping in any wrapping — bare,
+            # via a `type X = ...` alias, Annotated, or a subclass — it is a
+            # guard-only return with no output data (a union would have had its
+            # guard arms stripped above). Suppress the schema wholesale; matching
+            # `run()`'s subclass-aware control handling and covering every alias
+            # shape that exact-match replace_type below would miss.
+            if _contains_input_required(output_type):
                 output_type = _UnserializableType
 
             # there are a variety of types that we don't want to attempt to
@@ -306,6 +420,9 @@ class ParsedFunction:
                         mcp_types.AudioContent,
                         mcp_types.ResourceLink,
                         mcp_types.EmbeddedResource,
+                        # A guard tool's suspend signal is control flow, not
+                        # output data (any residual bare arm is suppressed).
+                        mcp_types.InputRequiredResult,
                         *_PREFAB_TYPES,
                     ),
                     _UnserializableType,

@@ -71,7 +71,7 @@ async def data_analysis_request(dataset: str, ctx: Context = CurrentContext()) -
 
 - Dependency parameters are automatically excluded from the MCP schema—clients never see them.
 - Context methods are async, so your function usually needs to be async as well.
-- **Each MCP request receives a new context object.** Context is scoped to a single request; state or data set in one request will not be available in subsequent requests.
+- **Each MCP request receives a new context object.** Request-scoped values, including non-serializable state, are not available in subsequent requests. Serializable session state stored with `ctx.set_state()` persists across requests in the same MCP session.
 - Context is only available during a request; attempting to use context methods outside a request will raise errors.
 
 ### Legacy Type-Hint Injection
@@ -184,13 +184,13 @@ List and read data from resources registered with your FastMCP server, allowing 
 resources = await ctx.list_resources()
 
 # Read a specific resource
-content_list = await ctx.read_resource("resource://config")
-content = content_list[0].content
+resource_result = await ctx.read_resource("resource://config")
+content = resource_result.contents[0].content
 ```
 
 **Method signatures:**
-- **`ctx.list_resources() -> list[MCPResource]`**: <VersionBadge version="2.13.0" /> Returns list of all available resources
-- **`ctx.read_resource(uri: str | AnyUrl) -> list[ReadResourceContents]`**: Returns a list of resource content parts
+- **`ctx.list_resources() -> list[mcp_types.Resource]`**: <VersionBadge version="2.13.0" /> Returns list of all available resources
+- **`ctx.read_resource(uri: str | AnyUrl) -> ResourceResult`**: Returns a `ResourceResult` whose `.contents` list contains the resource content parts
 
 ### Prompt Access
 
@@ -322,7 +322,7 @@ State set during `on_initialize` middleware persists to subsequent tool calls wh
 
 <VersionBadge version="3.0.0" />
 
-Tools can customize which components are visible to their current session using `ctx.enable_components()`, `ctx.disable_components()`, and `ctx.reset_visibility()`. These methods apply visibility rules that affect only the calling session, leaving other sessions unchanged. See [Per-Session Visibility](/servers/visibility#per-session-visibility) for complete documentation, filter criteria, and patterns like namespace activation.
+Tools can customize which components are visible to their current session using `ctx.enable_components()`, `ctx.disable_components()`, and `ctx.reset_visibility()`. They accept the same filters as the server-level methods, so `names={"search"}` targets a component by name and `tags` targets a group. These methods apply visibility rules that affect only the calling session, leaving other sessions unchanged. See [Per-Session Visibility](/servers/visibility#per-session-visibility) for complete documentation, filter criteria, and patterns like namespace activation.
 
 ### Change Notifications
 

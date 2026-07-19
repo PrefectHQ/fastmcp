@@ -25,6 +25,7 @@ from mcp_types import (
     ElicitRequestFormParams,
     TextResourceContents,
 )
+from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 from pydantic.networks import AnyUrl
 
 from fastmcp.client.client import Client, SDKServer
@@ -48,7 +49,8 @@ from fastmcp.server.providers.aggregate import ProviderErrorStrategy
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.server import FastMCP
 from fastmcp.server.tasks.config import TaskConfig
-from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.telemetry import inject_trace_context
+from fastmcp.tools.base import InputRequiredToolResult, Tool, ToolResult
 from fastmcp.utilities.components import FastMCPComponent, get_fastmcp_metadata
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.versions import VersionSpec, version_sort_key
@@ -228,19 +230,57 @@ class ProxyTool(Tool):
                     dict(req_ctx.meta) if req_ctx is not None and req_ctx.meta else None
                 )
 
-                result = await client.call_tool_mcp(
-                    name=backend_name, arguments=arguments, meta=meta
-                )
+                if client.protocol_version in MODERN_PROTOCOL_VERSIONS:
+                    # Modern backend: call the session directly (not
+                    # `call_tool_mcp`, which would *drive* a multi-round-trip ask
+                    # to completion on this proxy). A guard tool's
+                    # `InputRequiredResult` (SEP-2322) must instead surface as a
+                    # result so the parent's middleware and wire seam own the
+                    # round. Forward the inbound request's continuation state
+                    # down so the backend guard tool sees the client's answers
+                    # on its own `ctx.input_responses` / `ctx.request_state`.
+                    request_meta = cast(
+                        "mcp_types.RequestParamsMeta | None",
+                        inject_trace_context(meta) or None,
+                    )
+                    result = await client._await_with_session_monitoring(
+                        client.session.call_tool(
+                            name=backend_name,
+                            arguments=arguments,
+                            meta=request_meta,
+                            # Forward upstream progress the same way the legacy
+                            # `call_tool_mcp` path does — without this handler a
+                            # backend tool's `ctx.report_progress()` is dropped
+                            # on modern proxy calls.
+                            progress_callback=client._progress_handler,
+                            input_responses=ctx.input_responses,
+                            request_state=ctx.request_state,
+                            allow_input_required=True,
+                        )
+                    )
+                    # A backend ask round-trips into an InputRequiredToolResult
+                    # so the parent's middleware observes it and the parent's
+                    # wire handler unwraps it (era-gated on the parent's own
+                    # connection).
+                    if isinstance(result, mcp_types.InputRequiredResult):
+                        return InputRequiredToolResult(result)
+                    tool_result = cast("mcp_types.CallToolResult", result)
+                else:
+                    # Legacy backend: the multi-round-trip result type does not
+                    # exist there, so keep the original path.
+                    tool_result = await client.call_tool_mcp(
+                        name=backend_name, arguments=arguments, meta=meta
+                    )
             # Pass an upstream error result through faithfully rather than
             # collapsing it into a raised ToolError — this preserves the
             # backend's content (including non-text and structured content),
             # and the client still raises on isError by default.
             # Preserve backend's meta (includes task metadata for background tasks)
             return ToolResult(
-                content=result.content,
-                structured_content=result.structured_content,
-                meta=result.meta,
-                is_error=result.is_error,
+                content=tool_result.content,
+                structured_content=tool_result.structured_content,
+                meta=tool_result.meta,
+                is_error=tool_result.is_error,
             )
 
     def get_span_attributes(self) -> dict[str, Any]:
@@ -825,6 +865,8 @@ def _create_client_factory(
         | dict[str, Any]
         | str
     ),
+    *,
+    mode: str | None = None,
 ) -> ClientFactoryT:
     """Create a client factory from the given target.
 
@@ -872,7 +914,8 @@ def _create_client_factory(
         return fresh_client_factory
     else:
         # target is not a Client, so it's compatible with ProxyClient.__init__
-        base_client = ProxyClient(cast(Any, target))
+        client_kwargs: dict[str, Any] = {} if mode is None else {"mode": mode}
+        base_client = ProxyClient(cast(Any, target), **client_kwargs)
 
         def proxy_client_factory() -> Client:
             return base_client.new()
@@ -1135,6 +1178,13 @@ class ProxyClient(Client[ClientTransportT]):
     ):
         if "name" not in kwargs:
             kwargs["name"] = self.generate_name()
+        # ProxyClient defaults to the handshake era: a dual-era backend serves
+        # both, and a single proxy session can only be one era. Handshake keeps
+        # the server-initiated push forwarding (sampling / elicitation / roots,
+        # via the handlers installed below) that proxies rely on. To round-trip
+        # an upstream guard tool's InputRequiredResult (SEP-2322) instead, opt
+        # into the modern era explicitly with `create_proxy(target, mode="auto")`
+        # — the two are mutually exclusive per session.
         # Install context-restoring handler wrappers BEFORE super().__init__
         # registers them with the Client's session kwargs.
         self._proxy_rc_ref = [None]

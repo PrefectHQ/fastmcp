@@ -350,7 +350,7 @@ All custom attributes use the `fastmcp.` prefix for features unique to FastMCP:
 |-----------|-------------|
 | `fastmcp.server.name` | Server name |
 | `fastmcp.component.type` | `tool`, `resource`, `prompt`, or `resource_template` |
-| `fastmcp.component.key` | Full component identifier (e.g., `tool:greet`) |
+| `fastmcp.component.key` | Full component key, including type and version delimiter (e.g., `tool:greet@` or `tool:greet@v2`) |
 | `fastmcp.provider.type` | Provider class (`LocalProvider`, `FastMCPProvider`, `ProxyProvider`) |
 
 Provider-specific attributes for delegation context:

@@ -30,8 +30,8 @@ async def elicitation_handler(
 
     Args:
         message: The prompt to display to the user
-        response_type: Python dataclass type for the response (None if no data expected)
-        params: Original MCP elicitation parameters including raw JSON schema
+        response_type: Python dataclass type for form responses (None for URL requests or empty schemas)
+        params: Original MCP elicitation parameters
         context: Request context with metadata
 
     Returns:
@@ -44,6 +44,11 @@ async def elicitation_handler(
     if not user_input:
         return ElicitResult(action="decline")
 
+    # URL requests and empty-object schemas have no response type to construct,
+    # so accepting is the whole response.
+    if response_type is None:
+        return ElicitResult(action="accept")
+
     # Create response using the provided dataclass type
     return response_type(value=user_input)
 
@@ -55,7 +60,7 @@ client = Client(
 
 ## How It Works
 
-When a server needs user input, it sends an elicitation request with a message prompt and a JSON schema describing the expected response structure. FastMCP automatically converts this schema into a Python dataclass type, making it easy to construct properly typed responses without manually parsing JSON schemas.
+When a server needs user input, it sends an elicitation request with a message prompt. Form elicitation requests include a JSON schema describing the expected response structure, and FastMCP automatically converts that schema into a Python dataclass type. URL elicitation requests and empty-object schemas use `response_type=None`.
 
 The handler receives four parameters:
 
@@ -65,11 +70,11 @@ The handler receives four parameters:
 </ResponseField>
 
 <ResponseField name="response_type" type="type | None">
-  A Python dataclass type that FastMCP created from the server's JSON schema. Use this to construct your response with proper typing. If the server requests an empty object, this will be `None`.
+  A Python dataclass type that FastMCP created from a form request's JSON schema. Use this to construct your response with proper typing. For URL requests or empty-object schemas, this will be `None`.
 </ResponseField>
 
 <ResponseField name="params" type="ElicitRequestParams">
-  The original MCP elicitation parameters, including the raw JSON schema in `params.requested_schema`
+  The original MCP elicitation parameters. Form requests carry the raw JSON schema on `params.requested_schema`; URL requests carry `params.url` instead and have no schema.
 </ResponseField>
 
 <ResponseField name="context" type="RequestContext">

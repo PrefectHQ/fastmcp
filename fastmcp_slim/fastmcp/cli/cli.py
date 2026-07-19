@@ -435,7 +435,7 @@ async def run(
         str | None,
         cyclopts.Parameter(
             "--path",
-            help="The route path for the server (default: /mcp/ for http transport, /sse/ for sse transport)",
+            help="The route path for the server (default: /mcp for http transport, /sse for sse transport)",
         ),
     ] = None,
     log_level: Annotated[

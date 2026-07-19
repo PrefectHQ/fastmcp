@@ -17,6 +17,7 @@ from mcp_types import (
     ReadResourceRequestParams,
     SetLevelRequestParams,
 )
+from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
 from fastmcp.exceptions import (
     DisabledError,
@@ -26,6 +27,7 @@ from fastmcp.exceptions import (
 )
 from fastmcp.server.dependencies import bind_request_context, extract_version_spec
 from fastmcp.server.tasks.config import TaskMeta
+from fastmcp.tools.base import InputRequiredToolResult
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.pagination import paginate_sequence
 from fastmcp.utilities.versions import VersionSpec, dedupe_with_versions
@@ -211,12 +213,27 @@ class MCPOperationsMixin:
         self: FastMCP,
         ctx: ServerRequestContext,
         params: CallToolRequestParams,
-    ) -> mcp_types.CallToolResult | mcp_types.CreateTaskResult:
+    ) -> (
+        mcp_types.CallToolResult
+        | mcp_types.InputRequiredResult
+        | mcp_types.CreateTaskResult
+    ):
         """Handle MCP 'tools/call' requests.
 
         Task metadata is a first-class params field (``params.task``); its
         presence triggers backgrounding. The tool's ``_run()`` handles the
         backgrounding decision so middleware runs before Docket.
+
+        A guard tool (SEP-2322 multi-round-trip) requests client input by
+        returning an ``InputRequiredResult`` from its body; the run machinery
+        wraps that in an ``InputRequiredToolResult`` (a ``ToolResult``
+        subclass), which flows back through the middleware chain as an ordinary
+        result. Here we unwrap it and hand the raw ``InputRequiredResult`` to
+        the runner so it reaches the wire as ``resultType: "input_required"``
+        (the request-state boundary seals its ``requestState`` on egress). This
+        result shape only exists at 2026-07-28; on an earlier connection the
+        runner cannot serialize it, so we reject with a clear era error rather
+        than let it fail as a generic "invalid result".
         """
         with bind_request_context(ctx):
             key = params.name
@@ -258,6 +275,23 @@ class MCPOperationsMixin:
 
             if isinstance(result, mcp_types.CreateTaskResult):
                 return result
+            if isinstance(result, InputRequiredToolResult):
+                # A guard tool requested client input (SEP-2322). The
+                # multi-round-trip result type only exists at 2026-07-28; on an
+                # earlier connection the runner cannot serialize it, so name the
+                # era problem instead of failing as a generic "invalid result".
+                if ctx.protocol_version not in MODERN_PROTOCOL_VERSIONS:
+                    raise MCPError(
+                        code=INVALID_PARAMS,
+                        message=(
+                            f"Tool {key!r} returned an InputRequiredResult to request "
+                            "client input, but the multi-round-trip result type "
+                            "(SEP-2322) only exists at MCP 2026-07-28; this connection "
+                            f"negotiated {ctx.protocol_version!r}. Use ctx.elicit() for "
+                            "server-initiated input on handshake-era connections."
+                        ),
+                    )
+                return result.input_required
             return _normalize_call_tool_result(result.to_mcp_result())
 
     async def _on_read_resource(

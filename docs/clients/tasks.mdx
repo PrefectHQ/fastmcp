@@ -64,12 +64,12 @@ Check the current status without blocking:
 ```python
 status = await task.status()
 print(f"{status.status}: {status.statusMessage}")
-# status.status is "working", "completed", "failed", or "cancelled"
+# status.status is "working", "input_required", "completed", "failed", or "cancelled"
 ```
 
 ### Waiting with Control
 
-Use `task.wait()` for more control over waiting:
+Use `task.wait()` for more control over waiting. With no `state`, it returns when the task leaves `working`; pass a specific state when you need to wait for a particular transition:
 
 ```python
 # Wait up to 30 seconds for completion
@@ -116,7 +116,7 @@ def status_handler(status):
     Args:
         status: Task status object with:
             - taskId: Unique task identifier
-            - status: "working", "completed", "failed", or "cancelled"
+            - status: "working", "input_required", "completed", "failed", or "cancelled"
             - statusMessage: Optional progress message from server
     """
     if status.status == "working":

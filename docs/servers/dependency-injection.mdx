@@ -10,7 +10,7 @@ import { VersionBadge } from "/snippets/version-badge.mdx";
 
 FastMCP uses dependency injection to provide runtime values to your tools, resources, and prompts. Instead of passing context through every layer of your code, you declare what you need as parameter defaults—FastMCP resolves them automatically when your function runs.
 
-The dependency injection system is powered by [Docket](https://github.com/chrisguidry/docket) and its dependency system [uncalled-for](https://github.com/chrisguidry/uncalled-for). Core DI features like `Depends()` and `CurrentContext()` work without installing Docket. For background tasks and advanced task-related dependencies, install `fastmcp[tasks]`. For comprehensive coverage of dependency patterns, see the [Docket dependency documentation](https://docket.lol/en/latest/dependency-injection/).
+The dependency injection system is powered by [uncalled-for](https://github.com/chrisguidry/uncalled-for), the same dependency engine used by Docket. Core DI features like `Depends()` and `CurrentContext()` work without installing Docket. Background task execution and task-specific dependencies such as `CurrentDocket()` and `CurrentWorker()` require `fastmcp[tasks]`. For comprehensive coverage of dependency patterns, see the [Docket dependency documentation](https://docket.lol/en/latest/dependency-injection/).
 
 <Note>
 Dependency parameters are automatically excluded from the MCP schema—clients never see them as callable parameters. This separation keeps your function signatures clean while giving you access to the runtime context you need.
@@ -278,7 +278,7 @@ Common claims vary by identity provider:
 
 <VersionBadge version="2.3.0" />
 
-For background task execution, FastMCP provides dependencies that integrate with [Docket](https://github.com/chrisguidry/docket). These require installing `fastmcp[tasks]`.
+For background task execution, FastMCP provides dependencies that integrate with [Docket](https://github.com/chrisguidry/docket). `CurrentDocket()` and `CurrentWorker()` require installing `fastmcp[tasks]`; `Progress()` also works during immediate foreground execution with an in-memory tracker, and delegates to Docket progress when a Docket worker context is active.
 
 ```python
 from fastmcp import FastMCP
@@ -309,7 +309,7 @@ async def long_running_task(
 - **`Progress()`**: Track task progress with atomic updates
 
 <Note>
-Task dependencies require `pip install 'fastmcp[tasks]'`. They're only available within task-enabled components (`task=True`). For comprehensive task patterns, see the [Docket documentation](https://chrisguidry.github.io/docket/dependencies/).
+`CurrentDocket()` and `CurrentWorker()` require `pip install 'fastmcp[tasks]'`. They resolve once the server lifespan has initialized Docket, which happens as soon as any component on the server is task-enabled — so regular foreground tools, resources, and prompts can inject them too, not only task-enabled components. `Progress()` can be injected anywhere regardless, though cross-process task progress requires Docket. For comprehensive task patterns, see the [Docket documentation](https://chrisguidry.github.io/docket/dependencies/).
 </Note>
 
 ## Custom Dependencies

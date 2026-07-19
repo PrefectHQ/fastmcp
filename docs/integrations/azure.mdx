@@ -223,8 +223,9 @@ async def main():
         
         # Test the protected tool
         result = await client.call_tool("get_user_info")
-        print(f"Azure user: {result['email']}")
-        print(f"Name: {result['name']}")
+        user_info = result.data
+        print(f"Azure user: {user_info['email']}")
+        print(f"Name: {user_info['name']}")
 
 if __name__ == "__main__":
     asyncio.run(main())
