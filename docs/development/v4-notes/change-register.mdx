@@ -214,9 +214,12 @@ These settings previously lived on the transport instance, so a transport shared
 A client only passes the argument when it wants non-default settings, so an ordinary `Client` is unaffected and transports that don't accept it keep working. A custom `ClientTransport` used as a *proxy backend* must accept and honor it:
 
 ```python
+import contextlib
+
 from fastmcp.client.transports.base import ClientTransport, TransportOptions
 
 class MyTransport(ClientTransport):
+    @contextlib.asynccontextmanager
     async def connect_session(self, *, transport_options=None, **session_kwargs):
         options = transport_options or TransportOptions()
         async with options.session_class(read, write, **session_kwargs) as session:

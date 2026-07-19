@@ -69,6 +69,7 @@ class StdioTransport(ClientTransport):
         self._session: ClientSession | None = None
         self._session_options: TransportOptions | None = None
         self._active_sessions = 0
+        self._connect_lock = anyio.Lock()
         self._connect_task: asyncio.Task | None = None
         self._ready_event = anyio.Event()
         self._stop_event = anyio.Event()
@@ -101,61 +102,69 @@ class StdioTransport(ClientTransport):
     ) -> ClientSession | None:
         options = transport_options or TransportOptions()
 
-        # A kept-alive session was built for one client's options; handing it to
-        # a client that wants different ones would silently give it the first
-        # client's behavior. Rebuild it when it's idle; refuse when another
-        # client is still using it, since tearing it down would break them.
-        if self._connect_task is not None and self._session_options != options:
-            if self._active_sessions:
-                raise RuntimeError(
-                    "This stdio transport has a live session built for different "
-                    "connection options and another client is still using it. "
-                    "Sharing one transport across clients that need different "
-                    "sessions is not supported; give each client its own transport."
+        # Serialized so concurrent callers can't each decide to replace the
+        # session and race to spawn competing subprocesses.
+        async with self._connect_lock:
+            # A kept-alive session was built for one client's options; handing it
+            # to a client that wants different ones would silently give it the
+            # first client's behavior. Rebuild it when it's idle; refuse when
+            # another client is using it, since tearing it down would break them.
+            if self._connect_task is not None and self._session_options != options:
+                if self._active_sessions:
+                    raise RuntimeError(
+                        "This stdio transport has a live session built for different "
+                        "connection options and another client is still using it. "
+                        "Sharing one transport across clients that need different "
+                        "sessions is not supported; give each client its own transport."
+                    )
+                await self.disconnect()
+
+            # If the connect task completed or the session's streams are dead,
+            # the subprocess has exited. Tear down so we can start fresh.
+            if self._connect_task is not None and (
+                self._connect_task.done() or self._is_session_dead()
+            ):
+                await self.disconnect()
+
+            if self._connect_task is not None:
+                return
+
+            session_future: asyncio.Future[ClientSession] = asyncio.Future()
+
+            # Recorded before the connect completes: while it is in flight the
+            # session already belongs to these options, and a concurrent caller
+            # comparing against an unset value would read it as a mismatch and
+            # tear down the connection being established.
+            self._session_options = options
+
+            # start the connection task
+            self._connect_task = asyncio.create_task(
+                _stdio_transport_connect_task(
+                    command=self.command,
+                    args=self.args,
+                    env=self.env,
+                    cwd=self.cwd,
+                    log_file=self.log_file,
+                    # TODO(ty): remove when ty supports Unpack[TypedDict] inference
+                    session_kwargs=session_kwargs,  # type: ignore[arg-type]
+                    transport_options=options,
+                    ready_event=self._ready_event,
+                    stop_event=self._stop_event,
+                    session_future=session_future,
                 )
-            await self.disconnect()
-
-        # If the connect task completed or the session's streams are dead,
-        # the subprocess has exited. Tear down so we can start fresh.
-        if self._connect_task is not None and (
-            self._connect_task.done() or self._is_session_dead()
-        ):
-            await self.disconnect()
-
-        if self._connect_task is not None:
-            return
-
-        session_future: asyncio.Future[ClientSession] = asyncio.Future()
-
-        # start the connection task
-        self._connect_task = asyncio.create_task(
-            _stdio_transport_connect_task(
-                command=self.command,
-                args=self.args,
-                env=self.env,
-                cwd=self.cwd,
-                log_file=self.log_file,
-                # TODO(ty): remove when ty supports Unpack[TypedDict] inference
-                session_kwargs=session_kwargs,  # type: ignore[arg-type]
-                transport_options=options,
-                ready_event=self._ready_event,
-                stop_event=self._stop_event,
-                session_future=session_future,
             )
-        )
 
-        # wait for the client to be ready before returning
-        await self._ready_event.wait()
+            # wait for the client to be ready before returning
+            await self._ready_event.wait()
 
-        # Check if connect task completed with an exception (early failure)
-        if self._connect_task.done():
-            exception = self._connect_task.exception()
-            if exception is not None:
-                raise exception
+            # Check if connect task completed with an exception (early failure)
+            if self._connect_task.done():
+                exception = self._connect_task.exception()
+                if exception is not None:
+                    raise exception
 
-        self._session = await session_future
-        self._session_options = options
-        return self._session
+            self._session = await session_future
+            return self._session
 
     async def disconnect(self):
         if self._connect_task is None:
