@@ -170,6 +170,26 @@ backend = ProxyClient(
 )
 ```
 
+### Tool Results Are Relayed, Not Inspected
+
+A proxy passes a backend's tool results through untouched, including results that don't match the output schema the backend advertised. Deciding whether a server honored its own contract belongs to the client consuming the result, and that client validates for itself.
+
+This matters when a backend's declared schema is subtly wrong — an enum missing a variant it actually returns, say. A proxy that enforced the schema would replace the backend's working response with an error of its own, and the client would never see what the backend actually said.
+
+```python
+from fastmcp import Client
+from fastmcp.server import create_proxy
+
+proxy = create_proxy("backend_server.py")
+
+async with Client(proxy) as client:
+    # The backend's response arrives as the backend sent it. If it violates
+    # the backend's own output schema, this client raises — its decision.
+    result = await client.call_tool("get_status")
+```
+
+Skipping the check also avoids a `tools/list` round trip to the backend on every proxied call, since validation would need the backend's schemas and a proxy builds a fresh connection per request.
+
 ## Configuration-Based Proxies
 
 <VersionBadge version="2.4.0" />

@@ -205,6 +205,28 @@ client = Client("my_mcp_server.py", timeout=30.0)  # also works
 
 *Verify:* `fastmcp_slim/fastmcp/client/transports/base.py` (`SessionKwargs.read_timeout_seconds: float | None`), `client/client.py`.
 
+### Connection settings passed to `connect_session` — Breaking (custom transports)
+
+`ClientTransport.connect_session` takes a new keyword-only `transport_options: TransportOptions | None`, describing how the connecting client wants its session built: which `ClientSession` class to instantiate, and whether to forward the caller's authorization header upstream. Proxies use it to relay backend results without enforcing their output schema (see [Proxy Servers](/servers/providers/proxy#tool-results-are-relayed-not-inspected)).
+
+These settings previously lived on the transport instance, so a transport shared between clients leaked one client's configuration into another — including credential forwarding, which `create_proxy(some_client)` would silently enable on the caller's own client. They now travel with the client that wants them, and `forward_incoming_headers` is no longer a settable transport attribute.
+
+A client only passes the argument when it wants non-default settings, so an ordinary `Client` is unaffected and transports that don't accept it keep working. A custom `ClientTransport` used as a *proxy backend* must accept and honor it:
+
+```python
+from fastmcp.client.transports.base import ClientTransport, TransportOptions
+
+class MyTransport(ClientTransport):
+    async def connect_session(self, *, transport_options=None, **session_kwargs):
+        options = transport_options or TransportOptions()
+        async with options.session_class(read, write, **session_kwargs) as session:
+            yield session
+```
+
+A transport that wraps others must pass it along; `MCPConfigTransport` forwards it to both its single-server delegate and its composite server.
+
+*Verify:* `fastmcp_slim/fastmcp/client/transports/base.py` (`TransportOptions`), the four built-in transports, `transports/config.py`, and `tests/server/providers/proxy/test_proxy_server.py`.
+
 ### `get_session_id` via header sniff — Bridged
 
 The SDK dropped `get_session_id` from the streamable-HTTP transport with no replacement (the SDK source has an author TODO acknowledging it breaks the Transport protocol). FastMCP reconstructs it by registering an httpx2 response event hook on the client it owns, capturing the `mcp-session-id` response header (httpx2 preserves httpx's `event_hooks` API). The removal trigger is the upstream TODO.
