@@ -66,7 +66,7 @@ See [Server Configuration](/deployment/server-configuration) for the full config
 | Requirements | `--with-requirements` | Install from a requirements file |
 | Config Path | `--config-path` | Custom path to Claude Desktop config directory (`claude-desktop` only) |
 | Workspace | `--workspace` | Install to the workspace directory instead of globally (`cursor` only) |
-| Copy | `--copy` | Copy the generated configuration to the clipboard (`mcp-json` only) |
+| Copy | `--copy` | Copy the generated output to the clipboard (`mcp-json` and `stdio` only) |
 
 `goose` installs through a deeplink that runs your server with `uvx`, so it accepts only `--name`, `--with`, `--env`, `--env-file`, and `--python`. The environment options that depend on a local uv project — `--with-editable`, `--project`, and `--with-requirements` — are unavailable there.
 
