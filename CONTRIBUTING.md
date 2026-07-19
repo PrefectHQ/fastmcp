@@ -2,6 +2,8 @@
 
 FastMCP is an actively maintained, high-traffic project. We welcome contributions — but the most impactful way to contribute might not be what you expect.
 
+Participation is governed by our [Code of Conduct](CODE_OF_CONDUCT.md), and contributions are licensed under [Apache 2.0](LICENSE).
+
 ## The best contribution is a great issue
 
 FastMCP is an opinionated framework, and its maintainers use AI-assisted tooling that is deeply tuned to those opinions — the design philosophy, the API patterns, the way the framework is meant to evolve. A well-written issue with a clear problem description is often more valuable than a pull request, because it lets maintainers produce a solution that isn't just correct, but consistent with how the framework wants to work. That matters more than speed, though it's faster too.
@@ -26,6 +28,10 @@ An open issue is not an invitation to submit a PR, and it is not a queue you joi
 
 **Don't post drive-by comments claiming an issue** — "can I work on this?", "please assign me", "I'll take this." They don't affect who gets assigned, they're the most common form of noise we get, and automated versions are ignored. Whoever opens the issue has first claim on it; if that's you, a maintainer will assign you. If you want to implement something someone else reported, just open a PR — you don't need permission to try, and competing PRs are fine — but it's reviewed only if a maintainer assigns you to the issue, which usually won't happen if the reporter intends to handle it. The one comment worth posting is a genuinely different approach worth discussing; a substantive design proposal is welcome, a bare claim on the task is not.
 
+**Issues labeled `prs welcome` skip the assignment gate.** When we apply that label, we're saying the reporter isn't implementing it and we'd take a PR from anyone. Open one directly — no assignment needed, and it won't be auto-closed. Still reference the issue (`Fixes #123`), since that's how the check knows which issue to look at.
+
+**What assignment means.** Being assigned is a commitment on both sides: we'll review your work seriously, and you'll see it through. That means responding to review feedback yourself and being able to explain any part of your change and why you made it that way. Use whatever tooling you like to get there — but if you can't answer a question about your own diff, we'll unassign the issue so someone else can pick it up.
+
 **Bug fixes** — PRs are welcome for simple, well-scoped bug fixes where the problem and solution are both straightforward. "The function raises `TypeError` when passed `None` because of a missing guard" is a good candidate. If the fix requires design decisions or touches multiple subsystems, open an issue with a design proposal instead.
 
 **Documentation** — Typo fixes, clarifications, and improvements to examples are always welcome as PRs.
@@ -38,7 +44,9 @@ An open issue is not an invitation to submit a PR, and it is not a queue you joi
 
 If you do open a PR:
 
-- **Reference an issue you're assigned to.** Every PR must reference a tracked issue using an auto-close keyword (`Fixes #123`, `Closes #123`, or `Resolves #123`), and the referenced issue must be assigned to you. If there isn't an issue, open one. This lets us deconflict effort and steer the approach before you invest time in code. External PRs that don't meet both conditions are automatically labeled `missing-issue-link` and closed; they reopen automatically once the link is present and you're assigned.
+- **Reference an issue you're assigned to.** Every PR must reference a tracked issue using an auto-close keyword (`Fixes #123`, `Closes #123`, or `Resolves #123`), and the referenced issue must be assigned to you — unless it's labeled `prs welcome`, which waives the assignment requirement. If there isn't an issue, open one. This lets us deconflict effort and steer the approach before you invest time in code. External PRs that don't meet these conditions are automatically labeled `missing-issue-link` and closed; they reopen automatically once the link is present and you're assigned.
+- **Leave "Allow edits by maintainers" enabled.** We frequently take a PR the last few steps ourselves rather than block on another round trip — tightening a test, adjusting naming, rebasing. It's enabled by default on PRs from personal forks; leave it that way. GitHub doesn't allow it at all for forks owned by an organization, so if you're contributing from one, expect us to land the final changes separately.
+- **Target the right branch.** Open against `main` unless you're fixing something specific to a maintenance line, in which case target that branch directly (`release/3.x`, `release/2.x`).
 - **If your PR was auto-closed, don't open a new one.** Edit the *existing* PR to add the issue link, get assigned to that issue, and it reopens on its own — the branch and history are preserved. A duplicate PR just starts you over and adds to the triage pile.
 - **Keep it focused.** One logical change per PR. Don't bundle unrelated fixes or refactors.
 - **Match existing patterns.** Follow the code style, type annotation conventions, and test patterns you see in the codebase. Run `uv run prek run --all-files` before submitting.

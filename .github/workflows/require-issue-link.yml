@@ -1,5 +1,8 @@
 # Require external PRs to reference an issue with an auto-close keyword
-# (e.g. "Fixes #123") AND have the PR author assigned to that issue.
+# (e.g. "Fixes #123") AND have the PR author assigned to that issue —
+# unless the referenced issue is labeled "prs welcome", which waives the
+# assignment requirement for everyone (the link itself is still required,
+# since that's how the check finds the issue to read the label from).
 # Otherwise the PR is labeled "missing-issue-link", commented on, and
 # closed. CONTRIBUTING.md requires external contributors to be assigned to
 # an issue before opening a PR; this enforces that.
@@ -96,6 +99,8 @@ jobs:
             const enforce = process.env.ENFORCE_ISSUE_LINK === 'true';
             const LABEL = 'missing-issue-link';
             const MARKER = '<!-- require-issue-link -->';
+            // Issue-level label that waives the assignment requirement.
+            const OPEN_LABEL = 'prs welcome';
 
             // Dry-run guard: every mutating call goes through this so that
             // ENFORCE_ISSUE_LINK=false means strictly read-only.
@@ -300,6 +305,13 @@ jobs:
             // CONTRIBUTING.md requires external contributors to be assigned
             // before opening a PR (so maintainers can deconflict / steer
             // approach first).
+            //
+            // Exception: an issue labeled OPEN_LABEL waives that requirement
+            // for everyone. It's how maintainers advertise "the reporter
+            // isn't implementing this, we'd take a PR from anyone" without
+            // having to assign a specific person up front. Unlike the
+            // PR-level `trusted-contributor` / `bypass-issue-check` escapes,
+            // this one lives on the *issue* and is set ahead of time.
             const MAX_ISSUES = 5;
             const allNumbers = [...new Set(matches.map(m => parseInt(m[1], 10)))];
             const numbers = allNumbers.slice(0, MAX_ISSUES);
@@ -326,6 +338,19 @@ jobs:
                 throw new Error(`Cannot fetch issue #${num} (HTTP ${e.status ?? 'unknown'}): ${e.message}`);
               }
               sawRealIssue = true;
+
+              // GitHub returns labels as objects here, but the REST schema
+              // permits bare strings — normalize both rather than assume.
+              const labelNames = (issue.labels || [])
+                .map(l => (typeof l === 'string' ? l : l && l.name))
+                .filter(Boolean)
+                .map(n => n.toLowerCase());
+              if (labelNames.includes(OPEN_LABEL)) {
+                console.log(`#${num} is labeled "${OPEN_LABEL}" — assignment not required`);
+                assignedToAny = true;
+                break;
+              }
+
               const assignees = (issue.assignees || []).map(a => a.login.toLowerCase());
               if (assignees.includes(prAuthor)) {
                 console.log(`PR author ${pr.user.login} is assigned to #${num}`);
