@@ -9,7 +9,6 @@
   padding-top: 12px !important;
   padding-bottom: 12px !important;
   overflow: hidden !important;
-  position: relative;
 }
 
 #banner::before {
