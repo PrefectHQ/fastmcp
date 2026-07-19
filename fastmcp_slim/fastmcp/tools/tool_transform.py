@@ -7,6 +7,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, cast
 
+import mcp_types
 import pydantic_core
 from mcp_types import ToolAnnotations
 from pydantic import ConfigDict
@@ -327,9 +328,12 @@ class TransformedTool(Tool):
             # A multi-round-trip ask (SEP-2322) is not output data: it must
             # reach the wire handler intact, never reshaped by output_schema
             # (which would rebuild it as a plain empty ToolResult and drop the
-            # input_required payload).
+            # input_required payload). A custom transform fn may return the raw
+            # `InputRequiredResult`, like any tool body; wrap it the same way.
             if isinstance(result, InputRequiredToolResult):
                 return result
+            if isinstance(result, mcp_types.InputRequiredResult):
+                return InputRequiredToolResult(result)
 
             # If transform function returns ToolResult, respect our output_schema setting
             if isinstance(result, ToolResult):

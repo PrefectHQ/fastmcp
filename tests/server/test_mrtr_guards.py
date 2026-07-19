@@ -202,6 +202,30 @@ class TestTransformedGuard:
         assert isinstance(first, InputRequiredResult)
         assert "destination" in first.input_requests
 
+    async def test_transform_fn_returning_raw_ask_is_wrapped(self):
+        """A custom transform_fn that returns a raw InputRequiredResult (not a
+        pre-wrapped InputRequiredToolResult) must still emit the ask — the
+        transform path wraps it like any tool body."""
+        from fastmcp.tools.tool_transform import TransformedTool
+
+        base = two_question_server()
+        book = await base.get_tool("book_flight")
+        assert book is not None
+
+        async def transform_fn(**kwargs) -> InputRequiredResult:
+            return _ask(_elicit("q", "raw ask?", "q"), "q", request_state=None)
+
+        mcp = FastMCP("raw-transform")
+        transformed = TransformedTool.from_tool(
+            book, name="raw", transform_fn=transform_fn
+        )
+        mcp.add_tool(transformed)
+
+        async with Client(mcp, mode="auto") as client:
+            first = await client.session.call_tool("raw", {}, allow_input_required=True)
+        assert isinstance(first, InputRequiredResult)
+        assert "q" in first.input_requests
+
 
 class TestInMemoryLoop:
     async def test_two_question_loop_completes(self):
