@@ -191,7 +191,8 @@ class TestKeepAliveSessionsRespectClientOptions:
     `StdioTransport` keeps its subprocess and session alive between connections
     by default. Serving that cached session to a second client would give it the
     first client's behavior — e.g. an ordinary client silently inheriting a
-    proxy's non-validating session.
+    proxy's non-validating session. Rebuilding it is only safe while nobody else
+    is using it.
     """
 
     class Reconnected(Exception):
@@ -224,7 +225,7 @@ class TestKeepAliveSessionsRespectClientOptions:
         async with self.cached_connection(monkeypatch, options) as transport:
             assert await transport.connect(transport_options=options) is None
 
-    async def test_differing_options_force_a_reconnect(self, monkeypatch):
+    async def test_differing_options_rebuild_an_idle_session(self, monkeypatch):
         class OtherSession(ClientSession):
             pass
 
@@ -233,3 +234,19 @@ class TestKeepAliveSessionsRespectClientOptions:
                 await transport.connect(
                     transport_options=TransportOptions(session_class=OtherSession)
                 )
+
+    async def test_differing_options_do_not_disturb_a_session_in_use(self, monkeypatch):
+        """Tearing down a live session would break the client already on it."""
+
+        class OtherSession(ClientSession):
+            pass
+
+        async with self.cached_connection(monkeypatch, TransportOptions()) as transport:
+            transport._active_sessions = 1
+
+            with pytest.raises(RuntimeError, match="still using it"):
+                await transport.connect(
+                    transport_options=TransportOptions(session_class=OtherSession)
+                )
+
+            assert transport._connect_task is not None

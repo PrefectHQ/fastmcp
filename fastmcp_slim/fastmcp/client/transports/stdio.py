@@ -68,6 +68,7 @@ class StdioTransport(ClientTransport):
 
         self._session: ClientSession | None = None
         self._session_options: TransportOptions | None = None
+        self._active_sessions = 0
         self._connect_task: asyncio.Task | None = None
         self._ready_event = anyio.Event()
         self._stop_event = anyio.Event()
@@ -81,7 +82,11 @@ class StdioTransport(ClientTransport):
     ) -> AsyncIterator[ClientSession]:
         try:
             await self.connect(transport_options=transport_options, **session_kwargs)
-            yield cast(ClientSession, self._session)
+            self._active_sessions += 1
+            try:
+                yield cast(ClientSession, self._session)
+            finally:
+                self._active_sessions -= 1
         finally:
             if not self.keep_alive:
                 await self.disconnect()
@@ -98,8 +103,16 @@ class StdioTransport(ClientTransport):
 
         # A kept-alive session was built for one client's options; handing it to
         # a client that wants different ones would silently give it the first
-        # client's behavior. Reconnect instead.
+        # client's behavior. Rebuild it when it's idle; refuse when another
+        # client is still using it, since tearing it down would break them.
         if self._connect_task is not None and self._session_options != options:
+            if self._active_sessions:
+                raise RuntimeError(
+                    "This stdio transport has a live session built for different "
+                    "connection options and another client is still using it. "
+                    "Sharing one transport across clients that need different "
+                    "sessions is not supported; give each client its own transport."
+                )
             await self.disconnect()
 
         # If the connect task completed or the session's streams are dead,
