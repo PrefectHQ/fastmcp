@@ -143,7 +143,6 @@
                     "icon": "comments",
                     "pages": [
                       "servers/elicitation",
-                      "servers/multi-round-tools",
                       "servers/sampling",
                       "servers/progress",
                       "servers/logging",
