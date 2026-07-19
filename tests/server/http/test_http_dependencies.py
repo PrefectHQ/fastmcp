@@ -4,10 +4,9 @@ import pytest
 from mcp_types import TextContent, TextResourceContents
 from starlette.requests import Request
 
-from fastmcp.client import Client
 from fastmcp.server.dependencies import CurrentHeaders, CurrentRequest, get_http_request
 from fastmcp.server.server import FastMCP
-from fastmcp.utilities.tests import InMemoryServer, run_server_in_memory
+from fastmcp.utilities.tests import ASGIServer, asgi_server
 
 
 def fastmcp_server():
@@ -43,23 +42,21 @@ def fastmcp_server():
 async def shttp_server():
     """Start a test server with StreamableHttp transport."""
     server = fastmcp_server()
-    async with run_server_in_memory(server, transport="http") as in_memory_server:
-        yield in_memory_server
+    async with asgi_server(server, transport="http") as running_server:
+        yield running_server
 
 
 @pytest.fixture
 async def sse_server():
     """Start a test server with SSE transport."""
     server = fastmcp_server()
-    async with run_server_in_memory(server, transport="sse") as in_memory_server:
-        yield in_memory_server
+    async with asgi_server(server, transport="sse") as running_server:
+        yield running_server
 
 
-async def test_http_headers_resource_shttp(shttp_server: InMemoryServer):
+async def test_http_headers_resource_shttp(shttp_server: ASGIServer):
     """Test getting HTTP headers from the server."""
-    async with Client(
-        transport=shttp_server.transport(headers={"X-DEMO-HEADER": "ABC"})
-    ) as client:
+    async with shttp_server.client(headers={"X-DEMO-HEADER": "ABC"}) as client:
         raw_result = await client.read_resource("request://headers")
         assert isinstance(raw_result[0], TextResourceContents)
         json_result = json.loads(raw_result[0].text)
@@ -67,11 +64,9 @@ async def test_http_headers_resource_shttp(shttp_server: InMemoryServer):
         assert json_result["x-demo-header"] == "ABC"
 
 
-async def test_http_headers_resource_sse(sse_server: InMemoryServer):
+async def test_http_headers_resource_sse(sse_server: ASGIServer):
     """Test getting HTTP headers from the server."""
-    async with Client(
-        transport=sse_server.transport(headers={"X-DEMO-HEADER": "ABC"})
-    ) as client:
+    async with sse_server.client(headers={"X-DEMO-HEADER": "ABC"}) as client:
         raw_result = await client.read_resource("request://headers")
         assert isinstance(raw_result[0], TextResourceContents)
         json_result = json.loads(raw_result[0].text)
@@ -79,30 +74,24 @@ async def test_http_headers_resource_sse(sse_server: InMemoryServer):
         assert json_result["x-demo-header"] == "ABC"
 
 
-async def test_http_headers_tool_shttp(shttp_server: InMemoryServer):
+async def test_http_headers_tool_shttp(shttp_server: ASGIServer):
     """Test getting HTTP headers from the server."""
-    async with Client(
-        transport=shttp_server.transport(headers={"X-DEMO-HEADER": "ABC"})
-    ) as client:
+    async with shttp_server.client(headers={"X-DEMO-HEADER": "ABC"}) as client:
         result = await client.call_tool("get_headers_tool")
         assert "x-demo-header" in result.data
         assert result.data["x-demo-header"] == "ABC"
 
 
-async def test_http_headers_tool_sse(sse_server: InMemoryServer):
-    async with Client(
-        transport=sse_server.transport(headers={"X-DEMO-HEADER": "ABC"})
-    ) as client:
+async def test_http_headers_tool_sse(sse_server: ASGIServer):
+    async with sse_server.client(headers={"X-DEMO-HEADER": "ABC"}) as client:
         result = await client.call_tool("get_headers_tool")
         assert "x-demo-header" in result.data
         assert result.data["x-demo-header"] == "ABC"
 
 
-async def test_http_headers_prompt_shttp(shttp_server: InMemoryServer):
+async def test_http_headers_prompt_shttp(shttp_server: ASGIServer):
     """Test getting HTTP headers from the server."""
-    async with Client(
-        transport=shttp_server.transport(headers={"X-DEMO-HEADER": "ABC"})
-    ) as client:
+    async with shttp_server.client(headers={"X-DEMO-HEADER": "ABC"}) as client:
         result = await client.get_prompt("get_headers_prompt")
         assert isinstance(result.messages[0].content, TextContent)
         json_result = json.loads(result.messages[0].content.text)
@@ -110,11 +99,9 @@ async def test_http_headers_prompt_shttp(shttp_server: InMemoryServer):
         assert json_result["x-demo-header"] == "ABC"
 
 
-async def test_http_headers_prompt_sse(sse_server: InMemoryServer):
+async def test_http_headers_prompt_sse(sse_server: ASGIServer):
     """Test getting HTTP headers from the server."""
-    async with Client(
-        transport=sse_server.transport(headers={"X-DEMO-HEADER": "ABC"})
-    ) as client:
+    async with sse_server.client(headers={"X-DEMO-HEADER": "ABC"}) as client:
         result = await client.get_prompt("get_headers_prompt")
         assert isinstance(result.messages[0].content, TextContent)
         json_result = json.loads(result.messages[0].content.text)
@@ -122,7 +109,7 @@ async def test_http_headers_prompt_sse(sse_server: InMemoryServer):
         assert json_result["x-demo-header"] == "ABC"
 
 
-async def test_get_http_headers_excludes_content_type(sse_server: InMemoryServer):
+async def test_get_http_headers_excludes_content_type(sse_server: ASGIServer):
     """Test that get_http_headers() excludes content-type header (issue #3097).
 
     This prevents HTTP 415 errors when forwarding headers to downstream APIs
@@ -137,15 +124,13 @@ async def test_get_http_headers_excludes_content_type(sse_server: InMemoryServer
         """Check that problematic headers are excluded from get_http_headers()."""
         return get_http_headers()
 
-    async with run_server_in_memory(server, transport="sse") as in_memory_server:
-        async with Client(
-            transport=in_memory_server.transport(
-                headers={
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "X-Custom-Header": "should-be-included",
-                },
-            )
+    async with asgi_server(server, transport="sse") as running_server:
+        async with running_server.client(
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "X-Custom-Header": "should-be-included",
+            }
         ) as client:
             result = await client.call_tool("check_excluded_headers")
             headers = result.data
@@ -170,9 +155,9 @@ async def test_background_task_can_read_snapshotted_request_headers():
         request = get_http_request()
         return request.headers.get("x-tenant-id", "missing")
 
-    async with run_server_in_memory(server, transport="sse") as in_memory_server:
-        async with Client(
-            transport=in_memory_server.transport(headers={"X-Tenant-ID": "tenant-123"})
+    async with asgi_server(server, transport="sse") as running_server:
+        async with running_server.client(
+            headers={"X-Tenant-ID": "tenant-123"}
         ) as client:
             task = await client.call_tool("check_request_header", task=True)
             result = await task.result()
@@ -193,14 +178,12 @@ async def test_background_task_current_http_dependencies_restore_headers():
             "tenant": request.headers.get("x-tenant-id", "missing"),
         }
 
-    async with run_server_in_memory(server, transport="sse") as in_memory_server:
-        async with Client(
-            transport=in_memory_server.transport(
-                headers={
-                    "Authorization": "Bearer tenant-token",
-                    "X-Tenant-ID": "tenant-456",
-                },
-            )
+    async with asgi_server(server, transport="sse") as running_server:
+        async with running_server.client(
+            headers={
+                "Authorization": "Bearer tenant-token",
+                "X-Tenant-ID": "tenant-456",
+            }
         ) as client:
             task = await client.call_tool("check_headers", task=True)
             result = await task.result()

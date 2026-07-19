@@ -17,6 +17,7 @@ from mcp.shared.auth import AuthorizationCodeResult
 
 from fastmcp import settings
 from fastmcp.client.auth.oauth import OAuth
+from fastmcp.client.client import Client
 from fastmcp.client.transports.http import StreamableHttpTransport
 from fastmcp.client.transports.sse import SSETransport
 from fastmcp.utilities.asgi_transport import (
@@ -179,11 +180,13 @@ async def run_server_async(
     host: str = "127.0.0.1",
 ) -> AsyncGenerator[str, None]:
     """
-    Start a FastMCP server as an asyncio task for in-process async testing.
+    Start a FastMCP server on a real port as an asyncio task.
 
-    This is the recommended way to test FastMCP servers. It runs the server
-    as an async task in the same process, eliminating subprocess coordination,
-    sleeps, and cleanup issues.
+    This runs a real uvicorn server in the current process, bound to a real TCP port,
+    and yields its URL. Use it when the behaviour under test is genuinely about the
+    network — real sockets, TLS, or a server that must be reachable by something other
+    than an in-process client. Otherwise prefer `asgi_client` or `asgi_server`, which
+    exercise the same HTTP stack without binding a port.
 
     Args:
         server: FastMCP server instance
@@ -250,35 +253,38 @@ async def run_server_async(
 
 
 @dataclass(frozen=True)
-class InMemoryServer:
+class ASGIServer:
     """A FastMCP server's real HTTP app, reachable in-process with no sockets.
 
-    Yielded by `run_server_in_memory`. The `url` looks like an ordinary server URL and
-    the app behind it is the genuine article — auth middleware, session manager, SSE
-    framing and redirects all run — but every request is dispatched straight into the
-    ASGI application on the current event loop.
+    Yielded by `asgi_server`. The `url` looks like an ordinary server URL and the app
+    behind it is the genuine article — auth middleware, session manager, SSE framing and
+    redirects all run — but every request is dispatched straight into the ASGI
+    application on the current event loop.
 
     Because nothing is listening on the network, a plain `httpx2.AsyncClient()` cannot
-    reach this server. Use `http_client()` for raw HTTP assertions, `transport()` to
-    build a FastMCP client transport, or pass `httpx_client_factory` to anything that
-    accepts one.
+    reach this server. Use `client()` for a FastMCP client, `http_client()` for raw HTTP
+    assertions, and `transport()` when you need to build the client transport yourself.
     """
 
     url: str
     app: ASGIApp
     transport_type: Literal["http", "streamable-http", "sse"]
 
-    def httpx_client_factory(
+    def http_client(
         self,
         headers: dict[str, str] | None = None,
         timeout: httpx2.Timeout | None = None,
         auth: httpx2.Auth | None = None,
         **kwargs: Any,
     ) -> httpx2.AsyncClient:
-        """Build an `httpx2.AsyncClient` bound to the in-process app.
+        """An `httpx2.AsyncClient` bound to the in-process app, for raw HTTP assertions.
 
-        Matches the `McpHttpClientFactory` signature, so it can be handed to any
-        FastMCP client transport's `httpx_client_factory` argument.
+        Relative URLs resolve against the server's base URL, and absolute URLs on the
+        same origin work too, so `client.get(f"{server.url}/health")` reads the same as
+        it would against a real server.
+
+        The signature matches `McpHttpClientFactory`, so this method can also be handed
+        to anything that takes an `httpx_client_factory`.
         """
         # The legacy SSE transport runs the whole MCP session inside its GET request and
         # only releases its streams once that request observes a disconnect, so the
@@ -293,46 +299,57 @@ class InMemoryServer:
             **kwargs,
         )
 
-    def http_client(self, **kwargs: Any) -> httpx2.AsyncClient:
-        """An `httpx2.AsyncClient` for raw HTTP assertions against the in-process app.
-
-        Relative URLs resolve against the server's base URL, and absolute URLs on the
-        same origin work too, so `client.get(f"{server.url}/health")` reads the same as
-        it would against a real server.
-        """
-        return self.httpx_client_factory(**kwargs)
-
     def transport(self, **kwargs: Any) -> StreamableHttpTransport | SSETransport:
         """A FastMCP client transport wired to the in-process app.
 
         Accepts the same keyword arguments as the underlying transport (`headers`,
         `auth`, ...); `httpx_client_factory` is supplied automatically.
         """
-        kwargs.setdefault("httpx_client_factory", self.httpx_client_factory)
+        kwargs.setdefault("httpx_client_factory", self.http_client)
         if self.transport_type == "sse":
             return SSETransport(self.url, **kwargs)
         return StreamableHttpTransport(self.url, **kwargs)
 
+    def client(
+        self,
+        *,
+        headers: dict[str, str] | None = None,
+        auth: httpx2.Auth | Literal["oauth"] | str | None = None,
+        **client_kwargs: Any,
+    ) -> Client:
+        """An unconnected FastMCP `Client` pointed at the in-process app.
+
+        `headers` and `auth` configure the underlying HTTP transport; every other
+        keyword argument is passed to `Client` (`timeout`, `elicitation_handler`, ...).
+        Use it as a context manager, exactly like any other client.
+
+        Args:
+            headers: HTTP headers to send with every request.
+            auth: Client authentication, as accepted by the HTTP transports.
+            **client_kwargs: Additional arguments forwarded to `Client`.
+        """
+        return Client(self.transport(headers=headers, auth=auth), **client_kwargs)
+
 
 @asynccontextmanager
-async def run_server_in_memory(
+async def asgi_server(
     server: FastMCP,
     transport: Literal["http", "streamable-http", "sse"] = "http",
     path: str | None = None,
     **http_app_kwargs: Any,
-) -> AsyncGenerator[InMemoryServer, None]:
+) -> AsyncGenerator[ASGIServer, None]:
     """
-    Run a FastMCP server's HTTP app in-process, with no socket and no uvicorn.
+    Serve a FastMCP server's HTTP app in-process, with no socket and no uvicorn.
 
     This is the fastest way to test a FastMCP server over HTTP. The server's real
     Starlette app is built with `http_app()` and its lifespan is started, then every
-    request is dispatched directly into the app on the current event loop. Compared to
-    `run_server_async` this skips port binding, uvicorn startup and connection setup
-    entirely, while still exercising the full HTTP stack: middleware, authentication,
-    session management and SSE streaming all run exactly as they do in production.
+    request is dispatched directly into the app on the current event loop. That skips
+    port binding, uvicorn startup and connection setup entirely, while still exercising
+    the full HTTP stack: middleware, authentication, session management and SSE
+    streaming all run exactly as they do in production.
 
-    Prefer this over `run_server_async` unless the test's subject is genuine network
-    behaviour (real TCP, TLS, or a separate process).
+    Use this as a fixture when several tests share one server but each needs its own
+    client. For a single test, `asgi_client` hands you a connected client in one step.
 
     Args:
         server: FastMCP server instance.
@@ -341,29 +358,34 @@ async def run_server_in_memory(
         **http_app_kwargs: Additional arguments forwarded to `server.http_app()`.
 
     Yields:
-        An `InMemoryServer` describing how to reach the app.
+        An `ASGIServer` describing how to reach the app.
 
     Example:
         ```python
         import pytest
-        from fastmcp import FastMCP, Client
-        from fastmcp.utilities.tests import run_server_in_memory
+        from fastmcp import FastMCP
+        from fastmcp.utilities.tests import ASGIServer, asgi_server
+
+        mcp = FastMCP("test")
+
+        @mcp.tool
+        def greet(name: str) -> str:
+            return f"Hello, {name}!"
 
         @pytest.fixture
         async def server():
-            mcp = FastMCP("test")
+            async with asgi_server(mcp) as running_server:
+                yield running_server
 
-            @mcp.tool
-            def greet(name: str) -> str:
-                return f"Hello, {name}!"
-
-            async with run_server_in_memory(mcp) as in_memory_server:
-                yield in_memory_server
-
-        async def test_greet(server):
-            async with Client(server.transport()) as client:
+        async def test_greet(server: ASGIServer):
+            async with server.client() as client:
                 result = await client.call_tool("greet", {"name": "World"})
-                assert result.content[0].text == "Hello, World!"
+                assert result.data == "Hello, World!"
+
+        async def test_greet_with_headers(server: ASGIServer):
+            async with server.client(headers={"X-Tenant": "acme"}) as client:
+                result = await client.call_tool("greet", {"name": "World"})
+                assert result.data == "Hello, World!"
         ```
     """
     if path is None:
@@ -376,11 +398,67 @@ async def run_server_in_memory(
     base_url = "http://127.0.0.1"
 
     async with run_asgi_lifespan(app):
-        yield InMemoryServer(
+        yield ASGIServer(
             url=f"{base_url}{path}",
             app=app,
             transport_type=transport,
         )
+
+
+@asynccontextmanager
+async def asgi_client(
+    server: FastMCP,
+    transport: Literal["http", "streamable-http", "sse"] = "http",
+    path: str | None = None,
+    *,
+    headers: dict[str, str] | None = None,
+    auth: httpx2.Auth | Literal["oauth"] | str | None = None,
+    **client_kwargs: Any,
+) -> AsyncGenerator[Client, None]:
+    """
+    Serve a FastMCP server over HTTP in-process and yield a connected `Client`.
+
+    This is the shortest path to testing a server over a real HTTP stack. The server's
+    Starlette app is built and started, and requests are dispatched straight into it on
+    the current event loop — no port, no uvicorn, no subprocess — but middleware,
+    authentication, session management and SSE streaming all behave as in production.
+
+    Reach for `asgi_server` instead when a fixture must serve several tests that each
+    build their own client, or when a test needs raw HTTP access to the app.
+
+    Args:
+        server: FastMCP server instance.
+        transport: Transport type ("http", "streamable-http", or "sse").
+        path: URL path for the server (defaults to "/mcp", or "/sse" for SSE).
+        headers: HTTP headers to send with every request.
+        auth: Client authentication, as accepted by the HTTP transports.
+        **client_kwargs: Additional arguments forwarded to `Client`.
+
+    Yields:
+        A connected `Client`.
+
+    Example:
+        ```python
+        from fastmcp import FastMCP
+        from fastmcp.utilities.tests import asgi_client
+
+        async def test_greet():
+            mcp = FastMCP("test")
+
+            @mcp.tool
+            def greet(name: str) -> str:
+                return f"Hello, {name}!"
+
+            async with asgi_client(mcp) as client:
+                result = await client.call_tool("greet", {"name": "World"})
+                assert result.data == "Hello, World!"
+        ```
+    """
+    async with (
+        asgi_server(server, transport=transport, path=path) as running_server,
+        running_server.client(headers=headers, auth=auth, **client_kwargs) as client,
+    ):
+        yield client
 
 
 class HeadlessOAuth(OAuth):

@@ -498,9 +498,7 @@ class TestTransportIntegration:
 
     async def test_transport_set_via_http_middleware(self):
         """Test that transport is set per-request via HTTP middleware."""
-        from fastmcp import Client
-        from fastmcp.client.transports import StreamableHttpTransport
-        from fastmcp.utilities.tests import run_server_async
+        from fastmcp.utilities.tests import asgi_client
 
         mcp = FastMCP("test")
         observed_transport = None
@@ -511,9 +509,7 @@ class TestTransportIntegration:
             observed_transport = ctx.transport
             return observed_transport or "none"
 
-        async with run_server_async(mcp, transport="streamable-http") as url:
-            transport = StreamableHttpTransport(url=url)
-            async with Client(transport=transport) as client:
-                result = await client.call_tool("get_transport", {})
-                assert observed_transport == "streamable-http"
-                assert result.data == "streamable-http"
+        async with asgi_client(mcp, transport="streamable-http") as client:
+            result = await client.call_tool("get_transport", {})
+            assert observed_transport == "streamable-http"
+            assert result.data == "streamable-http"
