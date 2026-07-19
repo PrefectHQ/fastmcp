@@ -48,6 +48,12 @@ class HookRecorder(Middleware):
         self.records.append(("on_call_tool", context.method))
         return await call_next(context)
 
+    async def on_list_tools(
+        self, context: MiddlewareContext, call_next: CallNext
+    ) -> Any:
+        self.records.append(("on_list_tools", context.method))
+        return await call_next(context)
+
 
 def _adder() -> FastMCP:
     server = FastMCP("AdderServer")
@@ -227,6 +233,66 @@ class TestMessageModification:
             )
 
         assert ("on_message", "logging/setLevel") in recorder.records
+
+    async def test_method_rewrite_does_not_redirect_dispatch(self):
+        """Only the message is rewritable. Dispatch has already branched on the
+        method to decide this message has no interior handler, so honoring a
+        rewrite into a component method would hand it to a handler that runs the
+        chain again — firing the generic hooks twice for one message. The
+        rewrite is ignored and the invariant holds."""
+
+        class RewriteMethod(Middleware):
+            async def on_message(self, context, call_next):
+                if context.method == "ping":
+                    return await call_next(context.copy(method="tools/list"))
+                return await call_next(context)
+
+        server = _adder()
+        recorder = HookRecorder()
+        # Recorder outermost, so it observes the message as it arrived; the
+        # rewriter runs inside it.
+        server.add_middleware(recorder)
+        server.add_middleware(RewriteMethod())
+
+        async with Client(server) as client:
+            await client.session._dispatcher.send_raw_request("ping", {}, {})
+
+        # Had the rewrite redirected dispatch, the component handler would have
+        # run the chain again — a second on_message, plus an on_list_tools for a
+        # request that was never a tools/list.
+        assert [r for r in recorder.records if r == ("on_message", "ping")] == [
+            ("on_message", "ping")
+        ]
+        assert not [r for r in recorder.records if r == ("on_message", "tools/list")]
+        assert not [r for r in recorder.records if r[0] == "on_list_tools"]
+
+    async def test_failed_component_request_is_observed_not_retried(self):
+        """A component request that dies in validation reaches the hooks as a
+        failure. A hook cannot repair it from here: re-dispatching would run the
+        handler and fire the generic hooks a second time, so the failure stands
+        and ``on_message`` sees it exactly once."""
+
+        class RepairAttempt(Middleware):
+            async def on_message(self, context, call_next):
+                if context.method == "tools/call":
+                    context.message["name"] = "add"
+                    context.message["arguments"] = {"a": 1, "b": 2}
+                return await call_next(context)
+
+        server = _adder()
+        recorder = HookRecorder()
+        server.add_middleware(RepairAttempt())
+        server.add_middleware(recorder)
+
+        async with Client(server) as client:
+            with pytest.raises(MCPError):
+                await client.session._dispatcher.send_raw_request(
+                    "tools/call", {"not_a_valid": "param"}, {}
+                )
+
+        calls = [r for r in recorder.records if r == ("on_message", "tools/call")]
+        assert len(calls) == 1
+        assert ("on_call_tool", "tools/call") not in recorder.records
 
 
 def _guard_server() -> FastMCP:

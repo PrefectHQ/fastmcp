@@ -75,7 +75,7 @@ def _raw_message(ctx: ServerRequestContext) -> Any:
 def _forward_ctx(
     ctx: ServerRequestContext, mw_ctx: Any, original: Any
 ) -> ServerRequestContext:
-    """Fold middleware edits to ``method``/``message`` back into the SDK context.
+    """Fold middleware edits to the *message* back into the SDK context.
 
     The outer pass hands middleware a *copy* of the raw params (see
     ``_raw_message``), so a hook that follows the documented inspect/modify
@@ -84,8 +84,16 @@ def _forward_ctx(
     bridge dispatched the original context. Rewriting through
     ``dataclasses.replace`` is how the SDK documents altering what the handler
     sees. An untouched message forwards the original context unchanged.
+
+    ``ctx.method`` is deliberately *not* rewritable here. Dispatch has already
+    branched on the method to decide that this message has no interior handler,
+    so redirecting it now — say, turning a ``ping`` into a ``tools/list`` — would
+    hand it to a component handler that runs the FastMCP chain a second time,
+    firing ``on_message`` and raw ``__call__`` overrides twice for one message
+    and duplicating whatever side effects (rate limiting, authorization,
+    logging) they carry. Rewriting the method is not part of the documented
+    middleware contract; only the message is.
     """
-    method = mw_ctx.method or ctx.method
     message = mw_ctx.message
     if isinstance(message, Mapping):
         params: Mapping[str, Any] | None = dict(message)
@@ -95,9 +103,9 @@ def _forward_ctx(
             params = None
     else:
         params = ctx.params
-    if method == ctx.method and params == ctx.params:
+    if params == ctx.params:
         return ctx
-    return replace(ctx, method=method, params=params)
+    return replace(ctx, params=params)
 
 
 def client_supports_extension(session: ServerSession, extension_id: str) -> bool:
@@ -227,9 +235,16 @@ class FastMCPServerMiddleware:
         ``call_next`` bridges to the real SDK dispatch (request-state boundary,
         params validation, the notification handler), so these hooks observe the
         actual wire outcome: a notification returns ``None``, an unroutable request
-        raises through ``call_next``. When ``_raise`` is set the operation already
-        failed before the interior ran; the bridge re-raises it so the hooks
-        observe the failure rather than re-running the (failed) dispatch.
+        raises through ``call_next``. Message edits are folded back in through
+        ``_forward_ctx``.
+
+        When ``_raise`` is set the operation already failed before the interior
+        ran, and the bridge re-raises it rather than dispatching. This pass is
+        the *observation* path for that failure, not a retry: re-dispatching a
+        corrected component request would run its handler, which runs the FastMCP
+        chain interior, firing ``on_message`` and the raw ``__call__`` override a
+        second time for one message. A hook cannot repair a malformed
+        ``tools/call`` from here — it sees the failure, and the failure stands.
         """
         from fastmcp.server.context import Context
         from fastmcp.server.middleware.middleware import MiddlewareContext
