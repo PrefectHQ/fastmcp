@@ -82,6 +82,11 @@ class CallbackResponse:
     state: str | None = None
     error: str | None = None
     error_description: str | None = None
+    # RFC 9207: the authorization server's issuer identifier, sent on both
+    # success and error redirects once OAuthProxy advertises
+    # `authorization_response_iss_parameter_supported`. Must be captured
+    # here or `from_dict`'s annotation filter silently drops it.
+    iss: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, str]) -> CallbackResponse:
@@ -98,6 +103,12 @@ class OAuthCallbackResult:
     code: str | None = None
     state: str | None = None
     error: Exception | None = None
+    # RFC 9207 issuer identifier, captured on both success and error
+    # callbacks. The MCP SDK's `validate_authorization_response_iss` only
+    # consumes this on the success path (via `AuthorizationCodeResult.iss`),
+    # but it is stored unconditionally here so the error path never silently
+    # drops it either.
+    iss: str | None = None
 
 
 def create_oauth_callback_server(
@@ -127,6 +138,7 @@ def create_oauth_callback_server(
         code: str | None = None,
         state: str | None = None,
         error: Exception | None = None,
+        iss: str | None = None,
     ) -> None:
         """Store the first callback result and ignore subsequent requests."""
         if result_container is None or result_ready is None or result_ready.is_set():
@@ -135,6 +147,7 @@ def create_oauth_callback_server(
         result_container.code = code
         result_container.state = state
         result_container.error = error
+        result_container.iss = iss
         result_ready.set()
 
     async def callback_handler(request: Request):
@@ -151,8 +164,13 @@ def create_oauth_callback_server(
             else:
                 user_message = f"Authorization failed: {error_desc}"
 
-            # Store error and signal completion if result tracking provided
-            store_result_once(error=RuntimeError(user_message))
+            # Store error and signal completion if result tracking provided.
+            # RFC 9207: `iss` is captured here too, even though the callback
+            # ultimately raises instead of returning a result, so it isn't
+            # silently dropped for callers that want to inspect it.
+            store_result_once(
+                error=RuntimeError(user_message), iss=callback_response.iss
+            )
 
             return create_secure_html_response(
                 create_callback_html(
@@ -166,7 +184,9 @@ def create_oauth_callback_server(
             user_message = "No authorization code was received from the server."
 
             # Store error and signal completion if result tracking provided
-            store_result_once(error=RuntimeError(user_message))
+            store_result_once(
+                error=RuntimeError(user_message), iss=callback_response.iss
+            )
 
             return create_secure_html_response(
                 create_callback_html(
@@ -183,7 +203,9 @@ def create_oauth_callback_server(
             )
 
             # Store error and signal completion if result tracking provided
-            store_result_once(error=RuntimeError(user_message))
+            store_result_once(
+                error=RuntimeError(user_message), iss=callback_response.iss
+            )
 
             return create_secure_html_response(
                 create_callback_html(
@@ -196,6 +218,7 @@ def create_oauth_callback_server(
         # Success case - store result and signal completion if result tracking provided
         store_result_once(
             code=callback_response.code,
+            iss=callback_response.iss,
             state=callback_response.state,
         )
 

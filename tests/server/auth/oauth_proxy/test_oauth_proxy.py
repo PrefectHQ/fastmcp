@@ -1,11 +1,14 @@
 """Tests for OAuth proxy initialization and configuration."""
 
 import time
+from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs, urlparse
 
 import httpx2
 import pytest
 from key_value.aio.stores.memory import MemoryStore
+from mcp.shared.auth import OAuthClientInformationFull
+from pydantic import AnyUrl
 from starlette.applications import Starlette
 
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
@@ -238,6 +241,34 @@ class TestOAuthProxyInitialization:
             "none",
         }
 
+    async def test_metadata_advertises_authorization_response_issuer_parameter(
+        self, jwt_verifier
+    ):
+        """OAuth metadata should advertise RFC 9207 authorization response issuers."""
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://auth.example.com/authorize",
+            upstream_token_endpoint="https://auth.example.com/token",
+            upstream_client_id="client-123",
+            upstream_client_secret="secret-456",
+            token_verifier=jwt_verifier,
+            base_url="https://api.example.com",
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+        )
+
+        app = Starlette(routes=proxy.get_routes())
+        transport = httpx2.ASGITransport(app=app)
+
+        async with httpx2.AsyncClient(
+            transport=transport, base_url="https://api.example.com"
+        ) as client:
+            response = await client.get("/.well-known/oauth-authorization-server")
+
+        assert response.status_code == 200
+        metadata = response.json()
+        assert metadata["issuer"] == "https://api.example.com/"
+        assert metadata["authorization_response_iss_parameter_supported"] is True
+
 
 class TestOptionalClientSecret:
     """Tests for OAuthProxy without upstream_client_secret."""
@@ -360,6 +391,61 @@ class TestIdpCallbackErrorForwarding:
         assert params["error"] == ["access_denied"]
         assert params["error_description"] == ["User denied access"]
         assert params["state"] == [client_state]
+        assert params["iss"] == ["https://myserver.com/"]
+
+    async def test_error_redirect_does_not_duplicate_iss_already_in_redirect_uri(
+        self, oauth_proxy
+    ):
+        """RFC 9207 P2 regression: a registered redirect_uri may already
+        carry its own `iss` query parameter (e.g. a multi-tenant client
+        encoding its tenant in the callback URL). Forwarding an IdP error
+        must not append a second `iss` on top of it -- RFC 6749 §3.1
+        forbids a response parameter appearing more than once -- and every
+        other query byte on the registered URI (a valueless `flag` and a
+        non-UTF-8 percent-encoded `sig`) must survive untouched.
+        """
+        txn_id = "test-txn-dup-iss"
+        client_redirect_uri = (
+            "http://localhost:12345/callback?iss=tenant&flag&sig=%FF%FE"
+        )
+        client_state = "client-state-abc"
+
+        transaction = OAuthTransaction(
+            txn_id=txn_id,
+            client_id="test-client",
+            client_redirect_uri=client_redirect_uri,
+            client_state=client_state,
+            code_challenge=None,
+            code_challenge_method="S256",
+            scopes=["read"],
+            created_at=time.time(),
+        )
+        await oauth_proxy._transaction_store.put(key=txn_id, value=transaction)
+
+        app = Starlette(routes=oauth_proxy.get_routes())
+        transport = httpx2.ASGITransport(app=app)
+
+        async with httpx2.AsyncClient(
+            transport=transport,
+            base_url="https://myserver.com",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get(
+                f"/auth/callback?error=access_denied&state={txn_id}"
+            )
+
+        assert response.status_code == 302
+        location = response.headers["location"]
+        query = urlparse(location).query
+        params = parse_qs(query)
+
+        # Exactly one `iss`, corrected to the canonical value -- a
+        # duplicate would make this list have length 2.
+        assert params["iss"] == ["https://myserver.com/"]
+        # Other query bytes from the registered redirect_uri survive
+        # byte-for-byte.
+        assert "flag" in query
+        assert "sig=%FF%FE" in query
 
     async def test_error_with_unsafe_transaction_redirect_returns_html_error(
         self, oauth_proxy
@@ -412,3 +498,97 @@ class TestIdpCallbackErrorForwarding:
             )
 
         assert response.status_code == 400
+
+
+class TestIdpCallbackSuccessForwarding:
+    """Tests for the success (`code`) path in the IdP callback."""
+
+    async def test_success_redirect_does_not_duplicate_iss_already_in_redirect_uri(
+        self, jwt_verifier
+    ):
+        """RFC 9207 P2 regression at the success-redirect call site: a
+        registered redirect_uri already carrying `iss` must end up with
+        exactly one `iss` (the canonical value) after the proxy forwards
+        the exchanged authorization code, and every other query byte on the
+        registered URI must survive untouched.
+        """
+        # Consent is disabled here because this test exercises callback
+        # forwarding, not the consent-binding-cookie check that the
+        # standard consent flow additionally requires.
+        oauth_proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
+            upstream_token_endpoint="https://github.com/login/oauth/access_token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="test-client-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://myserver.com",
+            redirect_path="/auth/callback",
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+            require_authorization_consent=False,
+        )
+
+        client_id = "success-dup-iss-client"
+        client_redirect_uri = (
+            "http://localhost:12345/callback?iss=tenant&flag&sig=%FF%FE"
+        )
+        client_info = OAuthClientInformationFull(
+            client_id=client_id,
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl(client_redirect_uri)],
+        )
+        await oauth_proxy.register_client(client_info)
+
+        txn_id = "test-txn-success-dup-iss"
+        transaction = OAuthTransaction(
+            txn_id=txn_id,
+            client_id=client_id,
+            client_redirect_uri=client_redirect_uri,
+            client_state="client-state-success",
+            code_challenge=None,
+            code_challenge_method="S256",
+            scopes=["read"],
+            created_at=time.time(),
+        )
+        await oauth_proxy._transaction_store.put(key=txn_id, value=transaction)
+
+        app = Starlette(routes=oauth_proxy.get_routes())
+        transport = httpx2.ASGITransport(app=app)
+
+        with patch(
+            "fastmcp.server.auth.oauth_proxy.proxy.AsyncOAuth2Client"
+        ) as MockClient:
+            mock_client = AsyncMock()
+            mock_client.fetch_token = AsyncMock(
+                return_value={
+                    "access_token": "upstream-access-token",
+                    "refresh_token": "upstream-refresh-token",
+                    "expires_in": 3600,
+                    "token_type": "Bearer",
+                }
+            )
+            MockClient.return_value = mock_client
+
+            async with httpx2.AsyncClient(
+                transport=transport,
+                base_url="https://myserver.com",
+                follow_redirects=False,
+            ) as client:
+                response = await client.get(
+                    f"/auth/callback?code=idp-authorization-code&state={txn_id}"
+                )
+
+        assert response.status_code == 302
+        location = response.headers["location"]
+        query = urlparse(location).query
+        params = parse_qs(query)
+
+        assert "code" in params
+        assert params["state"] == ["client-state-success"]
+        # Exactly one `iss`, corrected to the canonical value -- a
+        # duplicate would make this list have length 2.
+        assert params["iss"] == ["https://myserver.com/"]
+        # Other query bytes from the registered redirect_uri survive
+        # byte-for-byte.
+        assert "flag" in query
+        assert "sig=%FF%FE" in query
