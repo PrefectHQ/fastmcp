@@ -110,9 +110,9 @@ Dispatch begins at the SDK seam, the single point every inbound message passes t
 
 The operation hooks (`on_call_tool`, `on_list_tools`, and the rest) fire exactly once per request, and their `call_next` still returns the typed component result—a `ToolResult`, a `list[Tool]`, and so on—so a tool exception propagates through `on_call_tool`, `on_request`, and `on_message` exactly where error, logging, and timing middleware expect it.
 
-#### Guard-tool suspensions
+#### Multi-round tool calls
 
-A guard tool suspends by returning an `InputRequiredResult` to ask the client for input (see [Multi-round-trip tools](/servers/tools)). Internally this travels as a `BaseException` control signal, mirroring `asyncio.CancelledError`: a middleware's `call_next` **raises** rather than returning a value, so a hook that records or transforms results neither observes the suspension as a result nor accidentally swallows it. A middleware that legitimately uses a broad `except Exception` is unaffected—the signal is a `BaseException`, so it passes straight through. The `InputRequiredResult` is produced at the wire boundary and sent to the client; it is not handed back up the FastMCP chain as a component result. To act on a suspension deliberately, catch it by intent rather than with a broad handler.
+A guard tool asks the client for input by returning an `InputRequiredResult` (see [Elicitation on the modern protocol](/servers/elicitation#elicitation-on-the-modern-protocol)). Each round of a multi-round call is a complete request→response cycle that runs the **full middleware chain**: `on_call_tool` fires once per round, and on an asking round `call_next` returns the ask as that round's ordinary result value—an `InputRequiredToolResult`, a `ToolResult` subclass. Nothing is raised and nothing is held open, so default middleware completes normally on every round (logging logs the ask, timing times it, error handling does not fire—an ask is a legitimate result, not an error). Middleware that needs to treat an ask differently identifies it with an `isinstance(result, InputRequiredToolResult)` check; see [Middleware and multi-round calls](/servers/elicitation#middleware) for a worked example.
 
 ### Hook Signature
 

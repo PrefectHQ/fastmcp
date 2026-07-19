@@ -18,11 +18,12 @@ from mcp_types import ElicitRequest, ElicitRequestFormParams, InputRequiredResul
 from fastmcp import Client, FastMCP
 from fastmcp.server.context import Context
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
+from fastmcp.tools.base import InputRequiredToolResult
 
 
 class SeamRecorder(Middleware):
     """Records ``(hook, method)`` before delegating, so a hook is captured even
-    when ``call_next`` raises (a pre-handler failure or a guard-tool suspend)."""
+    when ``call_next`` raises (a pre-handler failure)."""
 
     def __init__(self) -> None:
         self.records: list[tuple[str, str | None]] = []
@@ -183,29 +184,29 @@ def _guard_server() -> FastMCP:
     return server
 
 
-class TestSuspendVisibility:
-    async def test_suspend_is_not_surfaced_as_a_result_to_component_hooks(self):
-        """A guard-tool suspend travels as the internal ``ToolInputRequired``
-        control signal (a ``BaseException``), so a component hook's ``call_next``
-        raises rather than returning: the hook enters but never observes a result.
-        The ``InputRequiredResult`` is produced at the wire boundary, not handed
-        back up the FastMCP chain as a component result."""
+class TestAskVisibility:
+    async def test_ask_is_the_observed_result_of_a_guard_leg(self):
+        """Each MRTR leg is a complete request→response cycle: a guard tool's ask
+        is the full, legitimate result of that leg. A component hook's
+        ``call_next`` returns it as an ordinary value — an
+        ``InputRequiredToolResult`` (a ``ToolResult`` subclass) — so the hook
+        completes normally and can identify the ask by ``isinstance``."""
 
-        class SuspendProbe(Middleware):
+        class AskProbe(Middleware):
             def __init__(self) -> None:
                 self.entered = 0
-                self.completed = 0
+                self.results: list[Any] = []
 
             async def on_call_tool(
                 self, context: MiddlewareContext, call_next: CallNext
             ) -> Any:
                 self.entered += 1
                 result = await call_next(context)
-                self.completed += 1
+                self.results.append(result)
                 return result
 
         server = _guard_server()
-        probe = SuspendProbe()
+        probe = AskProbe()
         server.add_middleware(probe)
 
         async with Client(server, mode="auto") as client:
@@ -215,5 +216,6 @@ class TestSuspendVisibility:
 
         assert isinstance(result, InputRequiredResult)
         assert probe.entered == 1
-        # call_next raised the suspend signal, so the hook never saw a result.
-        assert probe.completed == 0
+        # The hook completed and observed the ask as the leg's result value.
+        assert len(probe.results) == 1
+        assert isinstance(probe.results[0], InputRequiredToolResult)
