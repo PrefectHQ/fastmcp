@@ -103,7 +103,7 @@ from fastmcp.server.auth.oauth_proxy.models import (
 from fastmcp.server.auth.oauth_proxy.ui import create_error_html
 from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client
 from fastmcp.server.auth.redirect_validation import (
-    add_query_params,
+    build_client_redirect,
     validate_redirect_uri,
 )
 from fastmcp.utilities.auth import parse_scopes
@@ -2425,12 +2425,15 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     error_params: dict[str, str] = {
                         "error": error,
                         "state": transaction_model.client_state,
-                        "iss": str(self.base_url),
                     }
                     if error_description:
                         error_params["error_description"] = error_description
                     return RedirectResponse(
-                        url=add_query_params(client_redirect_uri, error_params),
+                        url=build_client_redirect(
+                            client_redirect_uri,
+                            error_params,
+                            iss=str(self.base_url),
+                        ),
                         status_code=302,
                     )
                 # No trusted redirect_uri available — show local error page
@@ -2594,10 +2597,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             callback_params = {
                 "code": client_code,
                 "state": client_state,
-                "iss": str(self.base_url),
             }
 
-            client_callback_url = add_query_params(client_redirect_uri, callback_params)
+            client_callback_url = build_client_redirect(
+                client_redirect_uri, callback_params, iss=str(self.base_url)
+            )
 
             logger.debug(f"Forwarding to client callback for transaction {txn_id}")
 

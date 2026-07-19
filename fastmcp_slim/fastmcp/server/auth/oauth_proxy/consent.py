@@ -24,7 +24,7 @@ from starlette.responses import HTMLResponse, RedirectResponse
 from fastmcp.server.auth.oauth_proxy.models import ProxyDCRClient
 from fastmcp.server.auth.oauth_proxy.ui import create_consent_html
 from fastmcp.server.auth.redirect_validation import (
-    add_query_params,
+    build_client_redirect,
     validate_redirect_uri,
 )
 from fastmcp.utilities.logging import get_logger
@@ -390,11 +390,12 @@ class ConsentMixin:
                     callback_params = {
                         "error": "access_denied",
                         "state": txn.get("client_state") or "",
-                        "iss": str(self.base_url),
                     }
                     return RedirectResponse(
-                        url=add_query_params(
-                            txn["client_redirect_uri"], callback_params
+                        url=build_client_redirect(
+                            txn["client_redirect_uri"],
+                            callback_params,
+                            iss=str(self.base_url),
                         ),
                         status_code=302,
                     )
@@ -567,10 +568,9 @@ class ConsentMixin:
             callback_params = {
                 "error": "access_denied",
                 "state": txn.get("client_state") or "",
-                "iss": str(self.base_url),
             }
-            client_callback_url = add_query_params(
-                txn["client_redirect_uri"], callback_params
+            client_callback_url = build_client_redirect(
+                txn["client_redirect_uri"], callback_params, iss=str(self.base_url)
             )
             response = RedirectResponse(url=client_callback_url, status_code=302)
 

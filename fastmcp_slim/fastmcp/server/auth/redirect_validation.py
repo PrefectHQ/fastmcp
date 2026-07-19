@@ -64,6 +64,54 @@ def replace_query_param(url: str, key: str, value: str) -> str:
     return urlunparse(parsed._replace(query="&".join(new_segments)))
 
 
+def build_client_redirect(url: str, params: dict[str, str], *, iss: str) -> str:
+    """Build a client-facing authorization redirect that carries exactly one `iss`.
+
+    Every redirect this server sends back to an OAuth client from the
+    authorization endpoint -- success (carrying `code`) or error (carrying
+    `error`) -- must carry the proxy's RFC 9207 issuer exactly once (RFC
+    6749 §3.1 forbids a response parameter from appearing more than once).
+    A registered redirect_uri can legitimately carry its own `iss` query
+    parameter already (e.g. `https://client.example/callback?iss=tenant`),
+    so blindly appending the server's issuer on top of that would duplicate
+    it -- this is what every client-facing redirect site must get right,
+    and the reason this helper exists instead of five call sites each
+    reimplementing the same invariant by hand.
+
+    `params` is appended to `url` via `add_query_params` (verbatim, without
+    re-encoding the existing query -- see that function's docstring), and
+    `iss` is then set idempotently via `replace_query_param`: an existing
+    occurrence -- whether contributed by the registered redirect_uri or
+    already present in `url` -- is overwritten with the canonical value;
+    otherwise `iss` is appended.
+
+    `iss` is keyword-only and required so a caller cannot forget to pass
+    it. `params` must not itself contain an `"iss"` key -- pass it via the
+    `iss` keyword instead, so there is exactly one place the value can come
+    from.
+
+    Args:
+        url: The redirect target -- normally the client's registered
+            redirect_uri.
+        params: The response parameters to append (e.g. `code`/`state`, or
+            `error`/`error_description`). Must not include `"iss"`.
+        iss: The canonical RFC 9207 issuer, byte-for-byte equal to the
+            discovery document's `issuer` (`str(self.base_url)` /
+            `self._issuer` -- never the rstripped `self._base_url`).
+
+    Returns:
+        `url` with `params` appended and exactly one `iss` query parameter
+        set to `iss`.
+    """
+    if "iss" in params:
+        raise ValueError(
+            "params must not include 'iss' -- pass it via the 'iss' keyword"
+        )
+    if params:
+        url = add_query_params(url, params)
+    return replace_query_param(url, "iss", iss)
+
+
 def _parse_host_port(netloc: str) -> tuple[str | None, str | None]:
     """Parse host and port from netloc, handling wildcards.
 

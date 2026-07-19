@@ -45,10 +45,18 @@ class _DirectClientRedirectOAuthProxy(OAuthProxy):
     consent -> upstream IdP -> callback flow. OAuthProxy's own `authorize()`
     never does this itself, but a subclass legitimately can, and
     `AuthorizationHandler.handle()` must still attach `iss` to whatever
-    redirect comes back."""
+    redirect comes back.
+
+    Appends its own `code`/`state` with `&` rather than an unconditional
+    `?` so this still produces a well-formed URL when `redirect_uri` is a
+    registered redirect that already carries its own query string (e.g. a
+    client-supplied `iss`)."""
 
     async def authorize(self, client, params):  # type: ignore[override]
-        return f"{params.redirect_uri}?code=test-auth-code&state={params.state}"
+        separator = "&" if "?" in str(params.redirect_uri) else "?"
+        return (
+            f"{params.redirect_uri}{separator}code=test-auth-code&state={params.state}"
+        )
 
 
 class _DirectClientRedirectWithIssOAuthProxy(OAuthProxy):
@@ -358,6 +366,74 @@ class TestEnhancedAuthorizationHandler:
         assert query_params["code"] == ["test-auth-code"]
         assert query_params["state"] == ["test-state"]
         assert query_params["iss"] == [metadata["issuer"]]
+
+    def test_success_redirect_does_not_duplicate_iss_already_in_redirect_uri(
+        self, rsa_key_pair
+    ):
+        """RFC 9207 P2 regression: a registered redirect_uri may already
+        carry its own `iss` query parameter — distinct from the provider
+        adding one itself (covered by
+        `test_success_redirect_with_matching_iss_not_duplicated` below).
+        `AuthorizationHandler.handle()` must still land on exactly one
+        `iss` (the canonical value), with every other query byte on the
+        registered URI preserved untouched.
+        """
+        oauth_proxy = _DirectClientRedirectOAuthProxy(
+            upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
+            upstream_token_endpoint="https://github.com/login/oauth/access_token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="test-client-secret",
+            token_verifier=JWTVerifier(
+                public_key=rsa_key_pair.public_key,
+                issuer="https://test.com",
+                audience="https://test.com",
+                base_url="https://test.com",
+            ),
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+        )
+        app = Starlette(routes=oauth_proxy.get_routes())
+
+        client_redirect_uri = (
+            "http://localhost:12345/callback?iss=tenant&flag&sig=%FF%FE"
+        )
+        client_info = OAuthClientInformationFull(
+            client_id="valid-client",
+            client_secret="valid-secret",
+            redirect_uris=[AnyUrl(client_redirect_uri)],
+            scope="read",
+        )
+        asyncio.run(oauth_proxy.register_client(client_info))
+
+        with TestClient(app) as client:
+            metadata = client.get("/.well-known/oauth-authorization-server").json()
+
+            response = client.get(
+                "/authorize",
+                params={
+                    "client_id": "valid-client",
+                    "redirect_uri": client_redirect_uri,
+                    "response_type": "code",
+                    "code_challenge": "test-challenge",
+                    "state": "test-state",
+                },
+                follow_redirects=False,
+            )
+
+        assert response.status_code == 302
+        location = response.headers["location"]
+        query = urlparse(location).query
+        query_params = parse_qs(query)
+        assert query_params["code"] == ["test-auth-code"]
+        assert query_params["state"] == ["test-state"]
+        # Exactly one `iss`, corrected to the canonical value -- a
+        # duplicate would make this list have length 2.
+        assert query_params["iss"] == [metadata["issuer"]]
+        # Other query bytes from the registered redirect_uri survive
+        # byte-for-byte.
+        assert "flag" in query
+        assert "sig=%FF%FE" in query
 
     def test_success_redirect_with_matching_iss_not_duplicated(self, rsa_key_pair):
         """If a provider's `authorize()` override already stamped the
