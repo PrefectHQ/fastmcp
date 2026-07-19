@@ -82,11 +82,6 @@ class SymmetricKeyHelper:
 
 
 @pytest.fixture(scope="module")
-def rsa_key_pair() -> RSAKeyPair:
-    return RSAKeyPair.generate()
-
-
-@pytest.fixture(scope="module")
 def symmetric_key_helper() -> SymmetricKeyHelper:
     """Generate a symmetric key helper for testing."""
     return SymmetricKeyHelper("test-secret-key-for-hmac-signing")
@@ -749,13 +744,14 @@ class TestBearerTokenJWKS:
     async def test_jwks_token_validation_with_invalid_key(
         self,
         rsa_key_pair: RSAKeyPair,
+        rsa_key_pair_2: RSAKeyPair,
         jwks_provider: JWTVerifier,
         mock_jwks_data: JWKSData,
         httpx_mock: HTTPXMock,
         mock_dns,
     ):
         httpx_mock.add_response(json=mock_jwks_data)
-        token = RSAKeyPair.generate().create_token(
+        token = rsa_key_pair_2.create_token(
             subject="test-user",
             issuer="https://test.example.com",
             audience="https://api.example.com",

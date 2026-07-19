@@ -222,10 +222,10 @@ class TestAzureProvider:
         assert verifier.required_scopes == [".default"]
 
     async def test_token_accepted_with_client_id_audience(
-        self, memory_storage: MemoryStore
+        self, memory_storage: MemoryStore, rsa_key_pair: RSAKeyPair
     ):
         """Azure AD v2 tokens use the bare client_id as aud — must be accepted."""
-        key_pair = RSAKeyPair.generate()
+        key_pair = rsa_key_pair
         provider = AzureProvider(
             client_id="test_client",
             client_secret="test_secret",
@@ -252,10 +252,10 @@ class TestAzureProvider:
         assert result is not None
 
     async def test_token_accepted_with_identifier_uri_audience(
-        self, memory_storage: MemoryStore
+        self, memory_storage: MemoryStore, rsa_key_pair: RSAKeyPair
     ):
         """Azure AD v1 tokens use the identifier_uri as aud — must be accepted."""
-        key_pair = RSAKeyPair.generate()
+        key_pair = rsa_key_pair
         provider = AzureProvider(
             client_id="test_client",
             client_secret="test_secret",
@@ -282,10 +282,10 @@ class TestAzureProvider:
         assert result is not None
 
     async def test_token_rejected_with_wrong_audience(
-        self, memory_storage: MemoryStore
+        self, memory_storage: MemoryStore, rsa_key_pair: RSAKeyPair
     ):
         """Tokens for a different application must be rejected."""
-        key_pair = RSAKeyPair.generate()
+        key_pair = rsa_key_pair
         provider = AzureProvider(
             client_id="test_client",
             client_secret="test_secret",
@@ -888,9 +888,11 @@ class TestAzureProviderTokenIssuer:
         assert isinstance(provider._token_validator, JWTVerifier)
         assert provider._token_validator.issuer == custom_issuer
 
-    async def test_explicit_issuer_enforced(self, memory_storage: MemoryStore):
+    async def test_explicit_issuer_enforced(
+        self, memory_storage: MemoryStore, rsa_key_pair: RSAKeyPair
+    ):
         """With an explicit token_issuer, wrong issuers are rejected."""
-        key_pair = RSAKeyPair.generate()
+        key_pair = rsa_key_pair
         expected = "https://expected.issuer.com/v2.0"
         provider = AzureProvider(
             client_id="test_client",
@@ -1109,10 +1111,10 @@ class TestAzureProviderFromB2C:
         assert "B2C_1A_SIGNUP_SIGNIN" in provider._upstream_token_endpoint
 
     async def test_b2c_token_accepted_with_any_issuer(
-        self, memory_storage: MemoryStore
+        self, memory_storage: MemoryStore, rsa_key_pair: RSAKeyPair
     ):
         """B2C provider (issuer=None) accepts tokens from any issuer."""
-        key_pair = RSAKeyPair.generate()
+        key_pair = rsa_key_pair
         provider = AzureProvider.from_b2c(
             tenant_name="mytenant",
             policy_name="B2C_1_susi",
@@ -1139,10 +1141,10 @@ class TestAzureProviderFromB2C:
         assert result is not None
 
     async def test_b2c_token_rejected_with_wrong_audience(
-        self, memory_storage: MemoryStore
+        self, memory_storage: MemoryStore, rsa_key_pair: RSAKeyPair
     ):
         """B2C provider still rejects tokens with wrong audience."""
-        key_pair = RSAKeyPair.generate()
+        key_pair = rsa_key_pair
         provider = AzureProvider.from_b2c(
             tenant_name="mytenant",
             policy_name="B2C_1_susi",

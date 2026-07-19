@@ -14,11 +14,6 @@ TEST_PUBLIC_IP = "93.184.216.34"
 
 
 @pytest.fixture(scope="module")
-def rsa_key_pair() -> RSAKeyPair:
-    return RSAKeyPair.generate()
-
-
-@pytest.fixture(scope="module")
 def bearer_token(rsa_key_pair: RSAKeyPair) -> str:
     return rsa_key_pair.create_token(
         subject="test-user",
@@ -394,11 +389,14 @@ class TestBearerToken:
             assert access_token is None
 
     async def test_invalid_signature_rejection(
-        self, rsa_key_pair: RSAKeyPair, bearer_provider: JWTVerifier
+        self,
+        rsa_key_pair: RSAKeyPair,
+        rsa_key_pair_2: RSAKeyPair,
+        bearer_provider: JWTVerifier,
     ):
         """Test rejection of tokens with invalid signatures."""
         # Create a token with a different key pair
-        other_key_pair = RSAKeyPair.generate()
+        other_key_pair = rsa_key_pair_2
         token = other_key_pair.create_token(
             subject="test-user",
             issuer="https://test.example.com",
@@ -517,9 +515,10 @@ class TestFastMCPBearerAuth:
                 tools = await client.list_tools()  # noqa: F841
         assert "tools" not in locals()
 
-    async def test_token_with_bad_signature(self, mcp_server_url: str):
-        rsa_key_pair = RSAKeyPair.generate()
-        token = rsa_key_pair.create_token()
+    async def test_token_with_bad_signature(
+        self, mcp_server_url: str, rsa_key_pair_2: RSAKeyPair
+    ):
+        token = rsa_key_pair_2.create_token()
 
         with pytest.raises(MCPError):
             async with Client(mcp_server_url, auth=BearerAuth(token)) as client:

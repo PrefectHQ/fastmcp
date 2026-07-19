@@ -425,8 +425,8 @@ class TestAzureJWTVerifier:
         assert verifier.algorithm == "RS256"
         assert verifier.required_scopes == ["access_as_user"]
 
-    async def test_validates_short_form_scopes(self):
-        key_pair = RSAKeyPair.generate()
+    async def test_validates_short_form_scopes(self, rsa_key_pair: RSAKeyPair):
+        key_pair = rsa_key_pair
         verifier = AzureJWTVerifier(
             client_id="my-client-id",
             tenant_id="my-tenant-id",
@@ -446,9 +446,11 @@ class TestAzureJWTVerifier:
         assert result is not None
         assert "access_as_user" in result.scopes
 
-    async def test_validates_token_with_client_id_audience(self):
+    async def test_validates_token_with_client_id_audience(
+        self, rsa_key_pair: RSAKeyPair
+    ):
         """Azure AD v2 tokens use the bare client_id GUID as audience."""
-        key_pair = RSAKeyPair.generate()
+        key_pair = rsa_key_pair
         verifier = AzureJWTVerifier(
             client_id="my-client-id",
             tenant_id="my-tenant-id",
@@ -467,9 +469,11 @@ class TestAzureJWTVerifier:
         assert result is not None
         assert "access_as_user" in result.scopes
 
-    async def test_validates_token_with_custom_identifier_uri_audience(self):
+    async def test_validates_token_with_custom_identifier_uri_audience(
+        self, rsa_key_pair: RSAKeyPair
+    ):
         """Custom identifier_uri (e.g. Bicep deployments) accepted as audience."""
-        key_pair = RSAKeyPair.generate()
+        key_pair = rsa_key_pair
         verifier = AzureJWTVerifier(
             client_id="my-client-id",
             tenant_id="my-tenant-id",
@@ -489,9 +493,9 @@ class TestAzureJWTVerifier:
         assert result is not None
         assert "read" in result.scopes
 
-    async def test_rejects_token_with_wrong_audience(self):
+    async def test_rejects_token_with_wrong_audience(self, rsa_key_pair: RSAKeyPair):
         """Tokens for a different application must be rejected."""
-        key_pair = RSAKeyPair.generate()
+        key_pair = rsa_key_pair
         verifier = AzureJWTVerifier(
             client_id="my-client-id",
             tenant_id="my-tenant-id",

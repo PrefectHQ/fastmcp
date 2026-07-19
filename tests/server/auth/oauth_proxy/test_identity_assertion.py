@@ -116,8 +116,8 @@ def _make_proxy(identity_assertion: IdentityAssertion | None) -> OAuthProxy:
 
 
 @pytest.fixture
-def idp_key() -> RSAKeyPair:
-    return RSAKeyPair.generate()
+def idp_key(rsa_key_pair: RSAKeyPair) -> RSAKeyPair:
+    return rsa_key_pair
 
 
 @pytest.fixture
@@ -503,9 +503,11 @@ class TestValidationMatrix:
         assert second.status_code == 401
         assert second.json()["error"] == "invalid_grant"
 
-    async def test_wrong_signature_rejected(self, config: IdentityAssertion):
+    async def test_wrong_signature_rejected(
+        self, config: IdentityAssertion, rsa_key_pair_2: RSAKeyPair
+    ):
         # Sign with a different key than the one served in the JWKS.
-        other_key = RSAKeyPair.generate()
+        other_key = rsa_key_pair_2
         proxy = _make_proxy(config)
         assertion = _mint_id_jag(other_key)
 

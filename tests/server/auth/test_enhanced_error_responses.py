@@ -17,7 +17,7 @@ from fastmcp import FastMCP
 from fastmcp.server.auth import RemoteAuthProvider, TokenVerifier
 from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
-from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
+from fastmcp.server.auth.providers.jwt import JWTVerifier
 
 
 class _UnderScopedTokenVerifier(TokenVerifier):
@@ -35,11 +35,6 @@ class _UnderScopedOAuthProxy(OAuthProxy):
 
 class TestEnhancedAuthorizationHandler:
     """Tests for enhanced authorization handler error responses."""
-
-    @pytest.fixture
-    def rsa_key_pair(self) -> RSAKeyPair:
-        """Generate RSA key pair for testing."""
-        return RSAKeyPair.generate()
 
     @pytest.fixture
     def oauth_proxy(self, rsa_key_pair):
@@ -233,11 +228,6 @@ class TestEnhancedRequireAuthMiddleware:
             client_storage=MemoryStore(),
         )
         return FastMCP("Test Server", auth=auth).http_app()
-
-    @pytest.fixture
-    def rsa_key_pair(self) -> RSAKeyPair:
-        """Generate RSA key pair for testing."""
-        return RSAKeyPair.generate()
 
     @pytest.fixture
     def jwt_verifier(self, rsa_key_pair):
@@ -473,7 +463,7 @@ class TestContentNegotiation:
     """Tests for content negotiation in error responses."""
 
     @pytest.fixture
-    def oauth_proxy(self):
+    def oauth_proxy(self, rsa_key_pair):
         """Create OAuth proxy for testing."""
         from key_value.aio.stores.memory import MemoryStore
 
@@ -483,7 +473,7 @@ class TestContentNegotiation:
             upstream_client_id="test-client-id",
             upstream_client_secret="test-client-secret",
             token_verifier=JWTVerifier(
-                public_key=RSAKeyPair.generate().public_key,
+                public_key=rsa_key_pair.public_key,
                 issuer="https://test.com",
                 audience="https://test.com",
                 base_url="https://test.com",
