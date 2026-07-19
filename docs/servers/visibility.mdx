@@ -147,12 +147,24 @@ Keys are matched by exact string equality, so a key that omits the trailing `@` 
 
 ### Combining Filters
 
-You can specify several criteria in a single call. The filters combine additively.
+Criteria in a single call **narrow** each other: a component must satisfy every one of them to match. Combining a name with a tag targets the intersection, not the union.
 
 ```python
-# Disable a specific tool AND all dangerous-tagged components
+# Disables debug_info only if it is ALSO tagged "dangerous"
 mcp.disable(names={"debug_info"}, tags={"dangerous"})
 ```
+
+To act on a union, make one call per criterion. Because later calls override earlier ones only where they overlap, successive disables accumulate.
+
+```python
+# Disables debug_info AND everything tagged "dangerous"
+mcp.disable(names={"debug_info"})
+mcp.disable(tags={"dangerous"})
+```
+
+<Warning>
+Intersection is easy to misread as union, and a rule that matches nothing fails silently. `disable(names={"debug_info"}, tags={"dangerous"})` disables nothing at all when `debug_info` lacks that tag — the components you meant to hide stay exposed.
+</Warning>
 
 ## Allowlist Mode
 

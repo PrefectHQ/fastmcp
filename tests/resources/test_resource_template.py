@@ -1089,3 +1089,54 @@ class TestTemplateMimeType:
 
         assert result[0].meta is not None
         assert result[0].meta["team"] == "infra"
+
+
+class TestInternalMetaNotLeaked:
+    """FastMCP's private visibility marker must never reach the wire."""
+
+    @pytest.mark.parametrize(
+        "uri,read_uri",
+        [
+            ("data://plain", "data://plain"),
+            ("data://tmpl/{id}", "data://tmpl/1"),
+        ],
+    )
+    async def test_visibility_marker_stripped_from_content_meta(
+        self, uri: str, read_uri: str
+    ):
+        """Applying a visibility rule must not add internal meta to content."""
+        mcp = FastMCP()
+
+        if "{" in uri:
+
+            @mcp.resource(uri)
+            def templated(id: str) -> str:
+                return id
+        else:
+
+            @mcp.resource(uri)
+            def concrete() -> str:
+                return "value"
+
+        # Applying any visibility rule stamps the internal marker on meta
+        mcp.enable(names={"templated" if "{" in uri else "concrete"})
+
+        async with Client(mcp) as client:
+            result = await client.read_resource(read_uri)
+
+        assert result[0].meta is None
+
+    async def test_user_meta_survives_stripping(self):
+        """Only the internal namespace is removed; user meta is preserved."""
+        mcp = FastMCP()
+
+        @mcp.resource("data://tagged/{id}", meta={"team": "infra"})
+        def tagged(id: str) -> str:
+            return id
+
+        mcp.enable(names={"tagged"})
+
+        async with Client(mcp) as client:
+            result = await client.read_resource("data://tagged/1")
+
+        assert result[0].meta == {"team": "infra"}
