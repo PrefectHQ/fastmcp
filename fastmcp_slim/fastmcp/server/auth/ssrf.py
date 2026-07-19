@@ -6,22 +6,25 @@ This module provides SSRF-protected HTTP fetching with:
 - Support for both CIMD and JWKS fetches
 
 When ``FASTMCP_SSRF_TRUST_PROXY`` is set, DNS resolution and the IP blocklist are
-skipped and a single request is made to the hostname URL, delegating DNS and egress
-to a trusted outbound proxy (the scheme and hostname checks still apply). If no
-configured proxy would route the request — no HTTPS/ALL proxy, or NO_PROXY excludes
-the host — the fetch is refused rather than sent direct with the blocklist disabled.
+skipped and a single request is made to the hostname URL through the configured
+HTTPS_PROXY/ALL_PROXY, delegating DNS and egress to that trusted proxy (the scheme
+and hostname checks still apply). The proxy URL is read from the environment and
+passed to httpx2 explicitly with ``trust_env`` disabled, so the request is provably
+routed through the proxy rather than predicted to be — NO_PROXY is not evaluated in
+this mode. If no proxy is configured, the fetch is refused rather than sent direct
+with the blocklist disabled.
 """
 
 from __future__ import annotations
 
 import asyncio
 import ipaddress
+import os
 import socket
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from urllib.parse import urlparse
-from urllib.request import getproxies, proxy_bypass
 
 import httpx2
 
@@ -70,39 +73,24 @@ def format_ip_for_url(ip_str: str) -> str:
         return ip_str
 
 
-def _proxy_bypass_target(hostname: str, port: int) -> str:
-    """Build the host argument passed to ``urllib.request.proxy_bypass()``.
+def _configured_proxy_url() -> str | None:
+    """Return the proxy URL to route proxy-trust fetches through, if any is set.
 
-    httpx2 honors port-qualified ``NO_PROXY`` entries for IPv4 addresses and domain
-    names (``NO_PROXY=127.0.0.1:8443`` excludes only that port), so the port must be
-    included here or a port-specific bypass rule slips past ``proxy_bypass()``
-    undetected — it would report "not bypassed" for a request httpx2 actually sends
-    direct. Verified empirically against both ``proxy_bypass()`` and httpx2's own
-    ``get_environment_proxies()``/``URLPattern`` routing.
-
-    IPv6 is handled separately: httpx2 never attaches a port when it turns an IPv6
-    ``NO_PROXY`` entry into a routing rule — it brackets the bare address and matches
-    on host alone, so such an entry excludes that host on every port. Reproducing that
-    with a port suffix does not work through ``proxy_bypass()``: the bracketed form
-    (``[addr]:port``) never matches any ``NO_PROXY`` entry (``urllib``'s own NO_PROXY
-    parser does not understand brackets), and the unbracketed form (``addr:port``) is
-    ambiguous with a literal IPv6 address that legitimately ends in decimal digits.
-    The bare hostname is therefore not a weaker fallback for IPv6 — it is the
-    construction that actually matches httpx2's real routing, confirmed against
-    ``get_environment_proxies()``/``URLPattern`` the same way as the IPv4 case above.
-
-    Args:
-        hostname: Hostname or IP literal from the parsed URL (no brackets, no port).
-        port: Port the request will be made to.
+    Reads ``HTTPS_PROXY``/``https_proxy`` first, falling back to ``ALL_PROXY``/
+    ``all_proxy``. This is a simple presence check: no host matching, no ``NO_PROXY``
+    evaluation. The caller passes the returned URL to httpx2 explicitly (with
+    ``trust_env`` disabled) so there is no routing decision left for httpx2 to make
+    differently than this function assumed — see the module docstring and
+    :func:`validate_url` for why that matters.
 
     Returns:
-        The string to pass to ``proxy_bypass()``.
+        The configured proxy URL, or None if none of the supported variables are set.
     """
-    try:
-        is_ipv6 = isinstance(ipaddress.ip_address(hostname), ipaddress.IPv6Address)
-    except ValueError:
-        is_ipv6 = False
-    return hostname if is_ipv6 else f"{hostname}:{port}"
+    for name in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"):
+        value = os.environ.get(name)
+        if value:
+            return value
+    return None
 
 
 class SSRFError(Exception):
@@ -222,6 +210,7 @@ class ValidatedURL:
     port: int
     path: str
     resolved_ips: list[str]
+    proxy_url: str | None = None
 
 
 @dataclass
@@ -240,31 +229,35 @@ class _FetchTarget:
     In pinned (default) mode there is one target per resolved IP: the request goes to
     an IP-literal URL with Host and SNI pinned to the validated hostname. In proxy
     mode (FASTMCP_SSRF_TRUST_PROXY) there is a single target: the original hostname
-    URL with no pinning, so httpx and the trusted proxy own DNS and TLS.
+    URL with no pinning and an explicit ``proxy_url``, so the request is dialed
+    through the trusted proxy and the proxy (not httpx's environment-proxy routing)
+    owns DNS and TLS.
     """
 
     url: str
     host_header: str | None
     sni_hostname: str | None
+    proxy_url: str | None = None
 
 
 def _build_fetch_targets(validated: ValidatedURL) -> list[_FetchTarget]:
     """Build the ordered connection attempts for a validated URL.
 
     An empty ``resolved_ips`` means proxy mode (see :func:`validate_url`): a single
-    unpinned request to the original hostname URL, which httpx routes through the
-    configured proxy. Otherwise, one pinned IP-literal request per resolved IP, tried
-    in order with fallback on connection error.
+    unpinned request to the original hostname URL, explicitly routed through
+    ``validated.proxy_url``. Otherwise, one pinned IP-literal request per resolved
+    IP, tried in order with fallback on connection error.
     """
     if not validated.resolved_ips:
-        # Proxy mode: dial the original hostname URL verbatim and let httpx + the proxy
-        # parse and resolve it. validated.hostname is informational here — it does not
+        # Proxy mode: dial the original hostname URL verbatim and let the proxy parse
+        # and resolve it. validated.hostname is informational here — it does not
         # constrain what gets dialed — so do not pin Host or SNI from it.
         return [
             _FetchTarget(
                 url=validated.original_url,
                 host_header=None,
                 sni_hostname=None,
+                proxy_url=validated.proxy_url,
             )
         ]
 
@@ -317,45 +310,33 @@ async def validate_url(url: str, require_path: bool = False) -> ValidatedURL:
     # empty resolved_ips list. The scheme (HTTPS) and host checks above still run.
     if fastmcp.settings.ssrf_trust_proxy:
         # Skipping the blocklist is only safe if the request is *actually* routed
-        # through the trusted proxy, so confirm it will be before proceeding: an HTTPS
-        # request routes only through the https/all proxy entries, and NO_PROXY can
-        # still exclude this host. getproxies() ignores NO_PROXY, so consult
-        # proxy_bypass() too. This approximates httpx2's own trust_env routing, not an
-        # exact copy of it, and one gap has already bitten us in production: httpx2
-        # honors port-qualified NO_PROXY entries (e.g. NO_PROXY=127.0.0.1:8443 excludes
-        # only that port), so proxy_bypass() must be called with "{hostname}:{port}",
-        # not the bare hostname — a bare-hostname call misses the port qualifier and
-        # concludes "proxied" for a target httpx2 actually sends direct. IPv6 is
-        # handled separately below: httpx2 never attaches a port when it parses an
-        # IPv6 NO_PROXY entry, and neither the bracketed nor the port-suffixed form of
-        # an IPv6 literal reliably matches through proxy_bypass()'s own NO_PROXY
-        # parser, so IPv6 targets are checked by bare address instead — see
-        # _proxy_bypass_target() for the verified behavior behind that split. The
-        # intended contract is that every remaining divergence between this check and
-        # httpx2's real routing errs closed (we refuse a fetch httpx2 would have
-        # proxied, never the reverse); that must be re-verified whenever this function
-        # or the helper below changes, since it does not fall out of the code
-        # automatically. If nothing will proxy this target the fetch would otherwise go
-        # out direct with the blocklist already disabled — no SSRF protection at all —
-        # so refuse rather than make an unprotected request. The setting's contract is
-        # crisp: proxy-trust mode delegates SSRF protection to the proxy, and with no
-        # proxy for this target the fetch cannot proceed.
-        proxies = getproxies()
-        if "https" not in proxies and "all" not in proxies:
+        # through a trusted proxy, so this does not try to predict whether it will
+        # be — it controls it. Earlier revisions predicted httpx2's routing decision,
+        # first by approximating NO_PROXY handling with urllib.request.proxy_bypass(),
+        # then by replicating httpx2's own get_environment_proxies()/URLPattern
+        # matching internally. Both were still predictions of a library with
+        # open-ended NO_PROXY semantics, and each was found wrong for a different
+        # NO_PROXY form (port-qualified, IPv6, scheme-qualified entries each broke a
+        # different revision) — always in the dangerous direction of assuming
+        # "proxied" for a request that actually went out direct.
+        #
+        # Instead, read the proxy URL directly from the environment and hand it to
+        # httpx2 explicitly below, with trust_env disabled. With an explicit
+        # `proxy=` and `trust_env=False`, httpx2 has no routing decision left to make
+        # differently than assumed here: the request provably goes through that
+        # proxy or the connection fails. NO_PROXY is therefore not evaluated in this
+        # mode at all — a NO_PROXY'd host is routed through the proxy rather than
+        # fetched direct with the blocklist already disabled, which is strictly safer
+        # than the alternative (see the module docstring). If no proxy is configured,
+        # there is nothing to route through, so refuse rather than fetch unprotected.
+        proxy_url = _configured_proxy_url()
+        if proxy_url is None:
             raise SSRFError(
                 f"FASTMCP_SSRF_TRUST_PROXY is enabled but no HTTPS_PROXY/ALL_PROXY is "
                 f"configured, so the request to {hostname} would go direct with SSRF "
-                f"protection disabled. Point HTTPS_PROXY at the trusted proxy, or "
-                f"unset FASTMCP_SSRF_TRUST_PROXY to restore DNS/IP validation."
-            )
-        bypass_target = _proxy_bypass_target(hostname, port)
-        if proxy_bypass(bypass_target):
-            raise SSRFError(
-                f"FASTMCP_SSRF_TRUST_PROXY is enabled and a proxy is configured, but "
-                f"NO_PROXY (or a proxy-bypass rule) excludes {bypass_target}, so the "
-                f"request would go direct with SSRF protection disabled. Remove "
-                f"{bypass_target} from NO_PROXY to route it through the proxy, or "
-                f"unset FASTMCP_SSRF_TRUST_PROXY to restore DNS/IP validation."
+                f"protection disabled. Set HTTPS_PROXY (or ALL_PROXY) to the trusted "
+                f"proxy, or unset FASTMCP_SSRF_TRUST_PROXY to restore DNS/IP "
+                f"validation."
             )
         return ValidatedURL(
             original_url=url,
@@ -363,6 +344,7 @@ async def validate_url(url: str, require_path: bool = False) -> ValidatedURL:
             port=port,
             path=path,
             resolved_ips=[],
+            proxy_url=proxy_url,
         )
 
     # Resolve and validate IPs (resolve_hostname raises rather than returning [], so a
@@ -491,11 +473,13 @@ async def ssrf_safe_fetch_response(
                     ),
                     follow_redirects=False,
                     verify=True,
-                    # Proxy mode relies on httpx reading HTTPS_PROXY/HTTP_PROXY from the
-                    # environment; keep trust_env on (the default) so that routing works.
-                    # Disabling it would silently turn proxy-mode fetches into direct,
-                    # unpinned requests.
-                    trust_env=True,
+                    # Default (pinned) mode has no proxy_url and keeps trust_env's
+                    # normal default (True). Proxy-trust mode sets an explicit
+                    # proxy_url and turns trust_env off, so httpx2 has no environment
+                    # -based routing decision left to make — see validate_url() above
+                    # for why that matters.
+                    proxy=target.proxy_url,
+                    trust_env=target.proxy_url is None,
                 ) as client,
                 client.stream(
                     "GET",

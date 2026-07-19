@@ -3,6 +3,7 @@
 This module tests the ssrf.py module which provides SSRF-protected HTTP fetching.
 """
 
+import socket
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx2
@@ -547,34 +548,40 @@ class TestStreamingResponseSizeLimit:
 class TestProxyMode:
     """Tests for FASTMCP_SSRF_TRUST_PROXY (proxy trust) mode.
 
-    In proxy mode FastMCP skips its own DNS resolution and IP blocklist and issues a
-    single request to the hostname URL, delegating DNS and egress to a trusted proxy.
-    The scheme (HTTPS) and host checks still apply.
+    In proxy mode FastMCP skips its own DNS resolution and IP blocklist. Rather than
+    predicting whether httpx2 would route a request through a proxy -- a strategy
+    that broke three times chasing different NO_PROXY forms (port-qualified, IPv6,
+    scheme-qualified) -- it reads the proxy URL directly from the environment and
+    hands it to httpx2 explicitly with trust_env=False, so the request is provably
+    routed through that proxy rather than predicted to be. NO_PROXY is therefore not
+    evaluated in this mode. The scheme (HTTPS) and host checks still apply.
     """
 
-    @pytest.fixture
-    def proxy_routed(self):
-        """An environment where a configured HTTPS proxy actually routes the fetch.
-
-        Proxy mode now refuses to proceed unless a proxy will route the target, so the
-        happy-path tests must simulate one: an https entry from getproxies() and a
-        proxy_bypass() that does not exclude the host.
-        """
-        with (
-            patch(
-                "fastmcp.server.auth.ssrf.getproxies",
-                return_value={"https": "http://proxy.internal:3128"},
-            ),
-            patch("fastmcp.server.auth.ssrf.proxy_bypass", return_value=False),
+    @pytest.fixture(autouse=True)
+    def _clear_proxy_env(self, monkeypatch):
+        """Start every test from a clean slate for both spellings of every proxy
+        variable, so a proxy inherited from the host/CI environment (or left behind
+        by another test) can't leak in and make behavior non-deterministic."""
+        for name in (
+            "HTTP_PROXY",
+            "http_proxy",
+            "HTTPS_PROXY",
+            "https_proxy",
+            "ALL_PROXY",
+            "all_proxy",
+            "NO_PROXY",
+            "no_proxy",
         ):
-            yield
+            monkeypatch.delenv(name, raising=False)
 
     def test_flag_defaults_to_false(self):
         """The trust-proxy flag must be off by default (no silent weakening)."""
         assert fastmcp.settings.ssrf_trust_proxy is False
 
-    async def test_validate_url_skips_resolution_and_blocklist(self, proxy_routed):
-        """Proxy mode returns resolved_ips=[] without resolving or blocklisting."""
+    async def test_validate_url_skips_resolution_and_blocklist(self, monkeypatch):
+        """Proxy mode returns resolved_ips=[] without resolving or blocklisting, and
+        carries the configured proxy URL for the fetch to use."""
+        monkeypatch.setenv("HTTPS_PROXY", "http://proxy.internal:3128")
         with (
             temporary_settings(ssrf_trust_proxy=True),
             patch("fastmcp.server.auth.ssrf.resolve_hostname") as mock_resolve,
@@ -585,88 +592,47 @@ class TestProxyMode:
         assert result.resolved_ips == []
         assert result.original_url == "https://example.com/path"
         assert result.hostname == "example.com"
+        assert result.proxy_url == "http://proxy.internal:3128"
         mock_resolve.assert_not_called()
         mock_blocklist.assert_not_called()
 
-    async def test_validate_url_still_rejects_http(self):
+    async def test_validate_url_still_rejects_http(self, monkeypatch):
         """Proxy mode keeps the HTTPS-only scheme check."""
+        monkeypatch.setenv("HTTPS_PROXY", "http://proxy.internal:3128")
         with temporary_settings(ssrf_trust_proxy=True):
             with pytest.raises(SSRFError, match="must use HTTPS"):
                 await validate_url("http://example.com/path")
 
-    async def test_validate_url_still_rejects_missing_host(self):
+    async def test_validate_url_still_rejects_missing_host(self, monkeypatch):
         """Proxy mode keeps the host check."""
+        monkeypatch.setenv("HTTPS_PROXY", "http://proxy.internal:3128")
         with temporary_settings(ssrf_trust_proxy=True):
             with pytest.raises(SSRFError, match="must have a host"):
                 await validate_url("https:///path")
 
-    async def test_validate_url_still_enforces_require_path(self):
+    async def test_validate_url_still_enforces_require_path(self, monkeypatch):
         """Proxy mode keeps the require_path check (CIMD)."""
+        monkeypatch.setenv("HTTPS_PROXY", "http://proxy.internal:3128")
         with temporary_settings(ssrf_trust_proxy=True):
             with pytest.raises(SSRFError, match="non-root path"):
                 await validate_url("https://example.com/", require_path=True)
 
     async def test_raises_when_no_proxy_is_configured(self):
         """No proxy in the environment → refuse rather than fetch unprotected."""
-        with (
-            temporary_settings(ssrf_trust_proxy=True),
-            patch("fastmcp.server.auth.ssrf.getproxies", return_value={}),
-        ):
+        with temporary_settings(ssrf_trust_proxy=True):
             with pytest.raises(SSRFError, match="no HTTPS_PROXY/ALL_PROXY"):
                 await validate_url("https://example.com/path")
 
-    async def test_raises_when_only_http_proxy_is_configured(self):
-        """HTTP_PROXY alone never routes these HTTPS-only fetches — refuse."""
-        with (
-            temporary_settings(ssrf_trust_proxy=True),
-            patch(
-                "fastmcp.server.auth.ssrf.getproxies",
-                return_value={"http": "http://proxy.internal:3128"},
-            ),
-        ):
-            with pytest.raises(SSRFError, match="no HTTPS_PROXY/ALL_PROXY"):
-                await validate_url("https://example.com/path")
+    async def test_fetch_refuses_end_to_end_when_no_proxy_configured(self):
+        """The refusal surfaces through ssrf_safe_fetch: no client is ever built.
 
-    @pytest.mark.parametrize("scheme", ["https", "all"])
-    async def test_proceeds_when_proxy_is_configured(self, scheme):
-        """An https or all proxy entry routes the fetch — proxy mode proceeds."""
-        with (
-            temporary_settings(ssrf_trust_proxy=True),
-            patch(
-                "fastmcp.server.auth.ssrf.getproxies",
-                return_value={scheme: "http://proxy.internal:3128"},
-            ),
-            patch("fastmcp.server.auth.ssrf.proxy_bypass", return_value=False),
-        ):
-            result = await validate_url("https://example.com/path")
-
-        assert result.resolved_ips == []
-
-    async def test_raises_when_no_proxy_excludes_the_host(self):
-        """A proxy is configured but NO_PROXY excludes this host, so the fetch would go
-        direct — getproxies() alone would miss it, proxy_bypass() catches it and the
-        fetch is refused."""
-        with (
-            temporary_settings(ssrf_trust_proxy=True),
-            patch(
-                "fastmcp.server.auth.ssrf.getproxies",
-                return_value={"https": "http://proxy.internal:3128"},
-            ),
-            patch("fastmcp.server.auth.ssrf.proxy_bypass", return_value=True),
-        ):
-            with pytest.raises(SSRFError, match="NO_PROXY"):
-                await validate_url("https://example.com/path")
-
-    async def test_fetch_refuses_end_to_end_when_nothing_would_proxy(self):
-        """The refusal surfaces through ssrf_safe_fetch: no direct request is made.
-
-        The whole point of the hard failure is that the *fetch* cannot proceed, so this
-        drives it through the public entrypoint and asserts no httpx client is ever
-        constructed — the request never leaves the process with the blocklist disabled.
+        The whole point of the hard failure is that the *fetch* cannot proceed, so
+        this drives it through the public entrypoint and asserts no httpx client is
+        ever constructed — the request never leaves the process with the blocklist
+        disabled.
         """
         with (
             temporary_settings(ssrf_trust_proxy=True),
-            patch("fastmcp.server.auth.ssrf.getproxies", return_value={}),
             patch("httpx2.AsyncClient") as mock_client_class,
         ):
             with pytest.raises(SSRFError, match="no HTTPS_PROXY/ALL_PROXY"):
@@ -674,8 +640,15 @@ class TestProxyMode:
 
         mock_client_class.assert_not_called()
 
-    async def test_fetch_single_request_to_original_url(self, proxy_routed):
-        """Proxy mode issues one unpinned request to the hostname URL."""
+    async def test_https_proxy_used_explicitly(self, monkeypatch):
+        """HTTPS_PROXY is passed to httpx2 explicitly with trust_env disabled, and a
+        single request goes to the original hostname URL — not an IP literal.
+
+        This is the property the whole redesign rests on: with an explicit proxy=
+        and trust_env=False, httpx2 has no environment-based routing decision left
+        to make differently than assumed.
+        """
+        monkeypatch.setenv("HTTPS_PROXY", "http://proxy.internal:3128")
         mock_client = _mock_httpx_client()
         with (
             temporary_settings(ssrf_trust_proxy=True),
@@ -687,25 +660,82 @@ class TestProxyMode:
         assert content == b"ok"
         mock_resolve.assert_not_called()
 
+        client_kwargs = mock_client_class.call_args[1]
+        assert client_kwargs["proxy"] == "http://proxy.internal:3128"
+        assert client_kwargs["trust_env"] is False
+
         # A single request to the original hostname URL — not an IP literal.
         assert mock_client.stream.call_count == 1
         url_called = mock_client.stream.call_args[0][1]
         assert url_called == "https://example.com/api"
 
-        # No Host override and no SNI override — httpx derives both from the URL.
+        # No Host override and no SNI override — the client derives both from the URL.
         call_kwargs = mock_client.stream.call_args[1]
         assert "Host" not in call_kwargs["headers"]
         assert call_kwargs["extensions"] == {}
 
         # Redirects stay disabled and TLS verification stays on.
-        client_kwargs = mock_client_class.call_args[1]
         assert client_kwargs["follow_redirects"] is False
         assert client_kwargs["verify"] is True
 
-    async def test_fetch_preserves_request_headers_but_drops_host(self, proxy_routed):
+    async def test_all_proxy_used_as_fallback(self, monkeypatch):
+        """ALL_PROXY routes the fetch when HTTPS_PROXY is not set."""
+        monkeypatch.setenv("ALL_PROXY", "http://all-proxy.internal:3128")
+        mock_client = _mock_httpx_client()
+        with (
+            temporary_settings(ssrf_trust_proxy=True),
+            patch("fastmcp.server.auth.ssrf.resolve_hostname"),
+            patch("httpx2.AsyncClient", return_value=mock_client) as mock_client_class,
+        ):
+            content = await ssrf_safe_fetch("https://example.com/api")
+
+        assert content == b"ok"
+        client_kwargs = mock_client_class.call_args[1]
+        assert client_kwargs["proxy"] == "http://all-proxy.internal:3128"
+        assert client_kwargs["trust_env"] is False
+
+    async def test_https_proxy_preferred_over_all_proxy(self, monkeypatch):
+        """When both are set, HTTPS_PROXY takes priority."""
+        monkeypatch.setenv("HTTPS_PROXY", "http://https-proxy.internal:3128")
+        monkeypatch.setenv("ALL_PROXY", "http://all-proxy.internal:3128")
+        mock_client = _mock_httpx_client()
+        with (
+            temporary_settings(ssrf_trust_proxy=True),
+            patch("fastmcp.server.auth.ssrf.resolve_hostname"),
+            patch("httpx2.AsyncClient", return_value=mock_client) as mock_client_class,
+        ):
+            await ssrf_safe_fetch("https://example.com/api")
+
+        proxy_used = mock_client_class.call_args[1]["proxy"]
+        assert proxy_used == "http://https-proxy.internal:3128"
+
+    async def test_no_proxy_is_not_honored(self, monkeypatch):
+        """Documents the behavior change: a NO_PROXY entry that would previously have
+        matched the target host no longer excludes it. The fetch still proceeds
+        through the configured proxy rather than being refused, because routing a
+        NO_PROXY'd host through the proxy is strictly safer than the alternative —
+        fetching it direct with the IP blocklist already disabled.
+        """
+        monkeypatch.setenv("HTTPS_PROXY", "http://proxy.internal:3128")
+        monkeypatch.setenv("NO_PROXY", "example.com")
+        mock_client = _mock_httpx_client()
+        with (
+            temporary_settings(ssrf_trust_proxy=True),
+            patch("fastmcp.server.auth.ssrf.resolve_hostname"),
+            patch("httpx2.AsyncClient", return_value=mock_client) as mock_client_class,
+        ):
+            content = await ssrf_safe_fetch("https://example.com/api")
+
+        assert content == b"ok"
+        client_kwargs = mock_client_class.call_args[1]
+        assert client_kwargs["proxy"] == "http://proxy.internal:3128"
+        assert client_kwargs["trust_env"] is False
+
+    async def test_fetch_preserves_request_headers_but_drops_host(self, monkeypatch):
         """Caller headers pass through, but a caller-supplied Host is dropped."""
         from fastmcp.server.auth.ssrf import ssrf_safe_fetch_response
 
+        monkeypatch.setenv("HTTPS_PROXY", "http://proxy.internal:3128")
         mock_client = _mock_httpx_client()
         with (
             temporary_settings(ssrf_trust_proxy=True),
@@ -721,8 +751,9 @@ class TestProxyMode:
         assert sent_headers["If-None-Match"] == "etag"
         assert "Host" not in sent_headers
 
-    async def test_fetch_size_limit_preserved(self, proxy_routed):
+    async def test_fetch_size_limit_preserved(self, monkeypatch):
         """Proxy mode still enforces the response size limit during streaming."""
+        monkeypatch.setenv("HTTPS_PROXY", "http://proxy.internal:3128")
         big_chunks = [b"x" * 1024 for _ in range(10)]
         mock_client = _mock_httpx_client(headers={}, body_chunks=big_chunks)
         with (
@@ -733,8 +764,9 @@ class TestProxyMode:
             with pytest.raises(SSRFFetchError, match="too large"):
                 await ssrf_safe_fetch("https://example.com/api", max_size=5120)
 
-    async def test_fetch_status_check_preserved(self, proxy_routed):
+    async def test_fetch_status_check_preserved(self, monkeypatch):
         """Proxy mode still rejects non-allowed status codes."""
+        monkeypatch.setenv("HTTPS_PROXY", "http://proxy.internal:3128")
         mock_client = _mock_httpx_client(status_code=404, body_chunks=[b"no"])
         with (
             temporary_settings(ssrf_trust_proxy=True),
@@ -744,8 +776,39 @@ class TestProxyMode:
             with pytest.raises(SSRFFetchError, match="HTTP 404"):
                 await ssrf_safe_fetch("https://example.com/api")
 
+    async def test_gaierror_repro_succeeds_through_proxy(self, monkeypatch):
+        """Reproduces issue #4292: on a host with no external DNS at all (every
+        getaddrinfo() call raises gaierror), the OAuth/JWKS fetch still succeeds in
+        proxy-trust mode, because DNS resolution is never attempted — only HTTPS_PROXY
+        is read and the proxy resolves the target. This is the reporter's exact
+        failure mode, and the strongest proof the redesign closes the issue: unlike
+        other tests in this class, resolve_hostname itself is *not* mocked, so if
+        proxy mode ever regressed into calling it, this test would fail with SSRFError
+        instead of succeeding.
+        """
+        monkeypatch.setenv("HTTPS_PROXY", "http://proxy.internal:3128")
+
+        def _no_dns(*args, **kwargs):
+            raise socket.gaierror("Name or service not known")
+
+        monkeypatch.setattr(socket, "getaddrinfo", _no_dns)
+
+        mock_client = _mock_httpx_client()
+        with (
+            temporary_settings(ssrf_trust_proxy=True),
+            patch("httpx2.AsyncClient", return_value=mock_client) as mock_client_class,
+        ):
+            content = await ssrf_safe_fetch("https://example.com/api")
+
+        assert content == b"ok"
+        client_kwargs = mock_client_class.call_args[1]
+        assert client_kwargs["proxy"] == "http://proxy.internal:3128"
+        assert client_kwargs["trust_env"] is False
+        assert mock_client.stream.call_args[0][1] == "https://example.com/api"
+
     async def test_default_mode_still_resolves_and_pins(self):
-        """Regression: with the flag off, resolution + blocklist + IP pinning still apply."""
+        """Regression: with the flag off, resolution + blocklist + IP pinning still
+        apply, and no explicit proxy is passed to the client."""
         resolved_ip = "93.184.216.34"
         mock_client = _mock_httpx_client()
         with (
@@ -753,7 +816,7 @@ class TestProxyMode:
                 "fastmcp.server.auth.ssrf.resolve_hostname",
                 return_value=[resolved_ip],
             ) as mock_resolve,
-            patch("httpx2.AsyncClient", return_value=mock_client),
+            patch("httpx2.AsyncClient", return_value=mock_client) as mock_client_class,
         ):
             assert fastmcp.settings.ssrf_trust_proxy is False
             await ssrf_safe_fetch("https://example.com/api")
@@ -767,87 +830,29 @@ class TestProxyMode:
         assert call_args[1]["headers"]["Host"] == "example.com"
         assert call_args[1]["extensions"] == {"sni_hostname": "example.com"}
 
+        # No explicit proxy is passed, and trust_env keeps its normal default.
+        client_kwargs = mock_client_class.call_args[1]
+        assert client_kwargs["proxy"] is None
+        assert client_kwargs["trust_env"] is True
 
-class TestProxyModeNoProxyPortMatching:
-    """Tests for the port-qualified NO_PROXY check in proxy-trust mode.
-
-    These exercise the real ``urllib.request.proxy_bypass()`` against actual
-    ``NO_PROXY`` environment values instead of mocking it. The bug being tested was
-    in *how* ``validate_url()`` called ``proxy_bypass()`` — it passed the hostname
-    with the port already discarded — so mocking ``proxy_bypass()`` itself would
-    hide exactly the defect under test. Only ``getproxies()`` is mocked, to
-    guarantee an HTTPS proxy is configured without depending on the test
-    environment's actual proxy settings.
-    """
-
-    @pytest.fixture(autouse=True)
-    def https_proxy_configured(self):
-        """A configured HTTPS_PROXY, so the guard reaches the NO_PROXY check."""
-        with patch(
-            "fastmcp.server.auth.ssrf.getproxies",
-            return_value={"https": "http://proxy.internal:3128"},
+    async def test_default_mode_ignores_proxy_env_vars(self, monkeypatch):
+        """Regression: proxy env vars — including a hostile NO_PROXY that previously
+        caused non-deterministic failures — must not affect the default (non-trust)
+        path at all, since it never reads them."""
+        monkeypatch.setenv("HTTPS_PROXY", "http://proxy.internal:3128")
+        monkeypatch.setenv("NO_PROXY", "localhost,127.0.0.1,::1")
+        resolved_ip = "93.184.216.34"
+        mock_client = _mock_httpx_client()
+        with (
+            patch(
+                "fastmcp.server.auth.ssrf.resolve_hostname",
+                return_value=[resolved_ip],
+            ) as mock_resolve,
+            patch("httpx2.AsyncClient", return_value=mock_client) as mock_client_class,
         ):
-            yield
+            assert fastmcp.settings.ssrf_trust_proxy is False
+            await ssrf_safe_fetch("https://example.com/api")
 
-    async def test_port_qualified_no_proxy_excludes_matching_port(self, monkeypatch):
-        """NO_PROXY=host:port for the exact target port must refuse (the P1 case).
-
-        Before the fix, validate_url() called proxy_bypass(hostname) with the port
-        already discarded, so this port-qualified bypass rule went undetected: the
-        guard concluded the fetch was proxied and disabled the blocklist, while
-        httpx2 (which does honor port-qualified NO_PROXY) sent the request direct
-        to loopback.
-        """
-        monkeypatch.setenv("NO_PROXY", "127.0.0.1:8443")
-        with temporary_settings(ssrf_trust_proxy=True):
-            with pytest.raises(SSRFError, match="NO_PROXY"):
-                await validate_url("https://127.0.0.1:8443/jwks")
-
-    async def test_port_qualified_no_proxy_does_not_exclude_other_port(
-        self, monkeypatch
-    ):
-        """A non-matching port is genuinely proxy-routed, so the fetch proceeds."""
-        monkeypatch.setenv("NO_PROXY", "127.0.0.1:8443")
-        with temporary_settings(ssrf_trust_proxy=True):
-            result = await validate_url("https://127.0.0.1:9999/jwks")
-
-        assert result.resolved_ips == []
-
-    async def test_bare_host_no_proxy_still_excludes_any_port(self, monkeypatch):
-        """A bare-host NO_PROXY entry (no port) keeps excluding every port."""
-        monkeypatch.setenv("NO_PROXY", "127.0.0.1")
-        with temporary_settings(ssrf_trust_proxy=True):
-            with pytest.raises(SSRFError, match="NO_PROXY"):
-                await validate_url("https://127.0.0.1:8443/jwks")
-
-    async def test_wildcard_no_proxy_still_excludes(self, monkeypatch):
-        """NO_PROXY=* keeps excluding every host and port."""
-        monkeypatch.setenv("NO_PROXY", "*")
-        with temporary_settings(ssrf_trust_proxy=True):
-            with pytest.raises(SSRFError, match="NO_PROXY"):
-                await validate_url("https://127.0.0.1:8443/jwks")
-
-    async def test_ipv6_bare_host_no_proxy_excludes_regardless_of_port(
-        self, monkeypatch
-    ):
-        """IPv6 NO_PROXY exclusion is host-only in httpx2 — it ignores port entirely.
-
-        Unlike IPv4 addresses and domain names, httpx2 never attaches a port when it
-        turns an IPv6 NO_PROXY entry into a routing rule (it brackets the bare
-        address and matches on host alone), so a bare-address entry excludes that
-        host on every port. _proxy_bypass_target() checks IPv6 literals by bare
-        address rather than appending the port, to match that behavior — verified
-        directly against httpx2's own get_environment_proxies()/URLPattern routing.
-        """
-        monkeypatch.setenv("NO_PROXY", "::1")
-        with temporary_settings(ssrf_trust_proxy=True):
-            with pytest.raises(SSRFError, match="NO_PROXY"):
-                await validate_url("https://[::1]:8443/jwks")
-
-    async def test_ipv6_no_proxy_for_different_host_does_not_exclude(self, monkeypatch):
-        """A NO_PROXY entry for a different IPv6 host leaves the target proxy-routed."""
-        monkeypatch.setenv("NO_PROXY", "::2")
-        with temporary_settings(ssrf_trust_proxy=True):
-            result = await validate_url("https://[::1]:8443/jwks")
-
-        assert result.resolved_ips == []
+        mock_resolve.assert_called_once()
+        assert mock_client_class.call_args[1]["proxy"] is None
+        assert mock_client_class.call_args[1]["trust_env"] is True
