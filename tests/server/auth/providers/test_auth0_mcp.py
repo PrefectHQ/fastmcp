@@ -2,7 +2,7 @@
 
 from unittest.mock import patch
 
-import httpx
+import httpx2
 import pytest
 
 from fastmcp import FastMCP
@@ -268,10 +268,10 @@ class TestAuth0MCPMetadataForwarding:
                 DummyAsyncClient.last_url = url
                 return DummyResponse(metadata_payload)
 
-        real_httpx_client = httpx.AsyncClient
+        real_httpx_client = httpx2.AsyncClient
 
         monkeypatch.setattr(
-            "fastmcp.server.auth.providers.auth0.httpx.AsyncClient",
+            "fastmcp.server.auth.providers.auth0.httpx2.AsyncClient",
             DummyAsyncClient,
         )
 
@@ -290,7 +290,7 @@ class TestAuth0MCPMetadataForwarding:
         app = mcp.http_app()
 
         async with real_httpx_client(
-            transport=httpx.ASGITransport(app=app),
+            transport=httpx2.ASGITransport(app=app),
             base_url=TEST_BASE_URL,
         ) as client:
             response = await client.get("/.well-known/oauth-authorization-server")
@@ -326,8 +326,8 @@ class TestAuth0MCPIntegration:
 
         app = mcp.http_app()
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
             base_url=TEST_BASE_URL,
         ) as client:
             response = await client.post(
@@ -353,8 +353,8 @@ class TestAuth0MCPIntegration:
         mcp = FastMCP("test-server", auth=provider)
         app = mcp.http_app()
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
             base_url=TEST_BASE_URL,
         ) as client:
             response = await client.post(
@@ -380,8 +380,8 @@ class TestAuth0MCPIntegration:
         mcp = FastMCP("test-server", auth=provider)
         app = mcp.http_app()
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
             base_url=TEST_BASE_URL,
         ) as client:
             response = await client.get("/.well-known/oauth-protected-resource/mcp")

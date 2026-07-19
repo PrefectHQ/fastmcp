@@ -39,7 +39,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-import httpx
+import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl
 from starlette.responses import JSONResponse
@@ -305,7 +305,7 @@ class Auth0MCPProvider(RemoteAuthProvider):
 
         async def oauth_authorization_server_metadata(request):
             try:
-                async with httpx.AsyncClient() as client:
+                async with httpx2.AsyncClient() as client:
                     response = await client.get(metadata_url)
                     response.raise_for_status()
                     return JSONResponse(response.json())
