@@ -28,16 +28,10 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-# States before a worker has claimed the execution. While the task is still in
-# one of these, Docket's pub/sub subscription may not yet be live, so we
-# reconcile against Redis to catch terminal transitions that would otherwise be
-# lost (see subscribe_to_task_updates).
-_PENDING_STATES = {ExecutionState.SCHEDULED, ExecutionState.QUEUED}
-
-# Initial interval for reconciling execution state against Redis while the task
-# is still un-claimed (seconds). The interval doubles on each idle reconcile up
-# to the task's poll_interval, so fast tasks are caught within the first ~20ms
-# checks while stalled tasks (no worker available) converge to a gentle cadence.
+# Initial interval for reconciling execution state against Redis (seconds). The
+# interval doubles on each idle reconcile up to the task's poll_interval, so fast
+# tasks are caught within the first ~20ms checks while long-running tasks converge
+# to roughly one sync per advertised poll interval.
 _MIN_RECONCILE_INTERVAL_SECONDS = 0.02
 
 
@@ -61,13 +55,15 @@ async def subscribe_to_task_updates(
         docket: Docket instance for subscribing to execution events
         poll_interval_ms: Poll interval in milliseconds to include in notifications
 
-    Note: Docket's ``execution.subscribe()`` replays the current state and then
-    subscribes to Redis pub/sub. A task that completes during that (fire-and-forget)
-    subscribe window has its terminal state publish lost, so no live event ever
-    arrives — a common case for fast tasks. To close that gap we reconcile the
-    execution against Redis on a short interval while the task is still un-claimed,
-    and stop once a worker has clearly engaged (state leaves the pending set), at
-    which point pub/sub reliably delivers the remaining transitions.
+    Note: Docket's ``execution.subscribe()`` replays the current state and a progress
+    event before it subscribes to Redis pub/sub. A task that completes during that
+    window has its terminal state publish lost, so no live event ever arrives — a
+    common case for fast tasks. Because there is no reliable signal for when the
+    subscription goes live (the replayed state event arrives two iterations early),
+    we simply reconcile the execution against Redis on every idle interval until a
+    terminal state is observed. The interval backs off exponentially toward the
+    task's advertised poll interval, so a long-running task costs about one sync per
+    poll interval while live pub/sub events still short-circuit the wait instantly.
     """
     terminal_states = {
         ExecutionState.COMPLETED,
@@ -85,44 +81,32 @@ async def subscribe_to_task_updates(
         # returns on timeout without cancelling it, so the generator (and its pub/sub
         # subscription) stays intact — unlike wait_for, which would cancel mid-iteration.
         next_event = asyncio.ensure_future(subscription.__anext__())
-        reconcile = True
-        # Reconcile cadence backs off exponentially so a task no worker ever
-        # claims doesn't pin this loop at 50 syncs/sec forever; the task's
-        # advertised poll interval is the natural ceiling.
+        # Reconcile cadence backs off exponentially so a task that runs for a long
+        # time (or that no worker ever claims) doesn't pin this loop at 50 syncs/sec
+        # forever; the task's advertised poll interval is the natural ceiling.
         reconcile_backoff = _MIN_RECONCILE_INTERVAL_SECONDS
         reconcile_ceiling = max(
             poll_interval_ms / 1000, _MIN_RECONCILE_INTERVAL_SECONDS
         )
         try:
             while True:
-                if reconcile:
-                    done, _ = await asyncio.wait(
-                        {next_event}, timeout=reconcile_backoff
-                    )
-                    if not done:
-                        # No live event yet: reconcile against Redis in case a
-                        # terminal transition was published before pub/sub went live.
-                        await execution.sync()
-                        if execution.state in terminal_states:
-                            await _send_status_notification(
-                                session=session,
-                                task_id=task_id,
-                                task_key=task_key,
-                                docket=docket,
-                                state=execution.state,
-                                poll_interval_ms=poll_interval_ms,
-                            )
-                            break
-                        if execution.state not in _PENDING_STATES:
-                            # Worker has claimed the task; pub/sub is now live and
-                            # will deliver the remaining transitions.
-                            reconcile = False
-                        reconcile_backoff = min(
-                            reconcile_backoff * 2, reconcile_ceiling
+                done, _ = await asyncio.wait({next_event}, timeout=reconcile_backoff)
+                if not done:
+                    # No live event yet: reconcile against Redis in case a
+                    # terminal transition was published before pub/sub went live.
+                    await execution.sync()
+                    if execution.state in terminal_states:
+                        await _send_status_notification(
+                            session=session,
+                            task_id=task_id,
+                            task_key=task_key,
+                            docket=docket,
+                            state=execution.state,
+                            poll_interval_ms=poll_interval_ms,
                         )
-                        continue
-                else:
-                    await asyncio.wait({next_event})
+                        break
+                    reconcile_backoff = min(reconcile_backoff * 2, reconcile_ceiling)
+                    continue
 
                 try:
                     event = next_event.result()
@@ -131,8 +115,6 @@ async def subscribe_to_task_updates(
 
                 if event["type"] == "state":
                     state = ExecutionState(event["state"])
-                    if state not in _PENDING_STATES:
-                        reconcile = False
                     # Send notifications/tasks/status when state changes
                     await _send_status_notification(
                         session=session,
