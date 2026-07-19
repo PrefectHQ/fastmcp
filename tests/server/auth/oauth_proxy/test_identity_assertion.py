@@ -207,6 +207,7 @@ class TestIdentityAssertionConfig:
         with pytest.raises(ValueError):
             IdentityAssertion(trusted_issuers=[ISSUER], algorithms={ISSUER: "HS256"})
 
+    @pytest.mark.subprocess_heavy
     def test_lazy_reexport_does_not_import_module(self):
         # fastmcp.server.auth must not load identity_assertion (and its
         # httpx2 dependency) eagerly — the re-export is lazy via __getattr__.
