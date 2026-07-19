@@ -16,16 +16,21 @@ the ≤2025-11-25 era gate. The client-side *answering* path is covered by
 
 from __future__ import annotations
 
+from typing import Annotated
+
 import mcp_types
 import pytest
 from mcp.client._input_required import InputRequiredRoundsExceededError
 from mcp.server.request_state import RequestStateSecurity
 from mcp.shared.exceptions import MCPError
 from mcp_types import ElicitRequest, InputRequiredResult
+from pydantic import Field
 
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.elicitation import ElicitResult
 from fastmcp.client.transports import StreamableHttpTransport
+from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware
+from fastmcp.server.middleware.middleware import Middleware
 from fastmcp.utilities.tests import run_server_async
 
 
@@ -344,7 +349,79 @@ class TestRequestStateSealing:
         assert second.structured_content == {"result": "state=PLAINTEXT-STATE"}
 
 
+class TestMiddlewareInteraction:
+    async def test_suspend_survives_error_handling_middleware(self):
+        """The suspension signal must not be swallowed by error middleware.
+
+        ErrorHandlingMiddleware (and any third-party middleware) legitimately
+        uses a broad ``except Exception``; the suspend travels as a
+        ``BaseException`` subclass precisely so it passes through untouched.
+        """
+
+        class BroadCatchMiddleware(Middleware):
+            async def on_call_tool(self, context, call_next):
+                try:
+                    return await call_next(context)
+                except Exception as e:  # the trap the signal must escape
+                    raise RuntimeError(f"swallowed: {e}") from e
+
+        server = two_question_server()
+        server.add_middleware(ErrorHandlingMiddleware())
+        server.add_middleware(BroadCatchMiddleware())
+
+        asked: list[str] = []
+        async with Client(
+            server, mode="auto", elicitation_handler=_two_answer_handler(asked)
+        ) as client:
+            result = await client.call_tool("book_flight", {})
+        assert result.data == "Booked Paris on 2026-08-01"
+        assert len(asked) == 2
+
+
+class TestAnnotatedReturns:
+    async def test_annotated_union_return_strips_guard_arm(self):
+        """``Annotated[str | InputRequiredResult, ...]`` derives its output
+        schema from the data arm; the guard arm is stripped inside Annotated."""
+        mcp = FastMCP("AnnotatedGuard")
+
+        @mcp.tool
+        async def greet(
+            ctx: Context,
+        ) -> Annotated[str | InputRequiredResult, Field(description="greeting")]:
+            if ctx.input_responses is None:
+                return InputRequiredResult(
+                    input_requests={"name": _elicit("name", "Your name?", "name")},
+                    request_state="",
+                )
+            return "hello"
+
+        tool = await mcp.get_tool("greet")
+        assert tool is not None
+        schema = tool.output_schema
+        assert schema is not None
+        # Derived from the str arm — not poisoned by the guard arm.
+        assert "InputRequired" not in str(schema)
+
+
 class TestRequestStateSecurityConfig:
+    def test_custom_security_requires_stable_audience(self):
+        """A shared-key policy with neither an explicit audience nor a stable
+        server name would stamp per-replica random audiences — rejected at
+        construction with a clear remedy."""
+        with pytest.raises(ValueError, match="stable audience"):
+            FastMCP(request_state_security=RequestStateSecurity(keys=[b"0" * 32]))
+
+        # Either remedy works:
+        FastMCP(
+            name="Stable",
+            request_state_security=RequestStateSecurity(keys=[b"0" * 32]),
+        )
+        FastMCP(
+            request_state_security=RequestStateSecurity(
+                keys=[b"0" * 32], audience="my-service"
+            )
+        )
+
     async def test_explicit_shared_keys_seal_and_complete(self):
         """A server configured with explicit shared keys drives a full loop —
         the multi-replica configuration (RequestStateSecurity(keys=[...]))."""

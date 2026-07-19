@@ -419,6 +419,20 @@ class FastMCP(
         # None means "seal under a per-process ephemeral key" — correct for
         # single-process deployments; multi-replica deployments must pass a
         # policy carrying shared `keys=[...]`.
+        if (
+            request_state_security is not None
+            and request_state_security.audience is None
+            and name is None
+        ):
+            # The request-state boundary stamps an audience claim, defaulting to
+            # the server name. An auto-generated name differs per replica, so a
+            # shared-key multi-replica policy would mint tokens no other replica
+            # accepts. Require a stable identity up front.
+            raise ValueError(
+                "request_state_security requires a stable audience: pass "
+                "FastMCP(name=...) or RequestStateSecurity(audience=...) so "
+                "sealed request state verifies across server instances."
+            )
         self._request_state_security: RequestStateSecurity | None = (
             request_state_security
         )

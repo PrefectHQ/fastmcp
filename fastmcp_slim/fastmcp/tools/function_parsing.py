@@ -71,6 +71,13 @@ def _strip_input_required(tp: Any) -> Any:
     non-serializable return types.
     """
     origin = get_origin(tp)
+    if origin is Annotated:
+        # Annotated[X | InputRequiredResult, meta] — strip inside, keep metadata.
+        inner, *metadata = get_args(tp)
+        stripped = _strip_input_required(inner)
+        if stripped is inner:
+            return tp
+        return Annotated[tuple([stripped, *metadata])]
     if origin is not Union and origin is not types.UnionType:
         return tp
     residual = tuple(a for a in get_args(tp) if not _is_input_required_type(a))

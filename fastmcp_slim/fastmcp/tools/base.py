@@ -86,8 +86,14 @@ def default_serializer(data: Any) -> str:
     ).decode()
 
 
-class ToolInputRequired(Exception):
+class ToolInputRequired(BaseException):
     """Internal signal that a tool suspended to request client input (SEP-2322).
+
+    Subclasses `BaseException` (not `Exception`) for the same reason
+    `asyncio.CancelledError` does: this is control flow, not an error, and it
+    must not be swallowed by the broad `except Exception` handlers that error
+    middleware (including FastMCP's own `ErrorHandlingMiddleware`) legitimately
+    use. It is always caught by name at the `tools/call` wire handler.
 
     A guard tool's body returns an `InputRequiredResult` to ask the client for
     input before it can finish. That result is not tool-output data and must not
