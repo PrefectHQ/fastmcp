@@ -82,7 +82,7 @@ from fastmcp.server.transforms import (
 )
 from fastmcp.server.transforms.visibility import apply_session_transforms, is_enabled
 from fastmcp.settings import DuplicateBehavior as DuplicateBehaviorSetting
-from fastmcp.tools.base import Tool, ToolInputRequired, ToolResult
+from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.tools.tool_transform import ToolTransformConfig
 from fastmcp.utilities.components import FastMCPComponent, _coerce_version
@@ -1250,11 +1250,13 @@ class FastMCP(
             ToolResult when task_meta is None.
             CreateTaskResult when task_meta is provided.
 
+        A guard tool that requests client input (SEP-2322 multi-round-trip)
+        returns an ``InputRequiredToolResult`` (a ``ToolResult`` subclass); it
+        flows back through the middleware chain as an ordinary result and the
+        wire handler unwraps it into an ``InputRequiredResult`` on the response.
+
         Raises:
             NotFoundError: If tool not found or disabled
-            ToolInputRequired: If the tool suspended to request client input
-                (SEP-2322); the wire handler unwraps this into an
-                InputRequiredResult on the response.
             ToolError: If tool execution fails
             ValidationError: If arguments fail validation
         """
@@ -1339,12 +1341,6 @@ class FastMCP(
                     task_meta = replace(task_meta, fn_key=tool.key)
                 try:
                     return await tool._run(arguments or {}, task_meta=task_meta)
-                except ToolInputRequired:
-                    # A guard tool suspended to request client input (SEP-2322).
-                    # This is a control signal, not an execution error — let it
-                    # propagate untouched to the wire handler, ahead of the
-                    # broad error-masking `except Exception` below.
-                    raise
                 except ValidationError as e:
                     # Argument-validation failure (a bad call). FunctionTool
                     # converts pydantic's call-validation error into fastmcp's

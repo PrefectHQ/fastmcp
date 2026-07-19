@@ -103,8 +103,8 @@ class FastMCPProviderTool(Tool):
 
         Passes task_meta through to the child server so it can handle
         backgrounding appropriately. fn_key is already set by the parent
-        server before calling this method. A child tool that suspends to request
-        client input (SEP-2322) raises `ToolInputRequired`, which propagates
+        server before calling this method. A child tool that requests client
+        input (SEP-2322) returns an `InputRequiredToolResult`, which forwards
         through this delegation to the parent's wire handler unchanged.
         """
         # Pass exact version so child executes the correct version

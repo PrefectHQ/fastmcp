@@ -33,8 +33,8 @@ from pydantic.json_schema import SkipJsonSchema
 from fastmcp.decorators import get_fastmcp_meta
 from fastmcp.exceptions import ValidationError
 from fastmcp.tools.base import (
+    InputRequiredToolResult,
     Tool,
-    ToolInputRequired,
     ToolResult,
 )
 from fastmcp.tools.function_parsing import ParsedFunction, _is_object_schema
@@ -373,11 +373,12 @@ class FunctionTool(Tool):
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
         """Run the tool with arguments.
 
-        A tool body may return an `InputRequiredResult` (SEP-2322) to suspend
-        the call and ask the client for input. That is a control signal, not
-        result data, so it is raised as `ToolInputRequired` rather than
-        converted to `ToolResult` content; the wire handler unwraps it and
-        returns it to the client unmodified.
+        A tool body may return an `InputRequiredResult` (SEP-2322) to ask the
+        client for input. Under the stateless multi-round-trip protocol that ask
+        is the full result of this leg, so it is wrapped in an
+        `InputRequiredToolResult` (a `ToolResult` subclass) rather than
+        serialized as content; the ask flows through the middleware chain as an
+        ordinary result and the wire handler returns it to the client unmodified.
         """
         from fastmcp.server.dependencies import without_injected_parameters
 
@@ -427,12 +428,13 @@ class FunctionTool(Tool):
             assert original is not None
             raise original from original.__cause__
 
-        # An `InputRequiredResult` is a multi-round-trip control signal, not
-        # data: hand it off unmodified via `ToolInputRequired` so it reaches the
-        # wire as `resultType: "input_required"` instead of being serialized as
-        # content. The wire handler unwraps it (see `_on_call_tool`).
+        # An `InputRequiredResult` is the full result of this multi-round-trip
+        # leg (SEP-2322), not tool-output data: wrap it in an
+        # `InputRequiredToolResult` so it flows through the middleware chain as
+        # an ordinary result instead of being serialized as content. The wire
+        # handler reads it back out (see `_on_call_tool`).
         if isinstance(result, mcp_types.InputRequiredResult):
-            raise ToolInputRequired(result)
+            return InputRequiredToolResult(result)
 
         return self.convert_result(result)
 

@@ -22,7 +22,7 @@ from fastmcp.prompts.base import Message, Prompt, PromptResult
 from fastmcp.resources.base import Resource, ResourceContent, ResourceResult
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.tools.base import InputRequiredToolResult, Tool, ToolResult
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import FastMCPBaseModel
 
@@ -421,6 +421,15 @@ class ResponseCachingMiddleware(Middleware):
             return cached_value.unwrap()
 
         tool_result: ToolResult = await call_next(context)
+
+        # Never cache a multi-round-trip ask (SEP-2322). An
+        # InputRequiredToolResult is a request for client input on this leg, not
+        # a stable answer; caching it would replay a stale question to later
+        # callers and bypass the tool's own per-round logic. Return it straight
+        # through without storing.
+        if isinstance(tool_result, InputRequiredToolResult):
+            return tool_result
+
         cacheable_tool_result: CacheableToolResult = CacheableToolResult.wrap(
             value=tool_result
         )

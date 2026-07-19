@@ -31,6 +31,7 @@ from fastmcp.client.elicitation import ElicitResult
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware
 from fastmcp.server.middleware.middleware import Middleware
+from fastmcp.tools.base import InputRequiredToolResult, ToolResult
 from fastmcp.utilities.tests import run_server_async
 
 
@@ -249,8 +250,8 @@ class TestInMemoryLoop:
 class TestMountedServer:
     async def test_guard_tool_through_parent(self):
         """A guard tool on a mounted child completes when called through the
-        parent's namespaced name — ToolInputRequired propagates through the
-        provider delegation and is sealed/returned at the parent's wire seam."""
+        parent's namespaced name — the InputRequiredToolResult forwards through
+        the provider delegation and is sealed/returned at the parent's wire seam."""
         parent = FastMCP("parent")
         parent.mount(two_question_server(), namespace="sub")
 
@@ -262,6 +263,60 @@ class TestMountedServer:
 
         assert asked == ["Where would you like to fly?", "When to Paris?"]
         assert result.data == "Booked Paris on 2026-08-01"
+
+
+def _modern_proxy(backend: FastMCP) -> FastMCP:
+    """A FastMCPProxy whose backend client negotiates the modern era, so the
+    backend can emit an `InputRequiredResult` (SEP-2322) for the proxy to
+    round-trip rather than drive to completion internally."""
+    from fastmcp.server.providers.proxy import FastMCPProxy, ProxyClient
+
+    return FastMCPProxy(client_factory=lambda: ProxyClient(backend, mode="auto"))
+
+
+class TestProxyServer:
+    async def test_guard_tool_round_trips_through_proxy(self):
+        """A guard tool behind a proxy completes end-to-end: the backend's ask
+        round-trips into an `InputRequiredToolResult` on the parent (rather than
+        being driven to completion inside the proxy), so the parent's wire
+        handler returns it to the real client, and continuation answers forward
+        back down to the backend."""
+        proxy = _modern_proxy(two_question_server())
+
+        asked: list[str] = []
+        async with Client(
+            proxy, mode="auto", elicitation_handler=_two_answer_handler(asked)
+        ) as client:
+            result = await client.call_tool("book_flight", {})
+
+        assert asked == ["Where would you like to fly?", "When to Paris?"]
+        assert result.data == "Booked Paris on 2026-08-01"
+
+    async def test_proxy_parent_middleware_observes_ask(self):
+        """The proxy round-trip is what lets the parent's own middleware see the
+        ask as a result — it is not swallowed by driving inside the proxy."""
+        observed: list[object] = []
+
+        class RecordingMiddleware(Middleware):
+            async def on_call_tool(self, context, call_next):
+                result = await call_next(context)
+                observed.append(result)
+                return result
+
+        proxy = _modern_proxy(two_question_server())
+        proxy.add_middleware(RecordingMiddleware())
+
+        asked: list[str] = []
+        async with Client(
+            proxy, mode="auto", elicitation_handler=_two_answer_handler(asked)
+        ) as client:
+            result = await client.call_tool("book_flight", {})
+
+        assert result.data == "Booked Paris on 2026-08-01"
+        assert len(observed) == 3
+        assert isinstance(observed[0], InputRequiredToolResult)
+        assert isinstance(observed[1], InputRequiredToolResult)
+        assert not isinstance(observed[2], InputRequiredToolResult)
 
 
 class TestEraGate:
@@ -350,19 +405,25 @@ class TestRequestStateSealing:
 
 
 class TestMiddlewareInteraction:
-    async def test_suspend_survives_error_handling_middleware(self):
-        """The suspension signal must not be swallowed by error middleware.
+    """Each MRTR leg is a complete request→response cycle: an
+    `InputRequiredResult` is the full, legitimate result of that leg, so it
+    flows back through the middleware chain as an ordinary `ToolResult`
+    (specifically an `InputRequiredToolResult`). Middleware observes it as a
+    normal result, not an error and not control flow."""
 
-        ErrorHandlingMiddleware (and any third-party middleware) legitimately
-        uses a broad ``except Exception``; the suspend travels as a
-        ``BaseException`` subclass precisely so it passes through untouched.
+    async def test_completes_with_error_and_broad_except_middleware(self):
+        """An ask is a result, not an error, so error-handling middleware and a
+        broad ``except Exception`` are simply irrelevant — `call_next` returns
+        the ask, nothing is raised, and the loop completes normally.
         """
 
         class BroadCatchMiddleware(Middleware):
             async def on_call_tool(self, context, call_next):
+                # The ask is RETURNED here, never raised, so this except never
+                # fires on a guard round.
                 try:
                     return await call_next(context)
-                except Exception as e:  # the trap the signal must escape
+                except Exception as e:
                     raise RuntimeError(f"swallowed: {e}") from e
 
         server = two_question_server()
@@ -376,6 +437,103 @@ class TestMiddlewareInteraction:
             result = await client.call_tool("book_flight", {})
         assert result.data == "Booked Paris on 2026-08-01"
         assert len(asked) == 2
+
+    async def test_middleware_observes_ask_then_final_result_per_leg(self):
+        """A logging-style recording middleware sees the full chain run on every
+        leg: the ask (`InputRequiredToolResult`) is the observed result on the
+        two guard legs, and the terminal string is the result on the last leg.
+        Three client-visible rounds ⇒ three `on_call_tool` fires."""
+        observed: list[object] = []
+
+        class RecordingMiddleware(Middleware):
+            async def on_call_tool(self, context, call_next):
+                result = await call_next(context)
+                observed.append(result)
+                return result
+
+        server = two_question_server()
+        server.add_middleware(RecordingMiddleware())
+
+        asked: list[str] = []
+        async with Client(
+            server, mode="auto", elicitation_handler=_two_answer_handler(asked)
+        ) as client:
+            result = await client.call_tool("book_flight", {})
+
+        assert result.data == "Booked Paris on 2026-08-01"
+        # One on_call_tool fire per leg — three legs, three observations.
+        assert len(observed) == 3
+        # The first two legs each return the ask as their result; middleware can
+        # identify it by isinstance on the ToolResult subclass.
+        assert isinstance(observed[0], InputRequiredToolResult)
+        assert isinstance(observed[1], InputRequiredToolResult)
+        # Each ask carries the underlying InputRequiredResult unmodified.
+        assert isinstance(observed[0].input_required, InputRequiredResult)
+        # The final leg returns the ordinary terminal result, not an ask.
+        assert isinstance(observed[2], ToolResult)
+        assert not isinstance(observed[2], InputRequiredToolResult)
+        assert observed[2].structured_content == {
+            "result": "Booked Paris on 2026-08-01"
+        }
+
+    async def test_continuation_leg_is_detectable_from_context(self):
+        """Middleware can distinguish an initial leg from a continuation leg via
+        ``context.fastmcp_context.input_responses`` — ``None`` on the first
+        round, present once the client has answered."""
+        input_responses_seen: list[bool] = []
+
+        class DetectMiddleware(Middleware):
+            async def on_call_tool(self, context, call_next):
+                fctx = context.fastmcp_context
+                assert fctx is not None
+                input_responses_seen.append(fctx.input_responses is not None)
+                return await call_next(context)
+
+        server = two_question_server()
+        server.add_middleware(DetectMiddleware())
+
+        asked: list[str] = []
+        async with Client(
+            server, mode="auto", elicitation_handler=_two_answer_handler(asked)
+        ) as client:
+            result = await client.call_tool("book_flight", {})
+
+        assert result.data == "Booked Paris on 2026-08-01"
+        # Leg 1 has no answers yet; legs 2 and 3 are continuations.
+        assert input_responses_seen == [False, True, True]
+
+
+class TestCachingMiddlewareInteraction:
+    async def test_ask_is_not_cached(self):
+        """The response cache must never store an ask: two identical first-leg
+        calls both reach the tool (the second is not served a stale cached
+        question). A cached ask would replay a stale prompt and skip the tool's
+        own per-round logic."""
+        from fastmcp.server.middleware.caching import ResponseCachingMiddleware
+
+        call_count = {"n": 0}
+        mcp = FastMCP("cache-guard")
+
+        @mcp.tool
+        async def ask(ctx: Context) -> str | InputRequiredResult:
+            if ctx.input_responses is None:
+                call_count["n"] += 1
+                return _ask(_elicit("x", "q", "x"), "x", None)
+            return "done"
+
+        mcp.add_middleware(ResponseCachingMiddleware())
+
+        # Two independent first legs (no elicitation handler ⇒ each raises on the
+        # client driver rather than completing), but both must have reached the
+        # tool body — proving the ask was not served from cache.
+        async with Client(mcp, mode="auto") as client:
+            for _ in range(2):
+                first = await client.session.call_tool(
+                    "ask", {}, allow_input_required=True
+                )
+                assert isinstance(first, InputRequiredResult)
+
+        assert call_count["n"] == 2
 
 
 class TestAnnotatedReturns:

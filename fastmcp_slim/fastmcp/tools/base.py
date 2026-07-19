@@ -86,32 +86,6 @@ def default_serializer(data: Any) -> str:
     ).decode()
 
 
-class ToolInputRequired(BaseException):
-    """Internal signal that a tool suspended to request client input (SEP-2322).
-
-    Subclasses `BaseException` (not `Exception`) for the same reason
-    `asyncio.CancelledError` does: this is control flow, not an error, and it
-    must not be swallowed by the broad `except Exception` handlers that error
-    middleware (including FastMCP's own `ErrorHandlingMiddleware`) legitimately
-    use. It is always caught by name at the `tools/call` wire handler.
-
-    A guard tool's body returns an `InputRequiredResult` to ask the client for
-    input before it can finish. That result is not tool-output data and must not
-    be converted to `ToolResult` content, so the run machinery raises this to
-    carry the `InputRequiredResult` unmodified out of the `ToolResult`-typed
-    result path. It propagates through `_run`, `call_tool`, and the middleware
-    chain to the `tools/call` wire handler, which unwraps it, gates it on the
-    negotiated protocol era, and returns the `InputRequiredResult` to the runner.
-
-    This is a framework-internal mechanism: authors only ever *return* an
-    `InputRequiredResult`; they never see or raise this exception.
-    """
-
-    def __init__(self, result: mcp_types.InputRequiredResult) -> None:
-        super().__init__("tool suspended to request client input")
-        self.result = result
-
-
 class ToolResult(BaseModel):
     content: list[ContentBlock] = Field(
         description="List of content blocks for the tool result"
@@ -195,6 +169,44 @@ class ToolResult(BaseModel):
         if self.structured_content is None:
             return self.content
         return self.content, self.structured_content
+
+
+class InputRequiredToolResult(ToolResult):
+    """The full result of a single multi-round-trip leg (SEP-2322).
+
+    The protocol is stateless: each MRTR leg is a complete request→response
+    cycle. When a guard tool returns an `InputRequiredResult` from its body to
+    ask the client for input, that ask is the *legitimate result* of this tool
+    call — not a pause, not an error, not a third control-flow outcome. FastMCP
+    wraps it in this `ToolResult` subclass so it flows through the middleware
+    chain as an ordinary return value: `call_next(...)` returns it, default
+    middleware completes normally on the leg, and middleware authors can
+    identify an ask with a simple `isinstance(result, InputRequiredToolResult)`
+    check.
+
+    Invariant: the wrapped `InputRequiredResult` is never serialized as tool
+    content. `content` is always empty; the wire handler (`_on_call_tool`)
+    reads `.input_required` and returns it to the runner as the
+    `input_required` result. Do not read `.content` / `.structured_content` on
+    this subclass — they carry nothing.
+    """
+
+    input_required: mcp_types.InputRequiredResult = Field(
+        description="The client-input request this leg resolved to (SEP-2322)"
+    )
+
+    def __init__(self, input_required: mcp_types.InputRequiredResult) -> None:
+        # Bypass ToolResult's content-conversion __init__: an input-required
+        # leg carries no tool content (see the invariant above), and
+        # `input_required` is a required field ToolResult.__init__ can't set.
+        BaseModel.__init__(
+            self,
+            content=[],
+            structured_content=None,
+            meta=None,
+            is_error=False,
+            input_required=input_required,
+        )
 
 
 class Tool(FastMCPComponent):
@@ -317,11 +329,11 @@ class Tool(FastMCPComponent):
         `run()` can EITHER return a list of ContentBlocks, or a tuple of
         (list of ContentBlocks, dict of structured output).
 
-        A tool that suspends to request client input (SEP-2322 multi-round-trip)
-        does so by returning an `InputRequiredResult` from its body; the run
-        machinery raises `ToolInputRequired` to carry that signal out of the
-        normal `ToolResult` result path (see `FunctionTool.run`), so `run()`'s
-        declared result type stays `ToolResult`.
+        A tool that requests client input (SEP-2322 multi-round-trip) does so by
+        returning an `InputRequiredResult` from its body; the run machinery wraps
+        that in an `InputRequiredToolResult` — a `ToolResult` subclass — so it
+        stays inside the declared `ToolResult` result type and flows through the
+        middleware chain as an ordinary result (see `FunctionTool.run`).
         """
         raise NotImplementedError("Subclasses must implement run()")
 
@@ -622,4 +634,4 @@ def _convert_to_content(
     return [TextContent(type="text", text=default_serializer(result))]
 
 
-__all__ = ["Tool", "ToolInputRequired", "ToolResult"]
+__all__ = ["InputRequiredToolResult", "Tool", "ToolResult"]
