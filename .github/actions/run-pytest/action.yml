@@ -35,8 +35,11 @@ runs:
           EXTRA_FLAGS=""
         fi
 
+        # Windows previously ran serially: parallel workers crashed intermittently
+        # when many tests spawned stdio subprocesses (#2715, reverted in #2726).
+        # Most of those tests now run in-memory, so parallelism is worth retrying.
         PARALLEL_FLAGS=""
-        if [ "$MAX_PROCS" != "0" ] && [ "${{ runner.os }}" != "Windows" ]; then
+        if [ "$MAX_PROCS" != "0" ]; then
           PARALLEL_FLAGS="--numprocesses auto --maxprocesses $MAX_PROCS --dist worksteal"
         fi
 
