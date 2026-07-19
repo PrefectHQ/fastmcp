@@ -97,6 +97,30 @@ class TestStreamingASGITransport:
             with pytest.raises(ValueError, match="app exploded"):
                 await client.get("/anything")
 
+    async def test_error_after_response_start_truncates_the_body(self):
+        """Post-start failures look like a dropped socket, not a raised exception."""
+
+        async def boom(scope: Scope, receive: Receive, send: Send) -> None:
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [(b"content-type", b"text/plain")],
+                }
+            )
+            # Raise with no checkpoint in between, so the error is guaranteed to be
+            # recorded before the transport's waiter resumes — the scheduling order
+            # that used to surface the failure as a raised exception.
+            raise ValueError("app exploded mid-response")
+
+        async with httpx2.AsyncClient(
+            transport=StreamingASGITransport(boom), base_url="http://testserver"
+        ) as client:
+            response = await client.get("/anything")
+
+        assert response.status_code == 200
+        assert response.content == b""
+
 
 class TestRunAsgiLifespan:
     async def test_startup_and_shutdown_run_once(self):
@@ -127,6 +151,30 @@ class TestRunAsgiLifespan:
         with pytest.raises(RuntimeError, match="startup failed"):
             async with run_asgi_lifespan(app):
                 pass
+
+    async def test_shutdown_failure_raises(self):
+        async def app(scope: Scope, receive: Receive, send: Send) -> None:
+            await receive()
+            await send({"type": "lifespan.startup.complete"})
+            await receive()
+            await send({"type": "lifespan.shutdown.failed", "message": "teardown nope"})
+
+        with pytest.raises(RuntimeError, match="shutdown failed"):
+            async with run_asgi_lifespan(app):
+                pass
+
+    async def test_shutdown_failure_does_not_mask_body_error(self):
+        """A broken teardown must never hide the failure the caller actually cares about."""
+
+        async def app(scope: Scope, receive: Receive, send: Send) -> None:
+            await receive()
+            await send({"type": "lifespan.startup.complete"})
+            await receive()
+            await send({"type": "lifespan.shutdown.failed", "message": "teardown nope"})
+
+        with pytest.raises(ValueError, match="body exploded"):
+            async with run_asgi_lifespan(app):
+                raise ValueError("body exploded")
 
 
 class TestRunServerInMemory:

@@ -2,6 +2,7 @@ import asyncio
 import gc
 import inspect
 import os
+import time
 import weakref
 from pathlib import Path
 
@@ -50,6 +51,24 @@ async def wait_for_log_content(
             await asyncio.sleep(0.01)
 
     return await asyncio.wait_for(_poll(), timeout=timeout)
+
+
+async def wait_for_process_exit(pid: int | None, timeout: float = 5.0) -> None:
+    """Poll until the given pid is gone, failing clearly if it never exits.
+
+    The subprocesses under test self-terminate within a fraction of a second,
+    so a bounded poll costs nothing and turns a hung teardown into a named
+    failure instead of an opaque suite-level timeout.
+    """
+    assert pid is not None
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            psutil.Process(pid)
+        except psutil.NoSuchProcess:
+            return
+        await asyncio.sleep(0.01)
+    pytest.fail(f"Subprocess {pid} was still alive after {timeout}s")
 
 
 class TestParallelCalls:
@@ -156,10 +175,7 @@ class TestKeepAlive:
 
         # This test may fail/hang while debugging because the debugger holds a reference to the underlying transport
 
-        with pytest.raises(psutil.NoSuchProcess):
-            while True:
-                psutil.Process(pid)
-                await asyncio.sleep(0.01)
+        await wait_for_process_exit(pid)
 
     async def test_keep_alive_false_exit_scope_kills_server(self, stdio_script):
         pid: int | None = None
@@ -177,10 +193,7 @@ class TestKeepAlive:
 
         await test_server()
 
-        with pytest.raises(psutil.NoSuchProcess):
-            while True:
-                psutil.Process(pid)
-                await asyncio.sleep(0.01)
+        await wait_for_process_exit(pid)
 
     async def test_keep_alive_false_starts_new_session_across_multiple_calls(
         self, stdio_script
@@ -442,10 +455,7 @@ class TestSubprocessCrashRecovery:
             # Wait for the subprocess to actually exit (it self-terminates
             # via a background timer ~0.1s after the second call) instead
             # of blindly sleeping past the worst case.
-            with pytest.raises(psutil.NoSuchProcess):
-                while True:
-                    psutil.Process(pid1)
-                    await asyncio.sleep(0.01)
+            await wait_for_process_exit(pid1)
 
         # Recovery after clean exit.
         #

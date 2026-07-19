@@ -149,6 +149,7 @@ class StreamingASGITransport(httpx2.AsyncBaseTransport):
         }
 
         request_delivered = False
+        start_received = False
         client_disconnected = anyio.Event()
         response_started = anyio.Event()
         response_status = 0
@@ -169,8 +170,9 @@ class StreamingASGITransport(httpx2.AsyncBaseTransport):
             return {"type": "http.disconnect"}
 
         async def send_response(message: Message) -> None:
-            nonlocal response_status, response_headers
+            nonlocal response_status, response_headers, start_received
             if message["type"] == "http.response.start":
+                start_received = True
                 response_status = message["status"]
                 response_headers = list(message.get("headers", []))
                 response_started.set()
@@ -199,7 +201,10 @@ class StreamingASGITransport(httpx2.AsyncBaseTransport):
         self._task_group.start_soon(run_application)
         try:
             await response_started.wait()
-            if application_error is not None:
+            # Only a failure *before* the start message can fail the request. Once the
+            # response has started the client sees the failure as a truncated body, which
+            # is the same signal a real server over a real socket would give.
+            if application_error is not None and not start_received:
                 raise application_error
         except BaseException:
             # No response will be built, so close the reader the response body would have
@@ -229,7 +234,10 @@ async def run_asgi_lifespan(app: ASGIApp) -> AsyncIterator[None]:
         app: The ASGI application whose lifespan should run.
 
     Raises:
-        RuntimeError: If the application reports `lifespan.startup.failed`.
+        RuntimeError: If the application reports `lifespan.startup.failed`, or reports
+            `lifespan.shutdown.failed` (or crashes during shutdown) while the context
+            body itself completed successfully. A failure inside the body takes
+            precedence and propagates unchanged.
     """
     receive_queue: asyncio.Queue[Message] = asyncio.Queue()
     startup_complete: asyncio.Future[None] = asyncio.get_running_loop().create_future()
@@ -291,9 +299,24 @@ async def run_asgi_lifespan(app: ASGIApp) -> AsyncIterator[None]:
             await asyncio.gather(task, return_exceptions=True)
         raise
 
+    body_failed = False
     try:
         yield
+    except BaseException:
+        body_failed = True
+        raise
     finally:
         await receive_queue.put({"type": "lifespan.shutdown"})
         with anyio.CancelScope(shield=True):
-            await asyncio.gather(shutdown_complete, task, return_exceptions=True)
+            results = await asyncio.gather(
+                shutdown_complete, task, return_exceptions=True
+            )
+        # A harness must surface a broken teardown rather than swallow it — but never at
+        # the cost of masking the failure the body already raised, which is the one the
+        # caller actually needs to see.
+        if not body_failed:
+            for result in results:
+                if isinstance(result, BaseException) and not isinstance(
+                    result, asyncio.CancelledError
+                ):
+                    raise result
