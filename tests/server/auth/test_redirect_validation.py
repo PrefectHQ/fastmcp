@@ -1,13 +1,69 @@
 """Tests for redirect URI validation in OAuth flows."""
 
+from urllib.parse import parse_qsl, urlparse
+
 import pytest
 from pydantic import AnyUrl
 
 from fastmcp.server.auth.redirect_validation import (
     DEFAULT_LOCALHOST_PATTERNS,
+    add_query_params,
     matches_allowed_pattern,
     validate_redirect_uri,
 )
+
+
+class TestAddQueryParams:
+    """Test that add_query_params preserves the registered callback's exact query bytes.
+
+    A registered redirect URI may carry an opaque or signed query string.
+    Decoding it with parse_qsl and re-serializing with urlencode mutates it
+    (a valueless `?flag` becomes `?flag=`, and non-UTF-8 percent-encoded
+    bytes get replaced) which breaks clients that route on, or
+    cryptographically validate, the raw callback query.
+    """
+
+    def test_preserves_valueless_param_and_non_utf8_bytes(self):
+        original_query = "flag&sig=%FF%FE"
+        url = f"https://client.example.com/callback?{original_query}"
+
+        result = add_query_params(
+            url,
+            {
+                "code": "abc123",
+                "state": "xyz state",
+                "iss": "https://issuer.example.com/",
+            },
+        )
+
+        result_query = urlparse(result).query
+
+        # The original query substring must survive byte-for-byte: the
+        # valueless `flag` must not become `flag=`, and the non-UTF-8
+        # percent-encoded `sig` value must not be decoded/replaced.
+        assert result_query.startswith(f"{original_query}&")
+
+        # New params are appended after a single `&`, correctly encoded.
+        appended = result_query[len(original_query) + 1 :]
+        assert dict(parse_qsl(appended)) == {
+            "code": "abc123",
+            "state": "xyz state",
+            "iss": "https://issuer.example.com/",
+        }
+
+    def test_empty_query_has_no_stray_ampersand(self):
+        url = "https://client.example.com/callback"
+
+        result = add_query_params(url, {"code": "abc123"})
+
+        assert result == "https://client.example.com/callback?code=abc123"
+
+    def test_appends_to_existing_ordinary_query(self):
+        url = "https://client.example.com/callback?foo=bar"
+
+        result = add_query_params(url, {"code": "abc123"})
+
+        assert result == "https://client.example.com/callback?foo=bar&code=abc123"
 
 
 class TestMatchesAllowedPattern:

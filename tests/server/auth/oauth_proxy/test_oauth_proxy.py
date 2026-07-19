@@ -254,9 +254,9 @@ class TestOAuthProxyInitialization:
         )
 
         app = Starlette(routes=proxy.get_routes())
-        transport = httpx.ASGITransport(app=app)
+        transport = httpx2.ASGITransport(app=app)
 
-        async with httpx.AsyncClient(
+        async with httpx2.AsyncClient(
             transport=transport, base_url="https://api.example.com"
         ) as client:
             response = await client.get("/.well-known/oauth-authorization-server")
