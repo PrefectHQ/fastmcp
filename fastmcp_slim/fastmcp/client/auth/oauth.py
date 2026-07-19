@@ -415,6 +415,7 @@ class OAuth(OAuthClientProvider):
                     return AuthorizationCodeResult(
                         code=result.code,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
                         state=result.state,
+                        iss=result.iss,
                     )
             except TimeoutError as e:
                 raise TimeoutError(

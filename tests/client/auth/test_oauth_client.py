@@ -3,6 +3,7 @@ import time
 from unittest.mock import patch
 from urllib.parse import urlparse
 
+import anyio
 import httpx2
 import pytest
 from key_value.aio.stores.memory import MemoryStore
@@ -175,6 +176,44 @@ async def test_expired_dynamic_registration_is_retried():
             assert await client.ping()
 
     assert provider.registration_count == 2
+
+
+async def test_oauth_callback_handler_propagates_iss_to_authorization_code_result():
+    """RFC 9207: `OAuth.callback_handler()` (the production, non-headless path)
+    must carry `iss` from the callback query string all the way into the
+    `AuthorizationCodeResult` handed back to the MCP SDK.
+
+    The MCP SDK's `validate_authorization_response_iss` raises when the
+    authorization server metadata advertises
+    `authorization_response_iss_parameter_supported` and the result it
+    receives has no `iss` -- so if this hop drops it, every production OAuth
+    login against an RFC 9207-compliant server (like OAuthProxy) fails, even
+    though the server sent `iss` correctly. `HeadlessOAuth` already carries
+    `iss` through for tests -- this test exercises the real `OAuth` class
+    that production clients actually use.
+    """
+    oauth = OAuth(mcp_url="http://127.0.0.1:9999")
+
+    async def send_callback():
+        await anyio.sleep(0.1)
+        async with httpx2.AsyncClient() as client:
+            response = await client.get(
+                f"http://{oauth._callback_host}:{oauth.redirect_port}/callback",
+                params={
+                    "code": "auth-code-123",
+                    "state": "state-xyz",
+                    "iss": "https://issuer.example.com",
+                },
+            )
+            assert response.status_code == 200
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(send_callback)
+        result = await oauth.callback_handler()
+
+    assert result.code == "auth-code-123"
+    assert result.state == "state-xyz"
+    assert result.iss == "https://issuer.example.com"
 
 
 class TestOAuthClientUrlHandling:

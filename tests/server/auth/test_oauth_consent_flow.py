@@ -111,6 +111,26 @@ def oauth_proxy_https_remember():
     )
 
 
+@pytest.fixture
+def oauth_proxy_https_path():
+    """OAuthProxy with a path component in base_url (no trailing slash).
+
+    Exercises the RFC 9207 issuer consistency across a base_url shape where
+    naive normalization (e.g. force-appending a trailing slash) would produce
+    an `iss` value that no longer matches the discovery document's `issuer`.
+    """
+    return OAuthProxy(
+        upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
+        upstream_token_endpoint="https://github.com/login/oauth/access_token",
+        upstream_client_id="client-id",
+        upstream_client_secret="client-secret",
+        token_verifier=_Verifier(),
+        base_url="https://myserver.example/oauth",
+        client_storage=MemoryStore(),
+        jwt_signing_key="test-secret",
+    )
+
+
 async def _start_flow(
     proxy: OAuthProxy, client_id: str, redirect: str
 ) -> tuple[str, str]:
@@ -631,10 +651,179 @@ class TestConsentSecurity:
             q = parse_qs(parsed.query)
             assert q.get("error") == ["access_denied"]
             assert q.get("state") == ["client-state-xyz"]
+            assert q.get("iss") == ["https://myserver.example/"]
             # Signed denied cookie should be set
             assert "MCP_DENIED_CLIENTS" in ";\n".join(
                 r.headers.get("set-cookie", "").splitlines()
             )
+
+    async def test_deny_redirect_does_not_duplicate_iss_already_in_redirect_uri(
+        self, oauth_proxy_https_remember
+    ):
+        """RFC 9207 P2 regression: a registered redirect_uri may already
+        carry its own `iss` query parameter. Explicit consent denial must
+        not append a second `iss` on top of it -- RFC 6749 §3.1 forbids a
+        response parameter appearing more than once -- and every other
+        query byte on the registered URI (a valueless `flag` and a
+        non-UTF-8 percent-encoded `sig`) must survive untouched.
+        """
+        client_redirect = "http://localhost:5009/callback?iss=tenant&flag&sig=%FF%FE"
+        txn_id, _ = await _start_flow(
+            oauth_proxy_https_remember, "client-dup-iss", client_redirect
+        )
+        app = Starlette(routes=oauth_proxy_https_remember.get_routes())
+        with TestClient(app) as c:
+            consent = c.get(f"/consent?txn_id={txn_id}")
+            csrf = _extract_csrf(consent.text)
+            assert csrf
+            for k, v in consent.cookies.items():
+                c.cookies.set(k, v)
+            r = c.post(
+                "/consent",
+                data={"action": "deny", "txn_id": txn_id, "csrf_token": csrf},
+                follow_redirects=False,
+            )
+            assert r.status_code in (302, 303)
+            loc = r.headers.get("location", "")
+            query = urlparse(loc).query
+            q = parse_qs(query)
+            assert q.get("error") == ["access_denied"]
+            # Exactly one `iss`, corrected to the canonical value -- a
+            # duplicate would make this list have length 2.
+            assert q.get("iss") == ["https://myserver.example/"]
+            # Other query bytes from the registered redirect_uri survive
+            # byte-for-byte.
+            assert "flag" in query
+            assert "sig=%FF%FE" in query
+
+    async def test_deny_redirect_issuer_matches_path_base_url_metadata(
+        self, oauth_proxy_https_path
+    ):
+        """Consent-denial `iss` must match the discovery document exactly.
+
+        Regression test for a base_url with a path and no trailing slash
+        (`https://myserver.example/oauth`): the metadata `issuer` is the
+        unmodified base_url, so the denial redirect's `iss` must match it
+        byte-for-byte rather than force-appending a trailing slash.
+        """
+        client_redirect = "http://localhost:5008/callback"
+        txn_id, _ = await _start_flow(
+            oauth_proxy_https_path, "client-path", client_redirect
+        )
+        app = Starlette(routes=oauth_proxy_https_path.get_routes())
+        with TestClient(app) as c:
+            metadata = c.get("/.well-known/oauth-authorization-server").json()
+            assert metadata["issuer"] == "https://myserver.example/oauth"
+
+            consent = c.get(f"/consent?txn_id={txn_id}")
+            csrf = _extract_csrf(consent.text)
+            assert csrf
+            for k, v in consent.cookies.items():
+                c.cookies.set(k, v)
+            r = c.post(
+                "/consent",
+                data={"action": "deny", "txn_id": txn_id, "csrf_token": csrf},
+                follow_redirects=False,
+            )
+            assert r.status_code in (302, 303)
+            q = parse_qs(urlparse(r.headers.get("location", "")).query)
+            assert q.get("error") == ["access_denied"]
+            assert q.get("iss") == [metadata["issuer"]]
+
+    async def test_remembered_denial_redirects_with_issuer(
+        self, oauth_proxy_https_remember
+    ):
+        """Remembered consent denial redirects with RFC 9207 issuer."""
+        client_id = "client-denied"
+        redirect = "http://localhost:5007/callback"
+        txn_id, _ = await _start_flow(oauth_proxy_https_remember, client_id, redirect)
+        app = Starlette(routes=oauth_proxy_https_remember.get_routes())
+        with TestClient(app) as c:
+            consent = c.get(f"/consent?txn_id={txn_id}")
+            csrf = _extract_csrf(consent.text)
+            assert csrf
+            for k, v in consent.cookies.items():
+                c.cookies.set(k, v)
+            r = c.post(
+                "/consent",
+                data={"action": "deny", "txn_id": txn_id, "csrf_token": csrf},
+                follow_redirects=False,
+            )
+            set_cookie = ";\n".join(r.headers.get("set-cookie", "").splitlines())
+            m = re.search(r"__Host-MCP_DENIED_CLIENTS=([^;]+)", set_cookie)
+            assert m
+            denied_cookie = m.group(1)
+
+            new_txn, _ = await _start_flow(
+                oauth_proxy_https_remember, client_id, redirect
+            )
+            c.cookies.set("__Host-MCP_DENIED_CLIENTS", denied_cookie)
+            r2 = c.get(
+                f"/consent?txn_id={new_txn}",
+                headers={"Sec-Fetch-Site": "none"},
+                follow_redirects=False,
+            )
+
+            assert r2.status_code in (302, 303)
+            loc = r2.headers.get("location", "")
+            parsed = urlparse(loc)
+            assert parsed.scheme == "http" and parsed.netloc.startswith("localhost")
+            q = parse_qs(parsed.query)
+            assert q.get("error") == ["access_denied"]
+            assert q.get("state") == ["client-state-xyz"]
+            assert q.get("iss") == ["https://myserver.example/"]
+
+    async def test_remembered_denial_does_not_duplicate_iss_already_in_redirect_uri(
+        self, oauth_proxy_https_remember
+    ):
+        """RFC 9207 P2 regression: the *remembered/silent* denial path is a
+        separate call site from the explicit deny above, and must
+        independently avoid duplicating `iss` when the registered
+        redirect_uri already carries one.
+        """
+        client_id = "client-denied-dup-iss"
+        redirect = "http://localhost:5010/callback?iss=tenant&flag&sig=%FF%FE"
+        txn_id, _ = await _start_flow(oauth_proxy_https_remember, client_id, redirect)
+        app = Starlette(routes=oauth_proxy_https_remember.get_routes())
+        with TestClient(app) as c:
+            consent = c.get(f"/consent?txn_id={txn_id}")
+            csrf = _extract_csrf(consent.text)
+            assert csrf
+            for k, v in consent.cookies.items():
+                c.cookies.set(k, v)
+            r = c.post(
+                "/consent",
+                data={"action": "deny", "txn_id": txn_id, "csrf_token": csrf},
+                follow_redirects=False,
+            )
+            set_cookie = ";\n".join(r.headers.get("set-cookie", "").splitlines())
+            m = re.search(r"__Host-MCP_DENIED_CLIENTS=([^;]+)", set_cookie)
+            assert m
+            denied_cookie = m.group(1)
+
+            new_txn, _ = await _start_flow(
+                oauth_proxy_https_remember, client_id, redirect
+            )
+            c.cookies.set("__Host-MCP_DENIED_CLIENTS", denied_cookie)
+            r2 = c.get(
+                f"/consent?txn_id={new_txn}",
+                headers={"Sec-Fetch-Site": "none"},
+                follow_redirects=False,
+            )
+
+            assert r2.status_code in (302, 303)
+            loc = r2.headers.get("location", "")
+            query = urlparse(loc).query
+            q = parse_qs(query)
+            assert q.get("error") == ["access_denied"]
+            assert q.get("state") == ["client-state-xyz"]
+            # Exactly one `iss`, corrected to the canonical value -- a
+            # duplicate would make this list have length 2.
+            assert q.get("iss") == ["https://myserver.example/"]
+            # Other query bytes from the registered redirect_uri survive
+            # byte-for-byte.
+            assert "flag" in query
+            assert "sig=%FF%FE" in query
 
     async def test_approve_sets_cookie_and_redirects_to_upstream(
         self, oauth_proxy_https_remember
