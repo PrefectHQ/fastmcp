@@ -871,7 +871,7 @@ def _create_client_factory(
             credentials get forwarded upstream.
             """
             fresh = c.new()
-            fresh._session_kwargs["transport_options"] = PROXY_TRANSPORT_OPTIONS
+            fresh._transport_options = PROXY_TRANSPORT_OPTIONS
             return fresh
 
         if client.is_connected() and type(client) is ProxyClient:
@@ -1187,7 +1187,7 @@ class ProxyClient(Client[ClientTransportT]):
                 self._proxy_restoring_handler_keys.add(key)
         super().__init__(transport=transport, **kwargs)  # ty: ignore[no-matching-overload]
 
-        self._session_kwargs["transport_options"] = PROXY_TRANSPORT_OPTIONS
+        self._transport_options = PROXY_TRANSPORT_OPTIONS
 
     def _bind_restoring_handlers(self) -> None:
         if "roots" in self._proxy_restoring_handler_keys:

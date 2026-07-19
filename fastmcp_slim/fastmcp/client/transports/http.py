@@ -20,7 +20,7 @@ from fastmcp.client.dependencies import get_http_headers
 from fastmcp.client.transports.base import (
     ClientTransport,
     SessionKwargs,
-    pop_transport_options,
+    TransportOptions,
 )
 
 
@@ -145,9 +145,12 @@ class StreamableHttpTransport(ClientTransport):
 
     @contextlib.asynccontextmanager
     async def connect_session(
-        self, **session_kwargs: Unpack[SessionKwargs]
+        self,
+        *,
+        transport_options: TransportOptions | None = None,
+        **session_kwargs: Unpack[SessionKwargs],
     ) -> AsyncIterator[ClientSession]:
-        options, client_session_kwargs = pop_transport_options(session_kwargs)
+        options = transport_options or TransportOptions()
 
         # When used in a proxy, forward the inbound request's authorization
         # header to the upstream server. This is off by default so that a
@@ -207,7 +210,7 @@ class StreamableHttpTransport(ClientTransport):
                 write_stream,
             ),
             options.session_class(
-                read_stream, write_stream, **client_session_kwargs
+                read_stream, write_stream, **session_kwargs
             ) as session,
         ):
             yield session

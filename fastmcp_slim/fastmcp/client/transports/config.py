@@ -6,7 +6,11 @@ from mcp import ClientSession
 from typing_extensions import Unpack
 
 from fastmcp import _install_hints
-from fastmcp.client.transports.base import ClientTransport, SessionKwargs
+from fastmcp.client.transports.base import (
+    ClientTransport,
+    SessionKwargs,
+    TransportOptions,
+)
 from fastmcp.client.transports.memory import FastMCPTransport
 from fastmcp.mcp_config import (
     MCPConfig,
@@ -89,11 +93,16 @@ class MCPConfigTransport(ClientTransport):
 
     @contextlib.asynccontextmanager
     async def connect_session(
-        self, **session_kwargs: Unpack[SessionKwargs]
+        self,
+        *,
+        transport_options: TransportOptions | None = None,
+        **session_kwargs: Unpack[SessionKwargs],
     ) -> AsyncIterator[ClientSession]:
         # Single server - delegate directly to pre-created transport
         if len(self.config.mcpServers) == 1:
-            async with self.transport.connect_session(**session_kwargs) as session:
+            async with self.transport.connect_session(
+                transport_options=transport_options, **session_kwargs
+            ) as session:
                 yield session
             return
 
@@ -138,7 +147,7 @@ class MCPConfigTransport(ClientTransport):
                 raise ConnectionError("All MCP servers failed to connect")
 
             async with FastMCPTransport(mcp=composite).connect_session(
-                **session_kwargs
+                transport_options=transport_options, **session_kwargs
             ) as session:
                 yield session
 

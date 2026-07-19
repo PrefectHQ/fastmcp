@@ -1189,7 +1189,7 @@ class TestProxyOutputSchemaEnforcement:
     async def _call_without_validating(self, server: FastMCP, tool: str):
         """Call through a client that does not enforce the schema itself."""
         client = Client(server)
-        client._session_kwargs["transport_options"] = TransportOptions(
+        client._transport_options = TransportOptions(
             session_class=_ForwardingClientSession
         )
         async with client:
@@ -1300,12 +1300,12 @@ class TestProxySettingsAreNotSharedBetweenClients:
 
         ProxyClient(shared)
 
-        assert plain._session_kwargs.get("transport_options") is None
+        assert plain._transport_options is None
 
     def test_proxy_client_carries_its_own_options(self):
         proxy_client = ProxyClient(StreamableHttpTransport("http://example.com/mcp/"))
 
-        options = proxy_client._session_kwargs.get("transport_options")
+        options = proxy_client._transport_options
         assert options is not None
         assert options.forward_incoming_headers is True
         assert options.session_class is _ForwardingClientSession
@@ -1314,9 +1314,7 @@ class TestProxySettingsAreNotSharedBetweenClients:
         """The proxy builds a fresh client per request via `new()`."""
         proxy_client = ProxyClient(StreamableHttpTransport("http://example.com/mcp/"))
 
-        assert proxy_client.new()._session_kwargs.get(
-            "transport_options"
-        ) is proxy_client._session_kwargs.get("transport_options")
+        assert proxy_client.new()._transport_options is proxy_client._transport_options
 
     def test_a_user_supplied_client_is_not_reconfigured(self):
         """`create_proxy(client)` must not change how the caller's client behaves."""
@@ -1324,7 +1322,7 @@ class TestProxySettingsAreNotSharedBetweenClients:
 
         create_proxy(user_client)
 
-        assert user_client._session_kwargs.get("transport_options") is None
+        assert user_client._transport_options is None
 
 
 class TestProxyForwardingAppliesToEveryBackendClient:
@@ -1353,7 +1351,7 @@ class TestProxyForwardingAppliesToEveryBackendClient:
 
     async def _forwarded(self, server: FastMCP, tool: str = "status"):
         client = Client(server)
-        client._session_kwargs["transport_options"] = TransportOptions(
+        client._transport_options = TransportOptions(
             session_class=_ForwardingClientSession
         )
         async with client:

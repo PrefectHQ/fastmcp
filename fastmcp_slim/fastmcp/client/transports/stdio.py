@@ -15,7 +15,7 @@ from typing_extensions import Unpack
 from fastmcp.client.transports.base import (
     ClientTransport,
     SessionKwargs,
-    pop_transport_options,
+    TransportOptions,
 )
 from fastmcp.utilities.logging import get_logger
 
@@ -67,16 +67,20 @@ class StdioTransport(ClientTransport):
         self.log_file = log_file
 
         self._session: ClientSession | None = None
+        self._session_options: TransportOptions | None = None
         self._connect_task: asyncio.Task | None = None
         self._ready_event = anyio.Event()
         self._stop_event = anyio.Event()
 
     @contextlib.asynccontextmanager
     async def connect_session(
-        self, **session_kwargs: Unpack[SessionKwargs]
+        self,
+        *,
+        transport_options: TransportOptions | None = None,
+        **session_kwargs: Unpack[SessionKwargs],
     ) -> AsyncIterator[ClientSession]:
         try:
-            await self.connect(**session_kwargs)
+            await self.connect(transport_options=transport_options, **session_kwargs)
             yield cast(ClientSession, self._session)
         finally:
             if not self.keep_alive:
@@ -85,8 +89,19 @@ class StdioTransport(ClientTransport):
                 logger.debug("Stdio transport has keep_alive=True, not disconnecting")
 
     async def connect(
-        self, **session_kwargs: Unpack[SessionKwargs]
+        self,
+        *,
+        transport_options: TransportOptions | None = None,
+        **session_kwargs: Unpack[SessionKwargs],
     ) -> ClientSession | None:
+        options = transport_options or TransportOptions()
+
+        # A kept-alive session was built for one client's options; handing it to
+        # a client that wants different ones would silently give it the first
+        # client's behavior. Reconnect instead.
+        if self._connect_task is not None and self._session_options != options:
+            await self.disconnect()
+
         # If the connect task completed or the session's streams are dead,
         # the subprocess has exited. Tear down so we can start fresh.
         if self._connect_task is not None and (
@@ -109,6 +124,7 @@ class StdioTransport(ClientTransport):
                 log_file=self.log_file,
                 # TODO(ty): remove when ty supports Unpack[TypedDict] inference
                 session_kwargs=session_kwargs,  # type: ignore[arg-type]
+                transport_options=options,
                 ready_event=self._ready_event,
                 stop_event=self._stop_event,
                 session_future=session_future,
@@ -125,6 +141,7 @@ class StdioTransport(ClientTransport):
                 raise exception
 
         self._session = await session_future
+        self._session_options = options
         return self._session
 
     async def disconnect(self):
@@ -141,6 +158,7 @@ class StdioTransport(ClientTransport):
         # reset variables and events for potential future reconnects
         self._connect_task = None
         self._session = None
+        self._session_options = None
         self._stop_event = anyio.Event()
         self._ready_event = anyio.Event()
 
@@ -185,14 +203,13 @@ async def _stdio_transport_connect_task(
     cwd: str | None,
     log_file: Path | TextIO | None,
     session_kwargs: SessionKwargs,
+    transport_options: TransportOptions,
     ready_event: anyio.Event,
     stop_event: anyio.Event,
     session_future: asyncio.Future[ClientSession],
 ):
     """A standalone connection task for a stdio transport. It is not a part of the StdioTransport class
     to ensure that the connection task does not hold a reference to the Transport object."""
-
-    options, client_session_kwargs = pop_transport_options(session_kwargs)
 
     try:
         async with contextlib.AsyncExitStack() as stack:
@@ -218,8 +235,8 @@ async def _stdio_transport_connect_task(
                 read_stream, write_stream = transport
                 session_future.set_result(
                     await stack.enter_async_context(
-                        options.session_class(
-                            read_stream, write_stream, **client_session_kwargs
+                        transport_options.session_class(
+                            read_stream, write_stream, **session_kwargs
                         )
                     )
                 )

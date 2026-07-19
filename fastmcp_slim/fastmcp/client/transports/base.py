@@ -2,7 +2,7 @@ import abc
 import contextlib
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, TypeVar, cast
+from typing import Any, Literal, TypeVar
 
 import httpx2
 import mcp_types
@@ -56,26 +56,9 @@ class TransportOptions:
     forward_incoming_headers: bool = False
 
 
-class SessionKwargs(ClientSessionKwargs, total=False):
-    """Session settings a client hands to its transport.
-
-    ``transport_options`` is consumed by the transport rather than forwarded to
-    the session constructor; see `pop_transport_options`.
-    """
-
-    transport_options: TransportOptions | None
-
-
-def pop_transport_options(
-    session_kwargs: SessionKwargs,
-) -> tuple[TransportOptions, ClientSessionKwargs]:
-    """Split the transport's own options off from the constructor kwargs.
-
-    Transports call this before building a session so the remaining kwargs can
-    be splatted into the constructor.
-    """
-    options = session_kwargs.pop("transport_options", None) or TransportOptions()
-    return options, cast(ClientSessionKwargs, session_kwargs)
+# SessionKwargs stays exactly the ClientSession constructor's parameters, so a
+# transport can splat it into ClientSession without filtering.
+SessionKwargs = ClientSessionKwargs
 
 
 class ClientTransport(abc.ABC):
@@ -90,7 +73,10 @@ class ClientTransport(abc.ABC):
     @abc.abstractmethod
     @contextlib.asynccontextmanager
     async def connect_session(
-        self, **session_kwargs: Unpack[SessionKwargs]
+        self,
+        *,
+        transport_options: TransportOptions | None = None,
+        **session_kwargs: Unpack[SessionKwargs],
     ) -> AsyncIterator[ClientSession]:
         """
         Establishes a connection and yields an active ClientSession.
@@ -102,6 +88,9 @@ class ClientTransport(abc.ABC):
         within this context.
 
         Args:
+            transport_options: How the connecting client wants this connection
+                               built. Defaults apply when omitted. A transport
+                               that wraps others must pass this along.
             **session_kwargs: Keyword arguments to pass to the ClientSession
                               constructor (e.g., callbacks, timeouts).
 

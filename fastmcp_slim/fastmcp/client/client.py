@@ -98,6 +98,7 @@ from .transports import (
     StreamableHttpTransport,
     infer_transport,
 )
+from .transports.base import TransportOptions
 
 __all__ = [
     "Client",
@@ -490,6 +491,7 @@ class Client(
 
         # Session context management - see class docstring for detailed explanation
         self._session_state = ClientSessionState()
+        self._transport_options: TransportOptions | None = None
 
         # Track task IDs submitted by this client (for list_tasks support)
         self._submitted_task_ids: set[str] = set()
@@ -656,6 +658,7 @@ class Client(
         # Always reset session state so cloned clients start disconnected and do not
         # share lifecycle state with the original instance.
         new_client._session_state = ClientSessionState()
+        new_client._transport_options = self._transport_options
 
         # Reset mutable task tracking state so new client is independent
         new_client._task_registry = {}
@@ -695,10 +698,17 @@ class Client(
 
     @asynccontextmanager
     async def _context_manager(self):
+        # Only passed when this client actually wants non-default settings, so an
+        # ordinary client never sends an argument a transport might not accept.
+        if self._transport_options is not None:
+            connection = self.transport.connect_session(
+                transport_options=self._transport_options, **self._session_kwargs
+            )
+        else:
+            connection = self.transport.connect_session(**self._session_kwargs)
+
         with catch(get_catch_handlers()):
-            async with self.transport.connect_session(
-                **self._session_kwargs
-            ) as session:
+            async with connection as session:
                 self._session_state.session = session
                 # Initialize the session if auto_initialize is enabled
                 try:

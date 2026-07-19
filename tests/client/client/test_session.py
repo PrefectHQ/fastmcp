@@ -1,6 +1,7 @@
 """Client session and task error propagation tests."""
 
 import asyncio
+from contextlib import asynccontextmanager
 
 import pytest
 from mcp import ClientSession
@@ -8,6 +9,7 @@ from mcp_types import TextContent
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.client.transports import PythonStdioTransport
 from fastmcp.client.transports.base import TransportOptions
 
 
@@ -159,7 +161,7 @@ class TestCustomSessionClass:
             return "pong"
 
         client = Client(server)
-        client._session_kwargs["transport_options"] = TransportOptions(
+        client._transport_options = TransportOptions(
             session_class=RecordingClientSession
         )
         async with client:
@@ -181,3 +183,53 @@ class TestCustomSessionClass:
 
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "pong"
+
+
+class TestKeepAliveSessionsRespectClientOptions:
+    """A cached stdio session must not be handed to a client wanting different options.
+
+    `StdioTransport` keeps its subprocess and session alive between connections
+    by default. Serving that cached session to a second client would give it the
+    first client's behavior — e.g. an ordinary client silently inheriting a
+    proxy's non-validating session.
+    """
+
+    class Reconnected(Exception):
+        """Raised in place of a real teardown so the test stops at the guard."""
+
+    @asynccontextmanager
+    async def cached_connection(self, monkeypatch, options: TransportOptions):
+        """A transport that believes it already holds a session built for `options`."""
+        transport = PythonStdioTransport(script_path=__file__, keep_alive=True)
+
+        async def never_finishes():
+            await asyncio.sleep(60)
+
+        task = asyncio.create_task(never_finishes())
+        transport._connect_task = task
+        transport._session_options = options
+
+        async def fake_disconnect():
+            raise TestKeepAliveSessionsRespectClientOptions.Reconnected
+
+        monkeypatch.setattr(transport, "disconnect", fake_disconnect)
+        try:
+            yield transport
+        finally:
+            task.cancel()
+            transport._connect_task = None
+
+    async def test_matching_options_reuse_the_cached_session(self, monkeypatch):
+        options = TransportOptions()
+        async with self.cached_connection(monkeypatch, options) as transport:
+            assert await transport.connect(transport_options=options) is None
+
+    async def test_differing_options_force_a_reconnect(self, monkeypatch):
+        class OtherSession(ClientSession):
+            pass
+
+        async with self.cached_connection(monkeypatch, TransportOptions()) as transport:
+            with pytest.raises(self.Reconnected):
+                await transport.connect(
+                    transport_options=TransportOptions(session_class=OtherSession)
+                )

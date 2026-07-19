@@ -21,7 +21,7 @@ from fastmcp.client.dependencies import get_http_headers
 from fastmcp.client.transports.base import (
     ClientTransport,
     SessionKwargs,
-    pop_transport_options,
+    TransportOptions,
 )
 from fastmcp.utilities.timeout import normalize_timeout_to_timedelta
 
@@ -117,9 +117,12 @@ class SSETransport(ClientTransport):
 
     @contextlib.asynccontextmanager
     async def connect_session(
-        self, **session_kwargs: Unpack[SessionKwargs]
+        self,
+        *,
+        transport_options: TransportOptions | None = None,
+        **session_kwargs: Unpack[SessionKwargs],
     ) -> AsyncIterator[ClientSession]:
-        options, client_session_kwargs = pop_transport_options(session_kwargs)
+        options = transport_options or TransportOptions()
         client_kwargs: dict[str, Any] = {}
 
         # When used in a proxy, forward the inbound request's authorization
@@ -153,7 +156,7 @@ class SSETransport(ClientTransport):
         async with sse_client(self.url, auth=self.auth, **client_kwargs) as transport:
             read_stream, write_stream = transport
             async with options.session_class(
-                read_stream, write_stream, **client_session_kwargs
+                read_stream, write_stream, **session_kwargs
             ) as session:
                 yield session
 
