@@ -26,7 +26,6 @@ from collections import OrderedDict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, Literal
-from urllib.parse import urlencode
 
 import anyio
 import httpx2
@@ -103,7 +102,10 @@ from fastmcp.server.auth.oauth_proxy.models import (
 )
 from fastmcp.server.auth.oauth_proxy.ui import create_error_html
 from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client
-from fastmcp.server.auth.redirect_validation import validate_redirect_uri
+from fastmcp.server.auth.redirect_validation import (
+    build_client_redirect,
+    validate_redirect_uri,
+)
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 
@@ -2291,10 +2293,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         methods=["POST", "OPTIONS"],
                     )
                 )
-            elif (
-                (self._cimd_manager is not None or self._identity_assertion is not None)
-                and isinstance(route, Route)
-                and route.path.startswith("/.well-known/oauth-authorization-server")
+            elif isinstance(route, Route) and route.path.startswith(
+                "/.well-known/oauth-authorization-server"
             ):
                 client_registration_options = (
                     self.client_registration_options or ClientRegistrationOptions()
@@ -2307,6 +2307,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     revocation_options,
                     supports_identity_assertion=self._identity_assertion is not None,
                 )
+                # RFC 9207: every authorization response we issue carries an
+                # `iss` matching this issuer byte-for-byte, so this route must
+                # always be overridden to advertise support — not just when
+                # CIMD or identity assertion is also enabled.
+                metadata.authorization_response_iss_parameter_supported = True
                 if self._cimd_manager is not None:
                     metadata.client_id_metadata_document_supported = True
                     existing = metadata.token_endpoint_auth_methods_supported or []
@@ -2423,9 +2428,12 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     }
                     if error_description:
                         error_params["error_description"] = error_description
-                    separator = "&" if "?" in client_redirect_uri else "?"
                     return RedirectResponse(
-                        url=f"{client_redirect_uri}{separator}{urlencode(error_params)}",
+                        url=build_client_redirect(
+                            client_redirect_uri,
+                            error_params,
+                            iss=str(self.base_url),
+                        ),
                         status_code=302,
                     )
                 # No trusted redirect_uri available — show local error page
@@ -2591,10 +2599,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 "state": client_state,
             }
 
-            # Add query parameters to client redirect URI
-            separator = "&" if "?" in client_redirect_uri else "?"
-            client_callback_url = (
-                f"{client_redirect_uri}{separator}{urlencode(callback_params)}"
+            client_callback_url = build_client_redirect(
+                client_redirect_uri, callback_params, iss=str(self.base_url)
             )
 
             logger.debug(f"Forwarding to client callback for transaction {txn_id}")

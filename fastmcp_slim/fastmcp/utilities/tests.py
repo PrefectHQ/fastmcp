@@ -270,6 +270,7 @@ class HeadlessOAuth(OAuth):
 
             auth_code = query_params["code"][0]
             state = query_params.get("state", [None])[0]
-            return AuthorizationCodeResult(code=auth_code, state=state)
+            iss = query_params.get("iss", [None])[0]
+            return AuthorizationCodeResult(code=auth_code, state=state, iss=iss)
         else:
             raise RuntimeError(f"Authorization failed: {response.status_code}")
