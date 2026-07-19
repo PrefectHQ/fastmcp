@@ -544,3 +544,30 @@ If you need to support both eras, branch on `ctx.protocol_version`: return an `I
 ### Sampling and roots
 
 Elicitation is the most common request to carry this way, but the same mechanism carries **sampling** and **roots** requests too — the `input_requests` map can hold any of the three, and each answer comes back in `ctx.input_responses` under its key (an `ElicitResult`, `CreateMessageResult`, or `ListRootsResult`). See [Sampling](/servers/sampling) and [Client Roots](/clients/roots) for what those requests contain. `fastmcp.Client` answers all three from the handlers you already configured, so a guard tool that mixes them needs no extra client wiring.
+
+### Middleware
+
+Because each round is a complete request→response cycle, a multi-round tool call runs the **full middleware chain on every round**. `on_call_tool` fires once per round and `call_next(context)` returns that round's result like any other call — there is no held-open call and no special control flow to account for. Default middleware behaves sensibly with no changes: logging logs each round, timing times each round, and error-handling middleware does not fire on an asking round — an ask is a legitimate result, not an error.
+
+An asking round returns an `InputRequiredToolResult` (a `ToolResult` subclass); the final round returns an ordinary `ToolResult`. Middleware that needs to treat the two differently identifies an ask with an `isinstance` check, and tells an initial round from a continuation round by inspecting `ctx.input_responses` (`None` on the first round, present once the client has answered):
+
+```python
+from fastmcp.server.middleware import Middleware
+from fastmcp.tools import InputRequiredToolResult
+
+
+class GuardAwareMiddleware(Middleware):
+    async def on_call_tool(self, context, call_next):
+        is_continuation = context.fastmcp_context.input_responses is not None
+
+        result = await call_next(context)
+
+        if isinstance(result, InputRequiredToolResult):
+            ...  # this round asked the client for input
+        else:
+            ...  # this round returned a final result
+
+        return result
+```
+
+One built-in makes a deliberate exception: the [response caching middleware](/servers/middleware) never stores an `InputRequiredToolResult`, because caching an ask would replay a stale question to a later caller.
