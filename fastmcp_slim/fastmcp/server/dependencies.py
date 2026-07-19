@@ -618,6 +618,7 @@ def get_access_token() -> AccessToken | None:
             # Optional fields
             expires_at=access_token_as_dict.get("expires_at"),
             resource=access_token_as_dict.get("resource"),
+            subject=access_token_as_dict.get("subject"),
             claims=access_token_as_dict.get("claims") or {},
         )
     except Exception as e:

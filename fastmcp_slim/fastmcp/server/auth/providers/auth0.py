@@ -1,14 +1,15 @@
-"""Auth0 OAuth provider for FastMCP.
+"""Auth0 OAuth providers for FastMCP.
 
-This module provides a complete Auth0 integration that's ready to use with
-just the configuration URL, client ID, client secret, audience, and base URL.
+This module provides two Auth0 integrations:
 
-Example:
+- ``Auth0Provider`` — OAuth proxy for fixed Auth0 application credentials
+- ``Auth0MCPProvider`` — resource server for Auth0 Auth for MCP (DCR/CIMD)
+
+Example (OAuth proxy):
     ```python
     from fastmcp import FastMCP
     from fastmcp.server.auth.providers.auth0 import Auth0Provider
 
-    # Simple Auth0 OAuth protection
     auth = Auth0Provider(
         config_url="https://auth0.config.url",
         client_id="your-auth0-client-id",
@@ -19,17 +20,38 @@ Example:
 
     mcp = FastMCP("My Protected Server", auth=auth)
     ```
+
+Example (Auth for MCP):
+    ```python
+    from fastmcp import FastMCP
+    from fastmcp.server.auth.providers.auth0 import Auth0MCPProvider
+
+    auth = Auth0MCPProvider(
+        config_url="https://your-tenant.auth0.com/.well-known/openid-configuration",
+        base_url="http://127.0.0.1:8000",
+    )
+
+    mcp = FastMCP("My MCP Server", auth=auth)
+    ```
 """
 
-from typing import Literal
+from __future__ import annotations
 
+from typing import Any, Literal
+
+import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
+from fastmcp.server.auth import RemoteAuthProvider, TokenVerifier
 from fastmcp.server.auth.oidc_proxy import (
     DEFAULT_OIDC_DISCOVERY_TIMEOUT_SECONDS,
+    OIDCConfiguration,
     OIDCProxy,
 )
+from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 
@@ -159,3 +181,148 @@ class Auth0Provider(OIDCProxy):
             client_id,
             auth0_required_scopes,
         )
+
+
+class Auth0JWTVerifier(JWTVerifier):
+    """JWT verifier for Auth0 MCP access tokens.
+
+    Auth0's ``rfc9068_profile_authz`` token dialect exposes API permissions in
+    the ``permissions`` claim. Standard OAuth ``scope``/``scp`` claims are checked
+    first; ``permissions`` is included when present.
+    """
+
+    def _extract_scopes(self, claims: dict[str, Any]) -> list[str]:
+        scopes = super()._extract_scopes(claims)
+        permissions = claims.get("permissions")
+        if isinstance(permissions, str):
+            return scopes + permissions.split()
+        if isinstance(permissions, list):
+            return scopes + [str(permission) for permission in permissions]
+        return scopes
+
+
+class Auth0MCPProvider(RemoteAuthProvider):
+    """Auth0 resource server provider for Auth for MCP (DCR/CIMD).
+
+    FastMCP validates access tokens issued by Auth0 while Auth0 handles OAuth,
+    dynamic client registration, and CIMD approval in the tenant dashboard.
+
+    Enable the Resource Parameter Compatibility Profile in Auth0 and create an
+    API whose identifier matches this server's resource URL (logged at startup).
+
+    Example:
+        ```python
+        from fastmcp.server.auth.providers.auth0 import Auth0MCPProvider
+
+        auth = Auth0MCPProvider(
+            config_url="https://your-tenant.auth0.com/.well-known/openid-configuration",
+            base_url="http://127.0.0.1:8000",
+        )
+        ```
+    """
+
+    def __init__(
+        self,
+        *,
+        config_url: AnyHttpUrl | str,
+        base_url: AnyHttpUrl | str,
+        resource_base_url: AnyHttpUrl | str | None = None,
+        required_scopes: list[str] | None = None,
+        scopes_supported: list[str] | None = None,
+        resource_name: str | None = None,
+        resource_documentation: AnyHttpUrl | None = None,
+        token_verifier: TokenVerifier | None = None,
+        timeout_seconds: int | None = DEFAULT_OIDC_DISCOVERY_TIMEOUT_SECONDS,
+    ) -> None:
+        """Initialize Auth0 MCP resource server provider.
+
+        Args:
+            config_url: Auth0 OIDC discovery URL
+            base_url: Public URL of this FastMCP server
+            resource_base_url: Optional public base URL for protected resource metadata
+            required_scopes: Scopes or permissions required on every token
+            scopes_supported: Scopes advertised in OAuth metadata
+            resource_name: Optional protected resource name
+            resource_documentation: Optional protected resource documentation URL
+            token_verifier: Optional custom verifier (skips audience auto-binding)
+            timeout_seconds: OIDC discovery timeout during construction
+        """
+        oidc_config = OIDCConfiguration.get_oidc_configuration(
+            AnyHttpUrl(str(config_url)),
+            strict=None,
+            timeout_seconds=timeout_seconds,
+        )
+        self.issuer = str(oidc_config.issuer).rstrip("/")
+        self.base_url = AnyHttpUrl(str(base_url).rstrip("/"))
+
+        parsed_scopes = (
+            parse_scopes(required_scopes) if required_scopes is not None else None
+        )
+
+        self._auto_bind_audience = token_verifier is None
+        if token_verifier is None:
+            token_verifier = Auth0JWTVerifier(
+                jwks_uri=str(oidc_config.jwks_uri),
+                issuer=str(oidc_config.issuer),
+                algorithm="RS256",
+                required_scopes=parsed_scopes,
+            )
+
+        super().__init__(
+            token_verifier=token_verifier,
+            authorization_servers=[AnyHttpUrl(self.issuer)],
+            base_url=self.base_url,
+            resource_base_url=resource_base_url,
+            scopes_supported=scopes_supported,
+            resource_name=resource_name,
+            resource_documentation=resource_documentation,
+        )
+
+    def set_mcp_path(self, mcp_path: str | None) -> None:
+        """Bind the default verifier's audience to this server's resource URL."""
+        super().set_mcp_path(mcp_path)
+        if (
+            self._auto_bind_audience
+            and self._resource_url is not None
+            and isinstance(self.token_verifier, JWTVerifier)
+        ):
+            resource_url = str(self._resource_url)
+            self.token_verifier.audience = resource_url
+            logger.info(
+                "Auth0 tokens will be validated against aud=%s. "
+                "Set your Auth0 API identifier to this URL and enable the "
+                "Resource Parameter Compatibility Profile.",
+                resource_url,
+            )
+
+    def get_routes(
+        self,
+        mcp_path: str | None = None,
+    ) -> list[Route]:
+        """Protected resource routes plus Auth0 authorization server metadata."""
+        routes = super().get_routes(mcp_path)
+        metadata_url = f"{self.issuer}/.well-known/oauth-authorization-server"
+
+        async def oauth_authorization_server_metadata(request):
+            try:
+                async with httpx2.AsyncClient() as client:
+                    response = await client.get(metadata_url)
+                    response.raise_for_status()
+                    return JSONResponse(response.json())
+            except Exception as e:
+                return JSONResponse(
+                    {
+                        "error": "server_error",
+                        "error_description": f"Failed to fetch Auth0 metadata: {e}",
+                    },
+                    status_code=500,
+                )
+
+        routes.append(
+            Route(
+                "/.well-known/oauth-authorization-server",
+                endpoint=oauth_authorization_server_metadata,
+                methods=["GET"],
+            )
+        )
+        return routes

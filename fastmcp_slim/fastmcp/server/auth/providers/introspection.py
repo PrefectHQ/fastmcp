@@ -287,6 +287,7 @@ class IntrospectionTokenVerifier(TokenVerifier):
                     client_id=str(client_id),
                     scopes=scopes,
                     expires_at=int(exp) if exp is not None else None,
+                    subject=introspection_data.get("sub"),
                     claims=introspection_data,  # Store full response for extensibility
                 )
                 self._cache.set(token, result)

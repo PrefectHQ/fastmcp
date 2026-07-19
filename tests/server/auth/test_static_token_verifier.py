@@ -27,6 +27,7 @@ class TestStaticTokenVerifier:
                     "client_id": "test-client",
                     "scopes": ["read", "write"],
                     "expires_at": None,
+                    "sub": "user-42",
                 },
                 "scoped-token": {"client_id": "limited-client", "scopes": ["read"]},
             }
@@ -39,12 +40,14 @@ class TestStaticTokenVerifier:
         assert result.scopes == ["read", "write"]
         assert result.token == "valid-token"
         assert result.expires_at is None
+        assert result.subject == "user-42"
 
-        # Test token with different scopes
+        # Test token with different scopes and no "sub" entry
         result = await verifier.verify_token("scoped-token")
         assert isinstance(result, AccessToken)
         assert result.client_id == "limited-client"
         assert result.scopes == ["read"]
+        assert result.subject is None
 
         # Test invalid token
         result = await verifier.verify_token("invalid-token")

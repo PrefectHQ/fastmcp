@@ -139,6 +139,7 @@ class DiscordTokenVerifier(TokenVerifier):
                     client_id=client_id,
                     scopes=token_scopes,
                     expires_at=expires_at,
+                    subject=user_data.get("id"),
                     claims={
                         "sub": user_data.get("id"),
                         "username": user_data.get("username"),
