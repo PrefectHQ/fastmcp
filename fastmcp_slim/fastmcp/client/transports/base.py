@@ -43,6 +43,11 @@ class ClientTransport(abc.ABC):
 
     """
 
+    # The ClientSession class this transport instantiates. Overridable per
+    # instance for callers that need modified session behavior — e.g. proxies
+    # set a session that skips output-schema validation (see ProxyClient).
+    session_class: type[ClientSession] = ClientSession
+
     @abc.abstractmethod
     @contextlib.asynccontextmanager
     async def connect_session(

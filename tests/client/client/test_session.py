@@ -3,7 +3,10 @@
 import asyncio
 
 import pytest
+from mcp import ClientSession
+from mcp_types import TextContent
 
+from fastmcp import FastMCP
 from fastmcp.client import Client
 
 
@@ -135,3 +138,43 @@ class TestSessionTaskErrorPropagation:
 
             # Restore for cleanup
             client._session_state.session_task = original_task
+
+
+class TestCustomSessionClass:
+    """Transports build the session class the client asks for."""
+
+    async def test_session_class_is_used_when_provided(self):
+        built: list[str] = []
+
+        class RecordingClientSession(ClientSession):
+            def __init__(self, *args, **kwargs):
+                built.append("yes")
+                super().__init__(*args, **kwargs)
+
+        server = FastMCP("Server")
+
+        @server.tool
+        def ping() -> str:
+            return "pong"
+
+        client = Client(server)
+        client.transport.session_class = RecordingClientSession
+        async with client:
+            await client.call_tool("ping")
+
+        assert built == ["yes"]
+
+    async def test_default_session_class_is_client_session(self):
+        server = FastMCP("Server")
+
+        @server.tool
+        def ping() -> str:
+            return "pong"
+
+        client = Client(server)
+        assert client.transport.session_class is ClientSession
+        async with client:
+            result = await client.call_tool("ping")
+
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "pong"

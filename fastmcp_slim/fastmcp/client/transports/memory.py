@@ -88,7 +88,7 @@ class FastMCPTransport(ClientTransport):
                     )
 
                     try:
-                        async with ClientSession(
+                        async with self.session_class(
                             read_stream=client_read,
                             write_stream=client_write,
                             **session_kwargs,

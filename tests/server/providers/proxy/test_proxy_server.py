@@ -18,8 +18,10 @@ from fastmcp.client.transports import FastMCPTransport, StreamableHttpTransport
 from fastmcp.exceptions import ToolError
 from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.server import create_proxy
+from fastmcp.server.middleware import Middleware
 from fastmcp.server.providers.proxy import (
     FastMCPProxy,
+    ForwardingClientSession,
     ProxyClient,
     ProxyProvider,
 )
@@ -1152,3 +1154,129 @@ class TestProxySpanAttributes:
             assert all(v is not None for v in attrs.values()), (
                 f"OpenTelemetry rejects None attribute values; got {attrs!r}"
             )
+
+
+class TestProxyOutputSchemaEnforcement:
+    """A proxy relays tool results; it does not police the backend's schema.
+
+    `ClientSession.call_tool` validates structured content against the output
+    schema the backend advertised. For a proxy that check is misplaced: it
+    turns a backend's schema bug into a proxy error and hides the real
+    response from the client that actually consumes it.
+    """
+
+    @pytest.fixture
+    def backend_violating_its_schema(self) -> FastMCP:
+        mcp = FastMCP("SchemaViolator")
+        schema = {
+            "type": "object",
+            "properties": {"status": {"enum": ["ok", "error"]}},
+            "required": ["status"],
+        }
+
+        @mcp.tool(output_schema=schema)
+        def undeclared_status() -> dict:
+            return {"status": "weird"}
+
+        @mcp.tool(output_schema=schema)
+        def declared_status() -> dict:
+            return {"status": "ok"}
+
+        return mcp
+
+    async def _call_without_validating(self, server: FastMCP, tool: str):
+        """Call through a client that does not enforce the schema itself."""
+        client = Client(server)
+        client.transport.session_class = ForwardingClientSession
+        async with client:
+            return await client.call_tool_mcp(tool, {})
+
+    async def test_proxy_forwards_result_violating_backend_schema(
+        self, backend_violating_its_schema
+    ):
+        proxy = FastMCP("Proxy")
+        proxy.add_provider(
+            ProxyProvider(lambda: ProxyClient(backend_violating_its_schema))
+        )
+
+        result = await self._call_without_validating(proxy, "undeclared_status")
+
+        assert result.is_error is False
+        assert result.structured_content == {"status": "weird"}
+
+    async def test_proxy_forwards_conforming_result_unchanged(
+        self, backend_violating_its_schema
+    ):
+        proxy = FastMCP("Proxy")
+        proxy.add_provider(
+            ProxyProvider(lambda: ProxyClient(backend_violating_its_schema))
+        )
+
+        result = await self._call_without_validating(proxy, "declared_status")
+
+        assert result.is_error is False
+        assert result.structured_content == {"status": "ok"}
+
+    async def test_end_client_still_enforces_the_schema(
+        self, backend_violating_its_schema
+    ):
+        """Skipping validation in the proxy doesn't disarm the real client."""
+        proxy = FastMCP("Proxy")
+        proxy.add_provider(
+            ProxyProvider(lambda: ProxyClient(backend_violating_its_schema))
+        )
+
+        async with Client(proxy) as client:
+            with pytest.raises(RuntimeError, match="Invalid structured content"):
+                await client.call_tool_mcp("undeclared_status", {})
+
+    async def test_direct_client_still_enforces_the_schema(
+        self, backend_violating_its_schema
+    ):
+        """The behavior change is scoped to proxies, not clients generally."""
+        async with Client(backend_violating_its_schema) as client:
+            with pytest.raises(RuntimeError, match="Invalid structured content"):
+                await client.call_tool_mcp("undeclared_status", {})
+
+    async def test_proxied_calls_do_not_refetch_the_backend_tool_list(self):
+        """Validation used to force a `tools/list` on every proxied call.
+
+        The proxy builds a fresh client per request, so the SDK's output-schema
+        cache was always cold and each call paid an extra backend round trip.
+        """
+        counts = {"list": 0, "call": 0}
+
+        class CountingMiddleware(Middleware):
+            async def on_list_tools(self, context, call_next):
+                counts["list"] += 1
+                return await call_next(context)
+
+            async def on_call_tool(self, context, call_next):
+                counts["call"] += 1
+                return await call_next(context)
+
+        backend = FastMCP("Backend")
+        backend.add_middleware(CountingMiddleware())
+
+        @backend.tool(
+            output_schema={
+                "type": "object",
+                "properties": {"n": {"type": "integer"}},
+                "required": ["n"],
+            }
+        )
+        def echo(n: int) -> dict:
+            return {"n": n}
+
+        proxy = FastMCP("Proxy")
+        proxy.add_provider(ProxyProvider(lambda: ProxyClient(backend)))
+
+        async with Client(proxy) as client:
+            await client.call_tool("echo", {"n": 1})
+            lists_after_first = counts["list"]
+
+            for n in range(2, 5):
+                await client.call_tool("echo", {"n": n})
+
+        assert counts["call"] == 4
+        assert counts["list"] == lists_after_first

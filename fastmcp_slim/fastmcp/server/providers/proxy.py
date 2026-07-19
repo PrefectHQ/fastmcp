@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, cast
 import anyio
 import httpx2
 import mcp_types
+from mcp import ClientSession
 from mcp.server.connection import Connection
 from mcp.server.context import ServerRequestContext
 from mcp.shared.exceptions import MCPError
@@ -62,6 +63,22 @@ logger = get_logger(__name__)
 
 # Type alias for client factory functions
 ClientFactoryT = Callable[[], Client] | Callable[[], Awaitable[Client]]
+
+
+class ForwardingClientSession(ClientSession):
+    """A session that does not enforce the backend's declared output schema.
+
+    `ClientSession.call_tool` normally validates a tool's structured content
+    against the output schema the backend advertised, raising if they disagree.
+    That check belongs to whoever consumes the result. A proxy only relays it,
+    and the end client runs the same check for itself, so enforcing it mid-path
+    turns a backend's schema bug into a proxy error and hides the real response.
+    """
+
+    async def validate_tool_result(
+        self, name: str, result: mcp_types.CallToolResult
+    ) -> None:
+        return None
 
 
 def _proxy_upstream_error(error: Exception) -> MCPError:
@@ -1159,6 +1176,10 @@ class ProxyClient(Client[ClientTransportT]):
 
         if isinstance(self.transport, StreamableHttpTransport | SSETransport):
             self.transport.forward_incoming_headers = True
+
+        # A proxy relays results; it does not police the backend's output
+        # schema. See ForwardingClientSession.
+        self.transport.session_class = ForwardingClientSession
 
     def _bind_restoring_handlers(self) -> None:
         if "roots" in self._proxy_restoring_handler_keys:

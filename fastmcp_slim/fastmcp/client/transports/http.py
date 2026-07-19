@@ -202,7 +202,7 @@ class StreamableHttpTransport(ClientTransport):
                 read_stream,
                 write_stream,
             ),
-            ClientSession(read_stream, write_stream, **session_kwargs) as session,
+            self.session_class(read_stream, write_stream, **session_kwargs) as session,
         ):
             yield session
 

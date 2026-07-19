@@ -149,7 +149,7 @@ class SSETransport(ClientTransport):
 
         async with sse_client(self.url, auth=self.auth, **client_kwargs) as transport:
             read_stream, write_stream = transport
-            async with ClientSession(
+            async with self.session_class(
                 read_stream, write_stream, **session_kwargs
             ) as session:
                 yield session
