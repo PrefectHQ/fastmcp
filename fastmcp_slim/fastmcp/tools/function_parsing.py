@@ -56,7 +56,14 @@ def _contains_prefab_type(tp: Any) -> bool:
 
 
 def _is_input_required_type(tp: Any) -> bool:
-    """True when *tp* is the `InputRequiredResult` type (SEP-2322)."""
+    """True when *tp* is the `InputRequiredResult` type (SEP-2322).
+
+    Peels an `Annotated` wrapper first, so a metadata-carrying arm such as
+    ``Annotated[InputRequiredResult, Field(...)]`` is recognized as a guard
+    signal, not just the bare class.
+    """
+    if get_origin(tp) is Annotated:
+        tp = get_args(tp)[0]
     return isinstance(tp, type) and issubclass(tp, mcp_types.InputRequiredResult)
 
 

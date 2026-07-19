@@ -402,6 +402,29 @@ class TestAnnotatedReturns:
         # Derived from the str arm — not poisoned by the guard arm.
         assert "InputRequired" not in str(schema)
 
+    async def test_metadata_on_guard_arm_is_stripped(self):
+        """When only the guard arm carries metadata
+        (``str | Annotated[InputRequiredResult, Field(...)]``), it is still
+        recognized and stripped so the str arm's schema survives."""
+        mcp = FastMCP("AnnotatedGuardArm")
+
+        @mcp.tool
+        async def greet(
+            ctx: Context,
+        ) -> str | Annotated[InputRequiredResult, Field(description="suspend")]:
+            if ctx.input_responses is None:
+                return InputRequiredResult(
+                    input_requests={"name": _elicit("name", "Your name?", "name")},
+                    request_state="",
+                )
+            return "hello"
+
+        tool = await mcp.get_tool("greet")
+        assert tool is not None
+        schema = tool.output_schema
+        assert schema is not None
+        assert "InputRequired" not in str(schema)
+
 
 class TestRequestStateSecurityConfig:
     def test_custom_security_requires_stable_audience(self):
