@@ -273,3 +273,50 @@ class TestTransformChain:
         enabled = [t for t in result if is_enabled(t)]
 
         assert [t.name for t in enabled] == ["public"]
+
+
+class TestMalformedKeyWarning:
+    """Keys missing the '@' delimiter match nothing, so warn at construction."""
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "tool:my_tool",
+            "resource:data://config",
+            "prompt:analyze",
+        ],
+    )
+    def test_warns_on_key_without_delimiter(self, key: str):
+        """A key with no '@' can never match a real component key."""
+        with pytest.warns(UserWarning, match="missing the '@' version delimiter"):
+            Visibility(False, keys={key})
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "tool:my_tool@",
+            "tool:my_tool@v1",
+            "resource:data://config@",
+            "resource:data://user@example.com/profile@",
+        ],
+    )
+    def test_no_warning_on_well_formed_key(self, key: str, recwarn):
+        """Well-formed keys, including URIs containing '@', pass silently."""
+        Visibility(False, keys={key})
+        assert [w for w in recwarn if issubclass(w.category, UserWarning)] == []
+
+    def test_warning_lists_only_malformed_keys(self):
+        """The message names the offending keys and omits the valid ones."""
+        with pytest.warns(UserWarning) as record:
+            Visibility(False, keys={"tool:good@", "tool:bad"})
+
+        message = str(record[0].message)
+        assert "tool:bad" in message
+        assert "tool:good@" not in message
+
+    def test_other_filters_do_not_warn(self, recwarn):
+        """Only `keys` is subject to this validation."""
+        Visibility(False, names={"my_tool"})
+        Visibility(False, tags={"internal"})
+        Visibility(False, match_all=True)
+        assert [w for w in recwarn if issubclass(w.category, UserWarning)] == []

@@ -142,7 +142,7 @@ Keys take the form `{type}:{identifier}@{version}`, where the `@` separates the 
 The delimiter is unconditional because resource URIs may themselves contain `@`. Always emitting it means a key is parsed by splitting on the last `@`, so `resource:data://user@example.com/profile@` is unambiguous.
 
 <Warning>
-Keys are matched by exact string equality. A key that omits the trailing `@` — `tool:delete_everything` rather than `tool:delete_everything@` — matches nothing and the call silently has no effect. Prefer `names` unless you specifically need version-level precision, and read a key off `component.key` rather than assembling it by hand.
+Keys are matched by exact string equality, so a key that omits the trailing `@` — `tool:delete_everything` rather than `tool:delete_everything@` — matches nothing. FastMCP raises a `UserWarning` when it sees a key with no `@`, since such a key can never match. Prefer `names` unless you need version-level precision, and read a key off `component.key` rather than assembling it by hand.
 </Warning>
 
 ### Combining Filters
