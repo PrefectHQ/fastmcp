@@ -70,6 +70,41 @@ def format_ip_for_url(ip_str: str) -> str:
         return ip_str
 
 
+def _proxy_bypass_target(hostname: str, port: int) -> str:
+    """Build the host argument passed to ``urllib.request.proxy_bypass()``.
+
+    httpx2 honors port-qualified ``NO_PROXY`` entries for IPv4 addresses and domain
+    names (``NO_PROXY=127.0.0.1:8443`` excludes only that port), so the port must be
+    included here or a port-specific bypass rule slips past ``proxy_bypass()``
+    undetected — it would report "not bypassed" for a request httpx2 actually sends
+    direct. Verified empirically against both ``proxy_bypass()`` and httpx2's own
+    ``get_environment_proxies()``/``URLPattern`` routing.
+
+    IPv6 is handled separately: httpx2 never attaches a port when it turns an IPv6
+    ``NO_PROXY`` entry into a routing rule — it brackets the bare address and matches
+    on host alone, so such an entry excludes that host on every port. Reproducing that
+    with a port suffix does not work through ``proxy_bypass()``: the bracketed form
+    (``[addr]:port``) never matches any ``NO_PROXY`` entry (``urllib``'s own NO_PROXY
+    parser does not understand brackets), and the unbracketed form (``addr:port``) is
+    ambiguous with a literal IPv6 address that legitimately ends in decimal digits.
+    The bare hostname is therefore not a weaker fallback for IPv6 — it is the
+    construction that actually matches httpx2's real routing, confirmed against
+    ``get_environment_proxies()``/``URLPattern`` the same way as the IPv4 case above.
+
+    Args:
+        hostname: Hostname or IP literal from the parsed URL (no brackets, no port).
+        port: Port the request will be made to.
+
+    Returns:
+        The string to pass to ``proxy_bypass()``.
+    """
+    try:
+        is_ipv6 = isinstance(ipaddress.ip_address(hostname), ipaddress.IPv6Address)
+    except ValueError:
+        is_ipv6 = False
+    return hostname if is_ipv6 else f"{hostname}:{port}"
+
+
 class SSRFError(Exception):
     """Raised when an SSRF protection check fails."""
 
@@ -285,15 +320,26 @@ async def validate_url(url: str, require_path: bool = False) -> ValidatedURL:
         # through the trusted proxy, so confirm it will be before proceeding: an HTTPS
         # request routes only through the https/all proxy entries, and NO_PROXY can
         # still exclude this host. getproxies() ignores NO_PROXY, so consult
-        # proxy_bypass() too. This approximates httpx's own trust_env routing
-        # conservatively — proxy_bypass() does not match NO_PROXY identically to httpx,
-        # but every divergence errs closed (we refuse a fetch httpx would have proxied,
-        # never the reverse), which is the safe direction. If nothing will proxy this
-        # target the fetch would otherwise go out direct with the blocklist already
-        # disabled — no SSRF protection at all — so refuse rather than make an
-        # unprotected request. The setting's contract is crisp: proxy-trust mode
-        # delegates SSRF protection to the proxy, and with no proxy for this target the
-        # fetch cannot proceed.
+        # proxy_bypass() too. This approximates httpx2's own trust_env routing, not an
+        # exact copy of it, and one gap has already bitten us in production: httpx2
+        # honors port-qualified NO_PROXY entries (e.g. NO_PROXY=127.0.0.1:8443 excludes
+        # only that port), so proxy_bypass() must be called with "{hostname}:{port}",
+        # not the bare hostname — a bare-hostname call misses the port qualifier and
+        # concludes "proxied" for a target httpx2 actually sends direct. IPv6 is
+        # handled separately below: httpx2 never attaches a port when it parses an
+        # IPv6 NO_PROXY entry, and neither the bracketed nor the port-suffixed form of
+        # an IPv6 literal reliably matches through proxy_bypass()'s own NO_PROXY
+        # parser, so IPv6 targets are checked by bare address instead — see
+        # _proxy_bypass_target() for the verified behavior behind that split. The
+        # intended contract is that every remaining divergence between this check and
+        # httpx2's real routing errs closed (we refuse a fetch httpx2 would have
+        # proxied, never the reverse); that must be re-verified whenever this function
+        # or the helper below changes, since it does not fall out of the code
+        # automatically. If nothing will proxy this target the fetch would otherwise go
+        # out direct with the blocklist already disabled — no SSRF protection at all —
+        # so refuse rather than make an unprotected request. The setting's contract is
+        # crisp: proxy-trust mode delegates SSRF protection to the proxy, and with no
+        # proxy for this target the fetch cannot proceed.
         proxies = getproxies()
         if "https" not in proxies and "all" not in proxies:
             raise SSRFError(
@@ -302,13 +348,14 @@ async def validate_url(url: str, require_path: bool = False) -> ValidatedURL:
                 f"protection disabled. Point HTTPS_PROXY at the trusted proxy, or "
                 f"unset FASTMCP_SSRF_TRUST_PROXY to restore DNS/IP validation."
             )
-        if proxy_bypass(hostname):
+        bypass_target = _proxy_bypass_target(hostname, port)
+        if proxy_bypass(bypass_target):
             raise SSRFError(
                 f"FASTMCP_SSRF_TRUST_PROXY is enabled and a proxy is configured, but "
-                f"NO_PROXY (or a proxy-bypass rule) excludes {hostname}, so the "
+                f"NO_PROXY (or a proxy-bypass rule) excludes {bypass_target}, so the "
                 f"request would go direct with SSRF protection disabled. Remove "
-                f"{hostname} from NO_PROXY to route it through the proxy, or unset "
-                f"FASTMCP_SSRF_TRUST_PROXY to restore DNS/IP validation."
+                f"{bypass_target} from NO_PROXY to route it through the proxy, or "
+                f"unset FASTMCP_SSRF_TRUST_PROXY to restore DNS/IP validation."
             )
         return ValidatedURL(
             original_url=url,

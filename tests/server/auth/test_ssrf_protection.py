@@ -766,3 +766,88 @@ class TestProxyMode:
         assert resolved_ip in url_called
         assert call_args[1]["headers"]["Host"] == "example.com"
         assert call_args[1]["extensions"] == {"sni_hostname": "example.com"}
+
+
+class TestProxyModeNoProxyPortMatching:
+    """Tests for the port-qualified NO_PROXY check in proxy-trust mode.
+
+    These exercise the real ``urllib.request.proxy_bypass()`` against actual
+    ``NO_PROXY`` environment values instead of mocking it. The bug being tested was
+    in *how* ``validate_url()`` called ``proxy_bypass()`` — it passed the hostname
+    with the port already discarded — so mocking ``proxy_bypass()`` itself would
+    hide exactly the defect under test. Only ``getproxies()`` is mocked, to
+    guarantee an HTTPS proxy is configured without depending on the test
+    environment's actual proxy settings.
+    """
+
+    @pytest.fixture(autouse=True)
+    def https_proxy_configured(self):
+        """A configured HTTPS_PROXY, so the guard reaches the NO_PROXY check."""
+        with patch(
+            "fastmcp.server.auth.ssrf.getproxies",
+            return_value={"https": "http://proxy.internal:3128"},
+        ):
+            yield
+
+    async def test_port_qualified_no_proxy_excludes_matching_port(self, monkeypatch):
+        """NO_PROXY=host:port for the exact target port must refuse (the P1 case).
+
+        Before the fix, validate_url() called proxy_bypass(hostname) with the port
+        already discarded, so this port-qualified bypass rule went undetected: the
+        guard concluded the fetch was proxied and disabled the blocklist, while
+        httpx2 (which does honor port-qualified NO_PROXY) sent the request direct
+        to loopback.
+        """
+        monkeypatch.setenv("NO_PROXY", "127.0.0.1:8443")
+        with temporary_settings(ssrf_trust_proxy=True):
+            with pytest.raises(SSRFError, match="NO_PROXY"):
+                await validate_url("https://127.0.0.1:8443/jwks")
+
+    async def test_port_qualified_no_proxy_does_not_exclude_other_port(
+        self, monkeypatch
+    ):
+        """A non-matching port is genuinely proxy-routed, so the fetch proceeds."""
+        monkeypatch.setenv("NO_PROXY", "127.0.0.1:8443")
+        with temporary_settings(ssrf_trust_proxy=True):
+            result = await validate_url("https://127.0.0.1:9999/jwks")
+
+        assert result.resolved_ips == []
+
+    async def test_bare_host_no_proxy_still_excludes_any_port(self, monkeypatch):
+        """A bare-host NO_PROXY entry (no port) keeps excluding every port."""
+        monkeypatch.setenv("NO_PROXY", "127.0.0.1")
+        with temporary_settings(ssrf_trust_proxy=True):
+            with pytest.raises(SSRFError, match="NO_PROXY"):
+                await validate_url("https://127.0.0.1:8443/jwks")
+
+    async def test_wildcard_no_proxy_still_excludes(self, monkeypatch):
+        """NO_PROXY=* keeps excluding every host and port."""
+        monkeypatch.setenv("NO_PROXY", "*")
+        with temporary_settings(ssrf_trust_proxy=True):
+            with pytest.raises(SSRFError, match="NO_PROXY"):
+                await validate_url("https://127.0.0.1:8443/jwks")
+
+    async def test_ipv6_bare_host_no_proxy_excludes_regardless_of_port(
+        self, monkeypatch
+    ):
+        """IPv6 NO_PROXY exclusion is host-only in httpx2 — it ignores port entirely.
+
+        Unlike IPv4 addresses and domain names, httpx2 never attaches a port when it
+        turns an IPv6 NO_PROXY entry into a routing rule (it brackets the bare
+        address and matches on host alone), so a bare-address entry excludes that
+        host on every port. _proxy_bypass_target() checks IPv6 literals by bare
+        address rather than appending the port, to match that behavior — verified
+        directly against httpx2's own get_environment_proxies()/URLPattern routing.
+        """
+        monkeypatch.setenv("NO_PROXY", "::1")
+        with temporary_settings(ssrf_trust_proxy=True):
+            with pytest.raises(SSRFError, match="NO_PROXY"):
+                await validate_url("https://[::1]:8443/jwks")
+
+    async def test_ipv6_no_proxy_for_different_host_does_not_exclude(self, monkeypatch):
+        """A NO_PROXY entry for a different IPv6 host leaves the target proxy-routed."""
+        monkeypatch.setenv("NO_PROXY", "::2")
+        with temporary_settings(ssrf_trust_proxy=True):
+            result = await validate_url("https://[::1]:8443/jwks")
+
+        assert result.resolved_ips == []
