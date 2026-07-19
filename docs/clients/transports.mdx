@@ -16,7 +16,9 @@ Transports handle the underlying connection between your client and MCP servers.
 STDIO transport communicates with MCP servers through subprocess pipes. When using STDIO, your client launches and manages the server process, controlling its lifecycle and environment.
 
 <Warning>
-STDIO servers inherit only a small allowlist of environment variables — `HOME`, `LOGNAME`, `PATH`, `SHELL`, `TERM`, and `USER`. Anything else in your shell, including API keys and other credentials, does not reach the server unless you pass it through `env` explicitly.
+STDIO servers inherit only a small allowlist of environment variables — just enough to locate an interpreter and a home directory. Anything else in your shell, including API keys and other credentials, does not reach the server unless you pass it through `env` explicitly.
+
+The allowlist is platform-specific. On POSIX systems it is `HOME`, `LOGNAME`, `PATH`, `SHELL`, `TERM`, and `USER`; on Windows it is `APPDATA`, `HOMEDRIVE`, `HOMEPATH`, `LOCALAPPDATA`, `PATH`, `PATHEXT`, `PROCESSOR_ARCHITECTURE`, `SYSTEMDRIVE`, `SYSTEMROOT`, `TEMP`, `USERNAME`, and `USERPROFILE`.
 </Warning>
 
 ```python

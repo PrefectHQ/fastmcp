@@ -44,6 +44,11 @@ async def elicitation_handler(
     if not user_input:
         return ElicitResult(action="decline")
 
+    # URL requests and empty-object schemas have no response type to construct,
+    # so accepting is the whole response.
+    if response_type is None:
+        return ElicitResult(action="accept")
+
     # Create response using the provided dataclass type
     return response_type(value=user_input)
 
