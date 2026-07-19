@@ -60,13 +60,16 @@ BASE_URL=http://localhost:8000
 
 ### Step 3: FastMCP Configuration
 
-Create your FastMCP server file and use the DescopeProvider to handle all the OAuth integration automatically:
+Create your FastMCP server file and use the DescopeProvider to handle all the OAuth integration automatically. Nothing reads `.env` automatically, so load it explicitly with [python-dotenv](https://pypi.org/project/python-dotenv/) (`pip install python-dotenv`) before constructing the provider — otherwise the values you just wrote stay invisible to `os.environ`.
 
 ```python server.py
 import os
 
+from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.descope import DescopeProvider
+
+load_dotenv()
 
 # DescopeProvider accepts either supported Well-Known URL format.
 auth_provider = DescopeProvider(
