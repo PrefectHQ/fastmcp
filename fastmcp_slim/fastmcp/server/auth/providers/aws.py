@@ -86,6 +86,7 @@ class AWSCognitoTokenVerifier(JWTVerifier):
             client_id=access_token.client_id,
             scopes=access_token.scopes,
             expires_at=access_token.expires_at,
+            subject=access_token.subject,
             claims=cognito_claims,
         )
 

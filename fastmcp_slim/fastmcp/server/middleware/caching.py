@@ -49,7 +49,7 @@ def _to_base_model(value: FastMCPBaseModel, model_type: type[BaseModelT]) -> Bas
     return model_type.model_validate(field_values)
 
 
-class CachableResourceContent(FastMCPBaseModel):
+class CacheableResourceContent(FastMCPBaseModel):
     """A wrapper for ResourceContent that can be cached."""
 
     content: str | bytes
@@ -57,10 +57,10 @@ class CachableResourceContent(FastMCPBaseModel):
     meta: dict[str, Any] | None = None
 
 
-class CachableResourceResult(FastMCPBaseModel):
+class CacheableResourceResult(FastMCPBaseModel):
     """A wrapper for ResourceResult that can be cached."""
 
-    contents: list[CachableResourceContent]
+    contents: list[CacheableResourceContent]
     meta: dict[str, Any] | None = None
 
     def get_size(self) -> int:
@@ -70,7 +70,7 @@ class CachableResourceResult(FastMCPBaseModel):
     def wrap(cls, value: ResourceResult) -> Self:
         return cls(
             contents=[
-                CachableResourceContent(
+                CacheableResourceContent(
                     content=item.content, mime_type=item.mime_type, meta=item.meta
                 )
                 for item in value.contents
@@ -90,7 +90,7 @@ class CachableResourceResult(FastMCPBaseModel):
         )
 
 
-class CachableToolResult(FastMCPBaseModel):
+class CacheableToolResult(FastMCPBaseModel):
     content: list[mcp_types.ContentBlock]
     structured_content: dict[str, Any] | None
     meta: dict[str, Any] | None
@@ -114,7 +114,7 @@ class CachableToolResult(FastMCPBaseModel):
         )
 
 
-class CachableMessage(FastMCPBaseModel):
+class CacheableMessage(FastMCPBaseModel):
     """A wrapper for Message that can be cached."""
 
     role: str
@@ -126,10 +126,10 @@ class CachableMessage(FastMCPBaseModel):
     )
 
 
-class CachablePromptResult(FastMCPBaseModel):
+class CacheablePromptResult(FastMCPBaseModel):
     """A wrapper for PromptResult that can be cached."""
 
-    messages: list[CachableMessage]
+    messages: list[CacheableMessage]
     description: str | None = None
     meta: dict[str, Any] | None = None
 
@@ -140,7 +140,7 @@ class CachablePromptResult(FastMCPBaseModel):
     def wrap(cls, value: PromptResult) -> Self:
         return cls(
             messages=[
-                CachableMessage(role=m.role, content=m.content) for m in value.messages
+                CacheableMessage(role=m.role, content=m.content) for m in value.messages
             ],
             description=value.description,
             meta=value.meta,
@@ -287,23 +287,25 @@ class ResponseCachingMiddleware(Middleware):
             default_collection="prompts/list",
         )
 
-        self._read_resource_cache: PydanticAdapter[CachableResourceResult] = (
+        self._read_resource_cache: PydanticAdapter[CacheableResourceResult] = (
             PydanticAdapter(
                 key_value=self._stats,
-                pydantic_model=CachableResourceResult,
+                pydantic_model=CacheableResourceResult,
                 default_collection="resources/read",
             )
         )
 
-        self._get_prompt_cache: PydanticAdapter[CachablePromptResult] = PydanticAdapter(
-            key_value=self._stats,
-            pydantic_model=CachablePromptResult,
-            default_collection="prompts/get",
+        self._get_prompt_cache: PydanticAdapter[CacheablePromptResult] = (
+            PydanticAdapter(
+                key_value=self._stats,
+                pydantic_model=CacheablePromptResult,
+                default_collection="prompts/get",
+            )
         )
 
-        self._call_tool_cache: PydanticAdapter[CachableToolResult] = PydanticAdapter(
+        self._call_tool_cache: PydanticAdapter[CacheableToolResult] = PydanticAdapter(
             key_value=self._stats,
-            pydantic_model=CachableToolResult,
+            pydantic_model=CacheableToolResult,
             default_collection="tools/call",
         )
 
@@ -326,15 +328,15 @@ class ResponseCachingMiddleware(Middleware):
         tools: Sequence[Tool] = await call_next(context)
 
         # Turn any subclass of Tool into a Tool
-        cachable_tools = [_to_base_model(tool, Tool) for tool in tools]
+        cacheable_tools = [_to_base_model(tool, Tool) for tool in tools]
 
         await self._list_tools_cache.put(
             key=cache_key,
-            value=cachable_tools,
+            value=cacheable_tools,
             ttl=self._list_tools_settings.get("ttl", FIVE_MINUTES_IN_SECONDS),
         )
 
-        return cachable_tools
+        return cacheable_tools
 
     @override
     async def on_list_resources(
@@ -355,17 +357,17 @@ class ResponseCachingMiddleware(Middleware):
         resources: Sequence[Resource] = await call_next(context)
 
         # Turn any subclass of Resource into a Resource
-        cachable_resources = [
+        cacheable_resources = [
             _to_base_model(resource, Resource) for resource in resources
         ]
 
         await self._list_resources_cache.put(
             key=cache_key,
-            value=cachable_resources,
+            value=cacheable_resources,
             ttl=self._list_resources_settings.get("ttl", FIVE_MINUTES_IN_SECONDS),
         )
 
-        return cachable_resources
+        return cacheable_resources
 
     @override
     async def on_list_prompts(
@@ -386,15 +388,15 @@ class ResponseCachingMiddleware(Middleware):
         prompts: Sequence[Prompt] = await call_next(context)
 
         # Turn any subclass of Prompt into a Prompt
-        cachable_prompts = [_to_base_model(prompt, Prompt) for prompt in prompts]
+        cacheable_prompts = [_to_base_model(prompt, Prompt) for prompt in prompts]
 
         await self._list_prompts_cache.put(
             key=cache_key,
-            value=cachable_prompts,
+            value=cacheable_prompts,
             ttl=self._list_prompts_settings.get("ttl", FIVE_MINUTES_IN_SECONDS),
         )
 
-        return cachable_prompts
+        return cacheable_prompts
 
     @override
     async def on_call_tool(
@@ -419,17 +421,17 @@ class ResponseCachingMiddleware(Middleware):
             return cached_value.unwrap()
 
         tool_result: ToolResult = await call_next(context)
-        cachable_tool_result: CachableToolResult = CachableToolResult.wrap(
+        cacheable_tool_result: CacheableToolResult = CacheableToolResult.wrap(
             value=tool_result
         )
 
         await self._call_tool_cache.put(
             key=cache_key,
-            value=cachable_tool_result,
+            value=cacheable_tool_result,
             ttl=self._call_tool_settings.get("ttl", ONE_HOUR_IN_SECONDS),
         )
 
-        return cachable_tool_result.unwrap()
+        return cacheable_tool_result.unwrap()
 
     @override
     async def on_read_resource(
@@ -445,13 +447,13 @@ class ResponseCachingMiddleware(Middleware):
         cache_key: str = _make_read_resource_cache_key(
             msg=context.message, auth_key=_get_auth_partition_key()
         )
-        cached_value: CachableResourceResult | None
+        cached_value: CacheableResourceResult | None
 
         if cached_value := await self._read_resource_cache.get(key=cache_key):
             return cached_value.unwrap()
 
         value: ResourceResult = await call_next(context)
-        cached_value = CachableResourceResult.wrap(value)
+        cached_value = CacheableResourceResult.wrap(value)
 
         await self._read_resource_cache.put(
             key=cache_key,
@@ -480,7 +482,7 @@ class ResponseCachingMiddleware(Middleware):
             return cached_value.unwrap()
 
         value: PromptResult = await call_next(context)
-        cached_value = CachablePromptResult.wrap(value)
+        cached_value = CacheablePromptResult.wrap(value)
 
         await self._get_prompt_cache.put(
             key=cache_key,

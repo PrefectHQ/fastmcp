@@ -32,7 +32,7 @@ from fastmcp.prompts.function_prompt import FunctionPrompt
 from fastmcp.resources.base import Resource
 from fastmcp.server.middleware.caching import (
     ANONYMOUS_AUTH_KEY,
-    CachableToolResult,
+    CacheableToolResult,
     CallToolSettings,
     ResponseCachingMiddleware,
     ResponseCachingStatistics,
@@ -571,7 +571,7 @@ class TestResponseCachingMiddlewareIntegration:
             )
 
 
-class TestCachableToolResult:
+class TestCacheableToolResult:
     def test_wrap_and_unwrap(self):
         tool_result = ToolResult(
             "unstructured content",
@@ -579,7 +579,7 @@ class TestCachableToolResult:
             meta={"meta": "data"},
         )
 
-        cached_tool_result = CachableToolResult.wrap(tool_result).unwrap()
+        cached_tool_result = CacheableToolResult.wrap(tool_result).unwrap()
 
         assert cached_tool_result.content == tool_result.content
         assert cached_tool_result.structured_content == tool_result.structured_content
@@ -588,7 +588,7 @@ class TestCachableToolResult:
     def test_wrap_and_unwrap_preserves_is_error(self):
         tool_result = ToolResult("boom", is_error=True)
 
-        cached_tool_result = CachableToolResult.wrap(tool_result).unwrap()
+        cached_tool_result = CacheableToolResult.wrap(tool_result).unwrap()
 
         assert cached_tool_result.is_error is True
 

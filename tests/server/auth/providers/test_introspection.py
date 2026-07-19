@@ -138,6 +138,7 @@ class TestIntrospectionTokenVerifier:
         assert access_token.client_id == "user-123"
         assert access_token.scopes == ["read", "write"]
         assert access_token.expires_at is not None
+        assert access_token.subject == "user-123"
         assert access_token.claims["active"] is True
         assert access_token.claims["username"] == "testuser"
 
@@ -372,6 +373,7 @@ class TestIntrospectionTokenVerifier:
 
         assert access_token is not None
         assert access_token.client_id == "user-456"
+        assert access_token.subject == "user-456"
 
     async def test_client_id_defaults_to_unknown(
         self, verifier: IntrospectionTokenVerifier, httpx_mock: HTTPXMock
@@ -390,6 +392,7 @@ class TestIntrospectionTokenVerifier:
 
         assert access_token is not None
         assert access_token.client_id == "unknown"
+        assert access_token.subject is None
 
     def test_initialization_with_client_secret_post(self):
         """Test verifier initialization with client_secret_post method."""

@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
+from mcp.server.auth.provider import AccessToken as SDKAccessToken
 from starlette.requests import Request
 
 from fastmcp.server.auth import AccessToken
@@ -166,3 +167,55 @@ class TestStaleAccessToken:
         finally:
             auth_context_var.reset(auth_token)
             fastmcp_request_ctx.reset(request_token)
+
+
+class TestAccessTokenSubjectConversion:
+    """Regression tests for issue #4266.
+
+    When a ``TokenVerifier`` returns the SDK's own ``AccessToken`` (or any
+    object that isn't FastMCP's ``AccessToken`` subclass), ``get_access_token()``
+    converts it via ``model_dump()``. That conversion previously dropped the
+    ``subject`` field entirely.
+    """
+
+    def test_subject_carried_over_when_converting_sdk_access_token(self):
+        """A raw SDK AccessToken with a populated subject survives conversion."""
+        sdk_token = SDKAccessToken(
+            token="sdk-token",
+            client_id="test-client",
+            scopes=["read"],
+            subject="user-99",
+        )
+        user = AuthenticatedUser(sdk_token)
+        scope = {"type": "http", "user": user, "auth": MagicMock()}
+        mock_request = Request(scope)
+
+        request_token = fastmcp_request_ctx.set(_make_ctx(mock_request))
+        try:
+            result = get_access_token()
+        finally:
+            fastmcp_request_ctx.reset(request_token)
+
+        assert result is not None
+        assert not isinstance(sdk_token, AccessToken)  # confirms conversion ran
+        assert result.subject == "user-99"
+
+    def test_subject_none_when_converting_sdk_access_token_without_subject(self):
+        """A raw SDK AccessToken with no subject converts cleanly to subject=None."""
+        sdk_token = SDKAccessToken(
+            token="sdk-token-no-subject",
+            client_id="test-client",
+            scopes=["read"],
+        )
+        user = AuthenticatedUser(sdk_token)
+        scope = {"type": "http", "user": user, "auth": MagicMock()}
+        mock_request = Request(scope)
+
+        request_token = fastmcp_request_ctx.set(_make_ctx(mock_request))
+        try:
+            result = get_access_token()
+        finally:
+            fastmcp_request_ctx.reset(request_token)
+
+        assert result is not None
+        assert result.subject is None

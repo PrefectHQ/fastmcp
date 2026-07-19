@@ -164,6 +164,22 @@ Resource-not-found responses from the core `resources/read` handler previously u
 
 *Verify:* `fastmcp_slim/fastmcp/exceptions.py` (`to_mcp_error`); `fastmcp_slim/fastmcp/server/mixins/mcp_operations.py`; `tests/test_exceptions.py`.
 
+### `Cachable*` response-cache models renamed to `Cacheable*` — Breaking (rename) <!-- codespell:ignore -->
+
+The response-caching middleware's Pydantic wrapper models — used to serialize cached tool, resource, and prompt results for `ResponseCachingMiddleware` — carried a spelling typo. `CachableToolResult`, `CachableResourceContent`, `CachableResourceResult`, `CachableMessage`, and `CachablePromptResult` are renamed to `CacheableToolResult`, `CacheableResourceContent`, `CacheableResourceResult`, `CacheableMessage`, and `CacheablePromptResult`. None of these classes are re-exported from `fastmcp` or any package `__init__.py`, so the realistic blast radius is limited to code that imported the old names directly from `fastmcp.server.middleware.caching`:
+
+```python
+# Before (now raises ImportError):
+#   from fastmcp.server.middleware.caching import CachableToolResult
+
+# After
+from fastmcp.server.middleware.caching import CacheableToolResult
+```
+
+There is deliberately no compatibility alias for the old spelling.
+
+*Verify:* `fastmcp_slim/fastmcp/server/middleware/caching.py`.
+
 ## Client
 
 The `fastmcp.Client` public API is preserved exactly. The client stays a wrapper around `mcp.ClientSession` in legacy/handshake mode; the first-class `mcp.client.Client` is deliberately not adopted in this PR.

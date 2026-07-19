@@ -1,16 +1,23 @@
 import time
 from collections.abc import AsyncGenerator
 from typing import Any, cast
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from joserfc import jwk as jose_jwk
 from joserfc import jwt
 from joserfc.jws import JWSRegistry
 from joserfc.registry import HeaderParameter
+from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
+from starlette.requests import Request
 
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.jwt import JWKData, JWKSData, JWTVerifier, RSAKeyPair
+from fastmcp.server.dependencies import (
+    FastMCPRequestContext,
+    fastmcp_request_ctx,
+    get_access_token,
+)
 from fastmcp.utilities.tests import run_server_async
 from tests.utilities.httpx2_mock import HTTPXMock
 
@@ -337,6 +344,7 @@ class TestSymmetricKeyJWT:
         assert "read" in access_token.scopes
         assert "write" in access_token.scopes
         assert access_token.expires_at is not None
+        assert access_token.subject == "test-user"
 
     async def test_symmetric_token_with_different_algorithms(
         self, symmetric_key_helper: SymmetricKeyHelper
@@ -480,6 +488,106 @@ class TestSymmetricKeyJWT:
         # Should fail because provider expects HS256
         access_token = await provider.load_access_token(token)
         assert access_token is None
+
+
+def _create_token_without_sub(
+    rsa_key_pair: RSAKeyPair,
+    *,
+    issuer: str = "https://test.example.com",
+    audience: str | None = None,
+) -> str:
+    """Sign a JWT with no 'sub' claim, to exercise the missing-subject path."""
+    payload: dict[str, str | int] = {
+        "iss": issuer,
+        "iat": int(time.time()),
+        "exp": int(time.time()) + 3600,
+    }
+    if audience:
+        payload["aud"] = audience
+    signing_key = jose_jwk.import_key(
+        rsa_key_pair.private_key.get_secret_value(), "RSA"
+    )
+    return jwt.encode({"alg": "RS256"}, payload, signing_key, algorithms=["RS256"])
+
+
+class TestJWTAccessTokenSubject:
+    """Regression tests for issue #4266.
+
+    ``get_access_token().subject`` was always ``None``, even when the
+    authorization server supplied a ``sub`` claim, because neither the
+    JWT verifier nor the dependency-layer conversion carried it through.
+    """
+
+    async def test_subject_populated_from_sub_claim(
+        self, bearer_provider: JWTVerifier, rsa_key_pair: RSAKeyPair
+    ):
+        """A JWT bearing a 'sub' claim results in a populated subject."""
+        token = rsa_key_pair.create_token(
+            subject="user-42",
+            issuer="https://test.example.com",
+            audience="https://api.example.com",
+        )
+
+        access_token = await bearer_provider.load_access_token(token)
+
+        assert access_token is not None
+        assert access_token.subject == "user-42"
+
+    async def test_subject_is_none_without_sub_claim(
+        self, bearer_provider: JWTVerifier, rsa_key_pair: RSAKeyPair
+    ):
+        """A JWT with no 'sub' claim yields subject=None instead of crashing."""
+        token = _create_token_without_sub(
+            rsa_key_pair, audience="https://api.example.com"
+        )
+
+        access_token = await bearer_provider.load_access_token(token)
+
+        assert access_token is not None
+        assert access_token.subject is None
+
+    async def test_get_access_token_returns_subject_for_realistic_jwt_request(
+        self, bearer_provider: JWTVerifier, rsa_key_pair: RSAKeyPair
+    ):
+        """End-to-end path a real authenticated request actually takes.
+
+        Mirrors ``mcp.server.auth.middleware.bearer_auth.BearerAuthBackend``,
+        which wraps whatever the ``TokenVerifier`` returns directly into
+        ``AuthenticatedUser`` and stores it on ``request.scope["user"]``.
+        ``get_access_token()`` reads that object first, before ever reaching
+        the dependency-layer conversion block - so this is the path that
+        must carry ``subject`` through for real JWT-authenticated requests.
+        """
+        token = rsa_key_pair.create_token(
+            subject="user-42",
+            issuer="https://test.example.com",
+            audience="https://api.example.com",
+        )
+        access_token = await bearer_provider.load_access_token(token)
+        assert access_token is not None
+
+        user = AuthenticatedUser(access_token)
+        request = Request({"type": "http", "user": user, "auth": MagicMock()})
+
+        ctx_token = fastmcp_request_ctx.set(
+            FastMCPRequestContext(
+                session=MagicMock(),
+                request_id="0",
+                meta=None,
+                request=request,
+                protocol_version="2025-06-18",
+                close_sse_stream=None,
+                lifespan_context=MagicMock(),
+                _srctx=MagicMock(meta=None),
+            )
+        )
+        try:
+            result = get_access_token()
+        finally:
+            fastmcp_request_ctx.reset(ctx_token)
+
+        assert result is not None
+        assert result.subject == "user-42"
 
 
 class TestBearerTokenJWKS:
