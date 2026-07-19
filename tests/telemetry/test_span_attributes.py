@@ -8,6 +8,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.sdk.trace.sampling import Decision, Sampler, SamplingResult
 from opentelemetry.trace import Span as APISpan
+from opentelemetry.util import types as otel_types
 
 from fastmcp.client.telemetry import client_span
 from fastmcp.server.telemetry import delegate_span, seam_span, server_span
@@ -46,6 +47,59 @@ class NonForwardingSampler(Sampler):
 
     def get_description(self) -> str:
         return "NonForwardingSampler"
+
+
+class RedactingSampler(Sampler):
+    """Forwards the attributes it receives, but replaces `mcp.method.name`.
+
+    Mirrors a real-world sampler that deliberately alters a FastMCP attribute
+    (e.g. redacting the method name for privacy) rather than failing to
+    forward attributes at all. The restore-missing-attributes helper must
+    respect this decision: `mcp.method.name` is present on the span, just not
+    with FastMCP's original value, so it must not be overwritten.
+    """
+
+    def should_sample(
+        self,
+        parent_context: Context | None,
+        trace_id: int,
+        name: str,
+        kind: object = None,
+        attributes: otel_types.Attributes = None,
+        links: object = None,
+        trace_state: object = None,
+    ) -> SamplingResult:
+        forwarded = dict(attributes or {})
+        forwarded["mcp.method.name"] = "REDACTED"
+        return SamplingResult(Decision.RECORD_AND_SAMPLE, attributes=forwarded)
+
+    def get_description(self) -> str:
+        return "RedactingSampler"
+
+
+class AttributeAddingSampler(Sampler):
+    """Forwards the attributes it receives unchanged and adds its own.
+
+    Mirrors a sampler that annotates spans with sampling-policy metadata.
+    Both the sampler's own attribute and FastMCP's attributes must survive.
+    """
+
+    def should_sample(
+        self,
+        parent_context: Context | None,
+        trace_id: int,
+        name: str,
+        kind: object = None,
+        attributes: otel_types.Attributes = None,
+        links: object = None,
+        trace_state: object = None,
+    ) -> SamplingResult:
+        forwarded = dict(attributes or {})
+        forwarded["sampling.policy"] = "always_on"
+        return SamplingResult(Decision.RECORD_AND_SAMPLE, attributes=forwarded)
+
+    def get_description(self) -> str:
+        return "AttributeAddingSampler"
 
 
 def test_known_span_attributes_are_available_on_start(
@@ -203,3 +257,73 @@ def test_attributes_survive_a_non_forwarding_sampler(
     spans = [s for s in exporter.get_finished_spans() if s.name == span_name]
     assert len(spans) == 1
     assert dict(spans[0].attributes or {}) == expected_attrs
+
+
+@pytest.mark.parametrize(
+    ("span_factory", "span_name", "expected_attrs"), SPAN_HELPER_CASES
+)
+def test_redacted_attribute_survives_a_redacting_sampler(
+    monkeypatch: pytest.MonkeyPatch,
+    span_factory: Callable[[], AbstractContextManager[APISpan]],
+    span_name: str,
+    expected_attrs: dict[str, object],
+) -> None:
+    """A sampler that deliberately replaces one of FastMCP's attributes (e.g.
+    redacting `mcp.method.name` for privacy) must have that decision survive.
+
+    Restoring must only fill in attributes the sampler dropped, never
+    overwrite attributes the sampler kept and intentionally changed.
+    """
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider(sampler=RedactingSampler())
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = provider.get_tracer("test")
+    monkeypatch.setattr("fastmcp.client.telemetry.get_tracer", lambda: tracer)
+    monkeypatch.setattr("fastmcp.server.telemetry.get_tracer", lambda: tracer)
+
+    with span_factory():
+        pass
+
+    spans = [s for s in exporter.get_finished_spans() if s.name == span_name]
+    assert len(spans) == 1
+    attrs = dict(spans[0].attributes or {})
+
+    # The redaction must survive — not be clobbered by a blanket reapply.
+    assert attrs["mcp.method.name"] == "REDACTED"
+
+    # Every other FastMCP attribute the sampler forwarded unchanged is
+    # untouched, and any it dropped are still restored.
+    for key, value in expected_attrs.items():
+        if key == "mcp.method.name":
+            continue
+        assert attrs[key] == value
+
+
+@pytest.mark.parametrize(
+    ("span_factory", "span_name", "expected_attrs"), SPAN_HELPER_CASES
+)
+def test_sampler_added_attribute_survives_alongside_fastmcp_attributes(
+    monkeypatch: pytest.MonkeyPatch,
+    span_factory: Callable[[], AbstractContextManager[APISpan]],
+    span_name: str,
+    expected_attrs: dict[str, object],
+) -> None:
+    """A sampler that forwards attributes unchanged and adds its own must
+    keep both: its own attribute and every FastMCP attribute."""
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider(sampler=AttributeAddingSampler())
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = provider.get_tracer("test")
+    monkeypatch.setattr("fastmcp.client.telemetry.get_tracer", lambda: tracer)
+    monkeypatch.setattr("fastmcp.server.telemetry.get_tracer", lambda: tracer)
+
+    with span_factory():
+        pass
+
+    spans = [s for s in exporter.get_finished_spans() if s.name == span_name]
+    assert len(spans) == 1
+    attrs = dict(spans[0].attributes or {})
+
+    assert attrs["sampling.policy"] == "always_on"
+    for key, value in expected_attrs.items():
+        assert attrs[key] == value

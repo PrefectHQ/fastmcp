@@ -33,7 +33,7 @@ from typing_extensions import TypeVar
 from fastmcp import settings
 from fastmcp.exceptions import ToolError
 from fastmcp.server.sampling.sampling_tool import SamplingTool
-from fastmcp.telemetry import get_tracer
+from fastmcp.telemetry import get_tracer, restore_missing_attributes
 from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.tools.tool_transform import TransformedTool
 from fastmcp.utilities.async_utils import gather
@@ -319,17 +319,18 @@ async def execute_tools(
             kind=SpanKind.INTERNAL,
             attributes=span_attrs,
         ) as span:
-            # Reapply: `attributes=span_attrs` above lets on_start hooks and
+            # Restore: `attributes=span_attrs` above lets on_start hooks and
             # the sampler see these values at creation time. But OTel's
             # Tracer.start_span builds the span from
             # `sampling_result.attributes`, not the `attributes` kwarg
             # directly — a custom Sampler whose SamplingResult.attributes
             # defaults to None silently drops everything we passed.
-            # Reapplying here (additive, can't clobber anything a sampler
-            # legitimately added) guarantees FastMCP's attributes survive
-            # regardless of sampler behavior.
+            # Restoring only the keys still missing (rather than reapplying
+            # everything) guarantees FastMCP's attributes survive a
+            # non-forwarding sampler while leaving alone anything a sampler
+            # deliberately set, redacted, or replaced.
             if span.is_recording():
-                span.set_attributes(span_attrs)
+                restore_missing_attributes(span, span_attrs)
             try:
                 result_value = await tool.run(tool_use.input)
                 return ToolResultContent(
@@ -577,16 +578,17 @@ async def sample_step_impl(
         record_exception=False,
         set_status_on_exception=False,
     ) as span:
-        # Reapply: `attributes=span_attrs` above lets on_start hooks and the
+        # Restore: `attributes=span_attrs` above lets on_start hooks and the
         # sampler see these values at creation time. But OTel's
         # Tracer.start_span builds the span from
         # `sampling_result.attributes`, not the `attributes` kwarg directly —
         # a custom Sampler whose SamplingResult.attributes defaults to None
-        # silently drops everything we passed. Reapplying here (additive,
-        # can't clobber anything a sampler legitimately added) guarantees
-        # FastMCP's attributes survive regardless of sampler behavior.
+        # silently drops everything we passed. Restoring only the keys still
+        # missing (rather than reapplying everything) guarantees FastMCP's
+        # attributes survive a non-forwarding sampler while leaving alone
+        # anything a sampler deliberately set, redacted, or replaced.
         if span.is_recording():
-            span.set_attributes(span_attrs)
+            restore_missing_attributes(span, span_attrs)
         try:
             if use_fallback:
                 response = await call_sampling_handler(

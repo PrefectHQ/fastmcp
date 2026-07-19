@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
 from fastmcp.exceptions import ToolError as _ToolError
-from fastmcp.telemetry import get_tracer
+from fastmcp.telemetry import get_tracer, restore_missing_attributes
 
 
 @contextmanager
@@ -42,16 +42,17 @@ def client_span(
     with tracer.start_as_current_span(
         name, kind=SpanKind.CLIENT, attributes=attrs
     ) as span:
-        # Reapply: `attributes=attrs` above lets on_start hooks and the
+        # Restore: `attributes=attrs` above lets on_start hooks and the
         # sampler see these values at creation time. But OTel's
         # Tracer.start_span builds the span from
         # `sampling_result.attributes`, not the `attributes` kwarg directly —
         # a custom Sampler whose SamplingResult.attributes defaults to None
-        # silently drops everything we passed. Reapplying here (additive,
-        # can't clobber anything a sampler legitimately added) guarantees
-        # FastMCP's attributes survive regardless of sampler behavior.
+        # silently drops everything we passed. Restoring only the keys still
+        # missing (rather than reapplying everything) guarantees FastMCP's
+        # attributes survive a non-forwarding sampler while leaving alone
+        # anything a sampler deliberately set, redacted, or replaced.
         if span.is_recording():
-            span.set_attributes(attrs)
+            restore_missing_attributes(span, attrs)
         try:
             yield span
         except Exception as e:

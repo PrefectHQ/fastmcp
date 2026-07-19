@@ -16,6 +16,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.sdk.trace.sampling import Decision, Sampler, SamplingResult
 from opentelemetry.trace import StatusCode
+from opentelemetry.util import types as otel_types
 
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.sampling import RequestContext, SamplingMessage, SamplingParams
@@ -54,6 +55,54 @@ class NonForwardingSampler(Sampler):
 
     def get_description(self) -> str:
         return "NonForwardingSampler"
+
+
+class RedactingSampler(Sampler):
+    """Forwards the attributes it receives, but replaces `mcp.method.name`.
+
+    See `tests/telemetry/test_span_attributes.py` for the full explanation:
+    a sampler can legitimately keep an attribute FastMCP set while replacing
+    its value (e.g. redacting the method name for privacy), and that decision
+    must survive the restore step.
+    """
+
+    def should_sample(
+        self,
+        parent_context: OTelContext | None,
+        trace_id: int,
+        name: str,
+        kind: object = None,
+        attributes: otel_types.Attributes = None,
+        links: object = None,
+        trace_state: object = None,
+    ) -> SamplingResult:
+        forwarded = dict(attributes or {})
+        forwarded["mcp.method.name"] = "REDACTED"
+        return SamplingResult(Decision.RECORD_AND_SAMPLE, attributes=forwarded)
+
+    def get_description(self) -> str:
+        return "RedactingSampler"
+
+
+class AttributeAddingSampler(Sampler):
+    """Forwards the attributes it receives unchanged and adds its own."""
+
+    def should_sample(
+        self,
+        parent_context: OTelContext | None,
+        trace_id: int,
+        name: str,
+        kind: object = None,
+        attributes: otel_types.Attributes = None,
+        links: object = None,
+        trace_state: object = None,
+    ) -> SamplingResult:
+        forwarded = dict(attributes or {})
+        forwarded["sampling.policy"] = "always_on"
+        return SamplingResult(Decision.RECORD_AND_SAMPLE, attributes=forwarded)
+
+    def get_description(self) -> str:
+        return "AttributeAddingSampler"
 
 
 @pytest.fixture
@@ -328,3 +377,206 @@ class TestAttributesSurviveANonForwardingSampler:
         # The sampler never forwards attributes, so on_start legitimately sees
         # none — this documents that limitation rather than asserting around it.
         assert non_forwarding_recorder.attributes["sampling tool echo_tool"] == {}
+
+
+class TestAttributeRestoreRespectsSampler:
+    """Restoring missing attributes must not clobber attributes a sampler
+    deliberately kept and modified, and must coexist with attributes a
+    sampler adds of its own."""
+
+    @pytest.fixture
+    def redacting_tracer(
+        self, monkeypatch: pytest.MonkeyPatch, trace_exporter: InMemorySpanExporter
+    ) -> None:
+        provider = TracerProvider(sampler=RedactingSampler())
+        provider.add_span_processor(SimpleSpanProcessor(trace_exporter))
+        tracer = provider.get_tracer("test")
+        monkeypatch.setattr("fastmcp.server.sampling.run.get_tracer", lambda: tracer)
+
+    @pytest.fixture
+    def attribute_adding_tracer(
+        self, monkeypatch: pytest.MonkeyPatch, trace_exporter: InMemorySpanExporter
+    ) -> None:
+        provider = TracerProvider(sampler=AttributeAddingSampler())
+        provider.add_span_processor(SimpleSpanProcessor(trace_exporter))
+        tracer = provider.get_tracer("test")
+        monkeypatch.setattr("fastmcp.server.sampling.run.get_tracer", lambda: tracer)
+
+    async def test_create_message_span_keeps_redacted_value(
+        self,
+        trace_exporter: InMemorySpanExporter,
+        redacting_tracer: None,
+    ):
+        def sampling_handler(
+            messages: list[SamplingMessage],
+            params: SamplingParams,
+            ctx: RequestContext,
+        ) -> str:
+            return "sampled-text"
+
+        mcp = FastMCP("sampling-server")
+
+        @mcp.tool
+        async def ask(question: str, context: Context) -> str:
+            result = await context.sample(messages=question)
+            return result.text or ""
+
+        async with Client(mcp, sampling_handler=sampling_handler) as client:
+            await client.call_tool("ask", {"question": "hi"})
+
+        spans = _spans_named(trace_exporter, "sampling create_message")
+        assert len(spans) == 1
+        span = spans[0]
+        assert span.attributes is not None
+        # The redaction survives — it must not be overwritten by a restore.
+        assert span.attributes["mcp.method.name"] == "REDACTED"
+        # Attributes the sampler didn't touch are still present.
+        assert span.attributes["fastmcp.server.name"] == "sampling-server"
+
+    async def test_create_message_span_keeps_sampler_added_attribute(
+        self,
+        trace_exporter: InMemorySpanExporter,
+        attribute_adding_tracer: None,
+    ):
+        def sampling_handler(
+            messages: list[SamplingMessage],
+            params: SamplingParams,
+            ctx: RequestContext,
+        ) -> str:
+            return "sampled-text"
+
+        mcp = FastMCP("sampling-server")
+
+        @mcp.tool
+        async def ask(question: str, context: Context) -> str:
+            result = await context.sample(messages=question)
+            return result.text or ""
+
+        async with Client(mcp, sampling_handler=sampling_handler) as client:
+            await client.call_tool("ask", {"question": "hi"})
+
+        spans = _spans_named(trace_exporter, "sampling create_message")
+        assert len(spans) == 1
+        span = spans[0]
+        assert span.attributes is not None
+        assert span.attributes["sampling.policy"] == "always_on"
+        assert span.attributes["mcp.method.name"] == "sampling/createMessage"
+        assert span.attributes["fastmcp.server.name"] == "sampling-server"
+
+    async def test_tool_span_keeps_redacted_value(
+        self,
+        trace_exporter: InMemorySpanExporter,
+        redacting_tracer: None,
+    ):
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
+
+        def echo_tool(text: str) -> str:
+            return text
+
+        call_count = 0
+
+        def sampling_handler(
+            messages: list[SamplingMessage],
+            params: SamplingParams,
+            ctx: RequestContext,
+        ) -> CreateMessageResultWithTools:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return CreateMessageResultWithTools(
+                    role="assistant",
+                    content=[
+                        ToolUseContent(
+                            type="tool_use",
+                            id="call_1",
+                            name="echo_tool",
+                            input={"text": "hi"},
+                        )
+                    ],
+                    model="test-model",
+                    stop_reason="toolUse",
+                )
+            return CreateMessageResultWithTools(
+                role="assistant",
+                content=[TextContent(type="text", text="done")],
+                model="test-model",
+                stop_reason="endTurn",
+            )
+
+        mcp = FastMCP(sampling_handler=sampling_handler)
+
+        @mcp.tool
+        async def driver(context: Context) -> str:
+            result = await context.sample(messages="go", tools=[echo_tool])
+            return result.text or ""
+
+        async with Client(mcp) as client:
+            await client.call_tool("driver", {})
+
+        spans = _spans_named(trace_exporter, "sampling tool echo_tool")
+        assert len(spans) == 1
+        span = spans[0]
+        assert span.attributes is not None
+        # RedactingSampler only touches mcp.method.name, which this span
+        # doesn't set — its attributes are forwarded unchanged, confirming
+        # the restore step doesn't disturb them either.
+        assert span.attributes["gen_ai.tool.name"] == "echo_tool"
+        assert span.attributes["fastmcp.tool.use_id"] == "call_1"
+
+    async def test_tool_span_keeps_sampler_added_attribute(
+        self,
+        trace_exporter: InMemorySpanExporter,
+        attribute_adding_tracer: None,
+    ):
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
+
+        def echo_tool(text: str) -> str:
+            return text
+
+        call_count = 0
+
+        def sampling_handler(
+            messages: list[SamplingMessage],
+            params: SamplingParams,
+            ctx: RequestContext,
+        ) -> CreateMessageResultWithTools:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return CreateMessageResultWithTools(
+                    role="assistant",
+                    content=[
+                        ToolUseContent(
+                            type="tool_use",
+                            id="call_1",
+                            name="echo_tool",
+                            input={"text": "hi"},
+                        )
+                    ],
+                    model="test-model",
+                    stop_reason="toolUse",
+                )
+            return CreateMessageResultWithTools(
+                role="assistant",
+                content=[TextContent(type="text", text="done")],
+                model="test-model",
+                stop_reason="endTurn",
+            )
+
+        mcp = FastMCP(sampling_handler=sampling_handler)
+
+        @mcp.tool
+        async def driver(context: Context) -> str:
+            result = await context.sample(messages="go", tools=[echo_tool])
+            return result.text or ""
+
+        async with Client(mcp) as client:
+            await client.call_tool("driver", {})
+
+        spans = _spans_named(trace_exporter, "sampling tool echo_tool")
+        assert len(spans) == 1
+        span = spans[0]
+        assert span.attributes is not None
+        assert span.attributes["sampling.policy"] == "always_on"
+        assert span.attributes["gen_ai.tool.name"] == "echo_tool"
+        assert span.attributes["fastmcp.tool.use_id"] == "call_1"

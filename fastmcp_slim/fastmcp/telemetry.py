@@ -21,9 +21,9 @@ Example usage with SDK:
     ```
 """
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from opentelemetry import context as otel_context
 from opentelemetry import propagate, trace
@@ -135,6 +135,65 @@ def record_span_error(span: Span, exception: BaseException) -> None:
     span.set_status(Status(StatusCode.ERROR))
 
 
+@runtime_checkable
+class _AttributeReadableSpan(Protocol):
+    """Structural type for spans that expose their current attributes.
+
+    The `opentelemetry-api` `Span` ABC has no way to read attributes back —
+    only SDK span implementations (e.g. `opentelemetry.sdk.trace.ReadableSpan`)
+    expose `.attributes`. FastMCP only depends on `opentelemetry-api`, so this
+    module can't import the SDK class to `isinstance`-check against it. A
+    runtime-checkable `Protocol` gets the same structural narrowing without
+    that import: spans that don't expose `.attributes` (e.g. `NonRecordingSpan`)
+    simply fail the check.
+    """
+
+    @property
+    def attributes(self) -> Mapping[str, otel_types.AttributeValue] | None: ...
+
+
+def restore_missing_attributes(
+    span: Span, attrs: Mapping[str, otel_types.AttributeValue]
+) -> None:
+    """Restore FastMCP attributes a sampler dropped, without touching the rest.
+
+    `Tracer.start_span` builds the span from `SamplingResult.attributes`, not
+    the `attributes=` kwarg it was given for creation — a custom `Sampler`
+    whose `SamplingResult.attributes` defaults to `None` silently discards
+    every attribute FastMCP passed at creation time. Call this immediately
+    after span creation to restore what's missing.
+
+    Restoring only missing keys (instead of an unconditional
+    `span.set_attributes(attrs)`) matters because `set_attributes` overwrites
+    existing keys:
+
+    - A sampler that dropped everything gets everything restored.
+    - A sampler that deliberately redacted or replaced one of our keys (e.g.
+      scrubbing `mcp.method.name` for privacy) keeps its own value instead of
+      having it silently overwritten.
+    - A sampler that added its own attributes is untouched either way.
+    - Only the missing keys are re-inserted, so this doesn't cycle
+      already-present keys through the SDK's bounded attribute map and
+      inflate `dropped_attributes` beyond what the sampler itself dropped.
+
+    One case is irreducible: a sampler that deliberately *deletes* one of our
+    keys is indistinguishable from one that dropped it by accident, so it
+    gets restored either way. Restoring is the safer default — don't try to
+    build machinery to tell the two apart.
+
+    Callers are expected to guard this with `if span.is_recording():`; it
+    does no work worth skipping for non-recording spans, but the check is
+    kept at call sites so it reads alongside the sibling `is_recording()`
+    guards already in those functions.
+    """
+    existing: Mapping[str, otel_types.AttributeValue] = {}
+    if isinstance(span, _AttributeReadableSpan):
+        existing = span.attributes or {}
+    missing = {key: value for key, value in attrs.items() if key not in existing}
+    if missing:
+        span.set_attributes(missing)
+
+
 def extract_trace_context(meta: dict[str, Any] | None) -> Context:
     """Extract trace context from an MCP request meta dict.
 
@@ -175,4 +234,5 @@ __all__ = [
     "get_tracer",
     "inject_trace_context",
     "record_span_error",
+    "restore_missing_attributes",
 ]
