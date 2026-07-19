@@ -68,7 +68,7 @@ See [Server Configuration](/deployment/server-configuration) for the full config
 | Workspace | `--workspace` | Install to the workspace directory instead of globally (`cursor` only) |
 | Copy | `--copy` | Copy the generated output to the clipboard (`mcp-json` and `stdio` only) |
 
-`goose` installs through a deeplink that runs your server with `uvx`, so it accepts only `--name`, `--with`, `--env`, `--env-file`, and `--python`. The environment options that depend on a local uv project — `--with-editable`, `--project`, and `--with-requirements` — are unavailable there.
+`goose` installs through a deeplink that runs your server with `uvx`, so it accepts only `--name`, `--with`, and `--python`. Options that depend on a local uv project — `--with-editable`, `--project`, and `--with-requirements` — are unavailable there. Deeplinks also cannot carry environment variables: passing `--env` or `--env-file` exits with an error directing you to `fastmcp install mcp-json`, which generates a config you can add to Goose by hand with the variables included.
 
 ## Examples
 
