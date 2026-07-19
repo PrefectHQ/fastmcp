@@ -360,7 +360,12 @@ class TestAutomaticToolLoop:
 
         assert result.data == "Done!"
         # Verify sequential execution: tool_a must complete before tool_b starts
-        assert execution_order == ["tool_a_start", "tool_a_end", "tool_b_start", "tool_b_end"]
+        assert execution_order == [
+            "tool_a_start",
+            "tool_a_end",
+            "tool_b_start",
+            "tool_b_end",
+        ]
 
     async def test_concurrent_tool_execution_unlimited(self):
         """Test unlimited parallel tool execution with tool_concurrency=0."""
