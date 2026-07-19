@@ -57,29 +57,27 @@ mcp.enable(tags={"admin"})
 # Clients now see all three tools
 ```
 
-## Keys and Tags
+## Targeting Components
 
-Visibility filtering works with two identifiers: keys (for specific components) and tags (for groups).
+Every filter parameter narrows the same way: `enable()` and `disable()` act on the components matching all the criteria you supply. Reach for the simplest one that expresses your intent — usually names or tags.
 
-### Component Keys
+### Names
 
-Every component has a unique key in the format `{type}:{identifier}`.
-
-| Component | Key Format | Example |
-|-----------|------------|---------|
-| Tool | `tool:{name}` | `tool:delete_everything` |
-| Resource | `resource:{uri}` | `resource:data://config` |
-| Template | `template:{uri}` | `template:file://{path}` |
-| Prompt | `prompt:{name}` | `prompt:analyze` |
-
-Use keys to target specific components.
+`names` matches components by their name, or by their URI for resources and templates. This is the common case.
 
 ```python
 # Disable a specific tool
-mcp.disable(keys={"tool:delete_everything"})
+mcp.disable(names={"delete_everything"})
 
-# Disable multiple specific components
-mcp.disable(keys={"tool:reset_system", "resource:data://secrets"})
+# Disable several components at once
+mcp.disable(names={"reset_system", "data://secrets"})
+```
+
+A name matches across component types, so a tool and a prompt that share a name are both affected. Add `components` when you want only one type.
+
+```python
+# Disable only the tool named "config", leaving the resource alone
+mcp.disable(names={"config"}, components={"tool"})
 ```
 
 ### Tags
@@ -112,14 +110,61 @@ mcp.disable(tags={"dangerous"})
 
 A component is disabled if it has **any** of the disabled tags. The component doesn't need all the tags; one match is enough.
 
-### Combining Keys and Tags
+### Versions
 
-You can specify both keys and tags in a single call. The filters combine additively.
+When a component has several registered versions, `names` matches every one of them. To act on a particular version, filter by `version` with a [`VersionSpec`](/servers/versioning).
 
 ```python
-# Disable specific tools AND all dangerous-tagged components
-mcp.disable(keys={"tool:debug_info"}, tags={"dangerous"})
+from fastmcp.utilities.versions import VersionSpec
+
+# Retire v1 of every versioned component, leaving later versions live
+mcp.disable(version=VersionSpec(eq="v1"))
 ```
+
+### Component Keys
+
+`keys` targets components by their canonical key, which encodes type, identifier, and version together. It is the only filter that can single out **one specific version of one specific component** — use it when `names` would sweep too broadly and `version` would sweep across too many components.
+
+```python
+# Disable only v1 of search, leaving v1 of every other component untouched
+mcp.disable(keys={"tool:search@v1"})
+```
+
+Keys take the form `{type}:{identifier}@{version}`, where the `@` separates the identifier from the version and is **always present**. An unversioned component has an empty version, so its key ends in a bare `@`.
+
+| Component | Key Format | Example |
+|-----------|------------|---------|
+| Tool | `tool:{name}@{version}` | `tool:delete_everything@` |
+| Resource | `resource:{uri}@{version}` | `resource:data://config@` |
+| Template | `template:{uri_template}@{version}` | `template:file://{path}@` |
+| Prompt | `prompt:{name}@{version}` | `prompt:analyze@` |
+
+The delimiter is unconditional because resource URIs may themselves contain `@`. Always emitting it means a key is parsed by splitting on the last `@`, so `resource:data://user@example.com/profile@` is unambiguous.
+
+<Warning>
+Keys are matched by exact string equality, so a key that omits the trailing `@` — `tool:delete_everything` rather than `tool:delete_everything@` — matches nothing. FastMCP raises a `UserWarning` when it sees a key with no `@`, since such a key can never match. Prefer `names` unless you need version-level precision, and read a key off `component.key` rather than assembling it by hand.
+</Warning>
+
+### Combining Filters
+
+Criteria in a single call **narrow** each other: a component must satisfy every one of them to match. Combining a name with a tag targets the intersection, not the union.
+
+```python
+# Disables debug_info only if it is ALSO tagged "dangerous"
+mcp.disable(names={"debug_info"}, tags={"dangerous"})
+```
+
+To act on a union, make one call per criterion. Because later calls override earlier ones only where they overlap, successive disables accumulate.
+
+```python
+# Disables debug_info AND everything tagged "dangerous"
+mcp.disable(names={"debug_info"})
+mcp.disable(tags={"dangerous"})
+```
+
+<Warning>
+Intersection is easy to misread as union, and a rule that matches nothing fails silently. `disable(names={"debug_info"}, tags={"dangerous"})` disables nothing at all when `debug_info` lacks that tag — the components you meant to hide stay exposed.
+</Warning>
 
 ## Allowlist Mode
 
@@ -165,7 +210,7 @@ When you call `enable(only=True)`:
 
 ```python
 # Start fresh - only enable these specific tools
-mcp.enable(keys={"tool:safe_read", "tool:safe_write"}, only=True)
+mcp.enable(names={"safe_read", "safe_write"}, only=True)
 
 # Later, switch to a different allowlist
 mcp.enable(tags={"production"}, only=True)
@@ -177,7 +222,7 @@ Later `enable()` and `disable()` calls override earlier ones. This lets you crea
 
 ```python
 mcp.enable(tags={"api"}, only=True)  # Allow all api-tagged
-mcp.disable(keys={"tool:api_admin"})  # Later disable overrides for this tool
+mcp.disable(names={"api_admin"})  # Later disable overrides for this tool
 
 # api_admin is disabled because the later disable() overrides the allowlist
 ```
@@ -322,7 +367,7 @@ The session visibility methods accept the same filter criteria as `server.enable
 | Parameter | Description |
 |-----------|-------------|
 | `names` | Component names or URIs to match |
-| `keys` | Component keys (e.g., `{"tool:my_tool"}`) |
+| `keys` | Component keys (e.g., `{"tool:my_tool@"}` for an unversioned tool, or `{"tool:my_tool@v1"}` for a versioned tool) |
 | `tags` | Tags to match (component must have at least one) |
 | `version` | Version specification to match |
 | `components` | Component types (`{"tool"}`, `{"resource"}`, `{"prompt"}`, `{"template"}`) |

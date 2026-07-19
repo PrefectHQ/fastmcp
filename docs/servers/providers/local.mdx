@@ -124,10 +124,10 @@ def get_status() -> str:
 mcp.disable(tags={"admin"})
 
 # Or only enable specific tools
-mcp.enable(keys={"tool:get_status"}, only=True)
+mcp.enable(names={"get_status"}, only=True)
 ```
 
-See [Visibility](/servers/visibility) for the full documentation on keys, tags, allowlist mode, and provider-level control.
+See [Visibility](/servers/visibility) for the full documentation on names, tags, keys, allowlist mode, and provider-level control.
 
 ## Standalone LocalProvider
 

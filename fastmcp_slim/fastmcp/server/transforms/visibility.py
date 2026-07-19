@@ -7,6 +7,7 @@ Final filtering happens at the Provider level.
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
@@ -81,6 +82,19 @@ class Visibility(Transform):
             components: Component types to match (e.g., {"tool", "prompt"}).
             match_all: If True, matches all components regardless of other criteria.
         """
+        if keys:
+            malformed = sorted(key for key in keys if "@" not in key)
+            if malformed:
+                warnings.warn(
+                    f"Component keys are missing the '@' version delimiter and will "
+                    f"match nothing: {malformed}. A key always ends in '@' for an "
+                    f"unversioned component (e.g. 'tool:my_tool@') or '@<version>' "
+                    f"for a versioned one. Read the value from `component.key`, or "
+                    f"filter by `names` instead.",
+                    UserWarning,
+                    stacklevel=3,
+                )
+
         self._enabled = enabled
         self.names = names
         self.keys = keys

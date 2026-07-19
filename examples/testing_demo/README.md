@@ -81,4 +81,4 @@ uv run fastmcp inspect server.py
 
 ## Learning More
 
-For detailed information about testing FastMCP servers, see the [Testing Documentation](../../docs/patterns/testing.mdx).
+For detailed information about testing FastMCP servers, see the [Testing Documentation](../../docs/servers/testing.mdx).

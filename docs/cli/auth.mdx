@@ -23,21 +23,24 @@ fastmcp auth cimd create \
 
 ```json
 {
-  "client_id": "https://your-domain.com/oauth/client.json",
+  "client_id": "https://YOUR-DOMAIN.com/path/to/client.json",
   "client_name": "My App",
   "redirect_uris": ["http://localhost:*/callback"],
-  "token_endpoint_auth_method": "none"
+  "token_endpoint_auth_method": "none",
+  "grant_types": ["authorization_code"],
+  "response_types": ["code"]
 }
 ```
 
-The generated document includes a placeholder `client_id` — update it to match the URL where you'll host the document before deploying.
+By default, the generated document includes a placeholder `client_id`. Update it to match the URL where you'll host the document before deploying, or pass `--client-id` when generating the file.
 
 ### Options
 
 | Option | Flag | Description |
 | ------ | ---- | ----------- |
 | Name | `--name` | **Required.** Human-readable client name |
-| Redirect URI | `--redirect-uri` | **Required.** Allowed redirect URIs (repeatable) |
+| Redirect URI | `--redirect-uri`, `-r` | **Required.** Allowed redirect URIs (repeatable) |
+| Client ID | `--client-id` | URL where this document will be hosted; defaults to a placeholder |
 | Client URI | `--client-uri` | Client's home page URL |
 | Logo URI | `--logo-uri` | Client's logo URL |
 | Scope | `--scope` | Space-separated list of scopes |
@@ -51,6 +54,7 @@ fastmcp auth cimd create \
   --name "My Production App" \
   --redirect-uri "http://localhost:*/callback" \
   --redirect-uri "https://myapp.example.com/callback" \
+  --client-id "https://myapp.example.com/oauth/client.json" \
   --client-uri "https://myapp.example.com" \
   --scope "read write" \
   --output client.json
