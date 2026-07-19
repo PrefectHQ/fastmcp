@@ -621,6 +621,35 @@ class TestMiddlewareInteraction:
         # Leg 1 has no answers yet; legs 2 and 3 are continuations.
         assert input_responses_seen == [False, True, True]
 
+    async def test_continuation_fields_populate_message(self):
+        """The continuation fields (SEP-2322) appear on ``context.message``
+        itself, not only on ``fastmcp_context`` — so middleware branching on the
+        standard `input_responses` / `request_state` params sees a continuation
+        round as such rather than as an initial call."""
+        responses_seen: list[bool] = []
+        state_seen: list[bool] = []
+
+        class MessageMiddleware(Middleware):
+            async def on_call_tool(self, context, call_next):
+                responses_seen.append(context.message.input_responses is not None)
+                state_seen.append(context.message.request_state is not None)
+                return await call_next(context)
+
+        server = two_question_server()
+        server.add_middleware(MessageMiddleware())
+
+        asked: list[str] = []
+        async with Client(
+            server, mode="auto", elicitation_handler=_two_answer_handler(asked)
+        ) as client:
+            result = await client.call_tool("book_flight", {})
+
+        assert result.data == "Booked Paris on 2026-08-01"
+        # Answers arrive on legs 2 and 3; request_state is carried only on leg 3
+        # (round 2's ask minted it), so it is absent on legs 1 and 2.
+        assert responses_seen == [False, True, True]
+        assert state_seen == [False, False, True]
+
 
 class TestCachingMiddlewareInteraction:
     async def test_ask_is_not_cached(self):

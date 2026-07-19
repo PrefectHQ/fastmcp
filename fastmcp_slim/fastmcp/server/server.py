@@ -1287,6 +1287,14 @@ class FastMCP(
                     message=mcp_types.CallToolRequestParams(
                         name=name,
                         arguments=arguments or {},
+                        # Reflect the continuation fields (SEP-2322) so middleware
+                        # reading `context.message` sees a continuation round as
+                        # such, not as an initial call. These are recovered from
+                        # the raw wire request (unsealed to plaintext by the
+                        # request-state boundary); they drive middleware
+                        # visibility only — `call_next` routes on name/arguments.
+                        input_responses=ctx.input_responses,
+                        request_state=ctx.request_state,
                         _meta=_version_request_meta(version),
                     ),
                     source="client",
