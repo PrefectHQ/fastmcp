@@ -142,7 +142,7 @@ class TestRunInThread:
         def blocking() -> str:
             import time
 
-            time.sleep(0.2)
+            time.sleep(0.05)
             return "done"
 
         ticks = 0
@@ -163,8 +163,10 @@ class TestRunInThread:
 
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "done"
-        # With inline execution, ticks should be near zero — the 200ms sleep
-        # blocks the loop. Under a thread pool (default), ticks would be ~10.
+        # With inline execution, ticks should be near zero — the blocking
+        # sleep never yields control, so at most one already-scheduled timer
+        # fires once control returns. Under a thread pool (default), ticks
+        # would scale with sleep duration instead.
         assert ticks <= 2
 
     async def test_default_threadpool_permits_concurrency(self):
@@ -175,7 +177,7 @@ class TestRunInThread:
         def blocking() -> str:
             import time
 
-            time.sleep(0.2)
+            time.sleep(0.15)
             return "done"
 
         ticks = 0

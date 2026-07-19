@@ -1,7 +1,6 @@
 """Unit tests for JWT issuer and token encryption."""
 
 import base64
-import time
 
 import pytest
 from joserfc.errors import JoseError
@@ -163,24 +162,26 @@ class TestJWTIssuer:
 
     def test_verify_token_validates_expiration(self, issuer):
         """Test that expired tokens are rejected."""
-        # Create token that expires in 1 second
-        token = issuer.issue_access_token(
+        # A token that is still valid should verify successfully.
+        valid_token = issuer.issue_access_token(
             client_id="client-abc",
             scopes=["read"],
-            jti="token-id",
-            expires_in=1,
+            jti="valid-token-id",
         )
-
-        # Should be valid immediately
-        payload = issuer.verify_token(token)
+        payload = issuer.verify_token(valid_token)
         assert payload["client_id"] == "client-abc"
 
-        # Wait for token to expire
-        time.sleep(1.1)
-
-        # Should be rejected
+        # A token issued already-expired should be rejected. verify_token()
+        # does a strict `exp < time.time()` comparison with no clock-skew
+        # leeway, so this is instant and deterministic (no sleep needed).
+        expired_token = issuer.issue_access_token(
+            client_id="client-abc",
+            scopes=["read"],
+            jti="expired-token-id",
+            expires_in=-10,
+        )
         with pytest.raises(JoseError, match="expired"):
-            issuer.verify_token(token)
+            issuer.verify_token(expired_token)
 
     def test_verify_token_validates_issuer(self, issuer):
         """Test that tokens from different issuers are rejected."""

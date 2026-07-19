@@ -24,7 +24,9 @@ def gc_collect_harder():
     gc.collect()
 
 
-async def wait_for_log_content(log_file_path, expected: str, timeout: float = 2.0) -> str:
+async def wait_for_log_content(
+    log_file_path, expected: str, timeout: float = 2.0
+) -> str:
     """Poll a log file until it contains the expected text.
 
     The subprocess's stderr is redirected straight to the file at the OS
@@ -639,7 +641,9 @@ class TestLogFile:
                     "write_error", {"message": "Test error with TextIO"}
                 )
 
-            content = await wait_for_log_content(log_file_path, "Test error with TextIO")
+            content = await wait_for_log_content(
+                log_file_path, "Test error with TextIO"
+            )
 
         assert "Test error with TextIO" in content
 

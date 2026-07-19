@@ -30,7 +30,7 @@ class TestSessionTaskErrorPropagation:
 
             async def never_complete():
                 """A coroutine that will never complete normally."""
-                await asyncio.sleep(1000)
+                await asyncio.Event().wait()
 
             async def failing_session():
                 """Simulates a session task that raises an error."""
