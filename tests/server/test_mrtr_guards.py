@@ -150,9 +150,7 @@ class TestContextProperties:
 
 # PEP 695 `type X = ...` aliases, built portably (the `type` statement is 3.12+).
 # One factors out the whole guard union; the other is a lone aliased ask arm.
-_AliasedGuardUnion = TypeAliasType(
-    "_AliasedGuardUnion", str | InputRequiredResult
-)
+_AliasedGuardUnion = TypeAliasType("_AliasedGuardUnion", str | InputRequiredResult)
 _AliasedAskArm = TypeAliasType("_AliasedAskArm", InputRequiredResult)
 
 
