@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import copy
 import multiprocessing
 import socket
 import time
 from collections.abc import AsyncGenerator, Callable, Generator
 from contextlib import asynccontextmanager, contextmanager, suppress
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import parse_qs, urlparse
 
@@ -15,9 +17,17 @@ from mcp.shared.auth import AuthorizationCodeResult
 
 from fastmcp import settings
 from fastmcp.client.auth.oauth import OAuth
+from fastmcp.client.transports.http import StreamableHttpTransport
+from fastmcp.client.transports.sse import SSETransport
+from fastmcp.utilities.asgi_transport import (
+    StreamingASGITransport,
+    run_asgi_lifespan,
+)
 from fastmcp.utilities.http import find_available_port
 
 if TYPE_CHECKING:
+    from starlette.types import ASGIApp
+
     from fastmcp.server.server import FastMCP
 
 
@@ -140,6 +150,26 @@ def run_server_in_process(
             raise RuntimeError("Server process failed to terminate even after kill")
 
 
+async def _wait_for_port(host: str, port: int, timeout: float = 5.0) -> None:
+    """Poll until a TCP connection to `host:port` is accepted, or raise on timeout."""
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            _, writer = await asyncio.open_connection(host, port)
+        except (ConnectionRefusedError, OSError):
+            if time.monotonic() >= deadline:
+                raise RuntimeError(
+                    f"Server did not start listening on {host}:{port} "
+                    f"within {timeout} seconds"
+                ) from None
+            await asyncio.sleep(0.001)
+        else:
+            writer.close()
+            with suppress(ConnectionResetError, BrokenPipeError):
+                await writer.wait_closed()
+            return
+
+
 @asynccontextmanager
 async def run_server_async(
     server: FastMCP,
@@ -189,13 +219,8 @@ async def run_server_async(
                 assert result.content[0].text == "Hello, World!"
         ```
     """
-    import asyncio
-
     if port is None:
         port = find_available_port()
-
-    # Wait a tiny bit for the port to be released if it was just used
-    await asyncio.sleep(0.01)
 
     # Start server as a background task
     server_task = asyncio.create_task(
@@ -211,8 +236,9 @@ async def run_server_async(
     # Wait for server lifespan to be ready
     await server._started.wait()
 
-    # Give uvicorn a moment to bind the port after lifespan is ready
-    await asyncio.sleep(0.1)
+    # The lifespan completing does not guarantee uvicorn has bound the port yet, so
+    # poll until the socket accepts a connection rather than guessing at a sleep.
+    await _wait_for_port(host, port)
 
     try:
         yield f"http://{host}:{port}{path}"
@@ -221,6 +247,140 @@ async def run_server_async(
         server_task.cancel()
         with suppress(asyncio.CancelledError, asyncio.TimeoutError):
             await asyncio.wait_for(server_task, timeout=2.0)
+
+
+@dataclass(frozen=True)
+class InMemoryServer:
+    """A FastMCP server's real HTTP app, reachable in-process with no sockets.
+
+    Yielded by `run_server_in_memory`. The `url` looks like an ordinary server URL and
+    the app behind it is the genuine article — auth middleware, session manager, SSE
+    framing and redirects all run — but every request is dispatched straight into the
+    ASGI application on the current event loop.
+
+    Because nothing is listening on the network, a plain `httpx2.AsyncClient()` cannot
+    reach this server. Use `http_client()` for raw HTTP assertions, `transport()` to
+    build a FastMCP client transport, or pass `httpx_client_factory` to anything that
+    accepts one.
+    """
+
+    url: str
+    app: ASGIApp
+    transport_type: Literal["http", "streamable-http", "sse"]
+
+    def httpx_client_factory(
+        self,
+        headers: dict[str, str] | None = None,
+        timeout: httpx2.Timeout | None = None,
+        auth: httpx2.Auth | None = None,
+        **kwargs: Any,
+    ) -> httpx2.AsyncClient:
+        """Build an `httpx2.AsyncClient` bound to the in-process app.
+
+        Matches the `McpHttpClientFactory` signature, so it can be handed to any
+        FastMCP client transport's `httpx_client_factory` argument.
+        """
+        # The legacy SSE transport runs the whole MCP session inside its GET request and
+        # only releases its streams once that request observes a disconnect, so the
+        # bridge must let the application drain rather than cancelling at close.
+        cancel_on_close = self.transport_type != "sse"
+        return httpx2.AsyncClient(
+            transport=StreamingASGITransport(self.app, cancel_on_close=cancel_on_close),
+            base_url=self.url,
+            headers=headers,
+            timeout=timeout,
+            auth=auth,
+            **kwargs,
+        )
+
+    def http_client(self, **kwargs: Any) -> httpx2.AsyncClient:
+        """An `httpx2.AsyncClient` for raw HTTP assertions against the in-process app.
+
+        Relative URLs resolve against the server's base URL, and absolute URLs on the
+        same origin work too, so `client.get(f"{server.url}/health")` reads the same as
+        it would against a real server.
+        """
+        return self.httpx_client_factory(**kwargs)
+
+    def transport(self, **kwargs: Any) -> StreamableHttpTransport | SSETransport:
+        """A FastMCP client transport wired to the in-process app.
+
+        Accepts the same keyword arguments as the underlying transport (`headers`,
+        `auth`, ...); `httpx_client_factory` is supplied automatically.
+        """
+        kwargs.setdefault("httpx_client_factory", self.httpx_client_factory)
+        if self.transport_type == "sse":
+            return SSETransport(self.url, **kwargs)
+        return StreamableHttpTransport(self.url, **kwargs)
+
+
+@asynccontextmanager
+async def run_server_in_memory(
+    server: FastMCP,
+    transport: Literal["http", "streamable-http", "sse"] = "http",
+    path: str | None = None,
+    **http_app_kwargs: Any,
+) -> AsyncGenerator[InMemoryServer, None]:
+    """
+    Run a FastMCP server's HTTP app in-process, with no socket and no uvicorn.
+
+    This is the fastest way to test a FastMCP server over HTTP. The server's real
+    Starlette app is built with `http_app()` and its lifespan is started, then every
+    request is dispatched directly into the app on the current event loop. Compared to
+    `run_server_async` this skips port binding, uvicorn startup and connection setup
+    entirely, while still exercising the full HTTP stack: middleware, authentication,
+    session management and SSE streaming all run exactly as they do in production.
+
+    Prefer this over `run_server_async` unless the test's subject is genuine network
+    behaviour (real TCP, TLS, or a separate process).
+
+    Args:
+        server: FastMCP server instance.
+        transport: Transport type ("http", "streamable-http", or "sse").
+        path: URL path for the server (defaults to "/mcp", or "/sse" for SSE).
+        **http_app_kwargs: Additional arguments forwarded to `server.http_app()`.
+
+    Yields:
+        An `InMemoryServer` describing how to reach the app.
+
+    Example:
+        ```python
+        import pytest
+        from fastmcp import FastMCP, Client
+        from fastmcp.utilities.tests import run_server_in_memory
+
+        @pytest.fixture
+        async def server():
+            mcp = FastMCP("test")
+
+            @mcp.tool
+            def greet(name: str) -> str:
+                return f"Hello, {name}!"
+
+            async with run_server_in_memory(mcp) as in_memory_server:
+                yield in_memory_server
+
+        async def test_greet(server):
+            async with Client(server.transport()) as client:
+                result = await client.call_tool("greet", {"name": "World"})
+                assert result.content[0].text == "Hello, World!"
+        ```
+    """
+    if path is None:
+        path = "/sse" if transport == "sse" else "/mcp"
+
+    app = server.http_app(transport=transport, path=path, **http_app_kwargs)
+
+    # Nothing listens on this origin; it exists so that URLs are well-formed and so
+    # that host-header checks see a loopback address, as they would locally.
+    base_url = "http://127.0.0.1"
+
+    async with run_asgi_lifespan(app):
+        yield InMemoryServer(
+            url=f"{base_url}{path}",
+            app=app,
+            transport_type=transport,
+        )
 
 
 class HeadlessOAuth(OAuth):
