@@ -17,6 +17,7 @@ from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport, StreamableHttpTransport
 from fastmcp.client.transports.base import TransportOptions
 from fastmcp.exceptions import ToolError
+from fastmcp.mcp_config import MCPConfig
 from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.server import create_proxy
 from fastmcp.server.middleware import Middleware
@@ -1324,3 +1325,65 @@ class TestProxySettingsAreNotSharedBetweenClients:
         create_proxy(user_client)
 
         assert user_client._session_kwargs.get("transport_options") is None
+
+
+class TestProxyForwardingAppliesToEveryBackendClient:
+    """Every path that builds a proxy backend gets the forwarding session.
+
+    `create_proxy` accepts plain Clients and MCPConfigs, none of which route
+    through `ProxyClient.__init__`, so configuring only that constructor would
+    leave those forms still rejecting backend results.
+    """
+
+    @pytest.fixture
+    def backend(self) -> FastMCP:
+        mcp = FastMCP("SchemaViolator")
+
+        @mcp.tool(
+            output_schema={
+                "type": "object",
+                "properties": {"status": {"enum": ["ok", "error"]}},
+                "required": ["status"],
+            }
+        )
+        def status() -> dict:
+            return {"status": "weird"}
+
+        return mcp
+
+    async def _forwarded(self, server: FastMCP, tool: str = "status"):
+        client = Client(server)
+        client._session_kwargs["transport_options"] = TransportOptions(
+            session_class=_ForwardingClientSession
+        )
+        async with client:
+            return await client.call_tool_mcp(tool, {})
+
+    async def test_plain_client_target_forwards(self, backend):
+        result = await self._forwarded(create_proxy(Client(backend)))
+
+        assert result.is_error is False
+        assert result.structured_content == {"status": "weird"}
+
+    async def test_single_server_config_target_forwards(self, backend):
+        port = find_available_port()
+        async with run_server_async(backend, port=port):
+            config = MCPConfig.from_dict(
+                {"mcpServers": {"a": {"url": f"http://127.0.0.1:{port}/mcp/"}}}
+            )
+            result = await self._forwarded(create_proxy(Client(config)))
+
+        assert result.is_error is False
+        assert result.structured_content == {"status": "weird"}
+
+    async def test_multi_server_config_target_forwards(self, backend):
+        port = find_available_port()
+        async with run_server_async(backend, port=port):
+            url = f"http://127.0.0.1:{port}/mcp/"
+            config = MCPConfig.from_dict(
+                {"mcpServers": {"a": {"url": url}, "b": {"url": url}}}
+            )
+            result = await self._forwarded(create_proxy(Client(config)), "a_status")
+
+        assert result.is_error is False
+        assert result.structured_content == {"status": "weird"}

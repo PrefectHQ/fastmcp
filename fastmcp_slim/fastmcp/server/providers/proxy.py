@@ -888,11 +888,15 @@ def _create_client_factory(
         if client.is_connected():
             logger.info(
                 "Proxy detected connected client - reusing existing session for all requests. "
-                "This may cause context mixing in concurrent scenarios."
+                "This may cause context mixing in concurrent scenarios, and the session's "
+                "existing settings apply, so backend results are validated against their "
+                "declared output schema rather than relayed as-is. Pass a disconnected "
+                "client to avoid both."
             )
 
-            # Reusing the caller's live session, so its connection settings are
-            # already fixed and proxy options have nothing left to configure.
+            # The caller's session is already built, so there are no connection
+            # settings left to apply — proxy options only take effect at connect
+            # time. Reuse is opt-in via passing an already-connected client.
             def reuse_client_factory() -> Client:
                 return client
 
