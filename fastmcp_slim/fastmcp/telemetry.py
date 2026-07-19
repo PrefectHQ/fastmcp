@@ -21,9 +21,9 @@ Example usage with SDK:
     ```
 """
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from opentelemetry import context as otel_context
 from opentelemetry import propagate, trace
@@ -135,6 +135,80 @@ def record_span_error(span: Span, exception: BaseException) -> None:
     span.set_status(Status(StatusCode.ERROR))
 
 
+@runtime_checkable
+class _AttributeReadableSpan(Protocol):
+    """Structural type for spans that expose their current attribute state.
+
+    The `opentelemetry-api` `Span` ABC has no way to read attributes back —
+    only SDK span implementations (e.g. `opentelemetry.sdk.trace.ReadableSpan`)
+    expose `.attributes` and `.dropped_attributes`. FastMCP only depends on
+    `opentelemetry-api`, so this module can't import the SDK class to
+    `isinstance`-check against it. A runtime-checkable `Protocol` gets the
+    same structural narrowing without that import: spans that don't expose
+    this state (e.g. `NonRecordingSpan`) simply fail the check.
+    """
+
+    @property
+    def attributes(self) -> Mapping[str, otel_types.AttributeValue] | None: ...
+
+    @property
+    def dropped_attributes(self) -> int: ...
+
+
+def restore_dropped_attributes(
+    span: Span, attrs: Mapping[str, otel_types.AttributeValue]
+) -> None:
+    """Restore FastMCP attributes a non-forwarding sampler dropped entirely.
+
+    `Tracer.start_span` builds the span from `SamplingResult.attributes`, not
+    the `attributes=` kwarg it was given for creation — a custom `Sampler`
+    whose `SamplingResult.attributes` defaults to `None` silently discards
+    every attribute FastMCP passed at creation time. Call this immediately
+    after span creation to recover from that case.
+
+    The restore only fires when the span has *no* attributes at all AND the
+    SDK hasn't evicted anything (`dropped_attributes == 0`):
+
+    - A bare, non-forwarding sampler (the regression this exists to fix)
+      leaves the span with an empty attribute mapping, so everything is
+      restored.
+    - A sampler that supplied any attributes of its own — whether by
+      forwarding ours untouched, redacting or replacing some of our values,
+      or substituting its own attributes entirely (e.g. to strip component
+      names or resource URIs for privacy or cardinality control) — leaves
+      the span non-empty, so it is left alone entirely. This is what makes
+      the gate precise: a sampler that deliberately supplies only its own
+      attributes must not have them clobbered by a restore that assumes
+      "no FastMCP keys" means "sampler forwarding failed."
+    - A sampler that forwards most of our attributes but deliberately drops
+      one is still non-empty, so it's covered by the same "leave alone"
+      branch — a dropped key here is indistinguishable from the SDK's
+      bounded attribute map evicting it, and reinserting it would just push
+      the map's bound and evict a *different* retained key, churning which
+      attributes survive without changing how many are lost. No attempt is
+      made to restore individual missing keys; the gate is all-or-nothing.
+    - A low `OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT` that evicts every attribute a
+      forwarding sampler passed through is indistinguishable, from the
+      span's attribute state alone, from a bare non-forwarding sampler —
+      both leave an empty mapping. `dropped_attributes == 0` is what tells
+      them apart: eviction always increments it, so that case is correctly
+      excluded from the restore and the SDK's bounded map is left as
+      computed.
+
+    Callers are expected to guard this with `if span.is_recording():`; it
+    does no work worth skipping for non-recording spans, but the check is
+    kept at call sites so it reads alongside the sibling `is_recording()`
+    guards already in those functions.
+    """
+    existing: Mapping[str, otel_types.AttributeValue] = {}
+    dropped = 0
+    if isinstance(span, _AttributeReadableSpan):
+        existing = span.attributes or {}
+        dropped = span.dropped_attributes
+    if not existing and dropped == 0:
+        span.set_attributes(attrs)
+
+
 def extract_trace_context(meta: dict[str, Any] | None) -> Context:
     """Extract trace context from an MCP request meta dict.
 
@@ -175,4 +249,5 @@ __all__ = [
     "get_tracer",
     "inject_trace_context",
     "record_span_error",
+    "restore_dropped_attributes",
 ]
