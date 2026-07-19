@@ -77,7 +77,7 @@ def _strip_input_required(tp: Any) -> Any:
         stripped = _strip_input_required(inner)
         if stripped is inner:
             return tp
-        return Annotated[tuple([stripped, *metadata])]
+        return Annotated[(stripped, *metadata)]
     if origin is not Union and origin is not types.UnionType:
         return tp
     residual = tuple(a for a in get_args(tp) if not _is_input_required_type(a))
