@@ -79,17 +79,17 @@ The ASGI approach shines in production environments where you need reliability a
 
 ### Custom Path
 
-By default, your MCP server is accessible at `/mcp/` on your domain. You can customize this path to fit your URL structure or avoid conflicts with existing endpoints. This is particularly useful when integrating MCP into an existing application or following specific API conventions.
+By default, your MCP server is accessible at `/mcp` on your domain. You can customize this path to fit your URL structure or avoid conflicts with existing endpoints. This is particularly useful when integrating MCP into an existing application or following specific API conventions.
 
 ```python
 # Option 1: With mcp.run()
-mcp.run(transport="http", host="0.0.0.0", port=8000, path="/api/mcp/")
+mcp.run(transport="http", host="0.0.0.0", port=8000, path="/api/mcp")
 
 # Option 2: With ASGI app
-app = mcp.http_app(path="/api/mcp/")
+app = mcp.http_app(path="/api/mcp")
 ```
 
-Now your server is accessible at `http://localhost:8000/api/mcp/`.
+Now your server is accessible at `http://localhost:8000/api/mcp`.
 
 ### Authentication
 
@@ -345,7 +345,7 @@ def analyze(data: str) -> dict:
     return {"result": f"Analyzed: {data}"}
 
 # Create the ASGI app
-mcp_app = mcp.http_app(path='/mcp')
+mcp_app = mcp.http_app(path="/mcp")
 
 # Create a Starlette app and mount the MCP server
 app = Starlette(
@@ -357,7 +357,7 @@ app = Starlette(
 )
 ```
 
-The MCP endpoint will be available at `/mcp-server/mcp/` of the resulting Starlette app.
+The MCP endpoint will be available at `/mcp-server/mcp` of the resulting Starlette app.
 
 <Warning>
 For Streamable HTTP transport, you **must** pass the lifespan context from the FastMCP app to the resulting Starlette app, as nested lifespans are not recognized. Otherwise, the FastMCP server's session manager will not be properly initialized.
@@ -376,7 +376,7 @@ from starlette.routing import Mount
 mcp = FastMCP("MyServer")
 
 # Create the ASGI app
-mcp_app = mcp.http_app(path='/mcp')
+mcp_app = mcp.http_app(path="/mcp")
 
 # Create nested application structure
 inner_app = Starlette(routes=[Mount("/inner", app=mcp_app)])
@@ -386,7 +386,7 @@ app = Starlette(
 )
 ```
 
-In this setup, the MCP server is accessible at the `/outer/inner/mcp/` path.
+In this setup, the MCP server is accessible at the `/outer/inner/mcp` path.
 
 ### FastAPI Integration
 

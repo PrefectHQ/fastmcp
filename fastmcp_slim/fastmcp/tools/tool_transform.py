@@ -7,6 +7,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, cast
 
+import mcp_types
 import pydantic_core
 from mcp_types import ToolAnnotations
 from pydantic import ConfigDict
@@ -15,6 +16,7 @@ from pydantic.functional_validators import BeforeValidator
 from pydantic.json_schema import SkipJsonSchema
 
 from fastmcp.tools.base import (
+    InputRequiredToolResult,
     Tool,
     ToolResult,
     _convert_to_content,
@@ -322,6 +324,16 @@ class TransformedTool(Tool):
                 result = await call_sync_fn_in_threadpool(self.fn, **arguments)
                 if inspect.isawaitable(result):
                     result = await result
+
+            # A multi-round-trip ask (SEP-2322) is not output data: it must
+            # reach the wire handler intact, never reshaped by output_schema
+            # (which would rebuild it as a plain empty ToolResult and drop the
+            # input_required payload). A custom transform fn may return the raw
+            # `InputRequiredResult`, like any tool body; wrap it the same way.
+            if isinstance(result, InputRequiredToolResult):
+                return result
+            if isinstance(result, mcp_types.InputRequiredResult):
+                return InputRequiredToolResult(result)
 
             # If transform function returns ToolResult, respect our output_schema setting
             if isinstance(result, ToolResult):

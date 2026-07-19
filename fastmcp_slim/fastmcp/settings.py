@@ -292,11 +292,13 @@ class Settings(BaseSettings):
         Field(
             description=inspect.cleandoc(
                 """
-                Maximum interval, in seconds, between fallback polls while waiting on a
-                background task (SEP-1686). Task.wait() starts polling fast (~20ms) and
-                backs off exponentially up to this ceiling, so quick tasks resolve
-                promptly while long-running tasks don't hammer the server. Used only when
-                the server does not advertise its own pollInterval. Must be positive.
+                Ceiling, in seconds, for the fallback poll backoff while waiting on a
+                background task (SEP-1686). Applies only when the server does not
+                advertise its own pollInterval: in that case Task.wait() starts polling
+                fast (~20ms) and doubles up to this ceiling, so quick tasks resolve
+                promptly while long-running tasks don't hammer the server. When the
+                server does advertise a pollInterval, that interval is honored exactly
+                and this setting is ignored. Must be positive.
                 """
             ),
             gt=0,

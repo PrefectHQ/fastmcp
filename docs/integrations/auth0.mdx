@@ -182,7 +182,8 @@ async def main():
 
         # Test the protected tool
         result = await client.call_tool("get_token_info")
-        print(f"Auth0 audience: {result['audience']}")
+        token_info = result.data
+        print(f"Auth0 audience: {token_info['audience']}")
 
 if __name__ == "__main__":
     asyncio.run(main())

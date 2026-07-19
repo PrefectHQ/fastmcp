@@ -67,16 +67,21 @@ server = FastMCP("TestServer")
 client = Client(server)  # In-memory, no network or subprocess
 ```
 
-**STDIO transport** launches a server as a subprocess and communicates through stdin/stdout pipes. This is the standard mechanism used by desktop clients like Claude Desktop. The subprocess runs in an isolated environment, so you must explicitly pass any environment variables the server needs.
+**STDIO transport** launches a server as a subprocess and communicates through stdin/stdout pipes. This is the standard mechanism used by desktop clients like Claude Desktop. By default, the subprocess receives the MCP SDK's default environment; pass an explicit transport when you need to add environment variables, set a working directory, or control process reuse.
 
 ```python
 from fastmcp import Client
+from fastmcp.client.transports import PythonStdioTransport
 
 # Simple inference from file path
 client = Client("my_server.py")
 
 # With explicit environment configuration
-client = Client("my_server.py", env={"API_KEY": "secret"})
+transport = PythonStdioTransport(
+    "my_server.py",
+    env={"API_KEY": "secret"},
+)
+client = Client(transport)
 ```
 
 **HTTP transport** connects to servers running as web services. Use this for production deployments where the server runs independently and manages its own lifecycle.

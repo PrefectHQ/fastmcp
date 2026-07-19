@@ -114,7 +114,7 @@ def process(data: str, mode: str = "default") -> str:
     return data.upper()
 ```
 
-Both versions are registered. When a client lists tools, they see only `process` with version 2.0 (the highest). When they invoke `process`, version 2.0 executes. The same pattern applies to resources and prompts.
+Both versions are registered. Server-side `list_tools()` returns every registered version, while MCP client list operations deduplicate by identifier and expose the highest version with metadata describing the available versions. When a client invokes `process` without specifying a version, version 2.0 executes. The same pattern applies to resources and prompts.
 
 ### Versioned vs Unversioned Components
 
@@ -189,7 +189,7 @@ By default, clients receive and invoke the highest version of each component. Wh
 
 ### FastMCP Client
 
-The FastMCP client's `call_tool` and `get_prompt` methods accept an optional `version` parameter. When specified, the server executes that exact version instead of the highest.
+The FastMCP client's `call_tool`, `read_resource`, and `get_prompt` methods accept an optional `version` parameter. When specified, the server executes that exact version instead of the highest.
 
 ```python
 from fastmcp import Client
@@ -201,6 +201,9 @@ async with Client(server) as client:
     # Call a specific version
     result_v1 = await client.call_tool("calculate", {"x": 1, "y": 2}, version="1.0")
 
+    # Read a specific resource version
+    data = await client.read_resource("config://app", version="1.0")
+
     # Get a specific prompt version
     prompt = await client.get_prompt("summarize", {"text": "..."}, version="1.0")
 ```
@@ -209,13 +212,16 @@ If the requested version doesn't exist, the server raises a `NotFoundError`. Thi
 
 ### MCP Protocol
 
-For generic MCP clients that don't have built-in version support, pass the version through the `_meta` field in arguments. FastMCP servers extract the version from `_meta.fastmcp.version` before processing.
+For generic MCP clients that don't have built-in version support, pass the version through the request params `_meta` field. FastMCP servers extract the version from `_meta.fastmcp.version` before processing.
 
 <CodeGroup>
-```json Tool Call Arguments
+```json Tool Call Request Params
 {
-  "x": 1,
-  "y": 2,
+  "name": "calculate",
+  "arguments": {
+    "x": 1,
+    "y": 2
+  },
   "_meta": {
     "fastmcp": {
       "version": "1.0"
@@ -224,9 +230,12 @@ For generic MCP clients that don't have built-in version support, pass the versi
 }
 ```
 
-```json Prompt Arguments
+```json Prompt Request Params
 {
-  "text": "Summarize this document...",
+  "name": "summarize",
+  "arguments": {
+    "text": "Summarize this document..."
+  },
   "_meta": {
     "fastmcp": {
       "version": "1.0"

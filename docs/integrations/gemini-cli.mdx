@@ -118,7 +118,7 @@ fastmcp install gemini-cli server.py --project /path/to/my-project
 If your server needs environment variables (like API keys), you must include them:
 
 ```bash
-fastmcp install gemini-cli server.py --server-name "Weather Server" \
+fastmcp install gemini-cli server.py --name "Weather Server" \
   --env API_KEY=your-api-key \
   --env DEBUG=true
 ```
@@ -126,7 +126,7 @@ fastmcp install gemini-cli server.py --server-name "Weather Server" \
 Or load them from a `.env` file:
 
 ```bash
-fastmcp install gemini-cli server.py --server-name "Weather Server" --env-file .env
+fastmcp install gemini-cli server.py --name "Weather Server" --env-file .env
 ```
 
 <Warning>

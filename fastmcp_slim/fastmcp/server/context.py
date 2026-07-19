@@ -389,6 +389,57 @@ class Context:
         """
         return fastmcp_request_ctx.get()
 
+    def _input_response_params(
+        self,
+    ) -> mcp_types.InputResponseRequestParams | None:
+        """The active request's multi-round-trip fields (SEP-2322), if any.
+
+        Reads the raw params of the active wire request through the SDK's
+        per-request context and reparses them as `InputResponseRequestParams`
+        to recover the typed `input_responses` / `request_state`. The
+        framework's request-state boundary has already unsealed `requestState`
+        into plaintext by the time a handler observes it. Returns `None`
+        outside a wire request (e.g. a background task) or when the params are
+        not a mapping.
+        """
+        rc = self.request_context
+        if rc is None:
+            return None
+        params = rc._srctx.params
+        if not isinstance(params, Mapping):
+            return None
+        return mcp_types.InputResponseRequestParams.model_validate(dict(params))
+
+    @property
+    def input_responses(self) -> mcp_types.InputResponses | None:
+        """Client responses to a prior `InputRequiredResult.input_requests`.
+
+        The multi-round-trip guard channel (SEP-2322). A guard tool inspects
+        this to decide what to do on each round: `None` on the initial round
+        (nothing has been asked yet, or the client retried without responses),
+        so the tool returns an `InputRequiredResult` to ask; present on a later
+        round, so the tool reads the answers and proceeds. It is a mapping whose
+        keys match the `input_requests` map the tool minted; each value is the
+        client's result for that request (an `ElicitResult`, `CreateMessageResult`,
+        or `ListRootsResult`).
+        """
+        params = self._input_response_params()
+        return params.input_responses if params else None
+
+    @property
+    def request_state(self) -> str | None:
+        """Opaque state echoed from a prior `InputRequiredResult.request_state`.
+
+        The multi-round-trip guard channel (SEP-2322): whatever a tool put in
+        `InputRequiredResult.request_state` on an earlier round is handed back
+        here (as plaintext — the framework seals it on the wire and unseals it
+        before the tool runs, so tampering is rejected before this is read).
+        `None` on the initial round. Use it to carry a small amount of computed
+        state across rounds without re-deriving it.
+        """
+        params = self._input_response_params()
+        return params.request_state if params else None
+
     @property
     def lifespan_context(self) -> dict[str, Any]:
         """Access the server's lifespan context.

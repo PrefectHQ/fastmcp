@@ -169,17 +169,17 @@ These warnings come from the MCP SDK, not from FastMCP. For logging they are ben
 
 FastMCP servers built on the SDK v2 serve multiple protocol eras from the same server. The SDK negotiates the era each client speaks: the sessionless `2026-07-28` era (which discovers capabilities through `server/discover`) and earlier session-based handshake versions are all handled simultaneously. This formally supersedes FastMCP's earlier "latest protocol only" stance — a single server now works with clients across the protocol transition.
 
-Not every Context feature is available on every era yet. The push-style interactions that require the server to call back into the client — elicitation, sampling, and listing roots — depend on the session-based request/response flow of the earlier eras. On a `2026-07-28` connection these raise a clear, era-aware error rather than reaching the client. Logging notifications and the request/response features flow on every era.
+Not every Context feature is available on every era yet. The imperative push APIs that call back into the client mid-execution — `ctx.elicit`, `ctx.sample`, and `ctx.list_roots` — depend on the session-based back-channel of the earlier eras, so on a `2026-07-28` connection they raise a clear, era-aware error rather than reaching the client. Elicitation itself still reaches the user on the modern era, through the guard pattern: a tool *returns* an `InputRequiredResult` describing what it needs, and the client answers with a fresh call (see [Elicitation on the modern protocol](/servers/elicitation#elicitation-on-the-modern-protocol)). Logging notifications and the request/response features flow on every era.
 
-Sampling is the exception that does not come back. `ctx.sample` and `ctx.sample_step` are **deprecated** and will be removed in a future FastMCP release: server-initiated sampling was removed from the wire by SEP-2577, and unlike elicitation it has no multi-round-trip replacement (the agentic loop would exhaust the round-trip budget). The migration is to call an LLM directly from your server rather than borrowing the client's model. See [Sampling](/servers/sampling) for details.
+Sampling is the exception that does not come back, and the reason is the protocol rather than an unfinished FastMCP feature. SEP-2577 deprecated server-initiated sampling, so `ctx.sample` and `ctx.sample_step` are **deprecated** and will be removed in a future FastMCP release. Elicitation moved to the guard pattern because the modern protocol still carries elicitation requests; sampling has no equivalent path because the protocol deprecated the pattern itself. The migration is to call an LLM directly from your server rather than borrowing the client's model. See [Sampling](/servers/sampling) for details.
 
 | Context feature | Earlier eras (session-based) | `2026-07-28` (sessionless) |
 | --- | --- | --- |
 | `ctx.info` / logging notifications | Supported | Supported |
 | Tools, resources, prompts, completions | Supported | Supported |
-| `ctx.elicit` | Supported | Not yet — MRTR rewrite pending |
+| `ctx.elicit` | Supported | Use the guard pattern (return `InputRequiredResult`) |
 | `ctx.sample` / `ctx.sample_step` | Supported (deprecated) | Removed — call an LLM server-side |
-| `ctx.list_roots` | Supported | Not yet — MRTR rewrite pending |
+| `ctx.list_roots` | Supported | Via the guard pattern (`input_requests` carries roots requests) |
 | Tasks (via the FastMCP client) | Supported | Not yet |
 
-If your tools rely on `ctx.elicit` or `ctx.list_roots`, they continue to work against clients on the earlier eras, and the sessionless replacements will expand this table as they land. Sampling is deprecated on every era and will not return on modern connections — migrate those tools to server-side LLM calls.
+If your tools rely on `ctx.elicit` or `ctx.list_roots`, they continue to work against clients on the earlier eras; on the modern era, reach for the guard pattern instead (see [Elicitation on the modern protocol](/servers/elicitation#elicitation-on-the-modern-protocol)). Sampling is deprecated on every era and will not return on modern connections — migrate those tools to server-side LLM calls.

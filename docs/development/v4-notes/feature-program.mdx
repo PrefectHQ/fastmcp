@@ -30,9 +30,11 @@ In this PR, sampling still functions on the legacy eras. Users already see an SD
 
 ## MRTR elicitation
 
-**Status: Designed. Flagship feature.**
+**Status: Guard form shipped (4.0). Declarative `Resolve` layer designed.**
 
-Elicitation survives the modern era, but only declaratively. The 2026 wire envelope still carries elicitation as a multi-round input-request (MRTR — multi-round tool result). Imperative `ctx.elicit` relies on the session back-channel, which is gone on `2026-07-28` foreground calls; on the modern era, elicitation is reachable only through a declarative resolver.
+Elicitation survives the modern era through multi-round-trip (MRTR). The 2026 wire envelope carries elicitation as a multi-round input-request: a tool returns an `InputRequiredResult` and re-runs per round, each round a complete request→response cycle. Imperative `ctx.elicit` relies on the session back-channel, which is gone on `2026-07-28` foreground calls; on the modern era, elicitation is reachable through MRTR instead.
+
+The **guard form** of this is shipped in 4.0 (see [Elicitation on the modern protocol](/servers/elicitation#elicitation-on-the-modern-protocol)): a tool returns an `InputRequiredResult` and reads the client's answers off `ctx.input_responses` / `ctx.request_state`, re-running each round. It mirrors the SDK's base guard model exactly — no FastMCP-invented DX, the framework owns `request_state` sealing, and returning this result on a handshake-era connection produces a clear era error. The declarative `Resolve(...)` layer below sits *on top of* this primitive and remains designed but not yet built.
 
 The design does both, so the imperative DX survives where it can and a declarative surface covers the modern era:
 

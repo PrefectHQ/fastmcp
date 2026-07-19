@@ -62,9 +62,8 @@ api_client = httpx2.AsyncClient(
 
 # Create MCP server with authenticated client
 mcp = FastMCP.from_openapi(
-    openapi_spec=spec, 
+    openapi_spec=spec,
     client=api_client,
-    timeout=30.0  # 30 second timeout for all requests
 )
 ```
 
@@ -404,7 +403,7 @@ FastMCP intelligently handles different types of parameters in OpenAPI requests:
 
 ### Query Parameters
 
-By default, FastMCP only includes query parameters that have non-empty values. Parameters with `None` values or empty strings are automatically filtered out.
+By default, FastMCP skips parameters whose value is `None`. Empty strings are still sent as empty query values, which is useful for APIs that distinguish between an omitted parameter and an explicitly blank one.
 
 ```python
 # When calling this tool...
@@ -412,10 +411,10 @@ await client.call_tool("search_products", {
     "category": "electronics",  # ✅ Included
     "min_price": 100,           # ✅ Included  
     "max_price": None,          # ❌ Excluded
-    "brand": "",                # ❌ Excluded
+    "brand": "",                # ✅ Included as an empty value
 })
 
-# The HTTP request will be: GET /products?category=electronics&min_price=100
+# The HTTP request will be: GET /products?category=electronics&min_price=100&brand=
 ```
 
 ### Path Parameters

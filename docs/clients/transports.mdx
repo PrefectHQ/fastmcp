@@ -16,7 +16,9 @@ Transports handle the underlying connection between your client and MCP servers.
 STDIO transport communicates with MCP servers through subprocess pipes. When using STDIO, your client launches and manages the server process, controlling its lifecycle and environment.
 
 <Warning>
-STDIO servers run in isolated environments by default. They do not inherit your shell's environment variables. You must explicitly pass any configuration the server needs.
+STDIO servers inherit only a small allowlist of environment variables — just enough to locate an interpreter and a home directory. Anything else in your shell, including API keys and other credentials, does not reach the server unless you pass it through `env` explicitly.
+
+The allowlist is platform-specific. On POSIX systems it is `HOME`, `LOGNAME`, `PATH`, `SHELL`, `TERM`, and `USER`; on Windows it is `APPDATA`, `HOMEDRIVE`, `HOMEPATH`, `LOCALAPPDATA`, `PATH`, `PATHEXT`, `PROCESSOR_ARCHITECTURE`, `SYSTEMDRIVE`, `SYSTEMROOT`, `TEMP`, `USERNAME`, and `USERPROFILE`.
 </Warning>
 
 ```python
@@ -42,7 +44,7 @@ client = Client("my_server.py")  # Limited - no configuration options
 
 ### Environment Variables
 
-Since STDIO servers do not inherit your environment, you need strategies for passing configuration.
+Values you pass through `env` are merged on top of the inherited allowlist, so you add configuration rather than replacing the base environment. Anything your server needs beyond those six variables has to be listed explicitly.
 
 **Selective forwarding** passes only the variables your server needs:
 
@@ -63,7 +65,11 @@ client = Client(transport)
 from dotenv import dotenv_values
 from fastmcp.client.transports import StdioTransport
 
-env = dotenv_values(".env")
+env = {
+    key: value
+    for key, value in dotenv_values(".env").items()
+    if value is not None
+}
 transport = StdioTransport(command="python", args=["server.py"], env=env)
 client = Client(transport)
 ```

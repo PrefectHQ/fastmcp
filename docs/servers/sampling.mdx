@@ -23,6 +23,10 @@ replacement on modern connections — this architectural shift is the intended
 answer.
 </Warning>
 
+<Note>
+This page covers `ctx.sample()`, which requests generation over the handshake-era back-channel. The modern protocol's guard mechanism can structurally carry a sampling request in its `input_requests` map, but SEP-2577 deprecated server-initiated sampling as a pattern rather than only the `ctx.sample()` spelling of it, so that is not a supported migration path. Use the guard mechanism for [elicitation](/servers/elicitation#elicitation-on-the-modern-protocol) and roots, and call an LLM directly from your server for generation.
+</Note>
+
 LLM sampling allows your MCP tools to request text generation from an LLM during execution. This enables tools to leverage AI capabilities for analysis, generation, reasoning, and more—without the client needing to orchestrate multiple calls.
 
 By default, sampling requests are routed to the client's LLM. You can also configure a fallback handler to use a specific provider (like OpenAI) when the client doesn't support sampling, or to always use your own LLM regardless of client capabilities.

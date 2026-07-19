@@ -9,7 +9,7 @@ import mcp_types as mt
 import pydantic_core
 from mcp_types import TextContent
 
-from fastmcp.tools.base import ToolResult
+from fastmcp.tools.base import InputRequiredToolResult, ToolResult
 
 from .middleware import CallNext, Middleware, MiddlewareContext
 
@@ -109,6 +109,14 @@ class ResponseLimitingMiddleware(Middleware):
     ) -> ToolResult:
         """Intercept tool calls and limit response size."""
         result = await call_next(context)
+
+        # A multi-round-trip ask (SEP-2322) carries no tool content to measure,
+        # and truncating it would collapse the InputRequiredToolResult into a
+        # plain ToolResult — the wire handler would then serialize the ask as
+        # content instead of returning it as an input-required result. Pass it
+        # through untouched.
+        if isinstance(result, InputRequiredToolResult):
+            return result
 
         # Check if we should limit this tool
         if self.tools is not None and context.message.name not in self.tools:

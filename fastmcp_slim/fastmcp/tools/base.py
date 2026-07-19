@@ -171,6 +171,44 @@ class ToolResult(BaseModel):
         return self.content, self.structured_content
 
 
+class InputRequiredToolResult(ToolResult):
+    """The full result of a single multi-round-trip leg (SEP-2322).
+
+    The protocol is stateless: each MRTR leg is a complete request→response
+    cycle. When a guard tool returns an `InputRequiredResult` from its body to
+    ask the client for input, that ask is the *legitimate result* of this tool
+    call — not a pause, not an error, not a third control-flow outcome. FastMCP
+    wraps it in this `ToolResult` subclass so it flows through the middleware
+    chain as an ordinary return value: `call_next(...)` returns it, default
+    middleware completes normally on the leg, and middleware authors can
+    identify an ask with a simple `isinstance(result, InputRequiredToolResult)`
+    check.
+
+    Invariant: the wrapped `InputRequiredResult` is never serialized as tool
+    content. `content` is always empty; the wire handler (`_on_call_tool`)
+    reads `.input_required` and returns it to the runner as the
+    `input_required` result. Do not read `.content` / `.structured_content` on
+    this subclass — they carry nothing.
+    """
+
+    input_required: mcp_types.InputRequiredResult = Field(
+        description="The client-input request this leg resolved to (SEP-2322)"
+    )
+
+    def __init__(self, input_required: mcp_types.InputRequiredResult) -> None:
+        # Bypass ToolResult's content-conversion __init__: an input-required
+        # leg carries no tool content (see the invariant above), and
+        # `input_required` is a required field ToolResult.__init__ can't set.
+        BaseModel.__init__(
+            self,
+            content=[],
+            structured_content=None,
+            meta=None,
+            is_error=False,
+            input_required=input_required,
+        )
+
+
 class Tool(FastMCPComponent):
     """Internal tool registration info."""
 
@@ -290,6 +328,12 @@ class Tool(FastMCPComponent):
 
         `run()` can EITHER return a list of ContentBlocks, or a tuple of
         (list of ContentBlocks, dict of structured output).
+
+        A tool that requests client input (SEP-2322 multi-round-trip) does so by
+        returning an `InputRequiredResult` from its body; the run machinery wraps
+        that in an `InputRequiredToolResult` — a `ToolResult` subclass — so it
+        stays inside the declared `ToolResult` result type and flows through the
+        middleware chain as an ordinary result (see `FunctionTool.run`).
         """
         raise NotImplementedError("Subclasses must implement run()")
 
@@ -590,4 +634,4 @@ def _convert_to_content(
     return [TextContent(type="text", text=default_serializer(result))]
 
 
-__all__ = ["Tool", "ToolResult"]
+__all__ = ["InputRequiredToolResult", "Tool", "ToolResult"]

@@ -1,7 +1,7 @@
 ---
 title: User Elicitation
 sidebarTitle: Elicitation
-description: Request structured input from users during tool execution through the MCP context.
+description: Ask users for input while a tool is running, on both the handshake and modern protocols.
 icon: message-question
 ---
 
@@ -9,9 +9,9 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="2.10.0" />
 
-User elicitation allows MCP servers to request structured input from users during tool execution. Instead of requiring all inputs upfront, tools can interactively ask for missing parameters, clarification, or additional context as needed.
+User elicitation allows MCP servers to request input from users during tool execution. Instead of requiring all inputs upfront, tools can interactively ask for missing parameters, clarification, or additional context as needed.
 
-Elicitation enables tools to pause execution and request specific information from users:
+Elicitation enables tools to request specific information from users mid-task:
 
 - **Missing parameters**: Ask for required information not provided initially
 - **Clarification requests**: Get user confirmation or choices for ambiguous scenarios
@@ -20,9 +20,18 @@ Elicitation enables tools to pause execution and request specific information fr
 
 For example, a file management tool might ask "Which directory should I create?" or a data analysis tool might request "What date range should I analyze?"
 
-## Overview
+## Which approach to use
 
-Use the `ctx.elicit()` method within any tool function to request user input. Specify the message to display and the type of response you expect.
+Elicitation reaches the user two different ways, depending on the protocol era the connection negotiated:
+
+- **On handshake-era connections (≤ 2025-11-25)**, a running tool calls [`ctx.elicit()`](#requesting-input-on-handshake-connections). The tool pauses mid-execution, the server sends a request over the session back-channel, and the tool resumes with the answer. This is the original elicitation API and the rest of this page's first half covers it in full.
+- **On the modern protocol (2026-07-28)**, that back-channel is gone — server-initiated requests were removed from the wire (SEP-2577), so a tool cannot issue a request mid-execution and block on the answer. Instead a tool asks for input by *returning* a description of what it needs; each round completes normally and the client issues a new call with the answer attached. This is the [guard pattern](#elicitation-on-the-modern-protocol), covered in the second half.
+
+The era gate is strict: `ctx.elicit()` only works on handshake connections, and the guard pattern only works on modern ones. A tool that returns a guard result on a handshake connection — or calls `ctx.elicit()` on a modern one — raises a clear era error rather than failing obscurely. A server that serves both eras may need both paths; branch on `ctx.protocol_version` to pick the right one. `fastmcp.Client` drives whichever the connection negotiated automatically.
+
+## Requesting input on handshake connections
+
+Use the `ctx.elicit()` method within any tool function to request user input on a handshake-era connection. Specify the message to display and the type of response you expect.
 
 ```python
 from fastmcp import FastMCP, Context
@@ -178,16 +187,16 @@ async def confirm_purchase(ctx: Context) -> str:
 
 These arguments only apply when FastMCP is adding the wrapper. For structured responses (`BaseModel`, dataclass, `TypedDict`), set the metadata on the individual fields via `Field(title=..., description=...)` — passing `response_title` or `response_description` alongside a model type raises `TypeError`.
 
-### No Response
+### Empty Responses
 
-Sometimes, the goal of an elicitation is to simply get a user to approve or reject an action. Pass `None` as the response type to indicate that no data is expected. The `data` field will be `None` when the user accepts.
+Passing `None` as the response type creates an empty-object schema and returns an accepted result with `data == {}`. This form is deprecated because some clients render empty forms poorly; prefer an explicit response type such as `bool` for confirmations.
 
 ```python
 @mcp.tool
 async def approve_action(ctx: Context) -> str:
-    result = await ctx.elicit("Approve this action?", response_type=None)
+    result = await ctx.elicit("Approve this action?", response_type=bool)
 
-    if result.action == "accept":
+    if result.action == "accept" and result.data:
         return do_action()
     else:
         raise ValueError("Action rejected")
@@ -377,3 +386,195 @@ async def create_task(ctx: Context) -> str:
 ```
 
 Default values are supported for strings, integers, numbers, booleans, and enums.
+
+## Elicitation on the modern protocol
+
+<VersionBadge version="4.0.0" />
+
+The modern protocol (2026-07-28) removes the server-initiated back-channel that `ctx.elicit()` depends on (SEP-2577), so a running tool has no way to reach the user mid-execution. Elicitation reaches the user a different way: a tool asks for input by *returning* a description of what it needs. That return value completes the call normally — the result just happens to be an `InputRequiredResult` describing a request rather than a final answer. The client fulfils the request and issues a **new** tool call with the answer attached, and the tool runs again from the top, sees the answer, and either asks for the next thing or returns its final result.
+
+Every round is a complete, independent request→response cycle: the tool holds no state between rounds, and nothing on the server stays alive waiting between them. That makes elicitation work on stateless, serverless, and load-balanced deployments where no two rounds are guaranteed to land on the same worker. A booking tool can ask for a destination, then a date, then confirm, across as many rounds as the work requires, without keeping a connection or a server-side session alive in between.
+
+<Note>
+This pattern requires an MCP **2026-07-28** connection. The `InputRequiredResult` result type does not exist on earlier protocol versions; a tool that returns one on a handshake-era connection raises a clear error (see [Protocol requirements](#protocol-requirements)). On those connections, use [`ctx.elicit()`](#requesting-input-on-handshake-connections) instead.
+</Note>
+
+### How it works
+
+A tool that asks for input this way is a **guard**: each round it re-runs from the top, checks whether the answers it needs are present, and either asks for more or proceeds. Each of those rounds is an ordinary tool call that runs the full request path — middleware chain included — and returns a result like any other; the framework does not hold the call open between rounds. It inspects two request-scoped properties on the `Context` to decide what to do:
+
+- `ctx.input_responses` — the client's answers to what you asked on a previous round. It is `None` on the very first round (nothing has been asked yet) and a mapping of answers on later rounds.
+- `ctx.request_state` — a small opaque string you can carry from one round to the next. It is `None` on the first round and echoes back whatever you last put in `InputRequiredResult.request_state`.
+
+To ask for input, return an `InputRequiredResult` whose `input_requests` map describes the requests to run — most commonly an elicitation. Each request has a key; the client's answer comes back under the same key in `ctx.input_responses`.
+
+The following tool books a flight across three rounds: it asks for a destination, then asks for a date (carrying the destination forward), then confirms the booking.
+
+```python
+from fastmcp import FastMCP, Context
+from fastmcp.types import InputRequiredResult, ElicitRequest, ElicitRequestFormParams
+
+mcp = FastMCP("Booking Server")
+
+
+def ask(key: str, message: str, field: str, request_state: str | None = None) -> InputRequiredResult:
+    """Build an InputRequiredResult that elicits a single text field."""
+    params = ElicitRequestFormParams(
+        message=message,
+        requested_schema={
+            "type": "object",
+            "properties": {field: {"type": "string"}},
+            "required": [field],
+        },
+    )
+    elicitation = ElicitRequest(method="elicitation/create", params=params)
+    return InputRequiredResult(
+        result_type="input_required",
+        input_requests={key: elicitation},
+        request_state=request_state,
+    )
+
+
+@mcp.tool
+async def book_flight(ctx: Context) -> str | InputRequiredResult:
+    responses = ctx.input_responses
+
+    if responses is None:
+        return ask("destination", "Where would you like to fly?", "destination")
+
+    if "destination" in responses:
+        destination = responses["destination"].content["destination"]
+        return ask(
+            "date",
+            f"When would you like to fly to {destination}?",
+            "date",
+            request_state=f"dest={destination}",
+        )
+
+    destination = ctx.request_state.split("=", 1)[1]
+    date = responses["date"].content["date"]
+    return f"Booked a flight to {destination} on {date}"
+```
+
+The tool runs three times for one logical call. On the first run `ctx.input_responses` is `None`, so it asks for a destination. On the second run the destination is present, so it asks for a date and stashes the destination in `request_state`. On the third run the date is present, so it reads the destination back out of `ctx.request_state` and returns the booking. Each round is a fresh execution — the tool holds no state of its own between rounds; everything it needs travels on the request.
+
+### Reading answers
+
+Each value in `ctx.input_responses` is the client's result for one request, keyed by the key you gave it. For an elicitation, that is an `ElicitResult` with an `action` and (when accepted) `content`:
+
+```python
+@mcp.tool
+async def confirm(ctx: Context) -> str:
+    responses = ctx.input_responses
+    if responses is None:
+        return ask("ok", "Proceed?", "ok")
+
+    answer = responses["ok"]
+    if answer.action != "accept":
+        return "Cancelled."
+    return f"Proceeding with {answer.content['ok']}"
+```
+
+Always check `answer.action` before reading `answer.content`: a client may **decline** or **cancel**, in which case `content` is absent. A decline is a normal answer, not an error — it is delivered to your tool like any other round so you can handle it deliberately.
+
+### Driving the loop from a client
+
+`fastmcp.Client` drives the whole loop automatically. Point it at a 2026-era connection (`mode="auto"` negotiates one) and give it an elicitation handler; it fulfils each round's requests and retries until the tool returns its final result.
+
+```python
+from fastmcp import Client
+from fastmcp.client.elicitation import ElicitResult
+
+
+async def handler(message, response_type, params, ctx):
+    if "Where" in message:
+        return ElicitResult(action="accept", content=response_type(destination="Paris"))
+    return ElicitResult(action="accept", content=response_type(date="2026-08-01"))
+
+
+async with Client(mcp, mode="auto", elicitation_handler=handler) as client:
+    result = await client.call_tool("book_flight", {})
+    print(result.data)  # "Booked a flight to Paris on 2026-08-01"
+```
+
+The client caps the number of rounds it will drive (`input_required_max_rounds`, default 10) so a misbehaving guard cannot loop forever; exceeding it raises an error rather than hanging.
+
+### Carrying state across rounds
+
+The `request_state` you return is **sealed by the framework** before it reaches the wire and **unsealed and verified** before your tool runs again. Your tool only ever mints and reads plaintext — the client receives an opaque token it cannot read, and a token that has been tampered with, has expired, or was minted by a different server is rejected before your tool sees it. You never call any crypto yourself.
+
+Because sealing is automatic, `request_state` is a safe place to carry a computed value forward instead of re-deriving it each round. Keep it small — it round-trips through the client on every leg.
+
+#### Multi-replica deployments
+
+By default each server process seals under a per-process **ephemeral key**. That is correct for single-process deployments (stdio, one HTTP worker), but it means state minted by one process is rejected by another — so a horizontally scaled deployment, where consecutive rounds may land on different replicas, needs a **shared key**.
+
+Give every replica the same key (or key ring) via `request_state_security`:
+
+```python
+import os
+from fastmcp import FastMCP
+from mcp.server.request_state import RequestStateSecurity
+
+mcp = FastMCP(
+    "Booking Server",
+    request_state_security=RequestStateSecurity(keys=[os.environ["REQUEST_STATE_KEY"].encode()]),
+)
+```
+
+Keys must be at least 32 bytes of secret randomness. `keys` is a rotation ring: `keys[0]` seals, and every key in the ring can unseal, so you can rotate without downtime by rolling `keys=[old, new]` → `keys=[new, old]` → `keys=[new]` across deployments. Generate a key with:
+
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+### Protocol requirements
+
+The `InputRequiredResult` result type is part of MCP **2026-07-28** and does not exist on earlier protocol versions. If a tool returns one on a handshake-era (≤ 2025-11-25) connection, FastMCP rejects the call with a clear error naming the era mismatch rather than letting it fail as a generic invalid result:
+
+```
+Tool 'book_flight' returned an InputRequiredResult to request client input, but
+the multi-round-trip result type (SEP-2322) only exists at MCP 2026-07-28; this
+connection negotiated '2025-11-25'. Use ctx.elicit() for server-initiated input
+on handshake-era connections.
+```
+
+If you need to support both eras, branch on `ctx.protocol_version`: return an `InputRequiredResult` on modern connections and fall back to [`ctx.elicit()`](#requesting-input-on-handshake-connections) on handshake-era ones.
+
+### Sampling and roots
+
+Elicitation is the most common request to carry this way, and **roots** requests work identically — the `input_requests` map holds them the same way, and each answer comes back in `ctx.input_responses` under its key (an `ElicitResult` or `ListRootsResult`). See [Client Roots](/clients/roots) for what a roots request contains. `fastmcp.Client` answers both from the handlers you already configured, so a guard tool that mixes them needs no extra client wiring.
+
+The map can structurally hold a **sampling** request too (its answer would be a `CreateMessageResult`), but SEP-2577 deprecated server-initiated sampling on the modern protocol, so reach for a direct server-side LLM call instead of routing generation through a guard round. See [Sampling](/servers/sampling).
+
+### Middleware
+
+Because each round is a complete request→response cycle, a multi-round tool call runs the **full middleware chain on every round**. `on_call_tool` fires once per round and `call_next(context)` returns that round's result like any other call — there is no held-open call and no special control flow to account for. Default middleware behaves sensibly with no changes: logging logs each round, timing times each round, and error-handling middleware does not fire on an asking round — an ask is a legitimate result, not an error.
+
+An asking round returns an `InputRequiredToolResult` (a `ToolResult` subclass); the final round returns an ordinary `ToolResult`. Middleware that needs to treat the two differently identifies an ask with an `isinstance` check, and tells an initial round from a continuation round by inspecting `ctx.input_responses` (`None` on the first round, present once the client has answered):
+
+```python
+from fastmcp.server.middleware import Middleware
+from fastmcp.tools import InputRequiredToolResult
+
+
+class GuardAwareMiddleware(Middleware):
+    async def on_call_tool(self, context, call_next):
+        ctx = context.fastmcp_context
+        # Either signal marks a continuation: a state-only round carries
+        # request_state with no answers, so it retries with input_responses=None.
+        is_continuation = (
+            ctx.input_responses is not None or ctx.request_state is not None
+        )
+
+        result = await call_next(context)
+
+        if isinstance(result, InputRequiredToolResult):
+            ...  # this round asked the client for input
+        else:
+            ...  # this round returned a final result
+
+        return result
+```
+
+One built-in makes a deliberate exception: the [response caching middleware](/servers/middleware) never stores an `InputRequiredToolResult`, because caching an ask would replay a stale question to a later caller.

@@ -103,7 +103,9 @@ class FastMCPProviderTool(Tool):
 
         Passes task_meta through to the child server so it can handle
         backgrounding appropriately. fn_key is already set by the parent
-        server before calling this method.
+        server before calling this method. A child tool that requests client
+        input (SEP-2322) returns an `InputRequiredToolResult`, which forwards
+        through this delegation to the parent's wire handler unchanged.
         """
         # Pass exact version so child executes the correct version
         version = VersionSpec(eq=self.version) if self.version else None
@@ -133,7 +135,7 @@ class FastMCPProviderTool(Tool):
         result = await self._server.call_tool(
             self._original_name, arguments, version=version
         )
-        # Result from call_tool should always be ToolResult when no task_meta
+        # Result from call_tool should always be ToolResult when no task_meta.
         if isinstance(result, mcp_types.CreateTaskResult):
             raise RuntimeError(
                 "Unexpected CreateTaskResult from call_tool without task_meta"

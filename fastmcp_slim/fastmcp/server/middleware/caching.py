@@ -22,7 +22,7 @@ from fastmcp.prompts.base import Message, Prompt, PromptResult
 from fastmcp.resources.base import Resource, ResourceContent, ResourceResult
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.tools.base import InputRequiredToolResult, Tool, ToolResult
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import FastMCPBaseModel
 
@@ -413,6 +413,21 @@ class ResponseCachingMiddleware(Middleware):
         ) is False or not self._matches_tool_cache_settings(tool_name=tool_name):
             return await call_next(context)
 
+        # A multi-round continuation leg (SEP-2322) must bypass the cache
+        # entirely: the cache key is built from the tool name and arguments
+        # only, so a continuation shares its key with a fresh call. Reading
+        # could serve a prior flow's final answer to this leg; writing would
+        # serve THIS flow's final answer to a later fresh call — which would
+        # then never be asked the tool's questions. Either signal marks a
+        # continuation: a state-only round (request_state with no questions)
+        # retries with input_responses=None but still carries request_state.
+        fastmcp_ctx = context.fastmcp_context
+        if fastmcp_ctx is not None and (
+            fastmcp_ctx.input_responses is not None
+            or fastmcp_ctx.request_state is not None
+        ):
+            return await call_next(context)
+
         cache_key: str = _make_call_tool_cache_key(
             msg=context.message, auth_key=_get_auth_partition_key()
         )
@@ -421,6 +436,15 @@ class ResponseCachingMiddleware(Middleware):
             return cached_value.unwrap()
 
         tool_result: ToolResult = await call_next(context)
+
+        # Never cache a multi-round-trip ask (SEP-2322). An
+        # InputRequiredToolResult is a request for client input on this leg, not
+        # a stable answer; caching it would replay a stale question to later
+        # callers and bypass the tool's own per-round logic. Return it straight
+        # through without storing.
+        if isinstance(tool_result, InputRequiredToolResult):
+            return tool_result
+
         cacheable_tool_result: CacheableToolResult = CacheableToolResult.wrap(
             value=tool_result
         )

@@ -90,6 +90,10 @@ def get_application_status() -> str:
   A human-readable name. If not provided, defaults to function name
 </ParamField>
 
+<ParamField body="title" type="str | None">
+  A human-readable display title for the resource or template
+</ParamField>
+
 <ParamField body="description" type="str | None">
   Explanation of the resource. If not provided, defaults to docstring
 </ParamField>
@@ -100,11 +104,6 @@ def get_application_status() -> str:
 
 <ParamField body="tags" type="set[str] | None">
   A set of strings used to categorize the resource. These can be used by the server and, in some cases, by clients to filter or group available resources.
-</ParamField>
-
-<ParamField body="enabled" type="bool" default="True">
-  <Warning>Deprecated in v3.0.0. Use `mcp.enable()` / `mcp.disable()` at the server level instead.</Warning>
-  A boolean to enable or disable the resource. See [Component Visibility](#component-visibility) for the recommended approach.
 </ParamField>
 
 <ParamField body="icons" type="list[Icon] | None">
@@ -144,14 +143,16 @@ For decorating instance or class methods, use the standalone `@resource` decorat
 
 ### Return Values
 
-Resource functions must return one of three types:
+Resource functions can return these supported shapes:
 
 -   **`str`**: Sent as `TextResourceContents` (with `mime_type="text/plain"` by default).
 -   **`bytes`**: Base64 encoded and sent as `BlobResourceContents`. You should specify an appropriate `mime_type` (e.g., `"image/png"`, `"application/octet-stream"`).
--   **`ResourceResult`**: Full control over contents, MIME types, and metadata. See [ResourceResult](#resourceresult) below.
+-   **JSON-native values** (`dict`, `list`, `tuple`, numbers, booleans, or `None`): Serialized to JSON text, keeping the resource's declared MIME type — which is `text/plain` unless you set one. Pass `mime_type="application/json"` on the decorator whenever clients rely on the content type to parse the payload.
+-   **`list[ResourceContent]`**: Multiple content items with per-item MIME types and metadata.
+-   **`ResourceResult`**: Full control over contents, MIME types, and result-level metadata. See [ResourceResult](#resourceresult) below.
 
 <Note>
-To return structured data like dicts or lists, serialize them to JSON strings using `json.dumps()`. This explicit approach ensures your type checker catches errors during development rather than at runtime when a client reads the resource.
+For custom classes that are not JSON-native, return a `ResourceResult` or wrap values in a `ResourceContent` list so serialization and MIME types are explicit.
 </Note>
 
 #### ResourceResult
@@ -231,7 +232,7 @@ def get_public(): return "public"
 def get_secret(): return "secret"
 
 # Disable specific resources by key
-mcp.disable(keys={"resource:data://secret"})
+mcp.disable(names={"data://secret"})
 
 # Disable resources by tag
 mcp.disable(tags={"internal"})
@@ -369,8 +370,8 @@ def example_resource() -> str:
 
 # These operations trigger notifications:
 mcp.add_resource(example_resource)                   # Sends resources/list_changed notification
-mcp.disable(keys={"resource:data://example"})        # Sends resources/list_changed notification
-mcp.enable(keys={"resource:data://example"})         # Sends resources/list_changed notification
+mcp.disable(names={"data://example"})  # Sends resources/list_changed notification
+mcp.enable(names={"data://example"})   # Sends resources/list_changed notification
 ```
 
 Notifications are only sent when these operations occur within an active MCP request context (e.g., when called from within a tool or other MCP operation). Operations performed during server initialization do not trigger notifications.

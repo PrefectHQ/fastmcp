@@ -229,9 +229,10 @@ Environment variables are included in this section because they're runtime confi
   
   <Expandable title="Deployment Fields">
     <ParamField body="transport" type="string" default="stdio">
-      Protocol for client communication:
+      Protocol for client communication. `"http"` and `"streamable-http"` both select FastMCP's Streamable HTTP transport:
       - `"stdio"`: Standard input/output for desktop clients
-      - `"http"`: Network-accessible HTTP server
+      - `"http"`: Network-accessible Streamable HTTP server
+      - `"streamable-http"`: Explicit alias for Streamable HTTP
       - `"sse"`: Server-sent events
     </ParamField>
     
@@ -241,12 +242,12 @@ Environment variables are included in this section because they're runtime confi
       - `"0.0.0.0"`: All network interfaces
     </ParamField>
     
-    <ParamField body="port" type="integer" default="3000">
-      Port number for HTTP transport.
+    <ParamField body="port" type="integer" default="8000">
+      Port number for HTTP transport. If omitted, FastMCP uses the server runtime default.
     </ParamField>
     
-    <ParamField body="path" type="string" default="/mcp/">
-      URL path for the MCP endpoint when using HTTP transport.
+    <ParamField body="path" type="string" default="/mcp">
+      URL path for the MCP endpoint when using HTTP transport. The default is `/mcp` for Streamable HTTP and `/sse` for SSE.
     </ParamField>
     
     <ParamField body="log_level" type="string" default="INFO">
@@ -396,20 +397,20 @@ This flag tells FastMCP: "I already have the source code, skip any download/clon
 
 Note: For filesystem sources (local Python files), this flag has no effect since they don't require preparation.
 
-The configuration file works with all FastMCP commands:
+The configuration file works with server-loading commands that explicitly accept FastMCP config files:
 - **`run`** - Start the server in production mode
-- **`dev`** - Launch with the Inspector UI for development  
+- **`dev inspector`** - Launch with the Inspector UI for development
 - **`inspect`** - View server capabilities and configuration
-- **`install`** - Install to Claude Desktop, Cursor, or other MCP clients
+- **`install`** - Install to Claude Desktop, Cursor, or another MCP client
 
-When no file argument is provided, FastMCP searches the current directory for `fastmcp.json`. This means you can simply navigate to your project directory and run `fastmcp run` to start your server with all its configured settings.
+`run`, `dev inspector`, and `inspect` search the current directory for a file named exactly `fastmcp.json` when you don't pass a file argument, so you can navigate to your project directory and run `fastmcp run` to start your server with all its configured settings. `install` requires an explicit path to the config file — it never searches.
 
 ### CLI Override Behavior
 
 Command-line arguments take precedence over configuration file values, allowing ad-hoc adjustments without modifying the file:
 
 ```bash
-# Config specifies port 3000, CLI overrides to 8080
+# Config specifies port 8000, CLI overrides to 8080
 fastmcp run fastmcp.json --port 8080
 
 # Config specifies stdio, CLI overrides to HTTP
@@ -434,7 +435,7 @@ You can use different configuration files for different environments:
 - `prod.fastmcp.json` - Production settings
 - `test_fastmcp.json` - Test configuration
 
-Any file with "fastmcp.json" in the name is recognized as a configuration file.
+Only a file named exactly `fastmcp.json` is auto-detected when you omit the path. Other FastMCP configuration files can use any `.json` name, but you must pass them explicitly.
 
 ## Examples
 
@@ -471,7 +472,7 @@ A configuration optimized for local development:
     "type": "uv",
     "python": "3.12",
     "dependencies": ["fastmcp[dev]"],
-    "editable": "."
+    "editable": ["."]
   },
   // HOW should it run?
   "deployment": {
@@ -510,7 +511,7 @@ A production-ready configuration with full dependency management:
     "transport": "http",
     "host": "0.0.0.0",
     "port": 3000,
-    "path": "/api/mcp/",
+    "path": "/api/mcp",
     "log_level": "INFO",
     "env": {
       "ENV": "production",

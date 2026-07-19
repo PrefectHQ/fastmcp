@@ -28,12 +28,12 @@ In your Scalekit dashboard:
     2. Enter server details: a name, a resource identifier, and the desired MCP client authentication settings
     3. Save, then copy the **Resource ID** (for example, res_92015146095)
 
-In your FastMCP project's `.env`:
+Record these values in a `.env` file in your FastMCP project:
 
-```sh
-SCALEKIT_ENVIRONMENT_URL=<YOUR_APP_ENVIRONMENT_URL>
-SCALEKIT_RESOURCE_ID=<YOUR_APP_RESOURCE_ID> # res_926EXAMPLE5878
-BASE_URL=http://localhost:8000/
+```sh .env
+SCALEKIT_ENVIRONMENT_URL=https://your-env.scalekit.com
+SCALEKIT_RESOURCE_ID=res_926EXAMPLE5878
+BASE_URL=http://localhost:8000
 # Optional: additional scopes tokens must have
 # SCALEKIT_REQUIRED_SCOPES=read,write
 ```
@@ -43,20 +43,25 @@ BASE_URL=http://localhost:8000/
 
 ### Step 2: Add auth to FastMCP server
 
-Create your FastMCP server file and use the ScalekitProvider to handle all the OAuth integration automatically:
+Create your FastMCP server file and use the ScalekitProvider to handle all the OAuth integration automatically. Nothing reads `.env` automatically, so load it explicitly with [python-dotenv](https://pypi.org/project/python-dotenv/) (`pip install python-dotenv`) before constructing the provider.
 
 > **Warning:** The legacy `mcp_url` and `client_id` parameters are deprecated and will be removed in a future release. Use `base_url` instead of `mcp_url` and remove `client_id` from your configuration.
 
 ```python server.py
+import os
+
+from dotenv import load_dotenv
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.scalekit import ScalekitProvider
 
-# Discovers Scalekit endpoints and set up JWT token validation
+load_dotenv()
+
+# Discovers Scalekit endpoints and sets up JWT token validation
 auth_provider = ScalekitProvider(
-    environment_url=SCALEKIT_ENVIRONMENT_URL,    # Scalekit environment URL
-    resource_id=SCALEKIT_RESOURCE_ID,            # Resource server ID
-    base_url=SERVER_URL,                         # Public MCP endpoint
-    required_scopes=["read"],                    # Optional scope enforcement
+    environment_url=os.environ["SCALEKIT_ENVIRONMENT_URL"],  # Scalekit environment URL
+    resource_id=os.environ["SCALEKIT_RESOURCE_ID"],          # Resource server ID
+    base_url=os.environ.get("BASE_URL", "http://localhost:8000"),
+    required_scopes=["read"],                                # Optional scope enforcement
 )
 
 # Create FastMCP server with auth
@@ -86,7 +91,7 @@ Set `required_scopes` when you need tokens to carry specific permissions. Leave 
 uv run python server.py
 ```
 
-Use any MCP client (for example, mcp-inspector, Claude, VS Code, or Windsurf) to connect to the running serve. Verify that authentication succeeds and requests are authorized as expected.
+Use any MCP client (for example, mcp-inspector, Claude, VS Code, or Windsurf) to connect to the running server. Verify that authentication succeeds and requests are authorized as expected.
 
 ## Production Configuration
 
@@ -99,8 +104,8 @@ from fastmcp.server.auth.providers.scalekit import ScalekitProvider
 
 # Load configuration from environment variables
 auth = ScalekitProvider(
-    environment_url=os.environ.get("SCALEKIT_ENVIRONMENT_URL"),
-    resource_id=os.environ.get("SCALEKIT_RESOURCE_ID"),
+    environment_url=os.environ["SCALEKIT_ENVIRONMENT_URL"],
+    resource_id=os.environ["SCALEKIT_RESOURCE_ID"],
     base_url=os.environ.get("BASE_URL", "https://your-server.com")
 )
 

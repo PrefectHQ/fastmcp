@@ -100,15 +100,15 @@ The `FastMCP` constructor accepts parameters organized into four categories: ide
 These parameters control how your server presents itself to clients.
 
 <Card>
-<ParamField body="name" type="str" default="FastMCP">
-  A human-readable name for your server, shown in client applications and logs
+<ParamField body="name" type="str | None" default="None">
+  A human-readable name for your server, shown in client applications and logs. If omitted, FastMCP generates a random name
 </ParamField>
 
 <ParamField body="instructions" type="str | None">
   Description of how to interact with this server. Clients surface these instructions to help LLMs understand the server's purpose and available functionality
 </ParamField>
 
-<ParamField body="version" type="str | None">
+<ParamField body="version" type="str | int | float | None">
   Version string for your server. Defaults to the FastMCP library version if not provided
 </ParamField>
 
@@ -136,29 +136,29 @@ These parameters control how your server presents itself to clients.
 These parameters control what your server is built from — its components, middleware, providers, and lifecycle.
 
 <Card>
-<ParamField body="tools" type="list[Tool | Callable] | None">
+<ParamField body="tools" type="Sequence[Tool | Callable] | None">
   Tools to register on the server. An alternative to the `@mcp.tool` decorator when you need to add tools programmatically
 </ParamField>
 
-<ParamField body="auth" type="OAuthProvider | TokenVerifier | None">
+<ParamField body="auth" type="AuthProvider | None">
   Authentication provider for securing HTTP-based transports. See [Authentication](/servers/auth/authentication) for configuration
 </ParamField>
 
-<ParamField body="middleware" type="list[Middleware] | None">
+<ParamField body="middleware" type="Sequence[Middleware] | None">
   [Middleware](/servers/middleware) that intercepts and transforms every MCP message flowing through the server — requests, responses, and notifications in both directions. Use for cross-cutting concerns like logging, error handling, and rate limiting
 </ParamField>
 
-<ParamField body="providers" type="list[Provider] | None">
+<ParamField body="providers" type="Sequence[Provider] | None">
   [Providers](/servers/providers/overview) that supply tools, resources, and prompts dynamically. Providers are queried at request time, so they can serve components from databases, APIs, or other external sources
 </ParamField>
 
-<ParamField body="transforms" type="list[Transform] | None">
+<ParamField body="transforms" type="Sequence[Transform] | None">
   <VersionBadge version="3.1.0" />
 
   Server-level [transforms](/servers/transforms/transforms) to apply to all components. Transforms modify how tools, resources, and prompts are presented to clients — for example, [search transforms](/servers/transforms/tool-search) replace large catalogs with on-demand discovery
 </ParamField>
 
-<ParamField body="lifespan" type="Lifespan | AsyncContextManager | None">
+<ParamField body="lifespan" type="Lifespan | LifespanCallable | None">
   Server-level setup and teardown logic that runs when the server starts and stops. See [Lifespans](/servers/lifespan) for composable lifespans
 </ParamField>
 </Card>
@@ -185,7 +185,7 @@ These parameters tune how the server processes requests and communicates with cl
 <ParamField body="list_page_size" type="int | None" default="None">
   <VersionBadge version="3.0.0" />
 
-  Maximum items per page for list operations (`tools/list`, `resources/list`, etc.). When `None`, all results are returned in a single response. See [Pagination](/servers/pagination) for details
+  Maximum items per page for list operations (`tools/list`, `resources/list`, etc.). Must be a positive integer when set. When `None`, all results are returned in a single response. See [Pagination](/servers/pagination) for details
 </ParamField>
 
 <ParamField body="tasks" type="bool | None" default="False">
@@ -273,7 +273,7 @@ The filtering logic works as follows:
 - **Precedence**: Later calls override earlier ones, so call `disable` after `enable` to exclude from an allowlist
 
 <Tip>
-To ensure a component is never exposed, you can set `enabled=False` on the component itself. See the component-specific documentation for details.
+To hide a component by default, disable it at the server level with `mcp.disable(names={"admin_tool"})`. This is a default rather than a guarantee — a later `enable()` call or a per-session visibility rule can bring the component back. When something must never be reachable, leave it unregistered or guard it with [authentication](/servers/auth/authentication) instead of relying on visibility.
 </Tip>
 
 ```python

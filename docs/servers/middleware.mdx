@@ -262,27 +262,36 @@ async def on_list_prompts(self, context: MiddlewareContext, call_next):
 
 <VersionBadge version="2.13.0" />
 
-Called when a client connects and initializes the session. This hook cannot modify the initialization response.
+Called when a client connects and initializes the session. Middleware can reject the client before `call_next()` raises an error response, or inspect and modify the `InitializeResult` after `call_next()` returns.
+
+The request params carry the identity the client declared for itself on `client_info`, which makes this the natural place to gate access by client. Note that these fields are snake_case: the MCP wire format spells it `clientInfo`, but the Python model exposes `client_info` and treats the camelCase form as a serialization alias only.
 
 ```python
 from fastmcp.exceptions import McpError
 
 async def on_initialize(self, context: MiddlewareContext, call_next):
-    client_info = context.message.params.get("clientInfo", {})
-    client_name = client_info.get("name", "unknown")
+    client_name = context.message.params.client_info.name
 
     # Reject before call_next to send error to client
     if client_name == "blocked-client":
         raise McpError(code=-32000, message="Client not supported")
 
-    await call_next(context)
+    result = await call_next(context)
     print(f"Client {client_name} initialized")
+    return result
 ```
 
-**Returns:** `None` — The initialization response is handled internally by the MCP protocol.
+**Returns:** `InitializeResult | None` — The value you return is what gets serialized to the client, so modifying the result from `call_next()` changes what the client receives, including fields like `instructions` and `server_info`.
+
+```python
+async def on_initialize(self, context: MiddlewareContext, call_next):
+    result = await call_next(context)
+    result.instructions = "Custom instructions for this client"
+    return result
+```
 
 <Warning>
-Raising `McpError` after `call_next()` will only log the error, not send it to the client. The response has already been sent. Always reject **before** `call_next()`.
+Rejection works only **before** `call_next()`. Raising `McpError` afterward logs the error without sending it — the client still receives a successful initialize response.
 </Warning>
 
 ### Raw Handler

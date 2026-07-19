@@ -69,19 +69,22 @@ fastmcp run mcp.json
 ```
 
 <Warning>
-`fastmcp run` completely ignores the `if __name__ == "__main__"` block. Any setup code in that block won't execute. If you need initialization logic to run, use a [factory function](/cli/overview#factory-functions).
+`fastmcp run` completely ignores the `if __name__ == "__main__"` block. Any setup code in that block won't execute. If you need initialization logic to run, use a [factory function](#entrypoints).
 </Warning>
 
 ### Options
 
 | Option | Flag | Description |
 | ------ | ---- | ----------- |
-| Transport | `--transport`, `-t` | `stdio` (default), `http`, or `sse` |
+| Transport | `--transport`, `-t` | `stdio` (default), `http` / `streamable-http`, or `sse` |
 | Host | `--host` | Bind address for HTTP (default: `127.0.0.1`) |
 | Port | `--port`, `-p` | Bind port for HTTP (default: `8000`) |
-| Path | `--path` | URL path for HTTP (default: `/mcp/`) |
+| Path | `--path` | URL path for HTTP (default: `/mcp` for `http`, `/sse` for `sse`) |
 | Log Level | `--log-level`, `-l` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
 | No Banner | `--no-banner` | Suppress the startup banner |
+| Stateless | `--stateless` | Run without sessions, for serverless and multi-worker deployments |
+| Module Mode | `--module`, `-m` | Run a Python module via `python -m` instead of a file path |
+| Skip Source | `--skip-source` | Skip source preparation (use when the source is already prepared) |
 | Auto-Reload | `--reload` / `--no-reload` | Watch for file changes and restart automatically |
 | Reload Dirs | `--reload-dir` | Directories to watch (repeatable) |
 | Skip Env | `--skip-env` | Don't set up a uv environment (use when already in one) |
@@ -127,7 +130,7 @@ Auto-reload is on by default — save a file and the MCP server restarts automat
 
 ```bash
 fastmcp dev inspector server.py
-fastmcp dev inspector server.py -e . --with pandas
+fastmcp dev inspector server.py --with-editable . --with pandas
 ```
 
 <Tip>
@@ -140,7 +143,7 @@ The Inspector connects over **stdio only**. When it launches, you may need to se
 
 | Option | Flag | Description |
 | ------ | ---- | ----------- |
-| Editable Package | `--with-editable`, `-e` | Install a directory in editable mode |
+| Editable Package | `--with-editable` | Install a directory in editable mode |
 | Extra Packages | `--with` | Additional packages (repeatable) |
 | Inspector Version | `--inspector-version` | MCP Inspector version to use |
 | UI Port | `--ui-port` | Port for the Inspector UI |
