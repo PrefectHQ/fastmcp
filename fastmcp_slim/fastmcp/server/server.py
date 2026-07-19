@@ -581,7 +581,7 @@ class FastMCP(
         """Builds and executes the middleware chain for a single dispatch phase.
 
         ``phase`` is forwarded to every middleware so a pass can run only the
-        method-agnostic hooks (``"outer"``, at the SDK seam) or only the typed
+        method-agnostic hooks (``"outer"``, at the root dispatch) or only the typed
         per-method hook (``"typed"``, interior). It defaults to ``"all"`` for the
         direct programmatic path.
         """
@@ -612,7 +612,7 @@ class FastMCP(
         pass, so error-observing middleware see a tool exception propagate through
         ``on_message``/``on_request`` exactly as they always have. It also records
         (via ``mark_interior_dispatched``) that the chain fired for this wire
-        message, so the SDK-seam root dispatch knows not to observe it a second
+        message, so the root dispatch knows not to observe it a second
         time.
         """
         mark_interior_dispatched()

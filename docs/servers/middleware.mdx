@@ -102,7 +102,7 @@ When a client calls a tool, the middleware chain processes `on_message` first, t
 
 <VersionBadge version="4.0.0" />
 
-Dispatch begins at the SDK seam, the single point every inbound message passes through. As a result, `on_message`, `on_request`, and `on_notification` observe **every** message a client sends, including the ones that never reach a tool, resource, or prompt handler:
+Dispatch begins in the SDK's middleware layer — the single point every inbound message passes through. As a result, `on_message`, `on_request`, and `on_notification` observe **every** message a client sends, including the ones that never reach a tool, resource, or prompt handler:
 
 - **Notifications** such as `notifications/cancelled`, `notifications/initialized`, and `notifications/progress` reach `on_message` and `on_notification`.
 - **Cancellations** are observed as a `notifications/cancelled` message. The connection applies the cancellation itself and then hands the notification to your middleware.

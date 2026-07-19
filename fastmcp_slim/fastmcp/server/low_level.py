@@ -38,9 +38,9 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 # The request methods that FastMCP serves through a handler adapter, each of which
-# runs the FastMCP middleware chain interior (see MCPOperationsMixin). The seam
-# leaves these to the interior dispatch and only observes them if they fail before
-# reaching it. Every other message is dispatched at the seam.
+# runs the FastMCP middleware chain interior (see MCPOperationsMixin). The root
+# dispatch leaves these to the interior dispatch and only observes them if they fail before
+# reaching it. Every other message is dispatched here at the root.
 _INTERIOR_METHODS = frozenset(
     {
         "tools/call",
@@ -54,8 +54,8 @@ _INTERIOR_METHODS = frozenset(
 )
 
 
-def _seam_message(ctx: ServerRequestContext) -> Any:
-    """The message payload handed to the seam's ``on_message``/``on_request`` pass.
+def _raw_message(ctx: ServerRequestContext) -> Any:
+    """The message payload handed to the root dispatch's ``on_message``/``on_request`` pass.
 
     The raw inbound params mapping is used verbatim rather than a validated,
     typed request model. This is deliberate: the outer pass must observe *every*
@@ -101,14 +101,15 @@ def client_supports_extension(session: ServerSession, extension_id: str) -> bool
 
 
 class FastMCPServerMiddleware:
-    """SDK-seam root dispatch that drives the FastMCP middleware chain.
+    """Root dispatch for the FastMCP middleware chain, in the SDK's middleware layer.
 
     v2 no longer lets FastMCP subclass ``ServerSession`` (the runner constructs
     it per request), so the old ``MiddlewareServerSession._received_request``
-    override is replaced by a ``ServerMiddleware``. Sitting at the SDK seam, this
+    override is replaced by a ``ServerMiddleware`` — an ordinary entry in the
+    SDK's own middleware list. Sitting at the root of dispatch, this
     is the single entry point through which *every* inbound message flows —
     requests, notifications, cancellations, ``initialize``, and even malformed or
-    unroutable messages the seam can still hand us. It binds the FastMCP
+    unroutable messages the SDK can still hand us. It binds the FastMCP
     request-context ContextVar and re-applies the app-scoped ``SharedContext`` for
     the whole chain, then runs the FastMCP ``Middleware`` chain so
     ``on_message`` / ``on_request`` / ``on_notification`` observe the message.
@@ -123,14 +124,14 @@ class FastMCPServerMiddleware:
       ...) still run their FastMCP chain *interior*, in the handler adapter, where
       ``on_call_tool`` receives the typed component result and a tool exception
       propagates through ``on_message``/``on_request`` exactly where the built-in
-      error/logging/timing middleware expect it. The seam does not re-run the
+      error/logging/timing middleware expect it. The root dispatch does not re-run the
       chain for these — it only steps in when such a request fails *before* the
       interior runs (malformed params, routing), so ``on_message`` still observes
       the failure.
     - Every other message — all notifications (including ``notifications/cancelled``
       and ``notifications/initialized``), ``ping``, ``logging/setLevel``, and any
       unroutable/non-component request — has no interior FastMCP dispatch, so the
-      seam runs the ``"outer"`` pass (``on_message`` plus
+      root dispatch runs the ``"outer"`` pass (``on_message`` plus
       ``on_request``/``on_notification``) here, wrapping the real SDK dispatch.
       This closes the long-standing gap where these messages were invisible to
       FastMCP middleware.
@@ -169,7 +170,7 @@ class FastMCPServerMiddleware:
         The interior handler adapter runs the FastMCP chain itself and records
         ``_interior_dispatched``. If the request instead fails before reaching it
         (malformed params, method routing), the flag stays False and no hook fired
-        — so the seam runs the ``"outer"`` pass to observe the failure, re-raising
+        — so the root dispatch runs the ``"outer"`` pass to observe the failure, re-raising
         the original error inside it so ``on_message``/``on_request`` see it.
         """
         from fastmcp.server.middleware.middleware import _interior_dispatched
@@ -206,14 +207,14 @@ class FastMCPServerMiddleware:
 
         is_notification = ctx.request_id is None
 
-        async def seam_call_next(_mw_ctx: MiddlewareContext) -> HandlerResult:
+        async def root_call_next(_mw_ctx: MiddlewareContext) -> HandlerResult:
             if _raise is not None:
                 raise _raise
             return await call_next(ctx)
 
         async with Context(fastmcp=fastmcp, session=ctx.session) as fastmcp_ctx:
             mw_context = MiddlewareContext(
-                message=_seam_message(ctx),
+                message=_raw_message(ctx),
                 source="client",
                 type="notification" if is_notification else "request",
                 method=ctx.method,
@@ -221,7 +222,7 @@ class FastMCPServerMiddleware:
             )
             return await fastmcp._run_middleware(
                 mw_context,
-                cast("FastMCPCallNext[Any, Any]", seam_call_next),
+                cast("FastMCPCallNext[Any, Any]", root_call_next),
                 phase="outer",
             )
 

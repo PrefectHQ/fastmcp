@@ -1,6 +1,6 @@
-"""SDK-seam middleware coverage (v4 D3, the middleware hybrid rebase).
+"""Middleware message visibility (v4 D3, the middleware hybrid rebase).
 
-Dispatch begins at the SDK seam, so ``on_message``/``on_request``/
+Dispatch begins in the SDK's middleware layer, so ``on_message``/``on_request``/
 ``on_notification`` observe *every* inbound message — including the ones that
 never reach a FastMCP handler (notifications, cancellations, and
 malformed/unroutable requests) and were therefore invisible to FastMCP
@@ -21,7 +21,7 @@ from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.base import InputRequiredToolResult
 
 
-class SeamRecorder(Middleware):
+class HookRecorder(Middleware):
     """Records ``(hook, method)`` before delegating, so a hook is captured even
     when ``call_next`` raises (a pre-handler failure)."""
 
@@ -50,7 +50,7 @@ class SeamRecorder(Middleware):
 
 
 def _adder() -> FastMCP:
-    server = FastMCP("SeamServer")
+    server = FastMCP("AdderServer")
 
     @server.tool
     def add(a: int, b: int) -> int:
@@ -65,7 +65,7 @@ class TestNotificationVisibility:
         ``on_message`` and ``on_notification`` — it never reaches a FastMCP
         handler, so before the rebase it was invisible to middleware."""
         server = _adder()
-        recorder = SeamRecorder()
+        recorder = HookRecorder()
         server.add_middleware(recorder)
 
         async with Client(server) as client:
@@ -86,7 +86,7 @@ class TestNotificationVisibility:
     async def test_client_progress_notification_reaches_on_message(self):
         """A generic client notification is observed by ``on_message``."""
         server = _adder()
-        recorder = SeamRecorder()
+        recorder = HookRecorder()
         server.add_middleware(recorder)
 
         async with Client(server) as client:
@@ -104,10 +104,10 @@ class TestNotificationVisibility:
 
 class TestUnroutableAndMalformed:
     async def test_unroutable_method_observed_by_on_message(self):
-        """An unknown method fails routing before any handler; the seam still
+        """An unknown method fails routing before any handler; the root dispatch still
         runs ``on_message``/``on_request`` around the failure."""
         server = _adder()
-        recorder = SeamRecorder()
+        recorder = HookRecorder()
         server.add_middleware(recorder)
 
         async with Client(server) as client:
@@ -121,10 +121,10 @@ class TestUnroutableAndMalformed:
 
     async def test_malformed_component_params_observed_by_on_message(self):
         """A ``tools/call`` with malformed params fails validation before the
-        interior handler runs, so no typed hook fires — but the seam observes the
+        interior handler runs, so no typed hook fires — but the root dispatch observes the
         failure through ``on_message``, and ``on_call_tool`` does not fire."""
         server = _adder()
-        recorder = SeamRecorder()
+        recorder = HookRecorder()
         server.add_middleware(recorder)
 
         async with Client(server) as client:
@@ -140,10 +140,10 @@ class TestUnroutableAndMalformed:
 class TestSingleFire:
     async def test_each_hook_fires_once_per_component_call(self):
         """One ``tools/call`` fires ``on_message`` once and ``on_call_tool`` once —
-        the interior dispatch is the single entry for component methods; the seam
+        the interior dispatch is the single entry for component methods; the root dispatch
         does not double-run it."""
         server = _adder()
-        recorder = SeamRecorder()
+        recorder = HookRecorder()
         server.add_middleware(recorder)
 
         async with Client(server) as client:

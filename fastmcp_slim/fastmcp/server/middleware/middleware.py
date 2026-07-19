@@ -39,9 +39,9 @@ MiddlewarePhase = Literal["all", "outer", "typed"]
 - ``"all"`` runs the whole chain in one pass (``on_message`` -> ``on_request`` /
   ``on_notification`` -> the typed per-method hook). This is what the interior
   component methods (``call_tool``, ``list_tools``, ...) run for the methods they
-  serve, and what the ``initialize`` request runs at the seam.
+  serve, and what the ``initialize`` request runs at the dispatch root.
 - ``"outer"`` runs only ``on_message`` and ``on_request``/``on_notification``.
-  The SDK-seam root dispatch runs this pass for the messages the interior never
+  The root dispatch (in the SDK's middleware layer) runs this pass for the messages the interior never
   dispatches (notifications, cancellations, unroutable/non-component requests,
   and pre-handler failures), so ``on_message`` observes *every* inbound message
   without double-firing for the component methods the interior already covers.
@@ -55,12 +55,12 @@ _interior_dispatched: ContextVar[bool] = ContextVar(
 )
 """Set to True by an interior component dispatch when it runs its middleware chain.
 
-The SDK-seam root dispatch reads this to tell whether the FastMCP middleware
+The root dispatch reads this to tell whether the FastMCP middleware
 chain already fired *inside* the wire request (so ``on_message``/``on_request``
 were observed there — including any tool exception, exactly where the built-in
 error/logging/timing middleware expect them). It is only consulted for the
 component methods: if such a request fails *before* the interior runs (malformed
-params, routing), the flag stays False and the seam observes the failure itself.
+params, routing), the flag stays False and the root dispatch observes the failure itself.
 """
 
 
@@ -135,7 +135,7 @@ class Middleware:
 
         ``phase`` selects which slice of the hooks runs (see ``MiddlewarePhase``).
         It defaults to ``"all"`` so any direct caller keeps the whole-chain
-        behavior; the SDK-seam root dispatch passes ``"outer"`` and the interior
+        behavior; the root dispatch passes ``"outer"`` and the interior
         component methods pass ``"typed"``.
         """
         handler_chain = await self._dispatch_handler(
