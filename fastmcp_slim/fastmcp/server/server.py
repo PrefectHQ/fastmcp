@@ -422,7 +422,7 @@ class FastMCP(
         if (
             request_state_security is not None
             and request_state_security.audience is None
-            and name is None
+            and not name  # None or "" both yield a random per-replica name
         ):
             # The request-state boundary stamps an audience claim, defaulting to
             # the server name — which is auto-generated (random) when unnamed, so

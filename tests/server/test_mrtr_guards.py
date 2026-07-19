@@ -172,6 +172,37 @@ class TestOutputSchema:
         assert tool.output_schema is None
 
 
+class TestTransformedGuard:
+    """A guard tool wrapped by TransformedTool must still emit its ask: a
+    non-object output_schema on the transform reshapes ordinary ToolResults,
+    but an InputRequiredToolResult (which carries no output data) must pass
+    through so the wire handler still returns the InputRequiredResult."""
+
+    async def test_transformed_guard_still_asks(self):
+        from fastmcp.tools.tool_transform import TransformedTool
+
+        base = two_question_server()
+        book = await base.get_tool("book_flight")
+        assert book is not None
+
+        mcp = FastMCP("transformed")
+        # A non-object output_schema is exactly the transform config that
+        # rebuilds ordinary ToolResults and would strip the ask.
+        transformed = TransformedTool.from_tool(
+            book, name="book", output_schema={"type": "string"}
+        )
+        mcp.add_tool(transformed)
+
+        # The asking (first) round must reach the wire as an InputRequiredResult
+        # — without the guard it would arrive as an empty terminal result.
+        async with Client(mcp, mode="auto") as client:
+            first = await client.session.call_tool(
+                "book", {}, allow_input_required=True
+            )
+        assert isinstance(first, InputRequiredResult)
+        assert "destination" in first.input_requests
+
+
 class TestInMemoryLoop:
     async def test_two_question_loop_completes(self):
         """Two dependent asks complete over the in-memory transport; the
@@ -677,6 +708,15 @@ class TestRequestStateSecurityConfig:
 
         with caplog.at_level(logging.WARNING):
             FastMCP(request_state_security=RequestStateSecurity(keys=[b"0" * 32]))
+        assert any("stable audience" in r.message for r in caplog.records)
+
+        # An empty name is falsy → still a random per-replica name, so it must
+        # warn like an omitted name (not slip through a `name is None` check).
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            FastMCP(
+                name="", request_state_security=RequestStateSecurity(keys=[b"0" * 32])
+            )
         assert any("stable audience" in r.message for r in caplog.records)
 
         # Single-process customization is allowed (warns, does not raise):
