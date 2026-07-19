@@ -37,6 +37,39 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+# The request methods that FastMCP serves through a handler adapter, each of which
+# runs the FastMCP middleware chain interior (see MCPOperationsMixin). The seam
+# leaves these to the interior dispatch and only observes them if they fail before
+# reaching it. Every other message is dispatched at the seam.
+_INTERIOR_METHODS = frozenset(
+    {
+        "tools/call",
+        "tools/list",
+        "resources/read",
+        "resources/list",
+        "resources/templates/list",
+        "prompts/get",
+        "prompts/list",
+    }
+)
+
+
+def _seam_message(ctx: ServerRequestContext) -> Any:
+    """The message payload handed to the seam's ``on_message``/``on_request`` pass.
+
+    The raw inbound params mapping is used verbatim rather than a validated,
+    typed request model. This is deliberate: the outer pass must observe *every*
+    message, including malformed or unroutable ones, and reconstructing a typed
+    model would raise on exactly those messages and hide them from the hooks.
+    The method and request/notification kind are carried on the
+    ``MiddlewareContext`` itself, so observation middleware still has everything
+    it needs.
+    """
+    params = ctx.params
+    if isinstance(params, Mapping):
+        return dict(params)
+    return {} if params is None else params
+
 
 def client_supports_extension(session: ServerSession, extension_id: str) -> bool:
     """Check whether the connected client supports a given MCP extension.
@@ -68,15 +101,39 @@ def client_supports_extension(session: ServerSession, extension_id: str) -> bool
 
 
 class FastMCPServerMiddleware:
-    """SDK v2 server middleware that routes ``initialize`` through FastMCP middleware.
+    """SDK-seam root dispatch that drives the FastMCP middleware chain.
 
     v2 no longer lets FastMCP subclass ``ServerSession`` (the runner constructs
     it per request), so the old ``MiddlewareServerSession._received_request``
-    override is replaced by a ``ServerMiddleware``. This middleware binds the
-    FastMCP request-context ContextVar for the whole chain (covering
-    ``initialize``, where no handler adapter runs) and routes the initialize
-    request through the FastMCP middleware chain so ``on_initialize`` hooks fire
-    and can observe the ``InitializeResult`` or veto with ``MCPError``.
+    override is replaced by a ``ServerMiddleware``. Sitting at the SDK seam, this
+    is the single entry point through which *every* inbound message flows —
+    requests, notifications, cancellations, ``initialize``, and even malformed or
+    unroutable messages the seam can still hand us. It binds the FastMCP
+    request-context ContextVar and re-applies the app-scoped ``SharedContext`` for
+    the whole chain, then runs the FastMCP ``Middleware`` chain so
+    ``on_message`` / ``on_request`` / ``on_notification`` observe the message.
+
+    Dispatch shapes:
+
+    - ``initialize`` runs the *whole* FastMCP chain here (``on_message`` ->
+      ``on_request`` -> ``on_initialize``) because there is no interior handler
+      adapter for it: the SDK builds the ``InitializeResult`` directly, so this is
+      the only place ``on_initialize`` can observe it or veto with ``MCPError``.
+    - The component methods (``tools/call``, ``tools/list``, ``resources/read``,
+      ...) still run their FastMCP chain *interior*, in the handler adapter, where
+      ``on_call_tool`` receives the typed component result and a tool exception
+      propagates through ``on_message``/``on_request`` exactly where the built-in
+      error/logging/timing middleware expect it. The seam does not re-run the
+      chain for these — it only steps in when such a request fails *before* the
+      interior runs (malformed params, routing), so ``on_message`` still observes
+      the failure.
+    - Every other message — all notifications (including ``notifications/cancelled``
+      and ``notifications/initialized``), ``ping``, ``logging/setLevel``, and any
+      unroutable/non-component request — has no interior FastMCP dispatch, so the
+      seam runs the ``"outer"`` pass (``on_message`` plus
+      ``on_request``/``on_notification``) here, wrapping the real SDK dispatch.
+      This closes the long-standing gap where these messages were invisible to
+      FastMCP middleware.
     """
 
     def __init__(self, fastmcp: FastMCP):
@@ -93,13 +150,80 @@ class FastMCPServerMiddleware:
             bind_request_context(ctx),
             self._seam_span(fastmcp, ctx),
         ):
-            # Only initialize requests (request_id present) go through FastMCP
-            # middleware here; every other request already binds the context in
-            # its own adapter, so we just pass through.
+            if fastmcp is None:
+                return await call_next(ctx)
             if ctx.method == "initialize" and ctx.request_id is not None:
-                if fastmcp is not None:
-                    return await self._run_initialize_mw(fastmcp, ctx, call_next)
+                return await self._run_initialize_mw(fastmcp, ctx, call_next)
+            if ctx.request_id is not None and ctx.method in _INTERIOR_METHODS:
+                return await self._dispatch_component(fastmcp, ctx, call_next)
+            return await self._run_outer_mw(fastmcp, ctx, call_next, _raise=None)
+
+    async def _dispatch_component(
+        self,
+        fastmcp: FastMCP,
+        ctx: ServerRequestContext,
+        call_next: CallNext,
+    ) -> HandlerResult:
+        """Delegate a component request to the interior chain, covering early failures.
+
+        The interior handler adapter runs the FastMCP chain itself and records
+        ``_interior_dispatched``. If the request instead fails before reaching it
+        (malformed params, method routing), the flag stays False and no hook fired
+        — so the seam runs the ``"outer"`` pass to observe the failure, re-raising
+        the original error inside it so ``on_message``/``on_request`` see it.
+        """
+        from fastmcp.server.middleware.middleware import _interior_dispatched
+
+        token = _interior_dispatched.set(False)
+        try:
             return await call_next(ctx)
+        except (MCPError, ValidationError) as exc:
+            if _interior_dispatched.get():
+                raise
+            return await self._run_outer_mw(fastmcp, ctx, call_next, _raise=exc)
+        finally:
+            _interior_dispatched.reset(token)
+
+    async def _run_outer_mw(
+        self,
+        fastmcp: FastMCP,
+        ctx: ServerRequestContext,
+        call_next: CallNext,
+        *,
+        _raise: BaseException | None,
+    ) -> HandlerResult:
+        """Run the method-agnostic (``on_message``/``on_request``) hook pass.
+
+        ``call_next`` bridges to the real SDK dispatch (request-state boundary,
+        params validation, the notification handler), so these hooks observe the
+        actual wire outcome: a notification returns ``None``, an unroutable request
+        raises through ``call_next``. When ``_raise`` is set the operation already
+        failed before the interior ran; the bridge re-raises it so the hooks
+        observe the failure rather than re-running the (failed) dispatch.
+        """
+        from fastmcp.server.context import Context
+        from fastmcp.server.middleware.middleware import MiddlewareContext
+
+        is_notification = ctx.request_id is None
+
+        async def seam_call_next(_mw_ctx: MiddlewareContext) -> HandlerResult:
+            if _raise is not None:
+                raise _raise
+            return await call_next(ctx)
+
+        async with Context(fastmcp=fastmcp, session=ctx.session) as fastmcp_ctx:
+            mw_context = MiddlewareContext(
+                message=_seam_message(ctx),
+                source="client",
+                type="notification" if is_notification else "request",
+                method=ctx.method,
+                fastmcp_context=fastmcp_ctx,
+            )
+            return await fastmcp._run_middleware(
+                mw_context,
+                cast("FastMCPCallNext[Any, Any]", seam_call_next),
+                phase="outer",
+            )
 
     @contextmanager
     def _seam_span(
