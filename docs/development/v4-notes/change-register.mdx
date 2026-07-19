@@ -124,6 +124,12 @@ Server-side middleware is a new first-class SDK concept: `Server.middleware` is 
 
 *Verify:* `fastmcp_slim/fastmcp/server/low_level.py` (`FastMCPServerMiddleware`).
 
+### The middleware seam is the dispatch root — New (coverage)
+
+FastMCP's `Middleware` chain used to begin *inside* the per-method handlers, so `on_message`/`on_request`/`on_notification` only fired for messages that reached a tool/resource/prompt handler. Notifications, cancellations, and malformed or unroutable requests were invisible to middleware. `FastMCPServerMiddleware` — the FastMCP-owned `ServerMiddleware` at the SDK seam — is now the dispatch root: it runs the `on_message`/`on_request`/`on_notification` pass for every message the interior handlers do not dispatch (all notifications including `notifications/cancelled`, `ping`, `logging/setLevel`, unknown methods, and component requests that fail validation before the handler runs). The component methods keep their interior dispatch unchanged, so `on_call_tool` and friends still receive the typed component result and a tool exception still propagates through `on_message`/`on_request` exactly where the built-in error/logging/timing middleware expect it — each hook fires exactly once per message. A guard-tool suspension travels as the internal `ToolInputRequired` `BaseException` control signal, so a middleware's `call_next` raises rather than returning the `InputRequiredResult` as a component result; broad `except Exception` handlers pass it through untouched. All thirteen built-in middleware pass their suites unmodified. See [What middleware sees](/servers/middleware#what-middleware-sees).
+
+*Verify:* `fastmcp_slim/fastmcp/server/low_level.py` (`FastMCPServerMiddleware` root dispatch, `_INTERIOR_METHODS`), `fastmcp_slim/fastmcp/server/middleware/middleware.py` (`MiddlewarePhase`, `mark_interior_dispatched`), `fastmcp_slim/fastmcp/server/server.py` (`_dispatch_component_middleware`), `tests/server/middleware/test_seam_coverage.py`.
+
 ### Per-session state re-homed to the connection — Absorbed
 
 Because `ServerSession` is now per-request, per-session state can no longer live on the session object. The minimum logging level is re-homed to a FastMCP-side map keyed by session id (via `connection.session_id`), and `client_supports_extension` becomes a free function reading `session.client_params.capabilities`.

@@ -98,6 +98,22 @@ Rather than processing every message identically, FastMCP provides specialized h
 
 When a client calls a tool, the middleware chain processes `on_message` first, then `on_request`, then `on_call_tool`. This hierarchy lets you target exactly the right scope—use `on_message` for logging everything, `on_request` for authentication, and `on_call_tool` for tool-specific behavior.
 
+### What middleware sees
+
+<VersionBadge version="4.0.0" />
+
+Dispatch begins at the SDK seam, the single point every inbound message passes through. As a result, `on_message`, `on_request`, and `on_notification` observe **every** message a client sends, including the ones that never reach a tool, resource, or prompt handler:
+
+- **Notifications** such as `notifications/cancelled`, `notifications/initialized`, and `notifications/progress` reach `on_message` and `on_notification`.
+- **Cancellations** are observed as a `notifications/cancelled` message. The connection applies the cancellation itself and then hands the notification to your middleware.
+- **Malformed or unroutable requests**—an unknown method, or a `tools/call` whose params fail validation before the tool runs—reach `on_message` and `on_request` as a raised error propagating through `call_next`, so logging and error-handling middleware record them.
+
+The operation hooks (`on_call_tool`, `on_list_tools`, and the rest) fire exactly once per request, and their `call_next` still returns the typed component result—a `ToolResult`, a `list[Tool]`, and so on—so a tool exception propagates through `on_call_tool`, `on_request`, and `on_message` exactly where error, logging, and timing middleware expect it.
+
+#### Guard-tool suspensions
+
+A guard tool suspends by returning an `InputRequiredResult` to ask the client for input (see [Multi-round-trip tools](/servers/tools)). Internally this travels as a `BaseException` control signal, mirroring `asyncio.CancelledError`: a middleware's `call_next` **raises** rather than returning a value, so a hook that records or transforms results neither observes the suspension as a result nor accidentally swallows it. A middleware that legitimately uses a broad `except Exception` is unaffected—the signal is a `BaseException`, so it passes straight through. The `InputRequiredResult` is produced at the wire boundary and sent to the client; it is not handed back up the FastMCP chain as a component result. To act on a suspension deliberately, catch it by intent rather than with a broad handler.
+
 ### Hook Signature
 
 Every hook follows the same pattern:
