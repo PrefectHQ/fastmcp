@@ -2355,6 +2355,8 @@ def create_proxy(
         | dict[str, Any]
         | str
     ),
+    *,
+    mode: str | None = None,
     **settings: Any,
 ) -> FastMCPProxy:
     """Create a FastMCP proxy server for the given target.
@@ -2370,6 +2372,11 @@ def create_proxy(
             - A URL string or AnyUrl
             - A Path to a server script
             - An MCPConfig or dict
+        mode: Protocol-era negotiation for auto-created proxy clients (a
+            non-Client target). Defaults to the handshake era; pass
+            `"auto"` to negotiate the modern era so an upstream guard
+            tool's `InputRequiredResult` (SEP-2322) round-trips. Ignored
+            when `target` is already a `Client` (which carries its own mode).
         **settings: Additional settings passed to FastMCPProxy (name, etc.)
 
     Returns:
@@ -2391,7 +2398,7 @@ def create_proxy(
         _create_client_factory,
     )
 
-    client_factory = _create_client_factory(target)
+    client_factory = _create_client_factory(target, mode=mode)
     return FastMCPProxy(
         client_factory=client_factory,
         **settings,

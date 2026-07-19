@@ -350,6 +350,25 @@ class TestProxyServer:
         assert isinstance(observed[1], InputRequiredToolResult)
         assert not isinstance(observed[2], InputRequiredToolResult)
 
+    async def test_guard_round_trips_through_create_proxy_mode_auto(self):
+        """The standard create_proxy(target, mode="auto") path round-trips a
+        guard without a hand-built ProxyClient factory. The default stays
+        handshake-era (which preserves server-initiated push forwarding); modern
+        proxying is a per-call opt-in because the two eras are mutually
+        exclusive on a single proxy session."""
+        from fastmcp.server import create_proxy
+
+        proxy = create_proxy(two_question_server(), mode="auto")
+
+        asked: list[str] = []
+        async with Client(
+            proxy, mode="auto", elicitation_handler=_two_answer_handler(asked)
+        ) as client:
+            result = await client.call_tool("book_flight", {})
+
+        assert asked == ["Where would you like to fly?", "When to Paris?"]
+        assert result.data == "Booked Paris on 2026-08-01"
+
 
 class TestEraGate:
     async def test_legacy_connection_rejects_with_era_error(self):

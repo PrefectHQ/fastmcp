@@ -860,6 +860,8 @@ def _create_client_factory(
         | dict[str, Any]
         | str
     ),
+    *,
+    mode: str | None = None,
 ) -> ClientFactoryT:
     """Create a client factory from the given target.
 
@@ -907,7 +909,8 @@ def _create_client_factory(
         return fresh_client_factory
     else:
         # target is not a Client, so it's compatible with ProxyClient.__init__
-        base_client = ProxyClient(cast(Any, target))
+        client_kwargs: dict[str, Any] = {} if mode is None else {"mode": mode}
+        base_client = ProxyClient(cast(Any, target), **client_kwargs)
 
         def proxy_client_factory() -> Client:
             return base_client.new()
@@ -1170,6 +1173,13 @@ class ProxyClient(Client[ClientTransportT]):
     ):
         if "name" not in kwargs:
             kwargs["name"] = self.generate_name()
+        # ProxyClient defaults to the handshake era: a dual-era backend serves
+        # both, and a single proxy session can only be one era. Handshake keeps
+        # the server-initiated push forwarding (sampling / elicitation / roots,
+        # via the handlers installed below) that proxies rely on. To round-trip
+        # an upstream guard tool's InputRequiredResult (SEP-2322) instead, opt
+        # into the modern era explicitly with `create_proxy(target, mode="auto")`
+        # — the two are mutually exclusive per session.
         # Install context-restoring handler wrappers BEFORE super().__init__
         # registers them with the Client's session kwargs.
         self._proxy_rc_ref = [None]
