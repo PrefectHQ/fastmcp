@@ -34,6 +34,36 @@ def add_query_params(url: str, params: dict[str, str]) -> str:
     return urlunparse(parsed._replace(query=query))
 
 
+def replace_query_param(url: str, key: str, value: str) -> str:
+    """Replace the first occurrence of `key` in a URL's query string in place.
+
+    Like `add_query_params`, this does not round-trip the query through
+    `parse_qsl`/`urlencode`: every segment other than the matched one is
+    passed through byte-for-byte, so opaque or non-UTF-8 percent-encoded
+    values elsewhere in the query are left untouched. Only the matched
+    segment's encoding is replaced (with `key=value`, freshly
+    `urlencode`d). If `key` is not present, it is appended, matching
+    `add_query_params`'s behavior.
+    """
+    parsed = urlparse(url)
+    segments = parsed.query.split("&") if parsed.query else []
+    new_segment = urlencode({key: value})
+
+    replaced = False
+    new_segments: list[str] = []
+    for segment in segments:
+        segment_key = segment.split("=", 1)[0]
+        if not replaced and unquote(segment_key) == key:
+            new_segments.append(new_segment)
+            replaced = True
+        else:
+            new_segments.append(segment)
+    if not replaced:
+        new_segments.append(new_segment)
+
+    return urlunparse(parsed._replace(query="&".join(new_segments)))
+
+
 def _parse_host_port(netloc: str) -> tuple[str | None, str | None]:
     """Parse host and port from netloc, handling wildcards.
 

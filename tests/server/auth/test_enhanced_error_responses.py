@@ -8,7 +8,7 @@ This test suite covers:
 """
 
 import asyncio
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 import pytest
 from key_value.aio.stores.memory import MemoryStore
@@ -49,6 +49,36 @@ class _DirectClientRedirectOAuthProxy(OAuthProxy):
 
     async def authorize(self, client, params):  # type: ignore[override]
         return f"{params.redirect_uri}?code=test-auth-code&state={params.state}"
+
+
+class _DirectClientRedirectWithIssOAuthProxy(OAuthProxy):
+    """Like `_DirectClientRedirectOAuthProxy`, but the provider's
+    `authorize()` override already put its own `iss` on the redirect —
+    simulating a provider that is itself RFC 9207-aware (or, when
+    `redirect_iss` doesn't match this server's issuer, a provider bug).
+    `response_kind` selects whether the redirect looks like a success
+    (`code`) or error (`error`) response; `AuthorizationHandler.handle()`
+    must not duplicate `iss` on either."""
+
+    def __init__(
+        self,
+        *args,
+        redirect_iss: str,
+        response_kind: str = "code",
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self._redirect_iss = redirect_iss
+        self._response_kind = response_kind
+
+    async def authorize(self, client, params):  # type: ignore[override]
+        payload = (
+            f"code=test-auth-code&state={params.state}"
+            if self._response_kind == "code"
+            else f"error=access_denied&state={params.state}"
+        )
+        iss = quote(self._redirect_iss, safe="")
+        return f"{params.redirect_uri}?{payload}&iss={iss}"
 
 
 class TestEnhancedAuthorizationHandler:
@@ -327,6 +357,170 @@ class TestEnhancedAuthorizationHandler:
         query_params = parse_qs(urlparse(response.headers["location"]).query)
         assert query_params["code"] == ["test-auth-code"]
         assert query_params["state"] == ["test-state"]
+        assert query_params["iss"] == [metadata["issuer"]]
+
+    def test_success_redirect_with_matching_iss_not_duplicated(self, rsa_key_pair):
+        """If a provider's `authorize()` override already stamped the
+        correct `iss` on its redirect, `handle()` must not append a second
+        one — RFC 6749 §3.1 forbids a response parameter appearing twice.
+        """
+        oauth_proxy = _DirectClientRedirectWithIssOAuthProxy(
+            upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
+            upstream_token_endpoint="https://github.com/login/oauth/access_token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="test-client-secret",
+            token_verifier=JWTVerifier(
+                public_key=rsa_key_pair.public_key,
+                issuer="https://test.com",
+                audience="https://test.com",
+                base_url="https://test.com",
+            ),
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+            redirect_iss="https://myserver.com/",
+        )
+        app = Starlette(routes=oauth_proxy.get_routes())
+
+        client_info = OAuthClientInformationFull(
+            client_id="valid-client",
+            client_secret="valid-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+            scope="read",
+        )
+        asyncio.run(oauth_proxy.register_client(client_info))
+
+        with TestClient(app) as client:
+            metadata = client.get("/.well-known/oauth-authorization-server").json()
+
+            response = client.get(
+                "/authorize",
+                params={
+                    "client_id": "valid-client",
+                    "redirect_uri": "http://localhost:12345/callback",
+                    "response_type": "code",
+                    "code_challenge": "test-challenge",
+                    "state": "test-state",
+                },
+                follow_redirects=False,
+            )
+
+        assert response.status_code == 302
+        query_params = parse_qs(urlparse(response.headers["location"]).query)
+        # Exactly one `iss` (a duplicate would make this list have length 2).
+        assert query_params["iss"] == [metadata["issuer"]]
+
+    def test_success_redirect_with_mismatched_iss_is_corrected(self, rsa_key_pair):
+        """A provider's `authorize()` override can put an `iss` on its
+        redirect that doesn't match what this server advertises in its own
+        discovery document (`self._issuer`). An RFC 9207 client validates
+        `iss` against that document, so the mismatched value is already
+        unusable to a spec-compliant client. `handle()` corrects it to the
+        canonical value rather than leaving the broken value in place or
+        appending a second `iss` (which RFC 6749 §3.1 forbids outright).
+
+        This is a deliberate policy choice, not the only defensible one —
+        see the comment in `AuthorizationHandler.handle()` for the
+        reasoning, and update this test if that policy changes.
+        """
+        oauth_proxy = _DirectClientRedirectWithIssOAuthProxy(
+            upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
+            upstream_token_endpoint="https://github.com/login/oauth/access_token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="test-client-secret",
+            token_verifier=JWTVerifier(
+                public_key=rsa_key_pair.public_key,
+                issuer="https://test.com",
+                audience="https://test.com",
+                base_url="https://test.com",
+            ),
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+            redirect_iss="https://wrong-issuer.example.com/",
+        )
+        app = Starlette(routes=oauth_proxy.get_routes())
+
+        client_info = OAuthClientInformationFull(
+            client_id="valid-client",
+            client_secret="valid-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+            scope="read",
+        )
+        asyncio.run(oauth_proxy.register_client(client_info))
+
+        with TestClient(app) as client:
+            metadata = client.get("/.well-known/oauth-authorization-server").json()
+
+            response = client.get(
+                "/authorize",
+                params={
+                    "client_id": "valid-client",
+                    "redirect_uri": "http://localhost:12345/callback",
+                    "response_type": "code",
+                    "code_challenge": "test-challenge",
+                    "state": "test-state",
+                },
+                follow_redirects=False,
+            )
+
+        assert response.status_code == 302
+        query_params = parse_qs(urlparse(response.headers["location"]).query)
+        # Exactly one `iss`, corrected to the canonical value rather than
+        # left mismatched or duplicated.
+        assert query_params["iss"] == [metadata["issuer"]]
+        assert query_params["iss"] != ["https://wrong-issuer.example.com/"]
+
+    def test_error_redirect_with_existing_iss_not_duplicated(self, rsa_key_pair):
+        """The duplication guard applies to error redirects too, not just
+        success ones — a provider override can construct an `error`
+        redirect that already carries `iss`.
+        """
+        oauth_proxy = _DirectClientRedirectWithIssOAuthProxy(
+            upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
+            upstream_token_endpoint="https://github.com/login/oauth/access_token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="test-client-secret",
+            token_verifier=JWTVerifier(
+                public_key=rsa_key_pair.public_key,
+                issuer="https://test.com",
+                audience="https://test.com",
+                base_url="https://test.com",
+            ),
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+            redirect_iss="https://myserver.com/",
+            response_kind="error",
+        )
+        app = Starlette(routes=oauth_proxy.get_routes())
+
+        client_info = OAuthClientInformationFull(
+            client_id="valid-client",
+            client_secret="valid-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+            scope="read",
+        )
+        asyncio.run(oauth_proxy.register_client(client_info))
+
+        with TestClient(app) as client:
+            metadata = client.get("/.well-known/oauth-authorization-server").json()
+
+            response = client.get(
+                "/authorize",
+                params={
+                    "client_id": "valid-client",
+                    "redirect_uri": "http://localhost:12345/callback",
+                    "response_type": "code",
+                    "code_challenge": "test-challenge",
+                    "state": "test-state",
+                },
+                follow_redirects=False,
+            )
+
+        assert response.status_code == 302
+        query_params = parse_qs(urlparse(response.headers["location"]).query)
+        assert query_params["error"] == ["access_denied"]
         assert query_params["iss"] == [metadata["issuer"]]
 
     def test_html_error_includes_server_branding(self, oauth_proxy):

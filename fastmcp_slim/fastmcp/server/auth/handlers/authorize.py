@@ -24,7 +24,10 @@ from pydantic import AnyHttpUrl
 from starlette.requests import Request
 from starlette.responses import Response
 
-from fastmcp.server.auth.redirect_validation import add_query_params
+from fastmcp.server.auth.redirect_validation import (
+    add_query_params,
+    replace_query_param,
+)
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.ui import (
     INFO_BOX_STYLES,
@@ -226,9 +229,31 @@ class AuthorizationHandler(SDKAuthorizationHandler):
             # client (e.g. when consent/upstream is skipped entirely), so
             # this must not be gated on "error" alone.
             if "error" in redirect_params or "code" in redirect_params:
-                response.headers["location"] = add_query_params(
-                    redirect_url, {"iss": self._issuer}
-                )
+                existing_iss = redirect_params.get("iss")
+                if existing_iss is None:
+                    response.headers["location"] = add_query_params(
+                        redirect_url, {"iss": self._issuer}
+                    )
+                elif existing_iss[0] != self._issuer:
+                    # A provider's `authorize()` override already put an
+                    # `iss` on this redirect, and it doesn't match what this
+                    # server itself advertises (`self._issuer`, built from
+                    # the same base_url as the discovery document's `issuer`
+                    # field — see OAuthProxy.get_routes()). An RFC 9207
+                    # client validates `iss` against that discovery
+                    # document, so a mismatched value is already going to
+                    # fail verification; there's nothing for a spec-compliant
+                    # client to gain by us preserving it. We correct it to
+                    # the canonical value instead of appending a second
+                    # `iss`, since RFC 6749 §3.1 forbids a response
+                    # parameter from appearing more than once and duplicating
+                    # here would make strict clients reject the whole
+                    # response outright.
+                    response.headers["location"] = replace_query_param(
+                        redirect_url, "iss", self._issuer
+                    )
+                # else: the redirect already carries the correct `iss` —
+                # leave it untouched rather than appending a duplicate.
 
         # Check if this is a client not found error
         if response.status_code == 400:
