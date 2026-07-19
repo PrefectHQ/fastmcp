@@ -143,6 +143,7 @@ jobs:
         run: rm -rf ~/.claude/.locks ~/.local/state/claude/locks || true
 
       - name: Run Marvin for Issue Triage
+        id: marvin
         uses: anthropics/claude-code-action@v1
         with:
           github_token: ${{ steps.marvin-token.outputs.token }}
@@ -152,7 +153,7 @@ jobs:
           allowed_non_write_users: "*"
           allowed_bots: "marvin-context-protocol"
           claude_args: |
-            --allowedTools Bash(gh label list),Bash(bash .github/scripts/triage-label.sh:*),mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__add_issue_comment,mcp__github__get_pull_request_files
+            --allowedTools Bash(gh label list:*),Bash(bash .github/scripts/triage-label.sh:*),mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__add_issue_comment,mcp__github__get_pull_request_files
           settings: |
             {
               "model": "claude-sonnet-4-6",
@@ -162,3 +163,40 @@ jobs:
                 "TRIAGE_NUMBER": "${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}"
               }
             }
+
+      # Triage is fire-and-forget: nobody watches a green run, so a blocked tool
+      # call has to fail the job or it goes unnoticed indefinitely. A too-narrow
+      # allowlist silently produced zero labels across a dozen PRs before anyone
+      # spotted it, because the run still reported success.
+      - name: Fail if any tool call was denied
+        if: always() && steps.marvin.conclusion != 'skipped'
+        env:
+          EXECUTION_FILE: ${{ steps.marvin.outputs.execution_file }}
+        run: |
+          file="${EXECUTION_FILE:-}"
+          if [[ -z "$file" || ! -f "$file" ]]; then
+            file="${RUNNER_TEMP}/claude-execution-output.json"
+          fi
+          if [[ ! -f "$file" ]]; then
+            echo "::warning::No Marvin execution log found; cannot verify tool permissions."
+            exit 0
+          fi
+
+          # -s so this reads both a JSON array and a stream of JSON objects.
+          denials=$(jq -s '[.. | objects | .permission_denials_count? // empty] | add // 0' "$file" 2>/dev/null || echo 0)
+          echo "Permission denials: $denials"
+          if [[ "$denials" -gt 0 ]]; then
+            echo "::error::Marvin was denied $denials tool call(s), so triage likely applied no labels. Check the --allowedTools allowlist in this workflow (Bash patterns need a ':*' suffix to permit arguments)."
+            exit 1
+          fi
+
+      - name: Upload Marvin execution log
+        if: always() && steps.marvin.conclusion != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: marvin-triage-execution-log
+          path: |
+            ${{ steps.marvin.outputs.execution_file }}
+            ${{ runner.temp }}/claude-execution-output.json
+          if-no-files-found: ignore
+          retention-days: 14
