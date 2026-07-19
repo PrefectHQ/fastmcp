@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 
 from fastmcp import FastMCP
-from fastmcp.tools.tool import ToolResult
+from fastmcp.tools import ToolResult
 
 mcp = FastMCP("Echo Server")
 

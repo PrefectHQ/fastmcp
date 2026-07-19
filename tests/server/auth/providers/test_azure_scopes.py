@@ -520,6 +520,15 @@ class TestAzureJWTVerifier:
             "api://my-client-id/write",
         ]
 
+    def test_translates_arbitrary_challenge_scopes(self):
+        verifier = AzureJWTVerifier(
+            client_id="my-client-id",
+            tenant_id="my-tenant-id",
+            required_scopes=["read"],
+        )
+
+        assert verifier.get_challenge_scopes(["admin"]) == ["api://my-client-id/admin"]
+
     def test_already_prefixed_scopes_pass_through(self):
         verifier = AzureJWTVerifier(
             client_id="my-client-id",

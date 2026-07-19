@@ -313,10 +313,11 @@ async def execute_tools(
         with tracer.start_as_current_span(
             f"sampling tool {tool_use.name}",
             kind=SpanKind.INTERNAL,
+            attributes={
+                "gen_ai.tool.name": tool_use.name,
+                "fastmcp.tool.use_id": tool_use.id,
+            },
         ) as span:
-            if span.is_recording():
-                span.set_attribute("gen_ai.tool.name", tool_use.name)
-                span.set_attribute("fastmcp.tool.use_id", tool_use.id)
             try:
                 result_value = await tool.run(tool_use.input)
                 return ToolResultContent(
@@ -556,12 +557,13 @@ async def sample_step_impl(
     with tracer.start_as_current_span(
         "sampling create_message",
         kind=SpanKind.CLIENT,
+        attributes={
+            "mcp.method.name": "sampling/createMessage",
+            "fastmcp.server.name": context.fastmcp.name,
+        },
         record_exception=False,
         set_status_on_exception=False,
     ) as span:
-        if span.is_recording():
-            span.set_attribute("mcp.method.name", "sampling/createMessage")
-            span.set_attribute("fastmcp.server.name", context.fastmcp.name)
         try:
             if use_fallback:
                 response = await call_sampling_handler(

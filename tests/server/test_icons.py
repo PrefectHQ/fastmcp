@@ -1,6 +1,7 @@
 """Tests for icon support across all MCP object types."""
 
-from mcp_types import Icon
+import pytest
+from mcp_types import Icon, IconTheme
 
 from fastmcp import Client, FastMCP
 from fastmcp.prompts import Message, Prompt
@@ -323,6 +324,31 @@ class TestIconTypes:
             assert server_info.icons[0].src == "https://example.com/icon.png"
             assert server_info.icons[0].mime_type is None
             assert server_info.icons[0].sizes is None
+
+
+class TestIconTheme:
+    """Test icon theme support."""
+
+    @pytest.mark.parametrize("theme", ["light", "dark"])
+    async def test_icon_with_theme_round_trips(self, theme: IconTheme):
+        """Test that an icon's theme survives a client round-trip."""
+        icons = [Icon(src="https://example.com/icon.png", theme=theme)]
+
+        mcp = FastMCP("TestServer", icons=icons)
+
+        async with Client(mcp) as client:
+            server_info = client.initialize_result.server_info
+            assert server_info.icons[0].theme == theme
+
+    async def test_icon_without_theme_is_none(self):
+        """Test that an icon with no theme specified round-trips as None."""
+        icons = [Icon(src="https://example.com/icon.png")]
+
+        mcp = FastMCP("TestServer", icons=icons)
+
+        async with Client(mcp) as client:
+            server_info = client.initialize_result.server_info
+            assert server_info.icons[0].theme is None
 
 
 class TestIconImport:

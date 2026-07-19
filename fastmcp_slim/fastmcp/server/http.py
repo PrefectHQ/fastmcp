@@ -476,6 +476,7 @@ def create_sse_app(
                     handle_sse,
                     auth.required_scopes,
                     resource_metadata_url,
+                    auth.challenge_scopes,
                 ),
                 methods=["GET"],
             )
@@ -489,6 +490,7 @@ def create_sse_app(
                     sse.handle_post_message,
                     auth.required_scopes,
                     resource_metadata_url,
+                    auth.challenge_scopes,
                 ),
             )
         )
@@ -622,6 +624,7 @@ def create_streamable_http_app(
                     streamable_http_app,
                     auth.required_scopes,
                     resource_metadata_url,
+                    auth.challenge_scopes,
                 ),
                 methods=http_methods,
             )

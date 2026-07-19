@@ -782,10 +782,19 @@ class AzureJWTVerifier(JWTVerifier):
         property returns the full-URI form for OAuth metadata while
         ``required_scopes`` retains the short form for token validation.
         """
-        if not self.required_scopes:
+        return self.get_challenge_scopes()
+
+    def get_challenge_scopes(
+        self, required_scopes: list[str] | None = None
+    ) -> list[str]:
+        """Prefix any effective validation scopes for Azure authorization."""
+        effective_scopes = (
+            self.required_scopes if required_scopes is None else required_scopes
+        )
+        if not effective_scopes:
             return []
         prefixed = []
-        for scope in self.required_scopes:
+        for scope in effective_scopes:
             if scope in OIDC_SCOPES or "://" in scope or "/" in scope:
                 prefixed.append(scope)
             else:

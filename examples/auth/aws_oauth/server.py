@@ -48,6 +48,8 @@ def echo(message: str) -> str:
 async def get_access_token_claims() -> dict:
     """Get the authenticated user's access token claims."""
     token = get_access_token()
+    if token is None:
+        return {"error": "Not authenticated"}
     return {
         "sub": token.claims.get("sub"),
         "username": token.claims.get("username"),

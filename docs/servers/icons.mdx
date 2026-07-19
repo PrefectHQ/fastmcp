@@ -12,7 +12,7 @@ Icons provide visual representations for your MCP servers and components, helpin
 
 ## Icon Format
 
-Icons use the standard MCP Icon type from the MCP protocol specification. Each icon specifies a source URL or data URI, and optionally includes MIME type and size information.
+Icons use the standard MCP Icon type from the MCP protocol specification. Each icon specifies a source URL or data URI, and optionally includes MIME type, size, and theme information.
 
 ```python
 from fastmcp.types import Icon
@@ -29,6 +29,7 @@ The fields serve different purposes:
 - **src**: URL or data URI pointing to the icon image
 - **mime_type** (optional): MIME type of the image (e.g., "image/png", "image/svg+xml")
 - **sizes** (optional): Array of size descriptors (e.g., ["48x48"], ["any"])
+- **theme** (optional): The UI theme the icon is designed for, `"light"` or `"dark"`
 
 ## Server Icons
 
@@ -109,6 +110,45 @@ def analyze_code(code: str):
     """Create a prompt for code analysis."""
     return f"Please analyze this code:\n\n{code}"
 ```
+
+## Theme Variants
+
+<VersionBadge version="4.0.0" />
+
+MCP clients like VS Code and GitHub Desktop render their own interface in either a light or dark theme, and an icon designed for one can be hard to see against the other, such as a dark logo that disappears into a dark sidebar. The `theme` field on `Icon` tells a client which UI theme an icon is designed for, so the client can display the version that stays visible.
+
+Supply two icons with complementary `theme` values and the client picks the one that matches its current appearance:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.types import Icon
+
+mcp = FastMCP(
+    name="WeatherService",
+    icons=[
+        Icon(src="https://weather.example.com/icon-light.png", theme="light"),
+        Icon(src="https://weather.example.com/icon-dark.png", theme="dark"),
+    ],
+)
+```
+
+The same field works on tools, resources, resource templates, and prompts:
+
+```python
+from fastmcp.types import Icon
+
+@mcp.tool(
+    icons=[
+        Icon(src="https://example.com/calculator-light.png", theme="light"),
+        Icon(src="https://example.com/calculator-dark.png", theme="dark"),
+    ]
+)
+def calculate_sum(a: int, b: int) -> int:
+    """Add two numbers together."""
+    return a + b
+```
+
+Omitting `theme` means the icon is assumed suitable for any theme. That's the right choice for a single icon with enough contrast to read clearly against both light and dark backgrounds.
 
 ## Using Data URIs
 

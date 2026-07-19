@@ -180,6 +180,44 @@ class TestRemoteAuthProvider:
             "https://api.example.com/mcp"
         )
 
+    def test_init_preserves_all_legacy_positional_slots(self, test_tokens):
+        token_verifier = StaticTokenVerifier(
+            tokens=test_tokens, required_scopes=["read"]
+        )
+        documentation_url = AnyHttpUrl("https://docs.example.com/auth")
+
+        provider = RemoteAuthProvider(
+            token_verifier,
+            [AnyHttpUrl("https://auth.example.com")],
+            "https://auth.example.com/proxy",
+            ["read"],
+            "https://api.example.com",
+            "Example API",
+            documentation_url,
+        )
+
+        assert provider._scopes_supported == ["read"]
+        assert provider.resource_base_url == AnyHttpUrl("https://api.example.com/")
+        assert provider.resource_name == "Example API"
+        assert provider.resource_documentation == documentation_url
+        assert provider._challenge_scopes is None
+
+    def test_challenge_scope_translation_falls_back_for_protocol_verifier(self):
+        class ProtocolVerifier:
+            required_scopes = ["read"]
+            scopes_supported = ["read", "admin"]
+
+            async def verify_token(self, token: str):
+                return None
+
+        provider = RemoteAuthProvider(
+            token_verifier=ProtocolVerifier(),  # ty: ignore[invalid-argument-type]
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="https://api.example.com",
+        )
+
+        assert provider.get_challenge_scopes() == ["read"]
+
 
 class TestRemoteAuthProviderIntegration:
     """Integration tests for RemoteAuthProvider with FastMCP server."""

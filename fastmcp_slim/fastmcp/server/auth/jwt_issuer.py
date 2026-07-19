@@ -109,6 +109,8 @@ class JWTIssuer:
         jti: str,
         expires_in: int = 3600,
         upstream_claims: dict[str, Any] | None = None,
+        subject: str | None = None,
+        extra_claims: dict[str, Any] | None = None,
     ) -> str:
         """Issue a minimal FastMCP access token.
 
@@ -122,6 +124,12 @@ class JWTIssuer:
             jti: Unique token identifier (maps to upstream token)
             expires_in: Token lifetime in seconds
             upstream_claims: Optional claims from upstream IdP token to include
+            subject: Optional `sub` claim. Set for self-contained tokens (e.g.
+                minted from an ID-JAG) where the subject is carried directly in
+                the token rather than looked up via a JTI mapping.
+            extra_claims: Optional additional top-level claims to embed. Used to
+                mark self-contained tokens (e.g. the ID-JAG issuer/marker) so
+                `load_access_token` can validate them without a JTI mapping.
 
         Returns:
             Signed JWT token
@@ -138,6 +146,12 @@ class JWTIssuer:
             "iat": now,
             "jti": jti,
         }
+
+        if subject is not None:
+            payload["sub"] = subject
+
+        if extra_claims:
+            payload.update(extra_claims)
 
         if upstream_claims:
             payload["upstream_claims"] = upstream_claims

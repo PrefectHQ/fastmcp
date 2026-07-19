@@ -524,6 +524,8 @@ Note that like regular parameters, each wildcard parameter must still be a named
 
 #### Path Security
 
+<VersionBadge version="4.0.0" />
+
 Template parameters are extracted from the request URI and decoded before your function receives them, so a path-traversal payload like `../` or an absolute path can reach a handler that builds filesystem paths or upstream URLs. FastMCP screens every templated resource's parameter values **before the handler runs**, and this screening is **on by default**.
 
 By default, a parameter value is rejected if its `..` path segments would escape the value's own starting depth, if it looks like an absolute path, or if it contains a null byte. A rejected read surfaces a clean "resource not found" error to the client and logs the reason at debug level, so the failing parameter and policy are never revealed on the wire.
