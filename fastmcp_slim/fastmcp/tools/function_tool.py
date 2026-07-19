@@ -128,15 +128,20 @@ def _strict_input_validation() -> bool:
     """Whether the running server enforces strict argument validation.
 
     Reads ``strict_input_validation`` off the active request's ``FastMCP``
-    instance. Returns ``False`` outside a request context (e.g. a tool invoked
-    directly in tests), preserving the default coercing behavior.
+    instance, invoking it when stored as a zero-argument callable. Returns
+    ``False`` outside a request context (e.g. a tool invoked directly in
+    tests), preserving the default coercing behavior.
     """
     from fastmcp.server.context import _current_context
 
     context = _current_context.get(None)
     if context is None:
         return False
-    return context.fastmcp.strict_input_validation
+
+    setting = context.fastmcp.strict_input_validation
+    if callable(setting):
+        return bool(setting())
+    return setting
 
 
 F = TypeVar("F", bound=Callable[..., Any])

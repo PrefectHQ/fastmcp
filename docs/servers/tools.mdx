@@ -311,6 +311,31 @@ def add_numbers(a: int, b: int) -> int:
 
 The default flexible validation mode is recommended for most use cases as it handles common LLM client behaviors gracefully while still providing strong type safety through Pydantic's validation.
 
+#### Per-request strictness (multi-tenant)
+
+For servers shared across tenants with different client capabilities, pass a zero-argument callable instead of a fixed `bool`. FastMCP invokes it on each tool call (and at task submission) to decide whether to validate in strict mode:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.dependencies import get_access_token
+
+TENANTS_WITH_CLIENT_STRICT = {"tenant-a", "tenant-b"}
+
+def resolve_strict() -> bool:
+    """Skip server-side strict checks when the client already enforces schema."""
+    token = get_access_token()
+    if token is None or not token.claims:
+        return False
+    tenant_id = token.claims.get("tenant_id")
+    if tenant_id is None:
+        return False
+    return tenant_id not in TENANTS_WITH_CLIENT_STRICT
+
+mcp = FastMCP("MultiTenant", strict_input_validation=resolve_strict)
+```
+
+The callable runs during an active MCP request, so it can also read sync request-scoped data your middleware sets (for example, via a `contextvars.ContextVar`). For `task=True` tools, prefer auth claims over ad-hoc request state if strictness must stay consistent in background workers.
+
 ### Parameter Metadata
 
 You can provide additional metadata about parameters in several ways:

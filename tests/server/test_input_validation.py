@@ -351,6 +351,75 @@ class TestEdgeCases:
             assert result.content[0].text == "6"
 
 
+class TestCallableStrictInputValidation:
+    """Per-request strict mode via a zero-argument callable."""
+
+    async def test_callable_toggles_strict_per_invocation(self):
+        """Callable strict setting is resolved on each tool call."""
+        strict_enabled = False
+
+        def resolve_strict() -> bool:
+            return strict_enabled
+
+        mcp = FastMCP("TestServer", strict_input_validation=resolve_strict)
+
+        @mcp.tool
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        async with Client(mcp) as client:
+            strict_enabled = False
+            result = await client.call_tool("add", {"a": "1", "b": "2"})
+            assert isinstance(result.content[0], TextContent)
+            assert result.content[0].text == "3"
+
+            strict_enabled = True
+            with pytest.raises(Exception):
+                await client.call_tool("add", {"a": "1", "b": "2"})
+
+    async def test_callable_reads_middleware_context(self):
+        """Callable can read request-scoped state set by middleware."""
+        from contextvars import ContextVar
+
+        from fastmcp.server.middleware import Middleware, MiddlewareContext
+
+        strict_for_request: ContextVar[bool] = ContextVar(
+            "strict_for_request", default=False
+        )
+
+        class StrictFlagMiddleware(Middleware):
+            async def on_call_tool(self, context: MiddlewareContext, call_next):
+                token = strict_for_request.set(True)
+                try:
+                    return await call_next(context)
+                finally:
+                    strict_for_request.reset(token)
+
+        def resolve_strict() -> bool:
+            return strict_for_request.get()
+
+        mcp = FastMCP("TestServer", strict_input_validation=resolve_strict)
+        mcp.add_middleware(StrictFlagMiddleware())
+
+        @mcp.tool
+        def double(n: int) -> int:
+            return n * 2
+
+        async with Client(mcp) as client:
+            with pytest.raises(Exception):
+                await client.call_tool("double", {"n": "2"})
+
+            result = await client.call_tool("double", {"n": 2})
+            assert isinstance(result.content[0], TextContent)
+            assert result.content[0].text == "4"
+
+    def test_invalid_strict_input_validation_type_raises(self):
+        from typing import Any, cast
+
+        with pytest.raises(TypeError, match="strict_input_validation must be"):
+            FastMCP("TestServer", strict_input_validation=cast(Any, "yes"))
+
+
 class TestExpectedToolFailureLogging:
     async def test_validation_error_logs_warning_without_traceback(self, caplog):
         mcp = FastMCP("TestServer", strict_input_validation=False)

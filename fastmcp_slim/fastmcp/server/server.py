@@ -316,6 +316,9 @@ class StateValue(FastMCPBaseModel):
     value: Any
 
 
+StrictInputValidationSetting = bool | Callable[[], bool]
+
+
 class FastMCP(
     AggregateProvider,
     LifespanMixin,
@@ -340,7 +343,7 @@ class FastMCP(
         on_duplicate: DuplicateBehavior | None = None,
         mask_error_details: bool | None = None,
         dereference_schemas: bool = True,
-        strict_input_validation: bool | None = None,
+        strict_input_validation: StrictInputValidationSetting | None = None,
         list_page_size: int | None = None,
         resource_security: ResourceSecurity | None = DEFAULT_RESOURCE_SECURITY,
         cache_ttl: int | None = None,
@@ -454,7 +457,16 @@ class FastMCP(
                     tool = Tool.from_function(tool)
                 self.add_tool(tool)
 
-        self.strict_input_validation: bool = (
+        if strict_input_validation is not None and not (
+            isinstance(strict_input_validation, bool)
+            or callable(strict_input_validation)
+        ):
+            raise TypeError(
+                "strict_input_validation must be a bool or a zero-argument callable "
+                "returning bool"
+            )
+
+        self.strict_input_validation: StrictInputValidationSetting = (
             strict_input_validation
             if strict_input_validation is not None
             else fastmcp.settings.strict_input_validation

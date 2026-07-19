@@ -141,6 +141,32 @@ async def test_task_submission_honors_strict_input_validation():
     assert "notifications/tasks/status" not in recorder.methods
 
 
+async def test_task_submission_honors_callable_strict_input_validation():
+    """Callable strict settings apply at task submission, not just sync calls."""
+    strict_enabled = False
+
+    def resolve_strict() -> bool:
+        return strict_enabled
+
+    server = FastMCP(
+        "callable-strict-task-server", strict_input_validation=resolve_strict
+    )
+
+    @server.tool(task=True)
+    async def square(n: int) -> int:
+        return n * n
+
+    async with Client(server) as client:
+        strict_enabled = True
+        with pytest.raises(ToolError):
+            await client.call_tool("square", {"n": "1"})
+
+        task = await client.call_tool("square", {"n": "1"}, task=True)
+        assert task.returned_immediately
+        with pytest.raises(ToolError):
+            await task.result()
+
+
 async def test_task_submission_valid_argument_under_strict_validation():
     """A well-typed argument still submits fine when strict validation is on."""
     server = FastMCP("strict-task-valid-server", strict_input_validation=True)

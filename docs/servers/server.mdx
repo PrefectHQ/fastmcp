@@ -172,10 +172,10 @@ These parameters tune how the server processes requests and communicates with cl
   How to handle duplicate component registrations
 </ParamField>
 
-<ParamField body="strict_input_validation" type="bool" default="False">
+<ParamField body="strict_input_validation" type="bool | Callable[[], bool]" default="False">
   <VersionBadge version="2.13.0" />
 
-  When `False` (default), FastMCP uses Pydantic's flexible validation that coerces compatible inputs (e.g., `"10"` → `10` for int parameters). When `True`, validates inputs against the exact JSON Schema before calling your function, rejecting type mismatches. See [Input Validation Modes](/servers/tools#input-validation-modes) for details
+  When `False` (default), FastMCP uses Pydantic's flexible validation that coerces compatible inputs (e.g., `"10"` → `10` for int parameters). When `True`, validates inputs in strict mode before calling your function, rejecting type mismatches. Pass a zero-argument callable returning `bool` to resolve strictness per request (for example, based on tenant identity in `Context`). See [Input Validation Modes](/servers/tools#input-validation-modes) for details
 </ParamField>
 
 <ParamField body="mask_error_details" type="bool | None">
