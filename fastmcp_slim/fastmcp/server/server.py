@@ -73,6 +73,7 @@ from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.middleware.middleware import (
     MiddlewarePhase,
+    _dispatch_phase,
     mark_interior_dispatched,
 )
 from fastmcp.server.mixins import LifespanMixin, MCPOperationsMixin, TransportMixin
@@ -580,10 +581,12 @@ class FastMCP(
     ) -> Any:
         """Builds and executes the middleware chain for a single dispatch phase.
 
-        ``phase`` is forwarded to every middleware so a pass can run only the
-        method-agnostic hooks (``"outer"``, at the root dispatch) or only the typed
-        per-method hook (``"typed"``, interior). It defaults to ``"all"`` for the
-        direct programmatic path.
+        ``phase`` selects whether a pass runs only the method-agnostic hooks
+        (``"outer"``, at the root dispatch) or only the typed per-method hook
+        (``"typed"``, interior); it defaults to ``"all"`` for the direct
+        programmatic path. It is conveyed through the ``_dispatch_phase``
+        ContextVar rather than the middleware call signature, so user middleware
+        overriding the documented ``__call__(context, call_next)`` is unaffected.
         """
         chain = call_next
         for mw in reversed(self.middleware):
@@ -594,10 +597,14 @@ class FastMCP(
                 mw: Middleware = mw,
                 call_next: CallNext[Any, Any] = next_chain,
             ) -> Any:
-                return await mw(context, call_next, phase=phase)
+                return await mw(context, call_next)
 
             chain = cast(CallNext[Any, Any], wrapped)
-        return await chain(context)
+        token = _dispatch_phase.set(phase)
+        try:
+            return await chain(context)
+        finally:
+            _dispatch_phase.reset(token)
 
     async def _dispatch_component_middleware(
         self,

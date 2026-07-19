@@ -157,6 +157,78 @@ class TestSingleFire:
         assert len(on_call_tool) == 1
 
 
+class TestRawMiddlewareCompatibility:
+    """Middleware may override ``__call__(context, call_next)`` — the documented
+    raw signature. The dispatch phase travels out-of-band, so that contract is
+    unchanged and such middleware keeps working."""
+
+    async def test_raw_call_override_still_works(self):
+        seen: list[str | None] = []
+
+        class RawMiddleware(Middleware):
+            async def __call__(self, context, call_next):
+                seen.append(context.method)
+                return await call_next(context)
+
+        server = _adder()
+        server.add_middleware(RawMiddleware())
+
+        async with Client(server) as client:
+            result = await client.call_tool("add", {"a": 1, "b": 2})
+            await client.session.send_notification(
+                mcp_types.ProgressNotification(
+                    params=mcp_types.ProgressNotificationParams(
+                        progress_token="tok", progress=1.0
+                    )
+                )
+            )
+            await client.call_tool("add", {"a": 1, "b": 2})
+
+        assert result.data == 3
+        # It observes both a component call and a message the root dispatch owns.
+        assert "tools/call" in seen
+        assert "notifications/progress" in seen
+
+
+class TestMessageModification:
+    """The root dispatch hands middleware a copy of the raw params, so edits made
+    through the documented inspect/modify contract must be folded back into the
+    SDK context before the real dispatch runs."""
+
+    async def test_modified_message_reaches_sdk_dispatch(self):
+        """A ``logging/setLevel`` carrying an invalid level fails params
+        validation inside ``call_next``. Middleware that rewrites the message to
+        a valid level makes the request succeed — which only happens if the edit
+        is actually forwarded."""
+
+        class RewriteLevel(Middleware):
+            async def on_message(self, context, call_next):
+                if context.method == "logging/setLevel":
+                    context.message["level"] = "debug"
+                return await call_next(context)
+
+        server = _adder()
+        server.add_middleware(RewriteLevel())
+
+        async with Client(server) as client:
+            await client.session._dispatcher.send_raw_request(
+                "logging/setLevel", {"level": "not-a-valid-level"}, {}
+            )
+
+    async def test_unmodified_message_dispatches_unchanged(self):
+        """An observation-only hook leaves dispatch untouched."""
+        server = _adder()
+        recorder = HookRecorder()
+        server.add_middleware(recorder)
+
+        async with Client(server) as client:
+            await client.session._dispatcher.send_raw_request(
+                "logging/setLevel", {"level": "debug"}, {}
+            )
+
+        assert ("on_message", "logging/setLevel") in recorder.records
+
+
 def _guard_server() -> FastMCP:
     server = FastMCP("Guard")
 

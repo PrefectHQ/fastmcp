@@ -3,6 +3,7 @@ from __future__ import annotations
 import weakref
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
 
 import mcp_types
@@ -69,6 +70,34 @@ def _raw_message(ctx: ServerRequestContext) -> Any:
     if isinstance(params, Mapping):
         return dict(params)
     return {} if params is None else params
+
+
+def _forward_ctx(
+    ctx: ServerRequestContext, mw_ctx: Any, original: Any
+) -> ServerRequestContext:
+    """Fold middleware edits to ``method``/``message`` back into the SDK context.
+
+    The outer pass hands middleware a *copy* of the raw params (see
+    ``_raw_message``), so a hook that follows the documented inspect/modify
+    contract — mutating ``context.message`` or passing ``context.copy(message=...)``
+    to ``call_next`` — would otherwise have its edits silently dropped when the
+    bridge dispatched the original context. Rewriting through
+    ``dataclasses.replace`` is how the SDK documents altering what the handler
+    sees. An untouched message forwards the original context unchanged.
+    """
+    method = mw_ctx.method or ctx.method
+    message = mw_ctx.message
+    if isinstance(message, Mapping):
+        params: Mapping[str, Any] | None = dict(message)
+        # `_raw_message` renders absent params as `{}`; keep that distinction so
+        # an untouched notification still dispatches with `params=None`.
+        if ctx.params is None and message == original and not message:
+            params = None
+    else:
+        params = ctx.params
+    if method == ctx.method and params == ctx.params:
+        return ctx
+    return replace(ctx, method=method, params=params)
 
 
 def client_supports_extension(session: ServerSession, extension_id: str) -> bool:
@@ -206,15 +235,16 @@ class FastMCPServerMiddleware:
         from fastmcp.server.middleware.middleware import MiddlewareContext
 
         is_notification = ctx.request_id is None
+        original_message = _raw_message(ctx)
 
         async def root_call_next(_mw_ctx: MiddlewareContext) -> HandlerResult:
             if _raise is not None:
                 raise _raise
-            return await call_next(ctx)
+            return await call_next(_forward_ctx(ctx, _mw_ctx, original_message))
 
         async with Context(fastmcp=fastmcp, session=ctx.session) as fastmcp_ctx:
             mw_context = MiddlewareContext(
-                message=_raw_message(ctx),
+                message=original_message,
                 source="client",
                 type="notification" if is_notification else "request",
                 method=ctx.method,

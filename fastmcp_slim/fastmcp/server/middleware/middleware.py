@@ -69,6 +69,18 @@ def mark_interior_dispatched() -> None:
     _interior_dispatched.set(True)
 
 
+_dispatch_phase: ContextVar[MiddlewarePhase] = ContextVar(
+    "fastmcp_dispatch_phase", default="all"
+)
+"""The dispatch phase for the middleware chain currently running.
+
+Set by ``FastMCP._run_middleware`` around each chain execution and read by
+``Middleware.__call__``, so the phase never appears in the middleware call
+signature — user middleware overriding the documented
+``__call__(context, call_next)`` keeps working unchanged.
+"""
+
+
 T = TypeVar("T", default=Any)
 R = TypeVar("R", covariant=True, default=Any)
 
@@ -128,20 +140,20 @@ class Middleware:
         self,
         context: MiddlewareContext[T],
         call_next: CallNext[T, Any],
-        *,
-        phase: MiddlewarePhase = "all",
     ) -> Any:
         """Main entry point that orchestrates the pipeline.
 
-        ``phase`` selects which slice of the hooks runs (see ``MiddlewarePhase``).
-        It defaults to ``"all"`` so any direct caller keeps the whole-chain
-        behavior; the root dispatch passes ``"outer"`` and the interior
-        component methods pass ``"typed"``.
+        The dispatch phase — which slice of the hooks runs (see
+        ``MiddlewarePhase``) — is read from ``_dispatch_phase`` rather than
+        passed as an argument, so middleware that overrides this method with the
+        documented ``(context, call_next)`` signature keeps working unchanged.
+        Such an override runs once per message regardless of phase, which
+        matches its pre-existing behavior.
         """
         handler_chain = await self._dispatch_handler(
             context,
             call_next=call_next,
-            phase=phase,
+            phase=_dispatch_phase.get(),
         )
         return await handler_chain(context)
 
