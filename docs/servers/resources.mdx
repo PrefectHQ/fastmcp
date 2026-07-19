@@ -147,7 +147,7 @@ Resource functions can return these supported shapes:
 
 -   **`str`**: Sent as `TextResourceContents` (with `mime_type="text/plain"` by default).
 -   **`bytes`**: Base64 encoded and sent as `BlobResourceContents`. You should specify an appropriate `mime_type` (e.g., `"image/png"`, `"application/octet-stream"`).
--   **JSON-native values** (`dict`, `list`, `tuple`, numbers, booleans, or `None`): Serialized to JSON text. The declared MIME type differs by component: a concrete resource keeps its default `text/plain`, while a resource template reports `application/json`. Set `mime_type="application/json"` explicitly whenever clients rely on the content type to parse the payload, so both paths agree.
+-   **JSON-native values** (`dict`, `list`, `tuple`, numbers, booleans, or `None`): Serialized to JSON text, keeping the resource's declared MIME type — which is `text/plain` unless you set one. Pass `mime_type="application/json"` on the decorator whenever clients rely on the content type to parse the payload.
 -   **`list[ResourceContent]`**: Multiple content items with per-item MIME types and metadata.
 -   **`ResourceResult`**: Full control over contents, MIME types, and result-level metadata. See [ResourceResult](#resourceresult) below.
 

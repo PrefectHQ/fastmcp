@@ -23,7 +23,11 @@ from pydantic import (
     validate_call,
 )
 
-from fastmcp.resources.base import Resource, ResourceResult
+from fastmcp.resources.base import (
+    Resource,
+    ResourceResult,
+    convert_raw_to_resource_result,
+)
 from fastmcp.resources.security import (
     INHERIT_SECURITY,
     InheritSecurity,
@@ -278,13 +282,13 @@ class ResourceTemplate(FastMCPComponent):
         2. In tasks_result_handler() to convert Docket task results to ResourceResult
 
         Handles ResourceResult passthrough and converts raw values using
-        ResourceResult's normalization.
+        ResourceResult's normalization. The template's own ``mime_type`` is
+        forwarded so that reads match the MIME type the template advertises
+        in ``resources/templates/list``.
         """
-        if isinstance(raw_value, ResourceResult):
-            return raw_value
-
-        # ResourceResult.__init__ handles all normalization
-        return ResourceResult(raw_value)
+        return convert_raw_to_resource_result(
+            raw_value, mime_type=self.mime_type, meta=self.meta
+        )
 
     @overload
     async def _read(

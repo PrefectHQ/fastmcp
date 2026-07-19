@@ -214,6 +214,62 @@ class ResourceResult(pydantic.BaseModel):
         )
 
 
+def convert_raw_to_resource_result(
+    raw_value: Any,
+    *,
+    mime_type: str | None,
+    meta: dict[str, Any] | None,
+) -> ResourceResult:
+    """Wrap a user function's return value in a ResourceResult.
+
+    Shared by `Resource` and `ResourceTemplate` so both honor the MIME type
+    the component declares in listings. A component that advertises
+    `text/csv` must not serve `text/plain` on read.
+
+    Args:
+        raw_value: The value returned by the user's function.
+        mime_type: The component's declared MIME type, forwarded to content items.
+        meta: Component-level meta (e.g. `ui` metadata for MCP Apps CSP/permissions)
+            propagated to each content item.
+    """
+    if isinstance(raw_value, ResourceResult):
+        return raw_value
+
+    # For plain str/bytes returns, wrap in ResourceContent with the
+    # component's MIME type and meta so the wire response carries the
+    # correct type and metadata (e.g. CSP for MCP Apps).
+    if isinstance(raw_value, (str, bytes)):
+        return ResourceResult(
+            [ResourceContent(raw_value, mime_type=mime_type, meta=meta)]
+        )
+
+    # For JSON-native types (dict, list, tuple, int, float, bool, None),
+    # serialize and wrap in ResourceContent with the component's meta,
+    # matching the str/bytes path above so CSP/permissions propagate.
+    # Exclude list[ResourceContent] which should go through ResourceResult
+    # normalization below.
+    if (
+        isinstance(raw_value, dict | list | tuple | int | float | bool)
+        or raw_value is None
+    ) and not (
+        isinstance(raw_value, list)
+        and raw_value
+        and isinstance(raw_value[0], ResourceContent)
+    ):
+        return ResourceResult(
+            [
+                ResourceContent(
+                    json.dumps(raw_value),
+                    mime_type=mime_type or "application/json",
+                    meta=meta,
+                )
+            ]
+        )
+
+    # All other types fall through to ResourceResult for error handling
+    return ResourceResult(raw_value)
+
+
 class Resource(FastMCPComponent):
     """Base class for all resources."""
 
@@ -324,42 +380,9 @@ class Resource(FastMCPComponent):
         MCP Apps CSP/permissions) is propagated to each content item so
         that hosts can read it from the ``resources/read`` response.
         """
-        if isinstance(raw_value, ResourceResult):
-            return raw_value
-
-        # For plain str/bytes returns, wrap in ResourceContent with the
-        # resource's MIME type and component meta so the wire response
-        # carries the correct type and metadata (e.g. CSP for MCP Apps).
-        if isinstance(raw_value, (str, bytes)):
-            return ResourceResult(
-                [ResourceContent(raw_value, mime_type=self.mime_type, meta=self.meta)]
-            )
-
-        # For JSON-native types (dict, list, tuple, int, float, bool, None),
-        # serialize and wrap in ResourceContent with the component's meta,
-        # matching the str/bytes path above so CSP/permissions propagate.
-        # Exclude list[ResourceContent] which should go through ResourceResult
-        # normalization below.
-        if (
-            isinstance(raw_value, dict | list | tuple | int | float | bool)
-            or raw_value is None
-        ) and not (
-            isinstance(raw_value, list)
-            and raw_value
-            and isinstance(raw_value[0], ResourceContent)
-        ):
-            return ResourceResult(
-                [
-                    ResourceContent(
-                        json.dumps(raw_value),
-                        mime_type=self.mime_type or "application/json",
-                        meta=self.meta,
-                    )
-                ]
-            )
-
-        # All other types fall through to ResourceResult for error handling
-        return ResourceResult(raw_value)
+        return convert_raw_to_resource_result(
+            raw_value, mime_type=self.mime_type, meta=self.meta
+        )
 
     @overload
     async def _read(self, task_meta: None = None) -> ResourceResult: ...
