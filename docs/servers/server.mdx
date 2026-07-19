@@ -273,7 +273,7 @@ The filtering logic works as follows:
 - **Precedence**: Later calls override earlier ones, so call `disable` after `enable` to exclude from an allowlist
 
 <Tip>
-To ensure a component is never exposed, disable it at the server level with `mcp.disable(...)`. Filter by `keys` when you need an exact component, and include the component key's trailing version delimiter (for example, `tool:admin_tool@` for an unversioned tool).
+To hide a component by default, disable it at the server level with `mcp.disable(names={"admin_tool"})`. This is a default rather than a guarantee — a later `enable()` call or a per-session visibility rule can bring the component back. When something must never be reachable, leave it unregistered or guard it with [authentication](/servers/auth/authentication) instead of relying on visibility.
 </Tip>
 
 ```python

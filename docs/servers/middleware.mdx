@@ -262,7 +262,7 @@ async def on_list_prompts(self, context: MiddlewareContext, call_next):
 
 <VersionBadge version="2.13.0" />
 
-Called when a client connects and initializes the session. Middleware can reject the client before `call_next()` raises an error response, or inspect the `InitializeResult` after `call_next()` returns.
+Called when a client connects and initializes the session. Middleware can reject the client before `call_next()` raises an error response, or inspect and modify the `InitializeResult` after `call_next()` returns.
 
 The request params carry the identity the client declared for itself on `client_info`, which makes this the natural place to gate access by client. Note that these fields are snake_case: the MCP wire format spells it `clientInfo`, but the Python model exposes `client_info` and treats the camelCase form as a serialization alias only.
 
@@ -281,10 +281,17 @@ async def on_initialize(self, context: MiddlewareContext, call_next):
     return result
 ```
 
-**Returns:** `InitializeResult | None` — Return the result from `call_next()`. The initialize response has already been sent by the low-level handler, so returning a different `InitializeResult` after `call_next()` won't replace what the client receives.
+**Returns:** `InitializeResult | None` — The value you return is what gets serialized to the client, so modifying the result from `call_next()` changes what the client receives, including fields like `instructions` and `server_info`.
+
+```python
+async def on_initialize(self, context: MiddlewareContext, call_next):
+    result = await call_next(context)
+    result.instructions = "Custom instructions for this client"
+    return result
+```
 
 <Warning>
-Raising `McpError` after `call_next()` will only log the error, not send it to the client. The response has already been sent. Always reject **before** `call_next()`.
+Rejection works only **before** `call_next()`. Raising `McpError` afterward logs the error without sending it — the client still receives a successful initialize response.
 </Warning>
 
 ### Raw Handler

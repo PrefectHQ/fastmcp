@@ -309,7 +309,7 @@ async def long_running_task(
 - **`Progress()`**: Track task progress with atomic updates
 
 <Note>
-`CurrentDocket()` and `CurrentWorker()` require `pip install 'fastmcp[tasks]'` and are only available when a Docket task context is active. `Progress()` can be injected in regular components too, but cross-process task progress requires Docket. For comprehensive task patterns, see the [Docket documentation](https://chrisguidry.github.io/docket/dependencies/).
+`CurrentDocket()` and `CurrentWorker()` require `pip install 'fastmcp[tasks]'`. They resolve once the server lifespan has initialized Docket, which happens as soon as any component on the server is task-enabled — so regular foreground tools, resources, and prompts can inject them too, not only task-enabled components. `Progress()` can be injected anywhere regardless, though cross-process task progress requires Docket. For comprehensive task patterns, see the [Docket documentation](https://chrisguidry.github.io/docket/dependencies/).
 </Note>
 
 ## Custom Dependencies
