@@ -26,6 +26,11 @@ logger = get_logger(__name__)
 # quickly even when a status notification is missed.
 MIN_POLL_INTERVAL = 0.02
 
+# Upper bound on the fallback poll interval (seconds). The fallback exists to
+# recover from a missed status notification, so an absurd server-advertised
+# pollInterval must not disable it entirely.
+MAX_POLL_INTERVAL = 60.0
+
 if TYPE_CHECKING:
     from fastmcp.client.client import CallToolResult, Client
 
@@ -292,11 +297,19 @@ class Task(abc.ABC, Generic[TaskResultT]):
         Prefers the server-advertised pollInterval (milliseconds) from the most
         recent status, falling back to the configured client default when the
         server does not supply one.
+
+        The result is clamped to [MIN_POLL_INTERVAL, MAX_POLL_INTERVAL]. The
+        ceiling can originate from a remote server, so clamping here is what
+        stops a server advertising `pollInterval: 0` from spinning this client
+        in a tight request loop, or an absurdly large one from disabling the
+        fallback poll altogether.
         """
         cache = self._status_cache
         if cache is not None and cache.poll_interval:
-            return cache.poll_interval / 1000
-        return fastmcp.settings.client_task_poll_interval
+            ceiling = cache.poll_interval / 1000
+        else:
+            ceiling = fastmcp.settings.client_task_poll_interval
+        return min(max(ceiling, MIN_POLL_INTERVAL), MAX_POLL_INTERVAL)
 
     async def _wait_terminal(self, timeout: float = 300.0) -> GetTaskResult:
         """Wait until task reaches a terminal state (completed, failed, cancelled).
