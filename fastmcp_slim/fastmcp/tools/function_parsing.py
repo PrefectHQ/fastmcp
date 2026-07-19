@@ -83,33 +83,72 @@ def _is_input_required_type(tp: Any) -> bool:
     return isinstance(tp, type) and issubclass(tp, mcp_types.InputRequiredResult)
 
 
+def _contains_input_required(tp: Any) -> bool:
+    """True when `InputRequiredResult` appears anywhere in *tp*.
+
+    Recurses through `TypeAliasType`, `Annotated`, and unions so a guard arm is
+    found even when factored through a composed alias (``str | Value`` where
+    ``Value = int | InputRequiredResult``).
+    """
+    tp = _unwrap_type_alias(tp)
+    if _is_input_required_type(tp):
+        return True
+    origin = get_origin(tp)
+    if origin is Union or origin is types.UnionType or origin is Annotated:
+        return any(_contains_input_required(a) for a in get_args(tp))
+    return False
+
+
+def _residual_union_arms(tp: Any) -> list[Any]:
+    """Flatten a (possibly aliased/nested) union into its non-guard arms.
+
+    Every `InputRequiredResult` arm is dropped at any depth, and aliased union
+    arms are flattened inline so the residual is a flat union of data arms.
+    """
+    arms: list[Any] = []
+    for arm in get_args(_unwrap_type_alias(tp)):
+        if _is_input_required_type(arm):
+            continue
+        unwrapped = _unwrap_type_alias(arm)
+        arm_origin = get_origin(unwrapped)
+        if arm_origin is Union or arm_origin is types.UnionType:
+            arms.extend(_residual_union_arms(unwrapped))
+        elif arm_origin is Annotated:
+            arms.append(_strip_input_required(arm))
+        else:
+            arms.append(arm)
+    return arms
+
+
 def _strip_input_required(tp: Any) -> Any:
     """Remove `InputRequiredResult` arms from a union return annotation.
 
     A guard tool typically annotates its return as ``X | InputRequiredResult``;
     the ``InputRequiredResult`` arm is a suspend signal, not output data, so it
-    is dropped before schema derivation. A non-union annotation, or one with no
-    such arm, is returned unchanged. A bare ``InputRequiredResult`` annotation
-    (no other arm) is left intact and suppressed downstream like other
-    non-serializable return types.
+    is dropped before schema derivation. Stripping recurses through
+    `TypeAliasType` and nested unions, so a guard arm factored through an alias
+    (even ``str | Value`` where ``Value = int | InputRequiredResult``) is still
+    removed. A non-union annotation, or one with no such arm, is returned
+    unchanged. A bare ``InputRequiredResult`` annotation (no other arm) is left
+    intact and suppressed downstream like other non-serializable return types.
     """
-    tp = _unwrap_type_alias(tp)
-    origin = get_origin(tp)
+    if not _contains_input_required(tp):
+        return tp
+    unwrapped = _unwrap_type_alias(tp)
+    origin = get_origin(unwrapped)
     if origin is Annotated:
         # Annotated[X | InputRequiredResult, meta] — strip inside, keep metadata.
-        inner, *metadata = get_args(tp)
-        stripped = _strip_input_required(inner)
-        if stripped is inner:
-            return tp
-        return Annotated[(stripped, *metadata)]
+        inner, *metadata = get_args(unwrapped)
+        return Annotated[(_strip_input_required(inner), *metadata)]
     if origin is not Union and origin is not types.UnionType:
+        # A bare InputRequiredResult: left intact, suppressed downstream.
         return tp
-    residual = tuple(a for a in get_args(tp) if not _is_input_required_type(a))
-    if not residual or len(residual) == len(get_args(tp)):
+    residual = _residual_union_arms(unwrapped)
+    if not residual:
         return tp
     if len(residual) == 1:
         return residual[0]
-    return Union[residual]  # noqa: UP007
+    return Union[tuple(residual)]  # noqa: UP007
 
 
 def _unwrap_model(tp: Any) -> type[BaseModel] | None:

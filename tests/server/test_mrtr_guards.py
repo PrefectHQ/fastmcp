@@ -149,9 +149,11 @@ class TestContextProperties:
 
 
 # PEP 695 `type X = ...` aliases, built portably (the `type` statement is 3.12+).
-# One factors out the whole guard union; the other is a lone aliased ask arm.
+# One factors out the whole guard union; one is a lone aliased ask arm; one is a
+# composed alias whose union arm hides the guard (`str | _ComposedGuardArm`).
 _AliasedGuardUnion = TypeAliasType("_AliasedGuardUnion", str | InputRequiredResult)
 _AliasedAskArm = TypeAliasType("_AliasedAskArm", InputRequiredResult)
+_ComposedGuardArm = TypeAliasType("_ComposedGuardArm", int | InputRequiredResult)
 
 
 class TestOutputSchema:
@@ -192,6 +194,17 @@ class TestOutputSchema:
         tool = FunctionTool.from_function(book)
         assert tool.output_schema is not None
         assert tool.output_schema.get("x-fastmcp-wrap-result") is True
+
+    def test_composed_alias_arm_stripped(self):
+        """A composed alias arm — `str | Value` where
+        `Value = int | InputRequiredResult` — is recursively unwrapped so the
+        hidden guard is stripped, leaving the flattened data arms (`str | int`)."""
+        from typing import get_args as _get_args
+
+        from fastmcp.tools.function_parsing import _strip_input_required
+
+        stripped = _strip_input_required(str | _ComposedGuardArm)
+        assert set(_get_args(stripped)) == {str, int}
 
     def test_bare_input_required_return_suppresses_schema(self):
         from fastmcp.tools.function_tool import FunctionTool
