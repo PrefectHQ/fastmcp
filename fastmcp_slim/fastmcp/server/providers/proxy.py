@@ -248,6 +248,11 @@ class ProxyTool(Tool):
                             name=backend_name,
                             arguments=arguments,
                             meta=request_meta,
+                            # Forward upstream progress the same way the legacy
+                            # `call_tool_mcp` path does — without this handler a
+                            # backend tool's `ctx.report_progress()` is dropped
+                            # on modern proxy calls.
+                            progress_callback=client._progress_handler,
                             input_responses=ctx.input_responses,
                             request_state=ctx.request_state,
                             allow_input_required=True,

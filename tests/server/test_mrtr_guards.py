@@ -453,6 +453,34 @@ class TestProxyServer:
         assert asked == ["Where would you like to fly?", "When to Paris?"]
         assert result.data == "Booked Paris on 2026-08-01"
 
+    async def test_progress_forwards_through_modern_proxy(self):
+        """A backend tool's `ctx.report_progress()` reaches the caller's progress
+        handler even when the proxy backend negotiates the modern era — the
+        modern branch forwards the proxy client's progress handler just like the
+        legacy `call_tool_mcp` path does."""
+        backend = FastMCP("progress-backend")
+
+        @backend.tool
+        async def report(ctx: Context) -> str:
+            await ctx.report_progress(progress=1, total=2, message="halfway")
+            await ctx.report_progress(progress=2, total=2, message="done")
+            return "ok"
+
+        proxy = _modern_proxy(backend)
+
+        received: list[tuple[float, float | None, str | None]] = []
+
+        async def progress_handler(progress, total, message):
+            received.append((progress, total, message))
+
+        async with Client(
+            proxy, mode="auto", progress_handler=progress_handler
+        ) as client:
+            result = await client.call_tool("report", {})
+
+        assert result.data == "ok"
+        assert received == [(1, 2, "halfway"), (2, 2, "done")]
+
 
 class TestEraGate:
     async def test_legacy_connection_rejects_with_era_error(self):
