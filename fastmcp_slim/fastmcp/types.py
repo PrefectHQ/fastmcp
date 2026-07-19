@@ -44,10 +44,16 @@ from mcp_types import (
     CreateMessageResult as CreateMessageResult,
 )
 from mcp_types import (
+    ElicitRequest as ElicitRequest,
+)
+from mcp_types import (
     EmbeddedResource as EmbeddedResource,
 )
 from mcp_types import (
     ErrorData as ErrorData,
+)
+from mcp_types import (
+    InputRequiredResult as InputRequiredResult,
 )
 from mcp_types import (
     GetPromptResult as GetPromptResult,
@@ -117,11 +123,13 @@ __all__ = [
     "Completion",
     "ContentBlock",
     "CreateMessageResult",
+    "ElicitRequest",
     "EmbeddedResource",
     "ErrorData",
     "GetPromptResult",
     "Icon",
     "ImageContent",
+    "InputRequiredResult",
     "Prompt",
     "PromptMessage",
     "ReadResourceResult",

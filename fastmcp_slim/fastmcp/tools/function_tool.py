@@ -23,6 +23,7 @@ from typing import (
 )
 
 import anyio
+import mcp_types
 from mcp.shared.exceptions import MCPError
 from mcp_types import Icon, ToolAnnotations
 from pydantic import Field, TypeAdapter
@@ -33,6 +34,7 @@ from fastmcp.decorators import get_fastmcp_meta
 from fastmcp.exceptions import ValidationError
 from fastmcp.tools.base import (
     Tool,
+    ToolInputRequired,
     ToolResult,
 )
 from fastmcp.tools.function_parsing import ParsedFunction, _is_object_schema
@@ -369,7 +371,14 @@ class FunctionTool(Tool):
         )
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
-        """Run the tool with arguments."""
+        """Run the tool with arguments.
+
+        A tool body may return an `InputRequiredResult` (SEP-2322) to suspend
+        the call and ask the client for input. That is a control signal, not
+        result data, so it is raised as `ToolInputRequired` rather than
+        converted to `ToolResult` content; the wire handler unwraps it and
+        returns it to the client unmodified.
+        """
         from fastmcp.server.dependencies import without_injected_parameters
 
         wrapper_fn = without_injected_parameters(
@@ -417,6 +426,13 @@ class FunctionTool(Tool):
             original = e.__cause__
             assert original is not None
             raise original from original.__cause__
+
+        # An `InputRequiredResult` is a multi-round-trip control signal, not
+        # data: hand it off unmodified via `ToolInputRequired` so it reaches the
+        # wire as `resultType: "input_required"` instead of being serialized as
+        # content. The wire handler unwraps it (see `_on_call_tool`).
+        if isinstance(result, mcp_types.InputRequiredResult):
+            raise ToolInputRequired(result)
 
         return self.convert_result(result)
 

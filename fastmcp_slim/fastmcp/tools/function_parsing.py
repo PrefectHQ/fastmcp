@@ -55,6 +55,32 @@ def _contains_prefab_type(tp: Any) -> bool:
     return False
 
 
+def _is_input_required_type(tp: Any) -> bool:
+    """True when *tp* is the `InputRequiredResult` type (SEP-2322)."""
+    return isinstance(tp, type) and issubclass(tp, mcp_types.InputRequiredResult)
+
+
+def _strip_input_required(tp: Any) -> Any:
+    """Remove `InputRequiredResult` arms from a union return annotation.
+
+    A guard tool typically annotates its return as ``X | InputRequiredResult``;
+    the ``InputRequiredResult`` arm is a suspend signal, not output data, so it
+    is dropped before schema derivation. A non-union annotation, or one with no
+    such arm, is returned unchanged. A bare ``InputRequiredResult`` annotation
+    (no other arm) is left intact and suppressed downstream like other
+    non-serializable return types.
+    """
+    origin = get_origin(tp)
+    if origin is not Union and origin is not types.UnionType:
+        return tp
+    residual = tuple(a for a in get_args(tp) if not _is_input_required_type(a))
+    if not residual or len(residual) == len(get_args(tp)):
+        return tp
+    if len(residual) == 1:
+        return residual[0]
+    return Union[residual]  # noqa: UP007
+
+
 def _unwrap_model(tp: Any) -> type[BaseModel] | None:
     """Unwrap ``Annotated`` and return the underlying Pydantic model, if any."""
     if get_origin(tp) is Annotated:
@@ -269,6 +295,13 @@ class ParsedFunction:
 
         # Save original for return_type before any schema-related replacement
         original_output_type = output_type
+
+        # An `InputRequiredResult` return arm (SEP-2322 guard tools) is a
+        # control-flow signal, not data: strip it so the residual arms drive
+        # output-schema derivation (mirrors the SDK's func_metadata). The tool
+        # body still returns it at runtime; the tool pipeline passes it through
+        # to the wire without touching the output schema.
+        output_type = _strip_input_required(output_type)
 
         if output_type not in (inspect._empty, None, Any, ...):
             # bytes can't be represented as structured JSON output — skip schema

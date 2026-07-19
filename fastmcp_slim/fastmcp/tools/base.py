@@ -86,6 +86,26 @@ def default_serializer(data: Any) -> str:
     ).decode()
 
 
+class ToolInputRequired(Exception):
+    """Internal signal that a tool suspended to request client input (SEP-2322).
+
+    A guard tool's body returns an `InputRequiredResult` to ask the client for
+    input before it can finish. That result is not tool-output data and must not
+    be converted to `ToolResult` content, so the run machinery raises this to
+    carry the `InputRequiredResult` unmodified out of the `ToolResult`-typed
+    result path. It propagates through `_run`, `call_tool`, and the middleware
+    chain to the `tools/call` wire handler, which unwraps it, gates it on the
+    negotiated protocol era, and returns the `InputRequiredResult` to the runner.
+
+    This is a framework-internal mechanism: authors only ever *return* an
+    `InputRequiredResult`; they never see or raise this exception.
+    """
+
+    def __init__(self, result: mcp_types.InputRequiredResult) -> None:
+        super().__init__("tool suspended to request client input")
+        self.result = result
+
+
 class ToolResult(BaseModel):
     content: list[ContentBlock] = Field(
         description="List of content blocks for the tool result"
@@ -290,6 +310,12 @@ class Tool(FastMCPComponent):
 
         `run()` can EITHER return a list of ContentBlocks, or a tuple of
         (list of ContentBlocks, dict of structured output).
+
+        A tool that suspends to request client input (SEP-2322 multi-round-trip)
+        does so by returning an `InputRequiredResult` from its body; the run
+        machinery raises `ToolInputRequired` to carry that signal out of the
+        normal `ToolResult` result path (see `FunctionTool.run`), so `run()`'s
+        declared result type stays `ToolResult`.
         """
         raise NotImplementedError("Subclasses must implement run()")
 
@@ -590,4 +616,4 @@ def _convert_to_content(
     return [TextContent(type="text", text=default_serializer(result))]
 
 
-__all__ = ["Tool", "ToolResult"]
+__all__ = ["Tool", "ToolInputRequired", "ToolResult"]

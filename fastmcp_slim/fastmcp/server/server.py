@@ -25,6 +25,7 @@ from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.stores.memory import MemoryStore
 from mcp.server.lowlevel.server import LifespanResultT
+from mcp.server.request_state import RequestStateSecurity
 from mcp.shared.exceptions import MCPError
 from mcp_types import (
     Annotations,
@@ -81,7 +82,7 @@ from fastmcp.server.transforms import (
 )
 from fastmcp.server.transforms.visibility import apply_session_transforms, is_enabled
 from fastmcp.settings import DuplicateBehavior as DuplicateBehaviorSetting
-from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.tools.base import Tool, ToolInputRequired, ToolResult
 from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.tools.tool_transform import ToolTransformConfig
 from fastmcp.utilities.components import FastMCPComponent, _coerce_version
@@ -343,6 +344,7 @@ class FastMCP(
         strict_input_validation: bool | None = None,
         list_page_size: int | None = None,
         resource_security: ResourceSecurity | None = DEFAULT_RESOURCE_SECURITY,
+        request_state_security: RequestStateSecurity | None = None,
         cache_ttl: int | None = None,
         cache_scope: Literal["public", "private"] | None = None,
         tasks: bool | None = None,
@@ -409,6 +411,17 @@ class FastMCP(
         # traversal, absolute paths, and null bytes; None disables screening
         # server-wide.
         self._resource_security: ResourceSecurity | None = resource_security
+
+        # Server-level integrity policy for the multi-round-trip `requestState`
+        # (SEP-2322). Consumed by the low-level server, which installs the SDK's
+        # `RequestStateBoundary` middleware to seal every outgoing
+        # `InputRequiredResult.request_state` and unseal every inbound echo.
+        # None means "seal under a per-process ephemeral key" — correct for
+        # single-process deployments; multi-replica deployments must pass a
+        # policy carrying shared `keys=[...]`.
+        self._request_state_security: RequestStateSecurity | None = (
+            request_state_security
+        )
 
         # Server-level SEP-2549 cache hints, applied uniformly to every
         # SDK-cacheable result by the low-level server's runner (raises on
@@ -1225,6 +1238,9 @@ class FastMCP(
 
         Raises:
             NotFoundError: If tool not found or disabled
+            ToolInputRequired: If the tool suspended to request client input
+                (SEP-2322); the wire handler unwraps this into an
+                InputRequiredResult on the response.
             ToolError: If tool execution fails
             ValidationError: If arguments fail validation
         """
@@ -1309,6 +1325,12 @@ class FastMCP(
                     task_meta = replace(task_meta, fn_key=tool.key)
                 try:
                     return await tool._run(arguments or {}, task_meta=task_meta)
+                except ToolInputRequired:
+                    # A guard tool suspended to request client input (SEP-2322).
+                    # This is a control signal, not an execution error — let it
+                    # propagate untouched to the wire handler, ahead of the
+                    # broad error-masking `except Exception` below.
+                    raise
                 except ValidationError as e:
                     # Argument-validation failure (a bad call). FunctionTool
                     # converts pydantic's call-validation error into fastmcp's
