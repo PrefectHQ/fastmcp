@@ -536,6 +536,40 @@ class TestCachingMiddlewareInteraction:
 
         assert call_count["n"] == 2
 
+    async def test_completed_flow_final_result_not_served_to_fresh_call(self):
+        """A continuation leg's final result must not enter the cache: its key
+        is built from name+arguments only, identical to a fresh call's — so a
+        cached final would be served to the next fresh call, which would then
+        never be asked the tool's questions."""
+        from fastmcp.server.middleware.caching import ResponseCachingMiddleware
+
+        body_runs = {"n": 0}
+        mcp = FastMCP("cache-flow")
+
+        @mcp.tool
+        async def ask(ctx: Context) -> str | InputRequiredResult:
+            body_runs["n"] += 1
+            if ctx.input_responses is None:
+                return _ask(_elicit("x", "q", "x"), "x", None)
+            return "done"
+
+        mcp.add_middleware(ResponseCachingMiddleware())
+
+        async def answer(message, response_type, params, ctx):
+            return ElicitResult(action="accept", content=response_type(x="a"))
+
+        async with Client(mcp, mode="auto", elicitation_handler=answer) as client:
+            first = await client.call_tool("ask", {})
+            assert first.data == "done"
+            runs_after_first_flow = body_runs["n"]
+
+            # A fresh identical call must run the tool again (ask + answer),
+            # not be served the previous flow's cached final answer.
+            second = await client.call_tool("ask", {})
+            assert second.data == "done"
+
+        assert body_runs["n"] == runs_after_first_flow + 2
+
 
 class TestAnnotatedReturns:
     async def test_annotated_union_return_strips_guard_arm(self):
@@ -586,23 +620,34 @@ class TestAnnotatedReturns:
 
 
 class TestRequestStateSecurityConfig:
-    def test_custom_security_requires_stable_audience(self):
-        """A shared-key policy with neither an explicit audience nor a stable
-        server name would stamp per-replica random audiences — rejected at
-        construction with a clear remedy."""
-        with pytest.raises(ValueError, match="stable audience"):
-            FastMCP(request_state_security=RequestStateSecurity(keys=[b"0" * 32]))
+    def test_custom_security_without_stable_audience_warns(self, caplog):
+        """A supplied policy with neither an explicit audience nor a stable
+        server name warns (shared keys across replicas would stamp per-replica
+        random audiences) — but constructs, since single-process customization
+        (e.g. an ephemeral policy with a custom ttl) is legitimate and a policy
+        object cannot reveal whether its keys are shared."""
+        import logging
 
-        # Either remedy works:
-        FastMCP(
-            name="Stable",
-            request_state_security=RequestStateSecurity(keys=[b"0" * 32]),
-        )
-        FastMCP(
-            request_state_security=RequestStateSecurity(
-                keys=[b"0" * 32], audience="my-service"
+        with caplog.at_level(logging.WARNING):
+            FastMCP(request_state_security=RequestStateSecurity(keys=[b"0" * 32]))
+        assert any("stable audience" in r.message for r in caplog.records)
+
+        # Single-process customization is allowed (warns, does not raise):
+        FastMCP(request_state_security=RequestStateSecurity.ephemeral(ttl=30))
+
+        # Either remedy avoids the warning:
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            FastMCP(
+                name="Stable",
+                request_state_security=RequestStateSecurity(keys=[b"0" * 32]),
             )
-        )
+            FastMCP(
+                request_state_security=RequestStateSecurity(
+                    keys=[b"0" * 32], audience="my-service"
+                )
+            )
+        assert not any("stable audience" in r.message for r in caplog.records)
 
     async def test_explicit_shared_keys_seal_and_complete(self):
         """A server configured with explicit shared keys drives a full loop —

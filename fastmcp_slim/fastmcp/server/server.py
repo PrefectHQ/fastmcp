@@ -425,13 +425,18 @@ class FastMCP(
             and name is None
         ):
             # The request-state boundary stamps an audience claim, defaulting to
-            # the server name. An auto-generated name differs per replica, so a
-            # shared-key multi-replica policy would mint tokens no other replica
-            # accepts. Require a stable identity up front.
-            raise ValueError(
-                "request_state_security requires a stable audience: pass "
-                "FastMCP(name=...) or RequestStateSecurity(audience=...) so "
-                "sealed request state verifies across server instances."
+            # the server name — which is auto-generated (random) when unnamed, so
+            # a shared-key multi-replica policy would mint tokens no other
+            # replica accepts. A policy object can't reveal whether its keys are
+            # shared (ephemeral and shared-key policies both collapse into a
+            # codec), so single-process customization stays allowed and the
+            # multi-replica footgun is a warning, not an error.
+            logger.warning(
+                "request_state_security was provided without an audience on an "
+                "unnamed server; if this policy's keys are shared across "
+                "replicas, sealed request state will not verify between them. "
+                "Pass FastMCP(name=...) or RequestStateSecurity(audience=...) "
+                "for a stable audience."
             )
         self._request_state_security: RequestStateSecurity | None = (
             request_state_security
