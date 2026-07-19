@@ -108,6 +108,34 @@ class AttributeAddingSampler(Sampler):
         return "AttributeAddingSampler"
 
 
+class FilteringSampler(Sampler):
+    """Discards every attribute it receives and substitutes its own.
+
+    Mirrors a real-world sampler that strips component names or resource
+    URIs for privacy or cardinality control by returning a `SamplingResult`
+    with only its own attribute, ignoring what it was handed entirely. None
+    of FastMCP's attributes may survive on the span, and the restore helper
+    must not reintroduce them — that would defeat the filter.
+    """
+
+    def should_sample(
+        self,
+        parent_context: Context | None,
+        trace_id: int,
+        name: str,
+        kind: object = None,
+        attributes: otel_types.Attributes = None,
+        links: object = None,
+        trace_state: object = None,
+    ) -> SamplingResult:
+        return SamplingResult(
+            Decision.RECORD_AND_SAMPLE, attributes={"sampling.policy": "filtered"}
+        )
+
+    def get_description(self) -> str:
+        return "FilteringSampler"
+
+
 def test_known_span_attributes_are_available_on_start(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -338,6 +366,45 @@ def test_sampler_added_attribute_survives_alongside_fastmcp_attributes(
 @pytest.mark.parametrize(
     ("span_factory", "span_name", "expected_attrs"), SPAN_HELPER_CASES
 )
+def test_filtered_attributes_are_not_restored(
+    monkeypatch: pytest.MonkeyPatch,
+    span_factory: Callable[[], AbstractContextManager[APISpan]],
+    span_name: str,
+    expected_attrs: dict[str, object],
+) -> None:
+    """Regression: a sampler that intentionally supplies only its own
+    attributes (e.g. to strip component names or resource URIs for privacy
+    or cardinality control) must not have FastMCP's attributes restored.
+
+    A gate keyed off "none of our keys are present" can't tell this apart
+    from a bare non-forwarding sampler — both leave none of FastMCP's keys
+    on the span — so it would restore everything and defeat the filter. The
+    fix keys off the span having no attributes at all: a filtering sampler
+    leaves the span non-empty (its own attribute is there), which a bare
+    non-forwarding sampler never does.
+    """
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider(sampler=FilteringSampler())
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    tracer = provider.get_tracer("test")
+    monkeypatch.setattr("fastmcp.client.telemetry.get_tracer", lambda: tracer)
+    monkeypatch.setattr("fastmcp.server.telemetry.get_tracer", lambda: tracer)
+
+    with span_factory():
+        pass
+
+    spans = [s for s in exporter.get_finished_spans() if s.name == span_name]
+    assert len(spans) == 1
+    attrs = dict(spans[0].attributes or {})
+
+    assert attrs == {"sampling.policy": "filtered"}
+    for key in expected_attrs:
+        assert key not in attrs
+
+
+@pytest.mark.parametrize(
+    ("span_factory", "span_name", "expected_attrs"), SPAN_HELPER_CASES
+)
 def test_restore_does_not_churn_sdk_attribute_limit_evictions(
     monkeypatch: pytest.MonkeyPatch,
     span_factory: Callable[[], AbstractContextManager[APISpan]],
@@ -351,8 +418,8 @@ def test_restore_does_not_churn_sdk_attribute_limit_evictions(
     inside the restore helper, so a per-key "reinsert what's missing"
     strategy would cycle an evicted key back onto the span, which evicts a
     *different* retained key and inflates `dropped_attributes` beyond what
-    the SDK's own eviction already cost. The fix gates the restore on *none*
-    of our attributes being present (plus `dropped_attributes == 0`), so a
+    the SDK's own eviction already cost. The fix gates the restore on the
+    span having no attributes at all (plus `dropped_attributes == 0`), so a
     normal forwarding sampler colliding with a low limit is left exactly as
     the SDK computed it — this test proves that by diffing against a
     baseline with the restore step stubbed out entirely.

@@ -111,6 +111,34 @@ class AttributeAddingSampler(Sampler):
         return "AttributeAddingSampler"
 
 
+class FilteringSampler(Sampler):
+    """Discards every attribute it receives and substitutes its own.
+
+    See `tests/telemetry/test_span_attributes.py` for the full explanation:
+    a sampler can legitimately supply only its own attributes (e.g. to strip
+    component names or resource URIs for privacy or cardinality control),
+    and the restore step must not reintroduce FastMCP's attributes in that
+    case — doing so would defeat the filter.
+    """
+
+    def should_sample(
+        self,
+        parent_context: OTelContext | None,
+        trace_id: int,
+        name: str,
+        kind: object = None,
+        attributes: otel_types.Attributes = None,
+        links: object = None,
+        trace_state: object = None,
+    ) -> SamplingResult:
+        return SamplingResult(
+            Decision.RECORD_AND_SAMPLE, attributes={"sampling.policy": "filtered"}
+        )
+
+    def get_description(self) -> str:
+        return "FilteringSampler"
+
+
 @pytest.fixture
 def on_start_recorder(
     monkeypatch: pytest.MonkeyPatch,
@@ -387,8 +415,9 @@ class TestAttributesSurviveANonForwardingSampler:
 
 class TestAttributeRestoreRespectsSampler:
     """Restoring missing attributes must not clobber attributes a sampler
-    deliberately kept and modified, and must coexist with attributes a
-    sampler adds of its own."""
+    deliberately kept and modified, must coexist with attributes a sampler
+    adds of its own, and must not fire at all when a sampler supplies only
+    its own attributes and drops FastMCP's entirely."""
 
     @pytest.fixture
     def redacting_tracer(
@@ -404,6 +433,15 @@ class TestAttributeRestoreRespectsSampler:
         self, monkeypatch: pytest.MonkeyPatch, trace_exporter: InMemorySpanExporter
     ) -> None:
         provider = TracerProvider(sampler=AttributeAddingSampler())
+        provider.add_span_processor(SimpleSpanProcessor(trace_exporter))
+        tracer = provider.get_tracer("test")
+        monkeypatch.setattr("fastmcp.server.sampling.run.get_tracer", lambda: tracer)
+
+    @pytest.fixture
+    def filtering_tracer(
+        self, monkeypatch: pytest.MonkeyPatch, trace_exporter: InMemorySpanExporter
+    ) -> None:
+        provider = TracerProvider(sampler=FilteringSampler())
         provider.add_span_processor(SimpleSpanProcessor(trace_exporter))
         tracer = provider.get_tracer("test")
         monkeypatch.setattr("fastmcp.server.sampling.run.get_tracer", lambda: tracer)
@@ -586,6 +624,93 @@ class TestAttributeRestoreRespectsSampler:
         assert span.attributes["sampling.policy"] == "always_on"
         assert span.attributes["gen_ai.tool.name"] == "echo_tool"
         assert span.attributes["fastmcp.tool.use_id"] == "call_1"
+
+    async def test_create_message_span_filtered_attributes_are_not_restored(
+        self,
+        trace_exporter: InMemorySpanExporter,
+        filtering_tracer: None,
+    ):
+        """Regression: a sampler that intentionally supplies only its own
+        attributes must not have FastMCP's attributes restored on top."""
+
+        def sampling_handler(
+            messages: list[SamplingMessage],
+            params: SamplingParams,
+            ctx: RequestContext,
+        ) -> str:
+            return "sampled-text"
+
+        mcp = FastMCP("sampling-server")
+
+        @mcp.tool
+        async def ask(question: str, context: Context) -> str:
+            result = await context.sample(messages=question)
+            return result.text or ""
+
+        async with Client(mcp, sampling_handler=sampling_handler) as client:
+            await client.call_tool("ask", {"question": "hi"})
+
+        spans = _spans_named(trace_exporter, "sampling create_message")
+        assert len(spans) == 1
+        span = spans[0]
+        assert dict(span.attributes or {}) == {"sampling.policy": "filtered"}
+
+    async def test_tool_span_filtered_attributes_are_not_restored(
+        self,
+        trace_exporter: InMemorySpanExporter,
+        filtering_tracer: None,
+    ):
+        """Regression: a sampler that intentionally supplies only its own
+        attributes must not have FastMCP's attributes restored on top."""
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
+
+        def echo_tool(text: str) -> str:
+            return text
+
+        call_count = 0
+
+        def sampling_handler(
+            messages: list[SamplingMessage],
+            params: SamplingParams,
+            ctx: RequestContext,
+        ) -> CreateMessageResultWithTools:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return CreateMessageResultWithTools(
+                    role="assistant",
+                    content=[
+                        ToolUseContent(
+                            type="tool_use",
+                            id="call_1",
+                            name="echo_tool",
+                            input={"text": "hi"},
+                        )
+                    ],
+                    model="test-model",
+                    stop_reason="toolUse",
+                )
+            return CreateMessageResultWithTools(
+                role="assistant",
+                content=[TextContent(type="text", text="done")],
+                model="test-model",
+                stop_reason="endTurn",
+            )
+
+        mcp = FastMCP(sampling_handler=sampling_handler)
+
+        @mcp.tool
+        async def driver(context: Context) -> str:
+            result = await context.sample(messages="go", tools=[echo_tool])
+            return result.text or ""
+
+        async with Client(mcp) as client:
+            await client.call_tool("driver", {})
+
+        spans = _spans_named(trace_exporter, "sampling tool echo_tool")
+        assert len(spans) == 1
+        span = spans[0]
+        assert dict(span.attributes or {}) == {"sampling.policy": "filtered"}
 
 
 class TestRestoreDoesNotChurnAttributeLimitEvictions:

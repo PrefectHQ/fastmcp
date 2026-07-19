@@ -166,21 +166,34 @@ def restore_dropped_attributes(
     every attribute FastMCP passed at creation time. Call this immediately
     after span creation to recover from that case.
 
-    The restore only fires when *none* of `attrs`' keys are present on the
-    span AND the SDK hasn't evicted anything (`dropped_attributes == 0`):
+    The restore only fires when the span has *no* attributes at all AND the
+    SDK hasn't evicted anything (`dropped_attributes == 0`):
 
-    - A sampler that dropped every attribute it was handed (the regression
-      this exists to fix) gets everything restored.
-    - A sampler that forwarded at least one of our keys — whether it left
-      the rest alone, redacted or replaced some, or only some survived a
-      low `OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT` eviction — is left alone
-      entirely. A sampler deliberately dropping one key is indistinguishable
-      from the SDK's bounded attribute map evicting it, and reinserting an
-      evicted key would just push the map's bound and evict a *different*
-      retained key — churning which attributes survive without changing how
-      many are lost. So `dropped_attributes` and the retained subset are
-      left exactly as the SDK computed them.
-    - A sampler that added its own attributes is untouched either way.
+    - A bare, non-forwarding sampler (the regression this exists to fix)
+      leaves the span with an empty attribute mapping, so everything is
+      restored.
+    - A sampler that supplied any attributes of its own — whether by
+      forwarding ours untouched, redacting or replacing some of our values,
+      or substituting its own attributes entirely (e.g. to strip component
+      names or resource URIs for privacy or cardinality control) — leaves
+      the span non-empty, so it is left alone entirely. This is what makes
+      the gate precise: a sampler that deliberately supplies only its own
+      attributes must not have them clobbered by a restore that assumes
+      "no FastMCP keys" means "sampler forwarding failed."
+    - A sampler that forwards most of our attributes but deliberately drops
+      one is still non-empty, so it's covered by the same "leave alone"
+      branch — a dropped key here is indistinguishable from the SDK's
+      bounded attribute map evicting it, and reinserting it would just push
+      the map's bound and evict a *different* retained key, churning which
+      attributes survive without changing how many are lost. No attempt is
+      made to restore individual missing keys; the gate is all-or-nothing.
+    - A low `OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT` that evicts every attribute a
+      forwarding sampler passed through is indistinguishable, from the
+      span's attribute state alone, from a bare non-forwarding sampler —
+      both leave an empty mapping. `dropped_attributes == 0` is what tells
+      them apart: eviction always increments it, so that case is correctly
+      excluded from the restore and the SDK's bounded map is left as
+      computed.
 
     Callers are expected to guard this with `if span.is_recording():`; it
     does no work worth skipping for non-recording spans, but the check is
@@ -192,8 +205,7 @@ def restore_dropped_attributes(
     if isinstance(span, _AttributeReadableSpan):
         existing = span.attributes or {}
         dropped = span.dropped_attributes
-    none_present = not any(key in existing for key in attrs)
-    if none_present and dropped == 0:
+    if not existing and dropped == 0:
         span.set_attributes(attrs)
 
 

@@ -325,10 +325,11 @@ async def execute_tools(
             # `sampling_result.attributes`, not the `attributes` kwarg
             # directly — a custom Sampler whose SamplingResult.attributes
             # defaults to None silently drops everything we passed. This
-            # only fires when *none* of our attributes made it onto the
-            # span, so a sampler that forwarded (and redacted, replaced, or
-            # partially dropped) attributes, or an SDK attribute limit that
-            # evicted some, is left untouched.
+            # only fires when the span ends up with no attributes at all, so
+            # any sampler that supplied attributes of its own — forwarding
+            # ours, redacting or replacing some, or substituting entirely its
+            # own — is left untouched, as is an SDK attribute limit that
+            # evicted some.
             if span.is_recording():
                 restore_dropped_attributes(span, span_attrs)
             try:
@@ -583,10 +584,11 @@ async def sample_step_impl(
         # Tracer.start_span builds the span from
         # `sampling_result.attributes`, not the `attributes` kwarg directly —
         # a custom Sampler whose SamplingResult.attributes defaults to None
-        # silently drops everything we passed. This only fires when *none* of
-        # our attributes made it onto the span, so a sampler that forwarded
-        # (and redacted, replaced, or partially dropped) attributes, or an
-        # SDK attribute limit that evicted some, is left untouched.
+        # silently drops everything we passed. This only fires when the span
+        # ends up with no attributes at all, so any sampler that supplied
+        # attributes of its own — forwarding ours, redacting or replacing
+        # some, or substituting entirely its own — is left untouched, as is
+        # an SDK attribute limit that evicted some.
         if span.is_recording():
             restore_dropped_attributes(span, span_attrs)
         try:
