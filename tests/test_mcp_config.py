@@ -401,7 +401,7 @@ async def _wait_for_process_exit(pid: int, timeout: float = 3.0) -> None:
             psutil.Process(pid)
         except psutil.NoSuchProcess:
             return
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.005)
     # Final check — if still alive, let the NoSuchProcess propagation fail the test clearly
     psutil.Process(pid)
     pytest.fail(f"Process {pid} still alive after {timeout}s")

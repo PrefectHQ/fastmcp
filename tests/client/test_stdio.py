@@ -24,6 +24,24 @@ def gc_collect_harder():
     gc.collect()
 
 
+async def wait_for_log_content(log_file_path, expected: str, timeout: float = 2.0) -> str:
+    """Poll a log file until it contains the expected text.
+
+    The subprocess's stderr is redirected straight to the file at the OS
+    level (no async pump on our side to synchronize on), so poll for the
+    content instead of sleeping a fixed amount and hoping it landed.
+    """
+
+    async def _poll() -> str:
+        while True:
+            content = log_file_path.read_text()
+            if expected in content:
+                return content
+            await asyncio.sleep(0.01)
+
+    return await asyncio.wait_for(_poll(), timeout=timeout)
+
+
 class TestParallelCalls:
     @pytest.fixture
     def stdio_script(self, tmp_path):
@@ -163,7 +181,7 @@ class TestKeepAlive:
         with pytest.raises(psutil.NoSuchProcess):
             while True:
                 psutil.Process(pid)
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.01)
 
     async def test_keep_alive_false_exit_scope_kills_server(self, stdio_script):
         pid: int | None = None
@@ -184,7 +202,7 @@ class TestKeepAlive:
         with pytest.raises(psutil.NoSuchProcess):
             while True:
                 psutil.Process(pid)
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.01)
 
     async def test_keep_alive_false_starts_new_session_across_multiple_calls(
         self, stdio_script
@@ -479,7 +497,14 @@ class TestSubprocessCrashRecovery:
             pid1: int = result1.data
             # Second call triggers delayed clean exit
             await client.call_tool("pid_then_exit")
-            await asyncio.sleep(0.3)
+
+            # Wait for the subprocess to actually exit (it self-terminates
+            # via a background timer ~0.1s after the second call) instead
+            # of blindly sleeping past the worst case.
+            with pytest.raises(psutil.NoSuchProcess):
+                while True:
+                    psutil.Process(pid1)
+                    await asyncio.sleep(0.01)
 
         # Recovery after clean exit
         async with client:
@@ -594,10 +619,7 @@ class TestLogFile:
         async with client:
             await client.call_tool("write_error", {"message": "Test error message"})
 
-        # Need to wait a bit for stderr to flush
-        await asyncio.sleep(0.1)
-
-        content = log_file_path.read_text()
+        content = await wait_for_log_content(log_file_path, "Test error message")
         assert "Test error message" in content
 
     async def test_log_file_captures_stderr_output_with_textio(
@@ -617,10 +639,8 @@ class TestLogFile:
                     "write_error", {"message": "Test error with TextIO"}
                 )
 
-            # Need to wait a bit for stderr to flush
-            await asyncio.sleep(0.1)
+            content = await wait_for_log_content(log_file_path, "Test error with TextIO")
 
-        content = log_file_path.read_text()
         assert "Test error with TextIO" in content
 
     async def test_log_file_none_uses_default_behavior(
