@@ -21,15 +21,12 @@ from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Initial fallback poll interval for Task.wait() (seconds). Each wait() call
-# starts here and doubles up to the steady-state ceiling, so fast tasks resolve
-# quickly even when a status notification is missed.
+# Floor for the fallback poll interval in Task.wait() (seconds). When the server
+# does not advertise a pollInterval, each wait() call starts its backoff ramp
+# here so fast tasks resolve quickly even if a status notification is missed.
+# When the server does advertise one, this is only a safety floor that keeps a
+# server sending `pollInterval: 0` from spinning the client in a tight loop.
 MIN_POLL_INTERVAL = 0.02
-
-# Upper bound on the fallback poll interval (seconds). The fallback exists to
-# recover from a missed status notification, so an absurd server-advertised
-# pollInterval must not disable it entirely.
-MAX_POLL_INTERVAL = 60.0
 
 if TYPE_CHECKING:
     from fastmcp.client.client import CallToolResult, Client
@@ -228,6 +225,12 @@ class Task(abc.ABC, Generic[TaskResultT]):
         with fallback to polling (reliable). Optimally wakes up immediately
         on status changes when server sends notifications/tasks/status.
 
+        The fallback poll cadence has two modes. If the server advertises a
+        `pollInterval`, that interval is honored exactly (subject only to a
+        20ms safety floor), because it is a deliberate statement about how
+        much load the server wants to take. If it does not, the poll starts at
+        20ms and doubles up to the `client_task_poll_interval` setting.
+
         Args:
             state: Desired state ('working', 'input_required', 'completed', 'failed', 'cancelled').
                    If None, waits until the task exits the 'working' state (completed, failed, cancelled, input_required, etc.)
@@ -251,11 +254,9 @@ class Task(abc.ABC, Generic[TaskResultT]):
 
         start = time.time()
         in_progress_states = {"working"}
-        # Fallback poll cadence uses exponential backoff: start fast so quick
-        # tasks resolve in ~20ms even when a status notification is missed, then
-        # back off toward the steady-state ceiling so long-running tasks don't
-        # hammer the server. Notifications still short-circuit the wait via the
-        # status event. Backoff resets on each wait() call.
+        # Backoff state for the unadvertised-interval mode; resets per wait()
+        # call. Notifications still short-circuit the wait via the status event,
+        # so this only governs the fallback poll.
         backoff = MIN_POLL_INTERVAL
 
         while True:
@@ -276,8 +277,7 @@ class Task(abc.ABC, Generic[TaskResultT]):
                 )
 
             remaining = timeout - elapsed
-            ceiling = self._poll_ceiling_seconds()
-            interval = min(backoff, ceiling)
+            interval, backoff = self._next_poll_delay(backoff)
 
             # Wait for notification event OR poll timeout
             try:
@@ -289,27 +289,28 @@ class Task(abc.ABC, Generic[TaskResultT]):
                 # Fallback: poll server (notification didn't arrive in time)
                 self._status_cache = await self._client.get_task_status(self._task_id)
 
-            backoff = min(backoff * 2, ceiling)
+    def _next_poll_delay(self, backoff: float) -> tuple[float, float]:
+        """Delay before the next fallback poll, plus the backoff for the round after.
 
-    def _poll_ceiling_seconds(self) -> float:
-        """Steady-state ceiling for the fallback poll cadence, in seconds.
+        Advertised interval -> honor it; no advertised interval -> ramp.
 
-        Prefers the server-advertised pollInterval (milliseconds) from the most
-        recent status, falling back to the configured client default when the
-        server does not supply one.
+        A server that advertises `pollInterval` (milliseconds) is making a
+        deliberate statement about how much load it wants to take, so that
+        interval is used verbatim as the delay with no backoff ramp. The only
+        adjustment is `MIN_POLL_INTERVAL` as a safety floor, so a server sending
+        a zero or negative interval cannot spin this client in a tight request
+        loop.
 
-        The result is clamped to [MIN_POLL_INTERVAL, MAX_POLL_INTERVAL]. The
-        ceiling can originate from a remote server, so clamping here is what
-        stops a server advertising `pollInterval: 0` from spinning this client
-        in a tight request loop, or an absurdly large one from disabling the
-        fallback poll altogether.
+        When the server advertises nothing, there is no guidance to honor, so
+        the poll starts at `MIN_POLL_INTERVAL` and doubles each round up to the
+        `client_task_poll_interval` setting.
         """
         cache = self._status_cache
-        if cache is not None and cache.poll_interval:
-            ceiling = cache.poll_interval / 1000
-        else:
-            ceiling = fastmcp.settings.client_task_poll_interval
-        return min(max(ceiling, MIN_POLL_INTERVAL), MAX_POLL_INTERVAL)
+        if cache is not None and cache.poll_interval is not None:
+            return max(cache.poll_interval / 1000, MIN_POLL_INTERVAL), backoff
+
+        ceiling = fastmcp.settings.client_task_poll_interval
+        return min(backoff, ceiling), min(backoff * 2, ceiling)
 
     async def _wait_terminal(self, timeout: float = 300.0) -> GetTaskResult:
         """Wait until task reaches a terminal state (completed, failed, cancelled).

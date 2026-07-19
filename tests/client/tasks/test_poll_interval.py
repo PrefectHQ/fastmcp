@@ -1,13 +1,17 @@
-"""Poll-interval floor/ceiling behavior for client-side task waiting."""
+"""Fallback poll cadence for client-side task waiting.
+
+Two modes: a server-advertised pollInterval is honored exactly, while an
+unadvertised one falls back to an exponential ramp up to the client setting.
+"""
 
 import pytest
 from mcp_types import GetTaskResult
 from pydantic import ValidationError
 
-import fastmcp
 from fastmcp import Client, FastMCP
-from fastmcp.client.tasks import MAX_POLL_INTERVAL, MIN_POLL_INTERVAL, ToolTask
+from fastmcp.client.tasks import MIN_POLL_INTERVAL, ToolTask
 from fastmcp.settings import Settings
+from fastmcp.utilities.tests import temporary_settings
 
 
 @pytest.mark.parametrize("value", [0, -0.5, -1])
@@ -38,27 +42,49 @@ def _status(poll_interval: int | None) -> GetTaskResult:
     )
 
 
-@pytest.mark.parametrize("poll_interval", [0, None])
-def test_missing_server_poll_interval_falls_back_to_setting(
-    task: ToolTask, poll_interval: int | None
-):
-    task._status_cache = _status(poll_interval)
-    assert task._poll_ceiling_seconds() == fastmcp.settings.client_task_poll_interval
-
-
-@pytest.mark.parametrize("poll_interval", [1, 5, 19])
-def test_sub_floor_server_poll_interval_is_clamped_to_floor(
+@pytest.mark.parametrize("poll_interval", [2000, 30_000])
+def test_advertised_interval_is_used_verbatim_without_backoff(
     task: ToolTask, poll_interval: int
 ):
+    """An advertised interval is the delay itself, not a ceiling to ramp toward."""
     task._status_cache = _status(poll_interval)
-    assert task._poll_ceiling_seconds() == MIN_POLL_INTERVAL
+    expected = poll_interval / 1000
+
+    backoff = MIN_POLL_INTERVAL
+    for _ in range(5):
+        delay, backoff = task._next_poll_delay(backoff)
+        assert delay == expected
 
 
-def test_excessive_server_poll_interval_is_clamped_to_max(task: ToolTask):
+def test_large_advertised_interval_is_honored(task: ToolTask):
     task._status_cache = _status(24 * 60 * 60 * 1000)
-    assert task._poll_ceiling_seconds() == MAX_POLL_INTERVAL
+    delay, _ = task._next_poll_delay(MIN_POLL_INTERVAL)
+    assert delay == 24 * 60 * 60
 
 
-def test_reasonable_server_poll_interval_is_used_as_is(task: ToolTask):
-    task._status_cache = _status(2000)
-    assert task._poll_ceiling_seconds() == 2.0
+@pytest.mark.parametrize("poll_interval", [0, -1, -5000])
+def test_non_positive_advertised_interval_is_floored(
+    task: ToolTask, poll_interval: int
+):
+    """A buggy or hostile server must not be able to spin the client."""
+    task._status_cache = _status(poll_interval)
+    delay, _ = task._next_poll_delay(MIN_POLL_INTERVAL)
+    assert delay == MIN_POLL_INTERVAL
+
+
+def test_unadvertised_interval_ramps_up_to_setting(task: ToolTask):
+    task._status_cache = _status(None)
+    with temporary_settings(client_task_poll_interval=0.5):
+        delays = []
+        backoff = MIN_POLL_INTERVAL
+        for _ in range(7):
+            delay, backoff = task._next_poll_delay(backoff)
+            delays.append(delay)
+
+    assert delays == [0.02, 0.04, 0.08, 0.16, 0.32, 0.5, 0.5]
+
+
+def test_missing_status_cache_ramps_from_floor(task: ToolTask):
+    delay, backoff = task._next_poll_delay(MIN_POLL_INTERVAL)
+    assert delay == MIN_POLL_INTERVAL
+    assert backoff == MIN_POLL_INTERVAL * 2
