@@ -7,17 +7,16 @@ from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
 import anyio
-from mcp import McpError
-from mcp.types import ErrorData
+from mcp import MCPError
 
 from .middleware import CallNext, Middleware, MiddlewareContext
 
 
-class RateLimitError(McpError):
+class RateLimitError(MCPError):
     """Error raised when rate limit is exceeded."""
 
     def __init__(self, message: str = "Rate limit exceeded"):
-        super().__init__(ErrorData(code=-32000, message=message))
+        super().__init__(code=-32000, message=message)
 
 
 class TokenBucketRateLimiter:

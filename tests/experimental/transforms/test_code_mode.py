@@ -5,7 +5,7 @@ import json
 from typing import Any
 
 import pytest
-from mcp.types import ImageContent, TextContent
+from mcp_types import ImageContent, TextContent
 
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
@@ -656,7 +656,7 @@ async def test_code_mode_execute_non_text_content_stringified() -> None:
 
     @mcp.tool
     def image_tool() -> ImageContent:
-        return ImageContent(type="image", data="base64data", mimeType="image/png")
+        return ImageContent(type="image", data="base64data", mime_type="image/png")
 
     mcp.add_transform(CodeMode(sandbox_provider=_UnsafeTestSandboxProvider()))
 

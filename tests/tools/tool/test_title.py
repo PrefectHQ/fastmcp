@@ -47,7 +47,7 @@ class TestToolTitle:
 
     def test_tool_title_priority(self):
         """Test that explicit title takes priority over annotations.title."""
-        from mcp.types import ToolAnnotations
+        from mcp_types import ToolAnnotations
 
         def divide(x: int, y: int) -> float:
             """Divide two numbers."""
@@ -72,7 +72,7 @@ class TestToolTitle:
 
     def test_tool_annotations_title_fallback(self):
         """Test that annotations.title is used when no explicit title is provided."""
-        from mcp.types import ToolAnnotations
+        from mcp_types import ToolAnnotations
 
         def modulo(x: int, y: int) -> int:
             """Get modulo of two numbers."""

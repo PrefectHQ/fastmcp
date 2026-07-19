@@ -3,15 +3,15 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any, Generic, TypeAlias
 
-import mcp.types
+import mcp_types
 from mcp import ClientSession
-from mcp.client.session import ElicitationFnT
-from mcp.shared.context import LifespanContextT, RequestContext
-from mcp.types import ElicitRequestFormParams, ElicitRequestParams
-from mcp.types import ElicitResult as MCPElicitResult
+from mcp.client.session import ClientRequestContext, ElicitationFnT
+from mcp_types import ElicitRequestFormParams, ElicitRequestParams
+from mcp_types import ElicitResult as MCPElicitResult
 from pydantic_core import to_jsonable_python
 from typing_extensions import TypeVar
 
+from fastmcp.client._sdk_context_shim import LifespanContextT, RequestContext
 from fastmcp.utilities.json_schema_type import json_schema_to_type
 
 __all__ = ["ElicitRequestParams", "ElicitResult", "ElicitationHandler"]
@@ -39,22 +39,28 @@ def create_elicitation_callback(
     elicitation_handler: ElicitationHandler,
 ) -> ElicitationFnT:
     async def _elicitation_handler(
-        context: RequestContext[ClientSession, LifespanContextT],
+        context: ClientRequestContext,
         params: ElicitRequestParams,
-    ) -> MCPElicitResult | mcp.types.ErrorData:
+    ) -> MCPElicitResult | mcp_types.ErrorData:
         try:
             # requestedSchema only exists on ElicitRequestFormParams, not ElicitRequestURLParams
             if isinstance(params, ElicitRequestFormParams):
-                if params.requestedSchema == {"type": "object", "properties": {}}:
+                if params.requested_schema == {"type": "object", "properties": {}}:
                     response_type = None
                 else:
-                    response_type = json_schema_to_type(params.requestedSchema)
+                    response_type = json_schema_to_type(params.requested_schema)
             else:
                 # URL-based elicitation doesn't have a schema
                 response_type = None
 
+            # The public ElicitationHandler alias is typed against the
+            # subscriptable RequestContext shim; the runtime object is the SDK's
+            # ClientRequestContext, passed through opaquely.
             result = await elicitation_handler(
-                params.message, response_type, params, context
+                params.message,
+                response_type,
+                params,
+                context,  # ty: ignore[invalid-argument-type]
             )
             # if the user returns data, we assume they've accepted the elicitation
             if not isinstance(result, ElicitResult):
@@ -65,7 +71,7 @@ def create_elicitation_callback(
                 # (single "value" property). This lets handlers return T directly
                 # for ctx.elicit("msg", str/int/float/bool).
                 if isinstance(params, ElicitRequestFormParams) and set(
-                    params.requestedSchema.get("properties", {}).keys()
+                    params.requested_schema.get("properties", {}).keys()
                 ) == {"value"}:
                     content = {"value": content}
                 else:
@@ -80,8 +86,8 @@ def create_elicitation_callback(
             )
 
         except Exception as e:
-            return mcp.types.ErrorData(
-                code=mcp.types.INTERNAL_ERROR,
+            return mcp_types.ErrorData(
+                code=mcp_types.INTERNAL_ERROR,
                 message=str(e),
             )
 

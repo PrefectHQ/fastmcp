@@ -8,28 +8,28 @@ from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from logging import Logger
-from typing import Any, Literal, overload
+from typing import Any, Literal, cast, overload
 
-import mcp.types
+import mcp_types
 from mcp import LoggingLevel, ServerSession
-from mcp.server.lowlevel.server import request_ctx
-from mcp.shared.context import RequestContext
-from mcp.types import (
+from mcp.server.context import ServerRequestContext
+from mcp_types import (
     GetPromptResult,
     ModelPreferences,
     Root,
     SamplingMessage,
 )
-from mcp.types import Prompt as SDKPrompt
-from mcp.types import Resource as SDKResource
+from mcp_types import Prompt as SDKPrompt
+from mcp_types import Resource as SDKResource
+from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 from pydantic.networks import AnyUrl
-from starlette.requests import Request
 from typing_extensions import TypeVar
 from uncalled_for import SharedContext
 
 import fastmcp
-from fastmcp.exceptions import FastMCPDeprecationWarning
+from fastmcp.exceptions import FastMCPDeprecationWarning, ToolError
 from fastmcp.resources.base import ResourceResult
+from fastmcp.server.dependencies import FastMCPRequestContext, fastmcp_request_ctx
 from fastmcp.server.elicitation import (
     AcceptedElicitation,
     CancelledElicitation,
@@ -37,7 +37,7 @@ from fastmcp.server.elicitation import (
     handle_elicit_accept,
     parse_elicit_response_type,
 )
-from fastmcp.server.low_level import MiddlewareServerSession
+from fastmcp.server.low_level import client_supports_extension
 from fastmcp.server.sampling import SampleStep, SamplingResult, SamplingTool
 from fastmcp.server.sampling.run import (
     sample_impl,
@@ -79,6 +79,48 @@ ResultT = TypeVar("ResultT", default=str)
 
 # Import ToolChoiceOption from sampling module (after other imports)
 from fastmcp.server.sampling.run import ToolChoiceOption  # noqa: E402
+
+# Warn-once guard for the sampling deprecation. Server-initiated createMessage
+# was removed from MCP as of 2026-07-28 (SEP-2577); the warning fires a single
+# time per process to flag that ctx.sample/ctx.sample_step are on their way out.
+# A mutable set (mutated in place, never rebound) rather than a `global` boolean
+# so the warn-once state is unambiguously read and written from the module.
+_sample_deprecation_warned: set[bool] = set()
+
+_SAMPLING_DEPRECATION_MESSAGE = (
+    "ctx.sample() and ctx.sample_step() are deprecated and will be removed in a "
+    "future FastMCP release. They rely on server-initiated createMessage "
+    "requests, which were removed from MCP as of 2026-07-28 (SEP-2577), so they "
+    "work only on session-based (handshake-era) connections. Call an LLM "
+    "directly from your server instead."
+)
+
+_SAMPLING_MODERN_ERROR = (
+    "server-initiated sampling is not available on MCP 2026-07-28 connections; "
+    "SEP-2577 removed it — call an LLM from your server instead."
+)
+
+_ELICIT_MODERN_ERROR = (
+    "elicitation via server-initiated requests is unavailable on 2026-07-28 "
+    "connections."
+)
+
+
+def _warn_sampling_deprecated() -> None:
+    """Emit the sampling deprecation warning once per process.
+
+    Gated on ``settings.deprecation_warnings`` like every other FastMCP
+    deprecation; fires a single time (module-level flag) rather than per call.
+    """
+    if _sample_deprecation_warned or not fastmcp.settings.deprecation_warnings:
+        return
+    _sample_deprecation_warned.add(True)
+    warnings.warn(
+        _SAMPLING_DEPRECATION_MESSAGE,
+        FastMCPDeprecationWarning,
+        stacklevel=3,
+    )
+
 
 _current_context: ContextVar[Context | None] = ContextVar("context", default=None)
 
@@ -322,11 +364,11 @@ class Context:
             _current_context.reset(token)
 
     @property
-    def request_context(self) -> RequestContext[ServerSession, Any, Request] | None:
+    def request_context(self) -> FastMCPRequestContext | None:
         """Access to the underlying request context.
 
         Returns None when the MCP session has not been established yet.
-        Returns the full RequestContext once the MCP session is available.
+        Returns the FastMCPRequestContext wrapper once the MCP session is available.
 
         For HTTP request access in middleware, use `get_http_request()` from fastmcp.server.dependencies,
         which works whether or not the MCP session is available.
@@ -345,10 +387,7 @@ class Context:
             return await call_next(context)
         ```
         """
-        try:
-            return request_ctx.get()
-        except LookupError:
-            return None
+        return fastmcp_request_ctx.get()
 
     @property
     def lifespan_context(self) -> dict[str, Any]:
@@ -400,9 +439,10 @@ class Context:
             message: Optional status message describing current progress
         """
 
+        rc = self.request_context
         progress_token = (
-            self.request_context.meta.progressToken
-            if self.request_context and self.request_context.meta
+            rc._srctx.meta.get("progress_token")
+            if rc is not None and rc._srctx.meta is not None
             else None
         )
 
@@ -450,33 +490,38 @@ class Context:
 
     async def _paginate_list(
         self,
-        request_factory: Callable[[str | None], Any],
-        call_method: Callable[[Any], Any],
+        call_handler: Callable[[Any, Any], Any],
         extract_items: Callable[[Any], list[Any]],
     ) -> list[Any]:
         """Generic pagination helper for list operations.
 
+        Invokes a FastMCP ``_on_*`` list handler (``(ctx, params) -> result``)
+        page by page. The SDK request context comes from the active request;
+        outside a request context a fresh stand-in is used.
+
         Args:
-            request_factory: Function that creates a request from a cursor
-            call_method: Async method to call with the request
-            extract_items: Function to extract items from the result
+            call_handler: FastMCP list handler taking ``(ctx, params)``.
+            extract_items: Function to extract items from the result.
 
         Returns:
             List of all items across all pages
         """
+        rc = self.request_context
+        srctx = rc._srctx if rc is not None else _detached_request_context(self)
+
         all_items: list[Any] = []
         cursor: str | None = None
         seen_cursors: set[str] = set()
         while True:
-            request = request_factory(cursor)
-            result = await call_method(request)
+            params = mcp_types.PaginatedRequestParams(cursor=cursor) if cursor else None
+            result = await call_handler(srctx, params)
             all_items.extend(extract_items(result))
-            if not result.nextCursor:
+            if not result.next_cursor:
                 break
-            if result.nextCursor in seen_cursors:
+            if result.next_cursor in seen_cursors:
                 break
-            seen_cursors.add(result.nextCursor)
-            cursor = result.nextCursor
+            seen_cursors.add(result.next_cursor)
+            cursor = result.next_cursor
         return all_items
 
     async def list_resources(self) -> list[SDKResource]:
@@ -486,12 +531,7 @@ class Context:
             List of Resource objects available on the server
         """
         return await self._paginate_list(
-            request_factory=lambda cursor: mcp.types.ListResourcesRequest(
-                params=mcp.types.PaginatedRequestParams(cursor=cursor)
-                if cursor
-                else None
-            ),
-            call_method=self.fastmcp._list_resources_mcp,
+            call_handler=self.fastmcp._on_list_resources,
             extract_items=lambda result: result.resources,
         )
 
@@ -502,12 +542,7 @@ class Context:
             List of Prompt objects available on the server
         """
         return await self._paginate_list(
-            request_factory=lambda cursor: mcp.types.ListPromptsRequest(
-                params=mcp.types.PaginatedRequestParams(cursor=cursor)
-                if cursor
-                else None
-            ),
-            call_method=self.fastmcp._list_prompts_mcp,
+            call_handler=self.fastmcp._on_list_prompts,
             extract_items=lambda result: result.prompts,
         )
 
@@ -524,7 +559,7 @@ class Context:
             The prompt result
         """
         result = await self.fastmcp.render_prompt(name, arguments)
-        if isinstance(result, mcp.types.CreateTaskResult):
+        if isinstance(result, mcp_types.CreateTaskResult):
             raise RuntimeError(
                 "Unexpected CreateTaskResult: Context calls should not have task metadata"
             )
@@ -540,7 +575,7 @@ class Context:
             ResourceResult with contents
         """
         result = await self.fastmcp.read_resource(str(uri))
-        if isinstance(result, mcp.types.CreateTaskResult):
+        if isinstance(result, mcp_types.CreateTaskResult):
             raise RuntimeError(
                 "Unexpected CreateTaskResult: Context calls should not have task metadata"
             )
@@ -567,12 +602,23 @@ class Context:
         data = LogData(msg=message, extra=extra)
         related_request_id = self.origin_request_id
 
+        # Resolve the client-requested minimum level (set via logging/setLevel),
+        # keyed by session id, falling back to the server's configured default.
+        min_level = self.fastmcp.client_log_level
+        session = self.session
+        session_min = self.fastmcp._client_log_levels.get(
+            _log_level_session_key(session)
+        )
+        if session_min is not None:
+            min_level = session_min
+
         await _log_to_server_and_client(
             data=data,
-            session=self.session,
+            session=session,
             level=level or "info",
             logger_name=logger_name,
             related_request_id=related_request_id,
+            min_level=min_level,
         )
 
     @property
@@ -590,8 +636,12 @@ class Context:
         Inspects the ``extensions`` extra field on ``ClientCapabilities``
         sent by the client during initialization.
 
-        Returns ``False`` when no session is available (e.g., outside a
-        request context) or when the client did not advertise the extension.
+        Reads the client's advertised capabilities from the session, which is
+        available in request mode and in background-task mode (where the
+        snapshot session preserves the client's initialize params). Returns
+        ``False`` when no session is available (e.g., a distributed worker with
+        no live session, or outside any context) or when the client did not
+        advertise the extension.
 
         Example::
 
@@ -603,21 +653,18 @@ class Context:
                     return "UI-capable client"
                 return "text-only client"
         """
-        rc = self.request_context
-        if rc is None:
+        try:
+            session = self.session
+        except RuntimeError:
             return False
-        session = rc.session
-        if not isinstance(session, MiddlewareServerSession):
-            return False
-        return session.client_supports_extension(extension_id)
+        return client_supports_extension(session, extension_id)
 
     @property
     def client_id(self) -> str | None:
         """Get the client ID if available."""
+        rc = self.request_context
         return (
-            getattr(self.request_context.meta, "client_id", None)
-            if self.request_context and self.request_context.meta
-            else None
+            rc.meta.get("client_id") if rc is not None and rc.meta is not None else None
         )
 
     @property
@@ -671,23 +718,42 @@ class Context:
                 "This typically means you're outside a request context."
             )
 
-        # Check for cached session ID
-        session_id = getattr(session, "_fastmcp_state_prefix", None)
-        if session_id is not None:
-            return session_id
+        # In SDK v2 the ServerSession is constructed fresh per request, so the
+        # stable per-client identity lives on the underlying Connection, which
+        # persists for the whole client session. Cache the state prefix on the
+        # connection (its `session_id` for HTTP, its `state` dict otherwise) so
+        # session-scoped state survives across tool calls.
+        connection = getattr(session, "_connection", None)
 
-        # For HTTP, try to get from header
-        if request_ctx is not None:
+        # Check for a cached prefix on the stable connection (or the session, as
+        # a fallback for on_initialize where only a raw session is available).
+        if connection is not None:
+            cached = connection.state.get("_fastmcp_state_prefix")
+            if cached is not None:
+                return cached
+        session_cached = getattr(session, "_fastmcp_state_prefix", None)
+        if session_cached is not None:
+            return session_cached
+
+        # For HTTP, prefer the connection's negotiated session id, then the
+        # incoming request header.
+        session_id: str | None = None
+        if connection is not None:
+            session_id = connection.session_id
+        if session_id is None and request_ctx is not None:
             request = request_ctx.request
             if request:
                 session_id = request.headers.get("mcp-session-id")
 
-        # For STDIO/SSE/in-memory, generate a UUID
+        # For STDIO/SSE/in-memory, generate a UUID.
         if session_id is None:
             session_id = str(uuid4())
 
-        # Cache on session for consistency
-        session._fastmcp_state_prefix = session_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        # Cache on the stable connection (falling back to the session).
+        if connection is not None:
+            connection.state["_fastmcp_state_prefix"] = session_id
+        else:
+            session._fastmcp_state_prefix = session_id  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
         return session_id
 
     @property
@@ -783,18 +849,22 @@ class Context:
 
     async def list_roots(self) -> list[Root]:
         """List the roots available to the server, as indicated by the client."""
-        result = await self.session.list_roots()
+        # Deprecated upstream in SDK v2 but deliberately kept per compat directive;
+        # removed with the multi-round-trip follow-up.
+        result = await self.session.list_roots()  # ty: ignore[deprecated]
         return result.roots
 
     async def send_notification(
-        self, notification: mcp.types.ServerNotificationType
+        self, notification: mcp_types.ServerNotification
     ) -> None:
         """Send a notification to the client immediately.
 
         Args:
             notification: An MCP notification instance (e.g., ToolListChangedNotification())
         """
-        await self.session.send_notification(mcp.types.ServerNotification(notification))
+        # v2: ServerNotification is a union of concrete notification models;
+        # ServerSession.send_notification takes an instance directly (no wrapper).
+        await self.session.send_notification(notification)
 
     async def close_sse_stream(self) -> None:
         """Close the current response stream to trigger client reconnection.
@@ -834,6 +904,37 @@ class Context:
             )
             return
         await self.request_context.close_sse_stream()
+
+    def _is_modern_protocol(self) -> bool:
+        """True when the negotiated MCP protocol era removed the back-channel.
+
+        Reads the negotiated protocol version from the active request context.
+        The 2026-07-28 era (SEP-2577) has no back-channel for server-initiated
+        requests such as sampling/elicitation. Returns False when no request
+        context is available (e.g. background task or pre-session), leaving the
+        existing wire path to surface its own error.
+        """
+        rc = self.request_context
+        if rc is None:
+            return False
+        return rc.protocol_version in MODERN_PROTOCOL_VERSIONS
+
+    def _server_can_sample(self) -> bool:
+        """True when a server-configured sampling handler can serve the request
+        without the client back-channel.
+
+        FastMCP supports a server-side sampling handler (``FastMCP(sampling_handler=...)``).
+        With ``sampling_handler_behavior="always"`` the handler always answers;
+        with ``"fallback"`` it answers whenever the client cannot. On modern
+        connections the client back-channel is gone, so either configuration lets
+        the server answer entirely server-side as long as a handler is set. (For
+        ``"always"`` without a handler the sampling implementation raises its own
+        clear "no handler configured" error, which is not an era concern.)
+        """
+        fastmcp = self.fastmcp
+        if fastmcp.sampling_handler_behavior == "always":
+            return True
+        return fastmcp.sampling_handler is not None
 
     async def sample_step(
         self,
@@ -899,6 +1000,15 @@ class Context:
                 # Continue with tool results
                 messages = step.history
         """
+        _warn_sampling_deprecated()
+        # On modern (2026-07-28) connections the client back-channel is gone
+        # (SEP-2577). A server-configured sampling handler can still answer
+        # entirely server-side; only raise the era error when nothing can serve
+        # the request. When modern, force the handler path (never attempt the
+        # dead client) by passing client_available=False.
+        client_available = not self._is_modern_protocol()
+        if not client_available and not self._server_can_sample():
+            raise ToolError(_SAMPLING_MODERN_ERROR)
         return await sample_step_impl(
             self,
             messages=messages,
@@ -911,6 +1021,7 @@ class Context:
             auto_execute_tools=execute_tools,
             mask_error_details=mask_error_details,
             tool_concurrency=tool_concurrency,
+            client_available=client_available,
         )
 
     @overload
@@ -1000,12 +1111,21 @@ class Context:
             - .result: The typed result (str for text, parsed object for structured)
             - .history: All messages exchanged during sampling
 
-        Note:
-            Background task support for sampling is planned for a future release.
-            Currently, sampling in background tasks requires using the low-level
-            session.create_message() API directly.
+        Deprecated:
+            Server-initiated sampling relies on the createMessage back-channel,
+            which MCP removed as of 2026-07-28 (SEP-2577). This method works only
+            on session-based (handshake-era) connections and will be removed in a
+            future FastMCP release. Call an LLM directly from your server instead.
         """
-        # TODO: Add background task support similar to elicit() when is_background_task
+        _warn_sampling_deprecated()
+        # On modern (2026-07-28) connections the client back-channel is gone
+        # (SEP-2577). A server-configured sampling handler can still answer
+        # entirely server-side; only raise the era error when nothing can serve
+        # the request. When modern, force the handler path (never attempt the
+        # dead client) by passing client_available=False.
+        client_available = not self._is_modern_protocol()
+        if not client_available and not self._server_can_sample():
+            raise ToolError(_SAMPLING_MODERN_ERROR)
         return await sample_impl(  # ty: ignore[invalid-return-type]
             self,
             messages=messages,
@@ -1017,6 +1137,7 @@ class Context:
             result_type=result_type,
             mask_error_details=mask_error_details,
             tool_concurrency=tool_concurrency,
+            client_available=client_available,
         )
 
     @overload
@@ -1186,10 +1307,16 @@ class Context:
                 schema=config.schema,
             )
         else:
+            # Foreground push path: server-initiated elicitation needs a
+            # back-channel, which the 2026-07-28 era removed (SEP-2577). Raise a
+            # clear era-aware error before hitting the wire instead of the SDK's
+            # opaque "Method not found". Handshake-era behavior is unchanged.
+            if self._is_modern_protocol():
+                raise ToolError(_ELICIT_MODERN_ERROR)
             # Standard request mode: use session.elicit directly
             result = await self.session.elicit(
                 message=message,
-                requestedSchema=config.schema,
+                requested_schema=config.schema,
                 related_request_id=self.request_id,
             )
 
@@ -1206,7 +1333,7 @@ class Context:
         self,
         message: str,
         schema: dict[str, Any],
-    ) -> mcp.types.ElicitResult:
+    ) -> mcp_types.ElicitResult:
         """Send an elicitation request from a background task (SEP-1686).
 
         This method handles elicitation when running in a Docket worker context,
@@ -1422,21 +1549,51 @@ _MCP_LEVEL_SEVERITY: dict[LoggingLevel, int] = {
 }
 
 
+def _detached_request_context(context: Context) -> ServerRequestContext:
+    """Build a minimal SDK request context for internal handler invocation.
+
+    Used by ``Context._paginate_list`` when no request context is active (e.g.
+    introspection outside a live request), so the ``_on_*`` list handlers have a
+    context to bind. The list handlers only read ``self`` (the FastMCP server)
+    to enumerate components, so a session-less context is sufficient.
+    """
+    return ServerRequestContext(
+        session=cast(ServerSession, context._session),
+        lifespan_context={},
+        protocol_version="2025-06-18",
+        method="internal",
+        params=None,
+        request_id=None,
+        meta=None,
+        request=None,
+    )
+
+
+def _log_level_session_key(session: ServerSession) -> str:
+    """Derive the per-session key used for logging/setLevel gating.
+
+    v2 constructs sessions per-request, so the stable identity is the
+    connection session id (stateful HTTP). stdio/in-memory has no session id,
+    so a sentinel key is used — all such connections share one gate, matching
+    the single-connection nature of those transports.
+    """
+    connection = getattr(session, "_connection", None)
+    session_id = getattr(connection, "session_id", None) if connection else None
+    return session_id if session_id is not None else "__no_session__"
+
+
 async def _log_to_server_and_client(
     data: LogData,
     session: ServerSession,
     level: LoggingLevel,
     logger_name: str | None = None,
     related_request_id: str | None = None,
+    min_level: LoggingLevel | None = None,
 ) -> None:
     """Log a message to the server and client."""
-    from fastmcp.server.low_level import MiddlewareServerSession
-
-    if isinstance(session, MiddlewareServerSession):
-        min_level = session._minimum_logging_level or session.fastmcp.client_log_level
-        if min_level is not None:
-            if _MCP_LEVEL_SEVERITY[level] < _MCP_LEVEL_SEVERITY[min_level]:
-                return
+    if min_level is not None:
+        if _MCP_LEVEL_SEVERITY[level] < _MCP_LEVEL_SEVERITY[min_level]:
+            return
 
     msg_prefix = f"Sending {level.upper()} to client"
 
@@ -1449,7 +1606,9 @@ async def _log_to_server_and_client(
         extra=data.extra,
     )
 
-    await session.send_log_message(
+    # Deprecated upstream in SDK v2 but deliberately kept per compat directive;
+    # removed with the multi-round-trip follow-up.
+    await session.send_log_message(  # ty: ignore[deprecated]
         level=level,
         data=data,
         logger=logger_name,

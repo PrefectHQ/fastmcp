@@ -22,8 +22,8 @@ from fastmcp import Client
 
 async def message_handler(message):
     """Handle MCP notifications from the server."""
-    if hasattr(message, 'root'):
-        method = message.root.method
+    if hasattr(message, 'method'):
+        method = message.method
 
         if method == "notifications/tools/list_changed":
             print("Tools have changed - refresh tool cache")
@@ -45,23 +45,23 @@ For fine-grained targeting, subclass `MessageHandler` to use specific hooks:
 ```python
 from fastmcp import Client
 from fastmcp.client.messages import MessageHandler
-import mcp.types
+import mcp_types
 
 class MyMessageHandler(MessageHandler):
     async def on_tool_list_changed(
-        self, notification: mcp.types.ToolListChangedNotification
+        self, notification: mcp_types.ToolListChangedNotification
     ) -> None:
         """Handle tool list changes."""
         print("Tool list changed - refreshing available tools")
 
     async def on_resource_list_changed(
-        self, notification: mcp.types.ResourceListChangedNotification
+        self, notification: mcp_types.ResourceListChangedNotification
     ) -> None:
         """Handle resource list changes."""
         print("Resource list changed")
 
     async def on_prompt_list_changed(
-        self, notification: mcp.types.PromptListChangedNotification
+        self, notification: mcp_types.PromptListChangedNotification
     ) -> None:
         """Handle prompt list changes."""
         print("Prompt list changed")
@@ -76,7 +76,7 @@ client = Client(
 
 ```python
 from fastmcp.client.messages import MessageHandler
-import mcp.types
+import mcp_types
 
 class MyMessageHandler(MessageHandler):
     async def on_message(self, message) -> None:
@@ -84,37 +84,37 @@ class MyMessageHandler(MessageHandler):
         pass
 
     async def on_notification(
-        self, notification: mcp.types.ServerNotification
+        self, notification: mcp_types.ServerNotification
     ) -> None:
         """Called for notifications (fire-and-forget)."""
         pass
 
     async def on_tool_list_changed(
-        self, notification: mcp.types.ToolListChangedNotification
+        self, notification: mcp_types.ToolListChangedNotification
     ) -> None:
         """Called when the server's tool list changes."""
         pass
 
     async def on_resource_list_changed(
-        self, notification: mcp.types.ResourceListChangedNotification
+        self, notification: mcp_types.ResourceListChangedNotification
     ) -> None:
         """Called when the server's resource list changes."""
         pass
 
     async def on_prompt_list_changed(
-        self, notification: mcp.types.PromptListChangedNotification
+        self, notification: mcp_types.PromptListChangedNotification
     ) -> None:
         """Called when the server's prompt list changes."""
         pass
 
     async def on_progress(
-        self, notification: mcp.types.ProgressNotification
+        self, notification: mcp_types.ProgressNotification
     ) -> None:
         """Called for progress updates during long-running operations."""
         pass
 
     async def on_logging_message(
-        self, notification: mcp.types.LoggingMessageNotification
+        self, notification: mcp_types.LoggingMessageNotification
     ) -> None:
         """Called for log messages from the server."""
         pass
@@ -127,14 +127,14 @@ A practical example of maintaining a tool cache that refreshes when tools change
 ```python
 from fastmcp import Client
 from fastmcp.client.messages import MessageHandler
-import mcp.types
+import mcp_types
 
 class ToolCacheHandler(MessageHandler):
     def __init__(self):
         self.cached_tools = []
 
     async def on_tool_list_changed(
-        self, notification: mcp.types.ToolListChangedNotification
+        self, notification: mcp_types.ToolListChangedNotification
     ) -> None:
         """Clear tool cache when tools change."""
         print("Tools changed - clearing cache")

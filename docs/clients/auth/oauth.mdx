@@ -35,7 +35,7 @@ async with Client("https://your-server.fastmcp.app/mcp", auth="oauth") as client
 
 ### `OAuth` Helper
 
-To fully configure the OAuth flow, use the `OAuth` helper and pass it to the `auth` parameter of the `Client` or transport instance. `OAuth` manages the complexities of the OAuth 2.1 Authorization Code Grant with PKCE (Proof Key for Code Exchange) for enhanced security, and implements the full `httpx.Auth` interface.
+To fully configure the OAuth flow, use the `OAuth` helper and pass it to the `auth` parameter of the `Client` or transport instance. `OAuth` manages the complexities of the OAuth 2.1 Authorization Code Grant with PKCE (Proof Key for Code Exchange) for enhanced security, and implements the full `httpx2.Auth` interface.
 
 ```python {2, 4, 6}
 from fastmcp import Client
@@ -61,7 +61,7 @@ You don't need to pass `mcp_url` when using `OAuth` with `Client(auth=...)` — 
 - **`token_storage`** (`AsyncKeyValue`, optional): Storage backend for persisting OAuth tokens. Defaults to in-memory storage (tokens lost on restart). See [Token Storage](#token-storage) for encrypted storage options
 - **`additional_client_metadata`** (`dict[str, Any]`, optional): Extra metadata for client registration
 - **`callback_port`** (`int`, optional): Fixed port for OAuth callback server. If not specified, uses a random available port
-- **`httpx_client_factory`** (`McpHttpClientFactory`, optional): Factory for creating httpx clients
+- **`httpx_client_factory`** (`McpHttpClientFactory`, optional): Factory for creating httpx2 clients
 
 
 ## OAuth Flow

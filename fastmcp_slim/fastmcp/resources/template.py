@@ -9,14 +9,14 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, ClassVar, overload
 from urllib.parse import parse_qs, quote, unquote
 
-import mcp.types
-from mcp.types import Annotations, Icon
+import mcp_types
+from mcp_types import Annotations, Icon
 from pydantic.json_schema import SkipJsonSchema
 
 if TYPE_CHECKING:
     from docket import Docket
     from docket.execution import Execution
-from mcp.types import ResourceTemplate as SDKResourceTemplate
+from mcp_types import ResourceTemplate as SDKResourceTemplate
 from pydantic import (
     Field,
     field_validator,
@@ -24,6 +24,11 @@ from pydantic import (
 )
 
 from fastmcp.resources.base import Resource, ResourceResult
+from fastmcp.resources.security import (
+    INHERIT_SECURITY,
+    InheritSecurity,
+    ResourceSecurity,
+)
 from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
@@ -186,6 +191,29 @@ class ResourceTemplate(FastMCPComponent):
         description="Authorization checks for this resource template",
         exclude=True,
     )
+    security: SkipJsonSchema[ResourceSecurity | None | InheritSecurity] = Field(
+        default=INHERIT_SECURITY,
+        description=(
+            "Path-safety policy for extracted parameters. INHERIT_SECURITY "
+            "(default) inherits the server-wide default; None disables "
+            "screening; a ResourceSecurity instance applies that explicit "
+            "policy."
+        ),
+        exclude=True,
+    )
+
+    def resolve_security(
+        self, server_default: ResourceSecurity | None
+    ) -> ResourceSecurity | None:
+        """Resolve the effective security policy for this template.
+
+        A per-component ``security`` overrides the server default.
+        ``INHERIT_SECURITY`` (the field default) inherits ``server_default``;
+        an explicit ``None`` disables screening for this template.
+        """
+        if isinstance(self.security, InheritSecurity):
+            return server_default
+        return self.security
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(uri_template={self.uri_template!r}, name={self.name!r}, description={self.description!r}, tags={self.tags})"
@@ -205,6 +233,7 @@ class ResourceTemplate(FastMCPComponent):
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
+        security: ResourceSecurity | None | InheritSecurity = INHERIT_SECURITY,
     ) -> FunctionResourceTemplate:
         return FunctionResourceTemplate.from_function(
             fn=fn,
@@ -220,6 +249,7 @@ class ResourceTemplate(FastMCPComponent):
             meta=meta,
             task=task,
             auth=auth,
+            security=security,
         )
 
     @field_validator("mime_type", mode="before")
@@ -264,11 +294,11 @@ class ResourceTemplate(FastMCPComponent):
     @overload
     async def _read(
         self, uri: str, params: dict[str, Any], task_meta: TaskMeta
-    ) -> mcp.types.CreateTaskResult: ...
+    ) -> mcp_types.CreateTaskResult: ...
 
     async def _read(
         self, uri: str, params: dict[str, Any], task_meta: TaskMeta | None = None
-    ) -> ResourceResult | mcp.types.CreateTaskResult:
+    ) -> ResourceResult | mcp_types.CreateTaskResult:
         """Server entry point that handles task routing.
 
         This allows ANY ResourceTemplate subclass to support background execution
@@ -323,9 +353,9 @@ class ResourceTemplate(FastMCPComponent):
 
         return SDKResourceTemplate(
             name=overrides.get("name", self.name),
-            uriTemplate=overrides.get("uriTemplate", self.uri_template),
+            uri_template=overrides.get("uriTemplate", self.uri_template),
             description=overrides.get("description", self.description),
-            mimeType=overrides.get("mimeType", self.mime_type),
+            mime_type=overrides.get("mimeType", self.mime_type),
             title=overrides.get("title", self.title),
             icons=overrides.get("icons", self.icons),
             annotations=overrides.get("annotations", self.annotations),
@@ -340,10 +370,10 @@ class ResourceTemplate(FastMCPComponent):
         # Note: This creates a simple ResourceTemplate instance. For function-based templates,
         # the original function is lost, which is expected for remote templates.
         return cls(
-            uri_template=mcp_template.uriTemplate,
+            uri_template=mcp_template.uri_template,
             name=mcp_template.name,
             description=mcp_template.description,
-            mime_type=mcp_template.mimeType or "text/plain",
+            mime_type=mcp_template.mime_type or "text/plain",
             parameters={},  # Remote templates don't have local parameters
         )
 
@@ -402,11 +432,11 @@ class FunctionResourceTemplate(ResourceTemplate):
     @overload
     async def _read(
         self, uri: str, params: dict[str, Any], task_meta: TaskMeta
-    ) -> mcp.types.CreateTaskResult: ...
+    ) -> mcp_types.CreateTaskResult: ...
 
     async def _read(
         self, uri: str, params: dict[str, Any], task_meta: TaskMeta | None = None
-    ) -> ResourceResult | mcp.types.CreateTaskResult:
+    ) -> ResourceResult | mcp_types.CreateTaskResult:
         """Optimized server entry point that skips ephemeral resource creation.
 
         For FunctionResourceTemplate, we can call read() directly instead of
@@ -544,6 +574,7 @@ class FunctionResourceTemplate(ResourceTemplate):
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
+        security: ResourceSecurity | None | InheritSecurity = INHERIT_SECURITY,
     ) -> FunctionResourceTemplate:
         """Create a template from a function."""
 
@@ -683,4 +714,5 @@ class FunctionResourceTemplate(ResourceTemplate):
             meta=meta,
             task_config=task_config,
             auth=auth,
+            security=security,
         )

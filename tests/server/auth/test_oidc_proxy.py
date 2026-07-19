@@ -4,7 +4,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
-from httpx import Response
+from httpx2 import Response
 from pydantic import AnyHttpUrl
 
 from fastmcp.server.auth.oidc_proxy import OIDCConfiguration, OIDCProxy
@@ -360,7 +360,7 @@ class TestOIDCConfiguration:
 
 def validate_get_oidc_configuration(oidc_configuration, strict, timeout_seconds):
     """Validate get_oidc_configuration call."""
-    with patch("httpx.get") as mock_get:
+    with patch("httpx2.get") as mock_get:
         mock_response = MagicMock(spec=Response)
         mock_response.json.return_value = oidc_configuration
         mock_get.return_value = mock_response
@@ -409,7 +409,7 @@ class TestGetOIDCConfiguration:
         self, invalid_oidc_configuration_dict
     ) -> None:
         """Test with invalid response and strict set to False."""
-        with patch("httpx.get") as mock_get:
+        with patch("httpx2.get") as mock_get:
             mock_response = MagicMock(spec=Response)
             mock_response.json.return_value = invalid_oidc_configuration_dict
             mock_get.return_value = mock_response

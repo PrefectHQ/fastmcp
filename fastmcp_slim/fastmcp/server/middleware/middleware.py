@@ -13,7 +13,7 @@ from typing import (
     runtime_checkable,
 )
 
-import mcp.types as mt
+import mcp_types as mt
 from typing_extensions import TypeVar
 
 from fastmcp.prompts.base import Prompt, PromptResult

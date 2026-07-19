@@ -7,7 +7,7 @@ and don't regress to the slow performance we had before optimization.
 import time
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 
 from fastmcp import FastMCP
@@ -35,7 +35,7 @@ class TestOpenAPIPerformance:
         """
 
         # Download the full GitHub API schema (typically ~10MB)
-        response = httpx.get(
+        response = httpx2.get(
             "https://raw.githubusercontent.com/github/rest-api-description/refs/heads/main/descriptions-next/ghes-3.17/ghes-3.17.json",
             timeout=30.0,  # Allow time for download
         )
@@ -46,7 +46,7 @@ class TestOpenAPIPerformance:
         start_time = time.time()
 
         # This should complete quickly with our optimizations
-        mcp_server = FastMCP.from_openapi(schema, httpx.AsyncClient())
+        mcp_server = FastMCP.from_openapi(schema, httpx2.AsyncClient())
 
         elapsed_time = time.time() - start_time
 
@@ -127,7 +127,7 @@ class TestOpenAPIPerformance:
 
         # Time the parsing
         start_time = time.time()
-        mcp_server = FastMCP.from_openapi(schema, httpx.AsyncClient())
+        mcp_server = FastMCP.from_openapi(schema, httpx2.AsyncClient())
         elapsed_time = time.time() - start_time
 
         # Should be very fast for medium schemas (well under 1 second)

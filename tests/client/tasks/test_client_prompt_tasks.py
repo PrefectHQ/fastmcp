@@ -54,6 +54,12 @@ async def test_prompt_task_server_generated_id(prompt_server):
         assert "-" in task.task_id
 
 
+@pytest.mark.xfail(
+    reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+    "ReadResourceRequestParams; prompt/resource task submission is not "
+    "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+    strict=True,
+)
 async def test_prompt_task_result_returns_get_prompt_result(prompt_server):
     """PromptTask.result() returns GetPromptResult."""
     async with Client(prompt_server) as client:

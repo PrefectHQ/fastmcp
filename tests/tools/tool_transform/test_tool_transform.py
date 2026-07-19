@@ -4,7 +4,7 @@ import re
 from typing import Annotated, Any
 
 import pytest
-from mcp.types import TextContent
+from mcp_types import TextContent
 from pydantic import BaseModel, Field
 
 from fastmcp import FastMCP
@@ -719,8 +719,9 @@ class TestProxy:
     @pytest.fixture
     def proxy_server(self, mcp_server: FastMCP) -> FastMCP:
         from fastmcp.client.transports import FastMCPTransport
+        from fastmcp.server import create_proxy
 
-        proxy = FastMCP.as_proxy(FastMCPTransport(mcp_server))
+        proxy = create_proxy(FastMCPTransport(mcp_server))
         return proxy
 
     async def test_transform_proxy(self, proxy_server: FastMCP):

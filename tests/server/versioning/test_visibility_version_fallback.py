@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from mcp.server.auth.middleware.auth_context import auth_context_var
 from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 from fastmcp import FastMCP
 from fastmcp.server.auth import AccessToken, require_scopes

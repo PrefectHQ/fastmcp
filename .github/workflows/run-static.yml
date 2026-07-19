@@ -10,6 +10,7 @@ on:
       - "fastmcp_slim/**"
       - "fastmcp_remote/**"
       - "tests/**"
+      - "examples/**"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/**"

@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import mcp.types as mt
+import mcp_types as mt
 import pydantic_core
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 from fastmcp.tools.base import ToolResult
 

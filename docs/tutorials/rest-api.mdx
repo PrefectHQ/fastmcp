@@ -32,7 +32,7 @@ For this tutorial, we'll use the [JSONPlaceholder API](https://jsonplaceholder.t
 
 ## Step 2: Create the MCP Server
 
-Now for the magic. We'll use `FastMCP.from_openapi`. This method takes an `httpx.AsyncClient` configured for your API and its OpenAPI specification, and automatically converts **every endpoint** into a callable MCP `Tool`.
+Now for the magic. We'll use `FastMCP.from_openapi`. This method takes an `httpx2.AsyncClient` configured for your API and its OpenAPI specification, and automatically converts **every endpoint** into a callable MCP `Tool`.
 
 <Tip>
 Learn more about working with OpenAPI specs in the [OpenAPI integration docs](/integrations/openapi).
@@ -45,11 +45,11 @@ For this tutorial, we'll use a simplified OpenAPI spec directly in the code. In 
 Create a file named `api_server.py`:
 
 ```python api_server.py {31-35}
-import httpx
+import httpx2
 from fastmcp import FastMCP
 
 # Create an HTTP client for the target API
-client = httpx.AsyncClient(base_url="https://jsonplaceholder.typicode.com")
+client = httpx2.AsyncClient(base_url="https://jsonplaceholder.typicode.com")
 
 # Define a simplified OpenAPI spec for JSONPlaceholder
 openapi_spec = {
@@ -150,13 +150,13 @@ Learn more about route maps in the [OpenAPI integration docs](/integrations/open
 Here’s how you can add custom route maps to turn `GET` requests into `Resources` and `ResourceTemplates` (if they have path parameters):
 
 ```python api_server_with_resources.py {3, 37-42}
-import httpx
+import httpx2
 from fastmcp import FastMCP
 from fastmcp.server.providers.openapi import RouteMap, MCPType
 
 
 # Create an HTTP client for the target API
-client = httpx.AsyncClient(base_url="https://jsonplaceholder.typicode.com")
+client = httpx2.AsyncClient(base_url="https://jsonplaceholder.typicode.com")
 
 # Define a simplified OpenAPI spec for JSONPlaceholder
 openapi_spec = {

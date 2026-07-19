@@ -6,7 +6,7 @@ returns 404 at root level when a FastMCP app is mounted under a path prefix.
 The fix uses MCP SDK 1.17+ which implements RFC 9728 path-scoped well-known URLs.
 """
 
-import httpx
+import httpx2
 import pytest
 from key_value.aio.stores.memory import MemoryStore
 from pydantic import AnyHttpUrl
@@ -50,8 +50,8 @@ class TestOAuthMounting:
         mcp = FastMCP("test-server", auth=auth_provider)
         mcp_app = mcp.http_app()
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=mcp_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=mcp_app),
             base_url="https://api.example.com",
         ) as client:
             # RFC 9728: path-scoped well-known URL
@@ -96,8 +96,8 @@ class TestOAuthMounting:
             lifespan=mcp_app.lifespan,
         )
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=parent_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=parent_app),
             base_url="https://api.example.com",
         ) as client:
             # The CORRECT RFC 9728 path-scoped well-known URL at root
@@ -140,8 +140,8 @@ class TestOAuthMounting:
             lifespan=mcp_app.lifespan,
         )
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=parent_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=parent_app),
             base_url="https://api.example.com",
         ) as client:
             # The MCP endpoint should work at /api/mcp (mounted correctly)
@@ -183,8 +183,8 @@ class TestOAuthMounting:
             lifespan=mcp_app.lifespan,
         )
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=outer_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=outer_app),
             base_url="https://api.example.com",
         ) as client:
             # RFC 9728: path-scoped well-known URL for nested mounting
@@ -239,8 +239,8 @@ class TestOAuthMounting:
             lifespan=mcp_app.lifespan,
         )
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=parent_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=parent_app),
             base_url="https://api.example.com",
         ) as client:
             # Fetch the authorization server metadata
@@ -332,8 +332,8 @@ class TestOAuthMounting:
             lifespan=mcp_app.lifespan,
         )
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=parent_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=parent_app),
             base_url="https://api.example.com",
         ) as client:
             # Path-aware authorization server metadata should be accessible
@@ -464,8 +464,8 @@ class TestOAuthMounting:
             lifespan=mcp_app.lifespan,
         )
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=parent_app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=parent_app),
             base_url="https://api.example.com",
         ) as client:
             # Path-aware OIDC discovery (RFC 8414 §5)

@@ -7,35 +7,16 @@ No mocking of Redis, sessions, or Docket internals.
 
 import asyncio
 
-import mcp.types as mcp_types
+import mcp_types
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.elicitation import ElicitResult
-from fastmcp.client.messages import MessageHandler
 from fastmcp.server.context import Context
 from fastmcp.server.elicitation import AcceptedElicitation
 from fastmcp.server.tasks.notifications import (
     get_subscriber_count,
 )
-
-
-class NotificationCaptureHandler(MessageHandler):
-    """Capture server notifications for test assertions."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.notifications: list[mcp_types.ServerNotification] = []
-
-    async def on_notification(self, message: mcp_types.ServerNotification) -> None:
-        self.notifications.append(message)
-
-    def for_method(self, method: str) -> list[mcp_types.ServerNotification]:
-        return [
-            notification
-            for notification in self.notifications
-            if notification.root.method == method
-        ]
 
 
 class TestNotificationIntegration:
@@ -51,12 +32,14 @@ class TestNotificationIntegration:
     async def test_notification_delivered_during_elicitation(self):
         """Full E2E: notification queue delivers input_required metadata to client.
 
-        The elicitation relay handles the response via the client's
-        elicitation_handler. We verify both the notification metadata
-        structure and the end-to-end elicitation flow.
+        SDK v2 does not carry `notifications/tasks/status` in any protocol
+        version's core notification tables, so it is delivered through the
+        client's task-status notification binding (routed to Task objects) rather
+        than the message_handler. We observe it via `on_status_change`, whose
+        GetTaskResult carries the notification's `_meta`.
         """
         mcp = FastMCP("notification-test")
-        notification_handler = NotificationCaptureHandler()
+        captured: list[mcp_types.GetTaskResult] = []
 
         @mcp.tool(task=True)
         async def elicit_tool(ctx: Context) -> str:
@@ -70,20 +53,19 @@ class TestNotificationIntegration:
 
         async with Client(
             mcp,
-            message_handler=notification_handler,
             elicitation_handler=elicitation_handler,
         ) as client:
             task = await client.call_tool("elicit_tool", {}, task=True)
+            task.on_status_change(captured.append)
 
             await task.wait(timeout=10.0)
             result = await task.result()
             assert result.data == "got: hello"
 
             # Verify the input_required notification was delivered with metadata
-            notification: mcp_types.ServerNotification | None = None
-            candidates = notification_handler.for_method("notifications/tasks/status")
-            for candidate in reversed(candidates):
-                candidate_meta = getattr(candidate.root, "_meta", None)
+            notification: mcp_types.GetTaskResult | None = None
+            for candidate in reversed(captured):
+                candidate_meta = candidate.meta
                 related_task = (
                     candidate_meta.get("io.modelcontextprotocol/related-task")
                     if isinstance(candidate_meta, dict)
@@ -97,7 +79,7 @@ class TestNotificationIntegration:
                     break
 
             assert notification is not None, "expected notifications/tasks/status"
-            task_meta = getattr(notification.root, "_meta", None)
+            task_meta = notification.meta
             assert isinstance(task_meta, dict)
 
             related_task = task_meta.get("io.modelcontextprotocol/related-task")

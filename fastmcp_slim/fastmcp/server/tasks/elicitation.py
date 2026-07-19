@@ -21,7 +21,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-import mcp.types
+import mcp_types
 from mcp import ServerSession
 
 from fastmcp.server.tasks.context import get_task_context, get_task_session_id
@@ -50,7 +50,7 @@ async def elicit_for_task(
     message: str,
     schema: dict[str, Any],
     fastmcp: FastMCP,
-) -> mcp.types.ElicitResult:
+) -> mcp_types.ElicitResult:
     """Send an elicitation request from a background task.
 
     This function handles the complexity of eliciting user input when running
@@ -68,7 +68,7 @@ async def elicit_for_task(
 
     Raises:
         RuntimeError: If Docket is not available
-        McpError: If the elicitation request fails
+        MCPError: If the elicitation request fails
     """
     docket = fastmcp._docket
     if docket is None:
@@ -154,7 +154,7 @@ async def elicit_for_task(
             "No session_id available for task %s, cannot deliver elicitation notification",
             task_id,
         )
-        return mcp.types.ElicitResult(action="cancel", content=None)
+        return mcp_types.ElicitResult(action="cancel", content=None)
 
     try:
         await push_notification(session_id, notification_dict, docket)
@@ -175,7 +175,7 @@ async def elicit_for_task(
                 )
         except Exception:
             pass  # Keys will expire via TTL
-        return mcp.types.ElicitResult(action="cancel", content=None)
+        return mcp_types.ElicitResult(action="cancel", content=None)
 
     # Wait for response using BLPOP (blocking pop)
     # This is much more efficient than polling - single Redis round-trip
@@ -203,7 +203,7 @@ async def elicit_for_task(
                 )
 
                 # Convert to ElicitResult
-                return mcp.types.ElicitResult(
+                return mcp_types.ElicitResult(
                     action=response.get("action", "accept"),
                     content=response.get("content"),
                 )
@@ -230,7 +230,7 @@ async def elicit_for_task(
             cleanup_error,
         )
 
-    return mcp.types.ElicitResult(action="cancel", content=None)
+    return mcp_types.ElicitResult(action="cancel", content=None)
 
 
 async def relay_elicitation(
@@ -257,7 +257,7 @@ async def relay_elicitation(
     try:
         result = await session.elicit(
             message=elicitation["message"],
-            requestedSchema=elicitation["requestedSchema"],
+            requested_schema=elicitation["requestedSchema"],
         )
         await handle_task_input(
             task_id=task_id,

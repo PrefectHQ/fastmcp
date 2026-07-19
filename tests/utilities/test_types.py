@@ -3,7 +3,7 @@ import os
 from typing import Annotated, Any, cast
 
 import pytest
-from mcp.types import BlobResourceContents, TextResourceContents
+from mcp_types import BlobResourceContents, TextResourceContents
 from pydantic import Field
 
 from fastmcp.utilities.types import (
@@ -204,7 +204,7 @@ class TestImage:
         content = img.to_image_content()
 
         assert content.type == "image"
-        assert content.mimeType == "image/png"
+        assert content.mime_type == "image/png"
         assert content.data == base64.b64encode(test_data).decode()
 
         # Test with data
@@ -212,7 +212,7 @@ class TestImage:
         content = img.to_image_content()
 
         assert content.type == "image"
-        assert content.mimeType == "image/jpeg"
+        assert content.mime_type == "image/jpeg"
         assert content.data == base64.b64encode(test_data).decode()
 
     def test_to_image_content_error(self, monkeypatch):
@@ -327,7 +327,7 @@ class TestAudio:
         content = audio.to_audio_content()
 
         assert content.type == "audio"
-        assert content.mimeType == "audio/wav"
+        assert content.mime_type == "audio/wav"
         assert content.data == base64.b64encode(test_data).decode()
 
         # Test with data
@@ -335,7 +335,7 @@ class TestAudio:
         content = audio.to_audio_content()
 
         assert content.type == "audio"
-        assert content.mimeType == "audio/mp3"
+        assert content.mime_type == "audio/mp3"
         assert content.data == base64.b64encode(test_data).decode()
 
     def test_to_audio_content_error(self, monkeypatch):
@@ -359,7 +359,7 @@ class TestAudio:
         content = audio.to_audio_content(mime_type="audio/custom")
 
         assert content.type == "audio"
-        assert content.mimeType == "audio/custom"
+        assert content.mime_type == "audio/custom"
         assert content.data == base64.b64encode(test_data).decode()
 
 
@@ -442,7 +442,7 @@ class TestFile:
         resource = file.to_resource_content()
 
         assert resource.type == "resource"
-        assert resource.resource.mimeType == "text/plain"
+        assert resource.resource.mime_type == "text/plain"
         # Convert both to strings for comparison
         assert str(resource.resource.uri) == file_path.resolve().as_uri()
         if isinstance(resource.resource, BlobResourceContents):
@@ -455,7 +455,7 @@ class TestFile:
         resource = file.to_resource_content()
 
         assert resource.type == "resource"
-        assert resource.resource.mimeType == "application/pdf"
+        assert resource.resource.mime_type == "application/pdf"
         # Convert URI to string for comparison
         assert str(resource.resource.uri) == "file:///resource.pdf"
         if isinstance(resource.resource, BlobResourceContents):
@@ -469,7 +469,7 @@ class TestFile:
         assert resource.type == "resource"
         # Should be TextResourceContents for text/plain
         assert isinstance(resource.resource, TextResourceContents)
-        assert resource.resource.mimeType == "text/plain"
+        assert resource.resource.mime_type == "text/plain"
         assert resource.resource.text == "hello world"
 
     def test_to_resource_content_error(self, monkeypatch):
@@ -490,7 +490,7 @@ class TestFile:
         file = File(path=file_path)
         resource = file.to_resource_content(mime_type="application/custom")
 
-        assert resource.resource.mimeType == "application/custom"
+        assert resource.resource.mime_type == "application/custom"
 
 
 class TestReplaceType:

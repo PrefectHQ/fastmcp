@@ -882,7 +882,7 @@ class TestAppIntegration:
 
             # Call the UI tool through the client and check structured_content
             result = await client.call_tool_mcp("crm_contact_form", {})
-            sc = result.structuredContent
+            sc = result.structured_content
             assert sc is not None
 
         # Call the backend tool via its hashed address — bypasses namespace

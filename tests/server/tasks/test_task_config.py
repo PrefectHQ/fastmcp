@@ -8,9 +8,9 @@ Tests for TaskConfig:
 from datetime import timedelta
 
 import pytest
-from mcp.shared.exceptions import McpError
-from mcp.types import TextContent, ToolExecution
-from mcp.types import Tool as MCPTool
+from mcp.shared.exceptions import MCPError
+from mcp_types import TextContent, ToolExecution
+from mcp_types import Tool as MCPTool
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -186,15 +186,21 @@ class TestResourceModeEnforcement:
 
     async def test_required_resource_without_task_returns_error(self, server):
         """Required mode returns error when read without task metadata."""
-        from mcp.types import METHOD_NOT_FOUND
+        from mcp_types import METHOD_NOT_FOUND
 
         async with Client(server) as client:
-            with pytest.raises(McpError) as exc_info:
+            with pytest.raises(MCPError) as exc_info:
                 await client.read_resource("resource://required")
 
             assert exc_info.value.error.code == METHOD_NOT_FOUND
             assert "requires task-augmented execution" in exc_info.value.error.message
 
+    @pytest.mark.xfail(
+        reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+        "ReadResourceRequestParams; prompt/resource task submission is not "
+        "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+        strict=True,
+    )
     async def test_required_resource_with_task_succeeds(self, server):
         """Required mode succeeds when read with task metadata."""
         async with Client(server) as client:
@@ -238,15 +244,21 @@ class TestPromptModeEnforcement:
 
     async def test_required_prompt_without_task_returns_error(self, server):
         """Required mode returns error when called without task metadata."""
-        from mcp.types import METHOD_NOT_FOUND
+        from mcp_types import METHOD_NOT_FOUND
 
         async with Client(server) as client:
-            with pytest.raises(McpError) as exc_info:
+            with pytest.raises(MCPError) as exc_info:
                 await client.get_prompt("required_prompt")
 
             assert exc_info.value.error.code == METHOD_NOT_FOUND
             assert "requires task-augmented execution" in exc_info.value.error.message
 
+    @pytest.mark.xfail(
+        reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+        "ReadResourceRequestParams; prompt/resource task submission is not "
+        "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+        strict=True,
+    )
     async def test_required_prompt_with_task_succeeds(self, server):
         """Required mode succeeds when called with task metadata."""
         async with Client(server) as client:
@@ -265,7 +277,7 @@ class TestPromptModeEnforcement:
 
 
 class TestToolExecutionMetadata:
-    """Test that ToolExecution.taskSupport is set correctly in tool metadata."""
+    """Test that ToolExecution.task_support is set correctly in tool metadata."""
 
     async def test_optional_tool_exposes_task_support(self):
         """Tools with task enabled should expose taskSupport in metadata."""
@@ -280,10 +292,10 @@ class TestToolExecutionMetadata:
             tool = next(t for t in tools if t.name == "my_tool")
             assert isinstance(tool, MCPTool)
             assert isinstance(tool.execution, ToolExecution)
-            assert tool.execution.taskSupport == "optional"
+            assert tool.execution.task_support == "optional"
 
     async def test_required_tool_exposes_task_support(self):
-        """Tools with mode=required should expose taskSupport='required'."""
+        """Tools with mode=required should expose task_support='required'."""
         mcp = FastMCP("test", tasks=False)
 
         @mcp.tool(task=TaskConfig(mode="required"))
@@ -295,7 +307,7 @@ class TestToolExecutionMetadata:
             tool = next(t for t in tools if t.name == "my_tool")
             assert isinstance(tool, MCPTool)
             assert isinstance(tool.execution, ToolExecution)
-            assert tool.execution.taskSupport == "required"
+            assert tool.execution.task_support == "required"
 
     async def test_forbidden_tool_has_no_execution(self):
         """Tools with mode=forbidden should not expose execution metadata."""

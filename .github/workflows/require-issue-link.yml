@@ -354,28 +354,29 @@ jobs:
             async function enforceFailure(kind) {
               await addLabel();
 
-              const intro = kind === 'no-link'
-                ? '**This PR has been automatically closed** because its description does not reference a tracked issue.'
-                : '**This PR has been automatically closed** because you are not assigned to the issue it references.';
+              const reason = kind === 'no-link'
+                ? "it doesn't reference a tracked issue assigned to you"
+                : "you aren't assigned to the issue it references";
               const steps = kind === 'no-link'
                 ? [
-                    `1. Find or [open an issue](https://github.com/${owner}/${repo}/issues/new/choose) describing the change.`,
-                    '2. Comment on the issue to ask a maintainer to assign it to you.',
-                    '3. Add `Fixes #<issue>`, `Closes #<issue>`, or `Resolves #<issue>` to the PR description.',
-                    '4. Once you are assigned and the link is present, the PR reopens automatically.',
+                    `1. Find or [open an issue](https://github.com/${owner}/${repo}/issues/new/choose) describing the change — if you open it, you have first claim on it.`,
+                    "2. Add `Fixes #<issue>`, `Closes #<issue>`, or `Resolves #<issue>` to **this** PR's description — edit it in place, don't open a new PR.",
                   ]
                 : [
-                    '1. Comment on the linked issue to ask a maintainer to assign it to you.',
-                    '2. Once a maintainer assigns you, the PR reopens automatically.',
+                    "1. If you opened the linked issue, a maintainer will assign you when they pick it up and this PR reopens automatically. If someone else opened it, the PR reopens only if a maintainer chooses to assign it to you — please don't comment to ask.",
                   ];
 
               const commentBody = [
                 MARKER,
-                intro,
+                "**Don't open a new pull request — this one reopens on its own.** It's closed for " +
+                  `now because ${reason}, but the moment that's fixed it reopens automatically. Keep this ` +
+                  'PR and edit it; opening a fresh duplicate just starts you over and creates more to triage.',
                 '',
-                `Per [CONTRIBUTING.md](https://github.com/${owner}/${repo}/blob/main/CONTRIBUTING.md), an external PR must reference an issue that is assigned to its author. To proceed:`,
+                `Per [CONTRIBUTING.md](https://github.com/${owner}/${repo}/blob/main/CONTRIBUTING.md), an external PR must reference an issue that's assigned to its author. To get there:`,
                 '',
                 ...steps,
+                '',
+                "Once you're assigned and the link is present, this PR reopens automatically — no further action needed.",
                 '',
                 `*Maintainers: reopen this PR or remove the \`${LABEL}\` label to bypass this check.*`,
               ].join('\n');

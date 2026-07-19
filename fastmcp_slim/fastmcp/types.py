@@ -22,6 +22,84 @@ from __future__ import annotations
 
 from typing import Annotated
 
+from mcp_types import (
+    Annotations as Annotations,
+)
+from mcp_types import (
+    AudioContent as AudioContent,
+)
+from mcp_types import (
+    BlobResourceContents as BlobResourceContents,
+)
+from mcp_types import (
+    CallToolResult as CallToolResult,
+)
+from mcp_types import (
+    Completion as Completion,
+)
+from mcp_types import (
+    ContentBlock as ContentBlock,
+)
+from mcp_types import (
+    CreateMessageResult as CreateMessageResult,
+)
+from mcp_types import (
+    EmbeddedResource as EmbeddedResource,
+)
+from mcp_types import (
+    ErrorData as ErrorData,
+)
+from mcp_types import (
+    GetPromptResult as GetPromptResult,
+)
+from mcp_types import (
+    Icon as Icon,
+)
+from mcp_types import (
+    ImageContent as ImageContent,
+)
+from mcp_types import (
+    Prompt as Prompt,
+)
+from mcp_types import (
+    PromptMessage as PromptMessage,
+)
+from mcp_types import (
+    ReadResourceResult as ReadResourceResult,
+)
+from mcp_types import (
+    Resource as Resource,
+)
+from mcp_types import (
+    ResourceLink as ResourceLink,
+)
+from mcp_types import (
+    ResourceTemplate as ResourceTemplate,
+)
+from mcp_types import (
+    Root as Root,
+)
+from mcp_types import (
+    SamplingCapability as SamplingCapability,
+)
+from mcp_types import (
+    SamplingMessage as SamplingMessage,
+)
+from mcp_types import (
+    TextContent as TextContent,
+)
+from mcp_types import (
+    TextResourceContents as TextResourceContents,
+)
+from mcp_types import (
+    Tool as Tool,
+)
+from mcp_types import (
+    ToolAnnotations as ToolAnnotations,
+)
+from mcp_types import (
+    ToolResultContent as ToolResultContent,
+)
 from pydantic import Field
 
 Textarea = Annotated[str, Field(json_schema_extra={"format": "textarea"})]
@@ -31,4 +109,32 @@ Produces `"format": "textarea"` in the JSON Schema, which
 `fastmcp dev apps` picks up automatically.
 """
 
-__all__ = ["Textarea"]
+__all__ = [
+    "Annotations",
+    "AudioContent",
+    "BlobResourceContents",
+    "CallToolResult",
+    "Completion",
+    "ContentBlock",
+    "CreateMessageResult",
+    "EmbeddedResource",
+    "ErrorData",
+    "GetPromptResult",
+    "Icon",
+    "ImageContent",
+    "Prompt",
+    "PromptMessage",
+    "ReadResourceResult",
+    "Resource",
+    "ResourceLink",
+    "ResourceTemplate",
+    "Root",
+    "SamplingCapability",
+    "SamplingMessage",
+    "TextContent",
+    "TextResourceContents",
+    "Textarea",
+    "Tool",
+    "ToolAnnotations",
+    "ToolResultContent",
+]

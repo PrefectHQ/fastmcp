@@ -10,7 +10,7 @@ import pytest
 from key_value.aio.stores.memory import MemoryStore
 from mcp.server.auth.provider import AuthorizationParams
 from mcp.shared.auth import OAuthClientInformationFull
-from mcp.types import Icon
+from mcp_types import Icon
 from pydantic import AnyUrl
 from starlette.applications import Starlette
 from starlette.testclient import TestClient

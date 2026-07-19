@@ -29,6 +29,28 @@ async def test_capabilities_include_tasks():
         assert "tasks" not in (init_result.capabilities.experimental or {})
 
 
+def test_only_tools_advertise_task_support():
+    """Task requests advertise tools only, not prompts/resources (sdk-feedback #3).
+
+    SDK v2 b1 ``ReadResourceRequestParams`` / ``GetPromptRequestParams`` have no
+    ``task`` field, so resource/prompt task submissions always graceful-degrade
+    to synchronous execution. Advertising those capabilities would mislead
+    clients into sending task-augmented reads/gets, so the honest contract is
+    tools-only.
+    """
+    capabilities = get_task_capabilities()
+    assert capabilities is not None
+    requests = capabilities.requests
+    assert requests is not None
+    assert requests.tools is not None
+    assert requests.tools.call is not None
+    # No prompt/resource task capability of any form is advertised.
+    assert getattr(requests, "prompts", None) is None
+    assert getattr(requests, "resources", None) is None
+    dumped = requests.model_dump(exclude_none=True)
+    assert set(dumped) == {"tools"}
+
+
 async def test_client_uses_task_capable_session():
     """Client uses task-capable initialization."""
     mcp = FastMCP("client-cap-test")

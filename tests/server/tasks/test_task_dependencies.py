@@ -160,6 +160,12 @@ async def test_background_tool_with_multiple_dependencies(dependency_server):
         assert server_dep is dependency_server
 
 
+@pytest.mark.xfail(
+    reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+    "ReadResourceRequestParams; prompt/resource task submission is not "
+    "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+    strict=True,
+)
 async def test_background_prompt_receives_dependencies(dependency_server):
     """Background prompts can use dependency injection."""
     dependency_server._injected_values.clear()
@@ -180,6 +186,12 @@ async def test_background_prompt_receives_dependencies(dependency_server):
         assert dep_value is dependency_server
 
 
+@pytest.mark.xfail(
+    reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+    "ReadResourceRequestParams; prompt/resource task submission is not "
+    "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+    strict=True,
+)
 async def test_background_resource_receives_dependencies(dependency_server):
     """Background resources can use dependency injection."""
     dependency_server._injected_values.clear()

@@ -201,6 +201,14 @@ These parameters tune how the server processes requests and communicates with cl
 <ParamField body="dereference_schemas" type="bool" default="True">
   Automatically dereference `$ref` pointers in JSON schemas generated from complex Pydantic models. Most clients require flat schemas without `$ref`, so this should usually stay enabled
 </ParamField>
+
+<ParamField body="cache_ttl" type="int | None" default="None">
+  How long, in seconds, a client may treat this server's cacheable responses as fresh (SEP-2549). When set, the hint applies uniformly to `tools/list`, `prompts/list`, `resources/list`, `resources/templates/list`, and `resources/read`. Clients must opt into caching to honor it — see [Response caching](/clients/client#response-caching). Must be a positive integer
+</ParamField>
+
+<ParamField body="cache_scope" type='Literal["public", "private"] | None' default="None">
+  Whether a cached response may be shared across authorization contexts (`"public"`) or reused only within the one that produced it (`"private"`, the default when a `cache_ttl` is set). Requires `cache_ttl`
+</ParamField>
 </Card>
 
 ### Handlers and Storage
@@ -220,6 +228,27 @@ These parameters provide custom handlers for MCP capabilities and persistent sto
   Persistent key-value store for session state that survives across requests. Defaults to an in-memory store. Provide a custom implementation for persistence across server restarts
 </ParamField>
 </Card>
+
+
+## Response Caching
+
+<VersionBadge version="4.0.0" />
+
+A server whose listings and resource reads change slowly can tell clients how long they may reuse a response before fetching it again (SEP-2549). Set `cache_ttl` (seconds) on the server, and the hint is attached uniformly to every cacheable response — `tools/list`, `prompts/list`, `resources/list`, `resources/templates/list`, and `resources/read`.
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("Weather", cache_ttl=300, cache_scope="public")
+
+@mcp.tool
+def forecast(city: str) -> str:
+    return f"Sunny in {city}"
+```
+
+`cache_scope` controls whether a cached response may be shared across authorization contexts (`"public"`) or reused only within the one that produced it (`"private"`, the default when a TTL is set). A `cache_scope` without a `cache_ttl` does not enable caching and raises at construction.
+
+The hint is inert on its own: a client only reuses a response if it opts into caching and negotiates the modern protocol. See [Response caching](/clients/client#response-caching) for the client side.
 
 
 ## Tag-Based Filtering

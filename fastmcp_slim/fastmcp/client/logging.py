@@ -3,7 +3,7 @@ from logging import Logger
 from typing import TypeAlias
 
 from mcp.client.session import LoggingFnT
-from mcp.types import LoggingMessageNotificationParams
+from mcp_types import LoggingMessageNotificationParams
 
 from fastmcp.utilities.logging import get_logger
 

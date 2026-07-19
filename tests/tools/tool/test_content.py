@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import pytest
 from inline_snapshot import snapshot
-from mcp.types import (
+from mcp_types import (
     AudioContent,
     BlobResourceContents,
     EmbeddedResource,
@@ -11,7 +11,7 @@ from mcp.types import (
     TextContent,
     TextResourceContents,
 )
-from pydantic import AnyUrl, BaseModel
+from pydantic import BaseModel
 
 from fastmcp.tools.base import Tool, _convert_to_content
 from fastmcp.utilities.types import Audio, File, Image
@@ -104,21 +104,21 @@ class TestConvertResultToContent:
         argnames="content_block",
         argvalues=[
             (TextContent(type="text", text="hello")),
-            (ImageContent(type="image", data="fakeimagedata", mimeType="image/png")),
-            (AudioContent(type="audio", data="fakeaudiodata", mimeType="audio/mpeg")),
+            (ImageContent(type="image", data="fakeimagedata", mime_type="image/png")),
+            (AudioContent(type="audio", data="fakeaudiodata", mime_type="audio/mpeg")),
             (
                 ResourceLink(
                     type="resource_link",
                     name="test resource",
-                    uri=AnyUrl("resource://test"),
+                    uri="resource://test",
                 )
             ),
             (
                 EmbeddedResource(
                     type="resource",
                     resource=TextResourceContents(
-                        uri=AnyUrl("resource://test"),
-                        mimeType="text/plain",
+                        uri="resource://test",
+                        mime_type="text/plain",
                         text="resource content",
                     ),
                 )
@@ -140,7 +140,7 @@ class TestConvertResultToContent:
                 Image(data=b"fakeimagedata"),
                 [
                     ImageContent(
-                        type="image", data="ZmFrZWltYWdlZGF0YQ==", mimeType="image/png"
+                        type="image", data="ZmFrZWltYWdlZGF0YQ==", mime_type="image/png"
                     )
                 ],
             ),
@@ -148,7 +148,7 @@ class TestConvertResultToContent:
                 Audio(data=b"fakeaudiodata"),
                 [
                     AudioContent(
-                        type="audio", data="ZmFrZWF1ZGlvZGF0YQ==", mimeType="audio/wav"
+                        type="audio", data="ZmFrZWF1ZGlvZGF0YQ==", mime_type="audio/wav"
                     )
                 ],
             ),
@@ -158,9 +158,9 @@ class TestConvertResultToContent:
                     EmbeddedResource(
                         type="resource",
                         resource=BlobResourceContents(
-                            uri=AnyUrl("file:///resource.octet-stream"),
+                            uri="file:///resource.octet-stream",
                             blob="ZmlsZWRhdGE=",
-                            mimeType="application/octet-stream",
+                            mime_type="application/octet-stream",
                         ),
                     )
                 ],
@@ -187,13 +187,13 @@ class TestConvertResultToContent:
             ResourceLink(
                 type="resource_link",
                 name="test resource",
-                uri=AnyUrl("resource://test"),
+                uri="resource://test",
             ),
             EmbeddedResource(
                 type="resource",
                 resource=TextResourceContents(
-                    uri=AnyUrl("resource://test"),
-                    mimeType="text/plain",
+                    uri="resource://test",
+                    mime_type="text/plain",
                     text="resource content",
                 ),
             ),
@@ -209,21 +209,21 @@ class TestConvertResultToContent:
                 TextContent(type="text", text='{"key":"value"}'),
                 TextContent(type="text", text='{"x":1,"y":"hello"}'),
                 ImageContent(
-                    type="image", data="ZmFrZWltYWdlZGF0YQ==", mimeType="image/png"
+                    type="image", data="ZmFrZWltYWdlZGF0YQ==", mime_type="image/png"
                 ),
                 AudioContent(
-                    type="audio", data="ZmFrZWF1ZGlvZGF0YQ==", mimeType="audio/wav"
+                    type="audio", data="ZmFrZWF1ZGlvZGF0YQ==", mime_type="audio/wav"
                 ),
                 ResourceLink(
                     name="test resource",
-                    uri=AnyUrl("resource://test"),
+                    uri="resource://test",
                     type="resource_link",
                 ),
                 EmbeddedResource(
                     type="resource",
                     resource=TextResourceContents(
-                        uri=AnyUrl("resource://test"),
-                        mimeType="text/plain",
+                        uri="resource://test",
+                        mime_type="text/plain",
                         text="resource content",
                     ),
                 ),
@@ -475,7 +475,7 @@ class TestAutomaticStructuredContent:
         assert result.content == snapshot(
             [
                 AudioContent(
-                    type="audio", data="ZmFrZWF1ZGlvZGF0YQ==", mimeType="audio/wav"
+                    type="audio", data="ZmFrZWF1ZGlvZGF0YQ==", mime_type="audio/wav"
                 )
             ]
         )
