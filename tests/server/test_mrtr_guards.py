@@ -831,6 +831,29 @@ class TestRequestStateSecurityConfig:
                 )
 
 
+class TestTaskExecution:
+    """A guard tool returns an `InputRequiredResult` as its result, which only
+    makes sense against a live request that can answer the prompt. A detached
+    background task has no such request, so returning a guard result from a task
+    is rejected with a clear error rather than silently yielding empty content."""
+
+    async def test_guard_result_from_task_is_rejected(self):
+        mcp = FastMCP("guard-task")
+
+        @mcp.tool(task=True)
+        async def book_flight(ctx: Context) -> str | InputRequiredResult:
+            return _ask(
+                _elicit("date", "When?", "date"),
+                key="date",
+                request_state=None,
+            )
+
+        async with Client(mcp) as client:
+            task = await client.call_tool("book_flight", {}, task=True)
+            with pytest.raises(MCPError, match="background task"):
+                await task.result()
+
+
 class TestHttpTransport:
     async def test_two_question_loop_over_http(self):
         """The full guard loop completes over Streamable HTTP with mode='auto'."""

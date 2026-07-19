@@ -30,7 +30,7 @@ from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.tasks.config import DEFAULT_POLL_INTERVAL_MS, DEFAULT_TTL_MS
 from fastmcp.server.tasks.context import get_task_scope
 from fastmcp.server.tasks.keys import parse_task_key, task_redis_prefix
-from fastmcp.tools.base import Tool
+from fastmcp.tools.base import InputRequiredToolResult, Tool
 from fastmcp.utilities.versions import VersionSpec
 
 if TYPE_CHECKING:
@@ -336,6 +336,19 @@ async def tasks_result_handler(server: FastMCP, params: dict[str, Any]) -> Any:
         # Each branch merges related_task_meta with any existing _meta
         # (e.g. fastmcp.wrap_result) rather than overwriting it.
         if isinstance(component, Tool):
+            if isinstance(
+                raw_value, mcp_types.InputRequiredResult | InputRequiredToolResult
+            ):
+                raise MCPError(
+                    code=INTERNAL_ERROR,
+                    message=(
+                        f"Tool {component_key!r} requested input while running as a "
+                        "background task. Input-required (multi-round-trip) tools "
+                        "need a live request to answer the prompt and cannot run as "
+                        "tasks; remove task execution from this tool or the code path "
+                        "that returns an InputRequiredResult."
+                    ),
+                )
             fastmcp_result = component.convert_result(raw_value)
             mcp_result = fastmcp_result.to_mcp_result()
             if isinstance(mcp_result, mcp_types.CallToolResult):
