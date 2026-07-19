@@ -420,10 +420,17 @@ class File:
                 uri_str = self.path.resolve().as_uri()
         elif self.data is not None:
             raw_data = self.data
+            ext = self._mime_type.split("/")[1]
             if self._name:
-                uri_str = f"file:///{self._name}.{self._mime_type.split('/')[1]}"
+                # If the name already includes a file extension, use it
+                # as-is to avoid duplicating extensions (e.g. "report.pdf"
+                # should stay "report.pdf", not become "report.pdf.pdf").
+                if "." in self._name:
+                    uri_str = f"file:///{self._name}"
+                else:
+                    uri_str = f"file:///{self._name}.{ext}"
             else:
-                uri_str = f"file:///resource.{self._mime_type.split('/')[1]}"
+                uri_str = f"file:///resource.{ext}"
         else:
             raise ValueError("No resource data available")
 
