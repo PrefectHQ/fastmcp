@@ -418,9 +418,14 @@ class ResponseCachingMiddleware(Middleware):
         # only, so a continuation shares its key with a fresh call. Reading
         # could serve a prior flow's final answer to this leg; writing would
         # serve THIS flow's final answer to a later fresh call — which would
-        # then never be asked the tool's questions.
+        # then never be asked the tool's questions. Either signal marks a
+        # continuation: a state-only round (request_state with no questions)
+        # retries with input_responses=None but still carries request_state.
         fastmcp_ctx = context.fastmcp_context
-        if fastmcp_ctx is not None and fastmcp_ctx.input_responses is not None:
+        if fastmcp_ctx is not None and (
+            fastmcp_ctx.input_responses is not None
+            or fastmcp_ctx.request_state is not None
+        ):
             return await call_next(context)
 
         cache_key: str = _make_call_tool_cache_key(

@@ -536,6 +536,53 @@ class TestCachingMiddlewareInteraction:
 
         assert call_count["n"] == 2
 
+    async def test_state_only_continuation_final_not_cached(self):
+        """A state-only round (request_state, no questions) retries with
+        input_responses=None — request_state alone must mark the continuation,
+        or its terminal result would be cached under the fresh-call key."""
+        from fastmcp.server.middleware.caching import ResponseCachingMiddleware
+
+        body_runs = {"n": 0}
+        mcp = FastMCP("cache-state-only")
+
+        @mcp.tool
+        async def staged(ctx: Context) -> str | InputRequiredResult:
+            body_runs["n"] += 1
+            if ctx.request_state is None:
+                return InputRequiredResult(
+                    result_type="input_required",
+                    input_requests={},
+                    request_state="stage=1",
+                )
+            return f"done after {ctx.request_state}"
+
+        mcp.add_middleware(ResponseCachingMiddleware())
+
+        async with Client(mcp, mode="auto") as client:
+            first = await client.session.call_tool(
+                "staged", {}, allow_input_required=True
+            )
+            assert isinstance(first, InputRequiredResult)
+            # The client echoes the (sealed) state with no responses — the
+            # state-only continuation the guard must recognize.
+            final = await client.session.call_tool(
+                "staged",
+                {},
+                request_state=first.request_state,
+                allow_input_required=True,
+            )
+            assert not isinstance(final, InputRequiredResult)
+            runs_after_flow = body_runs["n"]
+
+            # A fresh identical call must run the tool again, not be served
+            # the continuation's cached final.
+            fresh = await client.session.call_tool(
+                "staged", {}, allow_input_required=True
+            )
+            assert isinstance(fresh, InputRequiredResult)
+
+        assert body_runs["n"] == runs_after_flow + 1
+
     async def test_completed_flow_final_result_not_served_to_fresh_call(self):
         """A continuation leg's final result must not enter the cache: its key
         is built from name+arguments only, identical to a fresh call's — so a
