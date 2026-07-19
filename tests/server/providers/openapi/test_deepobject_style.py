@@ -1,6 +1,6 @@
 """Tests for deepObject style parameter handling in OpenAPIProvider."""
 
-import httpx
+import httpx2
 import pytest
 
 from fastmcp import FastMCP
@@ -189,7 +189,7 @@ class TestDeepObjectStyle:
 
     async def test_deepobject_style_parsing_from_spec(self, deepobject_spec):
         """Test that deepObject style parameters are correctly parsed from OpenAPI spec."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             server = create_openapi_server(
                 openapi_spec=deepobject_spec,
                 client=client,
@@ -206,7 +206,7 @@ class TestDeepObjectStyle:
                 assert surveys_tool is not None
 
                 # Check that deepObject parameters are included in schema
-                params = surveys_tool.inputSchema
+                params = surveys_tool.input_schema
                 properties = params["properties"]
 
                 # Should have the deepObject parameters
@@ -222,7 +222,7 @@ class TestDeepObjectStyle:
 
     async def test_deepobject_explode_true_handling(self, deepobject_spec):
         """Test deepObject with explode=true parameter handling."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             server = create_openapi_server(
                 openapi_spec=deepobject_spec,
                 client=client,
@@ -236,7 +236,7 @@ class TestDeepObjectStyle:
                 )
 
                 # Check that explode=true parameters are properly structured
-                params = surveys_tool.inputSchema
+                params = surveys_tool.input_schema
                 properties = params["properties"]
 
                 # Target parameter with explode=true should allow individual property access
@@ -247,7 +247,7 @@ class TestDeepObjectStyle:
 
     async def test_deepobject_explode_false_handling(self, deepobject_spec):
         """Test deepObject with explode=false parameter handling."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             server = create_openapi_server(
                 openapi_spec=deepobject_spec,
                 client=client,
@@ -261,7 +261,7 @@ class TestDeepObjectStyle:
                 )
 
                 # Check that explode=false parameters are handled
-                params = surveys_tool.inputSchema
+                params = surveys_tool.input_schema
                 properties = params["properties"]
 
                 # Compact parameter with explode=false should still be present and valid
@@ -275,7 +275,7 @@ class TestDeepObjectStyle:
 
     async def test_nested_object_structure_in_request_body(self, deepobject_spec):
         """Test nested object structures in request body are preserved."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             server = create_openapi_server(
                 openapi_spec=deepobject_spec,
                 client=client,
@@ -292,7 +292,7 @@ class TestDeepObjectStyle:
                 assert prefs_tool is not None
 
                 # Check that nested object structure is preserved
-                params = prefs_tool.inputSchema
+                params = prefs_tool.input_schema
                 properties = params["properties"]
 
                 # Should have path parameter
@@ -319,7 +319,7 @@ class TestDeepObjectStyle:
 
     async def test_deepobject_tool_functionality(self, deepobject_spec):
         """Test that tools with deepObject parameters maintain basic functionality."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             server = create_openapi_server(
                 openapi_spec=deepobject_spec,
                 client=client,
@@ -338,9 +338,9 @@ class TestDeepObjectStyle:
 
                 # All tools should have valid schemas
                 for tool in tools:
-                    assert tool.inputSchema is not None
-                    assert tool.inputSchema["type"] == "object"
-                    assert "properties" in tool.inputSchema
+                    assert tool.input_schema is not None
+                    assert tool.input_schema["type"] == "object"
+                    assert "properties" in tool.input_schema
 
                     # Should have some properties
-                    assert len(tool.inputSchema["properties"]) > 0
+                    assert len(tool.input_schema["properties"]) > 0

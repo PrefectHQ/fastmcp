@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import httpx
+import httpx2
 
 from fastmcp import FastMCP
 from fastmcp.server import create_proxy
@@ -44,7 +44,7 @@ async def lifespan(server: FastMCP) -> AsyncIterator[None]:
     )
 
     # Wait for server to be ready (async to avoid blocking event loop)
-    async with httpx.AsyncClient() as client:
+    async with httpx2.AsyncClient() as client:
         for _ in range(50):
             try:
                 await client.get(

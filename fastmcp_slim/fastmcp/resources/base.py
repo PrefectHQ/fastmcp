@@ -7,7 +7,7 @@ import json
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, Any, ClassVar, overload
 
-import mcp.types
+import mcp_types
 
 if TYPE_CHECKING:
     from docket import Docket
@@ -17,8 +17,8 @@ if TYPE_CHECKING:
 
 import pydantic
 import pydantic_core
-from mcp.types import Annotations, Icon
-from mcp.types import Resource as SDKResource
+from mcp_types import Annotations, Icon
+from mcp_types import Resource as SDKResource
 from pydantic import (
     AnyUrl,
     ConfigDict,
@@ -30,7 +30,6 @@ from pydantic import (
 from pydantic.json_schema import SkipJsonSchema
 from typing_extensions import Self
 
-from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.tasks import TaskConfig, TaskMeta
@@ -93,7 +92,7 @@ class ResourceContent(pydantic.BaseModel):
 
     def to_mcp_resource_contents(
         self, uri: AnyUrl | str
-    ) -> mcp.types.TextResourceContents | mcp.types.BlobResourceContents:
+    ) -> mcp_types.TextResourceContents | mcp_types.BlobResourceContents:
         """Convert to MCP resource contents type.
 
         Args:
@@ -103,17 +102,17 @@ class ResourceContent(pydantic.BaseModel):
             TextResourceContents for str content, BlobResourceContents for bytes
         """
         if isinstance(self.content, str):
-            return mcp.types.TextResourceContents(
-                uri=AnyUrl(uri) if isinstance(uri, str) else uri,
+            return mcp_types.TextResourceContents(
+                uri=str(uri),
                 text=self.content,
-                mimeType=self.mime_type or "text/plain",
+                mime_type=self.mime_type or "text/plain",
                 _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
             )
         else:
-            return mcp.types.BlobResourceContents(
-                uri=AnyUrl(uri) if isinstance(uri, str) else uri,
+            return mcp_types.BlobResourceContents(
+                uri=str(uri),
                 blob=base64.b64encode(self.content).decode(),
-                mimeType=self.mime_type or "application/octet-stream",
+                mime_type=self.mime_type or "application/octet-stream",
                 _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
             )
 
@@ -199,7 +198,7 @@ class ResourceResult(pydantic.BaseModel):
             f"contents must be str, bytes, or list[ResourceContent], got {type(contents).__name__}"
         )
 
-    def to_mcp_result(self, uri: AnyUrl | str) -> mcp.types.ReadResourceResult:
+    def to_mcp_result(self, uri: AnyUrl | str) -> mcp_types.ReadResourceResult:
         """Convert to MCP ReadResourceResult.
 
         Args:
@@ -209,7 +208,7 @@ class ResourceResult(pydantic.BaseModel):
             MCP ReadResourceResult with converted contents
         """
         mcp_contents = [item.to_mcp_resource_contents(uri) for item in self.contents]
-        return mcp.types.ReadResourceResult(
+        return mcp_types.ReadResourceResult(
             contents=mcp_contents,
             _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
         )
@@ -366,11 +365,11 @@ class Resource(FastMCPComponent):
     async def _read(self, task_meta: None = None) -> ResourceResult: ...
 
     @overload
-    async def _read(self, task_meta: TaskMeta) -> mcp.types.CreateTaskResult: ...
+    async def _read(self, task_meta: TaskMeta) -> mcp_types.CreateTaskResult: ...
 
     async def _read(
         self, task_meta: TaskMeta | None = None
-    ) -> ResourceResult | mcp.types.CreateTaskResult:
+    ) -> ResourceResult | mcp_types.CreateTaskResult:
         """Server entry point that handles task routing.
 
         This allows ANY Resource subclass to support background execution by setting
@@ -410,9 +409,9 @@ class Resource(FastMCPComponent):
 
         return SDKResource(
             name=overrides.get("name", self.name),
-            uri=overrides.get("uri", self.uri),
+            uri=str(overrides.get("uri", self.uri)),
             description=overrides.get("description", self.description),
-            mimeType=overrides.get("mimeType", self.mime_type),
+            mime_type=overrides.get("mimeType", self.mime_type),
             title=overrides.get("title", self.title),
             icons=overrides.get("icons", self.icons),
             annotations=overrides.get("annotations", self.annotations),
@@ -469,29 +468,3 @@ __all__ = [
     "ResourceContent",
     "ResourceResult",
 ]
-
-
-def __getattr__(name: str) -> Any:
-    """Deprecated re-exports for backwards compatibility."""
-    deprecated_exports = {
-        "FunctionResource": "FunctionResource",
-        "resource": "resource",
-    }
-
-    if name in deprecated_exports:
-        import warnings
-
-        import fastmcp
-
-        if fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                f"Importing {name} from fastmcp.resources.resource is deprecated. "
-                f"Import from fastmcp.resources.function_resource instead.",
-                FastMCPDeprecationWarning,
-                stacklevel=2,
-            )
-        from fastmcp.resources import function_resource
-
-        return getattr(function_resource, name)
-
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

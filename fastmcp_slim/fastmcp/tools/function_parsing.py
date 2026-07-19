@@ -9,11 +9,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Annotated, Any, Generic, Union, get_args, get_origin, get_type_hints
 
-import mcp.types
-from pydantic import PydanticSchemaGenerationError
+import mcp_types
+from pydantic import BaseModel, PydanticSchemaGenerationError
 from typing_extensions import TypeVar as TypeVarExt
 
-from fastmcp.tools.base import ToolResult
+from fastmcp.tools.base import ToolResult, resolve_serialize_by_alias
 from fastmcp.utilities.docstring_parsing import ParsedDocstring, parse_docstring
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
@@ -21,7 +21,6 @@ from fastmcp.utilities.types import (
     Audio,
     File,
     Image,
-    create_function_without_params,
     get_cached_typeadapter,
     is_class_member_of_type,
     replace_type,
@@ -54,6 +53,53 @@ def _contains_prefab_type(tp: Any) -> bool:
     if origin is Union or origin is types.UnionType or origin is Annotated:
         return any(_contains_prefab_type(a) for a in get_args(tp))
     return False
+
+
+def _unwrap_model(tp: Any) -> type[BaseModel] | None:
+    """Unwrap ``Annotated`` and return the underlying Pydantic model, if any."""
+    if get_origin(tp) is Annotated:
+        return _unwrap_model(get_args(tp)[0])
+    if isinstance(tp, type) and issubclass(tp, BaseModel):
+        return tp
+    return None
+
+
+def _resolve_output_by_alias(tp: Any) -> bool:
+    """Resolve ``by_alias`` for the output schema of return type *tp*.
+
+    Unwraps ``Annotated`` and ``Optional``/``Union`` wrappers to find the
+    underlying Pydantic model so the generated schema honors the model's
+    ``serialize_by_alias`` config — keeping it consistent with how the runtime
+    result is serialized. Containers (``list[Model]`` etc.) are not unwrapped:
+    their schema keeps the default, matching the runtime path which only
+    special-cases a directly-returned model.
+
+    Known limitation: a single schema is generated with one ``by_alias`` value,
+    while the runtime resolves the alias mode per returned value. They cannot
+    diverge for a plain single-model return, but a union return can produce more
+    than one runtime alias mode that no single schema can describe:
+
+    - distinct models with *conflicting* ``serialize_by_alias`` (e.g. ``A | B``
+      where ``A`` opts out but ``B`` opts in), and
+    - a model arm alongside a container arm (e.g. ``Model | list[Model]``):
+      a directly-returned model honors its config, but a returned ``list`` is
+      serialized with the default alias mode, so the two variants disagree.
+
+    Pydantic's schema generator does not consult per-model ``serialize_by_alias``
+    and the runtime does not recurse into containers, so honoring every variant
+    would require per-arm schema assembly. This is an accepted edge; single-model
+    returns and unions whose arms all resolve to the same mode are consistent.
+    """
+    origin = get_origin(tp)
+    if origin is Annotated:
+        return _resolve_output_by_alias(get_args(tp)[0])
+    if origin is Union or origin is types.UnionType:
+        for arg in get_args(tp):
+            model = _unwrap_model(arg)
+            if model is not None:
+                return resolve_serialize_by_alias(model)
+        return True
+    return resolve_serialize_by_alias(tp)
 
 
 T = TypeVarExt("T", default=Any)
@@ -131,33 +177,27 @@ class ParsedFunction:
     def from_function(
         cls,
         fn: Callable[..., Any],
-        exclude_args: list[str] | None = None,
         validate: bool = True,
         wrap_non_object_output_schema: bool = True,
     ) -> ParsedFunction:
         if validate:
             sig = inspect.signature(fn)
-            # Reject functions with *args or **kwargs
+            # Reject signatures that cannot be represented by MCP's
+            # object-shaped tool arguments.
             for param in sig.parameters.values():
+                if param.kind == inspect.Parameter.POSITIONAL_ONLY:
+                    raise ValueError(
+                        "Functions with positional-only parameters are not "
+                        "supported as tools because MCP passes tool arguments by "
+                        "name. Replace them with standard parameters that can be "
+                        "passed as keywords."
+                    )
                 if param.kind == inspect.Parameter.VAR_POSITIONAL:
                     raise ValueError("Functions with *args are not supported as tools")
                 if param.kind == inspect.Parameter.VAR_KEYWORD:
                     raise ValueError(
                         "Functions with **kwargs are not supported as tools"
                     )
-
-            # Reject exclude_args that don't exist in the function or don't have a default value
-            if exclude_args:
-                for arg_name in exclude_args:
-                    if arg_name not in sig.parameters:
-                        raise ValueError(
-                            f"Parameter '{arg_name}' in exclude_args does not exist in function."
-                        )
-                    param = sig.parameters[arg_name]
-                    if param.default == inspect.Parameter.empty:
-                        raise ValueError(
-                            f"Parameter '{arg_name}' in exclude_args must have a default value."
-                        )
 
         # collect name and description before we potentially modify the function
         fn_name = getattr(fn, "__name__", None) or fn.__class__.__name__
@@ -194,19 +234,10 @@ class ParsedFunction:
         # Handle injected parameters (Context, Docket dependencies)
         wrapper_fn = without_injected_parameters(fn)
 
-        # Also handle exclude_args with non-serializable types (issue #2431)
-        # This must happen before Pydantic tries to serialize the parameters
-        if exclude_args:
-            wrapper_fn = create_function_without_params(wrapper_fn, list(exclude_args))
-
         input_type_adapter = get_cached_typeadapter(wrapper_fn)
         input_schema = input_type_adapter.json_schema()
 
-        # Compress and handle exclude_args
-        prune_params = list(exclude_args) if exclude_args else None
-        input_schema = compress_schema(
-            input_schema, prune_params=prune_params, prune_titles=True
-        )
+        input_schema = compress_schema(input_schema, prune_titles=True)
 
         # Inject parameter descriptions from the docstring into the schema.
         # Explicit annotations (Field(description=...), Annotated[x, "..."])
@@ -270,11 +301,11 @@ class ParsedFunction:
                         Audio,
                         File,
                         ToolResult,
-                        mcp.types.TextContent,
-                        mcp.types.ImageContent,
-                        mcp.types.AudioContent,
-                        mcp.types.ResourceLink,
-                        mcp.types.EmbeddedResource,
+                        mcp_types.TextContent,
+                        mcp_types.ImageContent,
+                        mcp_types.AudioContent,
+                        mcp_types.ResourceLink,
+                        mcp_types.EmbeddedResource,
                         *_PREFAB_TYPES,
                     ),
                     _UnserializableType,
@@ -282,8 +313,13 @@ class ParsedFunction:
             )
 
             try:
+                # Honor the model's serialize_by_alias config so the schema's
+                # field names match the serialized result (see base.py).
+                by_alias = _resolve_output_by_alias(clean_output_type)
                 type_adapter = get_cached_typeadapter(clean_output_type)
-                base_schema = type_adapter.json_schema(mode="serialization")
+                base_schema = type_adapter.json_schema(
+                    mode="serialization", by_alias=by_alias
+                )
 
                 # Generate schema for wrapped type if it's non-object
                 # because MCP requires that output schemas are objects
@@ -293,7 +329,9 @@ class ParsedFunction:
                     # Use the wrapped result schema directly
                     wrapped_type = _WrappedResult[clean_output_type]
                     wrapped_adapter = get_cached_typeadapter(wrapped_type)
-                    output_schema = wrapped_adapter.json_schema(mode="serialization")
+                    output_schema = wrapped_adapter.json_schema(
+                        mode="serialization", by_alias=by_alias
+                    )
                     output_schema["x-fastmcp-wrap-result"] = True
                 else:
                     output_schema = base_schema

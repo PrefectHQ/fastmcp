@@ -210,6 +210,24 @@ class Settings(BaseSettings):
         ),
     ] = True
 
+    enable_telemetry: Annotated[
+        bool,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Whether FastMCP's native OpenTelemetry instrumentation is active.
+                Enabled by default: FastMCP uses only the OpenTelemetry API, so
+                span creation is a no-op with negligible overhead unless an
+                OpenTelemetry SDK and exporter are configured. Set to False to
+                turn instrumentation off entirely, in which case FastMCP's span
+                helpers become a transparent pass-through: no FastMCP spans are
+                created even when an SDK is configured, and the surrounding OTel
+                trace context is left untouched.
+                """
+            )
+        ),
+    ] = True
+
     deprecation_warnings: Annotated[
         bool,
         Field(
@@ -221,6 +239,22 @@ class Settings(BaseSettings):
                 settings class itself.
                 """,
             )
+        ),
+    ] = True
+
+    mcp_camelcase_compat: Annotated[
+        bool,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Whether to install compatibility shims that let legacy
+                camelCase reads on MCP SDK objects (e.g. `tool.inputSchema`,
+                `result.isError`) keep working after the SDK v2 rename to
+                snake_case. Each bridged read emits a
+                `FastMCPDeprecationWarning`. Set to False to disable the shims
+                entirely, in which case only the snake_case names resolve.
+                """
+            ),
         ),
     ] = True
 
@@ -310,6 +344,26 @@ class Settings(BaseSettings):
         ),
     ] = False
 
+    ssrf_trust_proxy: Annotated[
+        bool,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Trust an outbound HTTP proxy for SSRF-protected fetches (OAuth client
+                metadata and JWKS). When False (default), FastMCP resolves the target
+                hostname itself and refuses to connect if it maps to a private,
+                loopback, link-local, or otherwise reserved IP. When True, FastMCP
+                routes auth metadata and JWKS fetches through the configured
+                HTTPS_PROXY/ALL_PROXY and does not honor NO_PROXY; if no proxy is
+                configured the fetch is refused (raising SSRFError) rather than sent
+                direct with the blocklist disabled. Only enable this when a trusted
+                corporate proxy is the mandated egress path: it shifts SSRF trust to
+                that proxy. Scheme (HTTPS-only) and hostname checks still apply.
+                """
+            ),
+        ),
+    ] = False
+
     server_dependencies: list[str] = Field(
         default_factory=list,
         description="List of dependencies to install in the server environment",
@@ -320,6 +374,24 @@ class Settings(BaseSettings):
     stateless_http: bool = (
         False  # If True, uses true stateless mode (new transport per request)
     )
+    http_host_origin_protection: bool | Literal["auto"] = False
+    http_allowed_hosts: list[str] | None = None
+    http_allowed_origins: list[str] | None = None
+    http_session_idle_timeout: Annotated[
+        float | None,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Maximum time in seconds a streamable-HTTP session may remain
+                idle before it is terminated. A session's deadline is pushed
+                forward on every request. When None (default), sessions never
+                expire from inactivity. Not supported in stateless HTTP mode.
+                Must be a positive number of seconds when set.
+                """
+            ),
+            gt=0,
+        ),
+    ] = None
 
     mounted_components_raise_on_load_error: Annotated[
         bool,
@@ -362,20 +434,3 @@ class Settings(BaseSettings):
             ),
         ),
     ] = "stable"
-
-    decorator_mode: Annotated[
-        Literal["function", "object"],
-        Field(
-            description=inspect.cleandoc(
-                """
-                Controls what decorators (@tool, @resource, @prompt) return.
-
-                - "function" (default): Decorators return the original function unchanged.
-                  The function remains callable and is registered with the server normally.
-                - "object" (deprecated): Decorators return component objects (FunctionTool,
-                  FunctionResource, FunctionPrompt). This was the default behavior in v2 and
-                  will be removed in a future version.
-                """
-            ),
-        ),
-    ] = "function"

@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast, overload
 
-from mcp.server.fastmcp import FastMCP as FastMCP1Server
+from mcp.server.mcpserver import MCPServer as SDKServer
 from pydantic import AnyUrl
 
 from fastmcp.client.transports.base import ClientTransport, ClientTransportT
@@ -33,7 +33,7 @@ def infer_transport(transport: FastMCP) -> FastMCPTransport: ...
 
 
 @overload
-def infer_transport(transport: FastMCP1Server) -> FastMCPTransport: ...
+def infer_transport(transport: SDKServer) -> FastMCPTransport: ...
 
 
 @overload
@@ -65,7 +65,7 @@ def infer_transport(transport: Path) -> PythonStdioTransport | NodeStdioTranspor
 def infer_transport(
     transport: ClientTransport
     | FastMCP
-    | FastMCP1Server
+    | SDKServer
     | AnyUrl
     | Path
     | MCPConfig
@@ -81,7 +81,7 @@ def infer_transport(
 
     The function supports these input types:
     - ClientTransport: Used directly without modification
-    - FastMCP or FastMCP1Server: Creates an in-memory FastMCPTransport
+    - FastMCP or SDKServer: Creates an in-memory FastMCPTransport
     - Path or str (file path): Creates PythonStdioTransport (.py) or NodeStdioTransport (.js)
     - AnyUrl or str (URL): Creates StreamableHttpTransport (default) or SSETransport (for /sse endpoints)
     - MCPConfig or dict: Creates MCPConfigTransport, potentially connecting to multiple servers
@@ -120,7 +120,7 @@ def infer_transport(
     # the transport is a FastMCP server (2.x or 1.0)
     elif _is_fastmcp_server(transport):
         inferred_transport = FastMCPTransport(
-            mcp=cast("FastMCP[Any] | FastMCP1Server", transport)
+            mcp=cast("FastMCP[Any] | SDKServer", transport)
         )
 
     # the transport is a path to a script
@@ -159,7 +159,7 @@ def infer_transport(
 
 
 def _is_fastmcp_server(transport: object) -> bool:
-    if isinstance(transport, FastMCP1Server):
+    if isinstance(transport, SDKServer):
         return True
 
     try:

@@ -10,7 +10,7 @@ import time
 from datetime import datetime, timezone
 
 import pytest
-from mcp.types import GetTaskResult
+from mcp_types import GetTaskResult
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -206,7 +206,7 @@ async def test_notification_with_failed_task(task_notification_server):
         status = await task.status()
         assert status.status == "failed"
         assert (
-            status.statusMessage is not None
+            status.status_message is not None
         )  # Error details in statusMessage per spec
 
 
@@ -215,14 +215,15 @@ async def test_wait_returns_on_input_required(task_notification_server):
     async with Client(task_notification_server) as client:
         task = await client.call_tool("quick_task", {"value": 1}, task=True)
 
-        # Directly inject an input_required status into the cache and signal the event
-        now = datetime.now(timezone.utc)
+        # Directly inject an input_required status into the cache and signal the event.
+        # SDK v2 types the Task timestamps as ISO 8601 strings.
+        now = datetime.now(timezone.utc).isoformat()
         input_required_status = GetTaskResult(
-            taskId=task._task_id,
+            task_id=task._task_id,
             status="input_required",
-            statusMessage="Waiting for user input",
-            createdAt=now,
-            lastUpdatedAt=now,
+            status_message="Waiting for user input",
+            created_at=now,
+            last_updated_at=now,
             ttl=None,
         )
         task._status_cache = input_required_status

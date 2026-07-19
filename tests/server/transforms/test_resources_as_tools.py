@@ -241,7 +241,7 @@ class TestResourcesAsToolsAnnotations:
             tools = await client.list_tools()
             tool = next(t for t in tools if t.name == "list_resources")
             assert tool.annotations is not None
-            assert tool.annotations.readOnlyHint is True
+            assert tool.annotations.read_only_hint is True
 
     async def test_read_resource_is_read_only(self):
         """read_resource is annotated as read-only by default."""
@@ -252,7 +252,7 @@ class TestResourcesAsToolsAnnotations:
             tools = await client.list_tools()
             tool = next(t for t in tools if t.name == "read_resource")
             assert tool.annotations is not None
-            assert tool.annotations.readOnlyHint is True
+            assert tool.annotations.read_only_hint is True
 
 
 def _deny_all(ctx: AuthContext) -> bool:

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Annotated, Any
 
 import pytest
-from mcp.types import TextContent
+from mcp_types import TextContent
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 

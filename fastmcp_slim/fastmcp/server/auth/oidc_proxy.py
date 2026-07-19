@@ -12,18 +12,25 @@ This implementation is based on:
 from collections.abc import Sequence
 from typing import Any, Literal
 
-import httpx
+import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl, BaseModel, model_validator
 from typing_extensions import Self
 
 from fastmcp.server.auth import TokenVerifier
+from fastmcp.server.auth.identity_assertion import IdentityAssertion
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.oauth_proxy.models import UpstreamTokenSet
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
+
+#: Default timeout, in seconds, for the OIDC discovery request made during
+#: provider construction. Bounds how long startup can block on a slow or
+#: unreachable issuer metadata endpoint. Pass ``timeout_seconds=None`` to fall
+#: back to the HTTP client's own default timeout instead.
+DEFAULT_OIDC_DISCOVERY_TIMEOUT_SECONDS = 10
 
 
 class OIDCConfiguration(BaseModel):
@@ -156,7 +163,7 @@ class OIDCConfiguration(BaseModel):
             get_kwargs["timeout"] = timeout_seconds
 
         try:
-            response = httpx.get(str(config_url), **get_kwargs)
+            response = httpx2.get(str(config_url), **get_kwargs)
             response.raise_for_status()
 
             config_data = response.json()
@@ -206,7 +213,7 @@ class OIDCProxy(OAuthProxy):
         client_id: str,
         client_secret: str | None = None,
         audience: str | None = None,
-        timeout_seconds: int | None = None,
+        timeout_seconds: int | None = DEFAULT_OIDC_DISCOVERY_TIMEOUT_SECONDS,
         # Token verifier
         token_verifier: TokenVerifier | None = None,
         algorithm: str | None = None,
@@ -240,6 +247,8 @@ class OIDCProxy(OAuthProxy):
         token_expiry_threshold_seconds: int = 0,
         # CIMD configuration
         enable_cimd: bool = True,
+        # Identity assertion (SEP-990 ID-JAG) support
+        identity_assertion: IdentityAssertion | None = None,
     ) -> None:
         """Initialize the OIDC proxy provider.
 
@@ -251,7 +260,10 @@ class OIDCProxy(OAuthProxy):
                 clients or when using alternative credentials. When omitted,
                 jwt_signing_key must be provided.
             audience: Audience for upstream server
-            timeout_seconds: HTTP request timeout in seconds
+            timeout_seconds: Timeout, in seconds, for the OIDC discovery request
+                made during construction. Defaults to 10 seconds so a slow or
+                unreachable issuer cannot block server startup indefinitely. Pass
+                None to fall back to the HTTP client's own default timeout.
             token_verifier: Optional custom token verifier (e.g., IntrospectionTokenVerifier for opaque tokens).
                 If not provided, a JWTVerifier will be created using the OIDC configuration.
                 Cannot be used with algorithm or required_scopes parameters (configure these on your verifier instead).
@@ -268,7 +280,8 @@ class OIDCProxy(OAuthProxy):
             redirect_path: Redirect path configured in upstream OAuth app (defaults to "/auth/callback")
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 Patterns support wildcards (e.g., "http://localhost:*", "https://*.example.com/*").
-                If None (default), all redirect URIs are allowed (for DCR compatibility).
+                If None (default), DCR clients use registered redirect URIs, with loopback
+                ports allowed to vary for MCP compatibility. Unsafe browser schemes are rejected.
                 If empty list, no redirect URIs are allowed.
                 These are for MCP clients performing loopback redirects, NOT for the upstream OAuth app.
             client_storage: Storage backend for OAuth state (client registrations, encrypted tokens).
@@ -279,7 +292,7 @@ class OIDCProxy(OAuthProxy):
                 provided, the upstream client secret will be used to derive a 32-byte key using PBKDF2.
             token_endpoint_auth_method: Token endpoint authentication method for upstream server.
                 Common values: "client_secret_basic", "client_secret_post", "none".
-                If None, authlib will use its default (typically "client_secret_basic").
+                Defaults to "client_secret_basic".
             require_authorization_consent: Whether to require user consent before authorizing clients (default True).
                 When True, users see a consent screen before being redirected to the upstream IdP.
                 When False, authorization proceeds directly without user confirmation.
@@ -318,6 +331,9 @@ class OIDCProxy(OAuthProxy):
             enable_cimd: Whether to enable CIMD (Client ID Metadata Document) client support.
                 When True, clients can use their metadata document URL as client_id instead of
                 Dynamic Client Registration. Default is True.
+            identity_assertion: Optional SEP-990 identity assertion (ID-JAG) configuration.
+                When provided, the token endpoint accepts the RFC 7523 jwt-bearer grant
+                carrying an ID-JAG issued by one of the configured trusted issuers.
         """
         if not config_url:
             raise ValueError("Missing required config URL")
@@ -409,6 +425,7 @@ class OIDCProxy(OAuthProxy):
             "fastmcp_access_token_expiry_seconds": fastmcp_access_token_expiry_seconds,
             "token_expiry_threshold_seconds": token_expiry_threshold_seconds,
             "enable_cimd": enable_cimd,
+            "identity_assertion": identity_assertion,
         }
 
         if redirect_path:

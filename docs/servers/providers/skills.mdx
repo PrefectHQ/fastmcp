@@ -111,6 +111,10 @@ skill://pdf-processing/reference.md
 skill://pdf-processing/examples/sample.pdf
 ```
 
+<Note>
+Supporting-file access is confined to the skill directory. Requested paths are validated before any filesystem access: attempts to traverse out with `..`, inject an absolute path, or smuggle a null byte are rejected with a clear error, and symlinks that resolve outside the skill directory are refused.
+</Note>
+
 ## Provider Architecture
 
 The Skills Provider uses a two-layer architecture to handle both single skills and skill directories.

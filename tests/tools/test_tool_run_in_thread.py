@@ -13,7 +13,7 @@ import threading
 from collections.abc import AsyncIterator
 
 import pytest
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 from fastmcp import Context, FastMCP
 from fastmcp.tools.base import Tool

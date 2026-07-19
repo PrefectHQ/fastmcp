@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
-import mcp.types
+import mcp_types
 
 from fastmcp.resources.base import Resource
 from fastmcp.resources.template import ResourceTemplate
@@ -322,11 +322,11 @@ async def save_visibility_rules(
     # Send notifications based on components hint
     # Note: MCP has no separate template notification - templates use ResourceListChangedNotification
     if components is None or "tool" in components:
-        await context.send_notification(mcp.types.ToolListChangedNotification())
+        await context.send_notification(mcp_types.ToolListChangedNotification())
     if components is None or "resource" in components or "template" in components:
-        await context.send_notification(mcp.types.ResourceListChangedNotification())
+        await context.send_notification(mcp_types.ResourceListChangedNotification())
     if components is None or "prompt" in components:
-        await context.send_notification(mcp.types.PromptListChangedNotification())
+        await context.send_notification(mcp_types.PromptListChangedNotification())
 
 
 def create_visibility_transforms(rules: list[dict[str, Any]]) -> list[Visibility]:

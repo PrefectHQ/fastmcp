@@ -3,8 +3,8 @@ import json
 import sys
 
 import pytest
-from mcp import McpError
-from mcp.types import TextResourceContents
+from mcp import MCPError
+from mcp_types import TextResourceContents
 
 from fastmcp.client import Client
 from fastmcp.client.transports import SSETransport
@@ -161,8 +161,8 @@ async def test_nested_sse_server_resolves_correctly(nested_sse_server: str):
 class TestTimeout:
     async def test_timeout(self, sse_server: str):
         with pytest.raises(
-            McpError,
-            match="Timed out while waiting for response to ClientRequest. Waited 0.03 seconds",
+            MCPError,
+            match="timed out",
         ):
             async with Client(
                 transport=SSETransport(sse_server),
@@ -172,7 +172,7 @@ class TestTimeout:
 
     async def test_timeout_tool_call(self, sse_server: str):
         async with Client(transport=SSETransport(sse_server)) as client:
-            with pytest.raises(McpError, match="Timed out"):
+            with pytest.raises(MCPError, match="timed out"):
                 await client.call_tool("sleep", {"seconds": 0.1}, timeout=0.03)
 
     async def test_timeout_tool_call_overrides_client_timeout_if_lower(
@@ -182,7 +182,7 @@ class TestTimeout:
             transport=SSETransport(sse_server),
             timeout=2,
         ) as client:
-            with pytest.raises(McpError, match="Timed out"):
+            with pytest.raises(MCPError, match="timed out"):
                 await client.call_tool("sleep", {"seconds": 0.1}, timeout=0.03)
 
     async def test_timeout_client_timeout_does_not_override_tool_call_timeout_if_lower(

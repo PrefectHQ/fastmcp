@@ -15,12 +15,17 @@ from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.stores.memory import MemoryStore
 from mcp.server.streamable_http import EventCallback, EventId, EventMessage, StreamId
 from mcp.server.streamable_http import EventStore as SDKEventStore
-from mcp.types import JSONRPCMessage
+from mcp_types import JSONRPCMessage
+from pydantic import TypeAdapter
 
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import FastMCPBaseModel
 
 logger = get_logger(__name__)
+
+# In the v2 SDK `JSONRPCMessage` is a bare union (no `.model_validate`); use a
+# TypeAdapter to validate a stored dict back into the correct member.
+_jsonrpc_message_adapter: TypeAdapter[JSONRPCMessage] = TypeAdapter(JSONRPCMessage)
 
 
 class EventEntry(FastMCPBaseModel):
@@ -35,6 +40,58 @@ class StreamEventList(FastMCPBaseModel):
     """List of event IDs for a stream."""
 
     event_ids: list[str]
+
+
+class SessionScopedEventStore(SDKEventStore):
+    """EventStore adapter that isolates stream IDs to one transport session."""
+
+    def __init__(self, event_store: SDKEventStore, session_id: str):
+        self._event_store = event_store
+        self._stream_prefix = f"{len(session_id)}:{session_id}:"
+
+    def _scope_stream_id(self, stream_id: StreamId) -> StreamId:
+        return f"{self._stream_prefix}{stream_id}"
+
+    def _unscope_stream_id(self, stream_id: StreamId) -> StreamId | None:
+        if not stream_id.startswith(self._stream_prefix):
+            return None
+        return stream_id[len(self._stream_prefix) :]
+
+    async def store_event(
+        self, stream_id: StreamId, message: JSONRPCMessage | None
+    ) -> EventId:
+        return await self._event_store.store_event(
+            self._scope_stream_id(stream_id), message
+        )
+
+    async def replay_events_after(
+        self,
+        last_event_id: EventId,
+        send_callback: EventCallback,
+    ) -> StreamId | None:
+        replayed_events: list[EventMessage] = []
+
+        async def buffer_event(event: EventMessage) -> None:
+            replayed_events.append(event)
+
+        scoped_stream_id = await self._event_store.replay_events_after(
+            last_event_id, buffer_event
+        )
+        if scoped_stream_id is None:
+            return None
+
+        stream_id = self._unscope_stream_id(scoped_stream_id)
+        if stream_id is None:
+            logger.warning(
+                "Event ID %s does not belong to this session-scoped event store",
+                last_event_id,
+            )
+            return None
+
+        for event in replayed_events:
+            await send_callback(event)
+
+        return stream_id
 
 
 class EventStore(SDKEventStore):
@@ -109,7 +166,7 @@ class EventStore(SDKEventStore):
         entry = EventEntry(
             event_id=event_id,
             stream_id=stream_id,
-            message=message.model_dump(mode="json") if message else None,
+            message=message.model_dump(mode="json", by_alias=True) if message else None,
         )
         await self._event_store.put(key=event_id, value=entry, ttl=self._ttl)
 
@@ -171,7 +228,7 @@ class EventStore(SDKEventStore):
         for event_id in event_ids[start_idx:]:
             event = await self._event_store.get(key=event_id)
             if event and event.message:
-                msg = JSONRPCMessage.model_validate(event.message)
+                msg = _jsonrpc_message_adapter.validate_python(event.message)
                 await send_callback(EventMessage(msg, event.event_id))
 
         return stream_id

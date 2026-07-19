@@ -1,5 +1,5 @@
 import pytest
-from mcp.types import CreateMessageResultWithTools, TextContent, ToolUseContent
+from mcp_types import CreateMessageResultWithTools, TextContent, ToolUseContent
 
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.sampling import RequestContext, SamplingMessage, SamplingParams
@@ -10,7 +10,7 @@ class TestSamplingResultType:
 
     async def test_result_type_creates_final_response_tool(self):
         """Test that result_type creates a synthetic final_response tool."""
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
         from pydantic import BaseModel
 
         class MathResult(BaseModel):
@@ -36,7 +36,7 @@ class TestSamplingResultType:
                     )
                 ],
                 model="test-model",
-                stopReason="toolUse",
+                stop_reason="toolUse",
             )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -63,7 +63,7 @@ class TestSamplingResultType:
 
     async def test_result_type_with_user_tools(self):
         """Test result_type works alongside user-provided tools."""
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
         from pydantic import BaseModel
 
         class SearchResult(BaseModel):
@@ -96,7 +96,7 @@ class TestSamplingResultType:
                         )
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 # Second call: call final_response
@@ -115,7 +115,7 @@ class TestSamplingResultType:
                         )
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -138,7 +138,7 @@ class TestSamplingResultType:
 
     async def test_result_type_validation_error_retries(self):
         """Test that validation errors are sent back to LLM for retry."""
-        from mcp.types import (
+        from mcp_types import (
             CreateMessageResultWithTools,
             ToolResultContent,
             ToolUseContent,
@@ -168,7 +168,7 @@ class TestSamplingResultType:
                         )
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 # Second call: valid type after seeing error
@@ -183,7 +183,7 @@ class TestSamplingResultType:
                         )
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -218,7 +218,7 @@ class TestSamplingResultType:
                 tool_result = msg.content
                 break
         assert tool_result is not None
-        assert tool_result.isError is True
+        assert tool_result.is_error is True
         assert isinstance(tool_result.content[0], TextContent)
         error_text = tool_result.content[0].text
         assert "Validation error" in error_text
@@ -228,7 +228,7 @@ class TestSamplingResultType:
 
     async def test_sampling_result_has_text_and_history(self):
         """Test that SamplingResult has text, result, and history attributes."""
-        from mcp.types import CreateMessageResultWithTools
+        from mcp_types import CreateMessageResultWithTools
 
         def sampling_handler(
             messages: list[SamplingMessage], params: SamplingParams, ctx: RequestContext
@@ -237,7 +237,7 @@ class TestSamplingResultType:
                 role="assistant",
                 content=[TextContent(type="text", text="Hello world")],
                 model="test-model",
-                stopReason="endTurn",
+                stop_reason="endTurn",
             )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -262,7 +262,7 @@ class TestSampleStep:
 
     async def test_sample_step_basic(self):
         """Test basic sample_step returns text response."""
-        from mcp.types import CreateMessageResultWithTools
+        from mcp_types import CreateMessageResultWithTools
 
         def sampling_handler(
             messages: list[SamplingMessage], params: SamplingParams, ctx: RequestContext
@@ -271,7 +271,7 @@ class TestSampleStep:
                 role="assistant",
                 content=[TextContent(type="text", text="Hello from step")],
                 model="test-model",
-                stopReason="endTurn",
+                stop_reason="endTurn",
             )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -290,7 +290,7 @@ class TestSampleStep:
 
     async def test_sample_step_with_tool_execution(self):
         """Test sample_step executes tools by default."""
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
         call_count = 0
 
@@ -316,14 +316,14 @@ class TestSampleStep:
                         )
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Done")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -349,7 +349,7 @@ class TestSampleStep:
 
     async def test_sample_step_execute_tools_false(self):
         """Test sample_step with execute_tools=False doesn't execute tools."""
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
         tool_executed = False
 
@@ -373,7 +373,7 @@ class TestSampleStep:
                     )
                 ],
                 model="test-model",
-                stopReason="toolUse",
+                stop_reason="toolUse",
             )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -400,7 +400,7 @@ class TestSampleStep:
 
     async def test_sample_step_history_includes_assistant_message(self):
         """Test that history includes assistant message when execute_tools=False."""
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
         def sampling_handler(
             messages: list[SamplingMessage], params: SamplingParams, ctx: RequestContext
@@ -416,7 +416,7 @@ class TestSampleStep:
                     )
                 ],
                 model="test-model",
-                stopReason="toolUse",
+                stop_reason="toolUse",
             )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -448,18 +448,18 @@ class TestTextResponseRetry:
 
     @staticmethod
     def _text_reply(text: str = "some text"):
-        from mcp.types import CreateMessageResultWithTools
+        from mcp_types import CreateMessageResultWithTools
 
         return CreateMessageResultWithTools(
             role="assistant",
             content=[TextContent(type="text", text=text)],
             model="m",
-            stopReason="endTurn",
+            stop_reason="endTurn",
         )
 
     @staticmethod
     def _tool_reply(value: int):
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
         return CreateMessageResultWithTools(
             role="assistant",
@@ -472,7 +472,7 @@ class TestTextResponseRetry:
                 )
             ],
             model="m",
-            stopReason="toolUse",
+            stop_reason="toolUse",
         )
 
     async def test_text_response_then_success(self):
@@ -562,7 +562,7 @@ def _final_response(call_id: str, input_data: dict) -> CreateMessageResultWithTo
             )
         ],
         model="test-model",
-        stopReason="toolUse",
+        stop_reason="toolUse",
     )
 
 
@@ -576,7 +576,7 @@ def _tool_call(
             ToolUseContent(type="tool_use", id=call_id, name=name, input=input_data)
         ],
         model="test-model",
-        stopReason="toolUse",
+        stop_reason="toolUse",
     )
 
 

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 import anyio
-import mcp.types
+import mcp_types
 
 from fastmcp.client.messages import MessageHandler
 from fastmcp.server.context import Context
@@ -16,7 +16,7 @@ class NotificationRecording:
     """Record of a notification that was received."""
 
     method: str
-    notification: mcp.types.ServerNotification
+    notification: mcp_types.ServerNotification
     timestamp: datetime = field(default_factory=datetime.now)
 
 
@@ -27,10 +27,11 @@ class RecordingMessageHandler(MessageHandler):
         super().__init__()
         self.notifications: list[NotificationRecording] = []
 
-    async def on_notification(self, message: mcp.types.ServerNotification) -> None:
+    async def on_notification(self, message: mcp_types.ServerNotification) -> None:
         """Record all notifications with timestamp."""
+        # SDK v2 delivers notifications unwrapped (no `.root` wrapper).
         self.notifications.append(
-            NotificationRecording(method=message.root.method, notification=message)
+            NotificationRecording(method=message.method, notification=message)
         )
 
     def get_notifications(

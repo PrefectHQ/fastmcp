@@ -60,7 +60,8 @@ def _extract_searchable_text(tool: Tool) -> str:
 def serialize_tools_for_output_json(tools: Sequence[Tool]) -> list[dict[str, Any]]:
     """Serialize tools to the same dict format as ``list_tools`` output."""
     return [
-        tool.to_mcp_tool().model_dump(mode="json", exclude_none=True) for tool in tools
+        tool.to_mcp_tool().model_dump(mode="json", by_alias=True, exclude_none=True)
+        for tool in tools
     ]
 
 

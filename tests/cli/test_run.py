@@ -5,6 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from pydantic import ValidationError
@@ -295,14 +296,14 @@ class TestV1ServerAsync:
         """Test that v1 server uses async stdio method."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as SDKServer
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 
@@ -319,7 +320,7 @@ async def async_echo(text: str) -> str:
 
         # Mock the async run method
         with patch.object(
-            FastMCP1x, "run_stdio_async", new_callable=AsyncMock
+            SDKServer, "run_stdio_async", new_callable=AsyncMock
         ) as run_mock:
             await run_command(str(test_file), transport="stdio")
             run_mock.assert_called_once()
@@ -328,14 +329,14 @@ async def async_echo(text: str) -> str:
         """Test that v1 server uses async http method."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as SDKServer
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 
@@ -352,7 +353,7 @@ async def async_echo(text: str) -> str:
 
         # Mock the async run method
         with patch.object(
-            FastMCP1x, "run_streamable_http_async", new_callable=AsyncMock
+            SDKServer, "run_streamable_http_async", new_callable=AsyncMock
         ) as run_mock:
             await run_command(str(test_file), transport="http")
             run_mock.assert_called_once()
@@ -361,14 +362,14 @@ async def async_echo(text: str) -> str:
         """Test that v1 server uses async streamable-http method."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as SDKServer
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 
@@ -385,7 +386,7 @@ async def async_echo(text: str) -> str:
 
         # Mock the async run method
         with patch.object(
-            FastMCP1x, "run_streamable_http_async", new_callable=AsyncMock
+            SDKServer, "run_streamable_http_async", new_callable=AsyncMock
         ) as run_mock:
             await run_command(str(test_file), transport="streamable-http")
             run_mock.assert_called_once()
@@ -394,14 +395,14 @@ async def async_echo(text: str) -> str:
         """Test that v1 server uses async sse method."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as SDKServer
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 
@@ -418,7 +419,7 @@ async def async_echo(text: str) -> str:
 
         # Mock the async run method
         with patch.object(
-            FastMCP1x, "run_sse_async", new_callable=AsyncMock
+            SDKServer, "run_sse_async", new_callable=AsyncMock
         ) as run_mock:
             await run_command(str(test_file), transport="sse")
             run_mock.assert_called_once()
@@ -427,14 +428,14 @@ async def async_echo(text: str) -> str:
         """Test that v1 server uses streamable-http by default."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as SDKServer
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 
@@ -451,7 +452,7 @@ async def async_echo(text: str) -> str:
 
         # Mock the async run method
         with patch.object(
-            FastMCP1x, "run_streamable_http_async", new_callable=AsyncMock
+            SDKServer, "run_streamable_http_async", new_callable=AsyncMock
         ) as run_mock:
             await run_command(str(test_file))
             run_mock.assert_called_once()
@@ -460,14 +461,14 @@ async def async_echo(text: str) -> str:
         """Test that v1 server receives host/port settings."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as SDKServer
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 
@@ -484,7 +485,7 @@ async def async_echo(text: str) -> str:
 
         # Mock the async run method
         with patch.object(
-            FastMCP1x, "run_streamable_http_async", new_callable=AsyncMock
+            SDKServer, "run_streamable_http_async", new_callable=AsyncMock
         ) as run_mock:
             await run_command(
                 str(test_file), transport="http", host="0.0.0.0", port=9000
@@ -1033,6 +1034,77 @@ class TestInspectorModuleMode:
 
 class TestRunDevApps:
     """Test running dev apps with the run command."""
+
+    def test_launch_escapes_tool_name_in_html_contexts(self):
+        """Test /launch escapes the tool query parameter in HTML sinks."""
+        starlette_app = _make_dev_app(
+            mcp_url="http://127.0.0.1:8000/mcp",
+            app_bridge_js="// js",
+            import_map_tag="",
+            message_log=_MessageLog(),
+            log_panel=False,
+        )
+        client = TestClient(starlette_app, raise_server_exceptions=False)
+
+        payload = "</title><script>alert(1)</script><img src=x onerror=alert(2)>"
+        response = client.get("/launch", params={"tool": payload, "args": "{}"})
+
+        assert response.status_code == 200
+        assert payload not in response.text
+        assert (
+            "&lt;/title&gt;&lt;script&gt;alert(1)&lt;/script&gt;"
+            "&lt;img src=x onerror=alert(2)&gt;"
+        ) in response.text
+        assert "\\u003c/script\\u003e" in response.text
+
+    def test_launch_serializes_args_safely_inside_script(self):
+        """Test /launch escapes argument values embedded in the script element."""
+        starlette_app = _make_dev_app(
+            mcp_url="http://127.0.0.1:8000/mcp",
+            app_bridge_js="// js",
+            import_map_tag="",
+            message_log=_MessageLog(),
+            log_panel=False,
+        )
+        client = TestClient(starlette_app, raise_server_exceptions=False)
+
+        payload = {"name": "</script><script>alert(1)</script>&"}
+        response = client.get(
+            "/launch",
+            params={"tool": "safe_tool", "args": json.dumps(payload)},
+        )
+
+        assert response.status_code == 200
+        assert json.dumps(payload) not in response.text
+        assert (
+            '"\\u003c/script\\u003e\\u003cscript\\u003ealert(1)'
+            '\\u003c/script\\u003e\\u0026"'
+        ) in response.text
+
+    def test_api_launch_encodes_generated_launch_url(self):
+        """Test /api/launch encodes query parameters in the returned URL."""
+        starlette_app = _make_dev_app(
+            mcp_url="http://127.0.0.1:8000/mcp",
+            app_bridge_js="// js",
+            import_map_tag="",
+            message_log=_MessageLog(),
+            log_panel=False,
+        )
+        client = TestClient(starlette_app, raise_server_exceptions=False)
+
+        response = client.post(
+            "/api/launch",
+            json={
+                "tool": "tool&name=<script>",
+                "__json_args__": '{"value": "</script>"}',
+            },
+        )
+
+        assert response.status_code == 200
+        url = response.json()
+        query = parse_qs(urlsplit(url).query)
+        assert query["tool"] == ["tool&name=<script>"]
+        assert json.loads(query["args"][0]) == {"value": "</script>"}
 
     @pytest.mark.parametrize(
         "host, expected_host",

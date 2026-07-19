@@ -93,7 +93,9 @@ class TestCIMDDocument:
     def test_missing_redirect_uris_rejected(self):
         """Test that redirect_uris is required for CIMD."""
         with pytest.raises(ValidationError) as exc_info:
-            CIMDDocument(client_id=AnyHttpUrl("https://example.com/client.json"))
+            CIMDDocument.model_validate(
+                {"client_id": "https://example.com/client.json"}
+            )
         assert "redirect_uris" in str(exc_info.value)
 
     def test_empty_redirect_uris_rejected(self):

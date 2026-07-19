@@ -34,7 +34,7 @@ def analyze(data: str) -> dict:
 # ... many more tools, resources, prompts
 ```
 
-When `list_page_size` is configured, the `tools/list`, `resources/list`, `resources/templates/list`, and `prompts/list` endpoints all paginate their responses. Each response includes a `nextCursor` field when more results exist, which clients use to fetch subsequent pages.
+When `list_page_size` is configured, the `tools/list`, `resources/list`, `resources/templates/list`, and `prompts/list` endpoints all paginate their responses. Each response includes a `next_cursor` field when more results exist, which clients use to fetch subsequent pages.
 
 ### Cursor Format
 
@@ -66,12 +66,12 @@ async with Client(server) as client:
     print(f"Page 1: {len(result.tools)} tools")
 
     # Continue fetching while more pages exist
-    while result.nextCursor:
-        result = await client.list_tools_mcp(cursor=result.nextCursor)
+    while result.next_cursor:
+        result = await client.list_tools_mcp(cursor=result.next_cursor)
         print(f"Next page: {len(result.tools)} tools")
 ```
 
-The `_mcp` methods return the raw MCP protocol objects, which include both the items and the `nextCursor` for the next page. When `nextCursor` is `None`, you've reached the end of the result set.
+The `_mcp` methods return the raw MCP protocol objects, which include both the items and the `next_cursor` for the next page. When `next_cursor` is `None`, you've reached the end of the result set.
 
 All four list operations support manual pagination:
 
