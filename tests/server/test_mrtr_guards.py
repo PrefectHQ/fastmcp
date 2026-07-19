@@ -31,25 +31,36 @@ from fastmcp.utilities.tests import run_server_async
 
 def _elicit(key: str, message: str, field: str) -> ElicitRequest:
     """A single-field form elicitation request keyed by ``key``."""
-    return ElicitRequest(
-        method="elicitation/create",
-        params={
-            "message": message,
-            "requestedSchema": {
-                "type": "object",
-                "properties": {field: {"type": "string"}},
-                "required": [field],
-            },
+    params = mcp_types.ElicitRequestFormParams(
+        message=message,
+        requested_schema={
+            "type": "object",
+            "properties": {field: {"type": "string"}},
+            "required": [field],
         },
     )
+    return ElicitRequest(method="elicitation/create", params=params)
 
 
 def _ask(request: ElicitRequest, key: str, request_state: str | None) -> InputRequiredResult:
     return InputRequiredResult(
-        resultType="input_required",
-        inputRequests={key: request},
-        requestState=request_state,
+        result_type="input_required",
+        input_requests={key: request},
+        request_state=request_state,
     )
+
+
+def _accepted(responses: mcp_types.InputResponses, key: str) -> dict[str, object]:
+    """The accepted form content for one answered elicitation.
+
+    ``ctx.input_responses`` values are the raw SDK union
+    (``ElicitResult | CreateMessageResult | ListRootsResult``); a guard tool
+    narrows to the response type it asked for.
+    """
+    answer = responses[key]
+    assert isinstance(answer, mcp_types.ElicitResult)
+    assert answer.content is not None
+    return dict(answer.content)
 
 
 def two_question_server(**server_kwargs) -> FastMCP:
@@ -73,7 +84,7 @@ def two_question_server(**server_kwargs) -> FastMCP:
                 request_state=None,
             )
         if "destination" in responses:
-            destination = responses["destination"].content["destination"]
+            destination = _accepted(responses, "destination")["destination"]
             return _ask(
                 _elicit("date", f"When to {destination}?", "date"),
                 "date",
@@ -81,7 +92,7 @@ def two_question_server(**server_kwargs) -> FastMCP:
             )
         assert ctx.request_state is not None
         destination = ctx.request_state.split("=", 1)[1]
-        date = responses["date"].content["date"]
+        date = _accepted(responses, "date")["date"]
         return f"Booked {destination} on {date}"
 
     return mcp
@@ -125,6 +136,31 @@ class TestContextProperties:
             assert ctx.request_state is None
 
 
+class TestOutputSchema:
+    """An `InputRequiredResult` return arm is control flow, not output data, so
+    it is stripped from output-schema derivation."""
+
+    def test_union_arm_stripped_keeps_data_schema(self):
+        from fastmcp.tools.function_tool import FunctionTool
+
+        def book(x: int) -> str | InputRequiredResult:
+            return "ok"
+
+        tool = FunctionTool.from_function(book)
+        assert tool.output_schema is not None
+        # Schema is derived from the residual `str` arm (wrapped as {"result": ...}).
+        assert tool.output_schema.get("x-fastmcp-wrap-result") is True
+
+    def test_bare_input_required_return_suppresses_schema(self):
+        from fastmcp.tools.function_tool import FunctionTool
+
+        def suspend_only(x: int) -> InputRequiredResult:
+            raise NotImplementedError
+
+        tool = FunctionTool.from_function(suspend_only)
+        assert tool.output_schema is None
+
+
 class TestInMemoryLoop:
     async def test_two_question_loop_completes(self):
         """Two dependent asks complete over the in-memory transport; the
@@ -145,12 +181,13 @@ class TestInMemoryLoop:
         mcp = FastMCP("echo")
 
         @mcp.tool
-        async def ask_once(ctx: Context) -> str:
+        async def ask_once(ctx: Context) -> str | InputRequiredResult:
             responses = ctx.input_responses
             if responses is None:
                 return _ask(_elicit("name", "Your name?", "name"), "name", None)
-            seen.append(responses["name"].content)
-            return f"Hi {responses['name'].content['name']}"
+            content = _accepted(responses, "name")
+            seen.append(content)
+            return f"Hi {content['name']}"
 
         async def handler(message, response_type, params, ctx):
             return ElicitResult(action="accept", content=response_type(name="Ada"))
@@ -167,11 +204,12 @@ class TestInMemoryLoop:
         mcp = FastMCP("decline")
 
         @mcp.tool
-        async def ask(ctx: Context) -> str:
+        async def ask(ctx: Context) -> str | InputRequiredResult:
             responses = ctx.input_responses
             if responses is None:
                 return _ask(_elicit("x", "q", "x"), "x", None)
             answer = responses["x"]
+            assert isinstance(answer, mcp_types.ElicitResult)
             return f"action={answer.action} content={answer.content}"
 
         async def decline_handler(message, response_type, params, ctx):
@@ -236,7 +274,7 @@ class TestRequestStateSealing:
         mcp = FastMCP("seal")
 
         @mcp.tool
-        async def guard(ctx: Context) -> str:
+        async def guard(ctx: Context) -> str | InputRequiredResult:
             if ctx.input_responses is None:
                 return _ask(_elicit("x", "q", "x"), "x", request_state="PLAINTEXT-STATE")
             return f"state={ctx.request_state}"
@@ -320,7 +358,7 @@ class TestRequestStateSecurityConfig:
         )
 
         @mcp.tool
-        async def guard(ctx: Context) -> str:
+        async def guard(ctx: Context) -> str | InputRequiredResult:
             if ctx.input_responses is None:
                 return _ask(_elicit("x", "q", "x"), "x", request_state="carried")
             return f"state={ctx.request_state}"

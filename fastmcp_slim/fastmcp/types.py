@@ -47,6 +47,9 @@ from mcp_types import (
     ElicitRequest as ElicitRequest,
 )
 from mcp_types import (
+    ElicitRequestFormParams as ElicitRequestFormParams,
+)
+from mcp_types import (
     EmbeddedResource as EmbeddedResource,
 )
 from mcp_types import (
@@ -124,6 +127,7 @@ __all__ = [
     "ContentBlock",
     "CreateMessageResult",
     "ElicitRequest",
+    "ElicitRequestFormParams",
     "EmbeddedResource",
     "ErrorData",
     "GetPromptResult",

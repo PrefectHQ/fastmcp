@@ -339,6 +339,9 @@ class ParsedFunction:
                         mcp_types.AudioContent,
                         mcp_types.ResourceLink,
                         mcp_types.EmbeddedResource,
+                        # A guard tool's suspend signal is control flow, not
+                        # output data (any residual bare arm is suppressed).
+                        mcp_types.InputRequiredResult,
                         *_PREFAB_TYPES,
                     ),
                     _UnserializableType,
