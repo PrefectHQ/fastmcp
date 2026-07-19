@@ -8,6 +8,7 @@ from mcp_types import TextContent
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.client.transports.base import TransportOptions
 
 
 class TestSessionTaskErrorPropagation:
@@ -158,7 +159,9 @@ class TestCustomSessionClass:
             return "pong"
 
         client = Client(server)
-        client.transport.session_class = RecordingClientSession
+        client._session_kwargs["transport_options"] = TransportOptions(
+            session_class=RecordingClientSession
+        )
         async with client:
             await client.call_tool("ping")
 
@@ -172,7 +175,7 @@ class TestCustomSessionClass:
             return "pong"
 
         client = Client(server)
-        assert client.transport.session_class is ClientSession
+        assert TransportOptions().session_class is ClientSession
         async with client:
             result = await client.call_tool("ping")
 

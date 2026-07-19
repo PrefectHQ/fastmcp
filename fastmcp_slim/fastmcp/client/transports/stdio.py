@@ -12,7 +12,11 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from typing_extensions import Unpack
 
-from fastmcp.client.transports.base import ClientTransport, SessionKwargs
+from fastmcp.client.transports.base import (
+    ClientTransport,
+    SessionKwargs,
+    pop_transport_options,
+)
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -105,7 +109,6 @@ class StdioTransport(ClientTransport):
                 log_file=self.log_file,
                 # TODO(ty): remove when ty supports Unpack[TypedDict] inference
                 session_kwargs=session_kwargs,  # type: ignore[arg-type]
-                session_class=self.session_class,
                 ready_event=self._ready_event,
                 stop_event=self._stop_event,
                 session_future=session_future,
@@ -182,13 +185,14 @@ async def _stdio_transport_connect_task(
     cwd: str | None,
     log_file: Path | TextIO | None,
     session_kwargs: SessionKwargs,
-    session_class: type[ClientSession],
     ready_event: anyio.Event,
     stop_event: anyio.Event,
     session_future: asyncio.Future[ClientSession],
 ):
     """A standalone connection task for a stdio transport. It is not a part of the StdioTransport class
     to ensure that the connection task does not hold a reference to the Transport object."""
+
+    options, client_session_kwargs = pop_transport_options(session_kwargs)
 
     try:
         async with contextlib.AsyncExitStack() as stack:
@@ -214,7 +218,9 @@ async def _stdio_transport_connect_task(
                 read_stream, write_stream = transport
                 session_future.set_result(
                     await stack.enter_async_context(
-                        session_class(read_stream, write_stream, **session_kwargs)
+                        options.session_class(
+                            read_stream, write_stream, **client_session_kwargs
+                        )
                     )
                 )
 

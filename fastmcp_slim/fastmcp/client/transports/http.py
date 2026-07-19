@@ -17,7 +17,11 @@ from typing_extensions import Unpack
 from fastmcp.client.auth.bearer import BearerAuth
 from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.dependencies import get_http_headers
-from fastmcp.client.transports.base import ClientTransport, SessionKwargs
+from fastmcp.client.transports.base import (
+    ClientTransport,
+    SessionKwargs,
+    pop_transport_options,
+)
 
 
 class StreamableHttpTransport(ClientTransport):
@@ -73,8 +77,6 @@ class StreamableHttpTransport(ClientTransport):
             )
 
         self._set_auth(auth)
-
-        self.forward_incoming_headers: bool = False
 
         # SDK v2's streamable_http_client no longer exposes a get_session_id
         # callback. We recover the session id ourselves by capturing the
@@ -145,11 +147,13 @@ class StreamableHttpTransport(ClientTransport):
     async def connect_session(
         self, **session_kwargs: Unpack[SessionKwargs]
     ) -> AsyncIterator[ClientSession]:
+        options, client_session_kwargs = pop_transport_options(session_kwargs)
+
         # When used in a proxy, forward the inbound request's authorization
         # header to the upstream server. This is off by default so that a
         # plain Client used inside a server tool handler doesn't accidentally
         # leak the caller's credentials to an unrelated remote server.
-        if self.forward_incoming_headers:
+        if options.forward_incoming_headers:
             headers = get_http_headers(include={"authorization"}) | self.headers
         else:
             headers = dict(self.headers)
@@ -202,7 +206,9 @@ class StreamableHttpTransport(ClientTransport):
                 read_stream,
                 write_stream,
             ),
-            self.session_class(read_stream, write_stream, **session_kwargs) as session,
+            options.session_class(
+                read_stream, write_stream, **client_session_kwargs
+            ) as session,
         ):
             yield session
 

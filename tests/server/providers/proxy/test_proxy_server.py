@@ -15,15 +15,16 @@ from pydantic import AnyUrl
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport, StreamableHttpTransport
+from fastmcp.client.transports.base import TransportOptions
 from fastmcp.exceptions import ToolError
 from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.server import create_proxy
 from fastmcp.server.middleware import Middleware
 from fastmcp.server.providers.proxy import (
     FastMCPProxy,
-    ForwardingClientSession,
     ProxyClient,
     ProxyProvider,
+    _ForwardingClientSession,
 )
 from fastmcp.tools.base import ToolResult
 from fastmcp.tools.tool_transform import (
@@ -1187,7 +1188,9 @@ class TestProxyOutputSchemaEnforcement:
     async def _call_without_validating(self, server: FastMCP, tool: str):
         """Call through a client that does not enforce the schema itself."""
         client = Client(server)
-        client.transport.session_class = ForwardingClientSession
+        client._session_kwargs["transport_options"] = TransportOptions(
+            session_class=_ForwardingClientSession
+        )
         async with client:
             return await client.call_tool_mcp(tool, {})
 
@@ -1280,3 +1283,44 @@ class TestProxyOutputSchemaEnforcement:
 
         assert counts["call"] == 4
         assert counts["list"] == lists_after_first
+
+
+class TestProxySettingsAreNotSharedBetweenClients:
+    """Proxy connection settings belong to the client, not to the transport.
+
+    Configuring a shared transport in place used to leak proxy behavior into
+    unrelated clients — including header forwarding, which would send the
+    caller's credentials to a server the user never meant to authorize.
+    """
+
+    def test_building_a_proxy_client_does_not_reconfigure_a_shared_transport(self):
+        shared = StreamableHttpTransport("http://example.com/mcp/")
+        plain = Client(shared)
+
+        ProxyClient(shared)
+
+        assert plain._session_kwargs.get("transport_options") is None
+
+    def test_proxy_client_carries_its_own_options(self):
+        proxy_client = ProxyClient(StreamableHttpTransport("http://example.com/mcp/"))
+
+        options = proxy_client._session_kwargs.get("transport_options")
+        assert options is not None
+        assert options.forward_incoming_headers is True
+        assert options.session_class is _ForwardingClientSession
+
+    def test_options_survive_the_per_request_client_copy(self):
+        """The proxy builds a fresh client per request via `new()`."""
+        proxy_client = ProxyClient(StreamableHttpTransport("http://example.com/mcp/"))
+
+        assert proxy_client.new()._session_kwargs.get(
+            "transport_options"
+        ) is proxy_client._session_kwargs.get("transport_options")
+
+    def test_a_user_supplied_client_is_not_reconfigured(self):
+        """`create_proxy(client)` must not change how the caller's client behaves."""
+        user_client = Client(StreamableHttpTransport("http://example.com/mcp/"))
+
+        create_proxy(user_client)
+
+        assert user_client._session_kwargs.get("transport_options") is None

@@ -18,7 +18,11 @@ from typing_extensions import Unpack
 from fastmcp.client.auth.bearer import BearerAuth
 from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.dependencies import get_http_headers
-from fastmcp.client.transports.base import ClientTransport, SessionKwargs
+from fastmcp.client.transports.base import (
+    ClientTransport,
+    SessionKwargs,
+    pop_transport_options,
+)
 from fastmcp.utilities.timeout import normalize_timeout_to_timedelta
 
 
@@ -60,8 +64,6 @@ class SSETransport(ClientTransport):
             )
 
         self._set_auth(auth)
-
-        self.forward_incoming_headers: bool = False
 
         self.sse_read_timeout = normalize_timeout_to_timedelta(sse_read_timeout)
 
@@ -117,13 +119,14 @@ class SSETransport(ClientTransport):
     async def connect_session(
         self, **session_kwargs: Unpack[SessionKwargs]
     ) -> AsyncIterator[ClientSession]:
+        options, client_session_kwargs = pop_transport_options(session_kwargs)
         client_kwargs: dict[str, Any] = {}
 
         # When used in a proxy, forward the inbound request's authorization
         # header to the upstream server. This is off by default so that a
         # plain Client used inside a server tool handler doesn't accidentally
         # leak the caller's credentials to an unrelated remote server.
-        if self.forward_incoming_headers:
+        if options.forward_incoming_headers:
             client_kwargs["headers"] = (
                 get_http_headers(include={"authorization"}) | self.headers
             )
@@ -149,8 +152,8 @@ class SSETransport(ClientTransport):
 
         async with sse_client(self.url, auth=self.auth, **client_kwargs) as transport:
             read_stream, write_stream = transport
-            async with self.session_class(
-                read_stream, write_stream, **session_kwargs
+            async with options.session_class(
+                read_stream, write_stream, **client_session_kwargs
             ) as session:
                 yield session
 

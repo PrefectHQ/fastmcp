@@ -1,7 +1,8 @@
 import abc
 import contextlib
 from collections.abc import AsyncIterator, Sequence
-from typing import Any, Literal, TypeVar
+from dataclasses import dataclass
+from typing import Any, Literal, TypeVar, cast
 
 import httpx2
 import mcp_types
@@ -20,7 +21,7 @@ from typing_extensions import TypedDict, Unpack
 ClientTransportT = TypeVar("ClientTransportT", bound="ClientTransport")
 
 
-class SessionKwargs(TypedDict, total=False):
+class ClientSessionKwargs(TypedDict, total=False):
     """Keyword arguments for the MCP ClientSession constructor."""
 
     read_timeout_seconds: float | None
@@ -34,6 +35,49 @@ class SessionKwargs(TypedDict, total=False):
     notification_bindings: Sequence[NotificationBinding[Any]] | None
 
 
+@dataclass(frozen=True)
+class TransportOptions:
+    """How one client wants its connection built.
+
+    These belong to the client rather than to the transport, so a transport
+    shared between clients doesn't leak one client's settings to another.
+
+    Attributes:
+        session_class: The ClientSession class to instantiate. Proxies supply a
+            session that skips output-schema validation, since they relay
+            results rather than consume them.
+        forward_incoming_headers: Whether to forward the inbound request's
+            authorization header upstream. Only appropriate for proxies, where
+            the caller's credentials are meant to be propagated. Honored by the
+            HTTP and SSE transports; ignored by the others.
+    """
+
+    session_class: type[ClientSession] = ClientSession
+    forward_incoming_headers: bool = False
+
+
+class SessionKwargs(ClientSessionKwargs, total=False):
+    """Session settings a client hands to its transport.
+
+    ``transport_options`` is consumed by the transport rather than forwarded to
+    the session constructor; see `pop_transport_options`.
+    """
+
+    transport_options: TransportOptions | None
+
+
+def pop_transport_options(
+    session_kwargs: SessionKwargs,
+) -> tuple[TransportOptions, ClientSessionKwargs]:
+    """Split the transport's own options off from the constructor kwargs.
+
+    Transports call this before building a session so the remaining kwargs can
+    be splatted into the constructor.
+    """
+    options = session_kwargs.pop("transport_options", None) or TransportOptions()
+    return options, cast(ClientSessionKwargs, session_kwargs)
+
+
 class ClientTransport(abc.ABC):
     """
     Abstract base class for different MCP client transport mechanisms.
@@ -42,11 +86,6 @@ class ClientTransport(abc.ABC):
     to an MCP server, and providing a ClientSession within an async context.
 
     """
-
-    # The ClientSession class this transport instantiates. Overridable per
-    # instance for callers that need modified session behavior — e.g. proxies
-    # set a session that skips output-schema validation (see ProxyClient).
-    session_class: type[ClientSession] = ClientSession
 
     @abc.abstractmethod
     @contextlib.asynccontextmanager
