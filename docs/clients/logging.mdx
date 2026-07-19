@@ -40,6 +40,12 @@ async def log_handler(message: LogMessage):
         msg = data
         extra = None
 
+    # Python's logging requires `extra` to be a mapping, but a server can send
+    # any JSON value, so fold anything else into the message instead.
+    if extra is not None and not isinstance(extra, dict):
+        msg = f"{msg} ({extra})"
+        extra = None
+
     level = LOGGING_LEVEL_MAP.get(message.level.upper(), logging.INFO)
     logger.log(level, msg, extra=extra)
 
