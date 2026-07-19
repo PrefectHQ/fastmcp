@@ -156,6 +156,10 @@ _AliasedAskArm = TypeAliasType("_AliasedAskArm", InputRequiredResult)
 _ComposedGuardArm = TypeAliasType("_ComposedGuardArm", int | InputRequiredResult)
 
 
+class _InputRequiredSubclass(InputRequiredResult):
+    """A user subclass of the guard result — still a control signal, not data."""
+
+
 class TestOutputSchema:
     """An `InputRequiredResult` return arm is control flow, not output data, so
     it is stripped from output-schema derivation."""
@@ -205,6 +209,18 @@ class TestOutputSchema:
 
         stripped = _strip_input_required(str | _ComposedGuardArm)
         assert set(_get_args(stripped)) == {str, int}
+
+    def test_bare_input_required_subclass_suppresses_schema(self):
+        """A bare `InputRequiredResult` *subclass* is subclass-aware suppressed,
+        matching `run()`'s isinstance handling, so no output schema is emitted
+        for data the client can never receive."""
+        from fastmcp.tools.function_tool import FunctionTool
+
+        def suspend_only(x: int) -> _InputRequiredSubclass:
+            raise NotImplementedError
+
+        tool = FunctionTool.from_function(suspend_only)
+        assert tool.output_schema is None
 
     def test_bare_input_required_return_suppresses_schema(self):
         from fastmcp.tools.function_tool import FunctionTool

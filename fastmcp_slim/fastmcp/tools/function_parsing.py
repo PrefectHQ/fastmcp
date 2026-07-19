@@ -391,6 +391,13 @@ class ParsedFunction:
             if is_class_member_of_type(output_type, ToolResult):
                 output_type = _UnserializableType
 
+            # A bare InputRequiredResult subclass is a guard signal, not output
+            # data — `run()` treats its instances as control results (isinstance
+            # is subclass-aware), so suppress its schema too (replace_type below
+            # only matches the exact class).
+            if is_class_member_of_type(output_type, mcp_types.InputRequiredResult):
+                output_type = _UnserializableType
+
             # there are a variety of types that we don't want to attempt to
             # serialize because they are either used by FastMCP internally,
             # or are MCP content types that explicitly don't form structured
