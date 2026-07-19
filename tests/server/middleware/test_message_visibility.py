@@ -294,11 +294,11 @@ class TestAskVisibility:
 
     async def test_hooks_fire_once_per_round_across_a_continuation(self):
         """The fires-once invariant holds across a continuation — the one place
-        seam dispatch and MRTR genuinely meet. Each round is its own complete
+        root dispatch and MRTR genuinely meet. Each round is its own complete
         request→response cycle, so answering the ask runs the chain a second
-        time in full rather than double-firing at the seam on either round."""
+        time in full rather than double-firing on either round."""
         server = _guard_server()
-        recorder = SeamRecorder()
+        recorder = HookRecorder()
         server.add_middleware(recorder)
 
         async with Client(server, mode="auto") as client:
