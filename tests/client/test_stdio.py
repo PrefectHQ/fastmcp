@@ -7,6 +7,7 @@ from pathlib import Path
 
 import psutil
 import pytest
+from mcp.shared.exceptions import MCPError
 
 from fastmcp import Client
 from fastmcp.client.transports import PythonStdioTransport, StdioTransport
@@ -446,11 +447,35 @@ class TestSubprocessCrashRecovery:
                     psutil.Process(pid1)
                     await asyncio.sleep(0.01)
 
-        # Recovery after clean exit
-        async with client:
-            result2 = await client.call_tool("pid")
-            pid2: int = result2.data
+        # Recovery after clean exit.
+        #
+        # The transport only notices a dead session once the SDK dispatcher's
+        # read loop has observed EOF on the subprocess's stdout and set its
+        # `_closed` flag (see `StdioTransport._is_session_dead`). The process
+        # being gone does not imply that detection has happened yet: EOF has to
+        # travel from the OS pipe through anyio's stream plumbing and then be
+        # picked up by a separate read-loop task. On a loaded machine — notably
+        # Windows CI running xdist workers on two cores — that can land after
+        # `connect()` samples the flag, so the first attempt is routed to the
+        # stale session and fails with CONNECTION_CLOSED, which in turn tears
+        # the session down so the next attempt reconnects.
+        #
+        # The crash tests above encode this same one-failure-then-recover
+        # contract explicitly with `pytest.raises`. Here the failure is
+        # timing-dependent rather than guaranteed, so retry once instead: the
+        # invariant under test is that a cleanly-exited server is replaced by a
+        # fresh subprocess, not how many attempts EOF detection costs.
+        pid2: int | None = None
+        for _ in range(2):
+            try:
+                async with client:
+                    result2 = await client.call_tool("pid")
+                    pid2 = result2.data
+                break
+            except (MCPError, RuntimeError):
+                continue
 
+        assert pid2 is not None, "Client did not recover after a clean subprocess exit"
         assert pid1 != pid2
 
     async def test_crash_during_initialization(self, tmp_path):
