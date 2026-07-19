@@ -217,7 +217,15 @@ class AuthorizationHandler(SDKAuthorizationHandler):
 
         if 300 <= response.status_code < 400 and "location" in response.headers:
             redirect_url = response.headers["location"]
-            if "error" in parse_qs(urlparse(redirect_url).query):
+            redirect_params = parse_qs(urlparse(redirect_url).query)
+            # RFC 9207: any client-facing authorization response — success
+            # (`code`) or error (`error`) — must carry `iss`. The base SDK
+            # handler's redirect target is normally `/consent` or the
+            # upstream IdP (neither carries `code`/`error`), but a provider
+            # can override `authorize()` to redirect straight back to the
+            # client (e.g. when consent/upstream is skipped entirely), so
+            # this must not be gated on "error" alone.
+            if "error" in redirect_params or "code" in redirect_params:
                 response.headers["location"] = add_query_params(
                     redirect_url, {"iss": self._issuer}
                 )

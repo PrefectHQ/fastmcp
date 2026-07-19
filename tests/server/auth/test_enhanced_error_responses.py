@@ -38,6 +38,19 @@ class _UnderScopedOAuthProxy(OAuthProxy):
         return AccessToken(token=token, client_id="test-client", scopes=["other"])
 
 
+class _DirectClientRedirectOAuthProxy(OAuthProxy):
+    """Proxy whose `authorize()` bypasses consent/upstream entirely and
+    redirects straight back to the client with a `code` — the pattern used
+    by providers (or tests) that short-circuit the standard
+    consent -> upstream IdP -> callback flow. OAuthProxy's own `authorize()`
+    never does this itself, but a subclass legitimately can, and
+    `AuthorizationHandler.handle()` must still attach `iss` to whatever
+    redirect comes back."""
+
+    async def authorize(self, client, params):  # type: ignore[override]
+        return f"{params.redirect_uri}?code=test-auth-code&state={params.state}"
+
+
 class TestEnhancedAuthorizationHandler:
     """Tests for enhanced authorization handler error responses."""
 
@@ -252,6 +265,69 @@ class TestEnhancedAuthorizationHandler:
             assert query_params["error"] == ["invalid_scope"]
             assert query_params["state"] == ["test-state"]
             assert query_params["iss"] == [metadata["issuer"]]
+
+    def test_success_redirect_from_authorize_override_includes_issuer(
+        self, rsa_key_pair
+    ):
+        """RFC 9207 regression: a `code` redirect returned directly by
+        `authorize()` (bypassing consent/upstream) must carry `iss` too, not
+        just `error` redirects.
+
+        `AuthorizationHandler.handle()` previously only attached `iss` when
+        the SDK's redirect contained an `error` parameter. The base
+        `OAuthProxy.authorize()` never redirects straight to the client, so
+        this gap was invisible until a provider override (or a test mock,
+        like the GitHub provider integration test) returned the client
+        redirect directly — at which point the server was advertising
+        `authorization_response_iss_parameter_supported: true` while
+        silently breaking RFC 9207-aware clients on this path.
+        """
+        oauth_proxy = _DirectClientRedirectOAuthProxy(
+            upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
+            upstream_token_endpoint="https://github.com/login/oauth/access_token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="test-client-secret",
+            token_verifier=JWTVerifier(
+                public_key=rsa_key_pair.public_key,
+                issuer="https://test.com",
+                audience="https://test.com",
+                base_url="https://test.com",
+            ),
+            base_url="https://myserver.com",
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+        )
+        app = Starlette(routes=oauth_proxy.get_routes())
+
+        client_info = OAuthClientInformationFull(
+            client_id="valid-client",
+            client_secret="valid-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+            scope="read",
+        )
+        asyncio.run(oauth_proxy.register_client(client_info))
+
+        with TestClient(app) as client:
+            metadata = client.get("/.well-known/oauth-authorization-server").json()
+            assert metadata["authorization_response_iss_parameter_supported"] is True
+
+            response = client.get(
+                "/authorize",
+                params={
+                    "client_id": "valid-client",
+                    "redirect_uri": "http://localhost:12345/callback",
+                    "response_type": "code",
+                    "code_challenge": "test-challenge",
+                    "state": "test-state",
+                },
+                follow_redirects=False,
+            )
+
+        assert response.status_code == 302
+        query_params = parse_qs(urlparse(response.headers["location"]).query)
+        assert query_params["code"] == ["test-auth-code"]
+        assert query_params["state"] == ["test-state"]
+        assert query_params["iss"] == [metadata["issuer"]]
 
     def test_html_error_includes_server_branding(self, oauth_proxy):
         """Test that HTML error page includes server branding from FastMCP instance."""
