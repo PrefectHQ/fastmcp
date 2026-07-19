@@ -89,6 +89,8 @@ def _strip_discriminator(obj: Any) -> Any:
     """
     if isinstance(obj, dict):
         skip = "discriminator" in obj and ("anyOf" in obj or "oneOf" in obj)
+        if skip:
+            obj = require_discriminator_property(obj)
         # Keys that hold instance data, not sub-schemas — don't recurse.
         _DATA_KEYS = {"default", "const", "examples", "enum"}
         return {
@@ -99,6 +101,47 @@ def _strip_discriminator(obj: Any) -> Any:
     if isinstance(obj, list):
         return [_strip_discriminator(item) for item in obj]
     return obj
+
+
+def _require_property(schema: dict[str, Any], property_name: str) -> dict[str, Any]:
+    """Return a copy of *schema* with *property_name* in ``required``."""
+    required = schema.get("required")
+    if required is None:
+        return {**schema, "required": [property_name]}
+    if isinstance(required, list) and property_name not in required:
+        return {**schema, "required": [*required, property_name]}
+    return schema
+
+
+def require_discriminator_property(schema: dict[str, Any]) -> dict[str, Any]:
+    """Keep an OpenAPI discriminator's tag mandatory after the keyword is dropped.
+
+    Returns a copy of *schema* with ``discriminator.propertyName`` added to each
+    ``anyOf``/``oneOf`` variant's ``required`` list. A Pydantic discriminated
+    union whose tag has a default omits that tag from ``required``; without this,
+    an untagged payload passes the generated schema but fails later in the source
+    model with ``union_tag_not_found``. No-op if there is no string
+    ``propertyName``.
+    """
+    discriminator = schema.get("discriminator")
+    if not isinstance(discriminator, dict):
+        return schema
+    property_name = discriminator.get("propertyName")
+    if not isinstance(property_name, str):
+        return schema
+
+    result = schema.copy()
+    for key in ("anyOf", "oneOf"):
+        variants = result.get(key)
+        if not isinstance(variants, list):
+            continue
+        result[key] = [
+            _require_property(variant, property_name)
+            if isinstance(variant, dict)
+            else variant
+            for variant in variants
+        ]
+    return result
 
 
 def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
@@ -455,6 +498,11 @@ def _single_pass_optimize(
     if not (prune_defs or prune_titles or prune_additional_properties):
         return schema  # Nothing to do
 
+    # Work on a copy so the caller's schema is never mutated (see docstring). The
+    # pruning phases below pop keys/$defs in place, which would otherwise corrupt a
+    # shared dict such as a live Tool.input_schema passed straight to compress_schema.
+    schema = copy.deepcopy(schema)
+
     # Phase 1: Collect references and apply simple cleanups
     # Track which $defs are referenced from the main schema and from other $defs
     root_refs: set[str] = set()  # $defs referenced directly from main schema
@@ -488,7 +536,7 @@ def _single_pass_optimize(
             # this regardless of `in_schema` — a $ref in a user extension
             # still pins the referenced $def as "used".
             if prune_defs:
-                ref = node.get("$ref")  # type: ignore
+                ref = node.get("$ref")
                 if isinstance(ref, str) and ref.startswith("#/$defs/"):
                     referenced_def = ref.split("/")[-1]
                     if current_def_name:
@@ -522,7 +570,7 @@ def _single_pass_optimize(
 
                 if (
                     prune_additional_properties
-                    and node.get("additionalProperties") is False  # type: ignore
+                    and node.get("additionalProperties") is False
                 ):
                     node.pop("additionalProperties")  # type: ignore
 

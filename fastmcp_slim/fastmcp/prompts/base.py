@@ -2,7 +2,6 @@
 
 from __future__ import annotations as _annotations
 
-import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, overload
 
@@ -14,9 +13,9 @@ if TYPE_CHECKING:
     from docket.execution import Execution
 
     from fastmcp.prompts.function_prompt import FunctionPrompt
-import mcp.types
+import mcp_types
 from mcp import GetPromptResult
-from mcp.types import (
+from mcp_types import (
     AudioContent,
     EmbeddedResource,
     Icon,
@@ -24,12 +23,11 @@ from mcp.types import (
     PromptMessage,
     TextContent,
 )
-from mcp.types import Prompt as SDKPrompt
-from mcp.types import PromptArgument as SDKPromptArgument
+from mcp_types import Prompt as SDKPrompt
+from mcp_types import PromptArgument as SDKPromptArgument
 from pydantic import Field
 from pydantic.json_schema import SkipJsonSchema
 
-from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
@@ -330,13 +328,13 @@ class Prompt(FastMCPComponent):
         self,
         arguments: dict[str, Any] | None,
         task_meta: TaskMeta,
-    ) -> mcp.types.CreateTaskResult: ...
+    ) -> mcp_types.CreateTaskResult: ...
 
     async def _render(
         self,
         arguments: dict[str, Any] | None = None,
         task_meta: TaskMeta | None = None,
-    ) -> PromptResult | mcp.types.CreateTaskResult:
+    ) -> PromptResult | mcp_types.CreateTaskResult:
         """Server entry point that handles task routing.
 
         This allows ANY Prompt subclass to support background execution by setting
@@ -414,27 +412,3 @@ __all__ = [
     "PromptArgument",
     "PromptResult",
 ]
-
-
-def __getattr__(name: str) -> Any:
-    """Deprecated re-exports for backwards compatibility."""
-    deprecated_exports = {
-        "FunctionPrompt": "FunctionPrompt",
-        "prompt": "prompt",
-    }
-
-    if name in deprecated_exports:
-        import fastmcp
-
-        if fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                f"Importing {name} from fastmcp.prompts.prompt is deprecated. "
-                f"Import from fastmcp.prompts.function_prompt instead.",
-                FastMCPDeprecationWarning,
-                stacklevel=2,
-            )
-        from fastmcp.prompts import function_prompt
-
-        return getattr(function_prompt, name)
-
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

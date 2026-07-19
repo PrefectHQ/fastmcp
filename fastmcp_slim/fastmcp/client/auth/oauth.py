@@ -7,13 +7,14 @@ from contextlib import aclosing
 from typing import Any
 
 import anyio
-import httpx
+import httpx2
 from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.stores.memory import MemoryStore
 from mcp.client.auth import OAuthClientProvider, TokenStorage
 from mcp.shared._httpx_utils import McpHttpClientFactory
 from mcp.shared.auth import (
+    AuthorizationCodeResult,
     OAuthClientInformationFull,
     OAuthClientMetadata,
     OAuthToken,
@@ -50,6 +51,10 @@ class ClientNotFoundError(Exception):
     """Raised when OAuth client credentials are not found on the server."""
 
 
+class ExpiredClientRegistrationError(Exception):
+    """Raised when dynamic registration returns an expired client secret."""
+
+
 async def check_if_auth_required(
     mcp_url: str, httpx_kwargs: dict[str, Any] | None = None
 ) -> bool:
@@ -59,7 +64,7 @@ async def check_if_auth_required(
     Returns:
         True if auth appears to be required, False otherwise
     """
-    async with httpx.AsyncClient(**(httpx_kwargs or {})) as client:
+    async with httpx2.AsyncClient(**(httpx_kwargs or {})) as client:
         try:
             # Try a simple request to the endpoint
             response = await client.get(mcp_url, timeout=5.0)
@@ -75,7 +80,7 @@ async def check_if_auth_required(
             # If we get a successful response, auth may not be required
             return False
 
-        except httpx.RequestError:
+        except httpx2.RequestError:
             # If we can't connect, assume auth might be required
             return True
 
@@ -165,6 +170,11 @@ class TokenStorageAdapter(TokenStorage):
 
         if client_info.client_secret_expires_at:
             ttl = client_info.client_secret_expires_at - int(time.time())
+            if ttl <= 0:
+                await self._storage_client_info.delete(
+                    key=self._get_client_info_cache_key()
+                )
+                return
 
         await self._storage_client_info.put(
             key=self._get_client_info_cache_key(),
@@ -236,7 +246,7 @@ class OAuth(OAuthClientProvider):
         self._client_id = client_id
         self._client_secret = client_secret
         self._static_client_info = None
-        self.httpx_client_factory = httpx_client_factory or httpx.AsyncClient
+        self.httpx_client_factory = httpx_client_factory or httpx2.AsyncClient
         self._bound = False
 
         if mcp_url is not None:
@@ -339,6 +349,20 @@ class OAuth(OAuthClientProvider):
             else:
                 self.context.update_token_expiry(self.context.current_tokens)
 
+    async def _perform_authorization(self) -> httpx2.Request:
+        """Reject expired registrations before attempting authorization."""
+        client_info = self.context.client_info
+        if (
+            client_info is not None
+            and client_info.client_secret is not None
+            and client_info.client_secret_expires_at
+            and client_info.client_secret_expires_at <= int(time.time())
+        ):
+            raise ExpiredClientRegistrationError(
+                "OAuth dynamic registration returned an expired client secret"
+            )
+        return await super()._perform_authorization()
+
     async def redirect_handler(self, authorization_url: str) -> None:
         """Open browser for authorization, with pre-flight check for invalid client."""
         # Pre-flight check to detect invalid client_id before opening browser
@@ -360,8 +384,8 @@ class OAuth(OAuthClientProvider):
         logger.info(f"OAuth authorization URL: {authorization_url}")
         webbrowser.open(authorization_url)
 
-    async def callback_handler(self) -> tuple[str, str | None]:
-        """Handle OAuth callback and return (auth_code, state)."""
+    async def callback_handler(self) -> AuthorizationCodeResult:
+        """Handle OAuth callback and return the authorization code result."""
         # Create result container and event to capture the OAuth response
         result = OAuthCallbackResult()
         result_ready = anyio.Event()
@@ -387,7 +411,11 @@ class OAuth(OAuthClientProvider):
                     await result_ready.wait()
                     if result.error:
                         raise result.error
-                    return result.code, result.state  # type: ignore
+                    # `result.code` is set once `result_ready` fires without error.
+                    return AuthorizationCodeResult(
+                        code=result.code,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+                        state=result.state,
+                    )
             except TimeoutError as e:
                 raise TimeoutError(
                     f"OAuth callback timed out after {self._callback_timeout} seconds"
@@ -400,8 +428,8 @@ class OAuth(OAuthClientProvider):
         raise RuntimeError("OAuth callback handler could not be started")
 
     async def async_auth_flow(
-        self, request: httpx.Request
-    ) -> AsyncGenerator[httpx.Request, httpx.Response]:
+        self, request: httpx2.Request
+    ) -> AsyncGenerator[httpx2.Request, httpx2.Response]:
         """HTTPX auth flow with automatic retry on stale cached credentials.
 
         If the OAuth flow fails due to invalid/stale client credentials,
@@ -424,7 +452,7 @@ class OAuth(OAuthClientProvider):
                     except StopAsyncIteration:
                         break
 
-        except ClientNotFoundError:
+        except (ClientNotFoundError, ExpiredClientRegistrationError) as exc:
             # Static credentials are fixed — retrying won't help. Surface the
             # error so the user can correct their client_id / client_secret.
             if self._static_client_info is not None:
@@ -432,10 +460,10 @@ class OAuth(OAuthClientProvider):
                     "OAuth server rejected the static client credentials. "
                     "Verify that the client_id (and client_secret, if provided) "
                     "are correct and that the client is registered with the server."
-                ) from None
+                ) from exc
 
             logger.debug(
-                "OAuth client not found on server, clearing cache and retrying..."
+                "OAuth client registration is invalid, clearing cache and retrying..."
             )
             # Clear cached state and retry once
             self._initialized = False

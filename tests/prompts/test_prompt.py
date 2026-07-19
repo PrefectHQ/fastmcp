@@ -1,6 +1,5 @@
 import pytest
-from mcp.types import EmbeddedResource, TextResourceContents
-from pydantic import FileUrl
+from mcp_types import EmbeddedResource, TextResourceContents
 
 from fastmcp.prompts.base import (
     Message,
@@ -112,9 +111,9 @@ class TestRenderPrompt:
                     content=EmbeddedResource(
                         type="resource",
                         resource=TextResourceContents(
-                            uri=FileUrl("file://file.txt"),
+                            uri="file://file.txt",
                             text="File contents",
-                            mimeType="text/plain",
+                            mime_type="text/plain",
                         ),
                     ),
                     role="user",
@@ -128,9 +127,9 @@ class TestRenderPrompt:
                 content=EmbeddedResource(
                     type="resource",
                     resource=TextResourceContents(
-                        uri=FileUrl("file://file.txt"),
+                        uri="file://file.txt",
                         text="File contents",
-                        mimeType="text/plain",
+                        mime_type="text/plain",
                     ),
                 ),
                 role="user",
@@ -147,9 +146,9 @@ class TestRenderPrompt:
                     content=EmbeddedResource(
                         type="resource",
                         resource=TextResourceContents(
-                            uri=FileUrl("file://file.txt"),
+                            uri="file://file.txt",
                             text="File contents",
-                            mimeType="text/plain",
+                            mime_type="text/plain",
                         ),
                     ),
                     role="user",
@@ -165,9 +164,9 @@ class TestRenderPrompt:
                 content=EmbeddedResource(
                     type="resource",
                     resource=TextResourceContents(
-                        uri=FileUrl("file://file.txt"),
+                        uri="file://file.txt",
                         text="File contents",
-                        mimeType="text/plain",
+                        mime_type="text/plain",
                     ),
                 ),
                 role="user",
@@ -184,9 +183,9 @@ class TestRenderPrompt:
                     content=EmbeddedResource(
                         type="resource",
                         resource=TextResourceContents(
-                            uri=FileUrl("file://file.txt"),
+                            uri="file://file.txt",
                             text="File contents",
-                            mimeType="text/plain",
+                            mime_type="text/plain",
                         ),
                     ),
                     role="user",
@@ -200,9 +199,9 @@ class TestRenderPrompt:
                 content=EmbeddedResource(
                     type="resource",
                     resource=TextResourceContents(
-                        uri=FileUrl("file://file.txt"),
+                        uri="file://file.txt",
                         text="File contents",
-                        mimeType="text/plain",
+                        mime_type="text/plain",
                     ),
                 ),
                 role="user",
@@ -580,7 +579,7 @@ class TestPromptArgumentDescriptions:
 class TestMessage:
     def test_message_string_content(self):
         """Test Message with string content."""
-        from mcp.types import TextContent
+        from mcp_types import TextContent
 
         msg = Message("Hello, world!")
         assert msg.role == "user"
@@ -589,7 +588,7 @@ class TestMessage:
 
     def test_message_with_role(self):
         """Test Message with explicit role."""
-        from mcp.types import TextContent
+        from mcp_types import TextContent
 
         msg = Message("I can help.", role="assistant")
         assert msg.role == "assistant"
@@ -598,7 +597,7 @@ class TestMessage:
 
     def test_message_auto_serializes_dict(self):
         """Test Message auto-serializes dicts to JSON."""
-        from mcp.types import TextContent
+        from mcp_types import TextContent
 
         msg = Message({"key": "value", "nested": {"a": 1}})
         assert msg.role == "user"
@@ -608,7 +607,7 @@ class TestMessage:
 
     def test_message_auto_serializes_list(self):
         """Test Message auto-serializes lists to JSON."""
-        from mcp.types import TextContent
+        from mcp_types import TextContent
 
         msg = Message(["item1", "item2", "item3"])
         assert isinstance(msg.content, TextContent)
@@ -616,7 +615,7 @@ class TestMessage:
 
     def test_message_to_mcp_prompt_message(self):
         """Test conversion to MCP PromptMessage."""
-        from mcp.types import TextContent
+        from mcp_types import TextContent
 
         msg = Message("Hello", role="assistant")
         mcp_msg = msg.to_mcp_prompt_message()
@@ -626,29 +625,29 @@ class TestMessage:
 
     def test_message_passthrough_image_content(self):
         """Test Message passes through ImageContent without JSON serialization."""
-        from mcp.types import ImageContent
+        from mcp_types import ImageContent
 
-        img = ImageContent(type="image", data="base64data", mimeType="image/png")
+        img = ImageContent(type="image", data="base64data", mime_type="image/png")
         msg = Message(img, role="user")
         assert isinstance(msg.content, ImageContent)
         assert msg.content.data == "base64data"
-        assert msg.content.mimeType == "image/png"
+        assert msg.content.mime_type == "image/png"
 
     def test_message_passthrough_audio_content(self):
         """Test Message passes through AudioContent without JSON serialization."""
-        from mcp.types import AudioContent
+        from mcp_types import AudioContent
 
-        audio = AudioContent(type="audio", data="base64audio", mimeType="audio/wav")
+        audio = AudioContent(type="audio", data="base64audio", mime_type="audio/wav")
         msg = Message(audio, role="user")
         assert isinstance(msg.content, AudioContent)
         assert msg.content.data == "base64audio"
-        assert msg.content.mimeType == "audio/wav"
+        assert msg.content.mime_type == "audio/wav"
 
     def test_message_image_content_to_mcp_prompt_message(self):
         """Test that ImageContent round-trips through to_mcp_prompt_message."""
-        from mcp.types import ImageContent
+        from mcp_types import ImageContent
 
-        img = ImageContent(type="image", data="base64data", mimeType="image/png")
+        img = ImageContent(type="image", data="base64data", mime_type="image/png")
         msg = Message(img, role="user")
         mcp_msg = msg.to_mcp_prompt_message()
         assert isinstance(mcp_msg.content, ImageContent)
@@ -658,7 +657,7 @@ class TestMessage:
 class TestPromptResult:
     def test_promptresult_from_string(self):
         """Test PromptResult accepts string and wraps as Message."""
-        from mcp.types import TextContent
+        from mcp_types import TextContent
 
         result = PromptResult("Hello!")
         assert len(result.messages) == 1

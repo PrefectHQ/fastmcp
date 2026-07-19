@@ -228,7 +228,7 @@ async def test_tool_schema_generation():
         return {"amount": amount, "tax": amount * rate, "total": amount * (1 + rate)}
     
     tools = mcp.list_tools()
-    schema = tools[0].inputSchema
+    schema = tools[0].input_schema
     
     # First run: snapshot() is empty, gets auto-populated
     # Subsequent runs: compares against stored snapshot

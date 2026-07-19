@@ -10,7 +10,7 @@ import hashlib
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-import httpx
+import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 
 from fastmcp.dependencies import Dependency
@@ -120,7 +120,7 @@ class AzureProvider(OAuthProxy):
         token_expiry_threshold_seconds: int = 0,
         base_authority: str = "login.microsoftonline.com",
         token_issuer: str | None = None,
-        http_client: httpx.AsyncClient | None = None,
+        http_client: httpx2.AsyncClient | None = None,
         enable_cimd: bool = True,
     ) -> None:
         """Initialize Azure OAuth provider.
@@ -176,7 +176,7 @@ class AzureProvider(OAuthProxy):
                 When "external", the built-in consent screen is skipped but no warning is
                 logged, indicating that consent is handled externally (e.g. by the upstream IdP).
                 SECURITY WARNING: Only set to False for local development or testing environments.
-            http_client: Optional httpx.AsyncClient for connection pooling in JWKS fetches.
+            http_client: Optional httpx2.AsyncClient for connection pooling in JWKS fetches.
                 When provided, the client is reused for JWT key fetches and the caller
                 is responsible for its lifecycle. When None (default), a fresh client is created per fetch.
             enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
@@ -501,8 +501,12 @@ class AzureProvider(OAuthProxy):
         Returns:
             List of scopes for Azure token endpoint
         """
-        # Prefix scopes for this API
-        prefixed_scopes = self._prefix_scopes_for_azure(scopes or [])
+        # Prefix scopes for this API. Some clients omit the scope parameter on
+        # the MCP authorization request; use the provider's configured scopes
+        # just like the authorize URL path does.
+        prefixed_scopes = self._prefix_scopes_for_azure(
+            scopes or self.required_scopes or []
+        )
 
         # Add OIDC scopes only (not other API scopes) to avoid AADSTS28000
         if self.additional_authorize_scopes:
@@ -528,9 +532,13 @@ class AzureProvider(OAuthProxy):
         """
         logger.debug("Base scopes from storage: %s", scopes)
 
+        # Some clients omit the scope parameter on the MCP authorization request;
+        # use the provider's configured scopes just like the authorize URL path does.
+        requested_scopes = scopes or self.required_scopes or []
+
         # Filter out any additional_authorize_scopes that may have been stored
         additional_scopes_set = set(self.additional_authorize_scopes or [])
-        base_scopes = [s for s in scopes if s not in additional_scopes_set]
+        base_scopes = [s for s in requested_scopes if s not in additional_scopes_set]
 
         # Prefix base scopes with identifier_uri for Azure
         prefixed_scopes = self._prefix_scopes_for_azure(base_scopes)
@@ -774,10 +782,19 @@ class AzureJWTVerifier(JWTVerifier):
         property returns the full-URI form for OAuth metadata while
         ``required_scopes`` retains the short form for token validation.
         """
-        if not self.required_scopes:
+        return self.get_challenge_scopes()
+
+    def get_challenge_scopes(
+        self, required_scopes: list[str] | None = None
+    ) -> list[str]:
+        """Prefix any effective validation scopes for Azure authorization."""
+        effective_scopes = (
+            self.required_scopes if required_scopes is None else required_scopes
+        )
+        if not effective_scopes:
             return []
         prefixed = []
-        for scope in self.required_scopes:
+        for scope in effective_scopes:
             if scope in OIDC_SCOPES or "://" in scope or "/" in scope:
                 prefixed.append(scope)
             else:
@@ -873,13 +890,13 @@ def EntraOBOToken(scopes: list[str]) -> str:
     Example:
         ```python
         from fastmcp.server.auth.providers.azure import EntraOBOToken
-        import httpx
+        import httpx2
 
         @mcp.tool()
         async def get_my_emails(
             graph_token: str = EntraOBOToken(["https://graph.microsoft.com/Mail.Read"])
         ):
-            async with httpx.AsyncClient() as client:
+            async with httpx2.AsyncClient() as client:
                 resp = await client.get(
                     "https://graph.microsoft.com/v1.0/me/messages",
                     headers={"Authorization": f"Bearer {graph_token}"}

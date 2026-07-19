@@ -1,5 +1,4 @@
 import contextlib
-import datetime
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
@@ -147,7 +146,7 @@ class MCPConfigTransport(ClientTransport):
         self,
         name: str,
         config: MCPServerTypes,
-        timeout: datetime.timedelta | None,
+        timeout: float | None,
         stack: contextlib.AsyncExitStack,
     ) -> tuple[ClientTransport, Any, "FastMCP[Any]"]:
         """Create underlying transport, proxy client, and proxy server for a single backend.

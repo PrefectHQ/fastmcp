@@ -7,11 +7,11 @@ on mounted child servers through a parent server.
 
 import asyncio
 
-import mcp.types as mt
+import mcp_types as mt
 import pytest
 from docket import Docket
-from mcp.types import Tool as MCPTool
-from mcp.types import ToolExecution
+from mcp_types import Tool as MCPTool
+from mcp_types import ToolExecution
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -237,6 +237,12 @@ class TestMountedPromptTasks:
             assert hasattr(task, "task_id")
             assert isinstance(task.task_id, str)
 
+    @pytest.mark.xfail(
+        reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+        "ReadResourceRequestParams; prompt/resource task submission is not "
+        "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+        strict=True,
+    )
     async def test_mounted_prompt_task_executes_in_background(self, parent_server):
         """Mounted prompt task executes in background."""
         async with Client(parent_server) as client:
@@ -273,6 +279,12 @@ class TestMountedResourceTasks:
             assert hasattr(task, "task_id")
             assert isinstance(task.task_id, str)
 
+    @pytest.mark.xfail(
+        reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+        "ReadResourceRequestParams; prompt/resource task submission is not "
+        "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+        strict=True,
+    )
     async def test_mounted_resource_task_executes_in_background(self, parent_server):
         """Mounted resource task executes in background."""
         async with Client(parent_server) as client:
@@ -289,6 +301,12 @@ class TestMountedResourceTasks:
             assert len(result) > 0
             assert "Data from child server" in result[0].text
 
+    @pytest.mark.xfail(
+        reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+        "ReadResourceRequestParams; prompt/resource task submission is not "
+        "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+        strict=True,
+    )
     async def test_mounted_resource_template_task(self, parent_server):
         """Mounted resource template with task=True works."""
         async with Client(parent_server) as client:
@@ -553,7 +571,7 @@ class TestMountedTaskMetadata:
     """Test task metadata exposure for mounted tools."""
 
     async def test_mounted_tool_list_preserves_task_support_metadata(self):
-        """Mounted tools should preserve execution.taskSupport in tools/list."""
+        """Mounted tools should preserve execution.task_support in tools/list."""
         child = FastMCP("child")
 
         @child.tool(task=True)
@@ -574,23 +592,23 @@ class TestMountedTaskMetadata:
 
         assert child_mcp_tool.execution is not None
         assert parent_mcp_tool.execution is not None
-        assert child_mcp_tool.execution.taskSupport == "optional"
-        assert parent_mcp_tool.execution.taskSupport == "optional"
+        assert child_mcp_tool.execution.task_support == "optional"
+        assert parent_mcp_tool.execution.task_support == "optional"
 
     async def test_proxy_tool_preserves_execution_metadata(self):
-        """ProxyTool.from_mcp_tool should propagate execution.taskSupport (#3569)."""
+        """ProxyTool.from_mcp_tool should propagate execution.task_support (#3569)."""
         mcp_tool = MCPTool(
             name="remote_task_tool",
             description="A remote tool that supports tasks",
-            inputSchema={"type": "object", "properties": {}},
-            execution=ToolExecution(taskSupport="optional"),
+            input_schema={"type": "object", "properties": {}},
+            execution=ToolExecution(task_support="optional"),
         )
 
         proxy = ProxyTool.from_mcp_tool(lambda: None, mcp_tool)  # ty: ignore[invalid-argument-type]
         result = proxy.to_mcp_tool(name=proxy.name)
 
         assert result.execution is not None
-        assert result.execution.taskSupport == "optional"
+        assert result.execution.task_support == "optional"
 
 
 class TestMountedTaskConfigModes:
@@ -786,6 +804,12 @@ class TestMiddlewareWithMountedTasks:
             "grandchild:tool",  # Executes in Docket after middleware completes
         ]
 
+    @pytest.mark.xfail(
+        reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+        "ReadResourceRequestParams; prompt/resource task submission is not "
+        "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+        strict=True,
+    )
     async def test_resource_middleware_runs_with_background_task(self):
         """Middleware runs at parent, child, and grandchild levels for resource tasks."""
         calls: list[str] = []
@@ -823,6 +847,12 @@ class TestMiddlewareWithMountedTasks:
             "grandchild:resource",
         ]
 
+    @pytest.mark.xfail(
+        reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+        "ReadResourceRequestParams; prompt/resource task submission is not "
+        "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+        strict=True,
+    )
     async def test_prompt_middleware_runs_with_background_task(self):
         """Middleware runs at parent, child, and grandchild levels for prompt tasks."""
         calls: list[str] = []
@@ -860,6 +890,12 @@ class TestMiddlewareWithMountedTasks:
             "grandchild:prompt",
         ]
 
+    @pytest.mark.xfail(
+        reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+        "ReadResourceRequestParams; prompt/resource task submission is not "
+        "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+        strict=True,
+    )
     async def test_resource_template_middleware_runs_with_background_task(self):
         """Middleware runs at all levels for resource template tasks."""
         calls: list[str] = []
@@ -928,7 +964,7 @@ class TestMountedTasksWithTaskMetaParameter:
             result = await parent.call_tool(
                 "child_add", {"a": 2, "b": 3}, task_meta=TaskMeta(ttl=300)
             )
-            return f"task:{result.task.taskId}"
+            return f"task:{result.task.task_id}"
 
         async with Client(parent) as client:
             result = await client.call_tool("outer", {})
@@ -952,7 +988,7 @@ class TestMountedTasksWithTaskMetaParameter:
             result = await parent.read_resource(
                 "data://child/info", task_meta=TaskMeta(ttl=300)
             )
-            return f"task:{result.task.taskId}"
+            return f"task:{result.task.task_id}"
 
         async with Client(parent) as client:
             result = await client.call_tool("outer", {})
@@ -976,7 +1012,7 @@ class TestMountedTasksWithTaskMetaParameter:
             result = await parent.read_resource(
                 "item://child/42", task_meta=TaskMeta(ttl=300)
             )
-            return f"task:{result.task.taskId}"
+            return f"task:{result.task.task_id}"
 
         async with Client(parent) as client:
             result = await client.call_tool("outer", {})
@@ -1003,7 +1039,7 @@ class TestMountedTasksWithTaskMetaParameter:
             result = await parent.call_tool(
                 "c_gc_compute", {"n": 7}, task_meta=TaskMeta(ttl=300)
             )
-            return f"task:{result.task.taskId}"
+            return f"task:{result.task.task_id}"
 
         async with Client(parent) as client:
             result = await client.call_tool("outer", {})
@@ -1030,7 +1066,7 @@ class TestMountedTasksWithTaskMetaParameter:
             result = await parent.read_resource(
                 "doc://c/gc/readme", task_meta=TaskMeta(ttl=300)
             )
-            return f"task:{result.task.taskId}"
+            return f"task:{result.task.task_id}"
 
         async with Client(parent) as client:
             result = await client.call_tool("outer", {})
@@ -1054,7 +1090,7 @@ class TestMountedTasksWithTaskMetaParameter:
             result = await parent.render_prompt(
                 "child_greet", {"name": "World"}, task_meta=TaskMeta(ttl=300)
             )
-            return f"task:{result.task.taskId}"
+            return f"task:{result.task.task_id}"
 
         async with Client(parent) as client:
             result = await client.call_tool("outer", {})
@@ -1081,7 +1117,7 @@ class TestMountedTasksWithTaskMetaParameter:
             result = await parent.render_prompt(
                 "c_gc_describe", {"topic": "FastMCP"}, task_meta=TaskMeta(ttl=300)
             )
-            return f"task:{result.task.taskId}"
+            return f"task:{result.task.task_id}"
 
         async with Client(parent) as client:
             result = await client.call_tool("outer", {})

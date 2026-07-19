@@ -14,7 +14,7 @@ try:
         Part,
         UserContent,
     )
-    from mcp.types import (
+    from mcp_types import (
         AudioContent,
         CreateMessageResult,
         ImageContent,
@@ -66,7 +66,7 @@ def test_convert_sampling_messages_to_google_genai_content():
 
 def test_convert_single_image_content_to_google_genai():
     part = _sampling_content_to_google_genai_part(
-        ImageContent(type="image", data="YWJj", mimeType="image/png")
+        ImageContent(type="image", data="YWJj", mime_type="image/png")
     )
 
     assert part.inline_data is not None
@@ -76,7 +76,7 @@ def test_convert_single_image_content_to_google_genai():
 
 def test_convert_single_audio_content_to_google_genai():
     part = _sampling_content_to_google_genai_part(
-        AudioContent(type="audio", data="YWJj", mimeType="audio/wav")
+        AudioContent(type="audio", data="YWJj", mime_type="audio/wav")
     )
 
     assert part.inline_data is not None
@@ -89,7 +89,7 @@ def test_convert_image_message_to_google_genai_content():
         messages=[
             SamplingMessage(
                 role="user",
-                content=ImageContent(type="image", data="YWJj", mimeType="image/jpeg"),
+                content=ImageContent(type="image", data="YWJj", mime_type="image/jpeg"),
             )
         ],
     )
@@ -105,7 +105,7 @@ def test_convert_audio_message_to_google_genai_content():
         messages=[
             SamplingMessage(
                 role="user",
-                content=AudioContent(type="audio", data="YWJj", mimeType="audio/mp3"),
+                content=AudioContent(type="audio", data="YWJj", mime_type="audio/mp3"),
             )
         ],
     )
@@ -123,7 +123,7 @@ def test_convert_list_content_with_image_and_text():
                 role="user",
                 content=[
                     TextContent(type="text", text="What is in this image?"),
-                    ImageContent(type="image", data="YWJj", mimeType="image/png"),
+                    ImageContent(type="image", data="YWJj", mime_type="image/png"),
                 ],
             )
         ],
@@ -144,7 +144,7 @@ def test_convert_list_content_with_audio_and_text():
                 role="user",
                 content=[
                     TextContent(type="text", text="Transcribe this audio"),
-                    AudioContent(type="audio", data="YWJj", mimeType="audio/wav"),
+                    AudioContent(type="audio", data="YWJj", mime_type="audio/wav"),
                 ],
             )
         ],
@@ -243,7 +243,7 @@ def test_sampling_content_to_google_genai_part_tool_result():
     """Test converting ToolResultContent to Google GenAI Part with FunctionResponse."""
     content = ToolResultContent(
         type="tool_result",
-        toolUseId="get_weather_abc123",
+        tool_use_id="get_weather_abc123",
         content=[TextContent(type="text", text="Weather is sunny")],
     )
 
@@ -259,7 +259,7 @@ def test_sampling_content_to_google_genai_part_tool_result_empty():
     """Test converting empty ToolResultContent to Google GenAI Part."""
     content = ToolResultContent(
         type="tool_result",
-        toolUseId="my_tool_xyz789",
+        tool_use_id="my_tool_xyz789",
         content=[],
     )
 
@@ -274,7 +274,7 @@ def test_sampling_content_to_google_genai_part_tool_result_no_underscore():
     """Test ToolResultContent when toolUseId has no underscore (fallback)."""
     content = ToolResultContent(
         type="tool_result",
-        toolUseId="simplefunction",
+        tool_use_id="simplefunction",
         content=[TextContent(type="text", text="Result")],
     )
 
@@ -320,7 +320,7 @@ def test_convert_messages_with_tool_result():
                 role="user",
                 content=ToolResultContent(
                     type="tool_result",
-                    toolUseId="get_weather_123",
+                    tool_use_id="get_weather_123",
                     content=[TextContent(type="text", text="Sunny, 72F")],
                 ),
             ),
@@ -343,7 +343,7 @@ def test_convert_messages_with_multiple_content_blocks():
                     TextContent(type="text", text="I need weather info."),
                     ToolResultContent(
                         type="tool_result",
-                        toolUseId="get_weather_xyz",
+                        tool_use_id="get_weather_xyz",
                         content=[TextContent(type="text", text="Cloudy")],
                     ),
                 ],
@@ -372,7 +372,7 @@ def test_response_to_result_with_tools_text_only():
 
     assert result.role == "assistant"
     assert result.model == "gemini-2.0-flash"
-    assert result.stopReason == "endTurn"
+    assert result.stop_reason == "endTurn"
     assert isinstance(result.content, list)
     assert len(result.content) == 1
     assert result.content[0].type == "text"
@@ -394,7 +394,7 @@ def test_response_to_result_with_tools_function_call():
 
     result = _response_to_result_with_tools(mock_response, model="gemini-2.0-flash")
 
-    assert result.stopReason == "toolUse"
+    assert result.stop_reason == "toolUse"
     assert isinstance(result.content, list)
     assert len(result.content) == 1
     tool_use = result.content[0]
@@ -421,7 +421,7 @@ def test_response_to_result_with_tools_mixed_content():
 
     result = _response_to_result_with_tools(mock_response, model="gemini-2.0-flash")
 
-    assert result.stopReason == "toolUse"
+    assert result.stop_reason == "toolUse"
     assert isinstance(result.content, list)
     assert len(result.content) == 2
     text_content = result.content[0]
@@ -576,7 +576,7 @@ def test_normal_response_text_and_function_call():
     assert isinstance(result.content[1], ToolUseContent)  # ty: ignore[not-subscriptable]
     assert result.content[1].name == "lookup"  # ty: ignore[not-subscriptable]
     assert result.content[1].input == {"q": "test"}  # ty: ignore[not-subscriptable]
-    assert result.stopReason == "toolUse"
+    assert result.stop_reason == "toolUse"
 
 
 def test_thought_with_function_call_keeps_function_call():
@@ -598,4 +598,4 @@ def test_thought_with_function_call_keeps_function_call():
     assert len(result.content) == 1  # ty: ignore[invalid-argument-type]
     assert isinstance(result.content[0], ToolUseContent)  # ty: ignore[not-subscriptable]
     assert result.content[0].name == "get_weather"  # ty: ignore[not-subscriptable]
-    assert result.stopReason == "toolUse"
+    assert result.stop_reason == "toolUse"

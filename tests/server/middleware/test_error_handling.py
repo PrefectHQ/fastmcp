@@ -4,7 +4,7 @@ import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from mcp import McpError
+from mcp import MCPError
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -106,9 +106,8 @@ class TestErrorHandlingMiddleware:
     def test_transform_error_mcp_error(self, mock_context):
         """Test that MCP errors are not transformed."""
         middleware = ErrorHandlingMiddleware()
-        from mcp.types import ErrorData
 
-        error = McpError(ErrorData(code=-32001, message="test error"))
+        error = MCPError(code=-32001, message="test error")
 
         result = middleware._transform_error(error, mock_context)
 
@@ -130,7 +129,7 @@ class TestErrorHandlingMiddleware:
 
         result = middleware._transform_error(error, mock_context)
 
-        assert isinstance(result, McpError)
+        assert isinstance(result, MCPError)
         assert result.error.code == -32602
         assert "Invalid params: test error" in result.error.message
 
@@ -146,7 +145,7 @@ class TestErrorHandlingMiddleware:
         ]:
             result = middleware._transform_error(error, resource_context)
 
-            assert isinstance(result, McpError)
+            assert isinstance(result, MCPError)
             assert result.error.code == -32002
             assert "Resource not found: test error" in result.error.message
 
@@ -160,7 +159,7 @@ class TestErrorHandlingMiddleware:
         ]:
             result = middleware._transform_error(error, mock_context)
 
-            assert isinstance(result, McpError)
+            assert isinstance(result, MCPError)
             assert result.error.code == -32001
             assert "Not found: test error" in result.error.message
 
@@ -171,7 +170,7 @@ class TestErrorHandlingMiddleware:
 
         result = middleware._transform_error(error, mock_context)
 
-        assert isinstance(result, McpError)
+        assert isinstance(result, MCPError)
         assert result.error.code == -32000
         assert "Permission denied: test error" in result.error.message
 
@@ -182,7 +181,7 @@ class TestErrorHandlingMiddleware:
 
         result = middleware._transform_error(error, mock_context)
 
-        assert isinstance(result, McpError)
+        assert isinstance(result, MCPError)
         assert result.error.code == -32000
         assert "Request timeout: test error" in result.error.message
 
@@ -193,7 +192,7 @@ class TestErrorHandlingMiddleware:
 
         result = middleware._transform_error(error, mock_context)
 
-        assert isinstance(result, McpError)
+        assert isinstance(result, MCPError)
         assert result.error.code == -32603
         assert "Internal error: test error" in result.error.message
 
@@ -212,10 +211,10 @@ class TestErrorHandlingMiddleware:
         mock_call_next = AsyncMock(side_effect=ValueError("test error"))
 
         with caplog.at_level(logging.ERROR):
-            with pytest.raises(McpError) as exc_info:
+            with pytest.raises(MCPError) as exc_info:
                 await middleware.on_message(mock_context, mock_call_next)
 
-        assert isinstance(exc_info.value, McpError)
+        assert isinstance(exc_info.value, MCPError)
         assert exc_info.value.error.code == -32602
         assert "Invalid params: test error" in exc_info.value.error.message
         assert "Error in test_method: ValueError: test error" in caplog.text
@@ -228,10 +227,10 @@ class TestErrorHandlingMiddleware:
         mock_call_next = AsyncMock(side_effect=tool_error)
 
         with caplog.at_level(logging.ERROR):
-            with pytest.raises(McpError) as exc_info:
+            with pytest.raises(MCPError) as exc_info:
                 await middleware.on_message(mock_context, mock_call_next)
 
-        assert isinstance(exc_info.value, McpError)
+        assert isinstance(exc_info.value, MCPError)
         assert exc_info.value.error.code == -32602
         assert "Invalid params: test error" in exc_info.value.error.message
         assert "Error in test_method: ToolError: test error" in caplog.text

@@ -1,12 +1,16 @@
 """Tests for OAuth proxy initialization and configuration."""
 
-import httpx
+import time
+from urllib.parse import parse_qs, urlparse
+
+import httpx2
 import pytest
-from authlib.integrations.httpx_client import AsyncOAuth2Client
 from key_value.aio.stores.memory import MemoryStore
 from starlette.applications import Starlette
 
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
+from fastmcp.server.auth.oauth_proxy.models import OAuthTransaction
+from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client
 
 
 class TestOAuthProxyInitialization:
@@ -203,7 +207,7 @@ class TestOAuthProxyInitialization:
         assert proxy._redirect_path == "/auth/callback"
 
     async def test_metadata_advertises_cimd_support(self, jwt_verifier):
-        """OAuth metadata should advertise CIMD support when enabled."""
+        """OAuth metadata should advertise CIMD and public-client auth support."""
         proxy = OAuthProxy(
             upstream_authorization_endpoint="https://auth.example.com/authorize",
             upstream_token_endpoint="https://auth.example.com/token",
@@ -217,9 +221,9 @@ class TestOAuthProxyInitialization:
         )
 
         app = Starlette(routes=proxy.get_routes())
-        transport = httpx.ASGITransport(app=app)
+        transport = httpx2.ASGITransport(app=app)
 
-        async with httpx.AsyncClient(
+        async with httpx2.AsyncClient(
             transport=transport, base_url="https://api.example.com"
         ) as client:
             response = await client.get("/.well-known/oauth-authorization-server")
@@ -227,6 +231,12 @@ class TestOAuthProxyInitialization:
         assert response.status_code == 200
         metadata = response.json()
         assert metadata.get("client_id_metadata_document_supported") is True
+        assert set(metadata.get("token_endpoint_auth_methods_supported")) == {
+            "client_secret_post",
+            "client_secret_basic",
+            "private_key_jwt",
+            "none",
+        }
 
 
 class TestOptionalClientSecret:
@@ -303,3 +313,102 @@ class TestOptionalClientSecret:
         signed = proxy._sign_cookie("test-payload")
         assert proxy._verify_cookie(signed) == "test-payload"
         assert proxy._verify_cookie("tampered.payload") is None
+
+
+class TestIdpCallbackErrorForwarding:
+    """Tests for error forwarding in the IdP callback."""
+
+    async def test_error_with_valid_transaction_redirects_to_client(self, oauth_proxy):
+        """When the IdP returns an error and the transaction exists, the proxy
+        must forward the error to the client's redirect_uri rather than showing
+        an HTML error page."""
+        txn_id = "test-txn-123"
+        client_redirect_uri = "http://localhost:12345/callback"
+        client_state = "client-state-abc"
+
+        transaction = OAuthTransaction(
+            txn_id=txn_id,
+            client_id="test-client",
+            client_redirect_uri=client_redirect_uri,
+            client_state=client_state,
+            code_challenge=None,
+            code_challenge_method="S256",
+            scopes=["read"],
+            created_at=time.time(),
+        )
+        await oauth_proxy._transaction_store.put(key=txn_id, value=transaction)
+
+        app = Starlette(routes=oauth_proxy.get_routes())
+        transport = httpx2.ASGITransport(app=app)
+
+        async with httpx2.AsyncClient(
+            transport=transport,
+            base_url="https://myserver.com",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get(
+                f"/auth/callback?error=access_denied&error_description=User+denied+access&state={txn_id}"
+            )
+
+        assert response.status_code == 302
+        location = response.headers["location"]
+        parsed = urlparse(location)
+        assert (
+            parsed.scheme + "://" + parsed.netloc + parsed.path == client_redirect_uri
+        )
+        params = parse_qs(parsed.query)
+        assert params["error"] == ["access_denied"]
+        assert params["error_description"] == ["User denied access"]
+        assert params["state"] == [client_state]
+
+    async def test_error_with_unsafe_transaction_redirect_returns_html_error(
+        self, oauth_proxy
+    ):
+        """IdP errors must not redirect to unsafe stored callback URIs."""
+        txn_id = "test-txn-unsafe"
+
+        transaction = OAuthTransaction(
+            txn_id=txn_id,
+            client_id="test-client",
+            client_redirect_uri="javascript:alert(document.cookie)//",
+            client_state="client-state-abc",
+            code_challenge=None,
+            code_challenge_method="S256",
+            scopes=["read"],
+            created_at=time.time(),
+        )
+        await oauth_proxy._transaction_store.put(key=txn_id, value=transaction)
+
+        app = Starlette(routes=oauth_proxy.get_routes())
+        transport = httpx2.ASGITransport(app=app)
+
+        async with httpx2.AsyncClient(
+            transport=transport,
+            base_url="https://myserver.com",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get(
+                f"/auth/callback?error=access_denied&state={txn_id}"
+            )
+
+        assert response.status_code == 400
+        assert "location" not in response.headers
+        assert "Invalid redirect URI" in response.text
+
+    async def test_error_with_missing_transaction_returns_html_error(self, oauth_proxy):
+        """When the IdP returns an error but the transaction is missing or
+        expired, the proxy must return a local HTML error page — there is no
+        trusted client redirect_uri to forward to."""
+        app = Starlette(routes=oauth_proxy.get_routes())
+        transport = httpx2.ASGITransport(app=app)
+
+        async with httpx2.AsyncClient(
+            transport=transport,
+            base_url="https://myserver.com",
+            follow_redirects=False,
+        ) as client:
+            response = await client.get(
+                "/auth/callback?error=access_denied&state=nonexistent-txn"
+            )
+
+        assert response.status_code == 400

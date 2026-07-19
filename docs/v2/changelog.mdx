@@ -4,6 +4,20 @@ icon: "list-check"
 rss: true
 ---
 
+<Update label="v2.14.7" description="2026-04-13">
+
+**[v2.14.7: Fake It Till You Break It](https://github.com/PrefectHQ/fastmcp/releases/tag/v2.14.7)**
+
+A 2.x backport of the fakeredis pin: fakeredis 2.35.0 renamed a connection class that pydocket's `memory://` backend depended on, crashing `fastmcp[tasks]` installs at startup. This caps `fakeredis<2.35.0` on the 2.x line.
+
+## What's Changed
+### Fixes 🐞
+* fix(deps): cap fakeredis to `<2.35.0` to prevent startup crash on 2.x by [@vincent067](https://github.com/vincent067) in [#3883](https://github.com/PrefectHQ/fastmcp/pull/3883)
+
+**Full Changelog**: [v2.14.6...v2.14.7](https://github.com/PrefectHQ/fastmcp/compare/v2.14.6...v2.14.7)
+
+</Update>
+
 <Update label="v2.14.6" description="2026-03-27">
 
 **[v2.14.6: $Ref Dead Redemption](https://github.com/PrefectHQ/fastmcp/releases/tag/v2.14.6)**
@@ -536,7 +550,7 @@ Thank you to our new contributors and everyone who tested preview builds. Your f
 * Add configurable redirect URI validation for OAuth providers by [@jlowin](https://github.com/jlowin) in [#1582](https://github.com/PrefectHQ/fastmcp/pull/1582)
 * Remove invalid-argument-type ignore and fix type errors by [@jlowin](https://github.com/jlowin) in [#1588](https://github.com/PrefectHQ/fastmcp/pull/1588)
 * Remove generate-schema from public CLI by [@jlowin](https://github.com/jlowin) in [#1591](https://github.com/PrefectHQ/fastmcp/pull/1591)
-* Skip flaky windows test / mulit-client garbage collection by [@jlowin](https://github.com/jlowin) in [#1592](https://github.com/PrefectHQ/fastmcp/pull/1592)
+* Skip flaky windows test / multi-client garbage collection by [@jlowin](https://github.com/jlowin) in [#1592](https://github.com/PrefectHQ/fastmcp/pull/1592)
 * Add setting to disable logging configuration by [@isra17](https://github.com/isra17) in [#1575](https://github.com/PrefectHQ/fastmcp/pull/1575)
 * Improve debug logging for nested Servers / Clients by [@strawgate](https://github.com/strawgate) in [#1604](https://github.com/PrefectHQ/fastmcp/pull/1604)
 * Add GitHub pull request template by [@strawgate](https://github.com/strawgate) in [#1581](https://github.com/PrefectHQ/fastmcp/pull/1581)

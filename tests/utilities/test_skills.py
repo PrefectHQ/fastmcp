@@ -8,8 +8,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from mcp.types import BlobResourceContents, TextResourceContents
-from pydantic import AnyUrl
+from mcp_types import BlobResourceContents, TextResourceContents
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.providers.skills import SkillsDirectoryProvider
@@ -38,12 +37,12 @@ class FakeResourceReader:
 
 
 def text_resource(uri: str, text: str) -> TextResourceContents:
-    return TextResourceContents(uri=AnyUrl(uri), text=text)
+    return TextResourceContents(uri=uri, text=text)
 
 
 def blob_resource(uri: str, data: bytes) -> BlobResourceContents:
     return BlobResourceContents(
-        uri=AnyUrl(uri),
+        uri=uri,
         blob=base64.b64encode(data).decode(),
     )
 

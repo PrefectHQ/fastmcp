@@ -1,6 +1,6 @@
 """Tests for parameter collision handling in OpenAPIProvider."""
 
-import httpx
+import httpx2
 import pytest
 
 from fastmcp import FastMCP
@@ -133,7 +133,7 @@ class TestParameterCollisions:
 
     async def test_path_body_collision_handling(self, collision_spec):
         """Test that path and body parameters with same name are handled correctly."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             server = create_openapi_server(
                 openapi_spec=collision_spec, client=client, name="Collision Test Server"
             )
@@ -146,7 +146,7 @@ class TestParameterCollisions:
                 assert update_tool is not None
 
                 # Check that both path and body 'id' parameters are included
-                params = update_tool.inputSchema
+                params = update_tool.input_schema
                 properties = params["properties"]
 
                 # Should have both path ID and body ID (with potential suffixing)
@@ -173,7 +173,7 @@ class TestParameterCollisions:
 
     async def test_query_header_collision_handling(self, collision_spec):
         """Test that query and header parameters with same name are handled correctly."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             server = create_openapi_server(
                 openapi_spec=collision_spec, client=client, name="Collision Test Server"
             )
@@ -188,7 +188,7 @@ class TestParameterCollisions:
                 assert search_tool is not None
 
                 # Check that both query and header 'query' parameters are handled
-                params = search_tool.inputSchema
+                params = search_tool.input_schema
                 properties = params["properties"]
 
                 # Should handle the collision somehow (suffixing or other mechanism)
@@ -203,7 +203,7 @@ class TestParameterCollisions:
 
     async def test_collision_resolution_maintains_functionality(self, collision_spec):
         """Test that collision resolution doesn't break basic tool functionality."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             server = create_openapi_server(
                 openapi_spec=collision_spec, client=client, name="Collision Test Server"
             )
@@ -220,6 +220,6 @@ class TestParameterCollisions:
 
                 # Tools should have valid schemas
                 for tool in tools:
-                    assert tool.inputSchema is not None
-                    assert tool.inputSchema["type"] == "object"
-                    assert "properties" in tool.inputSchema
+                    assert tool.input_schema is not None
+                    assert tool.input_schema["type"] == "object"
+                    assert "properties" in tool.input_schema

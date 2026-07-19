@@ -50,6 +50,12 @@ async def test_resource_task_server_generated_id(resource_server):
         assert "-" in task.task_id
 
 
+@pytest.mark.xfail(
+    reason="SDK v2 has no `task` field on ReadResourceRequestParams, so "
+    "resource reads cannot be submitted as background tasks over the wire and "
+    "always graceful-degrade to immediate execution (sdk-feedback #3).",
+    strict=True,
+)
 async def test_resource_task_result_returns_read_resource_result(resource_server):
     """ResourceTask.result() returns list of ReadResourceContents."""
     async with Client(resource_server) as client:
@@ -77,6 +83,12 @@ async def test_resource_task_await_syntax(resource_server):
         assert result[0].text == "Document content here"
 
 
+@pytest.mark.xfail(
+    reason="SDK v2 has no `task` field on ReadResourceRequestParams, so "
+    "resource reads cannot be submitted as background tasks over the wire and "
+    "always graceful-degrade to immediate execution (sdk-feedback #3).",
+    strict=True,
+)
 async def test_resource_template_task(resource_server):
     """Resource templates work with task support."""
     async with Client(resource_server) as client:

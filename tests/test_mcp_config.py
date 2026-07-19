@@ -8,14 +8,13 @@ import sys
 import tempfile
 import time
 from collections.abc import AsyncGenerator
-from datetime import timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import psutil
 import pytest
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 from fastmcp import FastMCP
 from fastmcp.client.auth.bearer import BearerAuth
@@ -716,26 +715,28 @@ async def test_canonical_multi_client_with_transforms(tmp_path: Path):
     script_path = tmp_path / "test.py"
     script_path.write_text(server_script)
 
-    config = CanonicalMCPConfig(
-        mcpServers={
-            "test_1": {
-                "command": "python",
-                "args": [str(script_path)],
-                "tools": {  # <--- Will be ignored as it's not valid for a canonical MCPConfig
-                    "add": {
-                        "name": "transformed_add",
-                        "arguments": {
-                            "a": {"name": "transformed_a"},
-                            "b": {"name": "transformed_b"},
-                        },
-                    }
+    config = CanonicalMCPConfig.model_validate(
+        {
+            "mcpServers": {
+                "test_1": {
+                    "command": "python",
+                    "args": [str(script_path)],
+                    "tools": {  # <--- Will be ignored as it's not valid for a canonical MCPConfig
+                        "add": {
+                            "name": "transformed_add",
+                            "arguments": {
+                                "a": {"name": "transformed_a"},
+                                "b": {"name": "transformed_b"},
+                            },
+                        }
+                    },
                 },
-            },
-            "test_2": {
-                "command": "python",
-                "args": [str(script_path)],
-            },
-        }  # type: ignore[reportUnknownArgumentType]  # ty:ignore[invalid-argument-type]
+                "test_2": {
+                    "command": "python",
+                    "args": [str(script_path)],
+                },
+            }
+        }
     )
 
     client = Client(config)
@@ -961,7 +962,8 @@ async def test_multi_server_timeout_propagation():
     )
 
     transport = MCPConfigTransport(config)
-    timeout = timedelta(seconds=42)
+    # SDK v2: read_timeout_seconds is a plain number of seconds, not a timedelta.
+    timeout = 42.0
 
     # Mock _create_proxy to avoid real stdio connections and verify timeout
     mock_create_proxy = AsyncMock(

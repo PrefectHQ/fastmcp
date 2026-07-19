@@ -409,7 +409,7 @@ The `EntraOBOToken` dependency handles the complete OBO flow automatically. Decl
 ```python
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.azure import AzureProvider, EntraOBOToken
-import httpx
+import httpx2
 
 auth_provider = AzureProvider(
     client_id="your-client-id",
@@ -431,7 +431,7 @@ async def get_recent_emails(
     graph_token: str = EntraOBOToken(["https://graph.microsoft.com/Mail.Read"]),
 ) -> list[dict]:
     """Get the user's recent emails from Microsoft Graph."""
-    async with httpx.AsyncClient() as client:
+    async with httpx2.AsyncClient() as client:
         response = await client.get(
             f"https://graph.microsoft.com/v1.0/me/messages?$top={count}",
             headers={"Authorization": f"Bearer {graph_token}"},

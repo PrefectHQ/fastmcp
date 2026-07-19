@@ -1,16 +1,11 @@
 [
   "python-sdk/fastmcp-cli",
-  "python-sdk/fastmcp-client",
   "python-sdk/fastmcp-decorators",
   "python-sdk/fastmcp-dependencies",
   "python-sdk/fastmcp-exceptions",
   "python-sdk/fastmcp-mcp_config",
-  "python-sdk/fastmcp-prompts",
-  "python-sdk/fastmcp-resources",
-  "python-sdk/fastmcp-server",
   "python-sdk/fastmcp-settings",
   "python-sdk/fastmcp-telemetry",
-  "python-sdk/fastmcp-tools",
   "python-sdk/fastmcp-types",
   {
     "group": "fastmcp.apps",
@@ -28,18 +23,9 @@
   {
     "group": "fastmcp.experimental",
     "pages": [
-      "python-sdk/fastmcp-experimental-__init__",
-      {
-        "group": "sampling",
-        "pages": [
-          "python-sdk/fastmcp-experimental-sampling-__init__",
-          "python-sdk/fastmcp-experimental-sampling-handlers"
-        ]
-      },
       {
         "group": "transforms",
         "pages": [
-          "python-sdk/fastmcp-experimental-transforms-__init__",
           "python-sdk/fastmcp-experimental-transforms-code_mode"
         ]
       }
@@ -69,7 +55,6 @@
           {
             "group": "v1",
             "pages": [
-              "python-sdk/fastmcp-utilities-mcp_server_config-v1-__init__",
               {
                 "group": "environments",
                 "pages": [
@@ -82,7 +67,6 @@
               {
                 "group": "sources",
                 "pages": [
-                  "python-sdk/fastmcp-utilities-mcp_server_config-v1-sources-__init__",
                   "python-sdk/fastmcp-utilities-mcp_server_config-v1-sources-base",
                   "python-sdk/fastmcp-utilities-mcp_server_config-v1-sources-filesystem"
                 ]

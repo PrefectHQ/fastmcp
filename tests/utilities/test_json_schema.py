@@ -292,6 +292,48 @@ class TestDereferenceRefs:
         actions = {v["properties"]["action"]["const"] for v in result["anyOf"]}
         assert actions == {"identify", "delete"}
 
+    def test_discriminator_property_remains_required_after_inlining(self):
+        schema = {
+            "$defs": {
+                "Comprehensive": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {"const": "comprehensive", "type": "string"},
+                    },
+                },
+                "Validate": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {"const": "validate", "type": "string"},
+                        "target_id": {"type": "string"},
+                    },
+                    "required": ["target_id"],
+                },
+            },
+            "anyOf": [
+                {"$ref": "#/$defs/Comprehensive"},
+                {"$ref": "#/$defs/Validate"},
+            ],
+            "discriminator": {
+                "mapping": {
+                    "comprehensive": "#/$defs/Comprehensive",
+                    "validate": "#/$defs/Validate",
+                },
+                "propertyName": "kind",
+            },
+        }
+        result = dereference_refs(schema)
+
+        assert "discriminator" not in result
+        for variant in result["anyOf"]:
+            assert "kind" in variant["required"]
+        validate_schema = next(
+            variant
+            for variant in result["anyOf"]
+            if variant["properties"]["kind"]["const"] == "validate"
+        )
+        assert validate_schema["required"] == ["target_id", "kind"]
+
     def test_preserves_property_named_discriminator(self):
         """A field *named* 'discriminator' inside properties must survive."""
         schema = {
@@ -315,6 +357,39 @@ class TestDereferenceRefs:
 
 class TestCompressSchema:
     """Tests for the compress_schema function."""
+
+    def test_does_not_mutate_input(self):
+        """compress_schema must return a new dict and leave the caller's schema
+        untouched, even when it prunes titles, additionalProperties and unused
+        $defs (a live Tool.input_schema is passed straight in at some call sites)."""
+        schema = {
+            "type": "object",
+            "title": "MySchema",
+            "additionalProperties": False,
+            "properties": {
+                "a": {"type": "string", "title": "A"},
+                "b": {
+                    "type": "object",
+                    "title": "B",
+                    "properties": {"c": {"type": "integer", "title": "C"}},
+                },
+            },
+            "$defs": {"Unused": {"type": "string", "title": "Unused"}},
+        }
+        original = copy.deepcopy(schema)
+
+        result = compress_schema(
+            schema, prune_titles=True, prune_additional_properties=True
+        )
+
+        # The input is untouched...
+        assert schema == original
+        assert result is not schema
+        # ...and the returned copy really was optimized (so it is not a no-op).
+        assert "title" not in result
+        assert "title" not in result["properties"]["b"]["properties"]["c"]
+        assert "additionalProperties" not in result
+        assert "$defs" not in result
 
     def test_preserves_refs_by_default(self):
         """Test that compress_schema preserves $refs by default."""

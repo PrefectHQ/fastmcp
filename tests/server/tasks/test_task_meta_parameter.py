@@ -5,7 +5,7 @@ These tests verify that the task_meta parameter provides explicit control
 over sync vs task execution, replacing implicit contextvar-based behavior.
 """
 
-import mcp.types
+import mcp_types
 import pytest
 
 from fastmcp import FastMCP
@@ -30,7 +30,7 @@ class TestTaskMetaParameter:
         result = await server.call_tool("simple_tool", {"x": 5})
 
         first_content = result.content[0]
-        assert isinstance(first_content, mcp.types.TextContent)
+        assert isinstance(first_content, mcp_types.TextContent)
         assert first_content.text == "10"
 
     async def test_task_meta_none_on_task_enabled_tool_still_returns_tool_result(self):
@@ -45,7 +45,7 @@ class TestTaskMetaParameter:
         result = await server.call_tool("task_enabled_tool", {"x": 5})
 
         first_content = result.content[0]
-        assert isinstance(first_content, mcp.types.TextContent)
+        assert isinstance(first_content, mcp_types.TextContent)
         assert first_content.text == "10"
 
     async def test_task_meta_on_forbidden_tool_raises_error(self):
@@ -56,7 +56,7 @@ class TestTaskMetaParameter:
         async def sync_only_tool(x: int) -> int:
             return x * 2
 
-        # Error is raised before docket is needed (McpError wrapped as ToolError)
+        # Error is raised before docket is needed (MCPError wrapped as ToolError)
         with pytest.raises(ToolError) as exc_info:
             await server.call_tool("sync_only_tool", {"x": 5}, task_meta=TaskMeta())
 
@@ -147,8 +147,8 @@ class TrackingMiddleware(Middleware):
 
     async def on_call_tool(
         self,
-        context: MiddlewareContext[mcp.types.CallToolRequestParams],
-        call_next: CallNext[mcp.types.CallToolRequestParams, ToolResult],
+        context: MiddlewareContext[mcp_types.CallToolRequestParams],
+        call_next: CallNext[mcp_types.CallToolRequestParams, ToolResult],
     ) -> ToolResult:
         if context.method:
             self._calls.append(context.method)
@@ -263,7 +263,7 @@ class TestTaskMetaDirectServerCall:
                 "inner_tool", {"x": x}, task_meta=TaskMeta()
             )
             # Should get CreateTaskResult since we're in server context
-            return f"Created task: {result.task.taskId}"
+            return f"Created task: {result.task.task_id}"
 
         async with Client(server) as client:
             # Call outer_tool which internally calls inner_tool with task_meta
@@ -285,7 +285,7 @@ class TestTaskMetaDirectServerCall:
             result = await server.call_tool("inner_tool", {"x": x})
             # Should get ToolResult directly
             first_content = result.content[0]
-            assert isinstance(first_content, mcp.types.TextContent)
+            assert isinstance(first_content, mcp_types.TextContent)
             return f"Got result: {first_content.text}"
 
         async with Client(server) as client:

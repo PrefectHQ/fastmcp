@@ -63,9 +63,9 @@ def check_app_status() -> dict[str, str]:
 
 
 # Mount sub-applications
-app.mount(server=weather_app, prefix="weather")
+app.mount(server=weather_app, namespace="weather")
 
-app.mount(server=news_app, prefix="news")
+app.mount(server=news_app, namespace="news")
 
 
 async def get_server_details():

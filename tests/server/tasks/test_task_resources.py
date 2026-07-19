@@ -56,6 +56,12 @@ async def test_resource_with_task_metadata_returns_immediately(resource_server):
         assert len(task.task_id) > 0
 
 
+@pytest.mark.xfail(
+    reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+    "ReadResourceRequestParams; prompt/resource task submission is not "
+    "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+    strict=True,
+)
 async def test_resource_task_executes_in_background(resource_server):
     """Resource task executes via Docket in background."""
     async with Client(resource_server) as client:
@@ -70,6 +76,12 @@ async def test_resource_task_executes_in_background(resource_server):
         assert result[0].text == "Large file content that takes time to load"
 
 
+@pytest.mark.xfail(
+    reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+    "ReadResourceRequestParams; prompt/resource task submission is not "
+    "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+    strict=True,
+)
 async def test_resource_template_with_task(resource_server):
     """Resource templates with task=True execute in background."""
     async with Client(resource_server) as client:
@@ -83,11 +95,17 @@ async def test_resource_template_with_task(resource_server):
         assert '"userId": "123"' in result[0].text
 
 
+@pytest.mark.xfail(
+    reason="SDK v2 has no `task` field on GetPromptRequestParams / "
+    "ReadResourceRequestParams; prompt/resource task submission is not "
+    "wire-expressible and always graceful-degrades (sdk-feedback #3).",
+    strict=True,
+)
 async def test_forbidden_mode_resource_rejects_task_calls(resource_server):
     """Resources with task=False (mode=forbidden) reject task-augmented calls."""
     import pytest
-    from mcp.shared.exceptions import McpError
-    from mcp.types import METHOD_NOT_FOUND
+    from mcp.shared.exceptions import MCPError
+    from mcp_types import METHOD_NOT_FOUND
 
     @resource_server.resource(
         "file://sync.txt/", task=False
@@ -96,8 +114,8 @@ async def test_forbidden_mode_resource_rejects_task_calls(resource_server):
         return "Sync content"
 
     async with Client(resource_server) as client:
-        # Calling with task=True when task=False should raise McpError
-        with pytest.raises(McpError) as exc_info:
+        # Calling with task=True when task=False should raise MCPError
+        with pytest.raises(MCPError) as exc_info:
             await client.read_resource("file://sync.txt", task=True)
 
         # New behavior: mode="forbidden" returns METHOD_NOT_FOUND error

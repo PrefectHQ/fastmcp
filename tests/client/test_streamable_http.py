@@ -5,8 +5,8 @@ from contextlib import suppress
 from unittest.mock import AsyncMock, call
 
 import pytest
-from mcp import McpError
-from mcp.types import TextResourceContents
+from mcp import MCPError
+from mcp_types import TextResourceContents
 
 from fastmcp import Context
 from fastmcp.client import Client
@@ -31,7 +31,7 @@ def create_test_server() -> FastMCP:
         result = await ctx.elicit("What is your name?", response_type=str)
 
         if result.action == "accept":
-            return f"You said your name was: {result.data}!"  # ty: ignore[unresolved-attribute]
+            return f"You said your name was: {result.data}!"
         else:
             return "No name provided"
 
@@ -234,9 +234,9 @@ async def test_elicitation_tool(streamable_http_server: str, request):
 @pytest.mark.parametrize("streamable_http_server", [True], indirect=True)
 async def test_stateless_http_rejects_get_sse(streamable_http_server: str):
     """Stateless servers should reject GET SSE requests with 405."""
-    import httpx
+    import httpx2
 
-    async with httpx.AsyncClient() as http_client:
+    async with httpx2.AsyncClient() as http_client:
         response = await http_client.get(streamable_http_server)
         assert response.status_code == 405
 
@@ -265,8 +265,8 @@ async def test_nested_streamable_http_server_resolves_correctly(nested_server: s
 class TestTimeout:
     async def test_timeout(self, streamable_http_server: str):
         # note this transport behaves differently than others and raises
-        # McpError from the *client* context
-        with pytest.raises(McpError, match="Timed out"):
+        # MCPError from the *client* context
+        with pytest.raises(MCPError, match="timed out"):
             async with Client(
                 transport=StreamableHttpTransport(streamable_http_server),
                 timeout=0.02,
@@ -277,7 +277,7 @@ class TestTimeout:
         async with Client(
             transport=StreamableHttpTransport(streamable_http_server),
         ) as client:
-            with pytest.raises(McpError):
+            with pytest.raises(MCPError):
                 await client.call_tool("sleep", {"seconds": 0.2}, timeout=0.1)
 
     async def test_timeout_tool_call_overrides_client_timeout(
@@ -287,5 +287,5 @@ class TestTimeout:
             transport=StreamableHttpTransport(streamable_http_server),
             timeout=2,
         ) as client:
-            with pytest.raises(McpError):
+            with pytest.raises(MCPError):
                 await client.call_tool("sleep", {"seconds": 0.2}, timeout=0.1)

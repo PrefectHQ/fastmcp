@@ -6,7 +6,7 @@ over sync vs task execution for resources and resource templates.
 """
 
 import pytest
-from mcp.shared.exceptions import McpError
+from mcp.shared.exceptions import MCPError
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -44,14 +44,14 @@ class TestResourceTaskMetaParameter:
         assert result.contents[0].content == "hello world"
 
     async def test_task_meta_on_forbidden_resource_raises_error(self):
-        """Providing task_meta to a task=False resource raises McpError."""
+        """Providing task_meta to a task=False resource raises MCPError."""
         server = FastMCP("test")
 
         @server.resource("data://test", task=False)
         async def sync_only_resource() -> str:
             return "hello"
 
-        with pytest.raises(McpError) as exc_info:
+        with pytest.raises(MCPError) as exc_info:
             await server.read_resource("data://test", task_meta=TaskMeta())
 
         assert "does not support task-augmented execution" in str(exc_info.value)
@@ -100,14 +100,14 @@ class TestResourceTemplateTaslMeta:
         assert result.contents[0].content == "Item 42"
 
     async def test_template_task_meta_on_forbidden_template_raises_error(self):
-        """Providing task_meta to a task=False template raises McpError."""
+        """Providing task_meta to a task=False template raises MCPError."""
         server = FastMCP("test")
 
         @server.resource("item://{id}", task=False)
         async def sync_only_template(id: str) -> str:
             return f"Item {id}"
 
-        with pytest.raises(McpError) as exc_info:
+        with pytest.raises(MCPError) as exc_info:
             await server.read_resource("item://42", task_meta=TaskMeta())
 
         assert "does not support task-augmented execution" in str(exc_info.value)
@@ -185,7 +185,7 @@ class TestResourceTaskMetaDirectServerCall:
             # Read inner resource as background task
             result = await server.read_resource("data://inner", task_meta=TaskMeta())
             # Should get CreateTaskResult since we provided task_meta
-            return f"Created task: {result.task.taskId}"
+            return f"Created task: {result.task.task_id}"
 
         async with Client(server) as client:
             result = await client.call_tool("outer_tool", {})
@@ -221,7 +221,7 @@ class TestResourceTaskMetaDirectServerCall:
         @server.tool
         async def outer_tool() -> str:
             result = await server.read_resource("item://99", task_meta=TaskMeta())
-            return f"Created task: {result.task.taskId}"
+            return f"Created task: {result.task.task_id}"
 
         async with Client(server) as client:
             result = await client.call_tool("outer_tool", {})

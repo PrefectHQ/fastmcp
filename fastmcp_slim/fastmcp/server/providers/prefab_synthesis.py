@@ -15,7 +15,7 @@ the app name + tool name). CSP on the resource is the tool's
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from fastmcp.server.providers.addressing import (
     HASH_LENGTH,
@@ -142,7 +142,7 @@ def _build_resource_for_tool(tool: Tool) -> Resource | None:
     uri = f"ui://prefab/tool/{tool_hash}/renderer.html"
 
     return TextResource(
-        uri=uri,  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+        uri=cast(Any, uri),
         name=f"Prefab Renderer ({tool.name})",
         text=get_renderer_html(),
         mime_type=UI_MIME_TYPE,

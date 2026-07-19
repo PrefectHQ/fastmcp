@@ -331,14 +331,14 @@ Tools can customize which components are visible to their current session using 
 FastMCP automatically sends list change notifications when components (such as tools, resources, or prompts) are added, removed, enabled, or disabled. In rare cases where you need to manually trigger these notifications, you can use the context's notification methods:
 
 ```python
-import mcp.types
+import mcp_types
 
 @mcp.tool
 async def custom_tool_management(ctx: Context) -> str:
     """Example of manual notification after custom tool changes."""
-    await ctx.send_notification(mcp.types.ToolListChangedNotification())
-    await ctx.send_notification(mcp.types.ResourceListChangedNotification())
-    await ctx.send_notification(mcp.types.PromptListChangedNotification())
+    await ctx.send_notification(mcp_types.ToolListChangedNotification())
+    await ctx.send_notification(mcp_types.ResourceListChangedNotification())
+    await ctx.send_notification(mcp_types.PromptListChangedNotification())
     return "Notifications sent"
 ```
 

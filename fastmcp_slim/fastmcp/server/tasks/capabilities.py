@@ -1,6 +1,6 @@
 """SEP-1686 task capabilities declaration."""
 
-from mcp.types import (
+from mcp_types import (
     ServerTasksCapability,
     ServerTasksRequestsCapability,
     TasksCallCapability,
@@ -22,8 +22,14 @@ def get_task_capabilities() -> ServerTasksCapability | None:
     with an old transitive pydocket would advertise task support and then
     return "method not found" when clients invoked it.
 
-    Note: prompts/resources are passed via extra_data since the SDK types
-    don't include them yet (FastMCP supports them ahead of the spec).
+    Only tools are advertised as task-capable. In the SDK v2 b1 wire types,
+    ``ReadResourceRequestParams`` / ``GetPromptRequestParams`` carry no ``task``
+    field (sdk-feedback #3), so resource/prompt task submissions are not
+    wire-expressible and always graceful-degrade to synchronous execution.
+    Advertising ``prompts``/``resources`` task support would mislead
+    capability-discovering clients into sending task-augmented reads/gets that
+    silently run synchronously. Restore them here once the SDK adds task
+    metadata to those request params.
     """
     # Function-local import to avoid a circular import at module load time:
     # fastmcp.server.tasks.__init__ pulls in this module, and dependencies
@@ -38,7 +44,5 @@ def get_task_capabilities() -> ServerTasksCapability | None:
         cancel=TasksCancelCapability(),
         requests=ServerTasksRequestsCapability(
             tools=TasksToolsCapability(call=TasksCallCapability()),
-            prompts={"get": {}},  # type: ignore[call-arg]  # extra_data for forward compat  # ty:ignore[unknown-argument]
-            resources={"read": {}},  # type: ignore[call-arg]  # extra_data for forward compat  # ty:ignore[unknown-argument]
         ),
     )

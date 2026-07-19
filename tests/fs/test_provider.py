@@ -459,6 +459,100 @@ def charge(amount: float) -> str:
             names = {t.name for t in tools_list}
             assert names == {"greet", "charge"}
 
+    async def test_mounted_servers_with_same_package_and_module_name(
+        self, tmp_path: Path
+    ):
+        """Two providers sharing a package/module path should not collide.
+
+        Reproduces the exact scenario from the bug report: both providers have a
+        `components/tools.py` package. Without isolation the second provider
+        reuses the first's cached module and `list_tools` returns the first
+        server's tool twice.
+        """
+        for server_name, tool_name in [
+            ("server1", "server1_tool"),
+            ("server2", "server2_tool"),
+        ]:
+            components = tmp_path / server_name / "components"
+            components.mkdir(parents=True)
+            (components / "__init__.py").write_text("")
+            (components / "tools.py").write_text(
+                f"""\
+from fastmcp.tools import tool
+
+@tool
+def {tool_name}() -> str:
+    return "{tool_name}"
+"""
+            )
+
+        server1 = FastMCP(
+            "server1",
+            providers=[FileSystemProvider(tmp_path / "server1" / "components")],
+        )
+        server2 = FastMCP(
+            "server2",
+            providers=[FileSystemProvider(tmp_path / "server2" / "components")],
+        )
+        parent = FastMCP("parent")
+        parent.mount(server1)
+        parent.mount(server2)
+
+        tools = await parent.list_tools()
+        assert {t.name for t in tools} == {"server1_tool", "server2_tool"}
+
+        result = await parent.call_tool("server2_tool", {})
+        assert "server2_tool" in str(result)
+
+    async def test_mounted_servers_with_same_package_different_module(
+        self, tmp_path: Path
+    ):
+        """Same package name but different module filenames must coexist.
+
+        The package directory name (`components`) collides while the leaf module
+        differs (`a.py` vs `b.py`). The shared package must not resolve to the
+        first provider's directory, which would drop the second provider's tool.
+        A relative import inside each module exercises that the isolated tree is
+        a real package.
+        """
+        for server_name, module_name, tool_name in [
+            ("server1", "a", "server1_tool"),
+            ("server2", "b", "server2_tool"),
+        ]:
+            components = tmp_path / server_name / "components"
+            components.mkdir(parents=True)
+            (components / "__init__.py").write_text("")
+            (components / "_shared.py").write_text(f'LABEL = "{tool_name}"\n')
+            (components / f"{module_name}.py").write_text(
+                f"""\
+from fastmcp.tools import tool
+
+from ._shared import LABEL
+
+@tool
+def {tool_name}() -> str:
+    return LABEL
+"""
+            )
+
+        server1 = FastMCP(
+            "server1",
+            providers=[FileSystemProvider(tmp_path / "server1" / "components")],
+        )
+        server2 = FastMCP(
+            "server2",
+            providers=[FileSystemProvider(tmp_path / "server2" / "components")],
+        )
+        parent = FastMCP("parent")
+        parent.mount(server1)
+        parent.mount(server2)
+
+        tools = await parent.list_tools()
+        assert {t.name for t in tools} == {"server1_tool", "server2_tool"}
+
+        result = await parent.call_tool("server2_tool", {})
+        assert "server2_tool" in str(result)
+
 
 class TestFileSystemProviderVersioning:
     """Tests for version propagation through FileSystemProvider."""

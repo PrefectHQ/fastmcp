@@ -5,8 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from anyio import create_task_group
-from mcp.server.lowlevel.server import request_ctx
-from mcp.types import LoggingLevel
+from mcp_types import LoggingLevel
 
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.elicitation import ElicitResult
@@ -14,7 +13,7 @@ from fastmcp.client.logging import LogMessage
 from fastmcp.client.transports import FastMCPTransport
 from fastmcp.exceptions import ToolError
 from fastmcp.server.context import _current_context
-from fastmcp.server.dependencies import get_server
+from fastmcp.server.dependencies import fastmcp_request_ctx, get_server
 from fastmcp.server.elicitation import AcceptedElicitation
 from fastmcp.server.providers.proxy import (
     FastMCPProxy,
@@ -28,7 +27,7 @@ from fastmcp.utilities.tests import find_available_port, run_server_async
 def fastmcp_server():
     mcp = FastMCP("TestServer")
 
-    states: dict[int, int] = {}
+    states: dict[str, int] = {}
 
     @mcp.tool
     async def log(
@@ -39,13 +38,16 @@ def fastmcp_server():
     @mcp.tool
     async def stateful_put(value: int, context: Context) -> None:
         """put a value associated with the server session"""
-        key = id(context.session)
+        # SDK v2 constructs a ServerSession per request, so `id(context.session)`
+        # is not a stable per-connection key. Use the connection-scoped
+        # `session_id` to share state across calls on the same client session.
+        key = context.session_id
         states[key] = value
 
     @mcp.tool
     async def stateful_get(context: Context) -> int:
         """get the value associated with the server session"""
-        key = id(context.session)
+        key = context.session_id
         try:
             return states[key]
         except KeyError:
@@ -221,7 +223,7 @@ class TestRestoreRequestContextCurrentServer:
 
     async def _run_in_child_context(self, fn):
         # Run in a child task so contextvar writes are isolated from the test
-        # task and `request_ctx` is genuinely unset (LookupError branch).
+        # task and `fastmcp_request_ctx` is genuinely unset (defaults to None).
         return await asyncio.create_task(fn())
 
     async def test_lookup_error_branch_restores_current_server(self):
@@ -232,13 +234,12 @@ class TestRestoreRequestContextCurrentServer:
         rc_ref: list = [(rc, weakref.ref(fastmcp))]
 
         async def body():
-            with pytest.raises(LookupError):
-                request_ctx.get()
+            assert fastmcp_request_ctx.get() is None
             _restore_request_context(rc_ref)
 
             # The actual Bug 4 fix: get_server() now resolves.
             assert get_server() is fastmcp
-            assert request_ctx.get() is rc
+            assert fastmcp_request_ctx.get() is rc
 
             ctx = _current_context.get()
             assert ctx is not None
@@ -265,10 +266,10 @@ class TestRestoreRequestContextCurrentServer:
         rc_ref: list = [(fresh_rc, weakref.ref(fastmcp))]
 
         async def body():
-            request_ctx.set(stale_rc)
+            fastmcp_request_ctx.set(stale_rc)
             _restore_request_context(rc_ref)
 
-            assert request_ctx.get() is fresh_rc
+            assert fastmcp_request_ctx.get() is fresh_rc
             assert get_server() is fastmcp
 
         await self._run_in_child_context(body)
@@ -279,7 +280,6 @@ class TestRestoreRequestContextCurrentServer:
         async def body():
             # No stash: nothing restored, no error.
             _restore_request_context(rc_ref)
-            with pytest.raises(LookupError):
-                request_ctx.get()
+            assert fastmcp_request_ctx.get() is None
 
         await self._run_in_child_context(body)

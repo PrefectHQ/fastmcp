@@ -42,7 +42,7 @@ async def sampling_handler(
         conversation.append(f"{message.role}: {content}")
 
     # Use the system prompt if provided
-    system_prompt = params.systemPrompt or "You are a helpful assistant."
+    system_prompt = params.system_prompt or "You are a helpful assistant."
 
     # Integrate with your LLM service here
     return "Generated response based on the messages"
@@ -172,7 +172,7 @@ Install the Google Gemini handler with `pip install fastmcp[gemini]`.
 When you provide a `sampling_handler`, FastMCP automatically advertises full sampling capabilities to the server, including tool support. To disable tool support for simpler handlers:
 
 ```python
-from mcp.types import SamplingCapability
+from fastmcp.types import SamplingCapability
 
 client = Client(
     "my_mcp_server.py",

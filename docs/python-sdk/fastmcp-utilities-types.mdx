@@ -85,14 +85,13 @@ replace_type(type_, type_map: dict[type, type])
 
 
 Given a (possibly generic, nested, or otherwise complex) type, replaces all
-instances of old_type with new_type.
+instances of keys in type_map with their corresponding values.
 
 This is useful for transforming types when creating tools.
 
 **Args:**
-- `type_`: The type to replace instances of old_type with new_type.
-- `old_type`: The type to replace.
-- `new_type`: The type to replace old_type with.
+- `type_`: The type to transform.
+- `type_map`: A mapping of types to replace (keys are replaced by values).
 
 Examples:
 ```python
@@ -166,4 +165,4 @@ Helper class for returning file data from tools.
 to_resource_content(self, mime_type: str | None = None, annotations: Annotations | None = None) -> mcp.types.EmbeddedResource
 ```
 
-### `ContextSamplingFallbackProtocol` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/types.py#L491" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ContextSamplingFallbackProtocol` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/types.py#L490" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
