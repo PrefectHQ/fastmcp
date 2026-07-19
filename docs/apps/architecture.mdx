@@ -33,8 +33,6 @@ When you mark a tool with `app=True` or `@app.ui()`, FastMCP wires up the metada
 
 The tool and renderer are linked through a `resourceUri` field in the metadata. Internally, registration uses the placeholder URI `ui://prefab/renderer.html`; when tools and resources are listed or read, FastMCP rewrites that placeholder to a per-tool URI like `ui://prefab/tool/<hash>/renderer.html` and synthesizes the matching renderer resource on demand.
 
-That means `app=True` is opt-in, while type inference is conservative: if the return type is a Prefab type and you haven't set `app` explicitly, FastMCP auto-wires the metadata as if you'd written `app=True`.
-
 ### FastMCPApp registration
 
 `FastMCPApp` uses the same mechanism but adds two things. First, it tags every tool — both `@app.ui()` entry points and `@app.tool()` backends — with `meta["fastmcp"]["app"]` set to the app's name. That tag lets the server identify which app a tool belongs to when routing UI calls.

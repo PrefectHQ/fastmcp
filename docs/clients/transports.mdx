@@ -15,9 +15,9 @@ Transports handle the underlying connection between your client and MCP servers.
 
 STDIO transport communicates with MCP servers through subprocess pipes. When using STDIO, your client launches and manages the server process, controlling its lifecycle and environment.
 
-<Note>
-STDIO servers receive the MCP SDK's default subprocess environment. Pass `env` when you need to add or override configuration values for the launched server.
-</Note>
+<Warning>
+STDIO servers inherit only a small allowlist of environment variables — `HOME`, `LOGNAME`, `PATH`, `SHELL`, `TERM`, and `USER`. Anything else in your shell, including API keys and other credentials, does not reach the server unless you pass it through `env` explicitly.
+</Warning>
 
 ```python
 from fastmcp import Client
@@ -42,7 +42,7 @@ client = Client("my_server.py")  # Limited - no configuration options
 
 ### Environment Variables
 
-When an STDIO server needs configuration beyond the default subprocess environment, pass the variables explicitly.
+Values you pass through `env` are merged on top of the inherited allowlist, so you add configuration rather than replacing the base environment. Anything your server needs beyond those six variables has to be listed explicitly.
 
 **Selective forwarding** passes only the variables your server needs:
 
@@ -130,7 +130,7 @@ client = Client(
 
 ### SSL Verification
 
-By default, HTTPS connections verify the server's SSL certificate. You can customize this behavior with the `verify` parameter, which accepts the same values as [httpx](https://www.python-httpx.org/advanced/ssl/):
+By default, HTTPS connections verify the server's SSL certificate. You can customize this behavior with the `verify` parameter, which accepts the same values as httpx2 (documented in [httpx's SSL guide](https://www.python-httpx.org/advanced/ssl/), which httpx2 follows):
 
 ```python
 from fastmcp import Client

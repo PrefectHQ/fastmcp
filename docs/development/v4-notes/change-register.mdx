@@ -1,0 +1,408 @@
+---
+title: Change Register
+---
+
+This is the complete register of user-facing changes from the MCP Python SDK v2 migration ([PR #4437](https://github.com/PrefectHQ/fastmcp/pull/4437)), organized by subsystem. It doubles as a review lens: take one subsystem, read its claimed changes, and verify each against the diff.
+
+Each entry is tagged **Absorbed** (public surface unchanged), **Bridged** (shim keeps old code working, usually warning), **Breaking** (user code must change), or **Deprecated** (works, warns, slated for removal). See the [overview](/development/v4-notes/index) for what each disposition means.
+
+**Empirical validation (WS2 upgrade reality-check).** The register's compatibility claims are verified, not predicted. Running unchanged 3.x-era code against this branch, all 11 upgrade scenarios pass or warn — the only failures are the two predicted breaks, user `mcp.types` imports and positional `McpError(ErrorData(...))` construction. Cross-version wire interop between a 3.4.3 peer and this branch is bidirectionally clean across 9 operations (3.4.3 client ↔ v4 server and v4 client ↔ 3.4.3 server over HTTP). All 25 `_ALIASES` bridge entries warn correctly with actionable messages.
+
+## Environment
+
+### Dependency floors: pydantic >= 2.12, Starlette >= 1.0 — Breaking (environment)
+
+The SDK v2 raises FastMCP's dependency floors. Projects pinning an older pydantic (e.g. `2.11.*`) hit an unsatisfiable-resolution error at install time and must bump their pin; unpinned projects get pydantic upgraded silently. The server extra floors Starlette at `>=1.0.1` — modern FastAPI (0.11x+) already runs Starlette 1.x, so coexistence is clean (verified with FastAPI 0.138.2); only very old FastAPI pinned below Starlette 1.0 conflicts. Both are documented in the [upgrade guide's Environment requirements](/getting-started/upgrading/from-fastmcp-3#environment-requirements).
+
+*Verify:* `fastmcp_slim/pyproject.toml` (`pydantic[email]>=2.12.0` core, `starlette>=1.0.1` server extra); WS2 environment-upgrade scenario.
+
+## Types and imports
+
+The SDK v2 split protocol types into a standalone `mcp_types` package and renamed every field from camelCase to snake_case. This is the single largest source of user-facing change, and FastMCP absorbs nearly all of it.
+
+### `mcp.types` split into `mcp_types` — Breaking (by omission)
+
+The `mcp.types` module no longer exists. Any `from mcp.types import X` or `import mcp.types` in user code raises `ImportError`. This is the one import change users cannot avoid.
+
+*Verify:* `fastmcp_slim/fastmcp/types.py`, and grep the diff for the doc migration `from mcp.types import` → `from fastmcp.types import` (30 sites).
+
+### `fastmcp.types` is the stable home — Bridged
+
+FastMCP re-exports the protocol types users are most likely to touch from `fastmcp.types`, sourced from `mcp_types` (the `mcp` root package lacks most of them):
+
+```python
+from fastmcp.types import TextContent, Tool, ToolAnnotations, ErrorData
+```
+
+The re-export set is deliberately limited to names that trace to a documented user import: `TextContent`, `ImageContent`, `AudioContent`, `EmbeddedResource`, `ResourceLink`, `ContentBlock`, `Tool`, `Resource`, `ResourceTemplate`, `Prompt`, `PromptMessage`, `CallToolResult`, `GetPromptResult`, `ReadResourceResult`, `TextResourceContents`, `BlobResourceContents`, `SamplingMessage`, `CreateMessageResult`, `SamplingCapability`, `Root`, `ErrorData`, `Completion`, `Annotations`, `ToolAnnotations`, `Icon`, `ToolResultContent`, plus the pre-existing `Textarea`. Notification and request wrapper types (e.g. `ToolListChangedNotification`) are not re-exported — import those from `mcp_types` directly.
+
+*Verify:* `fastmcp_slim/fastmcp/types.py` `__all__`.
+
+### camelCase field reads are bridged — Bridged (deprecated)
+
+Objects FastMCP hands back — results of `client.list_tools()`, `client.call_tool_mcp()`, `client.read_resource()`, and the parameter objects passed to sampling and elicitation handlers — are SDK v2 objects with snake_case fields. A compatibility bridge installed at import time routes the old camelCase names to their snake_case fields, warning once per read:
+
+```python
+from fastmcp import Client
+
+
+async def read_schema():
+    async with Client("my_mcp_server.py") as client:
+        tools = await client.list_tools()
+        return tools[0].inputSchema  # works, warns; prefer .input_schema
+```
+
+The bridged fields are exactly those users read, data-driven from an `_ALIASES` table: `inputSchema`/`outputSchema` (Tool); `mimeType` (Resource, ResourceTemplate, TextResourceContents, BlobResourceContents, ImageContent, AudioContent) and `uriTemplate` (ResourceTemplate); `isError`/`structuredContent` (CallToolResult); `hasMore` (Completion); `serverInfo`/`protocolVersion` (InitializeResult); `nextCursor`/`resourceTemplates` (List\*Result); `systemPrompt`/`maxTokens`/`stopSequences`/`modelPreferences`/`toolChoice` (CreateMessageRequestParams); `requestedSchema` (ElicitRequestFormParams). WS2 verified all 25 alias entries warn correctly with actionable messages.
+
+*Verify:* `fastmcp_slim/fastmcp/_compat.py` (the `_ALIASES` table and `install()`).
+
+### The bridge is a genuine runtime toggle — Absorbed (post-review fix)
+
+The bridge properties install unconditionally, and each getter reads the live `mcp_camelcase_compat` setting on every access: warn-and-return when enabled, raise `AttributeError` when disabled. An earlier version installed the bridge once at import, so flipping the setting afterward did nothing — commit `d9659453` fixed this so the toggle works at runtime:
+
+```python
+import fastmcp
+
+fastmcp.settings.mcp_camelcase_compat = False  # now takes effect immediately
+```
+
+The setting is documented in [Settings](/more/settings) as `FASTMCP_MCP_CAMELCASE_COMPAT`.
+
+*Verify:* `fastmcp_slim/fastmcp/settings.py` (setting), `fastmcp_slim/fastmcp/_compat.py` (per-read gate), commit `d9659453`.
+
+### `mcp-types` is now a core slim dependency — Absorbed (post-review fix)
+
+Bare `import fastmcp` loads `mcp_types` via `_sdk_patches` and `_compat`, so a bare `fastmcp-slim` install (without the `[mcp]` extra) hit `ModuleNotFoundError`. Because `mcp-types` only pulls `pydantic` and `typing-extensions` (already core), it was promoted to a core dependency while the full `mcp` SDK stays in the `[mcp]` extra.
+
+*Verify:* `fastmcp_slim/pyproject.toml` (`mcp-types==2.0.0b1` in core dependencies), commit `e16ffad4`.
+
+### `McpError` is an alias; construction changed — Bridged (catch) / Breaking (construct)
+
+`fastmcp.exceptions.McpError` is a plain alias of the SDK's `MCPError` — a plain alias, not a subclass, so `except McpError` still catches SDK-raised errors and `err.error.code` still reads:
+
+```python
+from fastmcp.exceptions import McpError
+
+try:
+    ...
+except McpError as err:
+    print(err.error.code)  # unchanged
+```
+
+Construction is the one unavoidable behavior break. The v1 pattern of wrapping an `ErrorData` positionally raises `TypeError` under v2; construct with keywords instead:
+
+```python
+from fastmcp.exceptions import McpError
+
+# Before (raises TypeError under SDK v2):
+#   raise McpError(ErrorData(code=-32000, message="Client not supported"))
+
+raise McpError(code=-32000, message="Client not supported")
+```
+
+*Verify:* `fastmcp_slim/fastmcp/exceptions.py` (`McpError = MCPError`).
+
+## Server core
+
+The SDK v2 rewrote the server request-handling model. FastMCP's handler layer is the most heavily rewritten part of the migration, but the public server API is unchanged.
+
+### Handler adapters — Absorbed
+
+Handlers are now registered by method string via `add_request_handler(method, params_type, handler)`, take a uniform `(ctx, params)` signature, and return the **bare** result model (no `ServerResult` wrapper). FastMCP's `_setup_handlers` builds one thin adapter per method (`tools/list`, `tools/call`, `resources/read`, `prompts/get`, `logging/setLevel`, …) that binds the request context, adapts params to the existing handler body, and returns the bare result. The v1 decorator overrides and `_wrap_list_handler` are deleted.
+
+*Verify:* `fastmcp_slim/fastmcp/server/low_level.py` (462 lines changed), `fastmcp_slim/fastmcp/server/mixins/mcp_operations.py`.
+
+### FastMCP-owned request context — Absorbed
+
+The SDK's `request_ctx` ContextVar is gone; the SDK passes context to handlers as an argument only. FastMCP owns its own `fastmcp_request_ctx` ContextVar, set at the top of every adapter. It stores a FastMCP-owned `FastMCPRequestContext` wrapper rather than the raw SDK context, because the raw `ServerRequestContext.meta` is a bare `TypedDict` carrying only `progress_token` — the full `_meta` block (which holds `_meta.fastmcp.version` and the distributed-trace parent) has to be lifted out of the raw params dict. `Context.request_context` and its consumers (`report_progress`, `session_id`, telemetry trace extraction, `get_http_request`) all read through the wrapper.
+
+*Verify:* `fastmcp_slim/fastmcp/server/dependencies.py`, `server/context.py`, `server/telemetry.py`.
+
+### `ServerMiddleware` bridge for `initialize` — Absorbed
+
+Server-side middleware is a new first-class SDK concept: `Server.middleware` is a list of `ServerMiddleware` composed around every request and notification, including `initialize`. FastMCP no longer subclasses `ServerSession` (the runner constructs it), so the old `MiddlewareServerSession._received_request` override is gone. A `FastMCPServerMiddleware` is appended to the SDK's middleware list (preserving the SDK's own OpenTelemetry middleware) and intercepts `initialize` to run FastMCP's middleware chain. The v2 seam is cleaner — `call_next(ctx)` returns the serialized result directly, so the old `capturing_respond` machinery is deleted.
+
+*Verify:* `fastmcp_slim/fastmcp/server/low_level.py` (`FastMCPServerMiddleware`).
+
+### Per-session state re-homed to the connection — Absorbed
+
+Because `ServerSession` is now per-request, per-session state can no longer live on the session object. The minimum logging level is re-homed to a FastMCP-side map keyed by session id (via `connection.session_id`), and `client_supports_extension` becomes a free function reading `session.client_params.capabilities`.
+
+*Verify:* `fastmcp_slim/fastmcp/server/low_level.py`, `server/context.py` (`_log_to_server_and_client`).
+
+### `extensions` capability read from the real field — Absorbed (post-review fix)
+
+SDK v2 declares `extensions` as a real field on `ClientCapabilities`, so a client sending `ClientCapabilities(extensions={...})` populates the field, not `model_extra`. `client_supports_extension` now reads `caps.extensions` first and falls back to `model_extra` only for legacy-serialized clients.
+
+*Verify:* commit `96ca0092`, `server/low_level.py` / `server/context.py`.
+
+### Task protocol and the `_sdk_patches` shim — Absorbed (with an upstream gap)
+
+The SEP-1686 task CRUD protocol (`tasks/get`, `tasks/result`, `tasks/list`, `tasks/cancel`) is entirely FastMCP-owned — the SDK ships no task store. Task detection moves to a params field: `params.task is not None` on `CallToolRequestParams`, with `ttl` from `params.task.ttl`. The four task handlers port to `add_request_handler`.
+
+The SDK has a real gap here (see [Known Gaps](/development/v4-notes/known-gaps) and sdk-feedback #1): it ships the task result types but omits them from the method registries, so a background-task `tools/call` returning a `CreateTaskResult` fails validation. FastMCP installs a registry-widening shim in `_sdk_patches.py` that adds `CreateTaskResult` to the `tools/call` result union and registers the `tasks/*` rows. It is a temporary patch with a self-documented removal trigger.
+
+Resources and prompts have **no `task` field** on their params in b1, so task-augmented resource reads and prompt gets are not wire-expressible — a documented capability regression, tracked by xfails, not a bug FastMCP fixes.
+
+*Verify:* `fastmcp_slim/fastmcp/_sdk_patches.py`, `server/tasks/*`.
+
+### Single SERVER span per request — Absorbed (post-migration fix)
+
+SDK v2 seeds an `OpenTelemetryMiddleware` into every lowlevel `Server`, so each inbound request already emits a SERVER span. FastMCP emits its own richer SERVER span per request (with `fastmcp.*` and auth/session attributes), so a server with an OTel exporter installed would export **two** SERVER spans per request under different attribute conventions. `LowLevelServer.__init__` now drops the SDK's seeded `OpenTelemetryMiddleware` (matched by type, not position, leaving any other seeded middleware intact) and keeps FastMCP's spans. Inbound W3C trace-context extraction is unaffected — FastMCP's telemetry reads `traceparent` from `_meta` itself, so distributed traces still link client to server. Client-side is not double-counted: the SDK's `ClientSession` emits a low-level `MCP send <method>` CLIENT span that nests *under* FastMCP's high-level client span, a legitimate parent/child hierarchy rather than a duplicate.
+
+*Verify:* `fastmcp_slim/fastmcp/server/low_level.py` (the `OpenTelemetryMiddleware` filter); `tests/server/telemetry/test_server_tracing.py::TestSingleServerSpan`.
+
+### Telemetry on by default, with an explicit off-switch — Absorbed
+
+FastMCP's OpenTelemetry instrumentation is on by default. Because FastMCP uses only the OpenTelemetry API, span creation is a no-op with negligible overhead (the API's `NonRecordingSpan`) unless the user configures an SDK and exporter — so being always-on costs nothing until you opt into collection. The new `FASTMCP_ENABLE_TELEMETRY` setting (`fastmcp.settings.enable_telemetry`, default `true`) is the explicit off-switch: set it to `false` and `get_tracer()` returns a genuine no-op tracer, so no FastMCP spans are created even when an SDK is configured. The off-switch governs FastMCP's own spans (all SERVER spans, plus FastMCP's high-level CLIENT span); the SDK's low-level `mcp-python-sdk` `MCP send <method>` CLIENT spans are governed by the user's OpenTelemetry SDK, not this setting. FastMCP's SERVER span now also carries `mcp.protocol.version` — the attribute the dropped SDK `OpenTelemetryMiddleware` set — restoring parity with the SDK's semantic conventions.
+
+*Verify:* `fastmcp_slim/fastmcp/settings.py` (`enable_telemetry`); `fastmcp_slim/fastmcp/telemetry.py` (`get_tracer` off-switch); `fastmcp_slim/fastmcp/server/telemetry.py` (`get_protocol_span_attributes`); `tests/server/telemetry/test_server_tracing.py::TestTelemetryEnabledByDefault`, `::TestProtocolVersionAttribute`.
+
+### Spec-correct error codes via a central translator — Breaking (wire error code)
+
+Resource-not-found responses from the core `resources/read` handler previously used `-32002`. SEP-2164 (and the SDK's own mcpserver, which maps `ResourceNotFoundError` → `INVALID_PARAMS`) makes this `-32602`. The per-adapter `MCPError(code=..., ...)` literals in `server/mixins/mcp_operations.py` are replaced by a single `fastmcp.exceptions.to_mcp_error()` translator that maps FastMCP's public exceptions to the `mcp_types` code constants (`NotFoundError`/`DisabledError`/`ValidationError` → `INVALID_PARAMS`, else `INTERNAL_ERROR`). Clients that string-matched on the old `-32002` for resource-not-found must switch to `-32602`; the human-readable message ("Resource not found: ...") is unchanged. The opt-in `ErrorHandlingMiddleware`, which has its own documented per-method-prefix code mapping, is intentionally left as-is.
+
+*Verify:* `fastmcp_slim/fastmcp/exceptions.py` (`to_mcp_error`); `fastmcp_slim/fastmcp/server/mixins/mcp_operations.py`; `tests/test_exceptions.py`.
+
+### `Cachable*` response-cache models renamed to `Cacheable*` — Breaking (rename) <!-- codespell:ignore -->
+
+The response-caching middleware's Pydantic wrapper models — used to serialize cached tool, resource, and prompt results for `ResponseCachingMiddleware` — carried a spelling typo. `CachableToolResult`, `CachableResourceContent`, `CachableResourceResult`, `CachableMessage`, and `CachablePromptResult` are renamed to `CacheableToolResult`, `CacheableResourceContent`, `CacheableResourceResult`, `CacheableMessage`, and `CacheablePromptResult`. None of these classes are re-exported from `fastmcp` or any package `__init__.py`, so the realistic blast radius is limited to code that imported the old names directly from `fastmcp.server.middleware.caching`:
+
+```python
+# Before (now raises ImportError):
+#   from fastmcp.server.middleware.caching import CachableToolResult
+
+# After
+from fastmcp.server.middleware.caching import CacheableToolResult
+```
+
+There is deliberately no compatibility alias for the old spelling.
+
+*Verify:* `fastmcp_slim/fastmcp/server/middleware/caching.py`.
+
+## Client
+
+The `fastmcp.Client` public API is preserved exactly. The client stays a wrapper around `mcp.ClientSession` in legacy/handshake mode; the first-class `mcp.client.Client` is deliberately not adopted in this PR.
+
+### Transports yield 2-tuples — Absorbed
+
+All SDK transports (`streamable_http_client`, `sse_client`, `stdio_client`) now yield a 2-tuple `(read, write)` instead of exposing a third `get_session_id` element. HTTP configuration flows through a caller-supplied `http_client=`. Only the tuple unpack changed on the FastMCP side.
+
+*Verify:* `fastmcp_slim/fastmcp/client/transports/http.py`, `transports/sse.py`, `transports/stdio.py`.
+
+### Float timeouts; `timedelta` still accepted — Absorbed
+
+The SDK session and call timeouts are now plain floats. FastMCP's public `Client(timeout=...)` still accepts a `timedelta`, a plain float, or an int, normalizing through the existing `normalize_timeout_to_seconds` at the `SessionKwargs` chokepoint:
+
+```python
+from datetime import timedelta
+
+from fastmcp import Client
+
+client = Client("my_mcp_server.py", timeout=timedelta(seconds=30))  # still works
+client = Client("my_mcp_server.py", timeout=30.0)  # also works
+```
+
+*Verify:* `fastmcp_slim/fastmcp/client/transports/base.py` (`SessionKwargs.read_timeout_seconds: float | None`), `client/client.py`.
+
+### `get_session_id` via header sniff — Bridged
+
+The SDK dropped `get_session_id` from the streamable-HTTP transport with no replacement (the SDK source has an author TODO acknowledging it breaks the Transport protocol). FastMCP reconstructs it by registering an httpx2 response event hook on the client it owns, capturing the `mcp-session-id` response header (httpx2 preserves httpx's `event_hooks` API). The removal trigger is the upstream TODO.
+
+*Verify:* `fastmcp_slim/fastmcp/client/transports/http.py` (`_capture_session_id`, `get_session_id`).
+
+### Pagination via `params=` — Absorbed
+
+The SDK's `cursor=` kwarg on `list_*` is gone; pagination now flows through `params=PaginatedRequestParams(cursor=...)`. FastMCP's public `cursor=` on the `list_*_mcp` methods is preserved and translated internally.
+
+*Verify:* `fastmcp_slim/fastmcp/client/mixins/{tools,resources,prompts}.py`.
+
+### OAuth `callback_handler` returns `AuthorizationCodeResult` — Breaking (advanced)
+
+The one OAuth break: a custom `callback_handler` must return an `AuthorizationCodeResult` (fields `code`, `state`, `iss`) instead of the old `tuple[str, str | None]`. Everything else in the OAuth surface — `OAuthClientProvider` kwargs, `TokenStorage`, `async_auth_flow` — is unchanged.
+
+*Verify:* `fastmcp_slim/fastmcp/client/auth/oauth.py`.
+
+### Notification dispatch unwrapped — Absorbed
+
+The client's notification handling was reworked for the v2 message model. Custom server-to-client notifications (like SEP-1686 `notifications/tasks/status`) are no longer tee'd to a user `message_handler` — the SDK routes them only through `NotificationBinding` (see sdk-feedback #8). FastMCP registers a binding so task-status updates reach the Task registry.
+
+*Verify:* `fastmcp_slim/fastmcp/client/messages.py`, `client/tasks.py`.
+
+### `SDKServer` alias — Absorbed (post-review rename)
+
+The in-memory transport resolves the low-level server per server type. The alias for the SDK's own `MCPServer` was renamed from the misleading `FastMCP1Server` / `FastMCP1x` to `SDKServer`, since it names the SDK v2 server, not a FastMCP 1.x object.
+
+*Verify:* commit `5c3b82e4`; `client/client.py`, `client/transports/memory.py`, `server/providers/proxy.py`, `cli/run.py`.
+
+### Proxy request-context stash — Absorbed (post-review fix)
+
+Proxy forwarding handlers stash the request context so a backend that issues a server-initiated request (list_roots/sampling/elicitation) can relay it back to the proxy's own client. This stash was initially applied only on the tool path; commit `1ac166bd` extended it to proxied resources, templates, and prompts.
+
+*Verify:* commit `1ac166bd`, `server/providers/proxy.py`.
+
+### Shared response cache via `KeyValueResponseCacheStore` — New
+
+The SDK's client response cache (SEP-2549) reads and writes through a pluggable `ResponseCacheStore`; the default is a per-client in-memory LRU. FastMCP adds `KeyValueResponseCacheStore`, an adapter over the same `AsyncKeyValue` key-value abstraction the event store and OAuth proxy already use, so a fleet of clients (e.g. proxy replicas) can share one Redis-backed response cache. Pass it via `CacheConfig(store=...)`; a custom store requires an explicit `partition` (SDK) and `target_id` (FastMCP). Results serialize through a type-tagged envelope validated against an allowlist of cacheable result models — an unknown tag is a cache miss, never an import-by-name — and each adapter owns its own collection so `clear()` never touches another tenant.
+
+```python
+from fastmcp.client.caching import KeyValueResponseCacheStore
+from mcp.client.caching import CacheConfig
+from key_value.aio.stores.redis import RedisStore
+
+store = KeyValueResponseCacheStore(storage=RedisStore(url="redis://localhost"))
+config = CacheConfig(store=store, partition="tenant-a", target_id="weather-api")
+```
+
+*Verify:* `fastmcp_slim/fastmcp/client/caching.py`, `tests/client/client/test_kv_response_cache.py`.
+
+## HTTP
+
+The maintainer asked whether FastMCP can now delete its custom HTTP app and let the SDK's `Server.streamable_http_app()` handle everything. The answer for this PR is **no** — every override earns its keep. Convergence is a v4 project gated on three upstream additions (see [Feature Program](/development/v4-notes/feature-program)).
+
+### Kept overrides — Absorbed
+
+Four overrides survive, each for a concrete reason:
+
+1. **Event-store session scoping.** The SDK hands every per-session transport the *same* `event_store` object, one stream-ID keyspace shared across sessions. FastMCP's `FastMCPStreamableHTTPSessionManager` returns a fresh `SessionScopedEventStore(shared, session_id=…)` per session, so resumability events don't leak across sessions.
+2. **Lifespan reconciliation.** The SDK builder enters the bare lowlevel `Server.lifespan` (which yields `{}`). FastMCP drives its own `_lifespan_manager` — ref-counted for mounts, Ctrl-C-shielded, docket-aware. The SDK path silently skips all of it, so FastMCP sets the server lifespan to delegate to `_lifespan_manager` and lets the manager enter it once.
+3. **Graceful transport termination.** FastMCP's lifespan `finally` drains the manager's server instances via `transport.terminate()` before task-group cancel, fixing the Uvicorn "returned without completing response" edge (#3025). The SDK just cancels.
+4. **User ASGI middleware hook.** The SDK builder hardcodes an empty middleware list and only appends auth. FastMCP's `http_app(middleware=...)` and `RequestContextMiddleware` have nowhere to go in the SDK path.
+
+*Verify:* `fastmcp_slim/fastmcp/server/http.py`, `server/event_store.py`, `server/mixins/lifespan.py`.
+
+### DNS-rebinding ownership — Absorbed (security)
+
+FastMCP owns DNS-rebinding protection through its `HostOriginGuardMiddleware`, which is more expressive than the SDK's and is the documented surface. To avoid two allowlists double-blocking with confusing errors from two layers, FastMCP **always** disables the SDK's layer by passing `TransportSecuritySettings(enable_dns_rebinding_protection=False)` to the manager — both when FastMCP's protection is on (so they don't double-block) and when it's off (so the SDK's default-on flip can't silently re-enable it).
+
+*Verify:* `fastmcp_slim/fastmcp/server/http.py` (`enable_dns_rebinding_protection=False`, `HostOriginGuardMiddleware`).
+
+### httpx2 replaces httpx — Breaking (custom client/factory, typing) / Absorbed (everything else)
+
+SDK v2.0.0b2 replaces `httpx` + `httpx-sse` with [httpx2](https://pypi.org/project/httpx2/) (`>=2.5.0`), a next-generation httpx fork with built-in SSE. httpx2 is a near drop-in fork: the public API (`AsyncClient`, `Auth`, `Request`, `Response`, `Timeout`, `MockTransport`, exception hierarchy, `event_hooks`) matches httpx name-for-name. The SDK duck-types the client you hand it — `streamable_http_client(http_client=...)` and `sse_client(httpx_client_factory=...)` are type-hinted `httpx2.AsyncClient` with no `isinstance` gate — but the objects that cross into the SDK must be httpx2.
+
+FastMCP now uses **httpx2 exclusively** and no longer depends on `httpx`. Every FastMCP-owned HTTP path moves to httpx2: the client transports (`client/transports/{base,http,sse}.py`), client auth (`client/auth/{oauth,bearer}.py` — `BearerAuth`/`OAuth` subclass `httpx2.Auth`), the client-side exception-group handler (`utilities/exceptions.py`), the proxy's upstream client (`server/providers/proxy.py`), the `MCPConfig` client-auth field (`mcp_config.py`), **and** all the server-side code that the earlier seam pass had left on httpx — the ~15 server auth providers' upstream IdP calls, the OpenAPI provider, `from_openapi`/`from_fastapi`, `version_check`, `resources/types.py`, the SSRF download guard, and the `apps_dev` CLI. `httpx` is dropped from the `mcp` extra entirely (it may still arrive transitively via other libraries, but FastMCP never imports it). The ~170 `httpx_mock` calls across the security-critical server-auth test files are ported to a local httpx2-backed `httpx_mock` fixture (`tests/utilities/httpx2_mock.py`) that preserves the `add_response`/`add_exception`/`get_request(s)` API verbatim, so `pytest-httpx` is dropped too.
+
+User-visible deltas:
+
+- **Custom client factory / client.** `StreamableHttpTransport(httpx_client_factory=...)`, `SSETransport(httpx_client_factory=...)`, and `OAuth(httpx_client_factory=...)` factories must now return `httpx2.AsyncClient`; a custom `httpx.Auth` passed as `Client(auth=...)` should become `httpx2.Auth`. httpx2 is a drop-in fork, so the change is an import swap (`import httpx` → `import httpx2`). This is a typing break; at runtime a duck-compatible httpx client still satisfies the SDK, but mixing `httpx.Timeout`/`httpx.Auth` with an httpx2 client is unsupported.
+- **OpenAPI client.** `FastMCP.from_openapi(client=...)` and `OpenAPIProvider(client=...)` are now type-hinted `httpx2.AsyncClient`. There is no `isinstance` gate, so an existing `httpx.AsyncClient` still works at runtime via duck-typing this release; the typing nudges you to httpx2.
+- **TLS trust store.** httpx2 verifies TLS against the OS trust store via `truststore` (honoring `SSL_CERT_FILE`/`SSL_CERT_DIR` first) instead of the bundled certifi CA set. This now applies to **all** FastMCP HTTP, including server-auth upstream IdP calls — not just the client path. Corporate-CA and certifi-pinned setups may see different trust behavior.
+- **Logger renames.** FastMCP HTTP now logs under `httpx2` and `httpcore2.*` (was `httpx`/`httpcore.*`). Anyone filtering FastMCP HTTP logs by logger name must update the names.
+
+The session-id header hook (below) works unchanged: httpx2 keeps httpx's `event_hooks` API. FastMCP's tool/resource/prompt handlers still map upstream 429/timeout errors to actionable `ToolError`/`ResourceError`; because a user's own tool may raise from either library, `server/server.py` catches both `httpx2` and (if installed) legacy `httpx` `HTTPStatusError`/`TimeoutException` via a defensive `try: import httpx` shim.
+
+*Verify:* `fastmcp_slim/pyproject.toml` (`mcp` extra lists only `httpx2`); no FastMCP source imports `httpx` except the documented defensive shim in `server/server.py`.
+
+## Protocol eras
+
+The SDK v2 serves multiple protocol eras from one server, and FastMCP formally embraces this.
+
+### Dual-era serving — Absorbed (supersedes "latest only")
+
+A single FastMCP server now handles clients across the protocol transition: the session-based handshake eras (through 2025-11-25) and the sessionless `2026-07-28` era (capability discovery via `server/discover`) simultaneously. This supersedes FastMCP's earlier "latest protocol only" stance.
+
+### Per-feature era matrix — Breaking (feature availability by era)
+
+The push-style Context features that require the server to call back into the client are unavailable on the sessionless `2026-07-28` era, because that era removes server-initiated requests (SEP-2577). The request/response features flow on every era.
+
+| Context feature | Session-based eras | `2026-07-28` (sessionless) |
+| --- | --- | --- |
+| `ctx.info` / logging notifications | Supported | Supported |
+| Tools, resources, prompts, completions | Supported | Supported |
+| `ctx.elicit` | Supported | Not yet — MRTR rewrite pending |
+| `ctx.sample` / `ctx.sample_step` | Supported (deprecated) | Removed — call an LLM server-side |
+| `ctx.list_roots` | Supported | Not yet — MRTR rewrite pending |
+| Tasks (via the FastMCP client) | Supported | Not yet |
+
+Tools that rely on `ctx.elicit` or `ctx.list_roots` continue to work against clients on the session-based eras. Sampling is the exception: it is deprecated on every era and will not return on modern connections (see the Deprecated entry below).
+
+Ordinary `ctx.info` usage emits an SDK-level `MCPDeprecationWarning` ("The logging capability is deprecated as of 2026-07-28 (SEP-2577)"). That warning comes from the SDK, not FastMCP, and is benign — logging keeps working on session-based connections per the matrix. `ctx.sample`/`ctx.sample_step` additionally emit a FastMCP-owned `FastMCPDeprecationWarning` (see below). The upgrade guide calls both out explicitly.
+
+Wire interop across the transition is verified: a 3.4.3 client against a v4 server and a v4 client against a 3.4.3 server are bidirectionally clean across 9 operations over HTTP (WS2).
+
+*Verify:* `docs/getting-started/upgrading/from-fastmcp-3.mdx` (the published matrix and SDK-warning note), `tests/server/test_protocol_eras.py`.
+
+### Sampling deprecated, era-gated — Deprecated
+
+`ctx.sample()` and `ctx.sample_step()` are deprecated and slated for removal in a future FastMCP release. Server-initiated sampling relies on the `createMessage` back-channel that SEP-2577 removed from the wire as of `2026-07-28`, and unlike elicitation it has no multi-round-trip replacement (the agentic loop would exhaust the round-trip budget). Both methods now emit a `FastMCPDeprecationWarning` once per process (gated on `settings.deprecation_warnings`), and on a `2026-07-28` connection they raise a clear `ToolError` before touching the wire. The client-side sampling handler infrastructure (anthropic/openai/google_genai) is retained for future MRTR work and is not deprecated. The migration is to call an LLM directly from your server rather than borrowing the client's model.
+
+The dead TODO at `server/context.py` (a background-task sampling relay that was never built) is removed: that relay is not being built, so the note is gone rather than left as a promise.
+
+*Verify:* `fastmcp_slim/fastmcp/server/context.py` (`_warn_sampling_deprecated`, `_is_modern_protocol`, the `sample`/`sample_step` gates), `docs/servers/sampling.mdx` (deprecation banner), `tests/server/test_protocol_eras.py` (warning + era-gate tests).
+
+### Push-feature degradation quality — Resolved (was sdk-feedback #10)
+
+On a `2026-07-28` connection the degradation error used to differ by feature: `ctx.list_roots` raised a clear `NoBackChannelError`, while `ctx.elicit` / `ctx.sample` surfaced a bare "Method not found" because those methods attach a `related_request_id` and reach client dispatch before failing. FastMCP now era-gates `ctx.elicit` and `ctx.sample`/`ctx.sample_step` to raise a clear, era-aware `ToolError` before the wire ("server-initiated sampling is not available on MCP 2026-07-28 connections…" and "elicitation via server-initiated requests is unavailable on 2026-07-28 connections."). The strict xfail that captured #10 is flipped to a passing test.
+
+*Verify:* `tests/server/test_protocol_eras.py` (`test_elicit_sample_degradation_message_is_clear_on_modern`, now a real test), `server/context.py` (era gates).
+
+### Server-level cache hints (SEP-2549) — New (opt-in feature)
+
+A FastMCP server can emit SEP-2549 freshness hints so a caching client (`fastmcp.Client(cache=...)`) may reuse a response without a wire round-trip. Two constructor params carry it: `FastMCP(cache_ttl=300, cache_scope="public")`, where `cache_ttl` is in seconds and `cache_scope` is `"public"` or `"private"` (default `"private"` when a TTL is set). The hint is uniform by construction — one server-level value applies to every SDK-cacheable method (`tools/list`, `prompts/list`, `resources/list`, `resources/templates/list`, `resources/read`, and `server/discover`) with no per-component surface and no aggregation. FastMCP does not hand-set the wire fields: it passes the hint through to the SDK low-level `Server(cache_hints=...)`, whose runner fills `ttlMs`/`cacheScope` on every cacheable result via `apply_cache_hint`, leaving any field a handler set explicitly untouched. `cache_ttl` must be positive, and a `cache_scope` without a `cache_ttl` is rejected at construction (a scope alone does not enable caching, since the client gates on the TTL's presence). Absent both params, no hint is emitted. Honoring is modern-only (the SDK client reads hints only at `2026-07-28`) and opt-in on the client, so a hinted server is inert unless the client passes `cache=`.
+
+*Verify:* `fastmcp_slim/fastmcp/server/caching.py` (`build_cache_hints`), `fastmcp_slim/fastmcp/server/server.py` (constructor params passed to `LowLevelServer(cache_hints=...)`), `tests/server/test_cache_hints.py` (unit validation + end-to-end interop with `fastmcp.Client(cache=True)`).
+
+### The xfail register — Known gap
+
+Roughly forty `xfail` markers across the test tree (concentrated in `tests/server/tasks/`, `tests/client/tasks/`, and `test_protocol_eras.py`) are the built-in beta tracker: each names the SDK gap it waits on. They are enumerated and mapped to sdk-feedback findings on the [Known Gaps](/development/v4-notes/known-gaps) page.
+
+## Security
+
+FastMCP retains hardening that is not yet upstream and does not remove it during the migration.
+
+### Retained OAuth / DCR hardening — Absorbed
+
+FastMCP keeps its own DCR redirect-URI hardening (PRs #4419, #4408) regardless of the SDK's validation, which still accepts unsafe `javascript:`/`data:` redirect schemes at the model level (sdk-feedback #4). The streamable-HTTP DNS-rebinding protection above is a second retained security surface.
+
+*Verify:* recent commits `67527c1f` (block unsafe OAuth redirect schemes), `57a27992` (DNS rebinding), `cccb529f` (DCR redirect URI validation) on `main`.
+
+### Identity assertion (SEP-990 ID-JAG) — Added (beta)
+
+`OAuthProxy` (and `OIDCProxy`, which inherits it) accepts an optional `identity_assertion=IdentityAssertion(trusted_issuers=[...])`. When configured, the token endpoint accepts the RFC 7523 `urn:ietf:params:oauth:grant-type:jwt-bearer` grant carrying an enterprise IdP-issued ID-JAG, validates it (signature against the trusted issuer's JWKS, `iss`/`aud`/`exp`, `typ` of `oauth-id-jag+jwt`, mandatory `sub`, signed `client_id`/`resource` binding, and `jti` replay rejection), and mints a short-lived FastMCP access token carrying the asserted subject with no refresh token. Authorization server metadata advertises the `jwt-bearer` grant type and the `urn:ietf:params:oauth:grant-profile:id-jag` profile when enabled. This is server-side only; the client-side wrapper ships separately. See [Identity Assertion](/servers/auth/oauth-proxy#identity-assertion-sep-990).
+
+*Verify:* `fastmcp_slim/fastmcp/server/auth/identity_assertion.py`, the `exchange_identity_assertion` and `get_routes` changes in `fastmcp_slim/fastmcp/server/auth/oauth_proxy/proxy.py`, and the jwt-bearer dispatch in `fastmcp_slim/fastmcp/server/auth/auth.py` (`TokenHandler._maybe_handle_id_jag`).
+
+### Templated resource parameters are path-screened by default — Breaking (behavior)
+
+Every templated resource now has its extracted parameter values screened for path-traversal (`..` segments), absolute paths, and null bytes **before the handler runs** — on by default, at the server's read chokepoint, covering local and provider-sourced (mounted/proxied) templates alike. Previously these payloads reached handlers raw; a template whose parameter flowed into a filesystem path or upstream URL was exposed unless the author added their own check. A rejected read now surfaces a non-leaky "resource not found" error (`-32602`) and a debug log.
+
+The check is component-based, matching the SDK's `contains_path_traversal`: only a standalone `..` segment is traversal, so values that merely contain dots (`HEAD~3..HEAD`, `file.tar.gz`) and dotfiles (`.env`) still pass. This can break a template that legitimately accepts `..`-bearing or absolute values — exempt the parameter with `ResourceSecurity(exempt_params={...})`, disable per-component with `security=None`, or set a server-wide default with `FastMCP(resource_security=...)`. See [Resources → Path Security](/servers/resources#path-security).
+
+*Verify:* `fastmcp_slim/fastmcp/resources/security.py` (`ResourceSecurity`), the screening block in `FastMCP.read_resource` (`fastmcp_slim/fastmcp/server/server.py`), and `tests/resources/test_resource_security.py`.
+
+## Removed in 4.0
+
+Deprecations that warned in 3.x are removed in 4.0. Each entry below is a hard removal — the old surface raises `TypeError` / `AttributeError` rather than warning, unless noted otherwise.
+
+### Module and class shims
+
+- **`fastmcp.server.proxy`** (deprecated 3.0) — Breaking. Import proxy classes (`FastMCPProxy`, `ProxyClient`, etc.) from `fastmcp.server.providers.proxy` instead.
+- **`fastmcp.server.openapi`** and its submodules (`server`, `components`, `routing`), including the **`FastMCPOpenAPI`** class (deprecated 3.0) — Breaking. Use `FastMCP` with an `OpenAPIProvider` from `fastmcp.server.providers.openapi` instead.
+- **`fastmcp.experimental.server.openapi`** and **`fastmcp.experimental.utilities.openapi`** shims (deprecated 2.14) — Breaking. Import from `fastmcp.server.providers.openapi` and `fastmcp.utilities.openapi` respectively.
+- **`fastmcp.server.apps`** and **`fastmcp.server.app`** shims (deprecated 3.2) — Breaking. Import from `fastmcp.apps` (e.g. `AppConfig`) or `fastmcp` (`FastMCPApp`) instead.
+- **`PromptToolMiddleware`** and **`ResourceToolMiddleware`** (deprecated 3.1) — Breaking. Use the `PromptsAsTools` / `ResourcesAsTools` transforms from `fastmcp.server.transforms` instead. The non-deprecated `ToolInjectionMiddleware` base class is retained.
+- **`StreamableHttpTransport(sse_read_timeout=...)`** (deprecated no-op) — Breaking. The parameter had no effect under the SDK v2 client; configure timeouts via `read_timeout_seconds` in `session_kwargs` or on the httpx2 client via `httpx_client_factory`. `SSETransport` still accepts `sse_read_timeout`.
+
+### `FastMCP` server methods and `mount()` kwargs
+
+The following `FastMCP` methods and parameters, deprecated since 3.0, are removed:
+
+- `FastMCP.as_proxy(...)` → `create_proxy(...)` (`from fastmcp.server import create_proxy`)
+- `FastMCP.import_server(sub)` → `mount(sub)`
+- `mount(prefix=...)` → `mount(namespace=...)`
+- `mount(as_proxy=...)` — removed; mounts always invoke the child's lifespan and middleware, so the flag was already meaningless. To proxy a server, wrap it with `create_proxy()` before mounting.
+- `FastMCP.add_tool_transformation(name, config)` → `add_transform(ToolTransform({name: config}))`
+- `FastMCP.remove_tool_transformation(name)` — removed; it was a no-op that only warned (transforms are immutable once added). Use `server.disable(keys=[...])` to hide tools.
+- `FastMCP.remove_tool(name)` → `mcp.local_provider.remove_tool(name)`
+
+The `_REMOVED_KWARGS` constructor shim (which raises helpful `TypeError`s for kwargs removed in 3.0) is retained through 4.0.
+
+### Tool and component parameters
+
+- **Tool-level `serializer` parameter** — removed from `@tool` / `mcp.tool()`, `Tool.from_function`, `Tool.from_tool`, `TransformedTool.from_tool`, the OpenAPI `OpenAPITool`, and the `mcp_mixin` tool decorator. Return a `ToolResult` from your tool for full control over serialization instead (see [Custom Serialization](/servers/tools#custom-serialization)). The server-level `tool_serializer` constructor kwarg was already removed in 3.0.
+- **Tool `exclude_args` parameter** — removed from the tool decorator and its plumbing (`ParsedFunction.from_function`, `Tool.from_function`, `mcp.tool()`). Use dependency injection with `Depends()` to hide parameters from the tool schema instead.
+- **`decorator_mode` setting** (`FASTMCP_DECORATOR_MODE`) and its `"object"` mode — removed. Decorators always return the original function with metadata attached; the object-returning machinery is gone. Access component objects through the server (e.g. `await mcp.get_tool("name")`) rather than the decorated function.
+- **Component-import compatibility shims** — the `__getattr__` shims that re-exported `FunctionTool` / `ParsedFunction` / `tool` from `fastmcp.tools.tool`, `FunctionResource` / `resource` from `fastmcp.resources.resource`, and `FunctionPrompt` / `prompt` from `fastmcp.prompts.prompt` are removed. Import these from their canonical modules (`fastmcp.tools.function_tool`, `fastmcp.resources.function_resource`, `fastmcp.prompts.function_prompt`) instead.
+
+*Verify:* deletions of `fastmcp_slim/fastmcp/server/proxy.py`, `fastmcp_slim/fastmcp/server/openapi/`, `fastmcp_slim/fastmcp/experimental/server/openapi/`, `fastmcp_slim/fastmcp/experimental/utilities/openapi/`, `fastmcp_slim/fastmcp/server/apps.py`, `fastmcp_slim/fastmcp/server/app.py`; the removed classes in `fastmcp_slim/fastmcp/server/middleware/tool_injection.py`; the removed parameter in `fastmcp_slim/fastmcp/client/transports/http.py`; `fastmcp_slim/fastmcp/server/server.py`; `fastmcp_slim/fastmcp/tools/base.py`, `tools/function_tool.py`, `tools/tool_transform.py`, `tools/function_parsing.py`; `fastmcp_slim/fastmcp/settings.py`, `resources/function_resource.py`, `prompts/function_prompt.py`, and the local-provider decorators; `resources/base.py`, `prompts/base.py`.

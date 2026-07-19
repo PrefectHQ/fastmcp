@@ -113,6 +113,26 @@ For local development servers over plain HTTP, disable OAuth when the server is 
 uvx fastmcp-remote http://localhost:8000/mcp --auth none
 ```
 
+## Self-Signed Certificates
+
+For servers behind a self-signed certificate, point `--verify` at a CA bundle that trusts the certificate:
+
+```bash
+uvx fastmcp-remote https://internal.example.com/mcp --verify /path/to/ca-bundle.pem
+```
+
+To disable certificate verification entirely, pass `--verify false`. This is insecure and should only be used for trusted servers on private networks:
+
+```bash
+uvx fastmcp-remote https://internal.example.com/mcp --verify false
+```
+
+To trust a CA bundle without a flag, set the standard `SSL_CERT_FILE` environment variable, which OpenSSL reads automatically:
+
+```bash
+SSL_CERT_FILE=/path/to/ca-bundle.pem uvx fastmcp-remote https://internal.example.com/mcp
+```
+
 ## OAuth Storage
 
 OAuth tokens are stored under `~/.fastmcp/remote` by default. Set `FASTMCP_REMOTE_CONFIG_DIR` to use another directory:
@@ -140,6 +160,7 @@ uvx fastmcp-remote https://example.com/mcp 3334 --host 127.0.0.1
 | `--transport` | Choose `http` or `sse`. Defaults to `http`. |
 | `--header` | Add a header to upstream requests, for example `--header "Authorization: Bearer <token>"`. Values may contain colons. Quote headers whose values contain spaces. Use `${VAR}` to expand environment variables inside values. Repeat for multiple headers. |
 | `--auth` | Choose `oauth` or `none`. The default uses OAuth unless an `Authorization` header is provided. |
+| `--verify` | Control TLS certificate verification. Pass a path to a CA bundle to trust a self-signed certificate, or `false` to disable verification (insecure). Defaults to verification enabled. |
 | `--resource` | Isolate OAuth token storage for a named remote resource. |
 | `--host` | Set the OAuth callback hostname. Defaults to `localhost`. |
 | `--auth-timeout` | Set how long to wait for the OAuth callback. Defaults to 300 seconds. |

@@ -366,7 +366,7 @@ class LocalProvider(
             matching = [t for t in matching if version.matches(t.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
+        return max(matching, key=version_sort_key)
 
     async def _list_resources(self) -> Sequence[Resource]:
         """Return all resources."""
@@ -390,7 +390,7 @@ class LocalProvider(
             matching = [r for r in matching if version.matches(r.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
+        return max(matching, key=version_sort_key)
 
     async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """Return all resource templates."""
@@ -416,7 +416,7 @@ class LocalProvider(
             matching = [t for t in matching if version.matches(t.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
+        return max(matching, key=version_sort_key)
 
     async def _list_prompts(self) -> Sequence[Prompt]:
         """Return all prompts."""
@@ -440,7 +440,7 @@ class LocalProvider(
             matching = [p for p in matching if version.matches(p.version)]
         if not matching:
             return None
-        return max(matching, key=version_sort_key)  # type: ignore[type-var]  # ty:ignore[invalid-return-type]
+        return max(matching, key=version_sort_key)
 
     # =========================================================================
     # Task registration

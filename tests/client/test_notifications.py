@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 
-import mcp.types
+import mcp_types
 import pytest
 
 from fastmcp import Client, FastMCP
@@ -14,7 +14,7 @@ class NotificationRecording:
     """Record of a notification that was received."""
 
     method: str
-    notification: mcp.types.ServerNotification
+    notification: mcp_types.ServerNotification
     timestamp: datetime = field(default_factory=datetime.now)
 
 
@@ -26,10 +26,11 @@ class RecordingMessageHandler(MessageHandler):
         self.notifications: list[NotificationRecording] = []
         self.name = name
 
-    async def on_notification(self, message: mcp.types.ServerNotification) -> None:
+    async def on_notification(self, message: mcp_types.ServerNotification) -> None:
         """Record all notifications with timestamp."""
+        # SDK v2 delivers notifications unwrapped (no `.root` wrapper).
         self.notifications.append(
-            NotificationRecording(method=message.root.method, notification=message)
+            NotificationRecording(method=message.method, notification=message)
         )
 
     def get_notifications(
@@ -83,7 +84,7 @@ class TestNotificationAPI:
         @server.tool
         async def trigger_notification(ctx: Context) -> str:
             """Send a notification using the async API."""
-            await ctx.send_notification(mcp.types.ToolListChangedNotification())
+            await ctx.send_notification(mcp_types.ToolListChangedNotification())
             return "Notification sent"
 
         async with Client(server, message_handler=recording_message_handler) as client:
@@ -104,9 +105,9 @@ class TestNotificationAPI:
         @server.tool
         async def trigger_all_notifications(ctx: Context) -> str:
             """Send all notification types."""
-            await ctx.send_notification(mcp.types.ToolListChangedNotification())
-            await ctx.send_notification(mcp.types.ResourceListChangedNotification())
-            await ctx.send_notification(mcp.types.PromptListChangedNotification())
+            await ctx.send_notification(mcp_types.ToolListChangedNotification())
+            await ctx.send_notification(mcp_types.ResourceListChangedNotification())
+            await ctx.send_notification(mcp_types.PromptListChangedNotification())
             return "All notifications sent"
 
         async with Client(server, message_handler=recording_message_handler) as client:

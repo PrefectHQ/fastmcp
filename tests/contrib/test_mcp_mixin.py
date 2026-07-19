@@ -276,7 +276,7 @@ class TestMCPMixin:
 
     async def test_tool_with_title_and_meta(self):
         """Test that title (via annotations) and meta arguments are properly passed through."""
-        from mcp.types import ToolAnnotations
+        from mcp_types import ToolAnnotations
 
         mcp = FastMCP()
 

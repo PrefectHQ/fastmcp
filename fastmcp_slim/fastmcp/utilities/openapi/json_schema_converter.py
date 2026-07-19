@@ -8,6 +8,7 @@ for our specific use case.
 
 from typing import Any
 
+from fastmcp.utilities.json_schema import require_discriminator_property
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -96,17 +97,20 @@ def convert_openapi_schema_to_json_schema(
     if convert_one_of_to_any_of and "oneOf" in result:
         result["anyOf"] = result.pop("oneOf")
 
-    # Step 3: Remove OpenAPI-specific fields
+    # Step 3: Preserve discriminator tag presence before removing the keyword
+    result = require_discriminator_property(result)
+
+    # Step 4: Remove OpenAPI-specific fields
     for field in OPENAPI_SPECIFIC_FIELDS:
         result.pop(field, None)
 
-    # Step 4: Handle readOnly/writeOnly property removal
+    # Step 5: Handle readOnly/writeOnly property removal
     if remove_read_only or remove_write_only:
         result = _filter_properties_by_access(
             result, remove_read_only, remove_write_only
         )
 
-    # Step 5: Recursively process nested schemas
+    # Step 6: Recursively process nested schemas
     for field_name, field_type in RECURSIVE_FIELDS.items():
         if field_name in result:
             if field_type is dict and isinstance(result[field_name], dict):

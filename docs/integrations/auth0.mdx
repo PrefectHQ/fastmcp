@@ -9,9 +9,54 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 
 <VersionBadge version="2.12.4" />
 
-This guide shows you how to secure your FastMCP server using **Auth0 OAuth**. While Auth0 does have support for Dynamic Client Registration, it is not enabled by default so this integration uses the [**OIDC Proxy**](/servers/auth/oidc-proxy) pattern to bridge Auth0's dynamic OIDC configuration with MCP's authentication requirements.
+FastMCP supports two Auth0 integration paths:
 
-## Configuration
+- **[Auth for MCP](#auth-for-mcp-dcr)** — Auth0 handles OAuth, DCR, and CIMD; FastMCP validates tokens (`Auth0MCPProvider`). Use this for MCP-native clients and Auth0's [Auth for MCP](https://auth0.com/ai/docs/mcp/intro/overview) setup.
+- **[OIDC Proxy](#oidc-proxy-fixed-credentials)** — FastMCP proxies OAuth with fixed application credentials (`Auth0Provider`). Use this when you manage an Auth0 application manually and do not need tenant-level DCR.
+
+## Auth for MCP (DCR)
+
+<VersionBadge version="3.3.0" />
+
+This path uses the [**Remote OAuth**](/servers/auth/remote-oauth) pattern. Auth0 acts as the authorization server; FastMCP is the resource server.
+
+### Prerequisites
+
+1. An **[Auth0 account](https://auth0.com/)** with **Auth for MCP** enabled
+2. **Resource Parameter Compatibility Profile** enabled (Settings → Advanced)
+3. Your FastMCP server URL (use `http://127.0.0.1:8000` in development — not `localhost`)
+
+See Auth0's [authorization quickstart](https://auth0.com/ai/docs/mcp/get-started/authorization-for-your-mcp-server) for tenant setup (API identifier, domain-level connections, CIMD approval).
+
+### Step 1: Create an Auth0 API
+
+Create an API (Resource Server) whose **identifier** is your MCP resource URL, for example `http://127.0.0.1:8000/mcp`. Use `RS256` signing and the `rfc9068_profile_authz` token dialect if you need `permissions` claims on tokens.
+
+When the server starts, it logs the exact `aud` value it validates — your API identifier must match.
+
+### Step 2: FastMCP configuration
+
+```python server_mcp.py
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.auth0 import Auth0MCPProvider
+
+auth_provider = Auth0MCPProvider(
+    config_url="https://YOUR_TENANT.auth0.com/.well-known/openid-configuration",
+    base_url="http://127.0.0.1:8000",
+)
+
+mcp = FastMCP(name="Auth0 MCP Server", auth=auth_provider)
+```
+
+No `client_id` or `client_secret` is required on the FastMCP side — MCP clients register with Auth0 directly.
+
+### Testing
+
+See `examples/auth/auth0_mcp/` for a runnable server and DCR client. Set `AUTH0_CONFIG_URL` to your tenant's OIDC discovery URL before starting the server.
+
+## OIDC Proxy (fixed credentials)
+
+This integration uses the [**OIDC Proxy**](/servers/auth/oidc-proxy) pattern when you use a fixed Auth0 application instead of tenant-level DCR.
 
 ### Prerequisites
 

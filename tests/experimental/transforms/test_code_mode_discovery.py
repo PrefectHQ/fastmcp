@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 from fastmcp import FastMCP
 from fastmcp.experimental.transforms.code_mode import (

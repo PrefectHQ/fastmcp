@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from mcp.shared.path_security import PathEscapeError, safe_join
 from pydantic import AnyUrl
 
 from fastmcp.resources.base import Resource, ResourceResult
@@ -75,14 +76,12 @@ class SkillFileTemplate(ResourceTemplate):
     async def read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult:
         """Read a file from the skill directory."""
         file_path = arguments.get("path", "")
-        full_path = self.skill_info.path / file_path
 
-        # Security: ensure path doesn't escape skill directory
+        # Security: reject traversal, absolute-path injection, null bytes, and
+        # symlink escapes before touching the filesystem.
         try:
-            full_path = full_path.resolve()
-            if not full_path.is_relative_to(self.skill_info.path):
-                raise ValueError(f"Path {file_path} escapes skill directory")
-        except ValueError as e:
+            full_path = safe_join(self.skill_info.path, file_path)
+        except PathEscapeError as e:
             raise ValueError(f"Invalid path: {e}") from e
 
         if not full_path.exists():
@@ -119,11 +118,13 @@ class SkillFileTemplate(ResourceTemplate):
         Provided for compatibility with the ResourceTemplate interface.
         """
         file_path = params.get("path", "")
-        full_path = (self.skill_info.path / file_path).resolve()
 
-        # Security: ensure path doesn't escape skill directory
-        if not full_path.is_relative_to(self.skill_info.path):
-            raise ValueError(f"Path {file_path} escapes skill directory")
+        # Security: reject traversal, absolute-path injection, null bytes, and
+        # symlink escapes before touching the filesystem.
+        try:
+            full_path = safe_join(self.skill_info.path, file_path)
+        except PathEscapeError as e:
+            raise ValueError(f"Invalid path: {e}") from e
 
         mime_type, _ = mimetypes.guess_type(str(full_path))
 
@@ -154,12 +155,12 @@ class SkillFileResource(Resource):
 
     async def read(self) -> str | bytes | ResourceResult:
         """Read the file content."""
-        full_path = self.skill_info.path / self.file_path
-
-        # Security check
-        full_path = full_path.resolve()
-        if not full_path.is_relative_to(self.skill_info.path):
-            raise ValueError(f"Path {self.file_path} escapes skill directory")
+        # Security: reject traversal, absolute-path injection, null bytes, and
+        # symlink escapes before touching the filesystem.
+        try:
+            full_path = safe_join(self.skill_info.path, self.file_path)
+        except PathEscapeError as e:
+            raise ValueError(f"Invalid path: {e}") from e
 
         if not full_path.exists():
             raise FileNotFoundError(f"File not found: {self.file_path}")

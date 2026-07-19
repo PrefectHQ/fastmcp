@@ -22,11 +22,10 @@ Requires the `docket` extra (included in dev dependencies).
 import asyncio
 from dataclasses import dataclass
 
-from mcp.types import TextContent
-
 from fastmcp import Context, FastMCP
 from fastmcp.client import Client
 from fastmcp.server.elicitation import AcceptedElicitation
+from fastmcp.types import TextContent
 
 mcp = FastMCP("Task Elicitation Demo")
 
@@ -52,6 +51,7 @@ async def plan_dinner(ctx: Context) -> str:
         return "Dinner cancelled!"
 
     prefs = result.data
+    assert isinstance(prefs, DinnerPrefs)
     await ctx.report_progress(1, 2, "Planning your menu...")
     await asyncio.sleep(1)
     await ctx.report_progress(2, 2, "Done!")

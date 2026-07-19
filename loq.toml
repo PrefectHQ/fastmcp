@@ -43,6 +43,10 @@ path = "fastmcp_slim/fastmcp/tools/tool_transform.py"
 max_lines = 1004
 
 [[rules]]
+path = "tests/resources/test_resource_template.py"
+max_lines = 1016
+
+[[rules]]
 path = "tests/server/providers/openapi/test_openapi_features.py"
 max_lines = 1029
 

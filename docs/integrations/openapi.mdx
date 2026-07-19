@@ -26,14 +26,14 @@ We recommend using the FastAPI integration for bootstrapping and prototyping, no
 To convert an OpenAPI specification to an MCP server, use the `FastMCP.from_openapi()` class method:
 
 ```python server.py
-import httpx
+import httpx2
 from fastmcp import FastMCP
 
 # Create an HTTP client for your API
-client = httpx.AsyncClient(base_url="https://api.example.com")
+client = httpx2.AsyncClient(base_url="https://api.example.com")
 
 # Load your OpenAPI spec 
-openapi_spec = httpx.get("https://api.example.com/openapi.json").json()
+openapi_spec = httpx2.get("https://api.example.com/openapi.json").json()
 
 # Create the MCP server
 mcp = FastMCP.from_openapi(
@@ -51,11 +51,11 @@ if __name__ == "__main__":
 If your API requires authentication, configure it on the HTTP client:
 
 ```python
-import httpx
+import httpx2
 from fastmcp import FastMCP
 
 # Bearer token authentication
-api_client = httpx.AsyncClient(
+api_client = httpx2.AsyncClient(
     base_url="https://api.example.com",
     headers={"Authorization": "Bearer YOUR_TOKEN"}
 )

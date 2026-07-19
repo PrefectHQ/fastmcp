@@ -5,7 +5,7 @@ _redirect_headers mechanism. These tests verify that FastMCP's transports rely o
 this behavior correctly and do not override it.
 """
 
-import httpx
+import httpx2
 import pytest
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -41,8 +41,8 @@ class TestHttpxBuiltinRedirectProtection:
         )
 
         # Use an httpx client with follow_redirects=True (as MCP does)
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
             follow_redirects=True,
         ) as client:
             response = await client.get(
@@ -76,8 +76,8 @@ class TestHttpxBuiltinRedirectProtection:
             ]
         )
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
             follow_redirects=True,
         ) as client:
             response = await client.get(
@@ -119,8 +119,8 @@ class TestHttpxBuiltinRedirectProtection:
             ]
         )
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
             follow_redirects=True,
         ) as client:
             response = await client.get(
@@ -159,8 +159,8 @@ class TestMcpHttpClientRedirectProtection:
         # Use AsyncClient directly with ASGI transport rather than
         # monkey-patching _transport on create_mcp_http_client, which
         # breaks when proxy env vars are set.
-        client = httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app),
+        client = httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app),
             headers={"Authorization": "Bearer secret"},
             follow_redirects=True,
         )

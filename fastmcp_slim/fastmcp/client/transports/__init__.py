@@ -1,4 +1,4 @@
-from mcp.server.fastmcp import FastMCP as FastMCP1Server
+from mcp.server.mcpserver import MCPServer as SDKServer
 
 from fastmcp.client.transports.base import (
     ClientTransport,

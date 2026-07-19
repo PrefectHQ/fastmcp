@@ -6,7 +6,13 @@ from fastmcp.client.auth import OAuth
 from fastmcp.client.transports import SSETransport, StreamableHttpTransport
 from fastmcp.tools import FunctionTool
 from fastmcp.utilities.versions import VersionSpec
-from fastmcp_remote.cli import IgnoreTools, build_transport, parse_args, parse_header
+from fastmcp_remote.cli import (
+    IgnoreTools,
+    build_transport,
+    parse_args,
+    parse_header,
+    parse_verify,
+)
 
 
 def sample_tool() -> str:
@@ -162,6 +168,77 @@ def test_sse_transport_strategy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     transport = build_transport(config)
 
     assert isinstance(transport, SSETransport)
+
+
+@pytest.mark.parametrize("value", ["false", "False", "0", "no", "off"])
+def test_parse_verify_disables_verification(value: str):
+    assert parse_verify(value) is False
+
+
+@pytest.mark.parametrize("value", ["true", "True", "1", "yes", "on"])
+def test_parse_verify_enables_verification(value: str):
+    assert parse_verify(value) is True
+
+
+def test_parse_verify_treats_other_values_as_ca_bundle_path():
+    assert parse_verify("/etc/ssl/ca-bundle.pem") == "/etc/ssl/ca-bundle.pem"
+
+
+def test_verify_defaults_to_none(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("FASTMCP_REMOTE_CONFIG_DIR", str(tmp_path))
+    config = parse_args(["https://example.com/mcp", "--auth", "none"])
+
+    assert config.verify is None
+    assert build_transport(config).verify is None
+
+
+def test_verify_false_disables_verification_on_transport(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("FASTMCP_REMOTE_CONFIG_DIR", str(tmp_path))
+    config = parse_args(
+        ["https://example.com/mcp", "--auth", "none", "--verify", "false"]
+    )
+
+    transport = build_transport(config)
+
+    assert config.verify is False
+    assert isinstance(transport, StreamableHttpTransport)
+    assert transport.verify is False
+
+
+def test_verify_ca_bundle_path_passes_to_transport(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("FASTMCP_REMOTE_CONFIG_DIR", str(tmp_path))
+    ca_bundle = "/etc/ssl/custom-ca.pem"
+    config = parse_args(
+        ["https://example.com/mcp", "--auth", "none", "--verify", ca_bundle]
+    )
+
+    assert build_transport(config).verify == ca_bundle
+
+
+def test_verify_passes_to_sse_transport(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("FASTMCP_REMOTE_CONFIG_DIR", str(tmp_path))
+    config = parse_args(
+        [
+            "https://example.com/sse",
+            "--transport",
+            "sse",
+            "--auth",
+            "none",
+            "--verify",
+            "false",
+        ]
+    )
+
+    transport = build_transport(config)
+
+    assert isinstance(transport, SSETransport)
+    assert transport.verify is False
 
 
 async def test_ignore_tools_transform_filters_matching_names():

@@ -1,4 +1,7 @@
+import pytest
+
 from fastmcp.cli.cli import _parse_env_var
+from fastmcp.cli.install.shared import parse_env_var
 
 
 class TestEnvVarParsing:
@@ -27,3 +30,10 @@ class TestEnvVarParsing:
         key, value = _parse_env_var("EMPTY_VAR=")
         assert key == "EMPTY_VAR"
         assert value == ""
+
+    @pytest.mark.parametrize("parser", [_parse_env_var, parse_env_var])
+    def test_parse_env_var_empty_key_exits(self, parser):
+        """Environment variable names cannot be empty."""
+        with pytest.raises(SystemExit) as exc_info:
+            parser("  =value")
+        assert exc_info.value.code == 1

@@ -2,7 +2,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from mcp.types import (
+from mcp_types import (
     AudioContent,
     CreateMessageRequestParams,
     CreateMessageResult,
@@ -27,7 +27,6 @@ from openai.types.chat import (
     ChatCompletionUserMessageParam,
 )
 from openai.types.chat.chat_completion import Choice
-from pydantic import AnyUrl
 
 from fastmcp.client.sampling.handlers.openai import (
     OpenAISamplingHandler,
@@ -58,7 +57,7 @@ def test_convert_sampling_messages_to_openai_messages():
 
 def test_image_content_to_openai_part():
     part = _image_content_to_openai_part(
-        ImageContent(type="image", data="YWJj", mimeType="image/png")
+        ImageContent(type="image", data="YWJj", mime_type="image/png")
     )
 
     assert part == ChatCompletionContentPartImageParam(
@@ -69,7 +68,7 @@ def test_image_content_to_openai_part():
 
 def test_audio_content_to_openai_part_wav():
     part = _audio_content_to_openai_part(
-        AudioContent(type="audio", data="YWJj", mimeType="audio/wav")
+        AudioContent(type="audio", data="YWJj", mime_type="audio/wav")
     )
 
     assert part == ChatCompletionContentPartInputAudioParam(
@@ -80,7 +79,7 @@ def test_audio_content_to_openai_part_wav():
 
 def test_audio_content_to_openai_part_mp3():
     part = _audio_content_to_openai_part(
-        AudioContent(type="audio", data="YWJj", mimeType="audio/mpeg")
+        AudioContent(type="audio", data="YWJj", mime_type="audio/mpeg")
     )
 
     assert part["input_audio"]["format"] == "mp3"
@@ -89,14 +88,14 @@ def test_audio_content_to_openai_part_mp3():
 def test_audio_content_to_openai_part_unsupported_raises():
     with pytest.raises(ValueError, match="Unsupported audio MIME type"):
         _audio_content_to_openai_part(
-            AudioContent(type="audio", data="YWJj", mimeType="audio/ogg")
+            AudioContent(type="audio", data="YWJj", mime_type="audio/ogg")
         )
 
 
 def test_image_content_to_openai_part_unsupported_raises():
     with pytest.raises(ValueError, match="Unsupported image MIME type"):
         _image_content_to_openai_part(
-            ImageContent(type="image", data="YWJj", mimeType="image/bmp")
+            ImageContent(type="image", data="YWJj", mime_type="image/bmp")
         )
 
 
@@ -106,7 +105,7 @@ def test_convert_single_image_content_to_openai_message():
         messages=[
             SamplingMessage(
                 role="user",
-                content=ImageContent(type="image", data="YWJj", mimeType="image/png"),
+                content=ImageContent(type="image", data="YWJj", mime_type="image/png"),
             )
         ],
     )
@@ -129,7 +128,7 @@ def test_convert_single_audio_content_to_openai_message():
         messages=[
             SamplingMessage(
                 role="user",
-                content=AudioContent(type="audio", data="YWJj", mimeType="audio/wav"),
+                content=AudioContent(type="audio", data="YWJj", mime_type="audio/wav"),
             )
         ],
     )
@@ -154,7 +153,7 @@ def test_convert_list_content_with_image_and_text():
                 role="user",
                 content=[
                     TextContent(type="text", text="What is in this image?"),
-                    ImageContent(type="image", data="YWJj", mimeType="image/jpeg"),
+                    ImageContent(type="image", data="YWJj", mime_type="image/jpeg"),
                 ],
             )
         ],
@@ -183,7 +182,7 @@ def test_convert_image_in_assistant_message_raises():
                 SamplingMessage(
                     role="assistant",
                     content=ImageContent(
-                        type="image", data="YWJj", mimeType="image/png"
+                        type="image", data="YWJj", mime_type="image/png"
                     ),
                 )
             ],
@@ -198,7 +197,7 @@ def test_convert_audio_in_assistant_message_raises():
                 SamplingMessage(
                     role="assistant",
                     content=AudioContent(
-                        type="audio", data="YWJj", mimeType="audio/wav"
+                        type="audio", data="YWJj", mime_type="audio/wav"
                     ),
                 )
             ],
@@ -215,7 +214,7 @@ def test_convert_list_image_in_assistant_message_raises():
                     role="assistant",
                     content=[
                         TextContent(type="text", text="Here's the image"),
-                        ImageContent(type="image", data="YWJj", mimeType="image/png"),
+                        ImageContent(type="image", data="YWJj", mime_type="image/png"),
                     ],
                 )
             ],
@@ -237,7 +236,7 @@ def test_convert_list_tool_calls_with_image_raises():
                             name="my_tool",
                             input={"arg": "val"},
                         ),
-                        ImageContent(type="image", data="YWJj", mimeType="image/png"),
+                        ImageContent(type="image", data="YWJj", mime_type="image/png"),
                     ],
                 )
             ],
@@ -284,7 +283,7 @@ async def test_handler_passes_max_completion_tokens():
     messages = [
         SamplingMessage(role="user", content=TextContent(type="text", text="hello"))
     ]
-    params = CreateMessageRequestParams(messages=messages, maxTokens=300)
+    params = CreateMessageRequestParams(messages=messages, max_tokens=300)
     await handler(messages, params, context=None)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
 
     call_kwargs = mock_client.chat.completions.create.call_args
@@ -331,7 +330,7 @@ def test_convert_messages_raises_on_unsupported_content_type():
     embedded = EmbeddedResource(
         type="resource",
         resource=TextResourceContents(
-            uri=AnyUrl("file:///test.txt"), text="hello", mimeType="text/plain"
+            uri="file:///test.txt", text="hello", mime_type="text/plain"
         ),
     )
     msg = SamplingMessage.model_construct(

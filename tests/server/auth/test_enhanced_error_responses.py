@@ -9,13 +9,28 @@ This test suite covers:
 
 import pytest
 from mcp.shared.auth import OAuthClientInformationFull
-from pydantic import AnyUrl
+from pydantic import AnyHttpUrl, AnyUrl
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
 from fastmcp import FastMCP
+from fastmcp.server.auth import RemoteAuthProvider, TokenVerifier
+from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
+
+
+class _UnderScopedTokenVerifier(TokenVerifier):
+    def __init__(self, required_scopes: list[str]):
+        super().__init__(required_scopes=required_scopes)
+
+    async def verify_token(self, token: str) -> AccessToken:
+        return AccessToken(token=token, client_id="test-client", scopes=["other"])
+
+
+class _UnderScopedOAuthProxy(OAuthProxy):
+    async def verify_token(self, token: str) -> AccessToken:
+        return AccessToken(token=token, client_id="test-client", scopes=["other"])
 
 
 class TestEnhancedAuthorizationHandler:
@@ -152,12 +167,12 @@ class TestEnhancedAuthorizationHandler:
 
     def test_html_error_includes_server_branding(self, oauth_proxy):
         """Test that HTML error page includes server branding from FastMCP instance."""
-        from mcp.types import Icon
+        from mcp_types import Icon
 
         # Create FastMCP server with custom branding
         mcp = FastMCP(
             "My Custom Server",
-            icons=[Icon(src="https://example.com/icon.png", mimeType="image/png")],
+            icons=[Icon(src="https://example.com/icon.png", mime_type="image/png")],
         )
 
         # Create app with OAuth routes
@@ -187,6 +202,38 @@ class TestEnhancedAuthorizationHandler:
 class TestEnhancedRequireAuthMiddleware:
     """Tests for enhanced authentication middleware error messages."""
 
+    @staticmethod
+    def create_scoped_app(
+        required_scopes: list[str],
+        scopes_supported: list[str],
+        challenge_scopes: list[str] | None = None,
+    ) -> Starlette:
+        auth = RemoteAuthProvider(
+            token_verifier=_UnderScopedTokenVerifier(required_scopes),
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url="http://localhost:8000",
+            scopes_supported=scopes_supported,
+            challenge_scopes=challenge_scopes,
+        )
+        return FastMCP("Test Server", auth=auth).http_app()
+
+    @staticmethod
+    def create_oauth_app() -> Starlette:
+        from key_value.aio.stores.memory import MemoryStore
+
+        auth = _UnderScopedOAuthProxy(
+            upstream_authorization_endpoint="https://auth.example.com/authorize",
+            upstream_token_endpoint="https://auth.example.com/token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="test-client-secret",
+            token_verifier=_UnderScopedTokenVerifier(["openid"]),
+            base_url="http://localhost:8000",
+            valid_scopes=["openid", "email", "calendar"],
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+        )
+        return FastMCP("Test Server", auth=auth).http_app()
+
     @pytest.fixture
     def rsa_key_pair(self) -> RSAKeyPair:
         """Generate RSA key pair for testing."""
@@ -202,8 +249,8 @@ class TestEnhancedRequireAuthMiddleware:
             base_url="https://test.com",
         )
 
-    def test_invalid_token_enhanced_error_message(self, jwt_verifier):
-        """Test that invalid_token errors have enhanced error messages."""
+    def test_missing_auth_no_error_attribute(self, jwt_verifier):
+        """Test that missing auth returns 401 without error attribute (RFC 6750 §3.1)."""
         from fastmcp.server.http import create_streamable_http_app
 
         server = FastMCP("Test Server")
@@ -225,6 +272,138 @@ class TestEnhancedRequireAuthMiddleware:
             assert response.status_code == 401
             assert "www-authenticate" in response.headers
 
+            # Per RFC 6750 §3.1: no error attribute when auth is missing
+            www_auth = response.headers["www-authenticate"]
+            assert "error=" not in www_auth
+            assert response.content == b""
+
+    def test_missing_auth_challenge_includes_supported_scopes(self):
+        app = self.create_scoped_app(
+            required_scopes=["read"],
+            scopes_supported=["api://client-id/read"],
+            challenge_scopes=["api://client-id/read"],
+        )
+
+        with TestClient(app) as client:
+            response = client.post("/mcp")
+
+        assert response.status_code == 401
+        assert response.headers["www-authenticate"] == (
+            'Bearer scope="api://client-id/read", '
+            'resource_metadata="http://localhost:8000/'
+            '.well-known/oauth-protected-resource/mcp"'
+        )
+
+    def test_insufficient_scope_challenge_includes_supported_scopes(self):
+        app = self.create_scoped_app(
+            required_scopes=["read"],
+            scopes_supported=["api://client-id/read"],
+            challenge_scopes=["api://client-id/read"],
+        )
+
+        with TestClient(app) as client:
+            response = client.post("/mcp", headers={"Authorization": "Bearer narrow"})
+
+        assert response.status_code == 403
+        assert response.headers["www-authenticate"] == (
+            'Bearer error="insufficient_scope", '
+            'error_description="Required scope: read", '
+            'scope="api://client-id/read", '
+            'resource_metadata="http://localhost:8000/'
+            '.well-known/oauth-protected-resource/mcp"'
+        )
+
+    def test_missing_auth_challenge_uses_required_scope_with_empty_catalog(self):
+        app = self.create_scoped_app(required_scopes=["read"], scopes_supported=[])
+
+        with TestClient(app) as client:
+            response = client.post("/mcp")
+
+        assert response.status_code == 401
+        assert response.headers["www-authenticate"] == (
+            'Bearer scope="read", resource_metadata="http://localhost:8000/'
+            '.well-known/oauth-protected-resource/mcp"'
+        )
+
+    def test_remote_missing_auth_challenge_excludes_optional_catalog_scopes(self):
+        app = self.create_scoped_app(
+            required_scopes=["read"],
+            scopes_supported=["read", "admin"],
+        )
+
+        with TestClient(app) as client:
+            response = client.post("/mcp")
+            metadata = client.get("/.well-known/oauth-protected-resource/mcp").json()
+
+        assert response.status_code == 401
+        assert 'scope="read"' in response.headers["www-authenticate"]
+        assert "admin" not in response.headers["www-authenticate"]
+        assert metadata["scopes_supported"] == ["read", "admin"]
+
+    def test_remote_insufficient_scope_challenge_excludes_optional_catalog_scopes(
+        self,
+    ):
+        app = self.create_scoped_app(
+            required_scopes=["read"],
+            scopes_supported=["read", "admin"],
+        )
+
+        with TestClient(app) as client:
+            response = client.post("/mcp", headers={"Authorization": "Bearer narrow"})
+
+        assert response.status_code == 403
+        assert 'scope="read"' in response.headers["www-authenticate"]
+        assert "admin" not in response.headers["www-authenticate"]
+
+    def test_oauth_missing_auth_challenge_excludes_optional_scopes(self):
+        app = self.create_oauth_app()
+
+        with TestClient(app) as client:
+            response = client.post("/mcp")
+            metadata = client.get("/.well-known/oauth-protected-resource/mcp").json()
+
+        assert response.status_code == 401
+        assert 'scope="openid"' in response.headers["www-authenticate"]
+        assert "email" not in response.headers["www-authenticate"]
+        assert "calendar" not in response.headers["www-authenticate"]
+        assert metadata["scopes_supported"] == ["openid", "email", "calendar"]
+
+    def test_oauth_insufficient_scope_challenge_excludes_optional_scopes(self):
+        app = self.create_oauth_app()
+
+        with TestClient(app) as client:
+            response = client.post("/mcp", headers={"Authorization": "Bearer narrow"})
+
+        assert response.status_code == 403
+        assert 'scope="openid"' in response.headers["www-authenticate"]
+        assert "email" not in response.headers["www-authenticate"]
+        assert "calendar" not in response.headers["www-authenticate"]
+
+    def test_invalid_token_enhanced_error_message(self, jwt_verifier):
+        """Test that invalid_token errors have enhanced error messages."""
+        from fastmcp.server.http import create_streamable_http_app
+
+        server = FastMCP("Test Server")
+
+        @server.tool
+        def test_tool() -> str:
+            return "test"
+
+        app = create_streamable_http_app(
+            server=server,
+            streamable_http_path="/mcp",
+            auth=jwt_verifier,
+        )
+
+        with TestClient(app) as client:
+            # Request WITH an invalid Authorization header
+            response = client.post(
+                "/mcp", headers={"Authorization": "Bearer invalid-token"}
+            )
+
+            assert response.status_code == 401
+            assert "www-authenticate" in response.headers
+
             # Check enhanced error message
             data = response.json()
             assert data["error"] == "invalid_token"
@@ -233,7 +412,7 @@ class TestEnhancedRequireAuthMiddleware:
             assert "automatically re-register" in data["error_description"]
 
     def test_invalid_token_www_authenticate_header_format(self, jwt_verifier):
-        """Test that WWW-Authenticate header format matches SDK."""
+        """Test that invalid token WWW-Authenticate header includes error attribute."""
         from fastmcp.server.http import create_streamable_http_app
 
         server = FastMCP("Test Server")
@@ -244,12 +423,15 @@ class TestEnhancedRequireAuthMiddleware:
         )
 
         with TestClient(app) as client:
-            response = client.post("/mcp")
+            # Request WITH an invalid token
+            response = client.post(
+                "/mcp", headers={"Authorization": "Bearer invalid-token"}
+            )
 
             assert response.status_code == 401
             www_auth = response.headers["www-authenticate"]
 
-            # Should follow Bearer challenge format
+            # Should follow Bearer challenge format with error
             assert www_auth.startswith("Bearer ")
             assert 'error="invalid_token"' in www_auth
             assert "error_description=" in www_auth

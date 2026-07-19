@@ -1,6 +1,6 @@
 from typing import cast
 
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.sampling import RequestContext, SamplingMessage, SamplingParams
@@ -12,7 +12,7 @@ class TestAutomaticToolLoop:
 
     async def test_automatic_tool_loop_executes_tools(self):
         """Test that ctx.sample() automatically executes tool calls."""
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
         call_count = 0
         tool_was_called = False
@@ -42,7 +42,7 @@ class TestAutomaticToolLoop:
                         )
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 # Second call: return final response
@@ -50,7 +50,7 @@ class TestAutomaticToolLoop:
                     role="assistant",
                     content=[TextContent(type="text", text="The weather is sunny!")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -75,7 +75,7 @@ class TestAutomaticToolLoop:
 
     async def test_automatic_tool_loop_multiple_tools(self):
         """Test that multiple tool calls in one response are all executed."""
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
         executed_tools: list[str] = []
 
@@ -110,14 +110,14 @@ class TestAutomaticToolLoop:
                         ),
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Done!")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -135,7 +135,7 @@ class TestAutomaticToolLoop:
 
     async def test_automatic_tool_loop_handles_unknown_tool(self):
         """Test that unknown tool names result in error being passed to LLM."""
-        from mcp.types import (
+        from mcp_types import (
             CreateMessageResultWithTools,
             ToolResultContent,
             ToolUseContent,
@@ -165,14 +165,14 @@ class TestAutomaticToolLoop:
                         )
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Handled error")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -201,7 +201,7 @@ class TestAutomaticToolLoop:
                 tool_result = msg.content
                 break
         assert tool_result is not None
-        assert tool_result.isError is True
+        assert tool_result.is_error is True
         # Content is list of TextContent objects
         assert isinstance(tool_result.content[0], TextContent)
         error_text = tool_result.content[0].text
@@ -210,7 +210,7 @@ class TestAutomaticToolLoop:
 
     async def test_automatic_tool_loop_handles_tool_exception(self):
         """Test that tool exceptions are caught and passed to LLM as errors."""
-        from mcp.types import (
+        from mcp_types import (
             CreateMessageResultWithTools,
             ToolResultContent,
             ToolUseContent,
@@ -239,14 +239,14 @@ class TestAutomaticToolLoop:
                         )
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Handled error")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -275,7 +275,7 @@ class TestAutomaticToolLoop:
                 tool_result = msg.content
                 break
         assert tool_result is not None
-        assert tool_result.isError is True
+        assert tool_result.is_error is True
         # Content is list of TextContent objects
         assert isinstance(tool_result.content[0], TextContent)
         error_text = tool_result.content[0].text
@@ -287,7 +287,7 @@ class TestAutomaticToolLoop:
         import asyncio
         import time
 
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
         execution_order: list[tuple[str, float]] = []
 
@@ -333,14 +333,14 @@ class TestAutomaticToolLoop:
                         ),
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Done!")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -367,7 +367,7 @@ class TestAutomaticToolLoop:
         import asyncio
         import time
 
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
         execution_times: dict[str, dict[str, float]] = {}
 
@@ -411,14 +411,14 @@ class TestAutomaticToolLoop:
                         ),
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Done!")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -447,7 +447,7 @@ class TestAutomaticToolLoop:
         import asyncio
         import time
 
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
         execution_order: list[tuple[str, float]] = []
 
@@ -491,14 +491,14 @@ class TestAutomaticToolLoop:
                         ),
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Done!")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -533,7 +533,7 @@ class TestAutomaticToolLoop:
         import asyncio
         import time
 
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
         execution_order: list[tuple[str, float]] = []
 
@@ -577,14 +577,14 @@ class TestAutomaticToolLoop:
                         ),
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Done!")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -620,7 +620,7 @@ class TestAutomaticToolLoop:
 
     async def test_concurrent_tool_execution_error_handling(self):
         """Test that errors are captured per-tool in parallel execution."""
-        from mcp.types import (
+        from mcp_types import (
             CreateMessageResultWithTools,
             ToolResultContent,
             ToolUseContent,
@@ -651,14 +651,14 @@ class TestAutomaticToolLoop:
                         ),
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Handled errors")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -682,14 +682,14 @@ class TestAutomaticToolLoop:
         tool_results = cast(list[ToolResultContent], tool_result_message.content)
         assert len(tool_results) == 2
         # One should be success, one should be error
-        assert any(not r.isError for r in tool_results)
-        assert any(r.isError for r in tool_results)
+        assert any(not r.is_error for r in tool_results)
+        assert any(r.is_error for r in tool_results)
 
     async def test_concurrent_tool_result_order_preserved(self):
         """Test that tool results maintain the same order as tool calls."""
         import asyncio
 
-        from mcp.types import (
+        from mcp_types import (
             CreateMessageResultWithTools,
             ToolResultContent,
             ToolUseContent,
@@ -732,14 +732,14 @@ class TestAutomaticToolLoop:
                         ),
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Done!")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -761,9 +761,9 @@ class TestAutomaticToolLoop:
         tool_result_message = messages_received[1][-1]
         tool_results = cast(list[ToolResultContent], tool_result_message.content)
         assert len(tool_results) == 3
-        assert tool_results[0].toolUseId == "call_1"
-        assert tool_results[1].toolUseId == "call_2"
-        assert tool_results[2].toolUseId == "call_3"
+        assert tool_results[0].tool_use_id == "call_1"
+        assert tool_results[1].tool_use_id == "call_2"
+        assert tool_results[2].tool_use_id == "call_3"
         # Check values are correct
         result_texts = [cast(TextContent, r.content[0]).text for r in tool_results]
         assert result_texts == ["1", "2", "3"]

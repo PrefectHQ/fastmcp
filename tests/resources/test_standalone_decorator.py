@@ -165,7 +165,7 @@ class TestResourceDecorator:
 
         async with Client(mcp) as client:
             templates = await client.list_resource_templates()
-            assert any(t.uriTemplate == "users://{user_id}/profile" for t in templates)
+            assert any(t.uri_template == "users://{user_id}/profile" for t in templates)
 
             result = await client.read_resource("users://123/profile")
             assert "123" in str(result)

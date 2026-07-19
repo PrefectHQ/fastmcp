@@ -1,4 +1,4 @@
-from mcp.types import Annotations, Icon
+from mcp_types import Annotations, Icon
 
 from fastmcp import FastMCP
 from fastmcp.resources import ResourceTemplate
@@ -46,7 +46,7 @@ class TestResourceTemplateFieldPreservation:
             name="t",
             title="Human Title",
             meta={"owner": "team-a"},
-            icons=[Icon(src="https://example.com/icon.png", mimeType="image/png")],
+            icons=[Icon(src="https://example.com/icon.png", mime_type="image/png")],
             annotations=Annotations(priority=0.5, audience=["user"]),
         )
 
@@ -84,7 +84,7 @@ class TestResourceTemplateFieldPreservation:
             "data://{param}",
             title="Sub Title",
             meta={"owner": "team-b"},
-            icons=[Icon(src="https://example.com/s.png", mimeType="image/png")],
+            icons=[Icon(src="https://example.com/s.png", mime_type="image/png")],
             annotations=Annotations(priority=0.9),
             tags={"alpha"},
         )

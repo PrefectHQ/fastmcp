@@ -7,7 +7,7 @@ import weakref
 import psutil
 import pytest
 
-from fastmcp import Client, FastMCP
+from fastmcp import Client
 from fastmcp.client.transports import PythonStdioTransport, StdioTransport
 
 
@@ -46,10 +46,12 @@ class TestParallelCalls:
         return script_file
 
     async def test_parallel_calls(self, stdio_script):
+        from fastmcp.server import create_proxy
+
         backend_transport = PythonStdioTransport(script_path=stdio_script)
         backend_client = Client(transport=backend_transport)
 
-        proxy = FastMCP.as_proxy(backend=backend_client, name="PROXY")
+        proxy = create_proxy(backend_client, name="PROXY")
 
         count = 10
 

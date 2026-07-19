@@ -1,6 +1,6 @@
 from typing import Any
 
-from mcp.types import CallToolResult, TextContent
+from mcp_types import CallToolResult, TextContent
 from pydantic import BaseModel, Field
 
 from fastmcp import FastMCP
@@ -43,7 +43,7 @@ class CallToolRequestResult(CallToolResult):
         return cls(
             tool=tool,
             arguments=arguments,
-            isError=result.isError,
+            is_error=result.is_error,
             content=result.content,
         )
 
@@ -84,7 +84,7 @@ class BulkToolCaller(MCPMixin):
 
             results.append(result)
 
-            if result.isError and not continue_on_error:
+            if result.is_error and not continue_on_error:
                 return results
 
         return results
@@ -112,7 +112,7 @@ class BulkToolCaller(MCPMixin):
 
             results.append(result)
 
-            if result.isError and not continue_on_error:
+            if result.is_error and not continue_on_error:
                 return results
 
         return results
@@ -128,7 +128,7 @@ class BulkToolCaller(MCPMixin):
             return CallToolRequestResult(
                 tool=tool,
                 arguments=arguments,
-                isError=True,
+                is_error=True,
                 content=[
                     TextContent(
                         type="text",
@@ -146,6 +146,6 @@ class BulkToolCaller(MCPMixin):
             return CallToolRequestResult(
                 tool=tool,
                 arguments=arguments,
-                isError=result.isError,
+                is_error=result.is_error,
                 content=result.content,
             )

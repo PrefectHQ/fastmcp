@@ -1,7 +1,7 @@
 import asyncio
 import threading
 
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 from fastmcp import Context, FastMCP
 from fastmcp.tools.base import Tool

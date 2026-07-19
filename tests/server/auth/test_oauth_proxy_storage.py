@@ -201,6 +201,8 @@ class TestOAuthProxyStorage:
                 "jwks": None,
                 "software_id": None,
                 "software_version": None,
+                "application_type": "native",
+                "issuer": None,
                 "client_id": "structured-client",
                 "client_secret": None,
                 "client_id_issued_at": None,

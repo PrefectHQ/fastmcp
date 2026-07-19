@@ -53,7 +53,7 @@ async with client:
     for item in content:
         if hasattr(item, 'text'):
             print(f"Text content: {item.text}")
-            print(f"MIME type: {item.mimeType}")
+            print(f"MIME type: {item.mime_type}")
 ```
 
 Binary resources include images, PDFs, and other non-text data:
@@ -65,7 +65,7 @@ async with client:
     for item in content:
         if hasattr(item, 'blob'):
             print(f"Binary content: {len(item.blob)} bytes")
-            print(f"MIME type: {item.mimeType}")
+            print(f"MIME type: {item.mime_type}")
 
             # Save to file
             with open("downloaded_logo.png", "wb") as f:
@@ -106,5 +106,5 @@ For complete control, use `read_resource_mcp()` which returns the full MCP proto
 ```python
 async with client:
     result = await client.read_resource_mcp("resource://example")
-    # result -> mcp.types.ReadResourceResult
+    # result -> fastmcp.types.ReadResourceResult
 ```

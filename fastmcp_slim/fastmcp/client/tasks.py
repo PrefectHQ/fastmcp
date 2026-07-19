@@ -11,8 +11,8 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Generic, TypeVar
 
-import mcp.types
-from mcp.types import GetTaskResult, TaskStatusNotification
+import mcp_types
+from mcp_types import GetTaskResult, TaskStatusNotification
 
 from fastmcp.client.messages import Message, MessageHandler
 from fastmcp.exceptions import ToolError
@@ -33,11 +33,11 @@ class TaskNotificationHandler(MessageHandler):
 
     async def dispatch(self, message: Message) -> None:
         """Dispatch messages, including task status notifications."""
-        if isinstance(message, mcp.types.ServerNotification):
-            if isinstance(message.root, TaskStatusNotification):
-                client = self._client_ref()
-                if client:
-                    client._handle_task_status_notification(message.root)
+        # SDK v2 delivers notifications unwrapped (no `.root` wrapper).
+        if isinstance(message, TaskStatusNotification):
+            client = self._client_ref()
+            if client:
+                client._handle_task_status_notification(message)
 
         await super().dispatch(message)
 
@@ -162,7 +162,7 @@ class Task(abc.ABC, Generic[TaskResultT]):
             >>> task = await client.call_tool("slow_operation", {}, task=True)
             >>>
             >>> def on_update(status: GetTaskResult):
-            ...     print(f"Task {status.taskId} is now {status.status}")
+            ...     print(f"Task {status.task_id} is now {status.status}")
             >>>
             >>> task.on_status_change(on_update)
             >>> result = await task  # Callback fires when status changes
@@ -178,15 +178,16 @@ class Task(abc.ABC, Generic[TaskResultT]):
         self._check_client_connected()
 
         if self._is_immediate:
-            # Return synthetic completed status
-            now = datetime.now(timezone.utc)
+            # Return synthetic completed status. SDK v2 types the task
+            # timestamps as ISO 8601 strings.
+            now = datetime.now(timezone.utc).isoformat()
             return GetTaskResult(
-                taskId=self._task_id,
+                task_id=self._task_id,
                 status="completed",
-                createdAt=now,
-                lastUpdatedAt=now,
+                created_at=now,
+                last_updated_at=now,
                 ttl=None,
-                pollInterval=1000,
+                poll_interval=1000,
             )
 
         # Return cached status if available (from notification)
@@ -370,7 +371,7 @@ class ToolTask(Task["CallToolResult"]):
             result = self._immediate_result
             if result.is_error and self._raise_on_error:
                 if result.content and isinstance(
-                    result.content[0], mcp.types.TextContent
+                    result.content[0], mcp_types.TextContent
                 ):
                     msg = result.content[0].text
                 else:
@@ -389,13 +390,13 @@ class ToolTask(Task["CallToolResult"]):
             # Convert to CallToolResult if needed and parse
             if isinstance(raw_result, dict):
                 # Raw dict from get_task_result - parse as CallToolResult
-                mcp_result = mcp.types.CallToolResult.model_validate(raw_result)
+                mcp_result = mcp_types.CallToolResult.model_validate(raw_result)
                 result = await self._client._parse_call_tool_result(
                     self._tool_name,
                     mcp_result,
                     raise_on_error=self._raise_on_error,
                 )
-            elif isinstance(raw_result, mcp.types.CallToolResult):
+            elif isinstance(raw_result, mcp_types.CallToolResult):
                 # Already a CallToolResult from MCP protocol - parse it
                 result = await self._client._parse_call_tool_result(
                     self._tool_name,
@@ -407,9 +408,9 @@ class ToolTask(Task["CallToolResult"]):
                 if hasattr(raw_result, "content") and hasattr(
                     raw_result, "structured_content"
                 ):
-                    mcp_result = mcp.types.CallToolResult(
+                    mcp_result = mcp_types.CallToolResult(
                         content=raw_result.content,
-                        structuredContent=raw_result.structured_content,
+                        structured_content=raw_result.structured_content,
                         _meta=raw_result.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                     )
                     result = await self._client._parse_call_tool_result(
@@ -426,7 +427,7 @@ class ToolTask(Task["CallToolResult"]):
         return result
 
 
-class PromptTask(Task[mcp.types.GetPromptResult]):
+class PromptTask(Task[mcp_types.GetPromptResult]):
     """
     Represents a prompt call that may execute in background or immediately.
 
@@ -443,7 +444,7 @@ class PromptTask(Task[mcp.types.GetPromptResult]):
         client: Client,
         task_id: str,
         prompt_name: str,
-        immediate_result: mcp.types.GetPromptResult | None = None,
+        immediate_result: mcp_types.GetPromptResult | None = None,
     ):
         """
         Create a PromptTask wrapper.
@@ -457,7 +458,7 @@ class PromptTask(Task[mcp.types.GetPromptResult]):
         super().__init__(client, task_id, immediate_result)
         self._prompt_name = prompt_name
 
-    async def result(self) -> mcp.types.GetPromptResult:
+    async def result(self) -> mcp_types.GetPromptResult:
         """Wait for and return the prompt result.
 
         If server executed immediately, returns the immediate result.
@@ -484,7 +485,7 @@ class PromptTask(Task[mcp.types.GetPromptResult]):
             mcp_result = await self._client.get_task_result(self._task_id)
 
             # Parse as GetPromptResult
-            result = mcp.types.GetPromptResult.model_validate(mcp_result)
+            result = mcp_types.GetPromptResult.model_validate(mcp_result)
 
         # Cache before returning
         self._cached_result = result
@@ -492,7 +493,7 @@ class PromptTask(Task[mcp.types.GetPromptResult]):
 
 
 class ResourceTask(
-    Task[list[mcp.types.TextResourceContents | mcp.types.BlobResourceContents]]
+    Task[list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents]]
 ):
     """
     Represents a resource read that may execute in background or immediately.
@@ -511,7 +512,7 @@ class ResourceTask(
         task_id: str,
         uri: str,
         immediate_result: list[
-            mcp.types.TextResourceContents | mcp.types.BlobResourceContents
+            mcp_types.TextResourceContents | mcp_types.BlobResourceContents
         ]
         | None = None,
     ):
@@ -529,7 +530,7 @@ class ResourceTask(
 
     async def result(
         self,
-    ) -> list[mcp.types.TextResourceContents | mcp.types.BlobResourceContents]:
+    ) -> list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents]:
         """Wait for and return the resource contents.
 
         If server executed immediately, returns the immediate result.
@@ -556,7 +557,7 @@ class ResourceTask(
             mcp_result = await self._client.get_task_result(self._task_id)
 
             # Parse as ReadResourceResult or extract contents
-            if isinstance(mcp_result, mcp.types.ReadResourceResult):
+            if isinstance(mcp_result, mcp_types.ReadResourceResult):
                 # Already parsed by TasksResponse - extract contents
                 result = list(mcp_result.contents)
             elif isinstance(mcp_result, dict) and "contents" in mcp_result:
@@ -566,11 +567,11 @@ class ResourceTask(
                     if isinstance(item, dict):
                         if "blob" in item:
                             parsed_contents.append(
-                                mcp.types.BlobResourceContents.model_validate(item)
+                                mcp_types.BlobResourceContents.model_validate(item)
                             )
                         else:
                             parsed_contents.append(
-                                mcp.types.TextResourceContents.model_validate(item)
+                                mcp_types.TextResourceContents.model_validate(item)
                             )
                     else:
                         parsed_contents.append(item)

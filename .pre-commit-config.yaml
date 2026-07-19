@@ -6,8 +6,8 @@ repos:
     hooks:
       - id: validate-pyproject
 
-  - repo: https://github.com/pre-commit/mirrors-prettier
-    rev: v3.1.0
+  - repo: https://github.com/rbubley/mirrors-prettier
+    rev: v3.8.4
     hooks:
       - id: prettier
         types_or: [yaml, json5]
@@ -29,7 +29,7 @@ repos:
         entry: uv run --isolated ty check
         language: system
         types: [python]
-        files: ^fastmcp_slim/|^tests/
+        files: ^fastmcp_slim/|^tests/|^examples/
         pass_filenames: false
         require_serial: true
 

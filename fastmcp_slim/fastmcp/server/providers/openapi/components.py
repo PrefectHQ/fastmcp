@@ -4,16 +4,12 @@ from __future__ import annotations
 
 import json
 import re
-import warnings
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
-import httpx
-from mcp.types import ToolAnnotations
+import httpx2
+from mcp_types import ToolAnnotations
 from pydantic.networks import AnyUrl
 
-import fastmcp
-from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.resources import (
     Resource,
     ResourceContent,
@@ -23,6 +19,11 @@ from fastmcp.resources import (
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.utilities.exceptions import (
+    HTTP_STATUS_ERRORS,
+    REQUEST_ERRORS,
+    TIMEOUT_ERRORS,
+)
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.openapi import HTTPRoute
 from fastmcp.utilities.openapi.director import RequestDirector
@@ -45,7 +46,7 @@ _SAFE_HEADERS = frozenset(
 )
 
 
-def _redact_headers(headers: httpx.Headers) -> dict[str, str]:
+def _redact_headers(headers: httpx2.Headers) -> dict[str, str]:
     return {k: v if k.lower() in _SAFE_HEADERS else "***" for k, v in headers.items()}
 
 
@@ -142,7 +143,7 @@ class OpenAPITool(Tool):
 
     def __init__(
         self,
-        client: httpx.AsyncClient,
+        client: httpx2.AsyncClient,
         route: HTTPRoute,
         director: RequestDirector,
         name: str,
@@ -151,16 +152,7 @@ class OpenAPITool(Tool):
         output_schema: dict[str, Any] | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
-        serializer: Callable[[Any], str] | None = None,  # Deprecated
     ):
-        if serializer is not None and fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                "The `serializer` parameter is deprecated. "
-                "Return ToolResult from your tools for full control over serialization. "
-                "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
-                FastMCPDeprecationWarning,
-                stacklevel=2,
-            )
         super().__init__(
             name=name,
             description=description,
@@ -168,7 +160,6 @@ class OpenAPITool(Tool):
             output_schema=output_schema,
             tags=tags or set(),
             annotations=annotations,
-            serializer=serializer,
         )
         self._client = client
         self._route = route
@@ -183,12 +174,24 @@ class OpenAPITool(Tool):
         # not HTTP failures, so we catch them separately.
         try:
             base_url = str(self._client.base_url) or "http://localhost"
-            request = self._director.build(self._route, arguments, base_url)
+            directed_request = self._director.build(self._route, arguments, base_url)
 
-            if self._client.headers:
-                for key, value in self._client.headers.items():
-                    if key not in request.headers:
-                        request.headers[key] = value
+            # Rebuild through the user's client so the request object comes
+            # from whichever httpx library the client belongs to (a legacy
+            # httpx.AsyncClient cannot send an httpx2.Request). Primitive
+            # values (str/bytes/tuples) cross that boundary safely; client
+            # default headers merge in with directed headers taking priority,
+            # matching the previous manual merge.
+            request = self._client.build_request(
+                method=directed_request.method,
+                url=str(directed_request.url.copy_with(query=None)),
+                params=list(directed_request.url.params.multi_items()),
+                headers=list(directed_request.headers.raw),
+                # read() materializes streaming bodies (multipart files=)
+                # that .content would refuse with RequestNotRead; idempotent
+                # for plain byte bodies.
+                content=directed_request.read(),
+            )
 
             mcp_headers = get_http_headers()
             if mcp_headers:
@@ -235,22 +238,24 @@ class OpenAPITool(Tool):
             except json.JSONDecodeError:
                 return ToolResult(content=response.text)
 
-        except httpx.HTTPStatusError as e:
+        except HTTP_STATUS_ERRORS as e:
+            status_error = cast("httpx2.HTTPStatusError", e)
             error_message = (
-                f"HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+                f"HTTP error {status_error.response.status_code}: "
+                f"{status_error.response.reason_phrase}"
             )
             try:
-                error_data = e.response.json()
+                error_data = status_error.response.json()
                 error_message += f" - {error_data}"
             except (json.JSONDecodeError, ValueError):
-                if e.response.text:
-                    error_message += f" - {e.response.text}"
+                if status_error.response.text:
+                    error_message += f" - {status_error.response.text}"
             raise ValueError(error_message) from e
 
-        except httpx.TimeoutException as e:
+        except TIMEOUT_ERRORS as e:
             raise ValueError(f"HTTP request timed out ({type(e).__name__})") from e
 
-        except httpx.RequestError as e:
+        except REQUEST_ERRORS as e:
             raise ValueError(f"Request error ({type(e).__name__}): {e!s}") from e
 
 
@@ -261,7 +266,7 @@ class OpenAPIResource(Resource):
 
     def __init__(
         self,
-        client: httpx.AsyncClient,
+        client: httpx2.AsyncClient,
         route: HTTPRoute,
         director: RequestDirector,
         uri: str,
@@ -269,6 +274,7 @@ class OpenAPIResource(Resource):
         description: str,
         mime_type: str = "application/json",
         tags: set[str] | None = None,
+        arguments: dict[str, Any] | None = None,
     ):
         super().__init__(
             uri=AnyUrl(uri),
@@ -280,6 +286,7 @@ class OpenAPIResource(Resource):
         self._client = client
         self._route = route
         self._director = director
+        self._arguments = dict(arguments or {})
 
     def __repr__(self) -> str:
         return f"OpenAPIResource(name={self.name!r}, uri={self.uri!r}, path={self._route.path})"
@@ -287,40 +294,27 @@ class OpenAPIResource(Resource):
     async def read(self) -> ResourceResult:
         """Fetch the resource data by making an HTTP request."""
         try:
-            path = self._route.path
-            resource_uri = str(self.uri)
-
-            # If this is a templated resource, extract path parameters from the URI
-            if "{" in path and "}" in path:
-                parts = resource_uri.split("/")
-
-                if len(parts) > 1:
-                    path_params = {}
-                    param_matches = re.findall(r"\{([^}]+)\}", path)
-                    if param_matches:
-                        param_matches.sort(reverse=True)
-                        expected_param_count = len(parts) - 1
-                        for i, param_name in enumerate(param_matches):
-                            if i < expected_param_count:
-                                param_value = parts[-1 - i]
-                                path_params[param_name] = param_value
-
-                    for param_name, param_value in path_params.items():
-                        path = path.replace(f"{{{param_name}}}", str(param_value))
-
-            # Build headers with correct precedence
-            headers: dict[str, str] = {}
-            if self._client.headers:
-                headers.update(self._client.headers)
+            base_url = str(self._client.base_url) or "http://localhost"
+            directed_request = self._director.build(
+                self._route, self._arguments, base_url
+            )
+            # Primitive values only: a legacy httpx.AsyncClient cannot accept
+            # httpx2 URL/QueryParams/Headers objects.
+            request = self._client.build_request(
+                method=directed_request.method,
+                url=str(directed_request.url.copy_with(query=None)),
+                params=list(directed_request.url.params.multi_items()),
+                headers=list(directed_request.headers.raw),
+                # read() materializes streaming bodies (multipart files=)
+                # that .content would refuse with RequestNotRead; idempotent
+                # for plain byte bodies.
+                content=directed_request.read(),
+            )
             mcp_headers = get_http_headers()
             if mcp_headers:
-                headers.update(mcp_headers)
+                request.headers.update(mcp_headers)
 
-            response = await self._client.request(
-                method=self._route.method,
-                url=path,
-                headers=headers,
-            )
+            response = await self._client.send(request)
             response.raise_for_status()
 
             content_type = response.headers.get("content-type", "").lower()
@@ -349,23 +343,32 @@ class OpenAPIResource(Resource):
                     ]
                 )
 
-        except httpx.HTTPStatusError as e:
+        except HTTP_STATUS_ERRORS as e:
+            status_error = cast("httpx2.HTTPStatusError", e)
             error_message = (
-                f"HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+                f"HTTP error {status_error.response.status_code}: "
+                f"{status_error.response.reason_phrase}"
             )
             try:
-                error_data = e.response.json()
+                error_data = status_error.response.json()
                 error_message += f" - {error_data}"
             except (json.JSONDecodeError, ValueError):
-                if e.response.text:
-                    error_message += f" - {e.response.text}"
+                if status_error.response.text:
+                    error_message += f" - {status_error.response.text}"
             raise ValueError(error_message) from e
 
-        except httpx.TimeoutException as e:
+        except TIMEOUT_ERRORS as e:
             raise ValueError(f"HTTP request timed out ({type(e).__name__})") from e
 
-        except httpx.RequestError as e:
+        except REQUEST_ERRORS as e:
             raise ValueError(f"Request error ({type(e).__name__}): {e!s}") from e
+
+
+def _path_argument_name(route: HTTPRoute, parameter_name: str) -> str:
+    for argument_name, mapping in route.parameter_map.items():
+        if mapping["location"] == "path" and mapping["openapi_name"] == parameter_name:
+            return argument_name
+    return parameter_name
 
 
 class OpenAPIResourceTemplate(ResourceTemplate):
@@ -375,7 +378,7 @@ class OpenAPIResourceTemplate(ResourceTemplate):
 
     def __init__(
         self,
-        client: httpx.AsyncClient,
+        client: httpx2.AsyncClient,
         route: HTTPRoute,
         director: RequestDirector,
         uri_template: str,
@@ -408,6 +411,17 @@ class OpenAPIResourceTemplate(ResourceTemplate):
     ) -> Resource:
         """Create a resource with the given parameters."""
         uri_parts = [f"{key}={value}" for key, value in params.items()]
+        arguments = {}
+        for parameter in self._route.parameters:
+            if parameter.location != "path":
+                continue
+            argument_name = _path_argument_name(self._route, parameter.name)
+            if parameter.name in params:
+                arguments[argument_name] = params[parameter.name]
+                continue
+            normalized_name = parameter.name.replace("-", "_")
+            if normalized_name in params:
+                arguments[argument_name] = params[normalized_name]
 
         return OpenAPIResource(
             client=self._client,
@@ -418,4 +432,5 @@ class OpenAPIResourceTemplate(ResourceTemplate):
             description=self.description or f"Resource for {self._route.path}",
             mime_type=self.mime_type,
             tags=set(self._route.tags or []),
+            arguments=arguments,
         )

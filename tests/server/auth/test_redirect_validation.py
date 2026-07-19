@@ -1,5 +1,6 @@
 """Tests for redirect URI validation in OAuth flows."""
 
+import pytest
 from pydantic import AnyUrl
 
 from fastmcp.server.auth.redirect_validation import (
@@ -66,14 +67,49 @@ class TestValidateRedirectUri:
         assert validate_redirect_uri(None, [])
         assert validate_redirect_uri(None, ["http://localhost:*"])
 
-    def test_default_allows_all(self):
-        """Test that None (default) allows all URIs for DCR compatibility."""
-        # All URIs should be allowed when None is provided (DCR compatibility)
-        assert validate_redirect_uri("http://localhost:3000", None)
-        assert validate_redirect_uri("http://127.0.0.1:8080", None)
-        assert validate_redirect_uri("http://example.com", None)
-        assert validate_redirect_uri("https://app.example.com", None)
-        assert validate_redirect_uri("https://claude.ai/api/mcp/auth_callback", None)
+    @pytest.mark.parametrize(
+        "uri",
+        [
+            "http://localhost:3000",
+            "http://127.0.0.1:8080",
+            "http://example.com",
+            "https://app.example.com",
+            "https://claude.ai/api/mcp/auth_callback",
+            "cursor://anysphere.cursor-mcp/oauth/callback",
+        ],
+    )
+    def test_default_allows_dcr_compatible_redirects(self, uri: str):
+        """None preserves broad DCR compatibility for ordinary redirect URIs."""
+        assert validate_redirect_uri(uri, None)
+
+    @pytest.mark.parametrize(
+        "uri",
+        [
+            "javascript:alert(document.cookie)//",
+            "JaVaScRiPt:alert(document.cookie)//",
+            "data:text/html,<script>alert(1)</script>",
+            "file:///tmp/callback",
+            "vbscript:msgbox(1)",
+        ],
+    )
+    def test_default_rejects_unsafe_browser_schemes(self, uri: str):
+        """Default DCR compatibility must not allow active browser schemes."""
+        assert not validate_redirect_uri(uri, None)
+
+    @pytest.mark.parametrize(
+        "uri,pattern",
+        [
+            ("javascript:alert(document.cookie)//", "javascript:*"),
+            ("data:text/html,<script>alert(1)</script>", "data:*"),
+            ("file:///tmp/callback", "file:///*"),
+            ("vbscript:msgbox(1)", "vbscript:*"),
+        ],
+    )
+    def test_custom_patterns_cannot_allow_unsafe_browser_schemes(
+        self, uri: str, pattern: str
+    ):
+        """Unsafe browser schemes stay blocked even if a pattern names them."""
+        assert not validate_redirect_uri(uri, [pattern])
 
     def test_empty_list_allows_none(self):
         """Test that empty list allows no redirect URIs."""
