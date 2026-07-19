@@ -11,7 +11,7 @@ from fastmcp.exceptions import ToolError as _ToolError
 from fastmcp.telemetry import (
     extract_trace_context,
     get_tracer,
-    restore_missing_attributes,
+    restore_dropped_attributes,
 )
 
 # Marker attribute set on the SERVER span opened at the FastMCP middleware seam
@@ -159,12 +159,12 @@ def seam_span(method: str, server_name: str) -> Generator[Span, None, None]:
         # this helper). But OTel's Tracer.start_span builds the span from
         # `sampling_result.attributes`, not the `attributes` kwarg directly —
         # a custom Sampler whose SamplingResult.attributes defaults to None
-        # silently drops everything we passed. Restoring only the keys still
-        # missing (rather than reapplying everything) guarantees FastMCP's
-        # attributes survive a non-forwarding sampler while leaving alone
-        # anything a sampler deliberately set, redacted, or replaced.
+        # silently drops everything we passed. This only fires when *none* of
+        # our attributes made it onto the span, so a sampler that forwarded
+        # (and redacted, replaced, or partially dropped) attributes, or an
+        # SDK attribute limit that evicted some, is left untouched.
         if span.is_recording():
-            restore_missing_attributes(span, attrs)
+            restore_dropped_attributes(span, attrs)
         token = _active_seam_span.set(span)
         try:
             yield span
@@ -237,7 +237,7 @@ def server_span(
         # from `sampling_result.attributes`, which a custom Sampler may not
         # forward even though it was handed `attributes=attrs` above.
         if span.is_recording():
-            restore_missing_attributes(span, attrs)
+            restore_dropped_attributes(span, attrs)
         try:
             yield span
         except Exception as e:
@@ -270,7 +270,7 @@ def delegate_span(
         # from `sampling_result.attributes`, which a custom Sampler may not
         # forward even though it was handed `attributes=attrs` above.
         if span.is_recording():
-            restore_missing_attributes(span, attrs)
+            restore_dropped_attributes(span, attrs)
         try:
             yield span
         except Exception as e:

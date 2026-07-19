@@ -3,7 +3,13 @@ from contextlib import AbstractContextManager
 
 import pytest
 from opentelemetry.context import Context
-from opentelemetry.sdk.trace import Span, SpanProcessor, TracerProvider
+from opentelemetry.sdk.trace import (
+    ReadableSpan,
+    Span,
+    SpanLimits,
+    SpanProcessor,
+    TracerProvider,
+)
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.sdk.trace.sampling import Decision, Sampler, SamplingResult
@@ -327,3 +333,70 @@ def test_sampler_added_attribute_survives_alongside_fastmcp_attributes(
     assert attrs["sampling.policy"] == "always_on"
     for key, value in expected_attrs.items():
         assert attrs[key] == value
+
+
+@pytest.mark.parametrize(
+    ("span_factory", "span_name", "expected_attrs"), SPAN_HELPER_CASES
+)
+def test_restore_does_not_churn_sdk_attribute_limit_evictions(
+    monkeypatch: pytest.MonkeyPatch,
+    span_factory: Callable[[], AbstractContextManager[APISpan]],
+    span_name: str,
+    expected_attrs: dict[str, object],
+) -> None:
+    """Regression: under a low `OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT`, restoring
+    must not reinsert a key the SDK's bounded attribute map already evicted.
+
+    An evicted key is indistinguishable from a sampler-omitted one from
+    inside the restore helper, so a per-key "reinsert what's missing"
+    strategy would cycle an evicted key back onto the span, which evicts a
+    *different* retained key and inflates `dropped_attributes` beyond what
+    the SDK's own eviction already cost. The fix gates the restore on *none*
+    of our attributes being present (plus `dropped_attributes == 0`), so a
+    normal forwarding sampler colliding with a low limit is left exactly as
+    the SDK computed it — this test proves that by diffing against a
+    baseline with the restore step stubbed out entirely.
+    """
+    monkeypatch.setenv("OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT", "2")
+    # SpanLimits reads the env var at construction time, so build it now
+    # (after setting the env var) rather than relying on TracerProvider to
+    # pick it up implicitly.
+    span_limits = SpanLimits()
+    assert span_limits.max_span_attributes == 2
+
+    def run(*, stub_restore: bool) -> ReadableSpan:
+        # Each run gets its own MonkeyPatch context so patches from one run
+        # (e.g. stubbing the restore step for the baseline) don't leak into
+        # the other — both runs must exercise their own code path.
+        with pytest.MonkeyPatch.context() as mp:
+            exporter = InMemorySpanExporter()
+            provider = TracerProvider(span_limits=span_limits)
+            provider.add_span_processor(SimpleSpanProcessor(exporter))
+            tracer = provider.get_tracer("test")
+            mp.setattr("fastmcp.client.telemetry.get_tracer", lambda: tracer)
+            mp.setattr("fastmcp.server.telemetry.get_tracer", lambda: tracer)
+            if stub_restore:
+                mp.setattr(
+                    "fastmcp.client.telemetry.restore_dropped_attributes",
+                    lambda span, attrs: None,
+                )
+                mp.setattr(
+                    "fastmcp.server.telemetry.restore_dropped_attributes",
+                    lambda span, attrs: None,
+                )
+
+            with span_factory():
+                pass
+
+            spans = [s for s in exporter.get_finished_spans() if s.name == span_name]
+            assert len(spans) == 1
+            return spans[0]
+
+    baseline = run(stub_restore=True)
+    # The whole test is moot if the limit didn't actually bind.
+    assert baseline.dropped_attributes > 0
+
+    with_restore = run(stub_restore=False)
+
+    assert dict(with_restore.attributes or {}) == dict(baseline.attributes or {})
+    assert with_restore.dropped_attributes == baseline.dropped_attributes

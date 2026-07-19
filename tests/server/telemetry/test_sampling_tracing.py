@@ -11,7 +11,13 @@ from __future__ import annotations
 import pytest
 from mcp_types import TextContent
 from opentelemetry.context import Context as OTelContext
-from opentelemetry.sdk.trace import Span, SpanProcessor, TracerProvider
+from opentelemetry.sdk.trace import (
+    ReadableSpan,
+    Span,
+    SpanLimits,
+    SpanProcessor,
+    TracerProvider,
+)
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.sdk.trace.sampling import Decision, Sampler, SamplingResult
@@ -580,3 +586,153 @@ class TestAttributeRestoreRespectsSampler:
         assert span.attributes["sampling.policy"] == "always_on"
         assert span.attributes["gen_ai.tool.name"] == "echo_tool"
         assert span.attributes["fastmcp.tool.use_id"] == "call_1"
+
+
+class TestRestoreDoesNotChurnAttributeLimitEvictions:
+    """Regression: under a low `OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT`, the restore
+    step in `fastmcp.server.sampling.run` must not reinsert an attribute the
+    SDK's bounded attribute map already evicted.
+
+    See `tests/telemetry/test_span_attributes.py::
+    test_restore_does_not_churn_sdk_attribute_limit_evictions` for the full
+    explanation: an evicted key looks identical to a sampler-omitted one from
+    inside the restore helper, so reinserting it churns which attributes the
+    SDK ultimately retains and inflates `dropped_attributes` beyond what the
+    limit alone already cost. This proves the same discriminator holds
+    end-to-end through the real sampling call path, not just at the helper
+    level.
+    """
+
+    @staticmethod
+    async def _run_create_message(
+        span_limits: SpanLimits, *, stub_restore: bool
+    ) -> ReadableSpan:
+        with pytest.MonkeyPatch.context() as mp:
+            exporter = InMemorySpanExporter()
+            provider = TracerProvider(span_limits=span_limits)
+            provider.add_span_processor(SimpleSpanProcessor(exporter))
+            tracer = provider.get_tracer("test")
+            mp.setattr("fastmcp.server.sampling.run.get_tracer", lambda: tracer)
+            if stub_restore:
+                mp.setattr(
+                    "fastmcp.server.sampling.run.restore_dropped_attributes",
+                    lambda span, attrs: None,
+                )
+
+            def sampling_handler(
+                messages: list[SamplingMessage],
+                params: SamplingParams,
+                ctx: RequestContext,
+            ) -> str:
+                return "sampled-text"
+
+            mcp = FastMCP("sampling-server")
+
+            @mcp.tool
+            async def ask(question: str, context: Context) -> str:
+                result = await context.sample(messages=question)
+                return result.text or ""
+
+            async with Client(mcp, sampling_handler=sampling_handler) as client:
+                await client.call_tool("ask", {"question": "hi"})
+
+            spans = _spans_named(exporter, "sampling create_message")
+            assert len(spans) == 1
+            return spans[0]
+
+    @staticmethod
+    async def _run_tool_span(
+        span_limits: SpanLimits, *, stub_restore: bool
+    ) -> ReadableSpan:
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
+
+        with pytest.MonkeyPatch.context() as mp:
+            exporter = InMemorySpanExporter()
+            provider = TracerProvider(span_limits=span_limits)
+            provider.add_span_processor(SimpleSpanProcessor(exporter))
+            tracer = provider.get_tracer("test")
+            mp.setattr("fastmcp.server.sampling.run.get_tracer", lambda: tracer)
+            if stub_restore:
+                mp.setattr(
+                    "fastmcp.server.sampling.run.restore_dropped_attributes",
+                    lambda span, attrs: None,
+                )
+
+            def echo_tool(text: str) -> str:
+                return text
+
+            call_count = 0
+
+            def sampling_handler(
+                messages: list[SamplingMessage],
+                params: SamplingParams,
+                ctx: RequestContext,
+            ) -> CreateMessageResultWithTools:
+                nonlocal call_count
+                call_count += 1
+                if call_count == 1:
+                    return CreateMessageResultWithTools(
+                        role="assistant",
+                        content=[
+                            ToolUseContent(
+                                type="tool_use",
+                                id="call_1",
+                                name="echo_tool",
+                                input={"text": "hi"},
+                            )
+                        ],
+                        model="test-model",
+                        stop_reason="toolUse",
+                    )
+                return CreateMessageResultWithTools(
+                    role="assistant",
+                    content=[TextContent(type="text", text="done")],
+                    model="test-model",
+                    stop_reason="endTurn",
+                )
+
+            mcp = FastMCP(sampling_handler=sampling_handler)
+
+            @mcp.tool
+            async def driver(context: Context) -> str:
+                result = await context.sample(messages="go", tools=[echo_tool])
+                return result.text or ""
+
+            async with Client(mcp) as client:
+                await client.call_tool("driver", {})
+
+            spans = _spans_named(exporter, "sampling tool echo_tool")
+            assert len(spans) == 1
+            return spans[0]
+
+    async def test_create_message_span(self, monkeypatch: pytest.MonkeyPatch):
+        # Two attributes on this span (`mcp.method.name`, `fastmcp.server.name`)
+        # — a limit of 1 guarantees eviction.
+        monkeypatch.setenv("OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT", "1")
+        span_limits = SpanLimits()
+        assert span_limits.max_span_attributes == 1
+
+        baseline = await self._run_create_message(span_limits, stub_restore=True)
+        # The whole test is moot if the limit didn't actually bind.
+        assert baseline.dropped_attributes > 0
+
+        with_restore = await self._run_create_message(span_limits, stub_restore=False)
+
+        assert dict(with_restore.attributes or {}) == dict(baseline.attributes or {})
+        assert with_restore.dropped_attributes == baseline.dropped_attributes
+
+    async def test_tool_span(self, monkeypatch: pytest.MonkeyPatch):
+        # Two attributes on this span (`gen_ai.tool.name`, `fastmcp.tool.use_id`)
+        # — a limit of 1 guarantees eviction.
+        monkeypatch.setenv("OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT", "1")
+        span_limits = SpanLimits()
+        assert span_limits.max_span_attributes == 1
+
+        baseline = await self._run_tool_span(span_limits, stub_restore=True)
+        # The whole test is moot if the limit didn't actually bind.
+        assert baseline.dropped_attributes > 0
+
+        with_restore = await self._run_tool_span(span_limits, stub_restore=False)
+
+        assert dict(with_restore.attributes or {}) == dict(baseline.attributes or {})
+        assert with_restore.dropped_attributes == baseline.dropped_attributes

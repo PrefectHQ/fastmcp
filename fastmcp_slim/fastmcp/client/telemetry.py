@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
 
 from fastmcp.exceptions import ToolError as _ToolError
-from fastmcp.telemetry import get_tracer, restore_missing_attributes
+from fastmcp.telemetry import get_tracer, restore_dropped_attributes
 
 
 @contextmanager
@@ -47,12 +47,12 @@ def client_span(
         # Tracer.start_span builds the span from
         # `sampling_result.attributes`, not the `attributes` kwarg directly —
         # a custom Sampler whose SamplingResult.attributes defaults to None
-        # silently drops everything we passed. Restoring only the keys still
-        # missing (rather than reapplying everything) guarantees FastMCP's
-        # attributes survive a non-forwarding sampler while leaving alone
-        # anything a sampler deliberately set, redacted, or replaced.
+        # silently drops everything we passed. This only fires when *none* of
+        # our attributes made it onto the span, so a sampler that forwarded
+        # (and redacted, replaced, or partially dropped) attributes, or an
+        # SDK attribute limit that evicted some, is left untouched.
         if span.is_recording():
-            restore_missing_attributes(span, attrs)
+            restore_dropped_attributes(span, attrs)
         try:
             yield span
         except Exception as e:

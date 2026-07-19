@@ -137,49 +137,50 @@ def record_span_error(span: Span, exception: BaseException) -> None:
 
 @runtime_checkable
 class _AttributeReadableSpan(Protocol):
-    """Structural type for spans that expose their current attributes.
+    """Structural type for spans that expose their current attribute state.
 
     The `opentelemetry-api` `Span` ABC has no way to read attributes back —
     only SDK span implementations (e.g. `opentelemetry.sdk.trace.ReadableSpan`)
-    expose `.attributes`. FastMCP only depends on `opentelemetry-api`, so this
-    module can't import the SDK class to `isinstance`-check against it. A
-    runtime-checkable `Protocol` gets the same structural narrowing without
-    that import: spans that don't expose `.attributes` (e.g. `NonRecordingSpan`)
-    simply fail the check.
+    expose `.attributes` and `.dropped_attributes`. FastMCP only depends on
+    `opentelemetry-api`, so this module can't import the SDK class to
+    `isinstance`-check against it. A runtime-checkable `Protocol` gets the
+    same structural narrowing without that import: spans that don't expose
+    this state (e.g. `NonRecordingSpan`) simply fail the check.
     """
 
     @property
     def attributes(self) -> Mapping[str, otel_types.AttributeValue] | None: ...
 
+    @property
+    def dropped_attributes(self) -> int: ...
 
-def restore_missing_attributes(
+
+def restore_dropped_attributes(
     span: Span, attrs: Mapping[str, otel_types.AttributeValue]
 ) -> None:
-    """Restore FastMCP attributes a sampler dropped, without touching the rest.
+    """Restore FastMCP attributes a non-forwarding sampler dropped entirely.
 
     `Tracer.start_span` builds the span from `SamplingResult.attributes`, not
     the `attributes=` kwarg it was given for creation — a custom `Sampler`
     whose `SamplingResult.attributes` defaults to `None` silently discards
     every attribute FastMCP passed at creation time. Call this immediately
-    after span creation to restore what's missing.
+    after span creation to recover from that case.
 
-    Restoring only missing keys (instead of an unconditional
-    `span.set_attributes(attrs)`) matters because `set_attributes` overwrites
-    existing keys:
+    The restore only fires when *none* of `attrs`' keys are present on the
+    span AND the SDK hasn't evicted anything (`dropped_attributes == 0`):
 
-    - A sampler that dropped everything gets everything restored.
-    - A sampler that deliberately redacted or replaced one of our keys (e.g.
-      scrubbing `mcp.method.name` for privacy) keeps its own value instead of
-      having it silently overwritten.
+    - A sampler that dropped every attribute it was handed (the regression
+      this exists to fix) gets everything restored.
+    - A sampler that forwarded at least one of our keys — whether it left
+      the rest alone, redacted or replaced some, or only some survived a
+      low `OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT` eviction — is left alone
+      entirely. A sampler deliberately dropping one key is indistinguishable
+      from the SDK's bounded attribute map evicting it, and reinserting an
+      evicted key would just push the map's bound and evict a *different*
+      retained key — churning which attributes survive without changing how
+      many are lost. So `dropped_attributes` and the retained subset are
+      left exactly as the SDK computed them.
     - A sampler that added its own attributes is untouched either way.
-    - Only the missing keys are re-inserted, so this doesn't cycle
-      already-present keys through the SDK's bounded attribute map and
-      inflate `dropped_attributes` beyond what the sampler itself dropped.
-
-    One case is irreducible: a sampler that deliberately *deletes* one of our
-    keys is indistinguishable from one that dropped it by accident, so it
-    gets restored either way. Restoring is the safer default — don't try to
-    build machinery to tell the two apart.
 
     Callers are expected to guard this with `if span.is_recording():`; it
     does no work worth skipping for non-recording spans, but the check is
@@ -187,11 +188,13 @@ def restore_missing_attributes(
     guards already in those functions.
     """
     existing: Mapping[str, otel_types.AttributeValue] = {}
+    dropped = 0
     if isinstance(span, _AttributeReadableSpan):
         existing = span.attributes or {}
-    missing = {key: value for key, value in attrs.items() if key not in existing}
-    if missing:
-        span.set_attributes(missing)
+        dropped = span.dropped_attributes
+    none_present = not any(key in existing for key in attrs)
+    if none_present and dropped == 0:
+        span.set_attributes(attrs)
 
 
 def extract_trace_context(meta: dict[str, Any] | None) -> Context:
@@ -234,5 +237,5 @@ __all__ = [
     "get_tracer",
     "inject_trace_context",
     "record_span_error",
-    "restore_missing_attributes",
+    "restore_dropped_attributes",
 ]

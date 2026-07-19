@@ -33,7 +33,7 @@ from typing_extensions import TypeVar
 from fastmcp import settings
 from fastmcp.exceptions import ToolError
 from fastmcp.server.sampling.sampling_tool import SamplingTool
-from fastmcp.telemetry import get_tracer, restore_missing_attributes
+from fastmcp.telemetry import get_tracer, restore_dropped_attributes
 from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.tools.tool_transform import TransformedTool
 from fastmcp.utilities.async_utils import gather
@@ -324,13 +324,13 @@ async def execute_tools(
             # Tracer.start_span builds the span from
             # `sampling_result.attributes`, not the `attributes` kwarg
             # directly — a custom Sampler whose SamplingResult.attributes
-            # defaults to None silently drops everything we passed.
-            # Restoring only the keys still missing (rather than reapplying
-            # everything) guarantees FastMCP's attributes survive a
-            # non-forwarding sampler while leaving alone anything a sampler
-            # deliberately set, redacted, or replaced.
+            # defaults to None silently drops everything we passed. This
+            # only fires when *none* of our attributes made it onto the
+            # span, so a sampler that forwarded (and redacted, replaced, or
+            # partially dropped) attributes, or an SDK attribute limit that
+            # evicted some, is left untouched.
             if span.is_recording():
-                restore_missing_attributes(span, span_attrs)
+                restore_dropped_attributes(span, span_attrs)
             try:
                 result_value = await tool.run(tool_use.input)
                 return ToolResultContent(
@@ -583,12 +583,12 @@ async def sample_step_impl(
         # Tracer.start_span builds the span from
         # `sampling_result.attributes`, not the `attributes` kwarg directly —
         # a custom Sampler whose SamplingResult.attributes defaults to None
-        # silently drops everything we passed. Restoring only the keys still
-        # missing (rather than reapplying everything) guarantees FastMCP's
-        # attributes survive a non-forwarding sampler while leaving alone
-        # anything a sampler deliberately set, redacted, or replaced.
+        # silently drops everything we passed. This only fires when *none* of
+        # our attributes made it onto the span, so a sampler that forwarded
+        # (and redacted, replaced, or partially dropped) attributes, or an
+        # SDK attribute limit that evicted some, is left untouched.
         if span.is_recording():
-            restore_missing_attributes(span, span_attrs)
+            restore_dropped_attributes(span, span_attrs)
         try:
             if use_fallback:
                 response = await call_sampling_handler(
