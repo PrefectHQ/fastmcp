@@ -3,12 +3,19 @@ import gc
 import inspect
 import os
 import weakref
+from pathlib import Path
 
 import psutil
 import pytest
 
 from fastmcp import Client
 from fastmcp.client.transports import PythonStdioTransport, StdioTransport
+
+# A pure-stdlib MCP server used by the process-lifecycle tests below. It starts
+# in ~0.03s instead of the ~0.7s a real FastMCP server needs, which matters
+# because these tests spawn several subprocesses each. See its docstring for
+# what it does and does not implement.
+MINIMAL_STDIO_SERVER = Path(__file__).parent / "minimal_stdio_server.py"
 
 
 def running_under_debugger():
@@ -46,24 +53,8 @@ async def wait_for_log_content(
 
 class TestParallelCalls:
     @pytest.fixture
-    def stdio_script(self, tmp_path):
-        script = inspect.cleandoc('''
-            import os
-            from fastmcp import FastMCP
-
-            mcp = FastMCP()
-
-            @mcp.tool
-            def pid() -> int:
-                """Gets PID of server"""
-                return os.getpid()
-
-            if __name__ == "__main__":
-                mcp.run()
-            ''')
-        script_file = tmp_path / "stdio.py"
-        script_file.write_text(script)
-        return script_file
+    def stdio_script(self):
+        return MINIMAL_STDIO_SERVER
 
     async def test_parallel_calls(self, stdio_script):
         from fastmcp.server import create_proxy
@@ -89,24 +80,8 @@ class TestKeepAlive:
     # https://github.com/PrefectHQ/fastmcp/issues/581
 
     @pytest.fixture
-    def stdio_script(self, tmp_path):
-        script = inspect.cleandoc('''
-            import os
-            from fastmcp import FastMCP
-
-            mcp = FastMCP()
-
-            @mcp.tool
-            def pid() -> int:
-                """Gets PID of server"""
-                return os.getpid()
-
-            if __name__ == "__main__":
-                mcp.run()
-            ''')
-        script_file = tmp_path / "stdio.py"
-        script_file.write_text(script)
-        return script_file
+    def stdio_script(self):
+        return MINIMAL_STDIO_SERVER
 
     async def test_keep_alive_default_true(self):
         client = Client(transport=StdioTransport(command="python", args=[""]))
@@ -288,24 +263,8 @@ class TestSubprocessCrashRecovery:
     INIT_TIMEOUT = 3
 
     @pytest.fixture
-    def stdio_script(self, tmp_path):
-        script = inspect.cleandoc('''
-            import os
-            from fastmcp import FastMCP
-
-            mcp = FastMCP()
-
-            @mcp.tool
-            def pid() -> int:
-                """Gets PID of server"""
-                return os.getpid()
-
-            if __name__ == "__main__":
-                mcp.run()
-            ''')
-        script_file = tmp_path / "stdio.py"
-        script_file.write_text(script)
-        return script_file
+    def stdio_script(self):
+        return MINIMAL_STDIO_SERVER
 
     async def test_keep_alive_recovers_after_subprocess_crash(self, stdio_script):
         """When keep_alive=True and the subprocess dies, the next connection should start a fresh subprocess."""
@@ -463,42 +422,21 @@ class TestSubprocessCrashRecovery:
         pid2 = int(result.content[0].text)  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
         assert pid1 != pid2
 
-    async def test_clean_exit_recovers(self, tmp_path):
+    async def test_clean_exit_recovers(self):
         """Recovery works when the subprocess exits cleanly (exit code 0), not just crashes."""
-        script = tmp_path / "exit_script.py"
-        script.write_text(
-            inspect.cleandoc('''
-            import os, sys, threading
-            from fastmcp import FastMCP
-
-            mcp = FastMCP()
-            call_count = 0
-
-            @mcp.tool
-            def pid_then_exit() -> int:
-                """Returns PID, exits cleanly after second call."""
-                global call_count
-                call_count += 1
-                pid = os.getpid()
-                if call_count >= 2:
-                    threading.Timer(0.1, lambda: os._exit(0)).start()
-                return pid
-
-            if __name__ == "__main__":
-                mcp.run()
-        ''')
-        )
-
         client = Client(
-            transport=PythonStdioTransport(script_path=script),
+            transport=PythonStdioTransport(
+                script_path=MINIMAL_STDIO_SERVER,
+                args=["--exit-after-calls", "2"],
+            ),
             init_timeout=self.INIT_TIMEOUT,
         )
 
         async with client:
-            result1 = await client.call_tool("pid_then_exit")
+            result1 = await client.call_tool("pid")
             pid1: int = result1.data
             # Second call triggers delayed clean exit
-            await client.call_tool("pid_then_exit")
+            await client.call_tool("pid")
 
             # Wait for the subprocess to actually exit (it self-terminates
             # via a background timer ~0.1s after the second call) instead
@@ -510,7 +448,7 @@ class TestSubprocessCrashRecovery:
 
         # Recovery after clean exit
         async with client:
-            result2 = await client.call_tool("pid_then_exit")
+            result2 = await client.call_tool("pid")
             pid2: int = result2.data
 
         assert pid1 != pid2
@@ -535,20 +473,13 @@ class TestSubprocessCrashRecovery:
             async with client:
                 pass
 
-        # Write a working script to the same path
+        # Replace the same path with a working server. It delegates to the
+        # minimal stdio server so the retry doesn't pay for a fastmcp import.
         crash_script.write_text(
-            inspect.cleandoc("""
-            import os
-            from fastmcp import FastMCP
+            inspect.cleandoc(f"""
+            import runpy
 
-            mcp = FastMCP()
-
-            @mcp.tool
-            def pid() -> int:
-                return os.getpid()
-
-            if __name__ == "__main__":
-                mcp.run()
+            runpy.run_path({str(MINIMAL_STDIO_SERVER)!r}, run_name="__main__")
         """)
         )
 
