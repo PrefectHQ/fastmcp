@@ -190,7 +190,7 @@ class AggregateProvider(Provider):
     async def _list_tools(self) -> Sequence[Tool]:
         """List all tools from all providers."""
         results = await gather(
-            *[p.list_tools() for p in self.providers],
+            (p.list_tools() for p in self.providers),
             return_exceptions=True,
         )
         return self._collect_list_results(results, "list_tools")
@@ -200,7 +200,7 @@ class AggregateProvider(Provider):
     ) -> Tool | None:
         """Get tool by name from providers."""
         results = await gather(
-            *[p.get_tool(name, version) for p in self.providers],
+            (p.get_tool(name, version) for p in self.providers),
             return_exceptions=True,
         )
         return self._get_highest_version_result(results, f"get_tool({name!r})")  # type: ignore[return-value]  # ty:ignore[invalid-argument-type, invalid-return-type]
@@ -208,7 +208,7 @@ class AggregateProvider(Provider):
     async def get_app_tool(self, app_name: str, tool_name: str) -> Tool | None:
         """Query all child providers for an app tool."""
         results = await gather(
-            *[p.get_app_tool(app_name, tool_name) for p in self.providers],
+            (p.get_app_tool(app_name, tool_name) for p in self.providers),
             return_exceptions=True,
         )
         for r in results:
@@ -223,7 +223,7 @@ class AggregateProvider(Provider):
     async def get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
         """Query all child providers for a tool matching a hash."""
         results = await gather(
-            *[p.get_tool_by_hash(tool_hash, tool_name) for p in self.providers],
+            (p.get_tool_by_hash(tool_hash, tool_name) for p in self.providers),
             return_exceptions=True,
         )
         for r in results:
@@ -242,7 +242,7 @@ class AggregateProvider(Provider):
     async def _list_resources(self) -> Sequence[Resource]:
         """List all resources from all providers."""
         results = await gather(
-            *[p.list_resources() for p in self.providers],
+            (p.list_resources() for p in self.providers),
             return_exceptions=True,
         )
         return self._collect_list_results(results, "list_resources")
@@ -252,7 +252,7 @@ class AggregateProvider(Provider):
     ) -> Resource | None:
         """Get resource by URI from providers."""
         results = await gather(
-            *[p.get_resource(uri, version) for p in self.providers],
+            (p.get_resource(uri, version) for p in self.providers),
             return_exceptions=True,
         )
         return self._get_highest_version_result(results, f"get_resource({uri!r})")  # type: ignore[return-value]  # ty:ignore[invalid-argument-type, invalid-return-type]
@@ -264,7 +264,7 @@ class AggregateProvider(Provider):
     async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """List all resource templates from all providers."""
         results = await gather(
-            *[p.list_resource_templates() for p in self.providers],
+            (p.list_resource_templates() for p in self.providers),
             return_exceptions=True,
         )
         return self._collect_list_results(results, "list_resource_templates")
@@ -274,7 +274,7 @@ class AggregateProvider(Provider):
     ) -> ResourceTemplate | None:
         """Get resource template by URI from providers."""
         results = await gather(
-            *[p.get_resource_template(uri, version) for p in self.providers],
+            (p.get_resource_template(uri, version) for p in self.providers),
             return_exceptions=True,
         )
         return self._get_highest_version_result(
@@ -288,7 +288,7 @@ class AggregateProvider(Provider):
     async def _list_prompts(self) -> Sequence[Prompt]:
         """List all prompts from all providers."""
         results = await gather(
-            *[p.list_prompts() for p in self.providers],
+            (p.list_prompts() for p in self.providers),
             return_exceptions=True,
         )
         return self._collect_list_results(results, "list_prompts")
@@ -298,7 +298,7 @@ class AggregateProvider(Provider):
     ) -> Prompt | None:
         """Get prompt by name from providers."""
         results = await gather(
-            *[p.get_prompt(name, version) for p in self.providers],
+            (p.get_prompt(name, version) for p in self.providers),
             return_exceptions=True,
         )
         return self._get_highest_version_result(results, f"get_prompt({name!r})")  # type: ignore[return-value]  # ty:ignore[invalid-argument-type, invalid-return-type]
@@ -310,7 +310,7 @@ class AggregateProvider(Provider):
     async def get_tasks(self) -> Sequence[FastMCPComponent]:
         """Get all task-eligible components from all providers."""
         results = await gather(
-            *[p.get_tasks() for p in self.providers],
+            (p.get_tasks() for p in self.providers),
             return_exceptions=True,
         )
         return self._collect_list_results(results, "get_tasks")

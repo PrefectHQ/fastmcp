@@ -498,10 +498,12 @@ class Provider:
         """
         # Fetch all component types in parallel
         results = await gather(
-            self._list_tools(),
-            self._list_resources(),
-            self._list_resource_templates(),
-            self._list_prompts(),
+            (
+                self._list_tools(),
+                self._list_resources(),
+                self._list_resource_templates(),
+                self._list_prompts(),
+            )
         )
         tools = cast("Sequence[Tool]", results[0])
         resources = cast("Sequence[Resource]", results[1])
