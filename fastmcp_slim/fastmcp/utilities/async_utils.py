@@ -95,8 +95,9 @@ async def gather(
             else:
                 raise
 
+    pending = enumerate(awaitables)
     async with anyio.create_task_group() as tg:
-        for i, aw in enumerate(awaitables):
+        for i, aw in pending:
             results.append(None)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
             try:
                 tg.start_soon(run_at, i, aw)
@@ -106,6 +107,14 @@ async def gather(
                 # explicitly so it isn't silently garbage collected later.
                 if inspect.iscoroutine(aw):
                     aw.close()
+                # Lazy consumption keeps the leak window small, but a caller
+                # that passed an already-built sequence has coroutines sitting
+                # behind this one that were never scheduled either. Draining
+                # the iterator closes them too, so `gather` cannot leak
+                # regardless of how eagerly its argument was constructed.
+                for _, remaining in pending:
+                    if inspect.iscoroutine(remaining):
+                        remaining.close()
                 raise
 
     return results

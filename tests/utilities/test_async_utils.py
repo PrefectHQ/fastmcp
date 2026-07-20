@@ -151,6 +151,52 @@ class TestGather:
         # must have been closed rather than abandoned.
         assert inspect.getcoroutinestate(created[1]) == "CORO_CLOSED"
 
+    async def test_closes_unscheduled_coroutines_from_an_eager_caller(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Lazy consumption keeps the leak window small, but a caller that
+        builds its awaitables eagerly (a list or a parenthesized tuple) has
+        coroutines queued behind the failing one that were never scheduled
+        either. ``gather`` drains what is left of the iterable and closes
+        those too, so it cannot leak regardless of how its argument was
+        constructed."""
+        real_create_task_group = anyio.create_task_group
+
+        class _FailOnSecondStart:
+            def __init__(self) -> None:
+                self._real_tg = real_create_task_group()
+                self._calls = 0
+
+            async def __aenter__(self) -> "_FailOnSecondStart":
+                await self._real_tg.__aenter__()
+                return self
+
+            async def __aexit__(self, *exc_info: Any) -> bool | None:
+                return await self._real_tg.__aexit__(*exc_info)
+
+            def start_soon(self, func: Any, *args: Any) -> None:
+                self._calls += 1
+                if self._calls == 2:
+                    raise RuntimeError("interrupted while scheduling")
+                self._real_tg.start_soon(func, *args)
+
+        monkeypatch.setattr(async_utils.anyio, "create_task_group", _FailOnSecondStart)
+
+        async def value(result: int) -> int:
+            return result
+
+        # Eagerly built: all four coroutines exist before gather() runs.
+        eager = [value(0), value(1), value(2), value(3)]
+
+        with pytest.raises(BaseExceptionGroup):
+            await gather(eager)
+
+        # The one that failed to schedule *and* the two queued behind it are
+        # all closed; none is left to surface as a stray warning later.
+        assert [inspect.getcoroutinestate(aw) for aw in eager[1:]] == [
+            "CORO_CLOSED"
+        ] * 3
+
 
 class TestAsyncPartialIntegration:
     async def test_async_partial_tool_runs(self) -> None:
