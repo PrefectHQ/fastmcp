@@ -60,8 +60,14 @@ class TestTokenBucketRateLimiter:
         # Should fail to consume more
         assert await limiter.consume(1) is False
 
-    async def test_refill(self):
+    async def test_refill(self, monkeypatch):
         """Test token refill over time."""
+        current_time = 0.0
+        monkeypatch.setattr(
+            "fastmcp.server.middleware.rate_limiting.time.time",
+            lambda: current_time,
+        )
+
         limiter = TokenBucketRateLimiter(
             capacity=10, refill_rate=10.0
         )  # 10 tokens per second
@@ -70,11 +76,13 @@ class TestTokenBucketRateLimiter:
         assert await limiter.consume(10) is True
         assert await limiter.consume(1) is False
 
-        # Wait for refill (0.2 seconds = 2 tokens at 10/sec)
-        await asyncio.sleep(0.2)
+        # Advance the clock instead of sleeping in real time. Use a small
+        # base time and a slight margin over the strict 0.2s/2-token
+        # threshold so the result isn't sensitive to float rounding.
+        current_time += 0.25
         assert await limiter.consume(2) is True
 
-    async def test_denied_consumes_do_not_freeze_clock(self):
+    async def test_denied_consumes_do_not_freeze_clock(self, monkeypatch):
         """Regression for #4056: a client that retries quickly after being
         denied must not be able to bypass the configured refill rate.
 
@@ -82,21 +90,26 @@ class TestTokenBucketRateLimiter:
         If it only advanced on success, the elapsed window would be re-counted
         on each retry, letting a client refill faster than `refill_rate`.
         """
+        current_time = 0.0
+        monkeypatch.setattr(
+            "fastmcp.server.middleware.rate_limiting.time.time",
+            lambda: current_time,
+        )
+
         limiter = TokenBucketRateLimiter(capacity=10, refill_rate=10.0)
 
         # Drain the bucket.
         assert await limiter.consume(10) is True
 
-        # Hammer with denied requests over ~0.2s. With the correct
-        # implementation, last_refill advances on each call, so total
-        # accumulated tokens after 0.2s is ~2 (10/s * 0.2s).
+        # Hammer with denied requests over a simulated ~0.2s (no real sleep).
+        # With the correct implementation, last_refill advances on each
+        # call, so total accumulated tokens after 0.2s is ~2 (10/s * 0.2s).
         for _ in range(20):
             await limiter.consume(1)
-            await asyncio.sleep(0.01)
+            current_time += 0.01
 
         # We should NOT be able to consume more than the configured rate
-        # would allow over the elapsed window. Allow a small slack for
-        # timing jitter, but stay well below `capacity`.
+        # would allow over the elapsed window, well below `capacity`.
         assert await limiter.consume(5) is False, (
             "denied retries should not silently accrue extra tokens"
         )
@@ -132,8 +145,14 @@ class TestSlidingWindowRateLimiter:
         # Should reject over limit
         assert await limiter.is_allowed() is False
 
-    async def test_sliding_window(self):
+    async def test_sliding_window(self, monkeypatch):
         """Test sliding window behavior."""
+        current_time = 0.0
+        monkeypatch.setattr(
+            "fastmcp.server.middleware.rate_limiting.time.time",
+            lambda: current_time,
+        )
+
         limiter = SlidingWindowRateLimiter(max_requests=2, window_seconds=1)
 
         # Use up requests
@@ -141,8 +160,8 @@ class TestSlidingWindowRateLimiter:
         assert await limiter.is_allowed() is True
         assert await limiter.is_allowed() is False
 
-        # Wait for window to pass
-        await asyncio.sleep(1.1)
+        # Advance the clock past the window instead of sleeping in real time
+        current_time += 1.1
 
         # Should be able to make requests again
         assert await limiter.is_allowed() is True
@@ -528,12 +547,11 @@ class TestRateLimitingMiddlewareIntegration:
 
     async def test_rate_limiting_recovery_over_time(self, rate_limit_server):
         """Test that rate limiting allows requests again after time passes."""
-        rate_limit_server.add_middleware(
-            RateLimitingMiddleware(
-                max_requests_per_second=10.0,  # 10 per second = 1 every 100ms
-                burst_capacity=4,
-            )
+        middleware = RateLimitingMiddleware(
+            max_requests_per_second=10.0,  # 10 per second = 1 every 100ms
+            burst_capacity=4,
         )
+        rate_limit_server.add_middleware(middleware)
 
         async with Client(rate_limit_server) as client:
             # Exhaust the burst; the exact number of internal requests before the
@@ -547,8 +565,11 @@ class TestRateLimitingMiddlewareIntegration:
                     break
             assert hit_limit, "Rate limit was never triggered"
 
-            # Wait for token bucket to refill (150ms should be enough for ~1.5 tokens)
-            await asyncio.sleep(0.15)
+            # Simulate token refill without a real sleep: rewind each
+            # bucket's last-refill timestamp so the next consume() sees
+            # ~150ms of elapsed time (10 tokens/sec => ~1.5 tokens refilled).
+            for limiter in middleware.limiters.values():
+                limiter.last_refill -= 0.15
 
             # Should be able to make another request
             result = await client.call_tool("quick_action", {"message": "after_wait"})

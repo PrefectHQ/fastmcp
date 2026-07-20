@@ -43,7 +43,7 @@ def test_idle_session_is_terminated_after_timeout():
     app = create_streamable_http_app(
         server=server,
         streamable_http_path="/mcp",
-        session_idle_timeout=0.2,
+        session_idle_timeout=0.1,
     )
 
     with TestClient(app, base_url="http://127.0.0.1") as client:
@@ -58,11 +58,15 @@ def test_idle_session_is_terminated_after_timeout():
 
         # Wait past the idle deadline; the SDK's idle cancel scope fires and
         # removes the session from the active instances. Poll to stay fast.
+        # The idle timeout itself is driven by anyio's event-loop clock
+        # inside the SDK (not a mockable Python-level time source), so this
+        # remains a real wait; the timeout and poll interval are kept as
+        # small as reliably possible.
         deadline = time.monotonic() + 3.0
         while time.monotonic() < deadline:
             if session_id not in sm._server_instances:
                 break
-            time.sleep(0.05)
+            time.sleep(0.02)
 
         assert session_id not in sm._server_instances
 

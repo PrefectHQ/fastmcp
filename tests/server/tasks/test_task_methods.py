@@ -5,6 +5,7 @@ Tests the tasks/get, tasks/result, and tasks/list JSON-RPC protocol methods.
 """
 
 import asyncio
+import time
 
 import pytest
 from mcp.shared.exceptions import MCPError
@@ -30,8 +31,12 @@ async def endpoint_server():
 
     @mcp.tool(task=True)  # Enable background execution
     async def slow_tool() -> str:
-        """A slow tool for testing cancellation."""
-        await asyncio.sleep(10)
+        """A slow tool for testing cancellation.
+
+        Never completes on its own - the only test that submits this task
+        cancels it well before any real-time completion would matter.
+        """
+        await asyncio.Event().wait()
         return "done"
 
     return mcp
@@ -160,17 +165,24 @@ async def test_task_cancellation_workflow(endpoint_server):
         # Submit slow task
         task = await client.call_tool("slow_tool", {}, task=True)
 
-        # Give it a moment to start
-        await asyncio.sleep(0.1)
+        # Wait until the task is tracked as working before cancelling
+        deadline = time.monotonic() + 5.0
+        status = await task.status()
+        while status.status != "working" and time.monotonic() < deadline:
+            await asyncio.sleep(0.005)
+            status = await task.status()
 
         # Cancel the task
         await task.cancel()
 
-        # Give cancellation a moment to process
-        await asyncio.sleep(0.1)
+        # Poll until cancellation is reflected in task status
+        deadline = time.monotonic() + 5.0
+        status = await task.status()
+        while status.status != "cancelled" and time.monotonic() < deadline:
+            await asyncio.sleep(0.005)
+            status = await task.status()
 
         # Task should be in cancelled state
-        status = await task.status()
         assert status.status == "cancelled"
 
 
@@ -192,7 +204,11 @@ async def test_task_cancellation_interrupts_running_coroutine(endpoint_server):
     async def interruptible_tool() -> str:
         started.set()
         try:
-            await asyncio.sleep(60)
+            # Never completes on its own - the test cancels this task well
+            # before any real-time completion would matter, so a genuinely
+            # suspended coroutine (rather than a fixed-duration sleep) is
+            # enough to prove cancellation delivers CancelledError.
+            await asyncio.Event().wait()
             completed_normally.set()
             return "completed"
         except asyncio.CancelledError:

@@ -24,7 +24,10 @@ async def keepalive_server():
 
     @mcp.tool(task=True)
     async def slow_task() -> str:
-        await asyncio.sleep(1)
+        # Never completes during the test - the only test that submits this
+        # task checks status immediately after submission and never awaits
+        # completion, so there's no need for a real-time sleep here.
+        await asyncio.Event().wait()
         return "done"
 
     return mcp

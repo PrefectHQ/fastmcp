@@ -7,6 +7,7 @@ and invoke user callbacks.
 
 import asyncio
 import time
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 import pytest
@@ -16,6 +17,17 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 
 
+async def _wait_until(condition: Callable[[], bool], timeout: float = 5.0) -> None:
+    """Poll until condition() is true or timeout elapses.
+
+    Used in place of a fixed sleep when waiting for an async callback or
+    notification to be delivered/dispatched after the awaited call returns.
+    """
+    deadline = time.monotonic() + timeout
+    while not condition() and time.monotonic() < deadline:
+        await asyncio.sleep(0.005)
+
+
 @pytest.fixture
 async def task_notification_server():
     """Server that sends task status notifications."""
@@ -23,20 +35,14 @@ async def task_notification_server():
 
     @mcp.tool(task=True)
     async def quick_task(value: int) -> int:
-        """Quick background task."""
-        await asyncio.sleep(0.05)
+        """Quick background task with a brief, measurable delay (contrast with instant_task)."""
+        await asyncio.sleep(0.01)
         return value * 2
 
     @mcp.tool(task=True)
     async def instant_task(value: int) -> int:
         """Background task that completes with no delay."""
         return value * 2
-
-    @mcp.tool(task=True)
-    async def slow_task(duration: float = 0.2) -> str:
-        """Slow background task."""
-        await asyncio.sleep(duration)
-        return "done"
 
     @mcp.tool(task=True)
     async def failing_task() -> str:
@@ -93,8 +99,12 @@ async def test_callback_invoked_on_notification(task_notification_server):
         # Wait for completion
         await task.wait(timeout=2.0)
 
-        # Give callbacks a moment to fire
-        await asyncio.sleep(0.1)
+        # Wait for the status this test actually asserts on. Waiting merely for
+        # "some callback fired" would be satisfied by the earlier `working`
+        # notification and race the `completed` one.
+        await _wait_until(
+            lambda: any(s.status == "completed" for s in callback_invocations)
+        )
 
     # Callback should have been invoked at least once
     assert len(callback_invocations) > 0
@@ -123,7 +133,7 @@ async def test_async_callback_invoked(task_notification_server):
         await task.wait(timeout=2.0)
 
         # Give async callbacks time to complete
-        await asyncio.sleep(0.2)
+        await _wait_until(lambda: len(callback_invocations) > 0)
 
     # Async callback should have been invoked
     assert len(callback_invocations) > 0
@@ -147,7 +157,7 @@ async def test_multiple_callbacks_all_invoked(task_notification_server):
         task.on_status_change(callback2)
 
         await task.wait(timeout=2.0)
-        await asyncio.sleep(0.1)
+        await _wait_until(lambda: bool(callback1_calls) and bool(callback2_calls))
 
     # Both callbacks should have been invoked
     assert len(callback1_calls) > 0
@@ -173,7 +183,7 @@ async def test_callback_error_doesnt_break_notification(task_notification_server
         task.on_status_change(working_callback)
 
         await task.wait(timeout=2.0)
-        await asyncio.sleep(0.1)
+        await _wait_until(lambda: bool(callback1_calls) and bool(callback2_calls))
 
     # Failing callback was called (and errored)
     assert len(callback1_calls) > 0
@@ -240,7 +250,7 @@ async def test_fast_task_completion_delivered_via_notification(
         assert result.data == 42
 
         # Allow the completion notification to arrive and dispatch.
-        await asyncio.sleep(0.1)
+        await _wait_until(lambda: "completed" in received)
 
     assert "completed" in received
 

@@ -1052,7 +1052,7 @@ def _build_picker_html(tools: list[dict[str, Any]]) -> str:
         from prefab_ui.components.form import Form
         from prefab_ui.rx import RESULT, Rx
     except ImportError:
-        return "<html><body><p>prefab-ui not installed. Run: pip install fastmcp[apps]</p></body></html>"
+        return "<html><body><p>prefab-ui not installed. Run: pip install 'fastmcp[apps]'</p></body></html>"
 
     if not tools:
         with Column(gap=4, css_class="p-6 max-w-2xl mx-auto") as view:

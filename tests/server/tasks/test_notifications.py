@@ -6,6 +6,7 @@ No mocking of Redis, sessions, or Docket internals.
 """
 
 import asyncio
+import time
 
 import mcp_types
 
@@ -123,8 +124,7 @@ class TestNotificationIntegration:
 
         # After client disconnects, subscriber should be cleaned up
         # Allow brief time for async cleanup
-        for _ in range(20):
-            if get_subscriber_count() == count_before:
-                break
-            await asyncio.sleep(0.05)
+        deadline = time.monotonic() + 1.0
+        while get_subscriber_count() != count_before and time.monotonic() < deadline:
+            await asyncio.sleep(0.005)
         assert get_subscriber_count() == count_before

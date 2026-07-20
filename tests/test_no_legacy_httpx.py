@@ -17,6 +17,8 @@ import subprocess
 import sys
 import textwrap
 
+import pytest
+
 _BLOCKER_SCRIPT = textwrap.dedent(
     """
     import sys
@@ -44,6 +46,7 @@ _BLOCKER_SCRIPT = textwrap.dedent(
 )
 
 
+@pytest.mark.subprocess_heavy
 def test_fastmcp_imports_without_legacy_httpx():
     result = subprocess.run(
         [sys.executable, "-c", _BLOCKER_SCRIPT],
