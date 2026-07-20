@@ -182,7 +182,10 @@ class StdioTransport(ClientTransport):
             if not connect_task.cancelled():
                 raise
         except Exception:
-            pass
+            logger.debug(
+                "Suppressed exception from stdio connection task during disconnect",
+                exc_info=True,
+            )
 
         # reset variables and events for potential future reconnects
         self._connect_task = None

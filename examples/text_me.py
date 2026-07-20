@@ -18,7 +18,8 @@ SURGE_MY_LAST_NAME=...
 Visit https://surgemsg.com/ and click "Get Started" to obtain these values.
 """
 
-from typing import Annotated
+from collections.abc import Callable
+from typing import Annotated, cast
 
 import httpx2
 from pydantic import BeforeValidator
@@ -41,7 +42,9 @@ class SurgeSettings(BaseSettings):
 
 # Create server
 mcp = FastMCP("Text me")
-surge_settings = SurgeSettings.model_validate({})
+# BaseSettings resolves these required fields from the environment at runtime.
+settings_factory = cast(Callable[[], SurgeSettings], SurgeSettings)
+surge_settings = settings_factory()
 
 
 @mcp.tool(name="textme", description="Send a text message to me")
