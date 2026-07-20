@@ -35,6 +35,7 @@
     "group": "fastmcp.utilities",
     "pages": [
       "python-sdk/fastmcp-utilities-__init__",
+      "python-sdk/fastmcp-utilities-asgi_transport",
       "python-sdk/fastmcp-utilities-async_utils",
       "python-sdk/fastmcp-utilities-auth",
       "python-sdk/fastmcp-utilities-authorization",
