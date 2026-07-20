@@ -4,12 +4,14 @@ import time
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
+import httpx2
 import mcp_types
 import pytest
 from anyio import create_task_group
 from dirty_equals import Contains
 from mcp import MCPError
 from mcp_types import Icon, TextContent, TextResourceContents
+from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 from pydantic import AnyUrl
 
 from fastmcp import FastMCP
@@ -281,13 +283,20 @@ async def test_proxy_initialize_forwards_remote_connection_error():
 
 
 async def test_proxy_list_tools_surfaces_remote_connection_error():
+    """A dead backend surfaces as an MCPError naming the connection failure.
+
+    The provider normalizes transport failures into `MCPError` (rather than
+    letting the client's `RuntimeError` escape) so the error survives the
+    modern era's wire boundary, which masks any non-MCPError as a generic
+    "Internal server error".
+    """
     port = find_available_port()
     proxy = create_proxy(
         StreamableHttpTransport(f"http://127.0.0.1:{port}/mcp"),
         provider_error_strategy="raise",
     )
 
-    with pytest.raises(RuntimeError, match="Client failed to connect"):
+    with pytest.raises(MCPError, match="Client failed to connect"):
         await proxy.list_tools()
 
 
@@ -1385,3 +1394,97 @@ class TestProxyForwardingAppliesToEveryBackendClient:
 
         assert result.is_error is False
         assert result.structured_content == {"status": "weird"}
+
+
+class TestProxyModernEraInstructions:
+    """Upstream instructions must reach a client on the modern era too.
+
+    `ProxyInitializeMiddleware.on_initialize` only fires for the legacy
+    handshake. A `mode="auto"` client negotiates via `server/discover`, which
+    the SDK builds from the low-level server's own `instructions`, so without a
+    discover-side hook the proxy drops its upstream's instructions entirely.
+    """
+
+    async def test_proxy_forwards_upstream_instructions_on_modern_era(self):
+        upstream = FastMCP(name="upstream", instructions="USE_THIS_MARKER_123")
+        proxy = create_proxy(upstream, name="proxy")
+
+        async with Client(proxy, mode="auto") as client:
+            assert client.protocol_version in MODERN_PROTOCOL_VERSIONS
+            assert client.session.instructions == "USE_THIS_MARKER_123"
+
+    async def test_proxy_own_instructions_take_precedence_on_modern_era(self):
+        upstream = FastMCP(name="upstream", instructions="upstream instructions")
+        proxy = create_proxy(upstream, name="proxy", instructions="proxy instructions")
+
+        async with Client(proxy, mode="auto") as client:
+            assert client.session.instructions == "proxy instructions"
+
+    async def test_proxy_instructions_none_when_upstream_has_none_on_modern_era(self):
+        upstream = FastMCP(name="upstream")
+        proxy = create_proxy(upstream, name="proxy")
+
+        async with Client(proxy, mode="auto") as client:
+            assert client.session.instructions is None
+
+
+class TestProxyProviderTransportErrors:
+    """A dead backend must surface as an MCPError, not a raw transport error.
+
+    `ProxyTool.run` and `ProxyInitializeMiddleware.on_initialize` normalize
+    connection failures into `MCPError`; the provider's list methods caught
+    only `MCPError`, so an `httpx2.ConnectError` (or the `RuntimeError` the
+    client wraps a failed connect in) escaped unwrapped to the caller.
+    """
+
+    @pytest.fixture
+    def unreachable_provider(self) -> ProxyProvider:
+        port = find_available_port()
+        return ProxyProvider(
+            lambda: ProxyClient(f"http://127.0.0.1:{port}/mcp/"),
+            cache_ttl=0,
+        )
+
+    @pytest.mark.parametrize(
+        "method",
+        ["_list_tools", "_list_resources", "_list_resource_templates", "_list_prompts"],
+    )
+    async def test_list_method_wraps_connection_failure(
+        self, unreachable_provider: ProxyProvider, method: str
+    ):
+        with pytest.raises(MCPError):
+            await getattr(unreachable_provider, method)()
+
+    @pytest.mark.parametrize(
+        "method",
+        ["_list_tools", "_list_resources", "_list_resource_templates", "_list_prompts"],
+    )
+    async def test_list_method_wraps_raw_transport_error(self, method: str):
+        """A raw transport error raised mid-call is normalized, not leaked."""
+
+        def exploding_factory() -> Client:
+            raise httpx2.ConnectError("backend refused the connection")
+
+        provider = ProxyProvider(exploding_factory, cache_ttl=0)
+        with pytest.raises(MCPError, match="backend refused the connection"):
+            await getattr(provider, method)()
+
+    @pytest.mark.parametrize("mode", ["legacy", "auto"])
+    async def test_connection_error_reaches_client_on_both_eras(self, mode: str):
+        """The actual defect: the modern era masked the connection failure.
+
+        An unwrapped `RuntimeError` reaching the modern wire boundary is
+        replaced with a generic "Internal server error", so a client on the
+        newer protocol could not tell a dead backend from a server bug. On the
+        legacy era the same exception reached the wire as `str(exc)`, which is
+        why nothing caught this while tests pinned the older version.
+        """
+        port = find_available_port()
+        proxy = create_proxy(
+            StreamableHttpTransport(f"http://127.0.0.1:{port}/mcp"),
+            provider_error_strategy="raise",
+        )
+
+        with pytest.raises(MCPError, match="Client failed to connect"):
+            async with Client(proxy, mode=mode) as client:
+                await client.list_tools()

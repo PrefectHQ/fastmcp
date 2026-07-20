@@ -318,6 +318,16 @@ class MCPOperationsMixin:
                 raise to_mcp_error(
                     NotFoundError(f"Resource not found: {str(uri)!r}")
                 ) from e
+            except FastMCPError as e:
+                # Resource-visible errors (ResourceError, ValidationError, ...)
+                # must reach the wire as an MCPError. Resources have no
+                # error-result shape the way tools do, so the equivalent of
+                # _on_call_tool's error result is a translated MCPError: at
+                # 2026-07-28 the runner only preserves MCPError/ValidationError
+                # messages and masks anything else as "Internal server error",
+                # which would hide a legitimate client-input error. Masking
+                # already happened inside read_resource.
+                raise to_mcp_error(e) from e
 
             if isinstance(result, mcp_types.CreateTaskResult):
                 return result
@@ -349,6 +359,13 @@ class MCPOperationsMixin:
                 result = await self.render_prompt(name, arguments, version=version)
             except (DisabledError, NotFoundError) as e:
                 raise to_mcp_error(NotFoundError(f"Unknown prompt: {name!r}")) from e
+            except FastMCPError as e:
+                # Prompt-visible errors (PromptError, ValidationError, ...) must
+                # reach the wire as an MCPError for the same reason as
+                # resources: at 2026-07-28 anything that is not an
+                # MCPError/ValidationError is masked as "Internal server error".
+                # Masking already happened inside render_prompt.
+                raise to_mcp_error(e) from e
 
             if isinstance(result, mcp_types.CreateTaskResult):
                 return result
