@@ -424,14 +424,23 @@ class TestSubprocessCrashRecovery:
         # Kill the subprocess
         psutil.Process(pid1).kill()
 
-        # Fire several concurrent requests — all should fail, none should hang
+        # Fire several concurrent requests. Depending on how quickly the dead
+        # session is detected and a replacement spawned, each caller either
+        # fails cleanly or lands on the fresh subprocess — with a fast-starting
+        # server, recovery can beat all five requests and the crash is fully
+        # transparent. What must never happen: a hang (gather returning is the
+        # proof), or a "success" served by the killed process.
         tasks = [proxy.call_tool("pid") for _ in range(5)]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        errors = [r for r in results if isinstance(r, Exception)]
-        assert len(errors) > 0
+        for r in results:
+            if not isinstance(r, Exception):
+                served_by = int(r.content[0].text)  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+                assert served_by != pid1, (
+                    "call reported success from the killed subprocess"
+                )
 
-        # Recovery: a subsequent request should succeed
+        # Recovery: a subsequent request must succeed on a fresh subprocess
         result = await proxy.call_tool("pid")
         pid2 = int(result.content[0].text)  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
         assert pid1 != pid2
