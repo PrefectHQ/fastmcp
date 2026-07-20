@@ -421,7 +421,15 @@ class File:
         elif self.data is not None:
             raw_data = self.data
             if self._name:
-                uri_str = f"file:///{self._name}.{self._mime_type.split('/')[1]}"
+                # Preserve explicit filenames that already include an extension
+                # (e.g. report.pdf, archive.tar.gz). Only append the MIME subtype
+                # when the provided name has no suffix. (#4530)
+                name = self._name
+                if Path(name).suffix:
+                    filename = name
+                else:
+                    filename = f"{name}.{self._mime_type.split('/')[1]}"
+                uri_str = f"file:///{filename}"
             else:
                 uri_str = f"file:///resource.{self._mime_type.split('/')[1]}"
         else:

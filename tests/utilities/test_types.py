@@ -461,6 +461,21 @@ class TestFile:
         if isinstance(resource.resource, BlobResourceContents):
             assert resource.resource.blob == base64.b64encode(test_data).decode()
 
+    def test_to_resource_content_preserves_name_with_extension(self):
+        """Explicit names that already include an extension must not get another. (#4530)"""
+        resource = File(data=b"x", format="pdf", name="report.pdf").to_resource_content()
+        assert str(resource.resource.uri) == "file:///report.pdf"
+
+        resource = File(
+            data=b"x", format="octet-stream", name="archive.tar.gz"
+        ).to_resource_content()
+        assert str(resource.resource.uri) == "file:///archive.tar.gz"
+
+    def test_to_resource_content_appends_extension_when_name_has_none(self):
+        """Bare names still receive a MIME-derived extension."""
+        resource = File(data=b"x", format="pdf", name="report").to_resource_content()
+        assert str(resource.resource.uri) == "file:///report.pdf"
+
     def test_to_resource_content_with_text_data(self):
         """Test conversion to ResourceContent with text data (TextResourceContents)."""
         test_data = b"hello world"
