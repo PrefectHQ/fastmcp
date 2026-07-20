@@ -156,7 +156,7 @@ jobs:
             --allowedTools "Bash(gh label list:*)","Bash(bash .github/scripts/triage-label.sh:*)",mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__add_issue_comment,mcp__github__get_pull_request_files
           settings: |
             {
-              "model": "claude-sonnet-4-6",
+              "model": "claude-sonnet-5",
               "env": {
                 "GH_TOKEN": "${{ steps.marvin-token.outputs.token }}",
                 "TRIAGE_REPO": "${{ github.repository }}",
