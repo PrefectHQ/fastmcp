@@ -559,9 +559,7 @@ async def sample_step_impl(
                 f"Invalid tool_choice: {tool_choice!r}. "
                 "Must be 'auto', 'required', or 'none'."
             )
-        effective_tool_choice = ToolChoice(
-            mode=cast(Literal["auto", "required", "none"], tool_choice)
-        )
+        effective_tool_choice = ToolChoice.model_validate({"mode": tool_choice})
 
     # Effective max_tokens
     effective_max_tokens = max_tokens if max_tokens is not None else 512

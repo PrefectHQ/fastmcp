@@ -4,7 +4,7 @@ import dataclasses
 import warnings
 from dataclasses import Field
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
@@ -294,7 +294,7 @@ class TestCrashPrevention:
             },
         }
         T = json_schema_to_type(schema)
-        field_names = [f.name for f in dataclasses.fields(T)]
+        field_names = [f.name for f in dataclasses.fields(cast(Any, T))]
         assert len(field_names) == 2
         assert len(set(field_names)) == 2
 
@@ -308,7 +308,7 @@ class TestCrashPrevention:
             },
         }
         T = json_schema_to_type(schema)
-        field_names = [f.name for f in dataclasses.fields(T)]
+        field_names = [f.name for f in dataclasses.fields(cast(Any, T))]
         assert len(field_names) == 2
         assert len(set(field_names)) == 2
 

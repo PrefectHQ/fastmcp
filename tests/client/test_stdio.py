@@ -71,6 +71,37 @@ async def wait_for_process_exit(pid: int | None, timeout: float = 5.0) -> None:
     pytest.fail(f"Subprocess {pid} was still alive after {timeout}s")
 
 
+class TestDisconnect:
+    async def test_cancelled_connection_task_is_cleaned_up(self):
+        transport = StdioTransport(command="python", args=[])
+        connect_task = asyncio.create_task(asyncio.sleep(0))
+        connect_task.cancel()
+        transport._connect_task = connect_task
+
+        await transport.disconnect()
+
+        assert transport._connect_task is None
+        assert not transport._stop_event.is_set()
+
+    async def test_caller_cancellation_is_not_suppressed(self):
+        transport = StdioTransport(command="python", args=[])
+        connection_finished = asyncio.Event()
+        connect_task = asyncio.create_task(connection_finished.wait())
+        transport._connect_task = connect_task
+
+        disconnect_task = asyncio.create_task(transport.disconnect())
+        await asyncio.sleep(0)
+        disconnect_task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await disconnect_task
+        assert not connect_task.cancelled()
+
+        connection_finished.set()
+        await connect_task
+        await transport.disconnect()
+
+
 class TestParallelCalls:
     @pytest.fixture
     def stdio_script(self):
