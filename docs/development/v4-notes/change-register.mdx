@@ -386,6 +386,24 @@ A proxy is a server on its front and a client on its back, and the two eras have
 
 *Verify:* `fastmcp_slim/fastmcp/server/providers/proxy.py` (`_mirror_front_era_mode`, the `_create_client_factory` non-Client branch, the era guard in `ProxyInitializeMiddleware.on_initialize`), `fastmcp_slim/fastmcp/client/transports/base.py` (`TransportOptions.backend_mode`), `fastmcp_slim/fastmcp/client/transports/config.py` (`MCPConfigTransport.connect_session` / `_create_proxy`), `fastmcp_slim/fastmcp/server/server.py` (`create_proxy` docstring), `tests/server/test_mrtr_guards.py` (`TestProxyEraMirroring`, `TestMultiServerConfigEraMirroring`).
 
+### Resource and prompt errors survive the modern era — Absorbed (defect fix)
+
+`_on_call_tool` returns a `ResourceError`-equivalent as an error result, but `_on_read_resource` and `_on_get_prompt` caught only `DisabledError`/`NotFoundError`, so a `ResourceError`, `PromptError`, or an argument-conversion failure on a resource template escaped as a raw handler exception. On the handshake eras that reached the wire as `str(exc)`, which is survivable; on `2026-07-28` the runner masks anything that is not an `MCPError` or `ValidationError` as a generic `"Internal server error"`, so a legitimate client-input error became indistinguishable from a server bug. Both handlers now translate a `FastMCPError` through `to_mcp_error` the way tools already do. Masking is unchanged — `mask_error_details` is still applied inside `read_resource`/`render_prompt`, so these paths leak no more than tools do.
+
+*Verify:* `fastmcp_slim/fastmcp/server/mixins/mcp_operations.py` (`_on_read_resource`, `_on_get_prompt`), `tests/server/test_protocol_eras.py`.
+
+### Proxies forward upstream instructions on the modern era — Absorbed (defect fix)
+
+`ProxyInitializeMiddleware` forwards an upstream server's `instructions` by patching the `InitializeResult`, but `on_initialize` only fires for the handshake era. A modern client negotiates via `server/discover`, which the SDK builds from the low-level server's own `instructions`, so a proxy silently dropped its upstream's instructions for every modern client. `FastMCPProxy` now registers a `server/discover` handler (the same `add_request_handler` hook it already uses for `ping`, and a replacement the SDK explicitly sanctions) that delegates to the SDK's own implementation and fills in only the instructions that would otherwise be lost. The proxy's lazy-connect contract is unchanged: the backend is contacted when a client asks, never at construction. Because era mirroring pins a modern backend to an exact version — and a pinned version adopts a synthesized `DiscoverResult` rather than probing the wire — this read negotiates with `mode="auto"`; instructions are metadata with no back-channel, so they do not need the era consistency mirroring exists to protect.
+
+*Verify:* `fastmcp_slim/fastmcp/server/providers/proxy.py` (`FastMCPProxy._setup_proxy_discover_handler`), `tests/server/providers/proxy/test_proxy_server.py` (`TestProxyModernEraInstructions`).
+
+### Proxy list methods raise `MCPError` on backend failure — Breaking (in-process error type)
+
+`ProxyProvider`'s four `_list_*` methods caught only `MCPError`, so a failed backend connection escaped as the `RuntimeError` the client wraps it in (or a raw `httpx2.ConnectError`). On the handshake eras that reached the wire as `str(exc)` and named the real failure; on `2026-07-28` it was masked as `"Internal server error"`, leaving a modern client unable to tell a dead backend from a server bug. The list methods now normalize transport failures through `_proxy_upstream_error`, matching `ProxyInitializeMiddleware.on_initialize`. Code calling a proxy's `list_tools()` (and friends) in-process must now catch `MCPError` rather than `RuntimeError`; the over-the-wire error type is unchanged.
+
+*Verify:* `fastmcp_slim/fastmcp/server/providers/proxy.py` (`_PROXY_TRANSPORT_ERRORS` and the four `_list_*` methods), `tests/server/providers/proxy/test_proxy_server.py` (`TestProxyProviderTransportErrors`).
+
 ### The xfail register — Known gap
 
 Roughly forty `xfail` markers across the test tree (concentrated in `tests/server/tasks/`, `tests/client/tasks/`, and `test_protocol_eras.py`) are the built-in beta tracker: each names the SDK gap it waits on. They are enumerated and mapped to sdk-feedback findings on the [Known Gaps](/development/v4-notes/known-gaps) page.

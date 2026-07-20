@@ -94,6 +94,22 @@ PROXY_TRANSPORT_OPTIONS = TransportOptions(
 )
 
 
+#: Transport-level failures that can escape a backend connection attempt.
+#: `Client._connect` wraps most connect failures in a ``RuntimeError("Client
+#: failed to connect: ...")``, but a transport can also surface an httpx or
+#: anyio stream error directly. Every proxy entry point that opens a backend
+#: connection normalizes these into an ``MCPError`` so callers see a protocol
+#: error instead of a raw transport exception.
+_PROXY_TRANSPORT_ERRORS: tuple[type[Exception], ...] = (
+    RuntimeError,
+    TimeoutError,
+    httpx2.HTTPError,
+    anyio.ClosedResourceError,
+    anyio.EndOfStream,
+    anyio.BrokenResourceError,
+)
+
+
 def _proxy_upstream_error(error: Exception) -> MCPError:
     return MCPError(
         code=mcp_types.INTERNAL_ERROR,
@@ -163,14 +179,7 @@ class ProxyInitializeMiddleware(Middleware):
                         upstream_instructions = init_result.instructions
         except MCPError:
             raise
-        except (
-            RuntimeError,
-            TimeoutError,
-            httpx2.HTTPError,
-            anyio.ClosedResourceError,
-            anyio.EndOfStream,
-            anyio.BrokenResourceError,
-        ) as error:
+        except _PROXY_TRANSPORT_ERRORS as error:
             raise _proxy_upstream_error(error) from error
 
         result = await call_next(context)
@@ -739,6 +748,8 @@ class ProxyProvider(Provider):
                 tools = []
             else:
                 raise
+        except _PROXY_TRANSPORT_ERRORS as error:
+            raise _proxy_upstream_error(error) from error
         self._tools_cache = _CacheEntry(tools, time.monotonic())
         return tools
 
@@ -776,6 +787,8 @@ class ProxyProvider(Provider):
                 resources = []
             else:
                 raise
+        except _PROXY_TRANSPORT_ERRORS as error:
+            raise _proxy_upstream_error(error) from error
         self._resources_cache = _CacheEntry(resources, time.monotonic())
         return resources
 
@@ -813,6 +826,8 @@ class ProxyProvider(Provider):
                 templates = []
             else:
                 raise
+        except _PROXY_TRANSPORT_ERRORS as error:
+            raise _proxy_upstream_error(error) from error
         self._templates_cache = _CacheEntry(templates, time.monotonic())
         return templates
 
@@ -850,6 +865,8 @@ class ProxyProvider(Provider):
                 prompts = []
             else:
                 raise
+        except _PROXY_TRANSPORT_ERRORS as error:
+            raise _proxy_upstream_error(error) from error
         self._prompts_cache = _CacheEntry(prompts, time.monotonic())
         return prompts
 
@@ -1089,6 +1106,7 @@ class FastMCPProxy(FastMCP):
         self.add_provider(provider)
         self.middleware.append(ProxyInitializeMiddleware(self))
         self._setup_proxy_ping_handler()
+        self._setup_proxy_discover_handler()
 
     async def _get_client(self) -> Client:
         client = self.client_factory()
@@ -1108,6 +1126,63 @@ class FastMCPProxy(FastMCP):
 
         self._mcp_server.add_request_handler(
             "ping", mcp_types.RequestParams, ping_remote
+        )
+
+    def _setup_proxy_discover_handler(self) -> None:
+        """Forward the backend's instructions on the modern (`server/discover`) path.
+
+        `ProxyInitializeMiddleware` forwards upstream instructions by patching
+        the `InitializeResult`, but `on_initialize` only fires for the legacy
+        handshake. A modern client negotiates via `server/discover`, whose
+        default SDK handler reads `self.instructions` off the low-level server
+        directly, so a proxy would silently drop its upstream's instructions for
+        every modern client.
+
+        The SDK sanctions replacing this handler wholesale, so we delegate to
+        its own implementation for the rest of the result (supported versions,
+        capabilities, server info) and only fill in the instructions we would
+        otherwise lose. Resolving them here — at request time, from a live
+        backend session — keeps the proxy's lazy-connect contract intact: the
+        backend is contacted when a client actually asks, never at construction.
+        """
+        build_default_result = self._mcp_server._handle_discover
+
+        async def discover_remote(
+            ctx: ServerRequestContext[Any, Any],
+            params: mcp_types.RequestParams | None,
+        ) -> mcp_types.DiscoverResult:
+            result = await build_default_result(ctx, params)
+            # A proxy with its own instructions keeps them, matching the
+            # precedence `ProxyInitializeMiddleware` applies on the legacy path.
+            if result.instructions is not None:
+                return result
+            client = await self._get_client()
+            # `session.instructions` is era-neutral: it reads the backend's
+            # `DiscoverResult` or `InitializeResult` depending on what the
+            # backend negotiated, so a modern front can proxy a legacy backend.
+            if client.is_connected():
+                result.instructions = client.session.instructions
+                return result
+            # Era mirroring pins a modern backend to an exact version, and a
+            # pinned version adopts a synthesized `DiscoverResult` instead of
+            # probing the wire — so the pinned client would report no
+            # instructions at all. Instructions are metadata with no
+            # back-channel, so this read does not need the era consistency
+            # mirroring exists to protect; negotiate with "auto" instead, which
+            # probes `server/discover` and falls back to the handshake for a
+            # legacy-only backend.
+            client.mode = "auto"
+            try:
+                async with client:
+                    result.instructions = client.session.instructions
+            except MCPError:
+                raise
+            except _PROXY_TRANSPORT_ERRORS as error:
+                raise _proxy_upstream_error(error) from error
+            return result
+
+        self._mcp_server.add_request_handler(
+            "server/discover", mcp_types.RequestParams, discover_remote
         )
 
 
