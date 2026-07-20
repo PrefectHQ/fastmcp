@@ -193,5 +193,5 @@ jobs:
 
           prompt: ${{ steps.analysis-prompt.outputs.PROMPT }}
           claude_args: |
-            --allowed-tools mcp__repository-summary,mcp__code-search,mcp__github-research,WebSearch,WebFetch,Bash(make:*,git:*)
+            --allowed-tools mcp__repository-summary,mcp__code-search,mcp__github-research,WebSearch,WebFetch,"Bash(make:*)","Bash(git:*)"
             --mcp-config /tmp/mcp-config/mcp-servers.json
