@@ -24,6 +24,8 @@ from fastmcp.mcp_config import (
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
+    from mcp.server.request_state import RequestStateSecurity
+
     from fastmcp.server.server import FastMCP
 
 logger = get_logger(__name__)
@@ -82,6 +84,7 @@ class MCPConfigTransport(ClientTransport):
         self.config = config
         self.name_as_prefix = name_as_prefix
         self._transports: list[ClientTransport] = []
+        self._request_state_security: RequestStateSecurity | None = None
 
         if not self.config.mcpServers:
             raise ValueError("No MCP servers defined in the config")
@@ -90,6 +93,22 @@ class MCPConfigTransport(ClientTransport):
         if len(self.config.mcpServers) == 1:
             self.transport = next(iter(self.config.mcpServers.values())).to_transport()
             self._transports.append(self.transport)
+        else:
+            # Sealing policy for the composite router built in `connect_session`.
+            # It is held here, not on the router, because the router is rebuilt
+            # on every connection while a guard tool's multi-round-trip spans
+            # several of them (a proxy builds a fresh backend client per
+            # request). A per-router key would seal `request_state` on one round
+            # and reject its own token on the next. Only multi-server configs
+            # mount a router, so single-server configs skip the import entirely
+            # (it pulls in the SDK's server tier). Aliased so the local binding
+            # does not shadow the type-checking-only name in the annotation
+            # above.
+            from mcp.server.request_state import (
+                RequestStateSecurity as _RequestStateSecurity,
+            )
+
+            self._request_state_security = _RequestStateSecurity.ephemeral()
 
     @contextlib.asynccontextmanager
     async def connect_session(
@@ -118,7 +137,18 @@ class MCPConfigTransport(ClientTransport):
             ) from exc
 
         timeout = session_kwargs.get("read_timeout_seconds")
-        composite = FastMCP[Any](name="MCPRouter")
+        composite = FastMCP[Any](
+            name="MCPRouter", request_state_security=self._request_state_security
+        )
+
+        # The composite is only a router: every real backend is reached through
+        # one of the mounted proxies below, so the era the connecting client
+        # negotiates with the composite means nothing unless those backend legs
+        # negotiate it too. `backend_mode` carries the connecting client's era
+        # down to them, keeping the whole chain on one era end to end.
+        backend_mode = (
+            transport_options.backend_mode if transport_options is not None else None
+        )
 
         async with contextlib.AsyncExitStack() as stack:
             # Close any previous transports from prior connections to avoid leaking
@@ -129,7 +159,7 @@ class MCPConfigTransport(ClientTransport):
             for name, server_config in self.config.mcpServers.items():
                 try:
                     transport, _client, proxy = await self._create_proxy(
-                        name, server_config, timeout, stack
+                        name, server_config, timeout, stack, backend_mode
                     )
                 except Exception:  # Broad catch is intentional: failure modes
                     # are diverse (OSError, TimeoutError, RuntimeError, etc.)
@@ -157,12 +187,16 @@ class MCPConfigTransport(ClientTransport):
         config: MCPServerTypes,
         timeout: float | None,
         stack: contextlib.AsyncExitStack,
+        backend_mode: str | None = None,
     ) -> tuple[ClientTransport, Any, "FastMCP[Any]"]:
         """Create underlying transport, proxy client, and proxy server for a single backend.
 
         The ProxyClient is connected via the AsyncExitStack *before* being
         passed to create_proxy so the factory sees it as connected and reuses
         the same session for all tool calls (instead of creating fresh copies).
+
+        `backend_mode` is the connect mode the calling client wants this backend
+        leg to negotiate; `None` leaves the client at its own default era.
 
         Returns a tuple of (transport, proxy_client, proxy_server).
         """
@@ -188,7 +222,12 @@ class MCPConfigTransport(ClientTransport):
         else:
             transport = config.to_transport()
 
-        client = StatefulProxyClient(transport=transport, timeout=timeout)
+        client_kwargs: dict[str, Any] = {}
+        if backend_mode is not None:
+            client_kwargs["mode"] = backend_mode
+        client = StatefulProxyClient(
+            transport=transport, timeout=timeout, **client_kwargs
+        )
         # Connect the client *before* create_proxy so _create_client_factory
         # detects it as connected and reuses it for all tool calls, preserving
         # the session ID across requests. StatefulProxyClient is used instead

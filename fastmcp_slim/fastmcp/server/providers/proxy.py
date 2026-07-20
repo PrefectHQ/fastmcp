@@ -11,6 +11,7 @@ import base64
 import inspect
 import time
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
 
 import anyio
@@ -145,12 +146,21 @@ class ProxyInitializeMiddleware(Middleware):
                         ctx._fastmcp,
                     )
             async with client:
-                await client.initialize()
-                # Capture the upstream's instructions while the session is live;
-                # `initialize_result` clears once the client context exits.
-                init_result = client.initialize_result
-                if init_result is not None:
-                    upstream_instructions = init_result.instructions
+                # Entering the context already ran connect-time negotiation.
+                # `initialize()` returns the handshake result on a legacy backend,
+                # but raises on a modern (server/discover) backend, which has no
+                # InitializeResult. That mismatch only arises when an explicit
+                # `mode=` pins the backend to a different era than this legacy
+                # front (the era-mirroring default keeps the two in lockstep, so
+                # a legacy front always reaches a legacy backend here). Skip the
+                # handshake-only call when the backend negotiated the modern era.
+                if client.protocol_version not in MODERN_PROTOCOL_VERSIONS:
+                    await client.initialize()
+                    # Capture the upstream's instructions while the session is
+                    # live; `initialize_result` clears once the context exits.
+                    init_result = client.initialize_result
+                    if init_result is not None:
+                        upstream_instructions = init_result.instructions
         except MCPError:
             raise
         except (
@@ -880,6 +890,38 @@ class ProxyProvider(Provider):
 # -----------------------------------------------------------------------------
 
 
+def _mirror_front_era_mode() -> str | None:
+    """Return the backend connect ``mode`` that mirrors the front connection's era.
+
+    A proxy is a server on its front and a client on its back. The two protocol
+    eras have mutually exclusive interaction models on a single session, so the
+    whole chain must speak one era end-to-end: a modern front must reach a modern
+    backend (a guard tool's `InputRequiredResult` round-trips), and a handshake
+    front must reach a handshake backend (server-initiated sampling / elicitation
+    / roots push-forwarding works). Rather than pin its own era, the proxy speaks
+    on its back whatever era was negotiated on its front.
+
+    Reads the negotiated protocol version from the active front request context:
+
+    - modern front → that exact version, so the backend negotiates the same era
+      (pinning the version rather than ``"auto"`` makes the eras truly match).
+    - handshake front → ``"legacy"``.
+    - no request context (e.g. proxy construction before any request) → ``None``,
+      leaving the factory's configured default mode in place.
+    """
+    try:
+        ctx = get_context()
+    except RuntimeError:
+        return None
+    rc = ctx.request_context
+    if rc is None:
+        return None
+    version = rc.protocol_version
+    if version in MODERN_PROTOCOL_VERSIONS:
+        return version
+    return "legacy"
+
+
 def _create_client_factory(
     target: (
         Client[ClientTransportT]
@@ -913,7 +955,13 @@ def _create_client_factory(
             credentials get forwarded upstream.
             """
             fresh = c.new()
-            fresh._transport_options = PROXY_TRANSPORT_OPTIONS
+            # The caller chose this client's era, so a multi-server MCPConfig
+            # target's mounted backend legs should negotiate it too rather than
+            # stopping at the composite router (see
+            # `TransportOptions.backend_mode`).
+            fresh._transport_options = replace(
+                PROXY_TRANSPORT_OPTIONS, backend_mode=fresh.mode
+            )
             return fresh
 
         if client.is_connected() and type(client) is ProxyClient:
@@ -949,12 +997,42 @@ def _create_client_factory(
 
         return fresh_client_factory
     else:
-        # target is not a Client, so it's compatible with ProxyClient.__init__
-        client_kwargs: dict[str, Any] = {} if mode is None else {"mode": mode}
+        # target is not a Client, so it's compatible with ProxyClient.__init__.
+        #
+        # With no explicit mode, the backend MIRRORS the front connection's
+        # negotiated era per request (see `_mirror_front_era_mode`): a fresh
+        # client is built for each request and its mode is set from the front
+        # era, so the whole chain speaks one era end-to-end. Because every
+        # request gets its own client whose mode is derived at call time, front
+        # connections of different eras never share a backend session — there is
+        # no era to bleed across the (metadata-only) provider caches.
+        #
+        # An explicit mode pins the backend era regardless of the front. This
+        # breaks era-consistency and is only appropriate when the backend speaks
+        # a single era; the mismatch surfaces through the normal era gates.
+        explicit_mode = mode is not None
+        client_kwargs: dict[str, Any] = {"mode": mode} if explicit_mode else {}
         base_client = ProxyClient(cast(Any, target), **client_kwargs)
 
         def proxy_client_factory() -> Client:
-            return base_client.new()
+            fresh = base_client.new()
+            backend_mode = mode
+            if not explicit_mode:
+                backend_mode = _mirror_front_era_mode()
+                if backend_mode is not None:
+                    fresh.mode = backend_mode
+            if backend_mode is not None:
+                # A multi-server MCPConfig target reaches its real backends
+                # through proxies mounted on a composite router, so setting the
+                # era on this client alone would stop at the router. Carry the
+                # era down to those backend legs too (see
+                # `TransportOptions.backend_mode`), resolved here — at the
+                # moment a client is built for this request — so it tracks the
+                # front era rather than whatever was true at construction.
+                fresh._transport_options = replace(
+                    PROXY_TRANSPORT_OPTIONS, backend_mode=backend_mode
+                )
+            return fresh
 
         return proxy_client_factory
 
@@ -1214,13 +1292,16 @@ class ProxyClient(Client[ClientTransportT]):
     ):
         if "name" not in kwargs:
             kwargs["name"] = self.generate_name()
-        # ProxyClient defaults to the handshake era: a dual-era backend serves
-        # both, and a single proxy session can only be one era. Handshake keeps
-        # the server-initiated push forwarding (sampling / elicitation / roots,
-        # via the handlers installed below) that proxies rely on. To round-trip
-        # an upstream guard tool's InputRequiredResult (SEP-2322) instead, opt
-        # into the modern era explicitly with `create_proxy(target, mode="auto")`
-        # — the two are mutually exclusive per session.
+        # ProxyClient itself defaults to the handshake era when constructed
+        # directly: a single proxy session can only be one era, and handshake
+        # keeps the server-initiated push forwarding (sampling / elicitation /
+        # roots, via the handlers installed below) that proxies rely on. When a
+        # proxy is created from a non-Client target (`create_proxy(target)` /
+        # `_create_client_factory`) with no explicit mode, the factory instead
+        # MIRRORS the front connection's negotiated era onto this client per
+        # request, so the whole chain speaks one era end-to-end. An explicit
+        # `mode=` (e.g. `create_proxy(target, mode="auto")`) pins the era and
+        # overrides mirroring. The eras are mutually exclusive per session.
         # Install context-restoring handler wrappers BEFORE super().__init__
         # registers them with the Client's session kwargs.
         self._proxy_rc_ref = [None]

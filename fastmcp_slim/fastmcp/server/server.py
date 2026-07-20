@@ -2419,10 +2419,16 @@ def create_proxy(
             - A Path to a server script
             - An MCPConfig or dict
         mode: Protocol-era negotiation for auto-created proxy clients (a
-            non-Client target). Defaults to the handshake era; pass
-            `"auto"` to negotiate the modern era so an upstream guard
-            tool's `InputRequiredResult` (SEP-2322) round-trips. Ignored
-            when `target` is already a `Client` (which carries its own mode).
+            non-Client target). By default (``None``) the backend MIRRORS the
+            front connection's negotiated era per request, so the whole chain
+            speaks one era end-to-end: a modern front reaches a modern backend
+            (a guard tool's `InputRequiredResult` (SEP-2322) round-trips) and a
+            handshake front reaches a handshake backend (server-initiated
+            sampling / elicitation / roots push-forwarding works). Pass an
+            explicit mode (e.g. ``"auto"`` or a version string) to pin the
+            backend era regardless of the front; this overrides mirroring and is
+            appropriate when the backend only speaks one era. Ignored when
+            `target` is already a `Client` (which carries its own mode).
         **settings: Additional settings passed to FastMCPProxy (name, etc.)
 
     Returns:
