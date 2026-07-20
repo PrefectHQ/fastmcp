@@ -11,6 +11,7 @@ import base64
 import inspect
 import time
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
 
 import anyio
@@ -954,7 +955,13 @@ def _create_client_factory(
             credentials get forwarded upstream.
             """
             fresh = c.new()
-            fresh._transport_options = PROXY_TRANSPORT_OPTIONS
+            # The caller chose this client's era, so a multi-server MCPConfig
+            # target's mounted backend legs should negotiate it too rather than
+            # stopping at the composite router (see
+            # `TransportOptions.backend_mode`).
+            fresh._transport_options = replace(
+                PROXY_TRANSPORT_OPTIONS, backend_mode=fresh.mode
+            )
             return fresh
 
         if client.is_connected() and type(client) is ProxyClient:
@@ -1009,10 +1016,22 @@ def _create_client_factory(
 
         def proxy_client_factory() -> Client:
             fresh = base_client.new()
+            backend_mode = mode
             if not explicit_mode:
-                front_mode = _mirror_front_era_mode()
-                if front_mode is not None:
-                    fresh.mode = front_mode
+                backend_mode = _mirror_front_era_mode()
+                if backend_mode is not None:
+                    fresh.mode = backend_mode
+            if backend_mode is not None:
+                # A multi-server MCPConfig target reaches its real backends
+                # through proxies mounted on a composite router, so setting the
+                # era on this client alone would stop at the router. Carry the
+                # era down to those backend legs too (see
+                # `TransportOptions.backend_mode`), resolved here — at the
+                # moment a client is built for this request — so it tracks the
+                # front era rather than whatever was true at construction.
+                fresh._transport_options = replace(
+                    PROXY_TRANSPORT_OPTIONS, backend_mode=backend_mode
+                )
             return fresh
 
         return proxy_client_factory

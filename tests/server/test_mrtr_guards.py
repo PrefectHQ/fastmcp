@@ -620,6 +620,72 @@ class TestProxyEraMirroring:
         assert era.data == "2026-07-28"
 
 
+class TestMultiServerConfigEraMirroring:
+    """A multi-server `MCPConfig` target puts an extra hop between the proxy and
+    the real backends: `MCPConfigTransport` mounts one proxy per configured
+    server on a composite router. Setting the era on the outer client alone
+    would stop at that router, leaving every real backend on its own default
+    era, so the mirrored era has to reach the mounted legs too.
+    """
+
+    @staticmethod
+    def _config(url: str) -> dict[str, object]:
+        """Two entries so the transport takes its multi-server composite path."""
+        return {"mcpServers": {"a": {"url": url}, "b": {"url": url}}}
+
+    async def test_modern_front_reaches_modern_backends(self):
+        """A modern front reaches each real backend on a modern session, and a
+        backend guard tool round-trips end to end across both proxy hops."""
+        from fastmcp.server import create_proxy
+
+        async with run_server_async(_era_reporting_backend()) as url:
+            proxy = create_proxy(self._config(url))
+
+            asked: list[str] = []
+            async with Client(
+                proxy, mode="auto", elicitation_handler=_two_answer_handler(asked)
+            ) as client:
+                era = await client.call_tool("a_backend_era", {})
+                result = await client.call_tool("a_book_flight", {})
+
+        assert era.data == "2026-07-28"
+        assert result.data == "Booked Paris on 2026-08-01"
+        assert len(asked) == 2
+
+    async def test_legacy_front_reaches_handshake_backends(self):
+        """A legacy front reaches each real backend on a handshake session, so
+        server-initiated elicitation still push-forwards up the whole chain."""
+        from fastmcp.server import create_proxy
+
+        async def name_handler(message, response_type, params, ctx):
+            return ElicitResult(action="accept", content=response_type(name="Ada"))
+
+        async with run_server_async(_era_reporting_backend()) as url:
+            proxy = create_proxy(self._config(url))
+
+            async with Client(
+                proxy, mode="legacy", elicitation_handler=name_handler
+            ) as client:
+                era = await client.call_tool("a_backend_era", {})
+                greeting = await client.call_tool("a_ask_name", {})
+
+        assert era.data not in MODERN_PROTOCOL_VERSIONS
+        assert greeting.data == "Hello, Ada!"
+
+    async def test_explicit_mode_overrides_mirroring(self):
+        """An explicit ``create_proxy(mode=...)`` pins the era all the way down,
+        overriding what the front negotiated."""
+        from fastmcp.server import create_proxy
+
+        async with run_server_async(_era_reporting_backend()) as url:
+            proxy = create_proxy(self._config(url), mode="auto")
+
+            async with Client(proxy, mode="legacy") as client:
+                era = await client.call_tool("a_backend_era", {})
+
+        assert era.data == "2026-07-28"
+
+
 class TestEraGate:
     async def test_legacy_connection_rejects_with_era_error(self):
         """Returning an InputRequiredResult on a ≤2025-11-25 connection produces

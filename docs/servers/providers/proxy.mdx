@@ -223,6 +223,21 @@ proxy = create_proxy("backend_server.py", mode="auto")
 
 Pinning breaks the end-to-end era agreement, so reserve it for a backend that only speaks one era. When the client's era and the pinned backend era disagree on a feature — a modern client asking for a guard round-trip against a handshake-pinned backend, say — the mismatch surfaces through the normal era gates rather than silently degrading. Mirroring applies to proxies created from a target the proxy connects itself (a URL, path, config, or `FastMCP` instance); when you hand `create_proxy` an already-configured `Client`, that client carries its own mode and mirroring does not override it.
 
+A multi-server configuration adds a hop: FastMCP mounts one proxy per configured server onto a router, and your client talks to that router rather than to any backend directly. The era carries through the whole depth, so each real backend negotiates the era your client did — not just the router in front of them.
+
+```python
+proxy = create_proxy(
+    {
+        "mcpServers": {
+            "weather": {"url": "https://weather.example.com/mcp"},
+            "calendar": {"url": "https://calendar.example.com/mcp"},
+        }
+    }
+)
+```
+
+A modern client here reaches both `weather` and `calendar` on modern sessions, so a guard tool on either one round-trips end to end. An explicit `mode` pins every backend in the configuration, the same way it pins a single one.
+
 ## Configuration-Based Proxies
 
 <VersionBadge version="2.4.0" />
