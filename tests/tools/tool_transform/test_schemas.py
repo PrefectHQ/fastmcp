@@ -553,3 +553,26 @@ class TestInputSchema:
                 "additionalProperties": False,
             }
         )
+
+
+class TestRequiredOrdering:
+    def test_required_follows_property_order(self):
+        """Transformed `required` should match property order deterministically.
+
+        Regression test for a bug where `required` was built from a set, so its
+        order depended on PYTHONHASHSEED and differed across processes.
+        """
+
+        def base(alpha: int, beta: str, gamma: float, delta: bool, epsilon: int) -> str:
+            return "x"
+
+        transformed = Tool.from_tool(
+            Tool.from_function(base),
+            transform_args={"alpha": ArgTransform(name="a")},
+        )
+
+        properties = list(transformed.parameters["properties"])
+        required = transformed.parameters["required"]
+
+        assert required == [name for name in properties if name in set(required)]
+        assert required == ["a", "beta", "gamma", "delta", "epsilon"]

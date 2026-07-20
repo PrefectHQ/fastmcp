@@ -707,7 +707,9 @@ class TransformedTool(Tool):
         schema = {
             "type": "object",
             "properties": new_props,
-            "required": list(new_required),
+            # Order by property insertion order so the schema is deterministic
+            # across processes (a bare set() order depends on PYTHONHASHSEED).
+            "required": [name for name in new_props if name in new_required],
             "additionalProperties": False,
         }
 
@@ -899,7 +901,9 @@ class TransformedTool(Tool):
         result = {
             "type": "object",
             "properties": merged_props,
-            "required": list(final_required),
+            # Order by property insertion order so the schema is deterministic
+            # across processes (a bare set() order depends on PYTHONHASHSEED).
+            "required": [name for name in merged_props if name in final_required],
             "additionalProperties": False,
         }
 
