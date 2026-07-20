@@ -8,6 +8,7 @@ import secrets
 from collections.abc import (
     AsyncIterator,
     Callable,
+    Iterable,
     Sequence,
 )
 from contextlib import (
@@ -77,7 +78,7 @@ from fastmcp.server.middleware.middleware import (
     mark_interior_dispatched,
 )
 from fastmcp.server.mixins import LifespanMixin, MCPOperationsMixin, TransportMixin
-from fastmcp.server.protocol_floor import validate_protocol_floor
+from fastmcp.server.protocol_versions import validate_protocol_versions
 from fastmcp.server.providers import LocalProvider, Provider
 from fastmcp.server.providers.aggregate import AggregateProvider
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
@@ -357,7 +358,7 @@ class FastMCP(
         session_state_store: AsyncKeyValue | None = None,
         sampling_handler: SamplingHandler | None = None,
         sampling_handler_behavior: Literal["always", "fallback"] | None = None,
-        min_protocol_version: str | None = None,
+        protocol_versions: Iterable[str] | None = None,
         client_log_level: mcp_types.LoggingLevel | None = None,
         experimental_capabilities: dict[str, dict[str, Any]] | None = None,
         **kwargs: Any,
@@ -532,16 +533,14 @@ class FastMCP(
             sampling_handler_behavior or "fallback"
         )
 
-        # Minimum MCP protocol version this server requires. Enforced at
-        # connection negotiation (the initialize handshake refuses clients below
-        # the floor) and checked for coherence against registered features at
-        # startup. `None` (the default) declares no floor: the server serves
-        # every protocol era, fully backward compatible.
-        #
-        # NOTE: the `min_protocol_version` spelling is provisional; see
-        # `fastmcp.server.protocol_floor`.
-        self._min_protocol_version: str | None = validate_protocol_floor(
-            min_protocol_version
+        # The set of MCP protocol versions this server is willing to serve.
+        # Enforced by set membership at both connection paths (the initialize
+        # handshake and the modern per-request envelope) and checked for
+        # coherence against registered features at startup. `None` (the default)
+        # declares no restriction: the server serves every protocol version the
+        # SDK supports, fully backward compatible.
+        self._protocol_versions: tuple[str, ...] | None = validate_protocol_versions(
+            protocol_versions
         )
 
     def __repr__(self) -> str:
@@ -564,13 +563,13 @@ class FastMCP(
         return self._mcp_server.version
 
     @property
-    def min_protocol_version(self) -> str | None:
-        """The minimum MCP protocol version this server requires, if declared.
+    def protocol_versions(self) -> tuple[str, ...] | None:
+        """The MCP protocol versions this server serves, if restricted.
 
-        `None` means no floor (serve every protocol era). The spelling is
-        provisional; see `fastmcp.server.protocol_floor`.
+        `None` (the default) means no restriction: every protocol version the
+        SDK supports is served. Otherwise the declared versions, in SDK order.
         """
-        return self._min_protocol_version
+        return self._protocol_versions
 
     @property
     def website_url(self) -> str | None:

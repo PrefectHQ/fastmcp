@@ -181,6 +181,7 @@ class FastMCPServerMiddleware:
         self, ctx: ServerRequestContext, call_next: CallNext
     ) -> HandlerResult:
         from fastmcp.server.dependencies import bind_request_context
+        from fastmcp.server.protocol_versions import protocol_version_error
 
         fastmcp = self._ref()
         with (
@@ -192,6 +193,18 @@ class FastMCPServerMiddleware:
                 return await call_next(ctx)
             if ctx.method == "initialize" and ctx.request_id is not None:
                 return await self._run_initialize_mw(fastmcp, ctx, call_next)
+            # Refuse a request whose protocol version the server does not serve.
+            # The handshake is vetoed at `initialize` above; a modern connection
+            # has no handshake to veto (a client pinned to a modern version can
+            # skip `server/discover` entirely), so the request itself is the
+            # enforcement point. Routing the refusal through the outer pass lets
+            # `on_message`/`on_request` observe it like any other early failure.
+            if ctx.request_id is not None:
+                version_error = protocol_version_error(fastmcp, ctx.protocol_version)
+                if version_error is not None:
+                    return await self._run_outer_mw(
+                        fastmcp, ctx, call_next, _raise=version_error
+                    )
             if ctx.request_id is not None and ctx.method in _INTERIOR_METHODS:
                 return await self._dispatch_component(fastmcp, ctx, call_next)
             return await self._run_outer_mw(fastmcp, ctx, call_next, _raise=None)
@@ -326,7 +339,9 @@ class FastMCPServerMiddleware:
     ) -> HandlerResult:
         from fastmcp.server.context import Context
         from fastmcp.server.middleware.middleware import MiddlewareContext
-        from fastmcp.server.protocol_floor import enforce_handshake_floor
+        from fastmcp.server.protocol_versions import (
+            enforce_handshake_protocol_version,
+        )
 
         # Reconstruct the InitializeRequest from the raw params so FastMCP
         # middleware `on_initialize` hooks that inspect the message still work.
@@ -350,11 +365,11 @@ class FastMCPServerMiddleware:
             _mw_ctx: MiddlewareContext,
         ) -> mcp_types.InitializeResult | None:
             # Refuse the handshake before it commits when the negotiated version
-            # is below the server's declared protocol floor. Raising MCPError
-            # here (before call_next) vetoes initialize on the framework-owned
-            # path, so the client sees a clear connect-time refusal instead of a
-            # runtime era error mid tool-call.
-            enforce_handshake_floor(fastmcp, init_message)
+            # is not one the server serves. Raising MCPError here (before
+            # call_next) vetoes initialize on the framework-owned path, so the
+            # client sees a clear connect-time refusal instead of a runtime era
+            # error mid tool-call.
+            enforce_handshake_protocol_version(fastmcp, init_message)
             # call_next(ctx) runs the rest of the SDK chain, which for
             # initialize returns the serialized InitializeResult dict. FastMCP
             # middleware `on_initialize` hooks expect a typed InitializeResult,

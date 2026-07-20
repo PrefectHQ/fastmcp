@@ -50,71 +50,130 @@ The complete picture of what a FastMCP v4 server and client provide on the `2026
 | **Pagination** | Declarative `FastMCP(list_page_size=...)` paginates all list operations in the high-level server; the client auto-paginates with cycle detection. |
 | **Telemetry** | OpenTelemetry spans on by default (no-op without an exporter), SDK-aligned attributes (`mcp.method.name`, `mcp.protocol.version`, `gen_ai.*`), plus auth and provider-delegation spans; `FASTMCP_ENABLE_TELEMETRY=false` disables cleanly. |
 
-## Server protocol floor (DRAFT — provisional API)
-
-<Warning>
-This section is a **draft** for an in-progress feature. The public spelling shown
-here (`min_protocol_version=`) is **provisional** and expected to change before
-release — the min-without-max shape is under review. The underlying mechanics
-(connect-time enforcement and startup coherence checks) are stable regardless of
-the final spelling.
-</Warning>
+## Restricting the protocol versions a server serves
 
 <VersionBadge version="4.0.0" />
 
-A server can depend on features that exist on only one protocol era. A tool that
-returns an `InputRequiredResult` (the modern [guard pattern](/servers/elicitation#elicitation-on-the-modern-protocol))
-works only on a `2026-07-28` connection. Today a legacy client that reaches such
-a tool over the initialize handshake gets a confusing era error *mid tool-call*,
-long after connecting — the failure surfaces far from its cause.
+Most servers should skip this section. By default a FastMCP server serves every
+protocol version the SDK supports, and that is the right setting for almost
+everything — one server, every client, no configuration.
 
-The protocol floor moves that failure to connect time. A server declares the
-minimum protocol version it requires, and FastMCP refuses any handshake below it
-with a clear error naming the required version:
+Some servers cannot. A server can depend on a feature that exists on only one
+protocol era, and the two eras are not a ladder: the modern era added the
+multi-round-trip [guard pattern](/servers/elicitation#elicitation-on-the-modern-protocol)
+and *removed* the server-initiated back-channel (`ctx.elicit`, `ctx.sample`,
+`ctx.list_roots`) that the handshake eras provide. Neither era is a superset of
+the other, so a server can legitimately need either one.
+
+When a server's whole purpose depends on an era, a client that cannot speak it
+should be told at connect time. Today it finds out mid-call: a handshake-era
+client happily connects to a guard-tool server, lists its tools, calls one, and
+only then gets an era error — a failure surfacing far from its cause. Declaring
+the versions the server serves moves that failure to the connection.
+
+### Declaring versions
+
+Pass the protocol versions the server is willing to serve. The MCP SDK exposes
+each era as a tuple, and those tuples are the durable way to name an era — they
+grow on their own when the SDK adds a revision, so a server pinned to
+`MODERN_PROTOCOL_VERSIONS` keeps working across SDK upgrades:
 
 ```python
 from fastmcp import FastMCP
 from fastmcp.types import InputRequiredResult
+from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
-mcp = FastMCP("guarded", min_protocol_version="2026-07-28")
+mcp = FastMCP("guarded", protocol_versions=MODERN_PROTOCOL_VERSIONS)
 
 
 @mcp.tool
 def confirm(action: str) -> str | InputRequiredResult:
-    ...  # a modern-only guard tool
+    ...  # a guard tool: multi-round trips exist only on the modern era
 ```
 
-A legacy client connecting to this server is refused during `initialize` with a
-message pointing it at the modern protocol, rather than discovering the
-incompatibility inside a tool call. Modern (`server/discover`) clients connect
-normally — the modern era satisfies any currently declarable floor, because it is
-the newest era.
+A server built around the back-channel declares the other era:
 
-**Enforcement points.** The floor is applied at the two negotiation points
-FastMCP owns, both through the framework's entry in the SDK's middleware layer:
+```python
+from fastmcp import Context, FastMCP
+from mcp_types.version import HANDSHAKE_PROTOCOL_VERSIONS
 
-- **Initialize handshake** — the connection's negotiated handshake version is
-  compared against the floor before the handshake commits; a version below the
-  floor is refused with `-32602` (invalid params).
-- **`server/discover` (modern)** — the modern era is the newest era, so every
-  modern connection satisfies any floor a server can declare today; discovery is
-  therefore never refused by a floor in the current version set.
+mcp = FastMCP("interviewer", protocol_versions=HANDSHAKE_PROTOCOL_VERSIONS)
 
-**Startup coherence check.** FastMCP knows what is registered, so at startup it
-warns (never fails) when the declared floor and the registered features conflict:
 
-- A guard tool (returns `InputRequiredResult`) under a non-modern floor will fail
-  for handshake-era clients mid-call — the warning names the tool and recommends
-  a modern floor.
-- A modern floor combined with a `sampling_handler` set to `"fallback"` is a dead
-  preference: the modern era forbids the server-initiated back-channel, so the
-  local handler always runs. The warning suggests `"always"` or a lower floor.
+@mcp.tool
+async def interview(ctx: Context) -> str:
+    answer = await ctx.elicit("What is your name?", response_type=str)
+    return f"Hello, {answer.data}"
+```
 
-Runtime-only back-channel usage (`ctx.elicit`, `ctx.sample`, `ctx.list_roots`)
-has no reliable static signal and is deliberately not inferred.
+You can also pin exact versions, which is what a server certified against a
+single revision wants:
 
-The default is no floor: a server without `min_protocol_version` serves every
-protocol era, fully backward compatible.
+```python
+mcp = FastMCP("pinned", protocol_versions=["2026-07-28"])
+```
+
+Any string the SDK does not recognize raises `ValueError` at construction. A
+version the SDK could never negotiate is a bug in the server, not a runtime
+condition worth warning about.
+
+### Membership, not a minimum
+
+The declaration is a **set**, not a floor. Versions are an enumerated set rather
+than an ordered scale — the SDK says so directly, and future revision
+identifiers are not guaranteed to be date-shaped or sortable. A connection is
+accepted when its negotiated version is a member of the declared set, which is
+what makes "handshake only" expressible at all: under a minimum-version model
+there is no way to say "the session era", because the modern era is numerically
+newer while lacking the features that era depends on.
+
+### What clients see
+
+A refused connection gets the spec-standard `-32022` unsupported-protocol-version
+error carrying the server's supported list, so a negotiating client treats it as
+guidance rather than a dead end:
+
+| Server declares | `mode="auto"` client | `mode="legacy"` client | Client pinned to `2026-07-28` |
+| --- | --- | --- | --- |
+| nothing (default) | modern | handshake | modern |
+| `MODERN_PROTOCOL_VERSIONS` | modern | refused | modern |
+| `HANDSHAKE_PROTOCOL_VERSIONS` | falls back to handshake | handshake | refused |
+
+An `auto` client refused at `server/discover` by a handshake-only server reads
+the handshake versions out of the error and completes the connection over
+`initialize` on its own — the restriction steers negotiation instead of breaking
+it. Only a client with no mutual version is refused outright, which is the point.
+
+Enforcement covers both connection paths FastMCP owns. The initialize handshake
+is refused before it commits. Modern connections are checked on the request
+itself, because a client pinned to a modern version never probes
+`server/discover` — refusing discovery alone would let it straight through.
+
+<Note>
+`fastmcp.Client` connects in-memory over the handshake by default, so testing a
+modern-only server in-process needs `Client(mcp, mode="auto")`. Over HTTP and
+stdio the default `auto` negotiation applies and no change is needed.
+</Note>
+
+### Startup coherence check
+
+FastMCP knows what is registered, so at startup it warns — never fails — when a
+declared version set cannot carry a capability the server actually uses. A
+handshake-only server registering a guard tool gets a warning naming the tool; a
+modern-only server configuring a `sampling_handler` with
+`sampling_handler_behavior="fallback"` gets one too, because the modern era has
+no back-channel for the fallback to reach.
+
+The check is **silent unless you declared something**. A server with ten
+ordinary tools and one guard tool is fine as-is: the guard tool raises a clear
+era error if an old client reaches for it, and warning about that at startup
+would only teach people to ignore warnings. The check fires when you asserted
+something and the registration contradicts the assertion.
+
+Detection is deliberately conservative. `ctx.elicit`, `ctx.sample`, and
+`ctx.list_roots` are runtime calls with no reliable static signal, so only
+configuration-level contradictions are caught — a missed case is a silent
+startup, never a false alarm.
 
 ## Still in the program
 
