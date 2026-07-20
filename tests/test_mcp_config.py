@@ -41,11 +41,13 @@ from fastmcp.mcp_config import (
 from fastmcp.server.elicitation import AcceptedElicitation
 from fastmcp.tools.base import Tool as FastMCPTool
 
-# Some tests in this module spawn subprocess servers via stdio, which can be
-# slow under parallel CI load. Give the whole module more headroom than the
-# 5s default rather than tuning each test individually.
+# Some tests in this module spawn subprocess servers via stdio, each paying a
+# full interpreter startup plus `import fastmcp` (~0.7s). They take 3-6s idle,
+# but on a loaded CI runner with four xdist workers competing they have blown a
+# 15s ceiling. The timeout is here to catch a genuine hang, not to police speed,
+# so give the module room rather than tuning each test individually.
 pytestmark = [
-    pytest.mark.timeout(15),
+    pytest.mark.timeout(60),
 ]
 
 # Most tests below run entirely in-memory (via InMemoryStdioMCPServer) or

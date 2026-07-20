@@ -99,8 +99,12 @@ async def test_callback_invoked_on_notification(task_notification_server):
         # Wait for completion
         await task.wait(timeout=2.0)
 
-        # Give callbacks a moment to fire
-        await _wait_until(lambda: len(callback_invocations) > 0)
+        # Wait for the status this test actually asserts on. Waiting merely for
+        # "some callback fired" would be satisfied by the earlier `working`
+        # notification and race the `completed` one.
+        await _wait_until(
+            lambda: any(s.status == "completed" for s in callback_invocations)
+        )
 
     # Callback should have been invoked at least once
     assert len(callback_invocations) > 0
@@ -179,7 +183,7 @@ async def test_callback_error_doesnt_break_notification(task_notification_server
         task.on_status_change(working_callback)
 
         await task.wait(timeout=2.0)
-        await _wait_until(lambda: len(callback2_calls) > 0)
+        await _wait_until(lambda: bool(callback1_calls) and bool(callback2_calls))
 
     # Failing callback was called (and errored)
     assert len(callback1_calls) > 0

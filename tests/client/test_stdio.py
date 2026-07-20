@@ -533,7 +533,16 @@ class TestSubprocessCrashRecovery:
             assert isinstance(result.data, int)
 
 
+@pytest.mark.subprocess_heavy
 class TestLogFile:
+    """Stderr capture, proven against a real FastMCP server.
+
+    Unlike the rest of this module these spawn a full `import fastmcp`
+    interpreter rather than the minimal stdlib server, because the point is
+    that the log file captures a real server's stderr. That costs ~0.7s per
+    spawn, so they run in the serial CI step.
+    """
+
     @pytest.fixture
     def stdio_script_with_stderr(self, tmp_path):
         script = inspect.cleandoc('''
