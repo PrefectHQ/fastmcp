@@ -97,10 +97,15 @@ def create_client_server(url: str) -> Any:
         A FastMCP server instance
     """
     try:
-        import fastmcp
-
-        client = fastmcp.Client(url)
-        server = create_proxy(client)
+        # Hand `create_proxy` the URL rather than a pre-built `Client`. A Client
+        # target is treated as caller-configured and pinned, so its era would be
+        # fixed at construction — and since `Client` now defaults to `"auto"`,
+        # that would pin this proxy's upstream to the modern era and break
+        # handshake-era clients connecting to it (`ping`, server-initiated
+        # forwarding). Passing the URL lets the proxy mirror each front
+        # connection's negotiated era instead, so `fastmcp run <URL>` serves
+        # both eras.
+        server = create_proxy(url)
         return server
     except Exception as e:
         logger.error(f"Failed to create client for URL {url}: {e}")

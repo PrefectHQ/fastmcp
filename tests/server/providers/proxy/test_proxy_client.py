@@ -125,6 +125,23 @@ def fastmcp_server():
 async def proxy_server(fastmcp_server: FastMCP):
     """
     A proxy server that forwards interactions with the proxy client to the given fastmcp server.
+
+    `ProxyClient(fastmcp_server)` defaults to `mode="legacy"` (see
+    `TestProxyClientEraDefault` above — a directly-constructed `ProxyClient`
+    always pins the handshake era, independent of `create_proxy`'s era
+    mirroring). Every test below that forwards a tool call through this
+    fixture (not just a listing) needs its front `Client` pinned to
+    `mode="legacy"` too, for either or both of two reasons:
+
+    - The test's subject is itself a handshake-only feature (roots / sampling
+      / elicitation push, logging, progress): the modern era has no
+      back-channel for server-initiated requests at all, so these forwarding
+      paths cannot exist there.
+    - Even for subjects that work on both eras, a modern front's request
+      `_meta` carries reserved modern-envelope keys that `ProxyTool.run`'s
+      legacy-backend path forwards verbatim onto this legacy-locked backend
+      session, which the backend server then rejects as a protocol
+      violation.
     """
     return create_proxy(ProxyClient(fastmcp_server))
 
@@ -134,7 +151,7 @@ class TestProxyClient:
         """
         Test that the proxy client correctly forwards the `echo` tool meta.
         """
-        async with Client(proxy_server, mode="legacy") as client:
+        async with Client(proxy_server) as client:
             tools = await client.list_tools()
             echo_tool = next(t for t in tools if t.name == "echo")
             assert echo_tool.meta == {"fastmcp": {"tags": ["echo"]}}
@@ -456,7 +473,7 @@ class TestProxyClient:
         from fastmcp.server.providers.proxy import FastMCPProxy
 
         # Create a disconnected client (should use fresh sessions per request)
-        base_client = Client(fastmcp_server, mode="legacy")
+        base_client = Client(fastmcp_server)
 
         # Test both create_proxy convenience function and direct client_factory usage
         proxy_via_create_proxy = create_proxy(base_client)
@@ -526,6 +543,12 @@ class TestProxyServerInitiatedForwardingNonTool:
     Before the fix, only ProxyTool.run stashed the proxy's request context, so
     resources/templates/prompts forwarded the request into the backend's own
     context and deadlocked.
+
+    Every test here pins the front to `mode="legacy"`: `roots/list` is a
+    server-initiated request over the handshake's back-channel, which the
+    modern (2026-07-28) era removes entirely — a modern front raises "this
+    transport context has no back-channel for server-initiated requests"
+    rather than reaching the roots handler at all.
     """
 
     async def test_proxied_resource_forwards_list_roots(

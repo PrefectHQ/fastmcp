@@ -71,7 +71,9 @@ async def test_task_id_operations_create_propagating_client_spans(
     @server.tool(task=True)
     async def slow_tool() -> str:
         started.set()
-        await asyncio.sleep(10)
+        # Never completes on its own - the test cancels this task well
+        # before any real-time completion would matter.
+        await asyncio.Event().wait()
         return "done"
 
     async with Client(server, mode="legacy") as client:

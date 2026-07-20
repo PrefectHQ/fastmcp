@@ -196,11 +196,7 @@ async def test_client_headers_proxy(proxy_server: str):
     """
     Test that client headers are passed through the proxy to the remove server.
     """
-    # The proxy backend forwards over the legacy handshake, so align the outer
-    # client's era with it.
-    async with Client(
-        transport=StreamableHttpTransport(proxy_server), mode="legacy"
-    ) as client:
+    async with Client(transport=StreamableHttpTransport(proxy_server)) as client:
         result = await client.read_resource("resource://get_headers_headers_get")
         assert isinstance(result[0], TextResourceContents)
         headers = json.loads(result[0].text)

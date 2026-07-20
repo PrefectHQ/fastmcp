@@ -381,9 +381,8 @@ async def test_state_isolation_between_streamable_http_clients():
 
     Each client should have its own session ID and isolated state.
     """
-    from fastmcp.client.transports import StreamableHttpTransport
     from fastmcp.server.context import Context
-    from fastmcp.utilities.tests import run_server_async
+    from fastmcp.utilities.tests import asgi_server
 
     server = FastMCP("TestServer")
 
@@ -398,12 +397,12 @@ async def test_state_isolation_between_streamable_http_clients():
             "session_id": ctx.session_id,
         }
 
-    async with run_server_async(server, transport="streamable-http") as url:
+    async with asgi_server(server, transport="streamable-http") as running_server:
         import json
 
         # Client 1 stores its value
-        transport1 = StreamableHttpTransport(url=url)
-        async with Client(transport=transport1, mode="legacy") as client1:
+        # Session ids belong to the handshake era, so these pin the legacy era.
+        async with running_server.client(mode="legacy") as client1:
             result1 = await client1.call_tool(
                 "store_and_read", {"value": "client1-value"}
             )
@@ -413,8 +412,7 @@ async def test_state_isolation_between_streamable_http_clients():
             session_id_1 = data1["session_id"]
 
         # Client 2 should have completely isolated state
-        transport2 = StreamableHttpTransport(url=url)
-        async with Client(transport=transport2, mode="legacy") as client2:
+        async with running_server.client(mode="legacy") as client2:
             result2 = await client2.call_tool(
                 "store_and_read", {"value": "client2-value"}
             )

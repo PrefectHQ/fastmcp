@@ -37,7 +37,7 @@ async with Client(
     "https://your-server.fastmcp.app/mcp", 
     auth="<your-token>",
 ) as client:
-    await client.ping()
+    await client.list_tools()
 ```
 
 You can also supply a Bearer token to a transport instance, such as `StreamableHttpTransport` or `SSETransport`:
@@ -52,7 +52,7 @@ transport = StreamableHttpTransport(
 )
 
 async with Client(transport) as client:
-    await client.ping()
+    await client.list_tools()
 ```
 
 ## `BearerAuth` Helper
@@ -67,7 +67,7 @@ async with Client(
     "https://your-server.fastmcp.app/mcp", 
     auth=BearerAuth(token="<your-token>"),
 ) as client:
-    await client.ping()
+    await client.list_tools()
 ```
 
 ## Custom Headers
@@ -84,5 +84,5 @@ async with Client(
         headers={"X-API-Key": "<your-token>"},
     ),
 ) as client:
-    await client.ping()
+    await client.list_tools()
 ```

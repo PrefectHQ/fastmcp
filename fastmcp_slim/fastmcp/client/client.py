@@ -8,7 +8,7 @@ import secrets
 import ssl
 import uuid
 import weakref
-from collections.abc import Callable, Coroutine, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Coroutine, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -48,8 +48,9 @@ from mcp_types import (
     TaskStatusNotification,
     TaskStatusNotificationParams,
 )
+from mcp_types.methods import validate_server_result
 from mcp_types.version import HANDSHAKE_PROTOCOL_VERSIONS, MODERN_PROTOCOL_VERSIONS
-from pydantic import AnyUrl
+from pydantic import AnyUrl, ValidationError
 
 import fastmcp as fastmcp
 from fastmcp.client.auth.oauth import OAuth
@@ -141,6 +142,185 @@ ConnectMode = Literal["legacy", "auto"] | str
 
 The ``str`` arm is only for the version-pin case; ``Client.__init__`` rejects any other value.
 """
+
+
+@asynccontextmanager
+async def _conformant_discover_only(
+    session: ClientSession,
+) -> AsyncIterator[None]:
+    """Hold ``session.send_discover`` to the same wire schema every later reply must meet.
+
+    ``negotiate_auto`` accepts a probe that parses as the version-free
+    ``DiscoverResult``, whose ``resultType``/``ttlMs``/``cacheScope`` all carry
+    SDK-side defaults. Every request *after* adoption is instead checked against
+    the strict per-version surface (``validate_server_result``), where those same
+    three fields are required. A server that answers ``server/discover`` without
+    them therefore passes the probe and then fails every subsequent call — the
+    connection is adopted into an era the peer cannot actually serve.
+
+    Closing that gap means judging the probe by the rule that will govern the rest
+    of the connection. A result that would be rejected later is not positive
+    evidence of a modern peer, so it is reported as an ordinary probe failure and
+    ``negotiate_auto`` falls back to the initialize handshake, exactly as it does
+    for a server with no ``server/discover`` at all.
+    """
+    send_discover = session.send_discover
+
+    async def _checked_send_discover(version: str) -> dict[str, Any]:
+        raw = await send_discover(version)
+        try:
+            validate_server_result("server/discover", version, raw)
+        except ValidationError as e:
+            # Ordered before the ValueError arm below: pydantic's ValidationError
+            # subclasses ValueError, so a broader clause first would swallow it.
+            logger.debug(
+                "server/discover at %s is not %s-conformant (%s); "
+                "falling back to the initialize handshake",
+                version,
+                version,
+                e,
+            )
+            raise MCPError(
+                code=mcp_types.INVALID_PARAMS,
+                message=(
+                    f"server/discover result is not conformant with {version}; "
+                    "treating the server as handshake-era"
+                ),
+            ) from e
+        except (KeyError, ValueError):
+            # No schema on file for this method/version pair, so there is nothing to
+            # judge the probe against; leave the verdict to negotiate_auto's parse.
+            return raw
+        return raw
+
+    # A transport may itself have installed a `send_discover` override, so restore
+    # whatever was there rather than assuming the class attribute.
+    had_own = "send_discover" in vars(session)
+    session.send_discover = _checked_send_discover  # ty: ignore[invalid-assignment]
+    try:
+        yield
+    finally:
+        if had_own:
+            session.send_discover = send_discover  # ty: ignore[invalid-assignment]
+        else:
+            del session.send_discover
+
+
+@dataclass
+class _FoldedExtensions:
+    """`Client(extensions=...)` folded into the shapes `ClientSession` consumes.
+
+    `ad` maps each extension identifier to its advertised settings (the SEP-2133
+    capability ad), `claims` maps each identifier to its `ResultClaim`s, `bindings`
+    is the flat list of `NotificationBinding`s the extensions observe, and `by_model`
+    indexes every claim by its result model so a claimed `tools/call` result can be
+    routed back to the owning resolver.
+    """
+
+    ad: dict[str, dict[str, Any]]
+    claims: dict[str, tuple[ResultClaim[Any], ...]]
+    bindings: list[NotificationBinding[Any]]
+    by_model: dict[type[mcp_types.Result], ResultClaim[Any]]
+
+
+def _fold_extensions(
+    extensions: Sequence[ClientExtension] | None,
+) -> _FoldedExtensions:
+    """Decompose `ClientExtension` instances into `ClientSession` kwargs.
+
+    Mirrors the SDK Client's own folding, using only the public `ClientExtension`
+    surface (`settings()`, `claims()`, `notifications()`). Duplicate identifiers,
+    result-type tags, or notification methods across extensions raise here rather
+    than at session construction, naming both owners. `by_model` is the model→claim
+    index the resolution path uses to finish a claimed result.
+    """
+    folded = _FoldedExtensions(ad={}, claims={}, bindings=[], by_model={})
+    if not extensions:
+        return folded
+    if isinstance(extensions, Mapping):
+        raise TypeError(
+            "extensions= takes a sequence of ClientExtension instances; use "
+            "mcp.client.advertise(identifier, settings) for an advertise-only entry"
+        )
+    claim_owners: dict[str, str] = {}
+    binding_owners: dict[str, str] = {}
+    for extension in extensions:
+        identifier = getattr(extension, "identifier", None)
+        if identifier is None:
+            raise ValueError(
+                f"{type(extension).__name__} has no `identifier`; a ClientExtension "
+                "must set the `identifier` class attribute (or assign one in "
+                "`__init__`) before it can be used"
+            )
+        if identifier in folded.ad:
+            raise ValueError(
+                f"extension identifier {identifier!r} is passed more than once"
+            )
+        folded.ad[identifier] = extension.settings()
+        extension_claims = tuple(extension.claims())
+        for claim in extension_claims:
+            tag = claim.result_type
+            if tag in claim_owners:
+                owner = claim_owners[tag]
+                both = (
+                    f"extension {identifier!r} claims"
+                    if owner == identifier
+                    else f"extensions {owner!r} and {identifier!r} both claim"
+                )
+                raise ValueError(
+                    f"{both} resultType {tag!r}; a wire tag can have only one resolver"
+                )
+            claim_owners[tag] = identifier
+            # Each model pins its result_type Literal to one tag, so this cannot collide.
+            folded.by_model[claim.model] = claim
+        if extension_claims:
+            folded.claims[identifier] = extension_claims
+        for binding in extension.notifications():
+            if binding.method in binding_owners:
+                owner = binding_owners[binding.method]
+                both = (
+                    f"extension {identifier!r} binds"
+                    if owner == identifier
+                    else f"extensions {owner!r} and {identifier!r} both bind"
+                )
+                raise ValueError(
+                    f"{both} notification method {binding.method!r}; a method can "
+                    "have only one observer"
+                )
+            binding_owners[binding.method] = identifier
+            folded.bindings.append(binding)
+    return folded
+
+
+def _evicting_message_handler(
+    cache: ClientResponseCache, user_handler: MessageHandlerFnT | None
+) -> MessageHandlerFnT:
+    """Compose cache eviction over an existing message handler (SEP-2549).
+
+    A server notification (tools/list_changed, resource updates, etc.) evicts the
+    entries it invalidates *before* the wrapped handler runs, so a downstream
+    consumer never observes a change while a stale cached listing is still served.
+    Mirrors the SDK Client's `_evicting_message_handler`, but delegates to FastMCP's
+    own handler chain rather than clobbering it. Eviction faults are contained: a
+    cache-store error must never block notification delivery.
+    """
+
+    async def handler(
+        message: Any,
+    ) -> None:
+        if isinstance(message, mcp_types.ServerNotification):
+            try:
+                await cache.evict_for_notification(message)
+            except Exception:
+                logger.exception(
+                    "Response cache eviction failed; the notification is still delivered"
+                )
+        if user_handler is not None:
+            await user_handler(message)
+        else:
+            await anyio.lowlevel.checkpoint()
+
+    return handler
 
 
 @dataclass
@@ -743,7 +923,8 @@ class Client(
                         await self.session.initialize()
                     )
                 elif effective_mode == "auto":
-                    await negotiate_auto(self.session)
+                    async with _conformant_discover_only(self.session):
+                        await negotiate_auto(self.session)
                     # auto may have fallen back to the legacy handshake; surface its
                     # InitializeResult through the existing public property when so.
                     self._session_state.initialize_result = (

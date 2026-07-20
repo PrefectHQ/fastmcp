@@ -52,10 +52,18 @@ class TransportOptions:
             authorization header upstream. Only appropriate for proxies, where
             the caller's credentials are meant to be propagated. Honored by the
             HTTP and SSE transports; ignored by the others.
+        backend_mode: The connect `mode` to give backend clients that a wrapping
+            transport builds on this client's behalf, so a chain of connections
+            speaks one protocol era end to end. `None` leaves each backend
+            client at its own default. Honored by `MCPConfigTransport`, whose
+            multi-server form mounts a proxy per configured server; ignored by
+            transports that connect to a single backend directly, since those
+            carry the connecting client's own session and era.
     """
 
     session_class: type[ClientSession] = ClientSession
     forward_incoming_headers: bool = False
+    backend_mode: str | None = None
 
 
 # SessionKwargs stays exactly the ClientSession constructor's parameters, so a

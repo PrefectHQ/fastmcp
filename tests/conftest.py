@@ -85,19 +85,42 @@ def enable_fastmcp_logger_propagation(caplog):
     root_logger.propagate = original_propagate
 
 
+@pytest.fixture(scope="session")
+def _settings_home_root(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Session-scoped (i.e. per xdist-worker) base directory for isolated
+    settings.home directories.
+
+    Created once via ``tmp_path_factory`` so ``isolate_settings_home`` can
+    carve out a per-test subdirectory with a plain, cheap ``mkdir`` instead
+    of requesting a fresh ``tmp_path`` (which every test would otherwise pay
+    for, autouse) on every single test.
+    """
+    return tmp_path_factory.mktemp("fastmcp-test-home")
+
+
 @pytest.fixture(autouse=True)
-def isolate_settings_home(tmp_path: Path):
+def isolate_settings_home(_settings_home_root: Path):
     """Ensure each test uses an isolated settings.home directory.
 
     This prevents file locking issues when multiple tests share the same
-    storage directory in settings.home / "oauth-proxy".
+    storage directory in settings.home / "oauth-proxy". That collision is
+    not hypothetical: most oauth-proxy tests construct their proxy with the
+    same hardcoded jwt_signing_key ("test-secret"), and the storage
+    directory's name is a fingerprint derived from that key -- so any two
+    tests reusing it resolve to the *same* subdirectory. Reusing a single
+    settings.home across the whole session/worker would let one test's
+    persisted client/token state leak into the next, even though the tests
+    run sequentially within a worker. A fresh subdirectory per test avoids
+    that leakage while a session-scoped root avoids paying tmp_path's
+    per-test overhead (numbering, test-id sanitization, retention-policy
+    bookkeeping) for the ~99% of tests that never touch this directory.
 
     Also sets a fast Docket polling interval for tests — the default 50ms
     is fine for production but still adds ~25ms average pickup latency per
     task. 10ms makes task tests near-instant.
     """
-    test_home = tmp_path / "fastmcp-test-home"
-    test_home.mkdir(exist_ok=True)
+    test_home = _settings_home_root / secrets.token_hex(8)
+    test_home.mkdir()
 
     with temporary_settings(
         home=test_home,

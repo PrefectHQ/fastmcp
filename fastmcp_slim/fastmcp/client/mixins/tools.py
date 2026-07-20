@@ -230,8 +230,13 @@ class ClientToolsMixin:
             else:
                 # A claimed extension result (SEP-2133): resolve it through the
                 # owning extension's resolver into an ordinary CallToolResult.
-                result = await self._resolve_claimed_result(
-                    name, driven, read_timeout_seconds
+                # Resolution issues further session requests of its own (result
+                # validation lists tools; a resolver may make more), so it needs
+                # the same session monitoring as the calls above — otherwise a
+                # transport-level failure can kill the session runner while this
+                # await waits forever.
+                result = await self._await_with_session_monitoring(
+                    self._resolve_claimed_result(name, driven, read_timeout_seconds)
                 )
 
             # Reflect tool-level errors on the span so callers see ERROR

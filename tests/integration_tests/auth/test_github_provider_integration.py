@@ -359,8 +359,10 @@ async def test_github_oauth_with_mock(github_client_with_mock: Client):
     """Test complete GitHub OAuth flow with mocked callback."""
 
     async with github_client_with_mock:
-        # Test that we can ping the server (requires successful OAuth)
-        assert await github_client_with_mock.ping()
+        # Reaching the server at all requires successful OAuth. `list_tools` stands
+        # in for `ping` here because it works in either protocol era, and a default
+        # client negotiates the modern one, which has no `ping` method.
+        assert await github_client_with_mock.list_tools()
 
         # Test that we can call protected tools
         result = await github_client_with_mock.call_tool("get_protected_data", {})

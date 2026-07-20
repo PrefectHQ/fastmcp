@@ -86,7 +86,7 @@ client = Client(transport)
 
 async def efficient_multiple_operations():
     async with client:
-        await client.ping()
+        await client.list_tools()
 
     async with client:  # Reuses the same subprocess
         await client.call_tool("process_data", {"file": "data.csv"})

@@ -496,12 +496,19 @@ class Provider:
 
         Used by the server during startup to register functions with Docket.
         """
-        # Fetch all component types in parallel
+        # Fetch all component types in parallel. Iterate the bound methods
+        # rather than a tuple of already-called coroutines: a parenthesized
+        # comma expression is a tuple, so it would create all four coroutines
+        # before `gather` starts, which is exactly what `gather` asks callers
+        # to avoid.
         results = await gather(
-            self._list_tools(),
-            self._list_resources(),
-            self._list_resource_templates(),
-            self._list_prompts(),
+            fetch()
+            for fetch in (
+                self._list_tools,
+                self._list_resources,
+                self._list_resource_templates,
+                self._list_prompts,
+            )
         )
         tools = cast("Sequence[Tool]", results[0])
         resources = cast("Sequence[Resource]", results[1])

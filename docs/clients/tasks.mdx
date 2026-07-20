@@ -14,6 +14,10 @@ Use this when you need to run long operations asynchronously while doing other w
 
 The MCP task protocol lets you request operations to run in the background. The call returns a Task object immediately, letting you track progress, cancel operations, or await results.
 
+<Note>
+**Background tasks require the older MCP protocol.** FastMCP submits a task over the session that the `initialize` handshake opens, and protocol version `2026-07-28` has no equivalent. Clients default to `mode="auto"`, which negotiates the newest version both sides support, so the examples on this page pass `mode="legacy"`. See [protocol negotiation](/clients/client#protocol-negotiation).
+</Note>
+
 ## Requesting Background Execution
 
 Pass `task=True` to run an operation as a background task:
@@ -21,7 +25,7 @@ Pass `task=True` to run an operation as a background task:
 ```python
 from fastmcp import Client
 
-async with Client(server) as client:
+async with Client(server, mode="legacy") as client:
     # Start a background task
     task = await client.call_tool("slow_computation", {"duration": 10}, task=True)
 
@@ -154,7 +158,7 @@ import asyncio
 from fastmcp import Client
 
 async def main():
-    async with Client(server) as client:
+    async with Client(server, mode="legacy") as client:
         # Start background task
         task = await client.call_tool(
             "slow_computation",

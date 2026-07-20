@@ -101,7 +101,8 @@ import asyncio
 
 async def main():
     async with Client("http://localhost:8000/mcp", auth="oauth") as client:
-        assert await client.ping()
+        tools = await client.list_tools()
+        print(f"Authenticated. Server exposes {len(tools)} tools.")
 
 if __name__ == "__main__":
     asyncio.run(main())

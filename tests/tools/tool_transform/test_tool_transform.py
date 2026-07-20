@@ -41,6 +41,23 @@ def test_tool_from_tool_no_change(add_tool):
     assert new_tool.description == add_tool.description
 
 
+def test_transformed_tool_required_order_is_deterministic():
+    """`required` must follow property order, not set iteration order.
+
+    Set iteration order varies with PYTHONHASHSEED, which broke snapshot
+    tests of tools/list output across processes.
+    """
+
+    def fn(alpha: int, beta: str, gamma: float, delta: bool, epsilon: int) -> str:
+        return "x"
+
+    base = Tool.from_function(fn)
+    transformed = Tool.from_tool(base, transform_args={"alpha": ArgTransform(name="a")})
+    props = list(transformed.parameters["properties"])
+    assert transformed.parameters["required"] == props
+    assert props == ["a", "beta", "gamma", "delta", "epsilon"]
+
+
 def test_from_tool_accepts_decorated_function():
     @tool
     def search(q: str, limit: int = 10) -> list[str]:

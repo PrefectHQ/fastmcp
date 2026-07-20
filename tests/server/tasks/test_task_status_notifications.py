@@ -28,9 +28,14 @@ async def notification_server():
         return value * 2
 
     @mcp.tool(task=True)
-    async def slow_task(duration: float = 0.1) -> str:
-        """Slow task for testing working status."""
-        await asyncio.sleep(duration)
+    async def slow_task() -> str:
+        """Task that never completes on its own.
+
+        Only used to verify disconnect-while-running doesn't crash - the
+        test disconnects before the task would finish, so it never needs
+        to actually complete.
+        """
+        await asyncio.Event().wait()
         return "completed"
 
     @mcp.tool(task=True)
@@ -41,13 +46,11 @@ async def notification_server():
     @mcp.prompt(task=True)
     async def test_prompt(name: str) -> str:
         """Test prompt for background execution."""
-        await asyncio.sleep(0.05)
         return f"Hello, {name}!"
 
     @mcp.resource("test://resource", task=True)
     async def test_resource() -> str:
         """Test resource for background execution."""
-        await asyncio.sleep(0.05)
         return "resource content"
 
     return mcp
@@ -84,9 +87,9 @@ async def test_subscription_handles_task_completion(notification_server: FastMCP
         assert result2.data == 4
         assert result3.data == 6
 
-        # Subscriptions should all clean up
-        # Give them a moment
-        await asyncio.sleep(0.1)
+        # Subscriptions clean up deterministically via the connection's
+        # exit stack when the client disconnects (see test below), so no
+        # settling wait is needed here.
 
 
 async def test_subscription_handles_task_failure(notification_server: FastMCP):
@@ -98,8 +101,8 @@ async def test_subscription_handles_task_failure(notification_server: FastMCP):
         with pytest.raises(Exception):
             await task
 
-        # Subscription should handle failure and clean up
-        await asyncio.sleep(0.1)
+        # Subscription cleans up deterministically via the connection's
+        # exit stack on disconnect; no settling wait is needed here.
 
 
 async def test_subscription_for_prompt_tasks(notification_server: FastMCP):
@@ -111,8 +114,8 @@ async def test_subscription_for_prompt_tasks(notification_server: FastMCP):
         # Prompt result has messages
         assert result
 
-        # Subscription should clean up
-        await asyncio.sleep(0.1)
+        # Subscription cleans up deterministically via the connection's
+        # exit stack on disconnect; no settling wait is needed here.
 
 
 async def test_subscription_for_resource_tasks(notification_server: FastMCP):
@@ -123,8 +126,8 @@ async def test_subscription_for_resource_tasks(notification_server: FastMCP):
         result = await task
         assert result  # Resource contents
 
-        # Subscription should clean up
-        await asyncio.sleep(0.1)
+        # Subscription cleans up deterministically via the connection's
+        # exit stack on disconnect; no settling wait is needed here.
 
 
 async def test_subscriptions_cleanup_on_session_disconnect(
@@ -132,8 +135,9 @@ async def test_subscriptions_cleanup_on_session_disconnect(
 ):
     """Subscriptions are cleaned up when session disconnects."""
     # Start session and create task
+    # Task submission is a handshake-era capability, so this pins the legacy era.
     async with Client(notification_server, mode="legacy") as client:
-        task = await client.call_tool("slow_task", {"duration": 1.0}, task=True)
+        task = await client.call_tool("slow_task", {}, task=True)
         task_id = task.task_id
         # Disconnect before task completes (session __aexit__ cancels subscriptions)
 
@@ -156,5 +160,5 @@ async def test_multiple_concurrent_subscriptions(notification_server: FastMCP):
         results = await asyncio.gather(*tasks)
         assert len(results) == 10
 
-        # All subscriptions should clean up
-        await asyncio.sleep(0.1)
+        # All subscriptions clean up deterministically via the connection's
+        # exit stack on disconnect; no settling wait is needed here.

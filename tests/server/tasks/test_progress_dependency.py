@@ -77,9 +77,10 @@ async def test_progress_status_message_in_background_task():
         await progress.increment()
         step_started.set()
 
-        # Give test time to poll status
-        await asyncio.sleep(0.2)
-
+        # No settling wait needed: the server never clears the progress
+        # message on completion (only a failure overwrites it), so whatever
+        # "Step N of 3" message is current when the test polls status()
+        # below still satisfies the assertion, win or lose the race.
         await progress.set_message("Step 2 of 3")
         await progress.increment()
         await progress.set_message("Step 3 of 3")

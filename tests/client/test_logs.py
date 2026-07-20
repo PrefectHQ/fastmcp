@@ -95,6 +95,8 @@ class TestSetLoggingLevel:
     async def test_set_logging_level(self, fastmcp_server: FastMCP):
         """Client can set the minimum log level and lower-level messages are suppressed."""
         log_handler = LogHandler()
+        # client.set_logging_level is a legacy-only RPC (deprecated per SEP-2577);
+        # it does not exist on the modern protocol.
         async with Client(
             fastmcp_server, mode="legacy", log_handler=log_handler.handle_log
         ) as client:

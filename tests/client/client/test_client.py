@@ -275,9 +275,19 @@ async def test_client_serialization_error():
 async def test_server_deserialization_error():
     """Test server error when JSON string cannot be converted to expected type.
 
-    Pinned to legacy: the detailed `PromptError` message is surfaced to the
-    client only on the handshake era; the modern server runner reports the
-    raised conversion error as a generic "Internal server error".
+    # TODO(defect): `_on_get_prompt` in
+    # fastmcp_slim/fastmcp/server/mixins/mcp_operations.py only catches
+    # `(DisabledError, NotFoundError)`, unlike `_on_call_tool` which catches
+    # `FastMCPError` broadly and returns the message as an `is_error` result.
+    # A `PromptError` raised during argument conversion therefore escapes as a
+    # raw exception. On the legacy path the v1-compat exception ladder puts
+    # `str(exc)` on the wire; on the modern path `modern_error_data` only
+    # special-cases `MCPError`/`ValidationError` and otherwise masks the
+    # exception as a generic "Internal server error" (deliberately, so handler
+    # internals don't leak) -- so this client-input error is indistinguishable
+    # from a real server bug on the modern protocol. Pinned to legacy until
+    # `_on_get_prompt` maps `FastMCPError` (or specifically `PromptError`) to a
+    # proper `MCPError` the same way tool errors are surfaced.
     """
 
     server = FastMCP("TestServer")

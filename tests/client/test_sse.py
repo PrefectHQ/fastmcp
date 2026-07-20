@@ -11,7 +11,7 @@ from fastmcp.client.transports import SSETransport
 from fastmcp.server.dependencies import get_http_request
 from fastmcp.server.http import create_sse_app
 from fastmcp.server.server import FastMCP
-from fastmcp.utilities.tests import run_server_async
+from fastmcp.utilities.tests import ASGIServer, asgi_server
 
 
 def create_test_server() -> FastMCP:
@@ -63,24 +63,22 @@ def create_test_server() -> FastMCP:
 
 @pytest.fixture
 async def sse_server():
-    """Start a test server with SSE transport and return its URL."""
+    """Start a test server with SSE transport, in-process."""
     server = create_test_server()
-    async with run_server_async(server, transport="sse") as url:
-        yield url
+    async with asgi_server(server, transport="sse") as running_server:
+        yield running_server
 
 
-async def test_ping(sse_server: str):
+async def test_ping(sse_server: ASGIServer):
     """Test pinging the server."""
-    async with Client(transport=SSETransport(sse_server)) as client:
+    async with sse_server.client() as client:
         result = await client.ping()
         assert result is True
 
 
-async def test_http_headers(sse_server: str):
+async def test_http_headers(sse_server: ASGIServer):
     """Test getting HTTP headers from the server."""
-    async with Client(
-        transport=SSETransport(sse_server, headers={"X-DEMO-HEADER": "ABC"})
-    ) as client:
+    async with sse_server.client(headers={"X-DEMO-HEADER": "ABC"}) as client:
         raw_result = await client.read_resource("request://headers")
         assert isinstance(raw_result[0], TextResourceContents)
         json_result = json.loads(raw_result[0].text)
@@ -90,10 +88,10 @@ async def test_http_headers(sse_server: str):
 
 @pytest.fixture
 async def sse_server_custom_path():
-    """Start a test server with SSE on a custom path."""
+    """Start a test server with SSE on a custom path, in-process."""
     server = create_test_server()
-    async with run_server_async(server, transport="sse", path="/help") as url:
-        yield url
+    async with asgi_server(server, transport="sse", path="/help") as running_server:
+        yield running_server
 
 
 @pytest.fixture
@@ -140,9 +138,9 @@ async def nested_sse_server():
             pass
 
 
-async def test_run_server_on_path(sse_server_custom_path: str):
+async def test_run_server_on_path(sse_server_custom_path: ASGIServer):
     """Test running server on a custom path."""
-    async with Client(transport=SSETransport(sse_server_custom_path)) as client:
+    async with sse_server_custom_path.client() as client:
         result = await client.ping()
         assert result is True
 
@@ -159,42 +157,33 @@ async def test_nested_sse_server_resolves_correctly(nested_sse_server: str):
     reason="Timeout tests are flaky on Windows. Timeouts *are* supported but the tests are unreliable.",
 )
 class TestTimeout:
-    async def test_timeout(self, sse_server: str):
+    async def test_timeout(self, sse_server: ASGIServer):
         with pytest.raises(
             MCPError,
             match="timed out",
         ):
-            async with Client(
-                transport=SSETransport(sse_server),
-                timeout=0.03,
-            ) as client:
+            async with sse_server.client(timeout=0.03) as client:
                 await client.call_tool("sleep", {"seconds": 0.1})
 
-    async def test_timeout_tool_call(self, sse_server: str):
-        async with Client(transport=SSETransport(sse_server)) as client:
+    async def test_timeout_tool_call(self, sse_server: ASGIServer):
+        async with sse_server.client() as client:
             with pytest.raises(MCPError, match="timed out"):
                 await client.call_tool("sleep", {"seconds": 0.1}, timeout=0.03)
 
     async def test_timeout_tool_call_overrides_client_timeout_if_lower(
-        self, sse_server: str
+        self, sse_server: ASGIServer
     ):
-        async with Client(
-            transport=SSETransport(sse_server),
-            timeout=2,
-        ) as client:
+        async with sse_server.client(timeout=2) as client:
             with pytest.raises(MCPError, match="timed out"):
                 await client.call_tool("sleep", {"seconds": 0.1}, timeout=0.03)
 
     async def test_timeout_client_timeout_does_not_override_tool_call_timeout_if_lower(
-        self, sse_server: str
+        self, sse_server: ASGIServer
     ):
         """
         With SSE, the tool call timeout always takes precedence over the client.
 
         Note: on Windows, the behavior appears unpredictable.
         """
-        async with Client(
-            transport=SSETransport(sse_server),
-            timeout=0.5,
-        ) as client:
+        async with sse_server.client(timeout=0.5) as client:
             await client.call_tool("sleep", {"seconds": 0.8}, timeout=2)

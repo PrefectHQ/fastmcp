@@ -29,7 +29,7 @@ from fastmcp import Client
 
 # Uses default OAuth settings
 async with Client("https://your-server.fastmcp.app/mcp", auth="oauth") as client:
-    await client.ping()
+    await client.list_tools()
 ```
 
 
@@ -44,7 +44,7 @@ from fastmcp.client.auth import OAuth
 oauth = OAuth(scopes=["user"])
 
 async with Client("https://your-server.fastmcp.app/mcp", auth=oauth) as client:
-    await client.ping()
+    await client.list_tools()
 ```
 
 <Note>
@@ -125,7 +125,7 @@ encrypted_storage = FernetEncryptionWrapper(
 oauth = OAuth(token_storage=encrypted_storage)
 
 async with Client("https://your-server.fastmcp.app/mcp", auth=oauth) as client:
-    await client.ping()
+    await client.list_tools()
 ```
 
 You can use any `AsyncKeyValue`-compatible backend from the [key-value library](https://github.com/strawgate/py-key-value) including Redis, DynamoDB, and more. Wrap your storage in `FernetEncryptionWrapper` for encryption.
@@ -150,7 +150,7 @@ async with Client(
         client_metadata_url="https://myapp.example.com/oauth/client.json",
     ),
 ) as client:
-    await client.ping()
+    await client.list_tools()
 ```
 
 See the [CIMD Authentication](/clients/auth/cimd) page for complete documentation on creating, hosting, and validating CIMD documents.
@@ -172,7 +172,7 @@ async with Client(
         client_secret="my-client-secret",
     ),
 ) as client:
-    await client.ping()
+    await client.list_tools()
 ```
 
 Public clients that rely on PKCE for security can omit `client_secret`:

@@ -5,7 +5,7 @@ These examples demonstrate FastMCP's sampling API, which allows server tools to 
 ## Prerequisites
 
 ```bash
-pip install fastmcp[anthropic]
+pip install 'fastmcp[anthropic]'
 export ANTHROPIC_API_KEY=your-key
 ```
 
@@ -59,4 +59,4 @@ from fastmcp.client.sampling.handlers.openai import OpenAISamplingHandler
 handler = OpenAISamplingHandler(default_model="gpt-4o-mini")
 ```
 
-And install with `pip install fastmcp[openai]`.
+And install with `pip install 'fastmcp[openai]'`.

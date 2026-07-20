@@ -81,7 +81,8 @@ auth = OAuth(additional_client_metadata={"token_endpoint_auth_method": "none"})
 
 async def main():
     async with Client("http://127.0.0.1:8000/mcp", auth=auth) as client:
-        assert await client.ping()
+        tools = await client.list_tools()
+        print(f"Authenticated. Server exposes {len(tools)} tools.")
 
 if __name__ == "__main__":
     asyncio.run(main())

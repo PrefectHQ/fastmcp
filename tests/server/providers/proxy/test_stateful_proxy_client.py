@@ -58,6 +58,16 @@ def fastmcp_server():
 
 @pytest.fixture
 async def stateful_proxy_server(fastmcp_server: FastMCP):
+    # `StatefulProxyClient` is a `ProxyClient` subclass, so it inherits the same
+    # `mode="legacy"` default for a directly-constructed instance (see
+    # `TestProxyClientEraDefault` in test_proxy_client.py) — this backend isn't
+    # built through `create_proxy`'s era-mirroring factory, so it stays pinned
+    # regardless of the front era. Every test below that forwards a real tool
+    # call through this fixture pins its front `Client` to `mode="legacy"` too:
+    # otherwise a modern front's request `_meta` carries reserved
+    # modern-envelope keys that `ProxyTool.run`'s legacy-backend path forwards
+    # verbatim, and this legacy-locked backend session rejects them as a
+    # protocol violation.
     client = StatefulProxyClient(transport=FastMCPTransport(fastmcp_server))
     return FastMCPProxy(client_factory=client.new_stateful)
 
@@ -119,6 +129,7 @@ class TestStatefulProxyClient:
 
     async def test_stateful_proxy(self, stateful_proxy_server: FastMCP):
         """Test that the state shared across multiple calls for the same client (fixes #959)."""
+        # See stateful_proxy_server fixture: its backend is pinned to legacy.
         async with Client(stateful_proxy_server, mode="legacy") as client:
             with pytest.raises(ToolError, match="Value not found"):
                 await client.call_tool("stateful_get", {})
@@ -130,6 +141,7 @@ class TestStatefulProxyClient:
     async def test_stateless_proxy(self, stateless_server: str):
         """Test that the state will not be shared across different calls,
         even if they are from the same client."""
+        # See stateful_proxy_server fixture: its backend is pinned to legacy.
         async with Client(stateless_server, mode="legacy") as client:
             await client.call_tool("stateful_put", {"value": 1})
 
@@ -158,6 +170,8 @@ class TestStatefulProxyClient:
         multi_proxy_mcp.mount(proxy_mcp_a, namespace="a")
         multi_proxy_mcp.mount(proxy_mcp_b, namespace="b")
 
+        # Both mounted backends are directly-constructed StatefulProxyClients
+        # (see stateful_proxy_server fixture note above), pinned to legacy.
         async with Client(multi_proxy_mcp, mode="legacy") as client:
             result_a = await client.call_tool("a_tool_a", {})
             result_b = await client.call_tool("b_tool_b", {})
@@ -203,7 +217,10 @@ class TestStatefulProxyClient:
             return ElicitResult(action="accept", content=response_type(name="Alice"))
 
         # Run the proxy over HTTP so the transport uses
-        # related_request_id routing for server-initiated messages.
+        # related_request_id routing for server-initiated messages. Elicitation
+        # is a handshake-only back-channel feature, and the backend is a
+        # directly-constructed StatefulProxyClient pinned to legacy regardless
+        # (see stateful_proxy_server fixture note above) — pin the front to match.
         async with run_server_async(proxy) as proxy_url:
             async with Client(
                 proxy_url, mode="legacy", elicitation_handler=elicitation_handler

@@ -216,7 +216,8 @@ async def test_user_binding_clobbering_task_method_is_rejected():
         identifier = "test.example.com/clobber"
 
         def notifications(self):
-            async def _handler(params: PingParams) -> None: ...
+            async def _handler(params: PingParams) -> None:
+                return None
 
             return (
                 NotificationBinding(

@@ -222,9 +222,9 @@ async def test_elicitation_response_title_rejected_for_basemodel():
     async def elicitation_handler(message, response_type, params, ctx):
         return ElicitResult(action="accept", content={"name": "x"})
 
-    async with Client(
-        mcp, mode="legacy", elicitation_handler=elicitation_handler
-    ) as client:
+    # Not pinned: response_title is validated locally before any request is
+    # dispatched, so this raises identically on every era.
+    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
         with pytest.raises(ToolError, match="response_title"):
             await client.call_tool("ask", {})
 
@@ -245,9 +245,9 @@ async def test_elicitation_response_title_rejected_for_none():
     async def elicitation_handler(message, response_type, params, ctx):
         return ElicitResult(action="accept", content={})
 
-    async with Client(
-        mcp, mode="legacy", elicitation_handler=elicitation_handler
-    ) as client:
+    # Not pinned: response_title is validated locally before any request is
+    # dispatched, so this raises identically on every era.
+    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
         with pytest.raises(ToolError, match="response_title"):
             await client.call_tool("ask", {})
 
@@ -540,6 +540,10 @@ async def test_elicitation_handler_error():
     async def elicitation_handler(message, response_type, params, ctx):
         raise ValueError("Handler failed!")
 
+    # Pinned: the tool's broad `except Exception` means this would pass under
+    # auto for the wrong reason (elicit() itself raising "unavailable on
+    # 2026-07-28" rather than the handler's ValueError ever running). Legacy
+    # pins the test to what it actually claims to exercise.
     async with Client(
         mcp, mode="legacy", elicitation_handler=elicitation_handler
     ) as client:

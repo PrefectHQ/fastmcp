@@ -156,6 +156,91 @@ class TestAutoMode:
             assert client.initialize_result is not None
 
 
+class TestNonConformantModernPeer:
+    """A peer that answers ``server/discover`` but cannot actually serve the era.
+
+    ``negotiate_auto`` accepts a probe that parses as the version-free
+    ``DiscoverResult``, where ``resultType``/``ttlMs``/``cacheScope`` all carry
+    SDK-side defaults. Every request after adoption is checked against the strict
+    per-version surface, where those three fields are required. Left alone, a
+    server that omits them on ``server/discover`` passes the probe and then fails
+    every subsequent call, so ``auto`` would adopt an era the peer cannot serve.
+
+    GitHub's remote MCP server is a live example: it has adopted the SEP-2549
+    cache fields but not result tagging, so it answers ``server/discover``
+    with ``ttlMs``/``cacheScope`` and no ``resultType``.
+    """
+
+    @staticmethod
+    def _discover_body(**envelope: Any) -> dict[str, Any]:
+        return {
+            "supportedVersions": [LATEST_MODERN_VERSION],
+            "capabilities": {"tools": {}, "resources": {}, "prompts": {}},
+            "serverInfo": {"name": "TestServer", "version": "1.0"},
+            **envelope,
+        }
+
+    @staticmethod
+    def _transport_answering(body: dict[str, Any], server) -> FastMCPTransport:
+        """An in-memory transport whose ``server/discover`` returns ``body`` verbatim."""
+
+        class _FixedDiscoverTransport(FastMCPTransport):
+            @contextlib.asynccontextmanager
+            async def connect_session(
+                self, **session_kwargs: Unpack[SessionKwargs]
+            ) -> AsyncIterator[ClientSession]:
+                async with super().connect_session(**session_kwargs) as session:
+
+                    async def _fixed_discover(version: str) -> dict[str, Any]:
+                        return body
+
+                    session.send_discover = _fixed_discover  # ty: ignore[invalid-assignment]
+                    yield session
+
+        return _FixedDiscoverTransport(server)
+
+    @pytest.mark.parametrize(
+        "envelope",
+        [
+            pytest.param({}, id="no-envelope-fields"),
+            pytest.param(
+                {"ttlMs": 0, "cacheScope": "private"}, id="github-shape-no-resultType"
+            ),
+            pytest.param({"resultType": "complete"}, id="no-cache-fields"),
+        ],
+    )
+    async def test_non_conformant_discover_falls_back_to_handshake(
+        self, fastmcp_server, envelope
+    ):
+        """A discover result missing required 2026-07-28 fields is not modern evidence.
+
+        Rather than adopting an era the peer cannot serve, auto degrades to the
+        initialize handshake and the connection stays fully usable.
+        """
+        transport = self._transport_answering(
+            self._discover_body(**envelope), fastmcp_server
+        )
+        async with Client(transport, mode="auto") as client:
+            assert client.protocol_version == LATEST_HANDSHAKE_VERSION
+            assert client.initialize_result is not None
+            # The connection works, which is the whole point of degrading.
+            assert await client.list_tools()
+            result = await client.call_tool("add", {"a": 1, "b": 2})
+            assert result.data == 3
+
+    async def test_conformant_discover_still_adopts_modern(self, fastmcp_server):
+        """The conformance check must not reject a well-formed modern peer."""
+        transport = self._transport_answering(
+            self._discover_body(resultType="complete", ttlMs=0, cacheScope="private"),
+            fastmcp_server,
+        )
+        async with Client(transport, mode="auto") as client:
+            assert client.protocol_version == LATEST_MODERN_VERSION
+            assert client.initialize_result is None
+            result = await client.call_tool("add", {"a": 1, "b": 2})
+            assert result.data == 3
+
+
 class TestPinnedMode:
     async def test_pinned_modern_adopts_without_probe(self, fastmcp_server):
         """Pinning the modern version adopts it directly; a synthesized

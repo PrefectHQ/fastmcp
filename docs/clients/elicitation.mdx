@@ -13,6 +13,12 @@ Use this when you need to respond to server requests for user input during tool 
 
 Elicitation allows MCP servers to request structured input from users during operations. Instead of requiring all inputs upfront, servers can interactively ask for missing parameters, request clarification, or gather additional context.
 
+Two routes reach that outcome, and the protocol version the client negotiates decides which one applies. On older versions the server pushes an elicitation request down to the client, over the connection the `initialize` handshake opens; that is the flow the next few sections describe. On `2026-07-28` and later the server instead returns a description of what it needs, and the client answers with a fresh call — see [input-required rounds](#input-required-rounds). You write the same `elicitation_handler` either way — FastMCP routes it to whichever mechanism the connection supports.
+
+<Note>
+**This page shows the older protocol's elicitation flow.** On protocol version `2026-07-28` the server instead returns a description of what it needs and the client answers with a new call — see [input-required rounds](#input-required-rounds). The same `elicitation_handler` serves both. Clients default to `mode="auto"`, so the examples below pass `mode="legacy"` to exercise the server-initiated flow. See [protocol negotiation](/clients/client#protocol-negotiation).
+</Note>
+
 ## Handler Template
 
 ```python
@@ -54,6 +60,7 @@ async def elicitation_handler(
 
 client = Client(
     "my_mcp_server.py",
+    mode="legacy",
     elicitation_handler=elicitation_handler,
 )
 ```
@@ -138,6 +145,7 @@ async def elicitation_handler(message, response_type, params, context):
 
 client = Client(
     "my_mcp_server.py",
+    mode="legacy",
     elicitation_handler=elicitation_handler
 )
 ```
@@ -146,7 +154,7 @@ client = Client(
 
 <VersionBadge version="4.0.0" />
 
-On modern-era connections (protocol version `2026-07-28` and later), a server can ask for input before it returns a final result. Nothing is held open: the tool *returns* a description of what it needs, which completes that round as an ordinary response, and the client answers by issuing a **new** `call_tool`, `get_prompt`, or `read_resource` request carrying the answer. `fastmcp.Client` drives that loop for you — it fulfils each round's requests using the callbacks you already configured (your `elicitation_handler`, `sampling_handler`, and roots) and repeats until the call reaches a terminal result. No extra wiring is needed beyond the handlers described above.
+On protocol version `2026-07-28` and later, a server can ask for input before it returns a final result. Nothing is held open: the tool *returns* a description of what it needs, which completes that round as an ordinary response, and the client answers by issuing a **new** `call_tool`, `get_prompt`, or `read_resource` request carrying the answer. `fastmcp.Client` drives that loop for you — it fulfils each round's requests using the callbacks you already configured (your `elicitation_handler`, `sampling_handler`, and roots) and repeats until the call reaches a terminal result. No extra wiring is needed beyond the handlers described above.
 
 The `input_required_max_rounds` parameter caps how many rounds the client will answer before giving up, guarding against a server that never terminates. It defaults to `10`.
 

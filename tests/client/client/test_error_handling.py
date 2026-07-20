@@ -7,6 +7,18 @@ server runner surfaces the raised exception as a generic "Internal server
 error". Tests asserting the detailed message are pinned to `mode="legacy"`;
 tool-error tests (which flow through an `isError` `CallToolResult`) are
 era-neutral and run on the default `auto`.
+
+# TODO(defect): `_on_read_resource` / `_on_get_prompt` in
+# fastmcp_slim/fastmcp/server/mixins/mcp_operations.py only catch
+# `(DisabledError, NotFoundError)`, unlike `_on_call_tool` which catches
+# `FastMCPError` broadly and returns the message as an `is_error` result. A
+# `ResourceError`/`PromptError` therefore escapes as a raw exception; on the
+# modern protocol `modern_error_data` only special-cases `MCPError`/
+# `ValidationError` and otherwise masks it as a generic "Internal server
+# error" (deliberately, so handler internals don't leak) - so this happens
+# regardless of `mask_error_details`, and a client-input error is
+# indistinguishable from a real server bug. See the matching TODO on
+# `test_server_deserialization_error` in `tests/client/client/test_client.py`.
 """
 
 import logging
