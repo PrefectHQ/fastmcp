@@ -59,4 +59,4 @@ from fastmcp.client.sampling.handlers.openai import OpenAISamplingHandler
 handler = OpenAISamplingHandler(default_model="gpt-4o-mini")
 ```
 
-And install with `pip install fastmcp[openai]`.
+And install with `pip install 'fastmcp[openai]'`.
