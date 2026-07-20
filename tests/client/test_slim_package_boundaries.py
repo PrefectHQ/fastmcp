@@ -64,6 +64,7 @@ async def test_multiserver_config_requires_server_for_now() -> None:
                 pass
 
 
+@pytest.mark.subprocess_heavy
 def test_bare_slim_import_needs_only_mcp_types() -> None:
     """A bare `fastmcp-slim` install ships `mcp-types` but not the full `mcp` SDK.
 

@@ -299,22 +299,19 @@ async def test_database_tool():
 
 ### Testing Network Transports
 
-While in-memory testing covers most unit testing needs, you'll occasionally need to test actual network transports like HTTP or SSE. FastMCP provides two approaches: in-process async servers (preferred), and separate subprocess servers (for special cases).
+In-memory testing covers most unit testing needs, but some behavior only exists over HTTP: middleware, authentication, session management, header handling, and SSE streaming. To test those, serve your server over HTTP with `asgi_client`.
 
-#### In-Process Network Testing (Preferred)
+#### Testing Over HTTP
 
-<VersionBadge version="2.13.0" />
+<VersionBadge version="3.5.0" />
 
-For most network transport tests, use `run_server_async` as an async context manager. This runs the server as a task in the same process, providing fast, deterministic tests with full debugger support:
+`asgi_client` builds your server's real Starlette app, starts its lifespan, and hands you a connected `Client` that talks to it over the full HTTP stack. The one thing it skips is the socket: requests are dispatched straight into the ASGI application on the current event loop, so there is no port to bind, no uvicorn to start, and no connection to negotiate. Everything else — middleware, authentication, session management, SSE framing — runs exactly as it does in production.
 
 ```python
-import pytest
-from fastmcp import FastMCP, Client
-from fastmcp.client.transports import StreamableHttpTransport
-from fastmcp.utilities.tests import run_server_async
+from fastmcp import FastMCP
+from fastmcp.utilities.tests import asgi_client
 
 def create_test_server() -> FastMCP:
-    """Create a test server instance."""
     server = FastMCP("TestServer")
 
     @server.tool
@@ -323,26 +320,84 @@ def create_test_server() -> FastMCP:
 
     return server
 
-@pytest.fixture
-async def http_server() -> str:
-    """Start server in-process for testing."""
-    server = create_test_server()
-    async with run_server_async(server) as url:
-        yield url
-
-async def test_http_transport(http_server: str):
-    """Test actual HTTP transport behavior."""
-    async with Client(
-        transport=StreamableHttpTransport(http_server)
-    ) as client:
-        result = await client.ping()
-        assert result is True
-
+async def test_greet_over_http():
+    async with asgi_client(create_test_server()) as client:
         greeting = await client.call_tool("greet", {"name": "World"})
         assert greeting.data == "Hello, World!"
 ```
 
-The `run_server_async` context manager automatically handles server lifecycle and cleanup. This approach is faster than subprocess-based testing and provides better error messages.
+Pass `transport="sse"` to exercise the SSE app instead of streamable HTTP, `path=` to serve on a custom path, `headers=` and `auth=` to configure the client's requests, and any other keyword argument to configure the `Client` itself.
+
+```python
+async def test_tenant_header_is_visible_to_tools():
+    async with asgi_client(
+        create_test_server(),
+        headers={"X-Tenant-ID": "acme"},
+        timeout=5,
+    ) as client:
+        await client.ping()
+```
+
+#### Sharing One Server Across Tests
+
+When several tests share a server but each needs its own client, use `asgi_server` in a fixture. It yields an `ASGIServer`, whose `client()` method produces a fresh client — with its own session — on demand.
+
+```python
+import pytest
+from fastmcp import FastMCP
+from fastmcp.utilities.tests import ASGIServer, asgi_server
+
+@pytest.fixture
+async def http_server():
+    server = FastMCP("TestServer")
+
+    @server.tool
+    def greet(name: str) -> str:
+        return f"Hello, {name}!"
+
+    async with asgi_server(server) as running_server:
+        yield running_server
+
+async def test_greet(http_server: ASGIServer):
+    async with http_server.client() as client:
+        greeting = await client.call_tool("greet", {"name": "World"})
+        assert greeting.data == "Hello, World!"
+
+async def test_sessions_are_isolated(http_server: ASGIServer):
+    async with http_server.client() as first, http_server.client() as second:
+        assert await first.ping() is True
+        assert await second.ping() is True
+```
+
+For assertions about raw HTTP — status codes, response headers, metadata endpoints — `http_client()` returns an `httpx.AsyncClient` bound to the same app. Because nothing is listening on the network, this is the only way to make raw requests; a plain `httpx.AsyncClient()` cannot reach the server.
+
+```python
+async def test_unauthenticated_request_is_rejected(http_server: ASGIServer):
+    async with http_server.http_client() as http:
+        response = await http.post(http_server.url, json={"jsonrpc": "2.0", "id": 1})
+        assert response.status_code in (400, 401)
+```
+
+If you need to build the client transport yourself, `transport()` returns a `StreamableHttpTransport` or `SSETransport` already wired to the in-process app.
+
+#### Testing on a Real Port
+
+<VersionBadge version="2.13.0" />
+
+`run_server_async` starts a real uvicorn server on a real TCP port as a task in the current process and yields its URL. Reach for it only when the subject of the test is the network itself — real sockets, TLS, or a server that must be reachable by something other than an in-process client.
+
+```python
+from fastmcp import FastMCP, Client
+from fastmcp.utilities.tests import run_server_async
+
+async def test_server_binds_a_real_port():
+    server = FastMCP("TestServer")
+
+    async with run_server_async(server) as url:
+        assert url.startswith("http://127.0.0.1:")
+        async with Client(url) as client:
+            assert await client.ping() is True
+```
 
 #### Subprocess Testing (Special Cases)
 
