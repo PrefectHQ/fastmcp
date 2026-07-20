@@ -26,7 +26,7 @@ uv run pytest --cov=fastmcp
 uv run pytest -m "not integration"
 
 # Skip tests that spawn processes
-uv run pytest -m "not integration and not client_process"
+uv run pytest -m "not integration and not client_process and not subprocess_heavy"
 ```
 
 Tests should complete in under 1 second unless marked as integration tests. This speed encourages running them frequently, catching issues early.
