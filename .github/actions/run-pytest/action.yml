@@ -19,7 +19,7 @@ runs:
           MAX_PROCS="2"
           EXTRA_FLAGS=""
         elif [ "${{ inputs.test-type }}" == "client_process" ]; then
-          MARKER="client_process"
+          MARKER="client_process or subprocess_heavy"
           TIMEOUT="5"
           MAX_PROCS="0"
           EXTRA_FLAGS="-x"
@@ -29,14 +29,20 @@ runs:
           MAX_PROCS="0"
           EXTRA_FLAGS="-x"
         else
-          MARKER="not integration and not client_process and not conformance"
+          MARKER="not integration and not client_process and not subprocess_heavy and not conformance"
           TIMEOUT="5"
           MAX_PROCS="4"
           EXTRA_FLAGS=""
         fi
 
+        # Windows previously ran serially: parallel workers crashed intermittently
+        # when many tests spawned stdio subprocesses (#2715, reverted in #2726).
+        # Most of those tests now run in-memory, but tests that spawn a fresh
+        # interpreter importing all of FastMCP still crash xdist workers on the
+        # 2-core Windows runners. They carry the subprocess_heavy marker and run
+        # in the serial client_process step instead.
         PARALLEL_FLAGS=""
-        if [ "$MAX_PROCS" != "0" ] && [ "${{ runner.os }}" != "Windows" ]; then
+        if [ "$MAX_PROCS" != "0" ]; then
           PARALLEL_FLAGS="--numprocesses auto --maxprocesses $MAX_PROCS --dist worksteal"
         fi
 

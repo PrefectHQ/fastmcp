@@ -46,7 +46,7 @@ class TestToolTimeout:
 
         @mcp.tool(timeout=5.0)
         async def fast_async_tool() -> str:
-            await anyio.sleep(0.1)
+            await anyio.sleep(0.01)
             return "completed"
 
         result = await mcp.call_tool("fast_async_tool")
@@ -59,7 +59,7 @@ class TestToolTimeout:
 
         @mcp.tool(timeout=5.0)
         def fast_sync_tool() -> str:
-            time.sleep(0.1)
+            time.sleep(0.01)
             return "completed"
 
         result = await mcp.call_tool("fast_sync_tool")
@@ -72,7 +72,7 @@ class TestToolTimeout:
 
         @mcp.tool(timeout=0.2)
         async def slow_async_tool() -> str:
-            await anyio.sleep(2.0)
+            await anyio.sleep(0.6)
             return "should not reach"
 
         # TimeoutError is caught and converted to ToolError by FastMCP
@@ -97,7 +97,7 @@ class TestToolTimeout:
 
         @mcp.tool(timeout=0.1)
         async def slow_tool() -> str:
-            await anyio.sleep(1.0)
+            await anyio.sleep(0.3)
             return "never"
 
         # Verify that ToolError is raised (timeout warning is logged to stderr)
@@ -109,7 +109,7 @@ class TestToolTimeout:
         from fastmcp.tools import Tool
 
         async def my_slow_tool() -> str:
-            await anyio.sleep(1.0)
+            await anyio.sleep(0.3)
             return "never"
 
         tool = Tool.from_function(my_slow_tool, timeout=0.1)
@@ -137,7 +137,7 @@ class TestToolTimeout:
 
         @mcp.tool(task=True, timeout=1.0)
         async def task_with_timeout() -> str:
-            await anyio.sleep(0.1)
+            await anyio.sleep(0.01)
             return "completed"
 
         # Tool should be registered successfully
@@ -153,17 +153,17 @@ class TestToolTimeout:
 
         @mcp.tool(timeout=1.0)
         async def short_timeout() -> str:
-            await anyio.sleep(0.1)
+            await anyio.sleep(0.01)
             return "short"
 
         @mcp.tool(timeout=5.0)
         async def long_timeout() -> str:
-            await anyio.sleep(0.1)
+            await anyio.sleep(0.01)
             return "long"
 
         @mcp.tool
         async def no_timeout() -> str:
-            await anyio.sleep(0.1)
+            await anyio.sleep(0.01)
             return "none"
 
         # All should complete successfully
@@ -184,7 +184,7 @@ class TestToolTimeout:
 
         @mcp.tool(timeout=0.1)
         async def times_out() -> str:
-            await anyio.sleep(1.0)
+            await anyio.sleep(0.3)
             return "never"
 
         # TimeoutError should be caught and converted to ToolError

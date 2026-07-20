@@ -40,7 +40,7 @@ inputs:
   model:
     description: "Model to use for Claude"
     required: false
-    default: "claude-opus-4-6"
+    default: "claude-opus-4-8"
 
   allowed-bots:
     description: "Allowed bot usernames, or '*' for all bots"

@@ -149,6 +149,7 @@ class TestBareSlimImport:
     The import must be deferred to the point of actual screening.
     """
 
+    @pytest.mark.subprocess_heavy
     def test_resources_import_without_sdk(self):
         code = textwrap.dedent(
             """

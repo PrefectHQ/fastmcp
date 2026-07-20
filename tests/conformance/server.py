@@ -116,9 +116,9 @@ async def test_error_handling() -> str:
 async def test_tool_with_logging(ctx: Context) -> str:
     """Sends log notifications during execution."""
     await ctx.info("Tool execution started")
-    await asyncio.sleep(0.05)
+    await asyncio.sleep(0.01)
     await ctx.info("Tool processing data")
-    await asyncio.sleep(0.05)
+    await asyncio.sleep(0.01)
     await ctx.info("Tool execution completed")
     return "Logging test complete."
 
@@ -127,9 +127,9 @@ async def test_tool_with_logging(ctx: Context) -> str:
 async def test_tool_with_progress(ctx: Context) -> str:
     """Reports progress notifications."""
     await ctx.report_progress(0, 100)
-    await asyncio.sleep(0.05)
+    await asyncio.sleep(0.01)
     await ctx.report_progress(50, 100)
-    await asyncio.sleep(0.05)
+    await asyncio.sleep(0.01)
     await ctx.report_progress(100, 100)
     return "Progress test complete."
 

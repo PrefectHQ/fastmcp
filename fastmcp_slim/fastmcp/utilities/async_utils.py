@@ -2,7 +2,7 @@
 
 import functools
 import inspect
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from typing import Any, Literal, TypeVar, overload
 
 import anyio
@@ -36,35 +36,55 @@ async def call_sync_fn_in_threadpool(
 
 @overload
 async def gather(
-    *awaitables: Awaitable[T],
+    awaitables: Iterable[Awaitable[T]],
+    *,
     return_exceptions: Literal[True],
 ) -> list[T | BaseException]: ...
 
 
 @overload
 async def gather(
-    *awaitables: Awaitable[T],
+    awaitables: Iterable[Awaitable[T]],
+    *,
     return_exceptions: Literal[False] = ...,
 ) -> list[T]: ...
 
 
 async def gather(
-    *awaitables: Awaitable[T],
+    awaitables: Iterable[Awaitable[T]],
+    *,
     return_exceptions: bool = False,
 ) -> list[T] | list[T | BaseException]:
     """Run awaitables concurrently and return results in order.
 
     Uses anyio TaskGroup for structured concurrency.
 
+    ``awaitables`` is consumed lazily, one item at a time, right before each
+    is handed to the task group. Callers with a dynamic number of awaitables
+    should pass a generator expression (e.g. ``gather(f(x) for x in xs)``)
+    rather than a list or list comprehension: a list comprehension calls
+    every ``f(x)`` up front, creating a batch of coroutine objects before
+    this function even starts, whereas a generator expression creates each
+    coroutine only as this function's own scheduling loop asks for it. That
+    matters because coroutine creation and scheduling can be interrupted
+    between any two bytecode instructions by a synchronous signal handler
+    (for example pytest-timeout's SIGALRM-based per-test timeout). If that
+    happens while a whole batch of coroutines is sitting unscheduled, they
+    are silently abandoned and eventually trigger a "coroutine was never
+    awaited" warning attributed to whatever unrelated code happens to be
+    running when the garbage collector gets to them. Lazy consumption keeps
+    the window in which a created-but-unscheduled coroutine can exist as
+    small as possible.
+
     Args:
-        *awaitables: Awaitables to run concurrently
+        awaitables: Iterable of awaitables to run concurrently.
         return_exceptions: If True, exceptions are returned in results.
                           If False, first exception cancels all and raises.
 
     Returns:
         List of results in the same order as input awaitables.
     """
-    results: list[T | BaseException] = [None] * len(awaitables)  # type: ignore[assignment]  # ty:ignore[invalid-assignment]
+    results: list[T | BaseException] = []
 
     async def run_at(i: int, aw: Awaitable[T]) -> None:
         try:
@@ -75,8 +95,26 @@ async def gather(
             else:
                 raise
 
+    pending = enumerate(awaitables)
     async with anyio.create_task_group() as tg:
-        for i, aw in enumerate(awaitables):
-            tg.start_soon(run_at, i, aw)
+        for i, aw in pending:
+            results.append(None)  # type: ignore[arg-type]  # ty:ignore[invalid-argument-type]
+            try:
+                tg.start_soon(run_at, i, aw)
+            except BaseException:
+                # `aw` was just created (possibly moments ago, by the
+                # generator's own iteration) but never handed off - close it
+                # explicitly so it isn't silently garbage collected later.
+                if inspect.iscoroutine(aw):
+                    aw.close()
+                # Lazy consumption keeps the leak window small, but a caller
+                # that passed an already-built sequence has coroutines sitting
+                # behind this one that were never scheduled either. Draining
+                # the iterator closes them too, so `gather` cannot leak
+                # regardless of how eagerly its argument was constructed.
+                for _, remaining in pending:
+                    if inspect.iscoroutine(remaining):
+                        remaining.close()
+                raise
 
     return results

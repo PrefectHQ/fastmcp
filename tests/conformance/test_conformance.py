@@ -55,7 +55,7 @@ def conformance_server(_require_npx):
             with socket.create_connection((HOST, port), timeout=1):
                 break
         except OSError:
-            time.sleep(0.1)
+            time.sleep(0.01)
     else:
         pytest.fail("Conformance server did not start in time")
 

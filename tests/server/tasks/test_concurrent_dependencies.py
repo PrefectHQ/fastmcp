@@ -26,7 +26,7 @@ async def test_concurrent_foreground_tools_with_context():
 
     @mcp.tool()
     async def slow_tool(name: str, ctx: Context) -> str:
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.01)
         results.append(name)
         return f"done:{name}"
 
@@ -77,7 +77,7 @@ async def test_concurrent_background_tasks_with_context():
 
     @mcp.tool(task=True)
     async def bg_tool(name: str, ctx: Context) -> str:
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.01)
         return f"bg:{name}"
 
     async with Client(mcp) as client:

@@ -48,7 +48,7 @@ jobs:
       - name: Run unit tests
         uses: ./.github/actions/run-pytest
 
-      - name: Run client process tests
+      - name: Run serial subprocess tests
         uses: ./.github/actions/run-pytest
         with:
           test-type: client_process
@@ -69,7 +69,7 @@ jobs:
       - name: Run unit tests
         uses: ./.github/actions/run-pytest
 
-      - name: Run client process tests
+      - name: Run serial subprocess tests
         uses: ./.github/actions/run-pytest
         with:
           test-type: client_process

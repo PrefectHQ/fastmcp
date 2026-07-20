@@ -41,7 +41,7 @@ try:
 except ImportError as e:
     raise ImportError(
         "The `anthropic` package is not installed. "
-        "Install it with `pip install fastmcp-slim[anthropic]` or add `anthropic` to your dependencies."
+        "Install it with `pip install 'fastmcp-slim[anthropic]'` or add `anthropic` to your dependencies."
     ) from e
 
 __all__ = ["AnthropicSamplingHandler"]

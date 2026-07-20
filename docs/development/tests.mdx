@@ -26,7 +26,7 @@ uv run pytest --cov=fastmcp
 uv run pytest -m "not integration"
 
 # Skip tests that spawn processes
-uv run pytest -m "not integration and not client_process"
+uv run pytest -m "not integration and not client_process and not subprocess_heavy"
 ```
 
 Tests should complete in under 1 second unless marked as integration tests. This speed encourages running them frequently, catching issues early.
@@ -60,6 +60,40 @@ async def test_stdio_transport():
         result = await client.call_tool("echo", {"message": "test"})
         assert result.content[0].text == "test"
 ```
+
+A third marker, `subprocess_heavy`, exists specifically for Windows CI stability. See [Windows CI and Test Parallelism](#windows-ci-and-test-parallelism) below for when to use it and why it exists.
+
+### Windows CI and Test Parallelism
+
+Windows CI ran the unit suite serially for months. [#2715](https://github.com/PrefectHQ/fastmcp/pull/2715) tried enabling `pytest-xdist` parallelism there in December 2025; [#2726](https://github.com/PrefectHQ/fastmcp/pull/2726) reverted it the next day because "Windows tests continue to fail with intermittent worker crashes." [#4554](https://github.com/PrefectHQ/fastmcp/pull/4554) re-enabled it after removing most of the subprocess pressure that caused those crashes, taking the Windows unit step from roughly 460s to 175s.
+
+That pressure came from three sources, all addressed by #4554: most HTTP tests moved in-process via `asgi_client` instead of binding real sockets, stdio lifecycle tests spawn a minimal stdlib responder (`tests/client/minimal_stdio_server.py`, ~0.03s to start) instead of a subprocess that runs `import fastmcp` (~0.7s), and roughly 80 real `sleep()` calls became deterministic waits on the condition each test actually cared about. Fewer, cheaper subprocesses competing under parallel workers left fewer chances for a worker to die.
+
+#### The `subprocess_heavy` marker
+
+One class of test still spawns a full Python interpreter that imports FastMCP — checking that a bare install doesn't need optional dependencies, or that a decorator works from a fresh process. Each spawn pays a full interpreter's startup and memory footprint, and a 2-core Windows runner already running 2 xdist workers has little headroom left to absorb that. These tests carry `@pytest.mark.subprocess_heavy` and run in the existing serial `client_process` CI step instead of alongside the parallel workers — `.github/actions/run-pytest/action.yml` routes `client_process or subprocess_heavy` to that step (`MAX_PROCS=0`) and excludes both markers from the parallel unit step.
+
+If a test runs `subprocess.run([sys.executable, "-c", ...])`, or otherwise starts a fresh interpreter that imports `fastmcp`, mark it `subprocess_heavy`. A subprocess that runs a minimal stdlib script with no FastMCP import doesn't need the marker — it's the interpreter startup and import that's expensive, not the subprocess itself.
+
+#### This is a mitigation, not a proof
+
+There is no root-cause diagnosis behind this fix, only a plausible one. During validation, one Windows run genuinely crashed a worker on `test_fastmcp_imports_without_legacy_httpx` — a fresh-interpreter test — with pytest-xdist reporting `worker 'gw1' crashed while running '...'` after execnet's channel saw `ConnectionResetError: [WinError 10054]`. Nothing in that log says *why* the worker died: memory exhaustion, handle exhaustion, and some Windows-specific `subprocess`/`execnet` interaction are all still consistent with what was observed. Marking the fresh-interpreter tests `subprocess_heavy` made the crash stop recurring, but "it stopped" is not the same as "we know why."
+
+Treat the next Windows worker crash as a test of this diagnosis. **If it lands on a test that is not a fresh-interpreter spawner, the `subprocess_heavy` theory was wrong** — the real problem is subprocess-under-xdist on Windows more generally, and isolating one marker's worth of tests was never going to fix that. The fallback is one conditional back in `run-pytest/action.yml`, restoring the pre-#4554 behavior:
+
+```bash
+PARALLEL_FLAGS=""
+if [ "$MAX_PROCS" != "0" ] && [ "${{ runner.os }}" != "Windows" ]; then
+  PARALLEL_FLAGS="--numprocesses auto --maxprocesses $MAX_PROCS --dist worksteal"
+fi
+```
+
+#### Two traps that aren't Windows-specific
+
+Two test-authoring bugs surfaced while validating this change. Neither is about Windows or parallelism, but both are worth watching for anywhere a real `sleep()` gets replaced with a wait:
+
+- **Match the wait condition to the assertion.** A test waited for "any callback fired," then asserted that a `completed` callback existed. That races, because an earlier `working` notification satisfies the wait before the `completed` one arrives. A deterministic wait is only as good as the condition it waits on — wait for the thing you actually assert.
+- **Don't assert on incidental timing.** A crash-recovery test asserted "at least one concurrent request fails" while a subprocess restarts, which quietly depended on the restart being slow. Once restart got faster, recovery could beat every in-flight request and the test started failing because the behavior *improved*. Assert the invariant instead: no hang, and no result served by the dead process.
 
 ## Writing Tests
 
@@ -299,22 +333,19 @@ async def test_database_tool():
 
 ### Testing Network Transports
 
-While in-memory testing covers most unit testing needs, you'll occasionally need to test actual network transports like HTTP or SSE. FastMCP provides two approaches: in-process async servers (preferred), and separate subprocess servers (for special cases).
+In-memory testing covers most unit testing needs, but some behavior only exists over HTTP: middleware, authentication, session management, header handling, and SSE streaming. To test those, serve your server over HTTP with `asgi_client`.
 
-#### In-Process Network Testing (Preferred)
+#### Testing Over HTTP
 
-<VersionBadge version="2.13.0" />
+<VersionBadge version="3.5.0" />
 
-For most network transport tests, use `run_server_async` as an async context manager. This runs the server as a task in the same process, providing fast, deterministic tests with full debugger support:
+`asgi_client` builds your server's real Starlette app, starts its lifespan, and hands you a connected `Client` that talks to it over the full HTTP stack. The one thing it skips is the socket: requests are dispatched straight into the ASGI application on the current event loop, so there is no port to bind, no uvicorn to start, and no connection to negotiate. Everything else — middleware, authentication, session management, SSE framing — runs exactly as it does in production.
 
 ```python
-import pytest
-from fastmcp import FastMCP, Client
-from fastmcp.client.transports import StreamableHttpTransport
-from fastmcp.utilities.tests import run_server_async
+from fastmcp import FastMCP
+from fastmcp.utilities.tests import asgi_client
 
 def create_test_server() -> FastMCP:
-    """Create a test server instance."""
     server = FastMCP("TestServer")
 
     @server.tool
@@ -323,26 +354,84 @@ def create_test_server() -> FastMCP:
 
     return server
 
-@pytest.fixture
-async def http_server() -> str:
-    """Start server in-process for testing."""
-    server = create_test_server()
-    async with run_server_async(server) as url:
-        yield url
-
-async def test_http_transport(http_server: str):
-    """Test actual HTTP transport behavior."""
-    async with Client(
-        transport=StreamableHttpTransport(http_server)
-    ) as client:
-        result = await client.ping()
-        assert result is True
-
+async def test_greet_over_http():
+    async with asgi_client(create_test_server()) as client:
         greeting = await client.call_tool("greet", {"name": "World"})
         assert greeting.data == "Hello, World!"
 ```
 
-The `run_server_async` context manager automatically handles server lifecycle and cleanup. This approach is faster than subprocess-based testing and provides better error messages.
+Pass `transport="sse"` to exercise the SSE app instead of streamable HTTP, `path=` to serve on a custom path, `headers=` and `auth=` to configure the client's requests, and any other keyword argument to configure the `Client` itself.
+
+```python
+async def test_tenant_header_is_visible_to_tools():
+    async with asgi_client(
+        create_test_server(),
+        headers={"X-Tenant-ID": "acme"},
+        timeout=5,
+    ) as client:
+        await client.ping()
+```
+
+#### Sharing One Server Across Tests
+
+When several tests share a server but each needs its own client, use `asgi_server` in a fixture. It yields an `ASGIServer`, whose `client()` method produces a fresh client — with its own session — on demand.
+
+```python
+import pytest
+from fastmcp import FastMCP
+from fastmcp.utilities.tests import ASGIServer, asgi_server
+
+@pytest.fixture
+async def http_server():
+    server = FastMCP("TestServer")
+
+    @server.tool
+    def greet(name: str) -> str:
+        return f"Hello, {name}!"
+
+    async with asgi_server(server) as running_server:
+        yield running_server
+
+async def test_greet(http_server: ASGIServer):
+    async with http_server.client() as client:
+        greeting = await client.call_tool("greet", {"name": "World"})
+        assert greeting.data == "Hello, World!"
+
+async def test_sessions_are_isolated(http_server: ASGIServer):
+    async with http_server.client() as first, http_server.client() as second:
+        assert await first.ping() is True
+        assert await second.ping() is True
+```
+
+For assertions about raw HTTP — status codes, response headers, metadata endpoints — `http_client()` returns an `httpx.AsyncClient` bound to the same app. Because nothing is listening on the network, this is the only way to make raw requests; a plain `httpx.AsyncClient()` cannot reach the server.
+
+```python
+async def test_unauthenticated_request_is_rejected(http_server: ASGIServer):
+    async with http_server.http_client() as http:
+        response = await http.post(http_server.url, json={"jsonrpc": "2.0", "id": 1})
+        assert response.status_code in (400, 401)
+```
+
+If you need to build the client transport yourself, `transport()` returns a `StreamableHttpTransport` or `SSETransport` already wired to the in-process app.
+
+#### Testing on a Real Port
+
+<VersionBadge version="2.13.0" />
+
+`run_server_async` starts a real uvicorn server on a real TCP port as a task in the current process and yields its URL. Reach for it only when the subject of the test is the network itself — real sockets, TLS, or a server that must be reachable by something other than an in-process client.
+
+```python
+from fastmcp import FastMCP, Client
+from fastmcp.utilities.tests import run_server_async
+
+async def test_server_binds_a_real_port():
+    server = FastMCP("TestServer")
+
+    async with run_server_async(server) as url:
+        assert url.startswith("http://127.0.0.1:")
+        async with Client(url) as client:
+            assert await client.ping() is True
+```
 
 #### Subprocess Testing (Special Cases)
 

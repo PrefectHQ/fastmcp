@@ -8,6 +8,18 @@ from fastmcp.client.oauth_callback import (
 from fastmcp.utilities.http import find_available_port
 
 
+async def _wait_until_listening(server) -> None:
+    """Poll until the callback server's socket is accepting connections.
+
+    uvicorn sets `Server.started = True` right after it binds and starts
+    listening on the socket, before `serve()` moves on to request handling,
+    so this is a deterministic readiness signal in place of a fixed sleep.
+    """
+    with anyio.fail_after(5):
+        while not server.started:
+            await anyio.sleep(0.001)
+
+
 async def test_oauth_callback_result_ignores_subsequent_callbacks():
     """Only the first callback should be captured in shared OAuth callback state."""
     port = find_available_port()
@@ -22,7 +34,7 @@ async def test_oauth_callback_result_ignores_subsequent_callbacks():
     async with anyio.create_task_group() as tg:
         tg.start_soon(server.serve)
 
-        await anyio.sleep(0.05)
+        await _wait_until_listening(server)
 
         async with httpx2.AsyncClient() as client:
             first = await client.get(
@@ -72,7 +84,7 @@ async def test_oauth_callback_result_captures_iss():
     async with anyio.create_task_group() as tg:
         tg.start_soon(server.serve)
 
-        await anyio.sleep(0.05)
+        await _wait_until_listening(server)
 
         async with httpx2.AsyncClient() as client:
             response = await client.get(
@@ -112,7 +124,7 @@ async def test_oauth_callback_result_captures_iss_on_error():
     async with anyio.create_task_group() as tg:
         tg.start_soon(server.serve)
 
-        await anyio.sleep(0.05)
+        await _wait_until_listening(server)
 
         async with httpx2.AsyncClient() as client:
             response = await client.get(

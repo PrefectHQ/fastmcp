@@ -390,7 +390,7 @@ async def execute_tools(
     # Execute in parallel
     if tool_concurrency == 0:
         # Unlimited parallel execution
-        return await gather(*[_execute_single_tool(tc) for tc in tool_calls])
+        return await gather(_execute_single_tool(tc) for tc in tool_calls)
     else:
         # Bounded parallel execution with semaphore
         semaphore = anyio.Semaphore(tool_concurrency)
@@ -399,7 +399,7 @@ async def execute_tools(
             async with semaphore:
                 return await _execute_single_tool(tool_use)
 
-        return await gather(*[bounded_execute(tc) for tc in tool_calls])
+        return await gather(bounded_execute(tc) for tc in tool_calls)
 
 
 # --- Helper functions for sampling ---

@@ -29,6 +29,7 @@ from fastmcp.tools.function_tool import DecoratedTool, FunctionTool, ToolMeta
         "from fastmcp.server import Context, FastMCP, create_proxy",
     ],
 )
+@pytest.mark.subprocess_heavy
 def test_component_import_works_in_fresh_interpreter(statement: str):
     result = subprocess.run(
         [sys.executable, "-c", statement],

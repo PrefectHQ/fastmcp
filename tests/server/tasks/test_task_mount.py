@@ -6,6 +6,7 @@ on mounted child servers through a parent server.
 """
 
 import asyncio
+import time
 
 import mcp_types as mt
 import pytest
@@ -140,7 +141,7 @@ class TestMountedToolTasks:
         """Can poll task status for mounted tool."""
         async with Client(parent_server) as client:
             task = await client.call_tool(
-                "child_slow_child_tool", {"duration": 0.5}, task=True
+                "child_slow_child_tool", {"duration": 0.05}, task=True
             )
 
             # Check status while running
@@ -162,15 +163,28 @@ class TestMountedToolTasks:
                 "child_slow_child_tool", {"duration": 10.0}, task=True
             )
 
-            # Let it start
-            await asyncio.sleep(0.1)
+            # Wait until the task is tracked as working before cancelling it
+            deadline = time.monotonic() + 5.0
+            status = await task.status()
+            while status.status != "working" and time.monotonic() < deadline:
+                await asyncio.sleep(0.005)
+                status = await task.status()
 
             # Cancel the task
             await task.cancel()
 
-            # Check status
+            # Cancellation propagation isn't instantaneous, so poll for the
+            # terminal state rather than asserting immediately after cancel().
+            deadline = time.monotonic() + 5.0
             status = await task.status()
-            assert status.status == "cancelled"
+            while status.status != "cancelled" and time.monotonic() < deadline:
+                await asyncio.sleep(0.005)
+                status = await task.status()
+
+            assert status.status == "cancelled", (
+                f"task did not reach 'cancelled' within 5s of cancel() "
+                f"(last status: {status.status!r})"
+            )
 
     async def test_graceful_degradation_sync_mounted_tool(self, parent_server):
         """Sync-only mounted tool returns error with task=True."""
