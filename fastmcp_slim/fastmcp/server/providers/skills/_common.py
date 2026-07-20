@@ -39,6 +39,11 @@ def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     Returns:
         Tuple of (frontmatter dict, remaining content)
     """
+    # YAML 1.2 allows a UTF-8 BOM at the start of a character stream; some
+    # Windows editors still emit one. Strip it so "---" is recognized (#4532).
+    if content.startswith("﻿"):
+        content = content[1:]
+
     if not content.startswith("---"):
         return {}, content
 

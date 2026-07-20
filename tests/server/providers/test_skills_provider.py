@@ -36,6 +36,19 @@ version: "1.0.0"
         frontmatter, body = parse_frontmatter(content)
         assert frontmatter["description"] == "A test skill"
         assert frontmatter["version"] == "1.0.0"
+
+    def test_frontmatter_with_utf8_bom(self):
+        content = (
+            "\ufeff---\n"
+            "name: bom-skill\n"
+            "description: Skill saved with a UTF-8 BOM\n"
+            "---\n"
+            "# BOM Skill\n"
+        )
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["name"] == "bom-skill"
+        assert frontmatter["description"] == "Skill saved with a UTF-8 BOM"
+        assert body.startswith("# BOM Skill")
         assert body.strip().startswith("# Skill Content")
 
     def test_frontmatter_with_tags_list(self):
