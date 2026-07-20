@@ -153,7 +153,7 @@ jobs:
           allowed_non_write_users: "*"
           allowed_bots: "marvin-context-protocol"
           claude_args: |
-            --allowedTools "Bash(gh label list:*)","Bash(bash .github/scripts/triage-label.sh:*)",mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__add_issue_comment,mcp__github__get_pull_request_files
+            --allowedTools "Bash(gh label list:*)","Bash(bash .github/scripts/triage-label.sh:*)",mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__add_issue_comment,mcp__github__get_pull_request,mcp__github__get_pull_request_files
           settings: |
             {
               "model": "claude-sonnet-5",
@@ -164,11 +164,16 @@ jobs:
               }
             }
 
-      # Triage is fire-and-forget: nobody watches a green run, so a blocked tool
-      # call has to fail the job or it goes unnoticed indefinitely. A too-narrow
-      # allowlist silently produced zero labels across a dozen PRs before anyone
-      # spotted it, because the run still reported success.
-      - name: Fail if any tool call was denied
+      # Triage is fire-and-forget: nobody watches a green run, so a broken
+      # allowlist has to fail the job or it goes unnoticed indefinitely — a
+      # mangled pattern silently produced zero labels across a dozen PRs
+      # because the run still reported success.
+      #
+      # Only denials of commands we MEANT to grant indicate that breakage. An
+      # agent reaching for something never on the allowlist (falling back to
+      # `gh issue view` when the API is down, say) is behaving normally, and
+      # failing on that would cry wolf during every GitHub incident.
+      - name: Fail if an allowlisted tool was denied
         if: always() && steps.marvin.conclusion != 'skipped'
         env:
           EXECUTION_FILE: ${{ steps.marvin.outputs.execution_file }}
@@ -190,23 +195,31 @@ jobs:
           # Anchor to result entries rather than recursing with `..`, which
           # descends into each denial's `tool_input` and double-counts any
           # denied command that happens to mention the field name.
-          if ! denials=$(jq -s '
+          if ! summary=$(jq -sr '
                 [ .[] | if type == "array" then .[] else . end ]
                 | map(select(type == "object" and .type == "result"))
-                | map(
-                    [ (.permission_denials | if type == "array" then length else 0 end),
-                      (.permission_denials_count | if type == "number" then . else 0 end) ]
-                    | max
-                  )
-                | add // 0
+                | map(.permission_denials // []) | flatten
+                | map(.tool_input.command // "")
+                | { total: length,
+                    granted: map(select(
+                      startswith("gh label list")
+                      or startswith("bash .github/scripts/triage-label.sh")
+                    ))
+                  }
+                | "\(.total)\t\(.granted | length)\t\(.granted | join(" | "))"
               ' "$file"); then
             echo "::error::Could not parse Marvin execution log ($file)."
             exit 1
           fi
-          echo "Permission denials: $denials"
-          if [[ "$denials" -gt 0 ]]; then
-            echo "::error::Marvin was denied $denials tool call(s), so triage likely applied no labels. Check the --allowedTools allowlist in this workflow: any Bash(...) pattern containing a space must be individually quoted, or it gets torn apart by whitespace splitting before it reaches the permission matcher."
+          IFS=$'\t' read -r total granted commands <<<"$summary"
+          echo "Denied tool calls: $total (of which allowlisted: $granted)"
+
+          if [[ "$granted" -gt 0 ]]; then
+            echo "::error::Marvin was denied $granted call(s) to tools this workflow grants, so it could not apply labels: ${commands}. The --allowedTools value is not reaching the permission matcher intact — claude_args is lexed with shell-quote, so any Bash(...) pattern containing a space must be quoted or it is split into fragments."
             exit 1
+          fi
+          if [[ "$total" -gt 0 ]]; then
+            echo "::notice::Marvin was denied $total call(s), none of them to tools this workflow grants. That is expected when it probes for a tool we deliberately withhold; the allowlist is intact."
           fi
 
       - name: Upload Marvin execution log
