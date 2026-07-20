@@ -5,7 +5,7 @@ These examples demonstrate FastMCP's sampling API, which allows server tools to 
 ## Prerequisites
 
 ```bash
-pip install fastmcp[anthropic]
+pip install 'fastmcp[anthropic]'
 export ANTHROPIC_API_KEY=your-key
 ```
 
