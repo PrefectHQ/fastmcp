@@ -707,7 +707,9 @@ class TransformedTool(Tool):
         schema = {
             "type": "object",
             "properties": new_props,
-            "required": list(new_required),
+            # Order `required` by property position so the schema is deterministic
+            # across processes; `list(set(...))` depends on PYTHONHASHSEED.
+            "required": [name for name in new_props if name in new_required],
             "additionalProperties": False,
         }
 

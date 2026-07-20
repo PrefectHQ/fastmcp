@@ -133,6 +133,25 @@ def test_tool_change_arg_name(add_tool):
     assert new_tool.parameters["required"] == ["new_x"]
 
 
+def test_transformed_required_follows_property_order():
+    """A transformed tool's ``required`` list follows the property order, so the
+    schema is deterministic across processes rather than depending on set
+    iteration order (``PYTHONHASHSEED``). Regression test for #4565.
+    """
+
+    def base(alpha: int, beta: str, gamma: float, delta: bool, epsilon: int) -> str:
+        return "x"
+
+    new_tool = Tool.from_tool(
+        Tool.from_function(base), transform_args={"alpha": ArgTransform(name="a")}
+    )
+
+    required = new_tool.parameters["required"]
+    property_order = list(new_tool.parameters["properties"])
+    assert required == [name for name in property_order if name in set(required)]
+    assert required == ["a", "beta", "gamma", "delta", "epsilon"]
+
+
 def test_tool_change_arg_description(add_tool):
     new_tool = Tool.from_tool(
         add_tool, transform_args={"old_x": ArgTransform(description="new description")}
