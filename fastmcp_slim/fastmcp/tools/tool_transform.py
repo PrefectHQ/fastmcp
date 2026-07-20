@@ -707,7 +707,8 @@ class TransformedTool(Tool):
         schema = {
             "type": "object",
             "properties": new_props,
-            "required": list(new_required),
+            # Iterate props (not the set) for deterministic ordering
+            "required": [p for p in new_props if p in new_required],
             "additionalProperties": False,
         }
 
@@ -899,7 +900,11 @@ class TransformedTool(Tool):
         result = {
             "type": "object",
             "properties": merged_props,
-            "required": list(final_required),
+            # Iterate props (not the set) for deterministic ordering; keep any
+            # required names not present in properties (sorted) rather than
+            # silently dropping them.
+            "required": [p for p in merged_props if p in final_required]
+            + sorted(final_required - set(merged_props)),
             "additionalProperties": False,
         }
 
