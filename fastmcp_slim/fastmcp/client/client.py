@@ -31,6 +31,11 @@ from mcp.client.caching import (
     ClientResponseCache,
     InMemoryResponseCacheStore,
 )
+from mcp.client.client import (
+    _evicting_message_handler,
+    _fold_extensions,
+    _synthesize_discover,
+)
 from mcp.client.extension import (
     ClaimContext,
     ClientExtension,
@@ -136,139 +141,6 @@ ConnectMode = Literal["legacy", "auto"] | str
 
 The ``str`` arm is only for the version-pin case; ``Client.__init__`` rejects any other value.
 """
-
-
-def _synthesize_discover(protocol_version: str) -> mcp_types.DiscoverResult:
-    """Build a minimal ``DiscoverResult`` for a pinned modern version (no wire probe).
-
-    Mirrors the SDK Client's ``_synthesize_discover``: the version is pinned but the
-    server identity is unknown, so ``server_info`` is empty.
-    """
-    return mcp_types.DiscoverResult(
-        supported_versions=[protocol_version],
-        capabilities=mcp_types.ServerCapabilities(),
-        server_info=mcp_types.Implementation(name="", version=""),
-        result_type="complete",
-        ttl_ms=0,
-        cache_scope="public",
-    )
-
-
-@dataclass
-class _FoldedExtensions:
-    """`Client(extensions=...)` folded into the shapes `ClientSession` consumes.
-
-    `ad` maps each extension identifier to its advertised settings (the SEP-2133
-    capability ad), `claims` maps each identifier to its `ResultClaim`s, `bindings`
-    is the flat list of `NotificationBinding`s the extensions observe, and `by_model`
-    indexes every claim by its result model so a claimed `tools/call` result can be
-    routed back to the owning resolver.
-    """
-
-    ad: dict[str, dict[str, Any]]
-    claims: dict[str, tuple[ResultClaim[Any], ...]]
-    bindings: list[NotificationBinding[Any]]
-    by_model: dict[type[mcp_types.Result], ResultClaim[Any]]
-
-
-def _fold_extensions(
-    extensions: Sequence[ClientExtension] | None,
-) -> _FoldedExtensions:
-    """Decompose `ClientExtension` instances into `ClientSession` kwargs.
-
-    Mirrors the SDK Client's own folding, using only the public `ClientExtension`
-    surface (`settings()`, `claims()`, `notifications()`). Duplicate identifiers,
-    result-type tags, or notification methods across extensions raise here rather
-    than at session construction, naming both owners. `by_model` is the model→claim
-    index the resolution path uses to finish a claimed result.
-    """
-    folded = _FoldedExtensions(ad={}, claims={}, bindings=[], by_model={})
-    if not extensions:
-        return folded
-    if isinstance(extensions, Mapping):
-        raise TypeError(
-            "extensions= takes a sequence of ClientExtension instances; use "
-            "mcp.client.advertise(identifier, settings) for an advertise-only entry"
-        )
-    claim_owners: dict[str, str] = {}
-    binding_owners: dict[str, str] = {}
-    for extension in extensions:
-        identifier = getattr(extension, "identifier", None)
-        if identifier is None:
-            raise ValueError(
-                f"{type(extension).__name__} has no `identifier`; a ClientExtension "
-                "must set the `identifier` class attribute (or assign one in "
-                "`__init__`) before it can be used"
-            )
-        if identifier in folded.ad:
-            raise ValueError(
-                f"extension identifier {identifier!r} is passed more than once"
-            )
-        folded.ad[identifier] = extension.settings()
-        extension_claims = tuple(extension.claims())
-        for claim in extension_claims:
-            tag = claim.result_type
-            if tag in claim_owners:
-                owner = claim_owners[tag]
-                both = (
-                    f"extension {identifier!r} claims"
-                    if owner == identifier
-                    else f"extensions {owner!r} and {identifier!r} both claim"
-                )
-                raise ValueError(
-                    f"{both} resultType {tag!r}; a wire tag can have only one resolver"
-                )
-            claim_owners[tag] = identifier
-            # Each model pins its result_type Literal to one tag, so this cannot collide.
-            folded.by_model[claim.model] = claim
-        if extension_claims:
-            folded.claims[identifier] = extension_claims
-        for binding in extension.notifications():
-            if binding.method in binding_owners:
-                owner = binding_owners[binding.method]
-                both = (
-                    f"extension {identifier!r} binds"
-                    if owner == identifier
-                    else f"extensions {owner!r} and {identifier!r} both bind"
-                )
-                raise ValueError(
-                    f"{both} notification method {binding.method!r}; a method can "
-                    "have only one observer"
-                )
-            binding_owners[binding.method] = identifier
-            folded.bindings.append(binding)
-    return folded
-
-
-def _evicting_message_handler(
-    cache: ClientResponseCache, user_handler: MessageHandlerFnT | None
-) -> MessageHandlerFnT:
-    """Compose cache eviction over an existing message handler (SEP-2549).
-
-    A server notification (tools/list_changed, resource updates, etc.) evicts the
-    entries it invalidates *before* the wrapped handler runs, so a downstream
-    consumer never observes a change while a stale cached listing is still served.
-    Mirrors the SDK Client's `_evicting_message_handler`, but delegates to FastMCP's
-    own handler chain rather than clobbering it. Eviction faults are contained: a
-    cache-store error must never block notification delivery.
-    """
-
-    async def handler(
-        message: Any,
-    ) -> None:
-        if isinstance(message, mcp_types.ServerNotification):
-            try:
-                await cache.evict_for_notification(message)
-            except Exception:
-                logger.exception(
-                    "Response cache eviction failed; the notification is still delivered"
-                )
-        if user_handler is not None:
-            await user_handler(message)
-        else:
-            await anyio.lowlevel.checkpoint()
-
-    return handler
 
 
 @dataclass
@@ -1306,7 +1178,7 @@ class Client(
         """
         folded = _fold_extensions(self._extensions_arg)
 
-        claims: dict[str, tuple[ResultClaim[Any], ...]] = dict(folded.claims)
+        claims: dict[str, tuple[ResultClaim[Any], ...]] = dict(folded.claims or {})
         by_model: dict[type[mcp_types.Result], ResultClaim[Any]] = dict(folded.by_model)
         for identifier, extra in (self._result_claims_arg or {}).items():
             existing = claims.get(identifier, ())
@@ -1319,7 +1191,7 @@ class Client(
             # The internal task binding must lead so user bindings extend it.
             "notification_bindings": [
                 self._task_status_binding(),
-                *folded.bindings,
+                *(folded.bindings or ()),
             ],
         }
         if folded.ad:
