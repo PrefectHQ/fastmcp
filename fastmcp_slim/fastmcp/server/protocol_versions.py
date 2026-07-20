@@ -34,6 +34,21 @@ reads it as guidance rather than as a dead end: refused at ``server/discover``
 by a handshake-only server, it sees handshake versions in ``supported`` and
 falls back to the initialize handshake on its own.
 
+FastMCP can only *veto* a connection, never steer the version the peer settles
+on, and the two eras negotiate their version differently — so enforcement is
+era-aware. A modern connection pins an exact version in every per-request
+envelope, so a modern-version declaration enforces exact membership. The
+handshake era is negotiated by the SDK's initialize handler
+(``ServerRunner._negotiate_initialize``), which honors the client's requested
+revision (or counters with the newest handshake revision) with no knowledge of
+this declaration; FastMCP cannot make it counter-offer a specific revision. A
+handshake-version declaration therefore enforces *era* membership, not an exact
+revision: a server that declares any handshake version serves the handshake era
+and accepts the handshake, running at whatever revision the SDK negotiates, and
+only a server that declares no handshake version refuses it. Pinning a single
+handshake revision (``["2025-06-18"]``) narrows nothing the SDK will honor — the
+connection still settles on whatever revision the client and SDK negotiate.
+
 Declaring nothing (the default) serves every era the SDK supports.
 """
 
@@ -123,13 +138,41 @@ def _remedy_for(versions: Sequence[str]) -> str:
     return "Use one of the protocol versions this server serves."
 
 
+def _serves_version(allowed: Sequence[str], version: str) -> bool:
+    """Whether a server declaring ``allowed`` serves a connection at ``version``.
+
+    Enforcement is era-aware because the two eras negotiate their version
+    differently and FastMCP can only *veto* a connection — never steer the
+    version the peer settles on:
+
+    * A modern version rides a per-request envelope that pins an exact version,
+      so membership is exact: the server serves it only when ``version`` is in
+      ``allowed``.
+    * A handshake version is negotiated by the SDK's initialize handler, which
+      honors the client's requested revision (or counters with the newest
+      handshake revision) with no knowledge of ``allowed``. FastMCP cannot make
+      the SDK counter-offer a specific revision, so a handshake-version pin
+      asserts *era* membership only: the server serves the handshake connection
+      when it declared any handshake version, whatever revision the SDK settled
+      on.
+    """
+    if version in HANDSHAKE_PROTOCOL_VERSIONS:
+        return not set(allowed).isdisjoint(HANDSHAKE_PROTOCOL_VERSIONS)
+    return version in allowed
+
+
 def protocol_version_error(fastmcp: FastMCP, version: str) -> MCPError | None:
     """The refusal for ``version``, or ``None`` when the server serves it.
 
     A server that declared nothing (the default) serves every version and never
-    refuses. Otherwise this is plain set membership: the declared versions are a
-    set, not a bound, so a handshake-only server refuses modern connections just
-    as a modern-only server refuses handshake connections.
+    refuses. Otherwise the decision is era-aware set membership (see
+    ``_serves_version``): a modern version must be an exact member, while a
+    handshake version is served whenever the declaration includes any handshake
+    version, because the SDK negotiates the handshake revision and FastMCP can
+    only veto — not steer — the version the connection settles on. A
+    handshake-only server still refuses modern connections just as a modern-only
+    server refuses handshake connections; only within-handshake revision pinning
+    is unenforceable.
 
     The refusal is the spec-standard ``-32022`` unsupported-protocol-version
     error carrying the server's supported list, which is what a negotiating
@@ -138,7 +181,7 @@ def protocol_version_error(fastmcp: FastMCP, version: str) -> MCPError | None:
     to the initialize handshake instead of failing the connect.
     """
     allowed = fastmcp.protocol_versions
-    if allowed is None or version in allowed:
+    if allowed is None or _serves_version(allowed, version):
         return None
     return MCPError(
         code=UNSUPPORTED_PROTOCOL_VERSION,
@@ -160,7 +203,9 @@ def handshake_negotiated_version(requested: str | None) -> str:
     requested handshake revision is honored; anything else (an unknown string,
     or a modern-era version the handshake cannot serve) counters with the newest
     handshake revision. The connection operates at the returned version, so it is
-    what the membership check must compare against.
+    the honest value to report as ``requested`` when a modern-only server refuses
+    the handshake — the enforcement decision itself is era-aware (see
+    ``_serves_version``) and does not turn on this exact revision.
     """
     if requested is not None and requested in HANDSHAKE_PROTOCOL_VERSIONS:
         return requested
@@ -176,6 +221,14 @@ def enforce_handshake_protocol_version(
     Called from the framework-owned initialize path before the handshake
     commits, so the client sees a clear connect-time refusal naming what the
     server serves instead of a confusing era error mid tool-call.
+
+    Enforcement is era-level (see ``_serves_version``): a server that declares
+    any handshake version serves the handshake era and accepts the handshake,
+    even when the client offers a different handshake revision than the one
+    pinned — the SDK negotiates the revision and FastMCP cannot steer it, only
+    veto. The refusal fires only for a genuine cross-era mismatch: a modern-only
+    server has no handshake version to share, so it refuses the handshake and
+    names the modern versions it does serve.
     """
     if fastmcp.protocol_versions is None or init_message is None:
         return

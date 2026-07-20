@@ -4,9 +4,11 @@ coherence checks.
 A server declares the *set* of protocol versions it serves. Membership — not
 ordering — decides whether a connection is accepted, so a handshake-only server
 refuses modern connections just as a modern-only server refuses handshake
-connections. A startup check warns (never raises) when a declared set cannot
-carry a capability the server actually uses, and stays silent when nothing was
-declared.
+connections. Enforcement is era-aware: FastMCP can only veto a connection, and
+the SDK negotiates the handshake revision with no knowledge of the declaration,
+so a handshake-version pin asserts the handshake *era*, not an exact revision. A
+startup check warns (never raises) when a declared set cannot carry a capability
+the server actually uses, and stays silent when nothing was declared.
 """
 
 from __future__ import annotations
@@ -252,20 +254,63 @@ def _initialize_request(version: str) -> mcp_types.InitializeRequest:
 
 
 @pytest.mark.parametrize("offered", ["2024-11-05", "2025-03-26", "2025-06-18"])
-def test_pinned_version_refuses_older_handshake(offered):
-    """The SDK client cannot pin a handshake-era version through `mode`, so the
-    older-handshake refusal is exercised at the enforcement hook."""
+def test_pinned_version_accepts_other_handshake_revision(offered):
+    """A handshake-version pin asserts the handshake *era*, not an exact revision.
+
+    FastMCP can only veto the handshake, and the SDK negotiates the revision with
+    no knowledge of the pin — so a server pinned to one handshake revision still
+    accepts a client offering another handshake revision. The connection just
+    settles on whatever the SDK negotiated, not on the pinned revision. (This
+    replaces a test that asserted the opposite, which encoded the pre-fix bug:
+    refusing an ordinary handshake client whenever it offered a handshake
+    revision other than the pinned one.)
+    """
     mcp = FastMCP("pinned", protocol_versions=["2025-11-25"])
 
-    with pytest.raises(MCPError) as excinfo:
-        enforce_handshake_protocol_version(mcp, _initialize_request(offered))
-    assert "2025-11-25" in excinfo.value.message
-    assert excinfo.value.code == mcp_types.UNSUPPORTED_PROTOCOL_VERSION
+    # No raise: the pinned revision and the offered revision are both handshake.
+    enforce_handshake_protocol_version(mcp, _initialize_request(offered))
 
 
 def test_pinned_version_accepts_matching_handshake():
     mcp = FastMCP("pinned", protocol_versions=["2025-11-25"])
     enforce_handshake_protocol_version(mcp, _initialize_request("2025-11-25"))
+
+
+@pytest.mark.parametrize("offered", ["2025-11-25", "2025-06-18", "garbage", None])
+def test_older_handshake_pin_accepts_any_handshake_offer_at_hook(offered):
+    """The review-comment bug, at the enforcement hook.
+
+    A server pinned to an older handshake revision must not refuse a client that
+    offers a newer (or unknown, which the SDK counters to the newest) handshake
+    revision. The SDK negotiates within the handshake era regardless of the pin,
+    and FastMCP cannot counter-offer the pinned revision — only veto — so the
+    honest behavior is to accept, since the server does serve the handshake era.
+    """
+    mcp = FastMCP("older-pin", protocol_versions=["2024-11-05"])
+
+    # No raise: the server serves the handshake era, so the handshake is served.
+    enforce_handshake_protocol_version(mcp, _initialize_request(offered or "garbage"))
+
+
+async def test_older_handshake_pin_accepts_normal_client_end_to_end():
+    """End-to-end review-comment regression: a server pinned to `2024-11-05`
+    accepts an ordinary legacy client that requests `2025-11-25`.
+
+    The pin declares the handshake era; the SDK negotiates the revision. The
+    connection settles on `2025-11-25` (what the SDK negotiated), not the pinned
+    `2024-11-05`, which is exactly why a handshake-revision pin is era-level: the
+    server cannot force the client down to the pinned revision.
+    """
+    mcp = FastMCP("older-pin", protocol_versions=["2024-11-05"])
+
+    @mcp.tool
+    def add(a: int, b: int) -> int:
+        return a + b
+
+    async with SDKClient(_server(mcp), mode="legacy") as client:
+        assert client.protocol_version == "2025-11-25"
+        result = await client.list_tools()
+    assert [t.name for t in result.tools] == ["add"]
 
 
 def test_unrestricted_server_never_refuses_handshake():
