@@ -101,6 +101,19 @@ class TestDisconnect:
         await connect_task
         await transport.disconnect()
 
+    async def test_caller_cancellation_wins_when_connection_is_also_cancelled(self):
+        transport = StdioTransport(command="python", args=[])
+        connect_task = asyncio.create_task(asyncio.Event().wait())
+        transport._connect_task = connect_task
+
+        disconnect_task = asyncio.create_task(transport.disconnect())
+        await asyncio.sleep(0)
+        connect_task.cancel()
+        disconnect_task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await disconnect_task
+
 
 class TestParallelCalls:
     @pytest.fixture
