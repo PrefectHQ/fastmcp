@@ -36,8 +36,8 @@ class TestServerIcons:
         )
 
         # Verify that icons and website_url are passed to the underlying server
-        async with Client(mcp, mode="legacy") as client:
-            server_info = client.initialize_result.server_info
+        async with Client(mcp) as client:
+            server_info = client.session.server_info
             assert server_info.website_url == "https://example.com"
             assert server_info.icons == icons
 
@@ -45,8 +45,8 @@ class TestServerIcons:
         """Test that server works without icons and websiteUrl."""
         mcp = FastMCP(name="TestServer")
 
-        async with Client(mcp, mode="legacy") as client:
-            server_info = client.initialize_result.server_info
+        async with Client(mcp) as client:
+            server_info = client.session.server_info
             assert server_info.website_url is None
             assert server_info.icons is None
 
@@ -290,8 +290,8 @@ class TestIconTypes:
 
         mcp = FastMCP("TestServer", icons=icons)
 
-        async with Client(mcp, mode="legacy") as client:
-            server_info = client.initialize_result.server_info
+        async with Client(mcp) as client:
+            server_info = client.session.server_info
             assert len(server_info.icons) == 3
             assert server_info.icons == icons
 
@@ -319,8 +319,8 @@ class TestIconTypes:
 
         mcp = FastMCP("TestServer", icons=icons)
 
-        async with Client(mcp, mode="legacy") as client:
-            server_info = client.initialize_result.server_info
+        async with Client(mcp) as client:
+            server_info = client.session.server_info
             assert server_info.icons[0].src == "https://example.com/icon.png"
             assert server_info.icons[0].mime_type is None
             assert server_info.icons[0].sizes is None
@@ -336,8 +336,8 @@ class TestIconTheme:
 
         mcp = FastMCP("TestServer", icons=icons)
 
-        async with Client(mcp, mode="legacy") as client:
-            server_info = client.initialize_result.server_info
+        async with Client(mcp) as client:
+            server_info = client.session.server_info
             assert server_info.icons[0].theme == theme
 
     async def test_icon_without_theme_is_none(self):
@@ -346,8 +346,8 @@ class TestIconTheme:
 
         mcp = FastMCP("TestServer", icons=icons)
 
-        async with Client(mcp, mode="legacy") as client:
-            server_info = client.initialize_result.server_info
+        async with Client(mcp) as client:
+            server_info = client.session.server_info
             assert server_info.icons[0].theme is None
 
 

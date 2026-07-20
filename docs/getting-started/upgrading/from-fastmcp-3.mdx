@@ -180,6 +180,10 @@ Sampling is the exception that does not come back, and the reason is the protoco
 | `ctx.elicit` | Supported | Use the guard pattern (return `InputRequiredResult`) |
 | `ctx.sample` / `ctx.sample_step` | Supported (deprecated) | Removed — call an LLM server-side |
 | `ctx.list_roots` | Supported | Via the guard pattern (`input_requests` carries roots requests) |
+| `Middleware.on_initialize` | Runs on connect | Never runs — there is no `initialize` handshake |
+| Session state (`ctx.set_state` across calls) | Persists for the session | Does not persist — every request is a fresh connection |
 | Tasks (via the FastMCP client) | Supported | Not yet |
 
 If your tools rely on `ctx.elicit` or `ctx.list_roots`, they continue to work against clients on the earlier eras; on the modern era, reach for the guard pattern instead (see [Elicitation on the modern protocol](/servers/elicitation#elicitation-on-the-modern-protocol)). Sampling is deprecated on every era and will not return on modern connections — migrate those tools to server-side LLM calls.
+
+Two of these bite by default now, because **`fastmcp.Client` defaults to `mode="auto"`** in v4 — an ordinary `Client(server)` negotiates the newest protocol both sides share, which against a FastMCP server is the sessionless `2026-07-28` era. On that era there is no `initialize` handshake, so a `Middleware.on_initialize` hook never runs; and each request is a fresh connection, so state written with `ctx.set_state` in one call is not visible in the next. A server that gates access in `on_initialize` or relies on per-session state must keep its clients on the session-based era. The narrow escape is per-client: `Client(server, mode="legacy")`. The durable, server-side answer is to declare the versions the server actually serves so a modern client is refused at connect time rather than silently losing those features — see the server's protocol-version restriction (added alongside this change).

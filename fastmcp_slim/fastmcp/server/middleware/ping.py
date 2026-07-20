@@ -71,6 +71,15 @@ class PingMiddleware(Middleware):
                         ping_task.cancel()
                         with contextlib.suppress(asyncio.CancelledError):
                             await ping_task
+                        # `ping_task` may be cancelled before its first
+                        # scheduler turn (a connection can be built and torn
+                        # down within a single request on the modern,
+                        # per-request `Connection` path), in which case its
+                        # body - and the `finally` in `_ping_loop` that would
+                        # otherwise discard this entry - never runs. Discard
+                        # unconditionally here so a connection that closes
+                        # before the loop starts doesn't leak its entry.
+                        self._active_sessions.discard(connection_id)
 
                     connection.exit_stack.push_async_callback(_cancel_ping)
 

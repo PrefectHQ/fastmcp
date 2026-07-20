@@ -4,6 +4,10 @@ Regression focus: the `sampling create_message` span is created with
 `record_exception=False, set_status_on_exception=False` and records the
 exception manually in its `except` block. A failed sampling call must
 therefore produce exactly ONE exception event, not two.
+
+`ctx.sample` requires the server to send a request down to the client, which
+only the older protocol's back-channel supports, so every client below pins
+`mode="legacy"`.
 """
 
 from __future__ import annotations

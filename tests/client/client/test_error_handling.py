@@ -1,24 +1,13 @@
 """Client error handling tests.
 
-Resource, resource-template, and prompt error *detail* surfacing is a
-handshake-era behavior: the legacy read/get path converts a `ResourceError` /
-`PromptError` into a client-visible message, while the modern (2026-07-28)
-server runner surfaces the raised exception as a generic "Internal server
-error". Tests asserting the detailed message are pinned to `mode="legacy"`;
-tool-error tests (which flow through an `isError` `CallToolResult`) are
-era-neutral and run on the default `auto`.
-
-# TODO(defect): `_on_read_resource` / `_on_get_prompt` in
-# fastmcp_slim/fastmcp/server/mixins/mcp_operations.py only catch
-# `(DisabledError, NotFoundError)`, unlike `_on_call_tool` which catches
-# `FastMCPError` broadly and returns the message as an `is_error` result. A
-# `ResourceError`/`PromptError` therefore escapes as a raw exception; on the
-# modern protocol `modern_error_data` only special-cases `MCPError`/
-# `ValidationError` and otherwise masks it as a generic "Internal server
-# error" (deliberately, so handler internals don't leak) - so this happens
-# regardless of `mask_error_details`, and a client-input error is
-# indistinguishable from a real server bug. See the matching TODO on
-# `test_server_deserialization_error` in `tests/client/client/test_client.py`.
+Resource, resource-template, and prompt error *detail* surfacing is
+era-neutral. `_on_read_resource` / `_on_get_prompt` in
+`fastmcp_slim/fastmcp/server/mixins/mcp_operations.py` catch `FastMCPError`
+broadly and translate it into an `MCPError` via `to_mcp_error`, mirroring how
+`_on_call_tool` returns tool errors as an `isError` `CallToolResult`. The
+detailed message (a `ResourceError`/`PromptError`, or the `ResourceError`/
+`PromptError` that wraps an arbitrary handler exception) reaches the client
+on the default `auto` mode exactly as it does on `mode="legacy"`.
 """
 
 import logging
@@ -106,7 +95,7 @@ class TestErrorHandling:
         async def exception_resource():
             raise ValueError("This is an internal error (sensitive)")
 
-        client = Client(transport=FastMCPTransport(mcp), mode="legacy")
+        client = Client(transport=FastMCPTransport(mcp))
 
         async with client:
             with pytest.raises(Exception) as excinfo:
@@ -122,7 +111,7 @@ class TestErrorHandling:
         async def exception_resource():
             raise ValueError("This is an internal error (sensitive)")
 
-        client = Client(transport=FastMCPTransport(mcp), mode="legacy")
+        client = Client(transport=FastMCPTransport(mcp))
 
         async with client:
             with pytest.raises(Exception) as excinfo:
@@ -138,7 +127,7 @@ class TestErrorHandling:
         async def error_resource():
             raise ResourceError("This is a resource error (xyz)")
 
-        client = Client(transport=FastMCPTransport(mcp), mode="legacy")
+        client = Client(transport=FastMCPTransport(mcp))
 
         async with client:
             with pytest.raises(Exception) as excinfo:
@@ -152,7 +141,7 @@ class TestErrorHandling:
         async def exception_resource(id: str):
             raise ValueError("This is an internal error (sensitive)")
 
-        client = Client(transport=FastMCPTransport(mcp), mode="legacy")
+        client = Client(transport=FastMCPTransport(mcp))
 
         async with client:
             with pytest.raises(Exception) as excinfo:
@@ -168,7 +157,7 @@ class TestErrorHandling:
         async def exception_resource(id: str):
             raise ValueError("This is an internal error (sensitive)")
 
-        client = Client(transport=FastMCPTransport(mcp), mode="legacy")
+        client = Client(transport=FastMCPTransport(mcp))
 
         async with client:
             with pytest.raises(Exception) as excinfo:
@@ -184,7 +173,7 @@ class TestErrorHandling:
         async def error_resource(id: str):
             raise ResourceError("This is a resource error (xyz)")
 
-        client = Client(transport=FastMCPTransport(mcp), mode="legacy")
+        client = Client(transport=FastMCPTransport(mcp))
 
         async with client:
             with pytest.raises(Exception) as excinfo:
@@ -347,7 +336,7 @@ class TestLogLevel:
                 "Resource unavailable, try again later", log_level=logging.WARNING
             )
 
-        async with Client(transport=FastMCPTransport(mcp), mode="legacy") as client:
+        async with Client(transport=FastMCPTransport(mcp)) as client:
             with caplog.at_level(logging.WARNING):
                 with pytest.raises(Exception) as exc_info:
                     await client.read_resource_mcp("test://custom")
@@ -370,7 +359,7 @@ class TestLogLevel:
         def regular_resource():
             raise ResourceError("Something went wrong")
 
-        async with Client(transport=FastMCPTransport(mcp), mode="legacy") as client:
+        async with Client(transport=FastMCPTransport(mcp)) as client:
             with caplog.at_level(logging.ERROR):
                 with pytest.raises(Exception) as exc_info:
                     await client.read_resource_mcp("test://regular")
@@ -392,7 +381,7 @@ class TestLogLevel:
                 "Insufficient context, provide more details", log_level=logging.WARNING
             )
 
-        async with Client(transport=FastMCPTransport(mcp), mode="legacy") as client:
+        async with Client(transport=FastMCPTransport(mcp)) as client:
             with caplog.at_level(logging.WARNING):
                 with pytest.raises(Exception) as exc_info:
                     await client.get_prompt("custom_level_prompt")
@@ -415,7 +404,7 @@ class TestLogLevel:
         def regular_prompt():
             raise PromptError("Something went wrong")
 
-        async with Client(transport=FastMCPTransport(mcp), mode="legacy") as client:
+        async with Client(transport=FastMCPTransport(mcp)) as client:
             with caplog.at_level(logging.ERROR):
                 with pytest.raises(Exception) as exc_info:
                     await client.get_prompt("regular_prompt")

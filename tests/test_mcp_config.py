@@ -140,6 +140,23 @@ class TestConfigTransportLegacyOnly:
         transport = MCPConfigTransport(config)
         assert transport.legacy_only is True
 
+    def test_transforming_single_server_wrapper_is_legacy_only(self):
+        """A single-server config that uses tool transforms or tag filters wraps
+        a legacy-pinned proxy; the wrapper transport must advertise legacy-only
+        so a default `mode="auto"` frontend negotiates the same era as the
+        backend rather than negotiating modern against a legacy upstream."""
+        config = {
+            "mcpServers": {
+                "a": {
+                    "url": "https://a.example.com/mcp",
+                    "include_tags": ["public"],
+                },
+            },
+        }
+        mcp_config = MCPConfig.from_dict(config)
+        transport = mcp_config.mcpServers["a"].to_transport()
+        assert transport.legacy_only is True
+
 
 def test_parse_single_stdio_config():
     config = {

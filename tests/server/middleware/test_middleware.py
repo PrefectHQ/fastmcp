@@ -173,10 +173,13 @@ class TestMiddlewareHooks:
     async def test_call_tool(
         self, mcp_server: FastMCP, recording_middleware: RecordingMiddleware
     ):
-        async with Client(mcp_server, mode="legacy") as client:
+        async with Client(mcp_server) as client:
             await client.call_tool("add", {"a": 1, "b": 2})
 
-        assert recording_middleware.assert_called(at_least=9)
+        # The floor is lower than a legacy connection's 11: the modern
+        # `server/discover` negotiation fires 2 generic hooks, vs. 5 for the
+        # older `initialize` request plus its `notifications/initialized`.
+        assert recording_middleware.assert_called(at_least=8)
         assert recording_middleware.assert_called(method="tools/call", at_least=3)
         assert recording_middleware.assert_called(hook="on_message", at_least=1)
         assert recording_middleware.assert_called(hook="on_request", at_least=1)
@@ -299,6 +302,7 @@ class TestMiddlewareHooks:
     async def test_initialize(
         self, mcp_server: FastMCP, recording_middleware: RecordingMiddleware
     ):
+        # `ping` only exists on the older protocol, so this pins that era.
         async with Client(mcp_server, mode="legacy") as client:
             await client.ping()
 

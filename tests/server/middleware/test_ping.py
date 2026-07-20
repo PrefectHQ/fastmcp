@@ -193,6 +193,13 @@ class TestPingMiddlewareIntegration:
 
         assert len(middleware._active_sessions) == 0
 
+        # PingMiddleware keys its keepalive loop off the connection, which
+        # persists for the life of a handshake-era session. On the modern
+        # protocol version, a connection lives only for the single request
+        # that built it, so `_active_sessions` never holds a mid-session
+        # entry an outside observer can see — the register-and-clean-up
+        # happens entirely within one call. That per-request lifecycle is
+        # itself the reason this test pins the older era.
         async with Client(mcp, mode="legacy") as client:
             result = await client.call_tool("hello")
             assert result.content[0].text == "Hello!"
@@ -214,6 +221,9 @@ class TestPingMiddlewareIntegration:
         def hello() -> str:
             return "Hello!"
 
+        # See the pin note in `test_ping_middleware_registers_session`: a
+        # mid-session `_active_sessions` entry is only observable when the
+        # connection persists across requests, which is handshake-era only.
         async with Client(mcp, mode="legacy") as client:
             await client.call_tool("hello")
             # Should have one active session

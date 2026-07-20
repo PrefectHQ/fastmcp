@@ -449,6 +449,8 @@ class TestSeamServerSpan:
     ):
         mcp = FastMCP("test-server")
 
+        # `logging/setLevel` was dropped from the modern protocol version
+        # (SEP-2577), so exercising it needs the older protocol.
         async with Client(mcp, mode="legacy") as client:
             await client.set_logging_level("info")
 
@@ -470,6 +472,8 @@ class TestSeamServerSpan:
         """A seam-spanned method must produce exactly one SERVER span, not two."""
         mcp = FastMCP("test-server")
 
+        # `logging/setLevel` only exists on the older protocol; see the pin
+        # note in `test_set_logging_level_emits_seam_span` above.
         async with Client(mcp, mode="legacy") as client:
             await client.set_logging_level("info")
 

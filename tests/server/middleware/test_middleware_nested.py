@@ -477,7 +477,7 @@ class TestProxyServer:
         # proxy server will have its tools listed as well as called in order to
         # apply transforms and filters prior to the call.
         proxy_server = create_proxy(mcp_server, name="Proxy Server")
-        async with Client(proxy_server, mode="legacy") as client:
+        async with Client(proxy_server) as client:
             await client.call_tool("add", {"a": 1, "b": 2})
 
         assert recording_middleware.assert_called(at_least=6)

@@ -164,7 +164,16 @@ class _TransformingMCPServerMixin(BaseModel):
                 )
             ) from exc
 
-        return FastMCPTransport(mcp=self._to_server_and_underlying_transport()[0])
+        transport = FastMCPTransport(mcp=self._to_server_and_underlying_transport()[0])
+        # The wrapped proxy talks to its upstream over the legacy era (it pins
+        # the backend client to `mode="legacy"` to forward the initialize
+        # handshake and server-initiated features). Mark the wrapper legacy-only
+        # so a default `Client(config)` on `mode="auto"` negotiates legacy with
+        # it too, keeping both legs on the same era — otherwise a modern
+        # frontend would receive a forwarded server-initiated request that the
+        # modern era has no back-channel for.
+        transport.legacy_only = True
+        return transport
 
 
 class StdioMCPServer(BaseModel):

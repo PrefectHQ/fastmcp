@@ -1,4 +1,14 @@
-"""Tests for middleware support during initialization."""
+"""Tests for middleware support during initialization.
+
+`on_initialize` only fires for the `initialize` handshake, which is unique to
+the older protocol version; the modern version connects without it, so a
+default client never triggers this hook. Most tests below pin `mode="legacy"`
+for that reason. `test_session_state_persists_across_tool_calls` pins for a
+different reason: it exercises `ctx.set_state`/`get_state` persisting across
+multiple tool calls in the same client session, which requires the
+handshake-era's persistent session (see `test_session_visibility.py` for the
+same distinction applied to a different feature).
+"""
 
 from collections.abc import Sequence
 from typing import Any
@@ -401,8 +411,7 @@ async def test_state_isolation_between_streamable_http_clients():
         import json
 
         # Client 1 stores its value
-        # Session ids belong to the handshake era, so these pin the legacy era.
-        async with running_server.client(mode="legacy") as client1:
+        async with running_server.client() as client1:
             result1 = await client1.call_tool(
                 "store_and_read", {"value": "client1-value"}
             )
@@ -412,7 +421,7 @@ async def test_state_isolation_between_streamable_http_clients():
             session_id_1 = data1["session_id"]
 
         # Client 2 should have completely isolated state
-        async with running_server.client(mode="legacy") as client2:
+        async with running_server.client() as client2:
             result2 = await client2.call_tool(
                 "store_and_read", {"value": "client2-value"}
             )

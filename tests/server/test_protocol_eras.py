@@ -36,6 +36,7 @@ from pydantic import FileUrl
 
 from fastmcp import Client as FastMCPClient
 from fastmcp import Context, FastMCP, settings
+from fastmcp.exceptions import PromptError, ResourceError
 from fastmcp.server.elicitation import AcceptedElicitation
 from fastmcp.server.middleware import Middleware
 
@@ -732,3 +733,90 @@ async def test_middleware_runs_on_both_eras():
 
     # One invocation observed from each era.
     assert counter.count == 2
+
+
+# ---------------------------------------------------------------------------
+# Resource / prompt handler errors must survive both eras
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def erroring_server() -> FastMCP:
+    """A server whose resource and prompt handlers raise FastMCP errors."""
+    mcp = FastMCP("erroring")
+
+    @mcp.resource("data://boom")
+    def boom() -> str:
+        raise ResourceError("resource detail marker")
+
+    @mcp.resource("data://items/{item_id}")
+    def item(item_id: int) -> str:
+        return f"item {item_id}"
+
+    @mcp.prompt
+    def explode() -> str:
+        raise PromptError("prompt detail marker")
+
+    return mcp
+
+
+@pytest.mark.parametrize("mode", ALL_MODES)
+async def test_resource_error_message_reaches_client(
+    erroring_server: FastMCP, mode: str
+) -> None:
+    """A ResourceError's message must reach the wire on every era.
+
+    The modern runner masks any handler exception that is not an MCPError or a
+    ValidationError as a generic "Internal server error", so a ResourceError
+    that escapes the handler becomes indistinguishable from a server bug.
+    """
+    async with FastMCPClient(erroring_server, mode=mode) as client:
+        with pytest.raises(MCPError) as exc_info:
+            await client.read_resource("data://boom")
+
+    assert "resource detail marker" in str(exc_info.value)
+
+
+@pytest.mark.parametrize("mode", ALL_MODES)
+async def test_prompt_error_message_reaches_client(
+    erroring_server: FastMCP, mode: str
+) -> None:
+    """A PromptError's message must reach the wire on every era."""
+    async with FastMCPClient(erroring_server, mode=mode) as client:
+        with pytest.raises(MCPError) as exc_info:
+            await client.get_prompt("explode")
+
+    assert "prompt detail marker" in str(exc_info.value)
+
+
+@pytest.mark.parametrize("mode", ALL_MODES)
+async def test_resource_template_conversion_error_reaches_client(
+    erroring_server: FastMCP, mode: str
+) -> None:
+    """A bad template argument is a client-input error, not a server fault.
+
+    This is the path that originally exposed the masking: converting
+    ``item_id`` to an int fails, and the resulting error must name the problem
+    rather than surface as a generic internal error.
+    """
+    async with FastMCPClient(erroring_server, mode=mode) as client:
+        with pytest.raises(MCPError) as exc_info:
+            await client.read_resource("data://items/not-an-int")
+
+    assert "Internal server error" not in str(exc_info.value)
+
+
+@pytest.mark.parametrize("mode", ALL_MODES)
+async def test_resource_error_masked_when_masking_enabled(mode: str) -> None:
+    """Masking still applies: resources leak no more than tools already do."""
+    mcp = FastMCP("masked", mask_error_details=True)
+
+    @mcp.resource("data://boom")
+    def boom() -> str:
+        raise ValueError("secret internal detail")
+
+    async with FastMCPClient(mcp, mode=mode) as client:
+        with pytest.raises(MCPError) as exc_info:
+            await client.read_resource("data://boom")
+
+    assert "secret internal detail" not in str(exc_info.value)

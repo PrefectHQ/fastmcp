@@ -229,6 +229,8 @@ async def test_task_execution_auto_populated_for_task_enabled_tool():
         """A tool that runs in background."""
         return f"Processed: {data}"
 
+    # `execution.task_support` (SEP-1686) is advertised in the handshake-era
+    # tool listing only; the modern listing omits it.
     async with Client(mcp, mode="legacy") as client:
         tools_result = await client.list_tools()
         assert len(tools_result) == 1

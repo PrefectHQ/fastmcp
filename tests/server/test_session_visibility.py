@@ -48,7 +48,16 @@ class RecordingMessageHandler(MessageHandler):
 
 
 class TestSessionVisibility:
-    """Test session-specific visibility control via Context."""
+    """Test session-specific visibility control via Context.
+
+    Session-scoped visibility rules are stored under `ctx.session_id`. The
+    modern protocol version is stateless: each request gets a fresh
+    connection identity, so a rule set in one request is gone by the next.
+    Tests that only check state within a single tool call are era-neutral
+    and stay unpinned; tests that activate a rule in one request and observe
+    its effect in a later request are pinned to the handshake era, where the
+    rule's persistence is the very thing under test.
+    """
 
     async def test_enable_components_stores_rule_dict(self):
         """Test that enable_components stores a rule dict in session state."""
@@ -70,7 +79,7 @@ class TestSessionVisibility:
             assert rules[0]["tags"] == ["finance"]
             return "activated"
 
-        async with Client(mcp, mode="legacy") as client:
+        async with Client(mcp) as client:
             result = await client.call_tool("activate_finance", {})
             assert result.data == "activated"
 
@@ -94,7 +103,7 @@ class TestSessionVisibility:
             assert rules[0]["tags"] == ["internal"]
             return "deactivated"
 
-        async with Client(mcp, mode="legacy") as client:
+        async with Client(mcp) as client:
             result = await client.call_tool("deactivate_internal", {})
             assert result.data == "deactivated"
 
@@ -402,7 +411,7 @@ class TestSessionVisibilityNotifications:
             return "activated"
 
         handler = RecordingMessageHandler()
-        async with Client(mcp, mode="legacy", message_handler=handler) as client:
+        async with Client(mcp, message_handler=handler) as client:
             handler.reset()
             await client.call_tool("activate", {})
 
@@ -432,7 +441,7 @@ class TestSessionVisibilityNotifications:
             return "deactivated"
 
         handler = RecordingMessageHandler()
-        async with Client(mcp, mode="legacy", message_handler=handler) as client:
+        async with Client(mcp, message_handler=handler) as client:
             handler.reset()
             await client.call_tool("deactivate", {})
 
@@ -461,7 +470,7 @@ class TestSessionVisibilityNotifications:
             return "cleared"
 
         handler = RecordingMessageHandler()
-        async with Client(mcp, mode="legacy", message_handler=handler) as client:
+        async with Client(mcp, message_handler=handler) as client:
             handler.reset()
             await client.call_tool("clear", {})
 
@@ -491,7 +500,7 @@ class TestSessionVisibilityNotifications:
             return "activated"
 
         handler = RecordingMessageHandler()
-        async with Client(mcp, mode="legacy", message_handler=handler) as client:
+        async with Client(mcp, message_handler=handler) as client:
             handler.reset()
             await client.call_tool("activate_tools_only", {})
 
