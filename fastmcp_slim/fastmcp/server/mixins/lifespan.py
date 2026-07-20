@@ -246,6 +246,14 @@ class LifespanMixin:
             for provider in self.providers:
                 await stack.enter_async_context(provider.lifespan())
 
+            # Warn (never raise) when the declared protocol floor and the
+            # registered features are incoherent — e.g. modern-only guard tools
+            # with no modern floor. Runs once per fresh lifespan entry, after all
+            # providers are mounted so their components are visible.
+            from fastmcp.server.protocol_floor import check_protocol_coherence
+
+            await check_protocol_coherence(self)
+
             self._started.set()
             try:
                 yield

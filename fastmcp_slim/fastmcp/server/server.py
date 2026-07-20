@@ -77,6 +77,7 @@ from fastmcp.server.middleware.middleware import (
     mark_interior_dispatched,
 )
 from fastmcp.server.mixins import LifespanMixin, MCPOperationsMixin, TransportMixin
+from fastmcp.server.protocol_floor import validate_protocol_floor
 from fastmcp.server.providers import LocalProvider, Provider
 from fastmcp.server.providers.aggregate import AggregateProvider
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
@@ -356,6 +357,7 @@ class FastMCP(
         session_state_store: AsyncKeyValue | None = None,
         sampling_handler: SamplingHandler | None = None,
         sampling_handler_behavior: Literal["always", "fallback"] | None = None,
+        min_protocol_version: str | None = None,
         client_log_level: mcp_types.LoggingLevel | None = None,
         experimental_capabilities: dict[str, dict[str, Any]] | None = None,
         **kwargs: Any,
@@ -530,6 +532,18 @@ class FastMCP(
             sampling_handler_behavior or "fallback"
         )
 
+        # Minimum MCP protocol version this server requires. Enforced at
+        # connection negotiation (the initialize handshake refuses clients below
+        # the floor) and checked for coherence against registered features at
+        # startup. `None` (the default) declares no floor: the server serves
+        # every protocol era, fully backward compatible.
+        #
+        # NOTE: the `min_protocol_version` spelling is provisional; see
+        # `fastmcp.server.protocol_floor`.
+        self._min_protocol_version: str | None = validate_protocol_floor(
+            min_protocol_version
+        )
+
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.name!r})"
 
@@ -548,6 +562,15 @@ class FastMCP(
     @property
     def version(self) -> str | None:
         return self._mcp_server.version
+
+    @property
+    def min_protocol_version(self) -> str | None:
+        """The minimum MCP protocol version this server requires, if declared.
+
+        `None` means no floor (serve every protocol era). The spelling is
+        provisional; see `fastmcp.server.protocol_floor`.
+        """
+        return self._min_protocol_version
 
     @property
     def website_url(self) -> str | None:

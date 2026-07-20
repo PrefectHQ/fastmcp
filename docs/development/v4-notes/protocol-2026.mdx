@@ -2,6 +2,8 @@
 title: 2026-07-28 Protocol Support
 ---
 
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
 FastMCP v4 serves the sessionless `2026-07-28` protocol era and the session-based handshake eras from a single server, with per-connection auto-detection. This page catalogs what FastMCP provides for the modern era — both the protocol machinery it inherits from the MCP Python SDK and the capabilities FastMCP implements itself on top of that layer. It is the reference for what a v4 deployment can actually do on the modern protocol today.
 
 ## Identity assertion (SEP-990): a complete server-side implementation
@@ -47,6 +49,72 @@ The complete picture of what a FastMCP v4 server and client provide on the `2026
 | **Composition** | `mount()`, providers, proxying, and tool transforms compose servers dynamically at runtime, with lifespans and middleware driven through the SDK session manager. |
 | **Pagination** | Declarative `FastMCP(list_page_size=...)` paginates all list operations in the high-level server; the client auto-paginates with cycle detection. |
 | **Telemetry** | OpenTelemetry spans on by default (no-op without an exporter), SDK-aligned attributes (`mcp.method.name`, `mcp.protocol.version`, `gen_ai.*`), plus auth and provider-delegation spans; `FASTMCP_ENABLE_TELEMETRY=false` disables cleanly. |
+
+## Server protocol floor (DRAFT — provisional API)
+
+<Warning>
+This section is a **draft** for an in-progress feature. The public spelling shown
+here (`min_protocol_version=`) is **provisional** and expected to change before
+release — the min-without-max shape is under review. The underlying mechanics
+(connect-time enforcement and startup coherence checks) are stable regardless of
+the final spelling.
+</Warning>
+
+<VersionBadge version="4.0.0" />
+
+A server can depend on features that exist on only one protocol era. A tool that
+returns an `InputRequiredResult` (the modern [guard pattern](/servers/elicitation#elicitation-on-the-modern-protocol))
+works only on a `2026-07-28` connection. Today a legacy client that reaches such
+a tool over the initialize handshake gets a confusing era error *mid tool-call*,
+long after connecting — the failure surfaces far from its cause.
+
+The protocol floor moves that failure to connect time. A server declares the
+minimum protocol version it requires, and FastMCP refuses any handshake below it
+with a clear error naming the required version:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.types import InputRequiredResult
+
+mcp = FastMCP("guarded", min_protocol_version="2026-07-28")
+
+
+@mcp.tool
+def confirm(action: str) -> str | InputRequiredResult:
+    ...  # a modern-only guard tool
+```
+
+A legacy client connecting to this server is refused during `initialize` with a
+message pointing it at the modern protocol, rather than discovering the
+incompatibility inside a tool call. Modern (`server/discover`) clients connect
+normally — the modern era satisfies any currently declarable floor, because it is
+the newest era.
+
+**Enforcement points.** The floor is applied at the two negotiation points
+FastMCP owns, both through the framework's entry in the SDK's middleware layer:
+
+- **Initialize handshake** — the connection's negotiated handshake version is
+  compared against the floor before the handshake commits; a version below the
+  floor is refused with `-32602` (invalid params).
+- **`server/discover` (modern)** — the modern era is the newest era, so every
+  modern connection satisfies any floor a server can declare today; discovery is
+  therefore never refused by a floor in the current version set.
+
+**Startup coherence check.** FastMCP knows what is registered, so at startup it
+warns (never fails) when the declared floor and the registered features conflict:
+
+- A guard tool (returns `InputRequiredResult`) under a non-modern floor will fail
+  for handshake-era clients mid-call — the warning names the tool and recommends
+  a modern floor.
+- A modern floor combined with a `sampling_handler` set to `"fallback"` is a dead
+  preference: the modern era forbids the server-initiated back-channel, so the
+  local handler always runs. The warning suggests `"always"` or a lower floor.
+
+Runtime-only back-channel usage (`ctx.elicit`, `ctx.sample`, `ctx.list_roots`)
+has no reliable static signal and is deliberately not inferred.
+
+The default is no floor: a server without `min_protocol_version` serves every
+protocol era, fully backward compatible.
 
 ## Still in the program
 

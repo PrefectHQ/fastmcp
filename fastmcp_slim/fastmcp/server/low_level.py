@@ -326,6 +326,7 @@ class FastMCPServerMiddleware:
     ) -> HandlerResult:
         from fastmcp.server.context import Context
         from fastmcp.server.middleware.middleware import MiddlewareContext
+        from fastmcp.server.protocol_floor import enforce_handshake_floor
 
         # Reconstruct the InitializeRequest from the raw params so FastMCP
         # middleware `on_initialize` hooks that inspect the message still work.
@@ -348,6 +349,12 @@ class FastMCPServerMiddleware:
         async def call_original_handler(
             _mw_ctx: MiddlewareContext,
         ) -> mcp_types.InitializeResult | None:
+            # Refuse the handshake before it commits when the negotiated version
+            # is below the server's declared protocol floor. Raising MCPError
+            # here (before call_next) vetoes initialize on the framework-owned
+            # path, so the client sees a clear connect-time refusal instead of a
+            # runtime era error mid tool-call.
+            enforce_handshake_floor(fastmcp, init_message)
             # call_next(ctx) runs the rest of the SDK chain, which for
             # initialize returns the serialized InitializeResult dict. FastMCP
             # middleware `on_initialize` hooks expect a typed InitializeResult,
