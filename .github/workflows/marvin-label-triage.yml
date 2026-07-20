@@ -174,19 +174,35 @@ jobs:
           EXECUTION_FILE: ${{ steps.marvin.outputs.execution_file }}
         run: |
           file="${EXECUTION_FILE:-}"
-          if [[ -z "$file" || ! -f "$file" ]]; then
+          if [[ -z "$file" || ! -s "$file" ]]; then
             file="${RUNNER_TEMP}/claude-execution-output.json"
           fi
-          if [[ ! -f "$file" ]]; then
-            echo "::warning::No Marvin execution log found; cannot verify tool permissions."
-            exit 0
+          # A missing or empty log means we cannot tell a clean run from a
+          # blocked one, which is the exact failure this step exists to catch.
+          if [[ ! -s "$file" ]]; then
+            echo "::error::No Marvin execution log found; cannot verify tool permissions."
+            exit 1
           fi
 
-          # The persisted execution log carries a `permission_denials` array on
-          # each result entry, not the `permission_denials_count` scalar that
-          # only appears in the action's own condensed stdout summary. -s so
-          # this reads both a JSON array and a stream of JSON objects.
-          denials=$(jq -s '[.. | objects | .permission_denials? // empty] | flatten | length' "$file" 2>/dev/null || echo 0)
+          # The persisted log carries a `permission_denials` array on each
+          # `type: result` entry; the `permission_denials_count` scalar only
+          # appears in the action's condensed stdout summary, never on disk.
+          # Anchor to result entries rather than recursing with `..`, which
+          # descends into each denial's `tool_input` and double-counts any
+          # denied command that happens to mention the field name.
+          if ! denials=$(jq -s '
+                [ .[] | if type == "array" then .[] else . end ]
+                | map(select(type == "object" and .type == "result"))
+                | map(
+                    [ (.permission_denials | if type == "array" then length else 0 end),
+                      (.permission_denials_count | if type == "number" then . else 0 end) ]
+                    | max
+                  )
+                | add // 0
+              ' "$file"); then
+            echo "::error::Could not parse Marvin execution log ($file)."
+            exit 1
+          fi
           echo "Permission denials: $denials"
           if [[ "$denials" -gt 0 ]]; then
             echo "::error::Marvin was denied $denials tool call(s), so triage likely applied no labels. Check the --allowedTools allowlist in this workflow: any Bash(...) pattern containing a space must be individually quoted, or it gets torn apart by whitespace splitting before it reaches the permission matcher."
