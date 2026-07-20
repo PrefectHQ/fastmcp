@@ -22,6 +22,7 @@ from rich.panel import Panel
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.sampling import SamplingMessage, SamplingParams
 from fastmcp.client.sampling.handlers.anthropic import AnthropicSamplingHandler
+from fastmcp.types import SamplingCapability, SamplingToolsCapability
 
 console = Console()
 
@@ -99,7 +100,11 @@ async def main():
 
     handler = LoggingAnthropicHandler(default_model="claude-sonnet-4-5")
 
-    async with Client(mcp, sampling_handler=handler) as client:
+    async with Client(
+        mcp,
+        sampling_handler=handler,
+        sampling_capabilities=SamplingCapability(tools=SamplingToolsCapability()),
+    ) as client:
         questions = [
             "What is 15 times 7, plus 23?",
             "Roll a 20-sided dice for me",
