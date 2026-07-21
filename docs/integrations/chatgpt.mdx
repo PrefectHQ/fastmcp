@@ -95,7 +95,7 @@ The connector must be explicitly enabled in each chat session through Developer 
 Use `annotations=ToolAnnotations(readOnlyHint=True)` to skip confirmation prompts for read-only tools:
 
 ```python
-from fastmcp.types import ToolAnnotations
+from mcp_types import ToolAnnotations
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def get_status() -> str:

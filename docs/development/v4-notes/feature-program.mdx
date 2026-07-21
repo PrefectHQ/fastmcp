@@ -2,8 +2,9 @@
 title: Feature Program
 ---
 
-The migration is the foundation. The forward v4 program is a sequence of post-merge PRs that build on it. Each feature below carries an explicit status:
+The migration is the foundation. The forward v4 program is a sequence of post-merge PRs that build on it. Several have now merged. Each feature below carries an explicit status:
 
+- **Shipped** — merged to `main`, with the PR cited.
 - **Designed** — the approach is settled and an API sketch exists; implementation has not started.
 - **Planned** — the shape is agreed but design details remain open.
 - **Not started** — identified as v4 scope, not yet designed.
@@ -12,21 +13,21 @@ Code blocks marked as sketches show the *intended* API and do not resolve agains
 
 ## Sampling: deprecate now, remove in 4.0
 
-**Status: Designed.**
+**Status: Deprecation and era-gating shipped (#4448); removal slated for 4.0.**
 
-Sampling is the push-shaped API where a server borrows the client's model mid-call (`ctx.sample`, `ctx.sample_step`). The `2026-07-28` era removes server-initiated requests, so this API cannot work on modern connections. Background-task sampling is already dead under v2 — a worker's back-channel is gone once the submitting request returns, and no sampling relay was ever built (sdk-feedback #9).
+Sampling is the push-shaped API where a server borrows the client's model mid-call (`ctx.sample`, `ctx.sample_step`). The `2026-07-28` era removes server-initiated requests, so this API cannot work on modern connections. Background-task sampling is dead under v2 — a worker's back-channel is gone once the submitting request returns, and no sampling relay was ever built (sdk-feedback #9).
 
-The plan is Option A: **deprecate the push-sampling API now and remove it in the 4.0 release.**
+The plan is Option A: **deprecate the push-sampling API now and remove it in the 4.0 release.** The first two steps shipped in #4448:
 
-- Deprecate `ctx.sample` / `ctx.sample_step` and the server sampling module now.
-- Era-gate them to raise a clear error on `2026-07-28` (this also fixes the opaque "Method not found" of sdk-feedback #10).
-- Remove `ctx.sample`, `ctx.sample_step`, `server/sampling/`, `SamplingTool`, and structured-result sampling in 4.0.
+- **Done:** `ctx.sample` / `ctx.sample_step` emit a `FastMCPDeprecationWarning` (once per process, gated on `settings.deprecation_warnings`).
+- **Done:** both are era-gated to raise a clear, era-aware `ToolError` on `2026-07-28` before the wire, which also fixed the opaque "Method not found" of sdk-feedback #10.
+- **Pending 4.0:** remove `ctx.sample`, `ctx.sample_step`, `server/sampling/`, `SamplingTool`, and structured-result sampling.
 
 The migration story is honest: there is **no drop-in** on modern connections. The guidance is architectural — call an LLM from your server directly, with your own API key, rather than borrowing the client's model. That shift is the real answer, and it is why the removal justifies a major version.
 
 The client-side provider handlers (Anthropic, OpenAI, Google GenAI) are **retained** regardless: MRTR needs them to answer sampling input-requests from the client side. What is removed is the server-side push emitter, which the SDK never built for the modern era.
 
-In this PR, sampling still functions on the legacy eras. Users already see an SDK-level `MCPDeprecationWarning` on ordinary `ctx.sample` usage (the SDK deprecated the capability wire-side per SEP-2577, verified empirically by WS2), but FastMCP's own deprecation — warnings with migration guidance, plus the era-gating — lands as the first follow-up PR.
+Sampling still functions on the legacy eras. Users also see an SDK-level `MCPDeprecationWarning` on ordinary `ctx.sample` usage (the SDK deprecated the capability wire-side per SEP-2577). FastMCP's own deprecation — the warning with migration guidance, plus the era-gating — shipped in #4448; only the final removal remains for 4.0.
 
 ## MRTR elicitation
 
@@ -34,15 +35,13 @@ In this PR, sampling still functions on the legacy eras. Users already see an SD
 
 Elicitation survives the modern era through multi-round-trip (MRTR). The 2026 wire envelope carries elicitation as a multi-round input-request: a tool returns an `InputRequiredResult` and re-runs per round, each round a complete request→response cycle. Imperative `ctx.elicit` relies on the session back-channel, which is gone on `2026-07-28` foreground calls; on the modern era, elicitation is reachable through MRTR instead.
 
-The **guard form** of this is shipped in 4.0 (see [Elicitation on the modern protocol](/servers/elicitation#elicitation-on-the-modern-protocol)): a tool returns an `InputRequiredResult` and reads the client's answers off `ctx.input_responses` / `ctx.request_state`, re-running each round. It mirrors the SDK's base guard model exactly — no FastMCP-invented DX, the framework owns `request_state` sealing, and returning this result on a handshake-era connection produces a clear era error. The declarative `Resolve(...)` layer below sits *on top of* this primitive and remains designed but not yet built.
+The **guard form** of this is shipped in 4.0 (see [Elicitation on the modern protocol](/servers/elicitation#elicitation-on-the-modern-protocol)): a tool returns an `InputRequiredResult` and reads the client's answers off `ctx.input_responses` / `ctx.request_state`, re-running each round. It mirrors the SDK's base guard model exactly — no FastMCP-invented DX, the framework owns `request_state` sealing, and returning this result on a handshake-era connection produces a clear era error.
 
-The design does both, so the imperative DX survives where it can and a declarative surface covers the modern era:
+What remains is the declarative `Resolve(...)` layer that sits *on top of* that shipped primitive. It is designed, not built: a new `fastmcp.elicitation` module — `Resolve`, `Elicit`, and `ElicitationResult` — thin wrappers over the SDK's resolver, wired into FastMCP's own tool layer (FastMCP tools do not inherit the SDK's auto-resolver wiring). It would detect `Annotated[_, Resolve(...)]` parameters, build resolver plans, and return the SDK's `InputRequiredResult` instead of the tool body on the first round.
 
-**1. Keep `ctx.elicit` as the primary imperative DX,** re-plumbed to be era-aware: legacy connections use the session elicit-form path; background tasks on any era use the existing Redis relay (the task's `input_required` status *is* the MRTR suspension boundary); foreground calls on `2026-07-28` raise a clear era-aware error pointing at the declarative form.
+Imperative `ctx.elicit` is **not** re-plumbed to survive the modern era. It works on the legacy eras through the session back-channel, and on `2026-07-28` foreground calls it is era-gated to raise a clear error (shipped in #4448) pointing at the guard form. The earlier plan to keep imperative `ctx.elicit` alive on modern connections through a background-task relay is dead twice over: the guard model shipped in its place, and the 2025 task machinery the relay depended on is slated for removal (see [Known Gaps](/development/v4-notes/known-gaps#the-xfail-register)).
 
-**2. Add a declarative surface** in a new `fastmcp.elicitation` module — `Resolve`, `Elicit`, and `ElicitationResult` — thin wrappers over the SDK's resolver, wired into FastMCP's own tool layer (FastMCP tools do not inherit the SDK's auto-resolver wiring).
-
-The intended DX (sketch — the module does not exist yet):
+The intended declarative DX (sketch — the module does not exist yet):
 
 ```python test="skip"
 from typing import Annotated
@@ -81,40 +80,38 @@ async def maybe_ship(
     if address.action != "accept":
         return "cancelled"
     return f"Shipping {order_id} to {address.data.city}"
-
-
-@mcp.tool(task=True)
-async def slow_ship(ctx: Context) -> str:
-    # imperative ctx.elicit survives 2026 via the background-task relay
-    result = await ctx.elicit("Confirm address", Address)
-    if result.action == "accept":
-        return f"Shipping to {result.data.city}"
-    return "cancelled"
 ```
 
-The registration path detects `Annotated[_, Resolve(...)]` parameters, builds resolver plans, and returns the SDK's `InputRequiredResult` instead of the tool body on the first round. The FastMCP client already dispatches input-requests through its elicitation callback; the follow-up work confirms the FastMCP client wrapper drives the input-required driver the way the SDK's own client does.
+The FastMCP client already dispatches input-requests through its elicitation callback; the remaining declarative work confirms the FastMCP client drives the input-required driver the way the SDK's own client does.
 
 The divergence between elicitation and sampling on 2026 comes down to one fact: the SDK built the server-side emitter for elicitation (`Elicit`/`Resolve`) and not for sampling. The wire carries all three input-request types and the client dispatches all three; only elicitation can produce one server-side. That is why elicitation survives 4.0 via MRTR and push-sampling does not.
 
-## Middleware on the SDK `ServerMiddleware` seam
+## Middleware root dispatch
 
-**Status: Planned.**
+**Status: Shipped (#4553).**
 
-The migration already routes `initialize` interception through the SDK's new `ServerMiddleware` seam via `FastMCPServerMiddleware`. The forward work is to lean into that seam more fully — moving more of FastMCP's request-lifecycle middleware onto the native SDK composition point rather than FastMCP-side wrappers, now that the SDK composes middleware around every request and notification.
+The migration already routed `initialize` interception through the SDK's `ServerMiddleware` list via `FastMCPServerMiddleware`. #4553 made that entry the root of middleware dispatch: FastMCP's method-agnostic hooks (`on_message`, `on_request`, `on_notification`) now fire for every inbound message — client cancellations, progress notifications, and requests that fail routing or validation — not only the ones that reach a component handler. The component methods keep running their own chain interior, and a method set plus a dispatch flag keep the two passes disjoint so each hook fires exactly once per message.
 
 ## First-class 2026 client
 
-**Status: Planned.**
+**Status: Partly shipped (#4572, #4574); full composition blocked upstream.**
 
-The migration keeps `fastmcp.Client` as a wrapper around `mcp.ClientSession` in legacy/handshake mode. The v4 client work adopts the SDK's first-class `mcp.client.Client`: a `mode='auto'` that negotiates the era, `discover()` for sessionless capability discovery, and the MRTR input-required driver so the client can answer multi-round elicitation and sampling input-requests. This is the client-side half of full `2026-07-28` support.
+`fastmcp.Client` now defaults to `mode="auto"` (#4572): it probes `server/discover`, falls back to the classic handshake, and answers multi-round-trip `input_required` requests through its existing handlers. The same PR surfaced `extensions=` and `result_claims=` (SEP-2133). The client also dropped its forked protocol helpers — extension folding, the evicting message handler, discover synthesis — in favor of the SDK's own (#4574).
 
-This workstream also owns the server-side statelessness design holes — `ctx.session_id` / `set_state` round-tripping, task push and background elicitation, and stateful-proxy affinity — since all three turn on the same "what is a session without a session?" question. See [Statelessness on 2026-07-28](/development/v4-notes/known-gaps#statelessness-on-2026-07-28) for the full accounting.
+The decision here was **compose, not wrap** (D16): rebuild `fastmcp.Client` on the SDK's high-level `mcp.Client` rather than wrapping `mcp.ClientSession`. The parts that compose cleanly have shipped. The rest is **blocked upstream on two counts**. First, `mcp.Client` constructs its `ClientSession` at a single hardcoded site with no injection hook, while FastMCP's `session_class` is load-bearing (`ProxyClient` substitutes a session that skips result validation so a backend's schema violation surfaces at the end client rather than becoming a proxy error) — a `session_factory=` hook on `mcp.Client`, the same shape as the `notification_bindings=` parameter added earlier, would solve this. Second, `mcp.Client.__aenter__` refuses reentry, but FastMCP's client is deliberately reentrant (its refcounted context manager exists to fix a proxy session-reuse deadlock), so the rebuild also needs the SDK client to tolerate reentrant entry. Both must land upstream before the full rebuild is possible; `session_factory=` alone is necessary but not sufficient.
+
+This workstream also owns the server-side statelessness design holes — `ctx.session_id` / `set_state` round-tripping and stateful-proxy affinity — since they turn on the same "what is a session without a session?" question. See [Statelessness on 2026-07-28](/development/v4-notes/known-gaps#statelessness-on-2026-07-28) for the full accounting.
 
 ## Subscriptions, cache hints, extensions, OTel
 
-**Status: Not started.**
+**Status: Mixed — cache hints and OTel shipped; subscriptions not started.**
 
-A cluster of protocol features tracked for v4 once the core client and elicitation work lands: a `subscriptions/listen` surface backed by a subscription bus, resource cache hints, reconciliation of the `extensions` / MCP Apps capability advertisement across eras (the `extensions` capability is stripped at pre-2026 negotiated versions today — sdk-feedback #2), and the OpenTelemetry integration re-checked against the SDK's own OTel middleware.
+A cluster of protocol features tracked for v4. Their statuses have diverged:
+
+- **Cache hints — shipped (#4464).** Server-level authoring (`FastMCP(cache_ttl=..., cache_scope=...)`, SEP-2549) stamps every cacheable result, and the FastMCP client honors hints with an opt-in response cache.
+- **OpenTelemetry — shipped (#4481).** Spans are on by default (a no-op without an exporter), with SDK-aligned attributes and a `FASTMCP_ENABLE_TELEMETRY=false` off-switch.
+- **Extensions — client side shipped (#4572).** `Client(extensions=..., result_claims=...)` advertises opt-in client extensions (SEP-2133). The cross-era reconciliation of the `extensions` / MCP Apps capability advertisement is still open (the capability is stripped at pre-2026 negotiated versions — sdk-feedback #2).
+- **Subscriptions — not started.** A `subscriptions/listen` surface backed by a subscription bus.
 
 ## SDK delegation, round two
 

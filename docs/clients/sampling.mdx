@@ -181,7 +181,7 @@ Install the Google Gemini handler with `pip install 'fastmcp[gemini]'`.
 When you provide a `sampling_handler`, FastMCP automatically advertises full sampling capabilities to the server, including tool support. To disable tool support for simpler handlers:
 
 ```python
-from fastmcp.types import SamplingCapability
+from mcp_types import SamplingCapability
 
 client = Client(
     "my_mcp_server.py",
