@@ -10,6 +10,7 @@ the handshake (`mode="legacy"`) and modern (`mode="auto"`) protocol eras.
 from __future__ import annotations
 
 import threading
+from typing import Any
 
 import pytest
 from mcp_types import (
@@ -269,8 +270,12 @@ def test_normalize_completion_truncates_oversized_completion_and_keeps_total():
 
 
 def test_normalize_completion_rejects_bare_string():
+    # A bare str is excluded from the handler return type, so this passes it
+    # through an Any-typed value to exercise the runtime guard for callers who
+    # bypass type checking.
+    bad: Any = "oops"
     with pytest.raises(TypeError, match="return a list of strings"):
-        normalize_completion("oops")
+        normalize_completion(bad)
 
 
 def test_completion_argument_and_context_types_importable():
