@@ -107,14 +107,15 @@ async def _restore_token_expiry(context: OAuthContext) -> None:
     honest, prompting a fresh token request when the stored one has expired.
 
     The restore is skipped unless the reloaded token itself declares an
-    `expires_in`. A token whose response omitted `expires_in` is non-expiring,
-    and the store may still hold a stale expiry from a previous token it
-    replaced; applying that would wrongly force a re-exchange. This mirrors the
-    guard in the interactive `OAuth._initialize`.
+    `expires_in`. A token whose response omitted `expires_in` (``None``) is
+    non-expiring, and the store may still hold a stale expiry from a previous
+    token it replaced; applying that would wrongly force a re-exchange. A token
+    that declares `expires_in=0` is immediately expired and keeps its recorded
+    expiry, so it is distinguished from an omitted one.
     """
     storage = context.storage
     tokens = context.current_tokens
-    if tokens is None or not tokens.expires_in:
+    if tokens is None or tokens.expires_in is None:
         return
     if not isinstance(storage, TokenStorageAdapter):
         return

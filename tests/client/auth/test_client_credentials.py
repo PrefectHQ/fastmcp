@@ -398,9 +398,14 @@ class TestTokenCacheIsolation:
 class TestPersistentTokenExpiry:
     """A token reloaded from persistent storage honors its stored expiry."""
 
-    async def test_expired_stored_token_is_refetched(self):
+    @pytest.mark.parametrize("expires_in", [-100, 0])
+    async def test_expired_stored_token_is_refetched(self, expires_in):
         """Recreating a provider against a store holding an already-expired token
-        re-fetches instead of trusting the stale token as if it never expires."""
+        re-fetches instead of trusting the stale token as if it never expires.
+
+        `expires_in=0` is the boundary: an immediately-expiring token still
+        declares an expiry, so it must not be mistaken for a non-expiring one.
+        """
         store = MemoryStore()
 
         def make_provider() -> ClientCredentialsOAuthProvider:
@@ -415,7 +420,11 @@ class TestPersistentTokenExpiry:
         # Seed the shared store with a token whose absolute expiry is in the past.
         seed_provider = make_provider()
         await seed_provider.context.storage.set_tokens(
-            OAuthToken(access_token="STALE-TOKEN", token_type="Bearer", expires_in=-100)
+            OAuthToken(
+                access_token="STALE-TOKEN",
+                token_type="Bearer",
+                expires_in=expires_in,
+            )
         )
 
         provider = make_provider()
