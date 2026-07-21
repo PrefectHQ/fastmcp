@@ -6,17 +6,11 @@ The migration ships with a set of deliberate gaps: temporary shims, xfailed test
 
 ## The xfail register
 
-Roughly forty `xfail` markers across the test tree are the built-in beta tracker. Each names the SDK gap it waits on, so re-running the suite against a new SDK beta surfaces exactly which gaps have closed (a strict xfail that starts passing fails the suite, prompting removal of the marker). They cluster in three areas.
+Roughly forty `xfail` markers across the test tree name the SDK gaps and removed protocol surfaces they wait on. Re-running the suite against a new SDK beta surfaces which have closed (a strict xfail that starts passing fails the suite, prompting removal of the marker). They cluster in three areas — but the largest cluster is no longer a set of gaps to close.
 
-**Task suite (`tests/server/tasks/`, `tests/client/tasks/`).** The large majority. These trace to two SDK gaps:
+**Task suite (`tests/server/tasks/`, `tests/client/tasks/`) — being deleted, not fixed.** The large majority. These cover the 2025 task protocol (SEP-1686), which was **removed from the MCP spec entirely.** FastMCP's 2025 task machinery (`fastmcp_slim/fastmcp/server/tasks/`) is slated for deletion rather than repair, so these xfails disappear with the code they cover — they are not waiting on an SDK fix. Users who need background tasks today stay on FastMCP 3; the official 2026 tasks extension (`io.modelcontextprotocol/tasks`, a separate spec) will be the modern replacement, built later through the extensions mechanism. The two SDK gaps these were originally filed against — **sdk-feedback #1** (task result types omitted from the method registries) and **sdk-feedback #3** (no `task` field on `ReadResourceRequestParams` / `GetPromptRequestParams`) — are moot for the same reason: the protocol they patched no longer exists.
 
-- **sdk-feedback #1** — SEP-1686 ships the task result types but omits them from the method registries, so a task-augmented `tools/call` cannot complete validation. FastMCP's `_sdk_patches.py` registry-widening shim covers the common tool path; the xfails cover paths the shim intentionally does not paper over.
-- **sdk-feedback #3** — `ReadResourceRequestParams` and `GetPromptRequestParams` have no `task` field, so task-augmented resource reads and prompt gets are not wire-expressible. The xfails in `test_task_resources.py`, `test_task_prompts.py`, `test_client_resource_tasks.py`, and `test_client_prompt_tasks.py` carry the reason "SDK v2 has no `task` field on GetPromptRequestParams / ReadResourceRequestParams."
-
-**Protocol eras (`tests/server/test_protocol_eras.py`).** Two strict xfails:
-
-- The strict xfail at `test_protocol_eras.py:319` maps directly to **sdk-feedback #10**: on `2026-07-28`, `ctx.elicit`/`ctx.sample` attach a `related_request_id` and surface a bare "Method not found" rather than a clear era-aware error. It stays strict until the SDK unifies the degradation path or FastMCP era-gates the calls.
-- The strict xfail at `test_protocol_eras.py:400` covers the SDK's first-class high-level client (`mcp.client.Client`) and the sessionless driver that the FastMCP client does not yet adopt (see the [first-class 2026 client](/development/v4-notes/feature-program#first-class-2026-client) feature).
+**Protocol eras (`tests/server/test_protocol_eras.py`).** One remaining strict xfail, and it too is task-related: the v2 SDK high-level client exposes no `task=` parameter on `call_tool`, so a task-augmented `tools/call` cannot be submitted through it at any era. It resolves with the task deletion above, not on its own. The earlier strict xfail for the `ctx.elicit` / `ctx.sample` "Method not found" degradation (sdk-feedback #10) is **gone** — the era-gating shipped in #4448 flipped it to a passing test.
 
 **MCP Apps (`tests/test_apps.py`).** Two xfails tied to **sdk-feedback #2** — the `extensions` capability is stripped by the pre-2026 version sieve, so the UI extension can't be advertised to legacy-era clients.
 
@@ -26,14 +20,14 @@ Every shim in the migration is temporary and carries a documented removal trigge
 
 | Shim | Location | Removal trigger |
 | --- | --- | --- |
-| `_sdk_patches.py` — task registry widening | `fastmcp_slim/fastmcp/_sdk_patches.py` | SDK adds `tasks/*` rows and `CreateTaskResult` to the `tools/call` result union (sdk-feedback #1). |
+| `_sdk_patches.py` — task registry widening | `fastmcp_slim/fastmcp/_sdk_patches.py` | Removed with FastMCP's 2025 task machinery (`server/tasks/`), which is slated for deletion now that the 2025 task protocol left the spec — or earlier, if the SDK wires `tasks/*` rows into the handshake-era registries first (sdk-feedback #1). |
 | `_compat.py` — camelCase field bridge | `fastmcp_slim/fastmcp/_compat.py` | User-migration aid; removed in a future release after users migrate reads to snake_case. Users can preview removal with `mcp_camelcase_compat = False`. |
 | `FastMCPRequestContext` ContextVar | `fastmcp_slim/fastmcp/server/dependencies.py` | The SDK deliberately passes context as an argument with no ContextVar; FastMCP's public `get_context()` needs ambient access, and the shim also lifts `_meta`, which the SDK's `TypedDict` drops. No planned removal — this is a permanent boundary, not a beta gap. |
 | `FastMCPServerMiddleware` | `fastmcp_slim/fastmcp/server/low_level.py` | Already the native SDK `ServerMiddleware` path; no cleaner hook exists. Permanent. |
 | Client `get_session_id` header sniff | `fastmcp_slim/fastmcp/client/transports/http.py` | SDK exposes session id (or an `on_session_created` callback) from `streamable_http_client`, at parity with `sse_client` (sdk-feedback #5). |
 | `_sdk_context_shim.py` — generic handler aliases | `fastmcp_slim/fastmcp/client/_sdk_context_shim.py` | The SDK's `ClientRequestContext` is not subscriptable, so FastMCP keeps the public generic `SamplingHandler`/`RootsHandler`/`ElicitationHandler` aliases. Permanent unless the SDK makes the context subscriptable (sdk-feedback #7). |
 
-The `TaskNotificationHandler` binding (sdk-feedback #8) is the client-side equivalent: it registers a `NotificationBinding` for `notifications/tasks/status` because the SDK no longer tees custom server notifications to the message handler.
+The `TaskNotificationHandler` binding (sdk-feedback #8) is the client-side equivalent: it registers a `NotificationBinding` for `notifications/tasks/status` because the SDK no longer tees custom server notifications to the message handler. It goes away with the 2025 task machinery it serves.
 
 ## Statelessness on 2026-07-28
 
@@ -53,7 +47,7 @@ These are not bugs. The protocol removed the mechanism they depend on, so they a
 
 These work on `2026-07-28` today because they never leaned on a protocol session:
 
-- **`tasks/get` polling.** Task result retrieval is keyed by `task_id` and backed by Docket/Redis, so a client polls across independent requests without any session affinity.
+- **`tasks/get` polling.** Task result retrieval is keyed by `task_id` and backed by Docket/Redis, so a client polls across independent requests without any session affinity. (This is 2025 task machinery, itself slated for deletion — see [the xfail register](#the-xfail-register).)
 - **OAuth bearer validation.** Auth is per-request bearer validation — every POST carries and re-validates its own credential.
 - **In-request progress and logging notifications.** Notifications emitted while a request is still streaming ride that POST's SSE sink and are delivered normally.
 
@@ -62,7 +56,7 @@ These work on `2026-07-28` today because they never leaned on a protocol session
 The remaining items are real holes, deferred to the [first-class 2026 client](/development/v4-notes/feature-program#first-class-2026-client) workstream because they all reduce to one unanswered question — *what is a session when the protocol has none?* The danger in each is that the code currently returns without erroring, which reads as "works" but is actually silent degradation. Again: these affect `2026-07-28` connections only; on the handshake eras every one of them behaves correctly.
 
 - **`ctx.session_id` and `ctx.set_state` / `ctx.get_state` (broken even single-replica).** On a modern request `ctx.session_id` mints a fresh `uuid4`, cached on the per-request `connection.state` that is discarded when the request returns. So `ctx.set_state` and `ctx.get_state` silently never round-trip across requests — no error, just lost data. The open design decision is whether `session_id` should become `None` with `set_state` documented as session-era-only, or be re-based on an app-level key (the auth subject, or a client-supplied header).
-- **Task push and background elicitation (broken even single-replica).** The initial task-status notification is delivered only while the submitting POST is still streaming; the standalone subscription task pushes into a dead sink and its cleanup fires at request end, and the Redis relay is keyed by the throwaway per-request session id. Elicitation from a background task is impossible on 2026 by protocol construction — it needs an explicit era-gate that raises a clear error rather than hanging. Task-status push on 2026 would require adopting `subscriptions/listen` (which does not carry task events) or declaring the era poll-only.
+- **Task push and background elicitation — moot; the 2025 task machinery is being deleted.** This was previously framed as a statelessness design hole to solve in the client workstream. It is not. The 2025 task protocol was removed from the MCP spec, and FastMCP's 2025 task machinery is slated for deletion rather than being made stateless-safe (see [the xfail register](#the-xfail-register)). Background tasks today are a FastMCP 3 story; on 2026 connections the modern elicitation path is the guard-mode `InputRequiredResult`, not a back-channel from a task. The official 2026 tasks extension, when built, is a separate spec layered on the extensions mechanism.
 - **Stateful proxy affinity (degraded).** The stateful proxy's `_caches` are keyed by the per-request `Connection`, so on modern connections the proxy collapses to stateless proxying: results stay correct, but the per-session affinity guarantee is lost. This is decided alongside the `session_id` question — same root — or gated to the legacy/stdio transports.
 
 Multi-replica concerns (per-process rate-limiter buckets, shared Redis backends for state and tasks, a Redis `SubscriptionBus`) are deployment configuration rather than protocol gaps and are out of scope for this section.
@@ -71,12 +65,12 @@ Multi-replica concerns (per-process rate-limiter buckets, shared Redis backends 
 
 FastMCP acts as an advisor to the SDK team. The migration produced a dossier of ten findings (`sdk-feedback.md`) — verified bugs and hard edges to report upstream, plus questions to bundle into a feedback thread. The highest-priority items:
 
-- **#1 (bug)** — SEP-1686 task result types ship but the method registries omit them.
+- **#1 (bug)** — SEP-1686 task result types ship but the method registries omit them. *Moot: the 2025 task protocol was removed from the spec and FastMCP's task machinery is being deleted, so there is nothing left to report.*
 - **#2 (bug/question)** — `capabilities.extensions` stripped at pre-2026 negotiated versions.
 - **#4 (security)** — DCR redirect-URI validation accepts `javascript:`/`data:` schemes.
 - **#5 (hard edge)** — `streamable_http_client` drops session-id access with no replacement.
 - **#8 (hard edge)** — custom server notifications are dropped, not tee'd to `message_handler`.
-- **#10 (hard edge)** — 2026 push-feature degradation error quality is inconsistent.
+- **#10 (hard edge)** — 2026 push-feature degradation error quality is inconsistent. *Resolved on the FastMCP side: `ctx.elicit` / `ctx.sample` are era-gated to raise a clear error on modern connections (#4448).*
 
 Filing is gated on maintainer approval of each issue text.
 

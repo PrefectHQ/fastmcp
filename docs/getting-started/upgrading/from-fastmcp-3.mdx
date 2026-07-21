@@ -43,21 +43,15 @@ fastmcp.settings.mcp_camelcase_compat = False
 
 See [Settings](/more/settings) for the full reference.
 
-### Imports have a stable home
+### Protocol types moved to `mcp_types`
 
-The `mcp.types` module no longer exists. FastMCP re-exports the protocol types you're most likely to use — `TextContent`, `ImageContent`, `Tool`, `ErrorData`, `Icon`, `PromptMessage`, `SamplingMessage`, `ToolAnnotations`, and around two dozen others — from `fastmcp.types`. Update your imports to point there:
-
-```python
-from fastmcp.types import TextContent, Tool, ToolAnnotations
-```
-
-For protocol types FastMCP does not re-export (notification and request wrapper types like `ToolListChangedNotification` or `ServerNotification`), import them from `mcp_types` directly:
+The `mcp.types` module no longer exists. Every protocol type — `TextContent`, `ImageContent`, `Tool`, `ErrorData`, `Icon`, `PromptMessage`, `SamplingMessage`, `ToolAnnotations`, notification and request wrapper types like `ToolListChangedNotification`, and everything else — now lives in the standalone `mcp_types` package. Update your imports to point there:
 
 ```python
-import mcp_types
-
-notification = mcp_types.ToolListChangedNotification()
+from mcp_types import TextContent, Tool, ToolAnnotations
 ```
+
+`fastmcp.types` still exists, but holds only types FastMCP defines itself (currently just `Textarea`, used to render a multiline textarea in form-based UIs) — it does not re-export protocol types.
 
 ### `McpError` has an alias
 
@@ -90,7 +84,7 @@ Three things are on you.
 ModuleNotFoundError: No module named 'mcp.types'
 ```
 
-The raw message gives no hint toward the fix, so if you see it after upgrading, this is why. Switch to `from fastmcp.types import X` for the common types, or `import mcp_types` for the rest.
+The raw message gives no hint toward the fix, so if you see it after upgrading, this is why. Switch to `from mcp_types import X`.
 
 **`McpError` construction.** The v1 pattern of wrapping an `ErrorData` and passing it positionally fails under SDK v2 with:
 

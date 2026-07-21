@@ -28,15 +28,31 @@ The `mcp.types` module no longer exists. Any `from mcp.types import X` or `impor
 
 ### `fastmcp.types` is the stable home — Bridged
 
+<Note>
+Superseded before release — see "`fastmcp.types` trimmed to FastMCP-unique types only" below. This section documents the re-export set as it existed mid-migration; none of it ever shipped.
+</Note>
+
 FastMCP re-exports the protocol types users are most likely to touch from `fastmcp.types`, sourced from `mcp_types` (the `mcp` root package lacks most of them):
 
-```python
+```python test="skip"
 from fastmcp.types import TextContent, Tool, ToolAnnotations, ErrorData
 ```
 
 The re-export set is deliberately limited to names that trace to a documented user import: `TextContent`, `ImageContent`, `AudioContent`, `EmbeddedResource`, `ResourceLink`, `ContentBlock`, `Tool`, `Resource`, `ResourceTemplate`, `Prompt`, `PromptMessage`, `CallToolResult`, `GetPromptResult`, `ReadResourceResult`, `TextResourceContents`, `BlobResourceContents`, `SamplingMessage`, `CreateMessageResult`, `SamplingCapability`, `Root`, `ErrorData`, `Completion`, `Annotations`, `ToolAnnotations`, `Icon`, `ToolResultContent`, plus the pre-existing `Textarea`. Notification and request wrapper types (e.g. `ToolListChangedNotification`) are not re-exported — import those from `mcp_types` directly.
 
 *Verify:* `fastmcp_slim/fastmcp/types.py` `__all__`.
+
+### `fastmcp.types` trimmed to FastMCP-unique types only — Absorbed (post-review cleanup)
+
+The re-export set above never shipped in a release, so it was cut before 4.0 rather than deprecated. `fastmcp.types` now holds only types FastMCP defines itself — `Textarea` — and every bare `mcp_types` mirror (`TextContent`, `Tool`, `ToolAnnotations`, `ErrorData`, and the rest of the 29-name list) is gone. Code that imported those from `fastmcp.types` now imports them from `mcp_types` directly:
+
+```python
+from mcp_types import TextContent, Tool, ToolAnnotations, ErrorData
+```
+
+Because `fastmcp.types.__all__` was `["Textarea"]` as of the last stable release (v3.4.4) and the mirrors were added only in this unreleased migration work, removing them breaks no released user — there is no bridge or deprecation warning to write.
+
+*Verify:* `fastmcp_slim/fastmcp/types.py` `__all__` (back down to `["Textarea"]`).
 
 ### camelCase field reads are bridged — Bridged (deprecated)
 
@@ -420,7 +436,7 @@ A FastMCP server can emit SEP-2549 freshness hints so a caching client (`fastmcp
 
 ### Elicitation on the modern protocol (SEP-2322), guard form — New (opt-in feature)
 
-A tool can gather client input across rounds on a `2026-07-28` call by returning an `InputRequiredResult` (see [Elicitation on the modern protocol](/servers/elicitation#elicitation-on-the-modern-protocol)). Each round is a complete request→response cycle: the tool re-runs per round and reads the client's answers off two new `Context` properties, `ctx.input_responses` (`None` on the first round) and `ctx.request_state` (the echoed opaque state) — thin passthroughs matching the SDK's mcpserver semantics. This is the modern-era elicitation path the earlier per-feature matrix flagged as "MRTR rewrite pending"; it mirrors the SDK's base guard model exactly (tool re-runs, checks whether answers are present, returns to ask for more), with no FastMCP-invented resolver or annotation layer. `fastmcp.types` gains `InputRequiredResult`, `ElicitRequest`, and `ElicitRequestFormParams` for authoring these requests. The `request_state` channel is sealed by the framework, not the author: FastMCP installs the SDK's `RequestStateBoundary` middleware on its low-level server, which seals every outgoing `request_state` and unseals and verifies every inbound echo before a tool runs — so a tool only ever sees plaintext and a tampered, expired, or foreign token is rejected with a frozen wire error. `FastMCP(request_state_security=RequestStateSecurity(keys=[...]))` supplies shared keys for multi-replica deployments; omitted, each process seals under an ephemeral key (correct single-process). Returning this result on a handshake-era (≤ 2025-11-25) connection raises a clear era error naming the mismatch rather than failing as a generic invalid result. The client half (`fastmcp.Client` at `mode="auto"`) drives the loop through its existing elicitation/sampling/roots handlers, capped by `input_required_max_rounds`.
+A tool can gather client input across rounds on a `2026-07-28` call by returning an `InputRequiredResult` (see [Elicitation on the modern protocol](/servers/elicitation#elicitation-on-the-modern-protocol)). Each round is a complete request→response cycle: the tool re-runs per round and reads the client's answers off two new `Context` properties, `ctx.input_responses` (`None` on the first round) and `ctx.request_state` (the echoed opaque state) — thin passthroughs matching the SDK's mcpserver semantics. This is the modern-era elicitation path the earlier per-feature matrix flagged as "MRTR rewrite pending"; it mirrors the SDK's base guard model exactly (tool re-runs, checks whether answers are present, returns to ask for more), with no FastMCP-invented resolver or annotation layer. For authoring these requests, `InputRequiredResult`, `ElicitRequest`, and `ElicitRequestFormParams` import from `mcp_types`. The `request_state` channel is sealed by the framework, not the author: FastMCP installs the SDK's `RequestStateBoundary` middleware on its low-level server, which seals every outgoing `request_state` and unseals and verifies every inbound echo before a tool runs — so a tool only ever sees plaintext and a tampered, expired, or foreign token is rejected with a frozen wire error. `FastMCP(request_state_security=RequestStateSecurity(keys=[...]))` supplies shared keys for multi-replica deployments; omitted, each process seals under an ephemeral key (correct single-process). Returning this result on a handshake-era (≤ 2025-11-25) connection raises a clear era error naming the mismatch rather than failing as a generic invalid result. The client half (`fastmcp.Client` at `mode="auto"`) drives the loop through its existing elicitation/sampling/roots handlers, capped by `input_required_max_rounds`.
 
 *Verify:* `fastmcp_slim/fastmcp/server/context.py` (`input_responses`/`request_state` properties), `fastmcp_slim/fastmcp/server/low_level.py` (`RequestStateBoundary` install), `fastmcp_slim/fastmcp/server/server.py` (`request_state_security` param), `fastmcp_slim/fastmcp/server/mixins/mcp_operations.py` (`_on_call_tool` input-required passthrough + era gate), `fastmcp_slim/fastmcp/tools/base.py` (`InputRequiredToolResult`), `tests/server/test_mrtr_guards.py`.
 

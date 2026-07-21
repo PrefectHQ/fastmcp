@@ -22,10 +22,11 @@ Requires the `docket` extra (included in dev dependencies).
 import asyncio
 from dataclasses import dataclass
 
+from mcp_types import TextContent
+
 from fastmcp import Context, FastMCP
 from fastmcp.client import Client
 from fastmcp.server.elicitation import AcceptedElicitation
-from fastmcp.types import TextContent
 
 mcp = FastMCP("Task Elicitation Demo")
 

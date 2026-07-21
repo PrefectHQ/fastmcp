@@ -11,10 +11,10 @@ from functools import wraps
 from typing import Any
 
 import yaml
+from mcp_types import TextContent
 
 from fastmcp import Client, FastMCP
 from fastmcp.tools import ToolResult
-from fastmcp.types import TextContent
 
 
 def with_serializer(serializer: Callable[[Any], str]):
