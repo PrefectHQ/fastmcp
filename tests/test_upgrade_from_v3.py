@@ -290,17 +290,27 @@ class TestBehaviorChanges:
         mcp = FastMCP("Guarded")
 
         @mcp.resource("files://{path}")
-        def read(path: str) -> str:
+        def guarded(path: str) -> str:
+            return f"read:{path}"
+
+        # Same template with screening disabled — the control that proves the
+        # rejection below is the path screen, not an unrelated URI mismatch.
+        @mcp.resource("open://{path}", security=None)
+        def unguarded(path: str) -> str:
             return f"read:{path}"
 
         async with Client(mcp) as client:
             ok = await client.read_resource("files://hello.txt")
             assert ok[0].text == "read:hello.txt"
 
-            # A `..` segment is screened before the handler runs and surfaces a
-            # non-leaky INVALID_PARAMS error, not the handler's output.
+            # With screening off, a `..` value reaches the handler...
+            control = await client.read_resource("open://..")
+            assert control[0].text == "read:.."
+
+            # ...but under the default policy it is screened before the handler
+            # runs and surfaces a non-leaky INVALID_PARAMS error.
             with pytest.raises(McpError) as exc_info:
-                await client.read_resource("files://../etc/passwd")
+                await client.read_resource("files://..")
             assert exc_info.value.error.code == -32602
             assert "not found" in exc_info.value.error.message.lower()
 

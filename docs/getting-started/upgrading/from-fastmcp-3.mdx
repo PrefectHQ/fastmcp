@@ -186,7 +186,9 @@ These `FastMCP` methods and keywords have warned since 3.0 and are now removed:
 | `mcp.remove_tool_transformation(name)` | removed (was a no-op); hide tools with `mcp.disable(keys=[...])` |
 | `mcp.remove_tool(name)` | `mcp.local_provider.remove_tool(name)` |
 
-The `mount(as_proxy=...)` flag was already meaningless — a mount always invokes the child's lifespan and middleware — so proxying is now explicit: wrap the child in `create_proxy()` before mounting it.
+Two of these replacements are not exact behavioral swaps. `create_proxy` takes its target as the first positional argument (`target`), so a keyword call like `as_proxy(backend=server)` becomes `create_proxy(server)` rather than reusing the old keyword. And `local_provider.remove_tool` raises a plain `KeyError` when the tool is missing, where `FastMCP.remove_tool` raised a `NotFoundError` — update any `except NotFoundError` cleanup around a removal.
+
+`mount(as_proxy=True)` used to route the child through a proxy (an MCP-client execution boundary) rather than composing it directly. To keep that boundary, wrap the child in `create_proxy()` and mount the proxy; a plain `mount(child)` composes the child in-process. Either way, the child's lifespan and middleware now run — a direct mount no longer skips them.
 
 `import_server` → `mount` is the one row here that is not a mechanical swap, because the two never had the same semantics. `import_server` took a **one-time static snapshot** — it copied the child's tools, resources, and prompts at call time, with no live link, and did not run the child's lifespan or middleware. `mount` is a **live composition** — it holds a live link to the child and runs the child's lifespan and middleware. After switching, later changes to the child become visible through the parent, and the child's lifespan and middleware now execute on every request. If you depended on the frozen-copy behavior (a stable snapshot, no child lifecycle), there is no drop-in replacement: register the child's components on the parent directly instead of composing the two servers.
 
@@ -195,7 +197,7 @@ The `mount(as_proxy=...)` flag was already meaningless — a mount always invoke
 Two `@tool` parameters and two settings are gone:
 
 - **Tool `serializer=`** is removed from `@tool` / `mcp.tool()`, `Tool.from_function`, `Tool.from_tool`, and the OpenAPI tool. Return a `ToolResult` from your tool for full control over serialization instead.
-- **Tool `exclude_args=`** is removed. Hide a parameter from the tool schema with dependency injection — declare it with `Depends()` (from `fastmcp.dependencies`) so the caller never sees it.
+- **Tool `exclude_args=`** is removed. Hide a parameter from the tool schema by injecting it instead: give it a `Depends(factory)` default (from `fastmcp.dependencies`), where `factory` is a callable returning the value the argument used to carry. An injected parameter never appears in the tool's schema, which is what `exclude_args` was for.
 - **The `decorator_mode` setting** (`FASTMCP_DECORATOR_MODE`) and its `"object"` mode are removed. Decorators always return your original function with metadata attached; reach the component object through the server (`await mcp.get_tool("name")`) rather than off the decorated function.
 - **`StreamableHttpTransport(sse_read_timeout=...)`** is removed — it was a no-op under the SDK v2 client. Configure timeouts through `read_timeout_seconds` in `session_kwargs`, or on the httpx2 client via `httpx_client_factory`. (`SSETransport` still accepts `sse_read_timeout`.)
 
