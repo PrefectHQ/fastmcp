@@ -316,6 +316,21 @@ config = CacheConfig(store=store, partition="tenant-a", target_id="weather-api")
 
 *Verify:* `fastmcp_slim/fastmcp/client/caching.py`, `tests/client/client/test_kv_response_cache.py`.
 
+### Machine-to-machine client auth — New (feature)
+
+`fastmcp.client.auth` gains two browser-free auth providers for the OAuth 2.0 `client_credentials` grant, closing the most common client-auth gap (previously only interactive `OAuth` and static `BearerAuth` were available). `ClientCredentialsOAuthProvider(client_id=..., client_secret=...)` authenticates with a client ID and secret; `PrivateKeyJWTOAuthProvider(client_id=..., assertion_provider=...)` uses an RFC 7523 `private_key_jwt` assertion (workload identity federation or a locally signed JWT via the re-exported `SignedJWTParameters` / `static_assertion_provider` helpers). Both are thin wrappers over the SDK's `mcp.client.auth.extensions.client_credentials` providers and implement `httpx2.Auth`, so they slot into the same `Client(auth=...)` path as every other provider. Like interactive `OAuth`, they take the MCP server URL (the token endpoint is discovered from OAuth metadata) and bind to it lazily — omit `mcp_url` and the transport supplies it. In-memory token storage is the default with no warning, since a lost M2M token is re-acquired in one non-interactive request.
+
+```python
+from fastmcp import Client
+from fastmcp.client.auth import ClientCredentialsOAuthProvider
+
+auth = ClientCredentialsOAuthProvider(client_id="id", client_secret="secret")
+async with Client("https://example.com/mcp", auth=auth) as client:
+    await client.list_tools()
+```
+
+*Verify:* `fastmcp_slim/fastmcp/client/auth/client_credentials.py`, `fastmcp_slim/fastmcp/client/transports/{http,sse}.py`, `tests/client/auth/test_client_credentials.py`.
+
 ## HTTP
 
 The maintainer asked whether FastMCP can now delete its custom HTTP app and let the SDK's `Server.streamable_http_app()` handle everything. The answer for this PR is **no** — every override earns its keep. Convergence is a v4 project gated on three upstream additions (see [Feature Program](/development/v4-notes/feature-program)).

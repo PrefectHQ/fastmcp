@@ -264,6 +264,7 @@
                     "icon": "key",
                     "pages": [
                       "clients/auth/oauth",
+                      "clients/auth/client-credentials",
                       "clients/auth/cimd",
                       "clients/auth/bearer"
                     ],
