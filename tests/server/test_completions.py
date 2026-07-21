@@ -279,7 +279,7 @@ def test_normalize_completion_rejects_bare_string():
 
 
 def test_completion_argument_and_context_types_importable():
-    """The completion authoring types are exported from fastmcp.types."""
+    """The completion authoring types are importable from mcp_types."""
     argument = CompletionArgument(name="theme", value="n")
     context = CompletionContext(arguments={"owner": "prefecthq"})
     assert argument.name == "theme"
