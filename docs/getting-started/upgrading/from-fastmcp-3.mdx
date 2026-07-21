@@ -245,7 +245,7 @@ Two of these bite by default now, because **`fastmcp.Client` defaults to `mode="
 Most servers upgrade untouched. Work down this list to find the ones that don't:
 
 1. **Bump your environment.** Raise any pin below `pydantic>=2.12`; upgrade FastAPI if your resolver complains about Starlette `<1.0.1`.
-2. **Fix imports that moved out.** Replace `from mcp.types import X` with `from fastmcp.types import X` (or `import mcp_types`), and update any import from the [removed modules](#moved-imports) (`fastmcp.server.proxy`, `fastmcp.server.openapi`, `fastmcp.server.apps`, the `fastmcp.tools.tool` / `resources.resource` / `prompts.prompt` component shims).
+2. **Fix imports that moved out.** Replace `from mcp.types import X` with `from mcp_types import X`, and update any import from the [removed modules](#moved-imports) (`fastmcp.server.proxy`, `fastmcp.server.openapi`, `fastmcp.server.apps`, the `fastmcp.tools.tool` / `resources.resource` / `prompts.prompt` component shims).
 3. **Update removed server APIs.** Swap `as_proxy` → `create_proxy`, `import_server` → `mount`, `mount(prefix=)` → `mount(namespace=)`, and the [other removed methods and keywords](#removed-server-methods-and-mount-keywords).
 4. **Update removed tool parameters.** Replace tool `serializer=` (return a `ToolResult`), `exclude_args=` (use `Depends()`), and `StreamableHttpTransport(sse_read_timeout=)`.
 5. **Fix `McpError` construction.** Positional `McpError(ErrorData(...))` becomes keyword `McpError(code=..., message=...)`. Catching is unchanged.

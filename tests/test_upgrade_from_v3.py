@@ -22,6 +22,10 @@ import inspect
 
 import pytest
 
+# Protocol types now live in mcp_types directly; fastmcp.types no longer
+# re-exports them (it holds only FastMCP-defined types like Textarea).
+from mcp_types import ErrorData, TextContent, Tool, ToolAnnotations
+
 from fastmcp import Client, FastMCP, settings
 
 # The canonical replacement symbols the upgrade guide points users to. Importing
@@ -41,7 +45,6 @@ from fastmcp.server.providers.openapi import OpenAPIProvider
 from fastmcp.server.providers.proxy import FastMCPProxy, ProxyClient
 from fastmcp.server.transforms import PromptsAsTools, ResourcesAsTools, ToolTransform
 from fastmcp.tools.function_tool import FunctionTool
-from fastmcp.types import ErrorData, TextContent, Tool, ToolAnnotations
 
 
 class TestCommonServersUpgradeCleanly:
@@ -159,7 +162,7 @@ REMOVED_MODULES = [
     "fastmcp.experimental.utilities.openapi",  # -> fastmcp.utilities.openapi
     "fastmcp.server.apps",  # -> fastmcp.apps
     "fastmcp.server.app",  # -> fastmcp.apps / fastmcp
-    "mcp.types",  # -> fastmcp.types / mcp_types
+    "mcp.types",  # -> mcp_types
 ]
 
 # Names that were re-export shims and are gone; import them from the canonical
