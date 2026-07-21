@@ -13,19 +13,22 @@ whichever reference/argument pair it recognizes.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable
 
 import mcp_types
 
 CompletionReference = mcp_types.PromptReference | mcp_types.ResourceTemplateReference
 """The reference a completion request targets: a prompt or a resource template."""
 
-CompletionValues = mcp_types.Completion | Sequence[str] | None
+CompletionValues = mcp_types.Completion | list[str] | tuple[str, ...] | None
 """What a completion handler may return.
 
 - ``Completion`` — used verbatim (carries the optional ``total`` / ``has_more``
   pagination hints).
-- ``Sequence[str]`` — wrapped into a ``Completion``.
+- ``list[str]`` / ``tuple[str, ...]`` — wrapped into a ``Completion``. A bare
+  ``str`` is deliberately excluded: it satisfies ``Sequence[str]`` but is almost
+  always a mistake, and ``normalize_completion`` rejects it at runtime — naming
+  concrete collections keeps the annotation and the runtime guard in agreement.
 - ``None`` — treated as "no candidates" (an empty completion).
 """
 
