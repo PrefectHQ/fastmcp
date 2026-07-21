@@ -2255,7 +2255,7 @@ class FastMCP(
 
             ```python
             from fastmcp import FastMCP
-            from fastmcp.types import Completion, PromptReference
+            from mcp_types import Completion, PromptReference
 
             mcp = FastMCP("Completion Server")
 
