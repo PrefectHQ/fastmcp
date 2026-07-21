@@ -135,6 +135,7 @@ class AWSCognitoProvider(OIDCProxy):
         issuer_url: AnyHttpUrl | str | None = None,
         redirect_path: str = "/auth/callback",
         required_scopes: list[str] | None = None,
+        valid_scopes: list[str] | None = None,
         allowed_client_redirect_uris: list[str] | None = None,
         client_storage: AsyncKeyValue | None = None,
         jwt_signing_key: str | bytes | None = None,
@@ -163,6 +164,7 @@ class AWSCognitoProvider(OIDCProxy):
                 to avoid 404s during discovery when mounting under a path.
             redirect_path: Redirect path configured in Cognito app (defaults to "/auth/callback")
             required_scopes: Required Cognito scopes (defaults to ["openid"])
+            valid_scopes: Scopes clients may request. Defaults to required_scopes.
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
             client_storage: Storage backend for OAuth state (client registrations, encrypted tokens).
@@ -193,6 +195,9 @@ class AWSCognitoProvider(OIDCProxy):
         required_scopes_final = (
             parse_scopes(required_scopes) if required_scopes is not None else ["openid"]
         )
+        valid_scopes_final = (
+            parse_scopes(valid_scopes) if valid_scopes is not None else None
+        )
 
         # Construct OIDC discovery URL
         config_url = f"https://cognito-idp.{aws_region}.amazonaws.com/{user_pool_id}/.well-known/openid-configuration"
@@ -216,6 +221,7 @@ class AWSCognitoProvider(OIDCProxy):
             redirect_path=redirect_path,
             allowed_client_redirect_uris=allowed_client_redirect_uris,
             client_storage=client_storage,
+            valid_scopes=valid_scopes_final,
             jwt_signing_key=jwt_signing_key,
             require_authorization_consent=require_authorization_consent,
             consent_csp_policy=consent_csp_policy,

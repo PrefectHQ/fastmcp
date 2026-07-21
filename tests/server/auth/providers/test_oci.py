@@ -85,3 +85,31 @@ class TestOCIProvider:
             assert str(provider.base_url) == TEST_BASE_URL
             assert provider._redirect_path == TEST_REDIRECT_PATH
             assert provider._token_validator.required_scopes == TEST_REQUIRED_SCOPES
+
+    def test_valid_scopes_passed_through(self, valid_oidc_configuration_dict):
+        """Test valid_scopes is passed to OIDCProxy."""
+        with patch(
+            "fastmcp.server.auth.oidc_proxy.OIDCConfiguration.get_oidc_configuration"
+        ) as mock_get:
+            oidc_config = OIDCConfiguration.model_validate(
+                valid_oidc_configuration_dict
+            )
+            mock_get.return_value = oidc_config
+
+            provider = OCIProvider(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+                required_scopes=["openid"],
+                valid_scopes=["openid", "offline_access"],
+                client_storage=MemoryStore(),
+                jwt_signing_key="test-secret-key",
+            )
+
+            assert provider._token_validator.required_scopes == ["openid"]
+            assert provider.client_registration_options is not None
+            assert provider.client_registration_options.valid_scopes == [
+                "openid",
+                "offline_access",
+            ]

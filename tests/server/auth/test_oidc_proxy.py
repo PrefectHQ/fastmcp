@@ -518,6 +518,71 @@ class TestOIDCProxyInitialization:
             assert proxy._token_validator.audience == "oidc-proxy-test-audience"
             assert proxy._token_validator.required_scopes == ["required", "scopes"]
 
+    def test_valid_scopes_initialization(self, valid_oidc_configuration_dict):
+        """Test valid_scopes are advertised separately from required_scopes."""
+        with patch(
+            "fastmcp.server.auth.oidc_proxy.OIDCConfiguration.get_oidc_configuration"
+        ) as mock_get:
+            oidc_config = OIDCConfiguration.model_validate(
+                valid_oidc_configuration_dict
+            )
+            mock_get.return_value = oidc_config
+
+            proxy = OIDCProxy(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+                required_scopes=["openid"],
+                valid_scopes=["openid", "offline_access"],
+                jwt_signing_key="test-secret",
+            )
+
+            validate_proxy(mock_get, proxy, oidc_config)
+
+            assert proxy._token_validator.required_scopes == ["openid"]
+            assert proxy.client_registration_options is not None
+            assert proxy.client_registration_options.valid_scopes == [
+                "openid",
+                "offline_access",
+            ]
+            assert proxy.client_registration_options.default_scopes == [
+                "openid",
+                "offline_access",
+            ]
+
+    def test_valid_scopes_preserved_with_id_token_verification(
+        self, valid_oidc_configuration_dict
+    ):
+        """Test verify_id_token does not collapse valid_scopes to required_scopes."""
+        with patch(
+            "fastmcp.server.auth.oidc_proxy.OIDCConfiguration.get_oidc_configuration"
+        ) as mock_get:
+            oidc_config = OIDCConfiguration.model_validate(
+                valid_oidc_configuration_dict
+            )
+            mock_get.return_value = oidc_config
+
+            proxy = OIDCProxy(
+                config_url=TEST_CONFIG_URL,
+                client_id=TEST_CLIENT_ID,
+                client_secret=TEST_CLIENT_SECRET,
+                base_url=TEST_BASE_URL,
+                required_scopes=["openid"],
+                valid_scopes=["openid", "offline_access"],
+                verify_id_token=True,
+                jwt_signing_key="test-secret",
+            )
+
+            validate_proxy(mock_get, proxy, oidc_config)
+
+            assert proxy.required_scopes == ["openid"]
+            assert proxy.client_registration_options is not None
+            assert proxy.client_registration_options.valid_scopes == [
+                "openid",
+                "offline_access",
+            ]
+
     def test_extra_parameters_initialization(self, valid_oidc_configuration_dict):
         """Test other parameters initialization."""
         with patch(

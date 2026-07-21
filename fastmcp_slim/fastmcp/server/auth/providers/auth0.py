@@ -94,6 +94,7 @@ class Auth0Provider(OIDCProxy):
         resource_base_url: AnyHttpUrl | str | None = None,
         issuer_url: AnyHttpUrl | str | None = None,
         required_scopes: list[str] | None = None,
+        valid_scopes: list[str] | None = None,
         redirect_path: str | None = None,
         allowed_client_redirect_uris: list[str] | None = None,
         client_storage: AsyncKeyValue | None = None,
@@ -122,6 +123,7 @@ class Auth0Provider(OIDCProxy):
             issuer_url: Issuer URL for OAuth metadata (defaults to base_url). Use root-level URL
                 to avoid 404s during discovery when mounting under a path.
             required_scopes: Required Auth0 scopes (defaults to ["openid"])
+            valid_scopes: Scopes clients may request. Defaults to required_scopes.
             redirect_path: Redirect path configured in Auth0 application
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
@@ -153,6 +155,9 @@ class Auth0Provider(OIDCProxy):
         auth0_required_scopes = (
             parse_scopes(required_scopes) if required_scopes is not None else ["openid"]
         )
+        auth0_valid_scopes = (
+            parse_scopes(valid_scopes) if valid_scopes is not None else None
+        )
 
         super().__init__(
             config_url=config_url,
@@ -165,6 +170,7 @@ class Auth0Provider(OIDCProxy):
             issuer_url=issuer_url,
             redirect_path=redirect_path,
             required_scopes=auth0_required_scopes,
+            valid_scopes=auth0_valid_scopes,
             allowed_client_redirect_uris=allowed_client_redirect_uris,
             client_storage=client_storage,
             jwt_signing_key=jwt_signing_key,

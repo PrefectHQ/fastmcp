@@ -131,6 +131,7 @@ class OCIProvider(OIDCProxy):
         audience: str | None = None,
         issuer_url: AnyHttpUrl | str | None = None,
         required_scopes: list[str] | None = None,
+        valid_scopes: list[str] | None = None,
         redirect_path: str | None = None,
         allowed_client_redirect_uris: list[str] | None = None,
         client_storage: AsyncKeyValue | None = None,
@@ -158,6 +159,7 @@ class OCIProvider(OIDCProxy):
             audience: OCI API audience (optional)
             issuer_url: Issuer URL for OCI IAM Domain metadata. This will override issuer URL from the discovery URL.
             required_scopes: Required OCI scopes (defaults to ["openid"])
+            valid_scopes: Scopes clients may request. Defaults to required_scopes.
             redirect_path: Redirect path configured in OCI IAM Domain Integrated Application. The default is "/auth/callback".
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
             fallback_refresh_token_expiry_seconds: Lifetime for the FastMCP-issued
@@ -176,6 +178,9 @@ class OCIProvider(OIDCProxy):
         oci_required_scopes = (
             parse_scopes(required_scopes) if required_scopes is not None else ["openid"]
         )
+        oci_valid_scopes = (
+            parse_scopes(valid_scopes) if valid_scopes is not None else None
+        )
 
         super().__init__(
             config_url=config_url,
@@ -188,6 +193,7 @@ class OCIProvider(OIDCProxy):
             issuer_url=issuer_url,
             redirect_path=redirect_path,
             required_scopes=oci_required_scopes,
+            valid_scopes=oci_valid_scopes,
             allowed_client_redirect_uris=allowed_client_redirect_uris,
             client_storage=client_storage,
             jwt_signing_key=jwt_signing_key,

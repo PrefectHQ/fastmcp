@@ -86,6 +86,26 @@ class TestAWSCognitoProvider:
             assert provider._token_validator.required_scopes == ["openid"]
             assert provider.aws_region == "eu-central-1"
 
+    def test_valid_scopes_passed_through(self):
+        """Test valid_scopes is passed to OIDCProxy."""
+        with mock_cognito_oidc_discovery():
+            provider = AWSCognitoProvider(
+                user_pool_id="us-east-1_XXXXXXXXX",
+                client_id="test_client",
+                client_secret="test_secret",
+                base_url="https://example.com",
+                required_scopes=["openid"],
+                valid_scopes=["openid", "offline_access"],
+                jwt_signing_key="test-secret",
+            )
+
+            assert provider._token_validator.required_scopes == ["openid"]
+            assert provider.client_registration_options is not None
+            assert provider.client_registration_options.valid_scopes == [
+                "openid",
+                "offline_access",
+            ]
+
     def test_oidc_discovery_integration(self):
         """Test that OIDC discovery endpoints are used correctly."""
         with mock_cognito_oidc_discovery():

@@ -218,6 +218,7 @@ class OIDCProxy(OAuthProxy):
         token_verifier: TokenVerifier | None = None,
         algorithm: str | None = None,
         required_scopes: list[str] | None = None,
+        valid_scopes: list[str] | None = None,
         verify_id_token: bool = False,
         # FastMCP server configuration
         base_url: AnyHttpUrl | str,
@@ -269,6 +270,7 @@ class OIDCProxy(OAuthProxy):
                 Cannot be used with algorithm or required_scopes parameters (configure these on your verifier instead).
             algorithm: Token verifier algorithm (only used if token_verifier is not provided)
             required_scopes: Required scopes for token validation (only used if token_verifier is not provided)
+            valid_scopes: Scopes clients may request. Defaults to required_scopes.
             verify_id_token: If True, verify the OIDC id_token instead of the access_token.
                 Useful for providers that issue opaque (non-JWT) access tokens, since the
                 id_token is always a standard JWT verifiable via the provider's JWKS.
@@ -414,6 +416,7 @@ class OIDCProxy(OAuthProxy):
             "issuer_url": issuer_url or base_url,
             "service_documentation_url": self.oidc_config.service_documentation,
             "allowed_client_redirect_uris": allowed_client_redirect_uris,
+            "valid_scopes": valid_scopes,
             "client_storage": client_storage,
             "jwt_signing_key": jwt_signing_key,
             "token_endpoint_auth_method": token_endpoint_auth_method,
@@ -461,7 +464,9 @@ class OIDCProxy(OAuthProxy):
         # from the (empty) verifier scopes.
         if verify_id_token and required_scopes:
             self.required_scopes = required_scopes
-            self.update_default_scopes(required_scopes)
+            self.update_default_scopes(
+                valid_scopes if valid_scopes is not None else required_scopes
+            )
 
     def _get_verification_token(
         self, upstream_token_set: UpstreamTokenSet
