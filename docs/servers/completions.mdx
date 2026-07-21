@@ -169,3 +169,9 @@ async def complete(ref, argument, context):
     await ctx.debug(f"Completing {argument.name!r} for {ref}")
     ...
 ```
+
+## Authorization
+
+Completion runs behind the server's connection-level authentication: an unauthenticated client never reaches the handler. It is independent of per-component `auth=`, though. FastMCP does not resolve the referenced prompt or resource template, so a completion request is not filtered by that component's visibility the way `prompts/get` or a resource read is — the single handler answers for whatever reference the client names.
+
+A completion response carries only candidate strings for one argument, never component content or schema, so this exposes nothing about a hidden component on its own. If a handler computes candidates that should themselves be restricted — matching a prompt hidden from unauthorized callers, say — check the auth context inside the handler (via [`get_context()`](/servers/context)) and return `None` when the caller is not permitted.
