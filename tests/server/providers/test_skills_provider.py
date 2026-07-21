@@ -92,6 +92,26 @@ This is my skill content.
         assert provider.skill_info.description == "A test skill"
         assert len(provider.skill_info.files) == 3
 
+    def test_loads_frontmatter_from_utf8_bom_skill(self, tmp_path: Path):
+        skill_dir = tmp_path / "bom-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "\ufeff---\n"
+            "name: bom-skill\n"
+            "description: Skill saved with a UTF-8 BOM\n"
+            "---\n"
+            "# BOM Skill\n",
+            encoding="utf-8",
+        )
+
+        provider = SkillProvider(skill_path=skill_dir)
+
+        assert provider.skill_info.description == "Skill saved with a UTF-8 BOM"
+        assert provider.skill_info.frontmatter == {
+            "name": "bom-skill",
+            "description": "Skill saved with a UTF-8 BOM",
+        }
+
     def test_raises_if_directory_missing(self, tmp_path: Path):
         with pytest.raises(FileNotFoundError, match="Skill directory not found"):
             SkillProvider(skill_path=tmp_path / "nonexistent")
@@ -156,6 +176,26 @@ This is my skill content.
             assert isinstance(result[0], TextResourceContents)
             assert "# My Skill" in result[0].text
 
+    async def test_read_main_file_with_literal_percent_in_name(self, tmp_path: Path):
+        """A custom main_file_name containing a literal '%' must round-trip
+        through the same encode/decode path as supporting files (#4545)."""
+        skill_dir = tmp_path / "percent-main-skill"
+        skill_dir.mkdir()
+        (skill_dir / "MAIN%20FILE.md").write_text("# Demo\n")
+
+        mcp = FastMCP("Test")
+        mcp.add_provider(
+            SkillProvider(skill_path=skill_dir, main_file_name="MAIN%20FILE.md")
+        )
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            main = next(
+                r for r in resources if r.name == "percent-main-skill/MAIN%20FILE.md"
+            )
+            result = await client.read_resource(main.uri)
+            assert "# Demo" in result[0].text
+
     async def test_read_manifest(self, single_skill_dir: Path):
         mcp = FastMCP("Test")
         mcp.add_provider(SkillProvider(skill_path=single_skill_dir))
@@ -209,6 +249,76 @@ This is my skill content.
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("skill://my-skill/reference.md"))
             assert "# Reference" in result[0].text
+
+    async def test_read_supporting_file_with_space_in_name(self, tmp_path: Path):
+        """Percent-encoded resource URIs for supporting files must round-trip (#4545)."""
+        skill_dir = tmp_path / "space-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("# Skill\n")
+        (skill_dir / "setup guide.md").write_text("SPACE OK")
+
+        mcp = FastMCP("Test")
+        mcp.add_provider(
+            SkillProvider(skill_path=skill_dir, supporting_files="resources")
+        )
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            supporting = next(
+                r for r in resources if r.name == "space-skill/setup guide.md"
+            )
+            assert str(supporting.uri) == "skill://space-skill/setup%20guide.md"
+
+            result = await client.read_resource(supporting.uri)
+            assert result[0].text == "SPACE OK"
+
+    async def test_read_supporting_file_with_utf8_name(self, tmp_path: Path):
+        skill_dir = tmp_path / "utf8-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("# Skill\n")
+        (skill_dir / "café.md").write_text("UTF8 OK", encoding="utf-8")
+
+        mcp = FastMCP("Test")
+        mcp.add_provider(
+            SkillProvider(skill_path=skill_dir, supporting_files="resources")
+        )
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            supporting = next(r for r in resources if r.name == "utf8-skill/café.md")
+
+            result = await client.read_resource(supporting.uri)
+            assert result[0].text == "UTF8 OK"
+
+    async def test_percent_encoded_name_does_not_collide_with_space(
+        self, tmp_path: Path
+    ):
+        """A filename that already contains a literal '%20' must not be confused
+        with a space-containing filename once both are percent-encoded into
+        resource URIs (#4545)."""
+        skill_dir = tmp_path / "percent-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("# Skill\n")
+        (skill_dir / "setup guide.md").write_text("SPACE OK")
+        (skill_dir / "setup%20guide.md").write_text("LITERAL PERCENT OK")
+
+        mcp = FastMCP("Test")
+        mcp.add_provider(
+            SkillProvider(skill_path=skill_dir, supporting_files="resources")
+        )
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            by_name = {r.name: r for r in resources}
+            space_uri = by_name["percent-skill/setup guide.md"].uri
+            literal_uri = by_name["percent-skill/setup%20guide.md"].uri
+
+            assert str(space_uri) != str(literal_uri)
+
+            space_result = await client.read_resource(space_uri)
+            literal_result = await client.read_resource(literal_uri)
+            assert space_result[0].text == "SPACE OK"
+            assert literal_result[0].text == "LITERAL PERCENT OK"
 
     async def test_skill_resource_meta(self, single_skill_dir: Path):
         """SkillResource populates meta with skill name and is_manifest."""

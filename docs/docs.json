@@ -144,6 +144,7 @@
                     "pages": [
                       "servers/elicitation",
                       "servers/sampling",
+                      "servers/completions",
                       "servers/progress",
                       "servers/logging",
                       "servers/pagination",
@@ -264,6 +265,7 @@
                     "icon": "key",
                     "pages": [
                       "clients/auth/oauth",
+                      "clients/auth/client-credentials",
                       "clients/auth/cimd",
                       "clients/auth/bearer"
                     ],

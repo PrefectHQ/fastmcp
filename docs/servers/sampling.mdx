@@ -102,7 +102,7 @@ Use model preferences when different tasks benefit from different model characte
 For requests that need conversational context, construct a list of `SamplingMessage` objects representing the conversation history. Each message has a `role` ("user" or "assistant") and `content` (a `TextContent` object).
 
 ```python
-from fastmcp.types import SamplingMessage, TextContent
+from mcp_types import SamplingMessage, TextContent
 from fastmcp import FastMCP, Context
 
 mcp = FastMCP()
@@ -372,7 +372,7 @@ Use `sample_step()` when you need to:
 By default, `sample_step()` executes any tool calls and includes the results in the history. Call it in a loop, passing the updated history each time, until a stop condition is met.
 
 ```python
-from fastmcp.types import SamplingMessage
+from mcp_types import SamplingMessage
 from fastmcp import FastMCP, Context
 
 mcp = FastMCP()
@@ -425,7 +425,7 @@ The contents of `step.history` depend on `execute_tools`:
 Set `execute_tools=False` to handle tool execution yourself. When disabled, `step.history` contains the user message and the assistant's response with tool calls—but no tool results. You execute the tools and append the results as a user message.
 
 ```python
-from fastmcp.types import SamplingMessage, ToolResultContent, TextContent
+from mcp_types import SamplingMessage, ToolResultContent, TextContent
 from fastmcp import FastMCP, Context
 
 mcp = FastMCP()

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import mcp_types
 from mcp.server.context import ServerRequestContext
@@ -11,6 +12,7 @@ from mcp.shared.exceptions import MCPError
 from mcp_types import (
     INVALID_PARAMS,
     CallToolRequestParams,
+    CompleteRequestParams,
     EmptyResult,
     GetPromptRequestParams,
     PaginatedRequestParams,
@@ -25,9 +27,14 @@ from fastmcp.exceptions import (
     NotFoundError,
     to_mcp_error,
 )
+from fastmcp.server.completions import CompletionValues, normalize_completion
 from fastmcp.server.dependencies import bind_request_context, extract_version_spec
 from fastmcp.server.tasks.config import TaskMeta
 from fastmcp.tools.base import InputRequiredToolResult
+from fastmcp.utilities.async_utils import (
+    call_sync_fn_in_threadpool,
+    is_coroutine_function,
+)
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.pagination import paginate_sequence
 from fastmcp.utilities.versions import VersionSpec, dedupe_with_versions
@@ -391,3 +398,54 @@ class MCPOperationsMixin:
             session_id = _log_level_session_key(rc.session)
             self._client_log_levels[session_id] = params.level
             return EmptyResult()
+
+    async def _on_complete(
+        self: FastMCP,
+        ctx: ServerRequestContext,
+        params: CompleteRequestParams,
+    ) -> mcp_types.CompleteResult:
+        """Handle MCP 'completion/complete' requests.
+
+        Routes to the server's registered completion handler (set via
+        ``@mcp.completion``). The handler switches on the reference and argument
+        and returns candidate values. A handler that does not recognize the
+        reference/argument returns ``None`` or an empty sequence, which becomes
+        an empty completion rather than an error — an unknown reference is not a
+        protocol failure. This handler is registered on the low-level server
+        only once a completion handler exists, so the completions capability is
+        declared exactly when the server can answer.
+        """
+        with bind_request_context(ctx):
+            logger.debug(f"[{self.name}] Handler called: complete %s", params.ref)
+            handler = self._completion_handler
+            if handler is None:
+                return mcp_types.CompleteResult(
+                    completion=mcp_types.Completion(values=[])
+                )
+
+            if is_coroutine_function(handler):
+                raw = handler(params.ref, params.argument, params.context)
+            else:
+                # A sync handler may perform blocking work (a database lookup,
+                # say); run it in a threadpool so it does not stall the event
+                # loop, matching how sync tools/prompts/resources are invoked.
+                raw = await call_sync_fn_in_threadpool(
+                    handler, params.ref, params.argument, params.context
+                )
+            result = await raw if inspect.isawaitable(raw) else raw
+            completion = normalize_completion(cast(CompletionValues, result))
+            return mcp_types.CompleteResult(completion=completion)
+
+    def _register_completion_handler(self: FastMCP) -> None:
+        """Register the low-level ``completion/complete`` handler.
+
+        Called when a completion handler is set (via
+        ``add_completion_handler``) so the SDK derives the completions
+        capability from the handler's presence. Registration is idempotent —
+        re-registering replaces the handler.
+        """
+        self._mcp_server.add_request_handler(
+            "completion/complete",
+            CompleteRequestParams,
+            self._on_complete,
+        )

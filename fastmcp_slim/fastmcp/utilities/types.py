@@ -421,7 +421,12 @@ class File:
         elif self.data is not None:
             raw_data = self.data
             if self._name:
-                uri_str = f"file:///{self._name}.{self._mime_type.split('/')[1]}"
+                extension = (
+                    ""
+                    if Path(self._name).suffix
+                    else f".{self._mime_type.split('/')[1]}"
+                )
+                uri_str = f"file:///{self._name}{extension}"
             else:
                 uri_str = f"file:///resource.{self._mime_type.split('/')[1]}"
         else:

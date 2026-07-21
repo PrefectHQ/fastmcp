@@ -7,6 +7,7 @@ import mimetypes
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Literal, cast
+from urllib.parse import quote, unquote
 
 from mcp.shared.path_security import PathEscapeError, safe_join
 from pydantic import AnyUrl
@@ -287,7 +288,9 @@ class SkillProvider(Provider):
         # Main skill file
         resources.append(
             SkillResource(
-                uri=AnyUrl(f"skill://{skill.name}/{self._main_file_name}"),
+                uri=AnyUrl(
+                    f"skill://{skill.name}/{quote(self._main_file_name, safe='/')}"
+                ),
                 name=f"{skill.name}/{self._main_file_name}",
                 description=skill.description,
                 mime_type="text/markdown",
@@ -318,7 +321,9 @@ class SkillProvider(Provider):
                 mime_type, _ = mimetypes.guess_type(file_info.path)
                 resources.append(
                     SkillFileResource(
-                        uri=AnyUrl(f"skill://{skill.name}/{file_info.path}"),
+                        uri=AnyUrl(
+                            f"skill://{skill.name}/{quote(file_info.path, safe='/')}"
+                        ),
                         name=f"{skill.name}/{file_info.path}",
                         description=f"File from {skill.name} skill",
                         mime_type=mime_type or "application/octet-stream",
@@ -347,6 +352,7 @@ class SkillProvider(Provider):
         skill_name, file_path = parts
         if skill_name != skill.name:
             return None
+        file_path = unquote(file_path)
 
         if file_path == "_manifest":
             return SkillResource(

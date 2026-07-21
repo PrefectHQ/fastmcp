@@ -1,7 +1,12 @@
 from fastmcp import _install_hints
 
 try:
-    from .auth import OAuth, BearerAuth
+    from .auth import (
+        BearerAuth,
+        ClientCredentialsOAuthProvider,
+        OAuth,
+        PrivateKeyJWTOAuthProvider,
+    )
     from .client import Client
     from .transports import (
         ClientTransport,
@@ -21,11 +26,13 @@ except ImportError as exc:
 __all__ = [
     "BearerAuth",
     "Client",
+    "ClientCredentialsOAuthProvider",
     "ClientTransport",
     "FastMCPTransport",
     "NodeStdioTransport",
     "NpxStdioTransport",
     "OAuth",
+    "PrivateKeyJWTOAuthProvider",
     "PythonStdioTransport",
     "SSETransport",
     "StdioTransport",

@@ -1,0 +1,177 @@
+---
+title: Argument Completion
+sidebarTitle: Completions
+description: Suggest values for prompt arguments and resource template parameters as the user types.
+icon: list-check
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="4.0.0" />
+
+Argument completion lets a server suggest values while a user fills in a prompt argument or a resource template parameter. As the user types, the client sends a `completion/complete` request naming the prompt or template, the argument being completed, and the partial value so far. The server answers with candidate strings, which the client offers as autocomplete suggestions.
+
+This is the server side of the feature. A client requests completions with [`Client.complete()`](/clients/client); this page covers how a server answers.
+
+## Register a completion handler
+
+A server has a single completion handler, registered with the `@mcp.completion` decorator. The handler receives every completion request and switches on which reference and argument is being completed.
+
+```python
+from fastmcp import FastMCP
+from mcp_types import PromptReference
+
+mcp = FastMCP("Completion Server")
+
+
+@mcp.prompt
+def write_poem(theme: str) -> str:
+    return f"Write a poem about {theme}"
+
+
+@mcp.completion
+def complete(ref, argument, context):
+    if isinstance(ref, PromptReference) and ref.name == "write_poem":
+        if argument.name == "theme":
+            options = ["nature", "love", "adventure"]
+            return [o for o in options if o.startswith(argument.value)]
+    return None
+```
+
+The handler is called with three values:
+
+- `ref`: which component is being completed — a `PromptReference` (carrying the prompt `name`) or a `ResourceTemplateReference` (carrying the template `uri`).
+- `argument`: a `CompletionArgument` with the argument `name` and the partial `value` typed so far.
+- `context`: an optional `CompletionContext` carrying the values of arguments the user has already supplied (see [Using already-supplied arguments](#using-already-supplied-arguments)).
+
+Filter your candidates against `argument.value` so the suggestions narrow as the user types. Returning `None` means "I have no suggestions for this reference and argument" — the client receives an empty list, which is the correct answer for a reference the server does not recognize.
+
+<Tip>
+Registering a completion handler declares the server's completions capability during the handshake. A server with no handler does not advertise the capability, and a client that checks capabilities before calling will skip completion requests entirely. This works the same way on both the handshake and modern protocol eras.
+</Tip>
+
+## Completing resource template parameters
+
+The same handler answers completion for resource template parameters. A `ResourceTemplateReference` identifies the template by its URI template, and `argument.name` is the parameter being completed.
+
+```python
+from fastmcp import FastMCP
+from mcp_types import ResourceTemplateReference
+
+mcp = FastMCP("Completion Server")
+
+REPOS = ["fastmcp", "prefect", "marvin"]
+
+
+@mcp.resource("github://{owner}/{repo}")
+def repo_readme(owner: str, repo: str) -> str:
+    return f"README for {owner}/{repo}"
+
+
+@mcp.completion
+def complete(ref, argument, context):
+    if isinstance(ref, ResourceTemplateReference):
+        if ref.uri == "github://{owner}/{repo}" and argument.name == "repo":
+            return [r for r in REPOS if r.startswith(argument.value)]
+    return None
+```
+
+Because a single handler answers for every prompt and template, a server that completes several components branches on `ref` first, then on `argument.name`. Grouping the branches by reference keeps the handler readable as it grows.
+
+## Using already-supplied arguments
+
+Completions often depend on values the user has already entered. A repository suggestion, for example, depends on which owner was chosen. The client sends those resolved values in the completion context, and the handler reads them from `context.arguments`.
+
+```python
+from fastmcp import FastMCP
+from mcp_types import ResourceTemplateReference
+
+mcp = FastMCP("Completion Server")
+
+REPOS_BY_OWNER = {
+    "prefecthq": ["fastmcp", "prefect", "marvin"],
+    "python": ["cpython", "mypy"],
+}
+
+
+@mcp.resource("github://{owner}/{repo}")
+def repo_readme(owner: str, repo: str) -> str:
+    return f"README for {owner}/{repo}"
+
+
+@mcp.completion
+def complete(ref, argument, context):
+    if isinstance(ref, ResourceTemplateReference) and argument.name == "repo":
+        owner = context.arguments.get("owner") if context and context.arguments else None
+        repos = REPOS_BY_OWNER.get(owner or "", [])
+        return [r for r in repos if r.startswith(argument.value)]
+    return None
+```
+
+Here the suggestions for `repo` are scoped to the `owner` the user already selected. The context is only present once at least one argument has been resolved, so guard against `context` being `None`.
+
+## Returning results
+
+A handler may return any of three things:
+
+- A list of strings — the simplest form, wrapped into a completion response automatically.
+- `None` — treated as an empty completion, for references and arguments the handler does not recognize.
+- A `Completion` object — when you want to include pagination hints alongside the values.
+
+The MCP protocol caps a single response at 100 values. When more candidates exist, return a `Completion` and set `total` (how many candidates match in all) and `has_more` (whether values were truncated) so the client can indicate that the list is partial.
+
+```python
+from fastmcp import FastMCP
+from mcp_types import Completion, PromptReference
+
+mcp = FastMCP("Completion Server")
+
+ALL_CITIES = ["Paris", "Prague", "Portland", "Phoenix", "Perth"]
+
+
+@mcp.prompt
+def pick_city(city: str) -> str:
+    return f"Tell me about {city}"
+
+
+def search_cities(prefix: str) -> list[str]:
+    # A real lookup might return thousands of matches; ALL_CITIES stands in.
+    return [c for c in ALL_CITIES if c.startswith(prefix)]
+
+
+@mcp.completion
+def complete(ref, argument, context):
+    if isinstance(ref, PromptReference) and argument.name == "city":
+        matches = search_cities(argument.value)
+        return Completion(
+            values=matches[:100],
+            total=len(matches),
+            has_more=len(matches) > 100,
+        )
+    return None
+```
+
+## Accessing the request context
+
+A completion handler may be sync or async, and it can reach the active request through FastMCP's dependency functions the same way any handler does. Use [`get_context()`](/servers/context) to access session information, authentication, or server state while computing suggestions.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.dependencies import get_context
+from mcp_types import PromptReference
+
+mcp = FastMCP("Completion Server")
+
+
+@mcp.completion
+async def complete(ref, argument, context):
+    ctx = get_context()
+    await ctx.debug(f"Completing {argument.name!r} for {ref}")
+    ...
+```
+
+## Authorization
+
+Completion runs behind the server's connection-level authentication: an unauthenticated client never reaches the handler. It is independent of per-component `auth=`, though. FastMCP does not resolve the referenced prompt or resource template, so a completion request is not filtered by that component's visibility the way `prompts/get` or a resource read is — the single handler answers for whatever reference the client names.
+
+A completion response carries only candidate strings for one argument, never component content or schema, so this exposes nothing about a hidden component on its own. If a handler computes candidates that should themselves be restricted — matching a prompt hidden from unauthorized callers, say — check the auth context inside the handler (via [`get_context()`](/servers/context)) and return `None` when the caller is not permitted.

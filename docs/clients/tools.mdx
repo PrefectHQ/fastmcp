@@ -80,7 +80,7 @@ async with client:
   Fully hydrated Python objects with complex type support (datetimes, UUIDs, custom classes). FastMCP exclusive.
 </ResponseField>
 
-<ResponseField name=".content" type="list[fastmcp.types.ContentBlock]">
+<ResponseField name=".content" type="list[mcp_types.ContentBlock]">
   Standard MCP content blocks (`TextContent`, `ImageContent`, `AudioContent`, etc.).
 </ResponseField>
 
@@ -173,7 +173,7 @@ For complete control, use `call_tool_mcp()` which returns the raw MCP protocol o
 ```python
 async with client:
     result = await client.call_tool_mcp("my_tool", {"param": "value"})
-    # result -> fastmcp.types.CallToolResult
+    # result -> mcp_types.CallToolResult
 
     if result.is_error:
         print(f"Tool failed: {result.content}")

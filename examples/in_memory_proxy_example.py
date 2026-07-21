@@ -9,10 +9,11 @@ It illustrates the pattern:
 
 import asyncio
 
+from mcp_types import TextContent
+
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.server import create_proxy
-from fastmcp.types import TextContent
 
 
 class EchoService:

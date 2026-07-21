@@ -723,7 +723,7 @@ For complete control over tool responses, return a `ToolResult` object. This giv
 
 ```python
 from fastmcp.tools.tool import ToolResult
-from fastmcp.types import TextContent
+from mcp_types import TextContent
 
 @mcp.tool
 def advanced_tool() -> ToolResult:
@@ -944,7 +944,7 @@ Annotations serve several purposes in client applications:
 You can add annotations to a tool using the `annotations` parameter in the `@mcp.tool` decorator. FastMCP accepts either a plain dict or `ToolAnnotations`; the examples below use `ToolAnnotations` for consistency and stronger editor/type support.
 
 ```python
-from fastmcp.types import ToolAnnotations
+from mcp_types import ToolAnnotations
 
 @mcp.tool(
     annotations=ToolAnnotations(
@@ -983,7 +983,7 @@ Mark a tool as read-only when it retrieves data, performs calculations, or check
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.types import ToolAnnotations
+from mcp_types import ToolAnnotations
 
 mcp = FastMCP("Data Server")
 

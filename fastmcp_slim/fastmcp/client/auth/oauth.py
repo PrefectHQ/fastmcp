@@ -87,12 +87,19 @@ async def check_if_auth_required(
 
 class TokenStorageAdapter(TokenStorage):
     _server_url: str
+    _cache_namespace: str | None
     _key_value_store: AsyncKeyValue
     _storage_oauth_token: PydanticAdapter[OAuthToken]
     _storage_client_info: PydanticAdapter[OAuthClientInformationFull]
 
-    def __init__(self, async_key_value: AsyncKeyValue, server_url: str):
+    def __init__(
+        self,
+        async_key_value: AsyncKeyValue,
+        server_url: str,
+        cache_namespace: str | None = None,
+    ):
         self._server_url = server_url
+        self._cache_namespace = cache_namespace
         self._key_value_store = async_key_value
         self._storage_oauth_token = PydanticAdapter[OAuthToken](
             default_collection="mcp-oauth-token",
@@ -107,14 +114,23 @@ class TokenStorageAdapter(TokenStorage):
             raise_on_validation_error=True,
         )
 
+    def _cache_key_prefix(self) -> str:
+        # When set, the namespace distinguishes clients that share one store
+        # against the same server URL (e.g. M2M providers with different
+        # client_ids). Without it, the prefix is the bare server URL, preserving
+        # the existing keys used by the interactive OAuth flow.
+        if self._cache_namespace is not None:
+            return f"{self._server_url}/{self._cache_namespace}"
+        return self._server_url
+
     def _get_token_cache_key(self) -> str:
-        return f"{self._server_url}/tokens"
+        return f"{self._cache_key_prefix()}/tokens"
 
     def _get_client_info_cache_key(self) -> str:
-        return f"{self._server_url}/client_info"
+        return f"{self._cache_key_prefix()}/client_info"
 
     def _get_token_expiry_cache_key(self) -> str:
-        return f"{self._server_url}/token_expiry"
+        return f"{self._cache_key_prefix()}/token_expiry"
 
     async def clear(self) -> None:
         await self._storage_oauth_token.delete(key=self._get_token_cache_key())

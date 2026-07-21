@@ -68,6 +68,7 @@ from fastmcp.resources.security import (
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth import AuthCheck, AuthContext, AuthProvider, run_auth_checks
 from fastmcp.server.caching import build_cache_hints
+from fastmcp.server.completions import CompletionHandler
 from fastmcp.server.lifespan import Lifespan
 from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
@@ -512,6 +513,12 @@ class FastMCP(
         self.experimental_capabilities: dict[str, dict[str, Any]] = (
             experimental_capabilities or {}
         )
+
+        # Server-level argument completion handler (set via @mcp.completion).
+        # The completions capability is declared only once this is set, because
+        # add_completion_handler registers the low-level completion/complete
+        # handler at that point (the SDK derives the capability from the handler).
+        self._completion_handler: CompletionHandler | None = None
 
         self.middleware: list[Middleware] = list(middleware or [])
 
@@ -2195,6 +2202,84 @@ class FastMCP(
             task=task if task is not None else self._support_tasks_by_default,
             auth=auth,
         )
+
+    def add_completion_handler(self, handler: CompletionHandler) -> None:
+        """Register the server's argument-completion handler.
+
+        A server has a single completion handler that answers every
+        `completion/complete` request, switching on the reference (a prompt or
+        resource template) and the argument being completed. Registering it also
+        registers the low-level `completion/complete` handler, which is what
+        makes the SDK declare the completions capability — so the capability is
+        advertised exactly when the server can answer. Calling this again
+        replaces the handler.
+
+        Args:
+            handler: A callable taking the reference, the
+                `CompletionArgument`, and the optional `CompletionContext`, and
+                returning candidate values (a `Completion`, a list of strings,
+                or None). May be sync or async.
+        """
+        self._completion_handler = handler
+        self._register_completion_handler()
+
+    @overload
+    def completion(self, handler: CompletionHandler) -> CompletionHandler: ...
+
+    @overload
+    def completion(
+        self,
+    ) -> Callable[[CompletionHandler], CompletionHandler]: ...
+
+    def completion(
+        self,
+        handler: CompletionHandler | None = None,
+    ) -> CompletionHandler | Callable[[CompletionHandler], CompletionHandler]:
+        """Decorator to register the server's argument-completion handler.
+
+        The handler answers `completion/complete` requests for prompt arguments
+        and resource-template parameters. It receives the reference being
+        completed, the argument (its name and the partial value typed so far),
+        and the context of arguments already supplied, and returns candidate
+        values. Return a list of strings, a `Completion` (to include pagination
+        hints), or None when the reference/argument is not one it handles — an
+        unhandled reference yields an empty completion, not an error.
+
+        Registering a handler declares the completions capability; a server with
+        none does not advertise it. This works identically on the handshake and
+        modern protocol eras.
+
+        Supports both `@mcp.completion` and `@mcp.completion()`.
+
+        Example:
+
+            ```python
+            from fastmcp import FastMCP
+            from mcp_types import Completion, PromptReference
+
+            mcp = FastMCP("Completion Server")
+
+            @mcp.prompt
+            def poem(theme: str) -> str:
+                return f"Write a poem about {theme}"
+
+            @mcp.completion
+            def complete(ref, argument, context):
+                if isinstance(ref, PromptReference) and ref.name == "poem":
+                    if argument.name == "theme":
+                        options = ["nature", "love", "adventure"]
+                        return [o for o in options if o.startswith(argument.value)]
+                return None
+            ```
+        """
+
+        def register(fn: CompletionHandler) -> CompletionHandler:
+            self.add_completion_handler(fn)
+            return fn
+
+        if handler is None:
+            return register
+        return register(handler)
 
     def mount(
         self,
