@@ -19,18 +19,29 @@ The camelCase field bridge and the `McpError` alias are covered in
 
 import importlib
 import inspect
-import subprocess
-import sys
-import textwrap
 
 import pytest
-from mcp_types import ErrorData
 
 from fastmcp import Client, FastMCP, settings
+
+# The canonical replacement symbols the upgrade guide points users to. Importing
+# them here — the ordinary in-process path every other test in the suite uses —
+# means this file fails at collection if the guide ever names a symbol that no
+# longer resolves. `create_proxy`, `settings`, `McpError`, and
+# `CacheableToolResult` above are part of the same set.
+from fastmcp.apps import AppConfig
 from fastmcp.client.transports import StreamableHttpTransport
+from fastmcp.dependencies import Depends
 from fastmcp.exceptions import McpError
+from fastmcp.prompts.function_prompt import FunctionPrompt
+from fastmcp.resources.function_resource import FunctionResource
 from fastmcp.server import create_proxy
 from fastmcp.server.middleware.caching import CacheableToolResult
+from fastmcp.server.providers.openapi import OpenAPIProvider
+from fastmcp.server.providers.proxy import FastMCPProxy, ProxyClient
+from fastmcp.server.transforms import PromptsAsTools, ResourcesAsTools, ToolTransform
+from fastmcp.tools.function_tool import FunctionTool
+from fastmcp.types import ErrorData, TextContent, Tool, ToolAnnotations
 
 
 class TestCommonServersUpgradeCleanly:
@@ -108,59 +119,35 @@ class TestCommonServersUpgradeCleanly:
         assert result.data == "pong"
 
 
-# --- Canonical replacement surfaces that must exist in 4.0 ---
-
-CANONICAL_IMPORTS = [
-    ("fastmcp.tools.function_tool", "FunctionTool"),
-    ("fastmcp.resources.function_resource", "FunctionResource"),
-    ("fastmcp.prompts.function_prompt", "FunctionPrompt"),
-    ("fastmcp.server.providers.openapi", "OpenAPIProvider"),
-    ("fastmcp.server.providers.proxy", "FastMCPProxy"),
-    ("fastmcp.server.providers.proxy", "ProxyClient"),
-    ("fastmcp.server", "create_proxy"),
-    ("fastmcp.apps", "AppConfig"),
-    ("fastmcp.server.transforms", "ToolTransform"),
-    ("fastmcp.server.transforms", "PromptsAsTools"),
-    ("fastmcp.server.transforms", "ResourcesAsTools"),
-    ("fastmcp.dependencies", "Depends"),
-    ("fastmcp.exceptions", "McpError"),
-    ("fastmcp.types", "TextContent"),
-    ("fastmcp.types", "Tool"),
-    ("fastmcp.types", "ToolAnnotations"),
-    ("fastmcp.types", "ErrorData"),
-]
+# --- Canonical replacement surfaces the guide points users to ---
 
 
 class TestCanonicalReplacementsResolve:
-    @pytest.mark.subprocess_heavy
-    def test_replacement_symbols_importable(self):
-        # Run in a clean interpreter so this is immune to any in-process import
-        # state that other tests mutate on shared modules (some tests reload or
-        # block-import `fastmcp.*`/`mcp*`, which can leave a shared module object
-        # missing attributes for the rest of a worker's run).
-        pairs = "\n".join(f"{m}:{n}" for m, n in CANONICAL_IMPORTS)
-        script = textwrap.dedent(
-            """
-            import importlib
-
-            missing = []
-            for line in '''{pairs}'''.strip().splitlines():
-                module_path, name = line.split(":")
-                module = importlib.import_module(module_path)
-                if not hasattr(module, name):
-                    missing.append(line)
-            if missing:
-                raise SystemExit("unresolved: " + ", ".join(missing))
-            print("OK")
-            """
-        ).format(pairs=pairs)
-        result = subprocess.run(
-            [sys.executable, "-c", script],
-            capture_output=True,
-            text=True,
+    def test_replacement_symbols_are_bound(self):
+        # The imports at the top of this module already prove these resolve
+        # (a broken pointer would fail collection). This asserts each is bound
+        # so the guarantee is an explicit, named test rather than a side effect.
+        symbols = (
+            FunctionTool,
+            FunctionResource,
+            FunctionPrompt,
+            OpenAPIProvider,
+            FastMCPProxy,
+            ProxyClient,
+            create_proxy,
+            AppConfig,
+            ToolTransform,
+            PromptsAsTools,
+            ResourcesAsTools,
+            Depends,
+            McpError,
+            CacheableToolResult,
+            TextContent,
+            Tool,
+            ToolAnnotations,
+            ErrorData,
         )
-        assert result.returncode == 0, result.stdout + result.stderr
-        assert result.stdout.strip().endswith("OK")
+        assert all(sym is not None for sym in symbols)
 
 
 # --- Hard removals: modules that no longer exist ---

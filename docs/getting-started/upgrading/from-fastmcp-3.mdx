@@ -15,7 +15,7 @@ The SDK v2 raises FastMCP's dependency floors, which matters before any of your 
 
 **pydantic >= 2.12 is now the floor.** If your project pins an older pydantic (for example `pydantic==2.11.*`), installing this FastMCP release fails with an unsatisfiable-resolution error from your installer — bump your pin to `>=2.12` first. If you don't pin pydantic at all, installers upgrade it silently as part of the FastMCP upgrade.
 
-**The server extra floors Starlette >= 1.0.** Modern FastAPI (0.11x and later) already runs on Starlette 1.x, so mounting a FastMCP server inside a FastAPI app coexists cleanly — verified with FastAPI 0.138.2. Only very old FastAPI versions pinned below Starlette 1.0 conflict; upgrade FastAPI if your resolver complains about Starlette.
+**The server extra floors Starlette >= 1.0.1.** Modern FastAPI (0.11x and later) already runs on Starlette 1.x, so mounting a FastMCP server inside a FastAPI app coexists cleanly — verified with FastAPI 0.138.2. Only very old FastAPI versions pinned below Starlette 1.0.1 conflict; upgrade FastAPI if your resolver complains about Starlette.
 
 ## What FastMCP absorbs
 
@@ -190,7 +190,7 @@ Two of these replacements are not exact behavioral swaps. `create_proxy` takes i
 
 `mount(as_proxy=True)` used to route the child through a proxy (an MCP-client execution boundary) rather than composing it directly. To keep that boundary, wrap the child in `create_proxy()` and mount the proxy; a plain `mount(child)` composes the child in-process. Either way, the child's lifespan and middleware now run — a direct mount no longer skips them.
 
-`import_server` → `mount` is the one row here that is not a mechanical swap, because the two never had the same semantics. `import_server` took a **one-time static snapshot** — it copied the child's tools, resources, and prompts at call time, with no live link, and did not run the child's lifespan or middleware. `mount` is a **live composition** — it holds a live link to the child and runs the child's lifespan and middleware. After switching, later changes to the child become visible through the parent, and the child's lifespan and middleware now execute on every request. If you depended on the frozen-copy behavior (a stable snapshot, no child lifecycle), there is no drop-in replacement: register the child's components on the parent directly instead of composing the two servers.
+`import_server` → `mount` is the one row here that is not a mechanical swap, because the two never had the same semantics. `import_server` took a **one-time static snapshot** — it copied the child's tools, resources, and prompts at call time, with no live link, and did not run the child's lifespan or middleware. `mount` is a **live composition** — it holds a live link to the child and runs the child's lifespan and middleware. After switching, later changes to the child become visible through the parent, the child's lifespan runs with the parent's (entered when the server starts, held until it stops — not per request), and the child's middleware runs on the operations delegated to it. If you depended on the frozen-copy behavior (a stable snapshot, no child lifecycle), there is no drop-in replacement: register the child's components on the parent directly instead of composing the two servers.
 
 ### Removed tool and decorator parameters
 
@@ -199,7 +199,7 @@ Two `@tool` parameters and two settings are gone:
 - **Tool `serializer=`** is removed from `@tool` / `mcp.tool()`, `Tool.from_function`, `Tool.from_tool`, and the OpenAPI tool. Return a `ToolResult` from your tool for full control over serialization instead.
 - **Tool `exclude_args=`** is removed. Hide a parameter from the tool schema by injecting it instead: give it a `Depends(factory)` default (from `fastmcp.dependencies`), where `factory` is a callable returning the value the argument used to carry. An injected parameter never appears in the tool's schema, which is what `exclude_args` was for.
 - **The `decorator_mode` setting** (`FASTMCP_DECORATOR_MODE`) and its `"object"` mode are removed. Decorators always return your original function with metadata attached; reach the component object through the server (`await mcp.get_tool("name")`) rather than off the decorated function.
-- **`StreamableHttpTransport(sse_read_timeout=...)`** is removed — it was a no-op under the SDK v2 client. Configure timeouts through `read_timeout_seconds` in `session_kwargs`, or on the httpx2 client via `httpx_client_factory`. (`SSETransport` still accepts `sse_read_timeout`.)
+- **`StreamableHttpTransport(sse_read_timeout=...)`** is removed — it was a no-op under the SDK v2 client. Set the read timeout through the public `Client(transport, timeout=...)` (a `timedelta` or float seconds), or reach for a custom `httpx_client_factory` when you need finer control. (`SSETransport` still accepts `sse_read_timeout`.)
 
 ## Behavior changes to verify
 
@@ -207,7 +207,7 @@ Two server-side behaviors changed in ways that compile fine but can surface at r
 
 **Templated resources are path-screened by default.** Every templated resource now has its extracted parameter values checked for path-traversal (`..` segments), absolute paths, and null bytes *before your handler runs*, at the server's read chokepoint. A rejected read returns a non-leaky "resource not found" error. Only a standalone `..` segment counts as traversal, so values that merely contain dots (`file.tar.gz`, `HEAD~3..HEAD`) and dotfiles (`.env`) still pass. If a template legitimately accepts `..`-bearing or absolute values, exempt the parameter with `ResourceSecurity(exempt_params={...})`, disable the check per-component with `security=None`, or set a server-wide default with `FastMCP(resource_security=...)`. See [Resources → Path Security](/servers/resources#path-security).
 
-**Resource-not-found now returns `-32602`.** The wire error code for a missing resource from the core `resources/read` handler changed from `-32002` to `-32602` (`INVALID_PARAMS`, per SEP-2164). The human-readable message ("Resource not found: ...") is unchanged, so this only affects clients that matched on the numeric code — update those to expect `-32602`.
+**Resource-not-found now returns `-32602`.** The wire error code for a missing resource from the core `resources/read` handler changed from `-32002` to `-32602` (`INVALID_PARAMS`, per SEP-2164). The human-readable message ("Resource not found: ...") is unchanged, so this only affects clients that matched on the numeric code — update those to expect `-32602`. (The opt-in `ErrorHandlingMiddleware` keeps its own per-method-prefix code mapping; if you run it with `transform_errors=True` it can still map not-found to a different code, so it is unaffected by this change.)
 
 ## Deprecation timeline
 
@@ -250,7 +250,7 @@ Two of these bite by default now, because **`fastmcp.Client` defaults to `mode="
 
 Most servers upgrade untouched. Work down this list to find the ones that don't:
 
-1. **Bump your environment.** Raise any pin below `pydantic>=2.12`; upgrade FastAPI if your resolver complains about Starlette `<1.0`.
+1. **Bump your environment.** Raise any pin below `pydantic>=2.12`; upgrade FastAPI if your resolver complains about Starlette `<1.0.1`.
 2. **Fix imports that moved out.** Replace `from mcp.types import X` with `from fastmcp.types import X` (or `import mcp_types`), and update any import from the [removed modules](#moved-imports) (`fastmcp.server.proxy`, `fastmcp.server.openapi`, `fastmcp.server.apps`, the `fastmcp.tools.tool` / `resources.resource` / `prompts.prompt` component shims).
 3. **Update removed server APIs.** Swap `as_proxy` → `create_proxy`, `import_server` → `mount`, `mount(prefix=)` → `mount(namespace=)`, and the [other removed methods and keywords](#removed-server-methods-and-mount-keywords).
 4. **Update removed tool parameters.** Replace tool `serializer=` (return a `ToolResult`), `exclude_args=` (use `Depends()`), and `StreamableHttpTransport(sse_read_timeout=)`.
