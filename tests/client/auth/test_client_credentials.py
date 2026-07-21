@@ -431,6 +431,45 @@ class TestPersistentTokenExpiry:
 
         assert requests[-1].headers["Authorization"] == "Bearer FRESH-TOKEN"
 
+    async def test_nonexpiring_token_ignores_stale_stored_expiry(self):
+        """A reloaded token without `expires_in` is non-expiring and must not
+        inherit a stale expiry left by a previous token it replaced."""
+        store = MemoryStore()
+
+        def make_provider() -> ClientCredentialsOAuthProvider:
+            return ClientCredentialsOAuthProvider(
+                SERVER_URL,
+                client_id="cid",
+                client_secret="secret",
+                scopes=["read"],
+                token_storage=store,
+            )
+
+        # Record a stale past expiry, then replace the token with a non-expiring
+        # one — set_tokens leaves the earlier expiry record in place.
+        seed = make_provider()
+        await seed.context.storage.set_tokens(
+            OAuthToken(access_token="OLD", token_type="Bearer", expires_in=-100)
+        )
+        await seed.context.storage.set_tokens(
+            OAuthToken(access_token="NONEXPIRING", token_type="Bearer")
+        )
+
+        provider = make_provider()
+        responder, _ = make_m2m_responder(
+            token_response={
+                "access_token": "FRESH-TOKEN",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+            }
+        )
+
+        requests = await drive_auth_flow(provider, responder)
+
+        # The non-expiring token is used as-is; the stale expiry does not force
+        # a needless re-exchange to FRESH-TOKEN.
+        assert requests[-1].headers["Authorization"] == "Bearer NONEXPIRING"
+
 
 class TestStepUpScopeAccumulation:
     """A 403 insufficient_scope step-up unions the challenged scope with the

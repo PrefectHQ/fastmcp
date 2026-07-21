@@ -105,9 +105,18 @@ async def _restore_token_expiry(context: OAuthContext) -> None:
     provider recreated with persistent storage would treat an already-expired
     token as still valid. Reading the absolute expiry back keeps `is_token_valid`
     honest, prompting a fresh token request when the stored one has expired.
+
+    The restore is skipped unless the reloaded token itself declares an
+    `expires_in`. A token whose response omitted `expires_in` is non-expiring,
+    and the store may still hold a stale expiry from a previous token it
+    replaced; applying that would wrongly force a re-exchange. This mirrors the
+    guard in the interactive `OAuth._initialize`.
     """
     storage = context.storage
-    if context.current_tokens is None or not isinstance(storage, TokenStorageAdapter):
+    tokens = context.current_tokens
+    if tokens is None or not tokens.expires_in:
+        return
+    if not isinstance(storage, TokenStorageAdapter):
         return
     expiry = await storage.get_token_expiry()
     if expiry is not None:
