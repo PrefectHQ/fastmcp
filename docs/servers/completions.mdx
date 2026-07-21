@@ -126,6 +126,8 @@ from mcp_types import Completion, PromptReference
 
 mcp = FastMCP("Completion Server")
 
+ALL_CITIES = ["Paris", "Prague", "Portland", "Phoenix", "Perth"]
+
 
 @mcp.prompt
 def pick_city(city: str) -> str:
@@ -133,7 +135,7 @@ def pick_city(city: str) -> str:
 
 
 def search_cities(prefix: str) -> list[str]:
-    # Stand-in for a real lookup that may return thousands of matches.
+    # A real lookup might return thousands of matches; ALL_CITIES stands in.
     return [c for c in ALL_CITIES if c.startswith(prefix)]
 
 

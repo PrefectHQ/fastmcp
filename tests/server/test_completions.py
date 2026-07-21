@@ -223,6 +223,23 @@ def test_normalize_completion_passes_completion_through():
     assert normalize_completion(completion) is completion
 
 
+def test_normalize_completion_truncates_oversized_list_to_100():
+    values = [str(i) for i in range(150)]
+    completion = normalize_completion(values)
+    assert len(completion.values) == 100
+    assert completion.total == 150
+    assert completion.has_more is True
+
+
+def test_normalize_completion_truncates_oversized_completion_and_keeps_total():
+    completion = normalize_completion(
+        Completion(values=[str(i) for i in range(150)], total=500)
+    )
+    assert len(completion.values) == 100
+    assert completion.total == 500
+    assert completion.has_more is True
+
+
 def test_normalize_completion_rejects_bare_string():
     with pytest.raises(TypeError, match="return a list of strings"):
         normalize_completion("oops")

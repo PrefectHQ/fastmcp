@@ -44,20 +44,41 @@ context of already-supplied argument values. May be sync or async.
 """
 
 
+# The MCP completion contract caps `values` at 100 candidates per response.
+MAX_COMPLETION_VALUES = 100
+
+
 def normalize_completion(result: CompletionValues) -> mcp_types.Completion:
     """Coerce a handler's return value into a wire ``Completion``.
 
     A returned ``str`` is rejected: it is almost always a mistake (the value
     would iterate into one-character candidates), so it raises rather than
     silently producing surprising output.
+
+    The MCP contract caps a completion at 100 values, so a longer result is
+    truncated to the first 100 with ``has_more`` set — a handler that returns
+    thousands of matches emits a conforming response rather than an oversized
+    one that strict clients reject.
     """
     if result is None:
         return mcp_types.Completion(values=[])
-    if isinstance(result, mcp_types.Completion):
-        return result
     if isinstance(result, str):
         raise TypeError(
             "A completion handler returned a str; return a list of strings "
             "(for example, [value]) or a Completion instead."
         )
-    return mcp_types.Completion(values=list(result))
+    if isinstance(result, mcp_types.Completion):
+        completion = result
+    else:
+        completion = mcp_types.Completion(values=list(result))
+
+    if len(completion.values) > MAX_COMPLETION_VALUES:
+        total = (
+            completion.total if completion.total is not None else len(completion.values)
+        )
+        return mcp_types.Completion(
+            values=completion.values[:MAX_COMPLETION_VALUES],
+            total=total,
+            has_more=True,
+        )
+    return completion
