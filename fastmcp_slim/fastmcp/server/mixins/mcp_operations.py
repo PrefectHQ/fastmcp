@@ -422,7 +422,7 @@ class MCPOperationsMixin:
             result = handler(params.ref, params.argument, params.context)
             if inspect.isawaitable(result):
                 result = await result
-            completion = normalize_completion(cast("CompletionValues", result))
+            completion = normalize_completion(cast(CompletionValues, result))
             return mcp_types.CompleteResult(completion=completion)
 
     def _register_completion_handler(self: FastMCP) -> None:
