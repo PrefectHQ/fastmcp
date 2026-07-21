@@ -25,6 +25,16 @@ The migration merges to `main` and development continues there with subsequent P
 - **`main` carries the beta pins.** While the SDK is on `mcp==2.0.0b1` / `mcp-types==2.0.0b1`, `main` cuts **pre-releases** (`4.0.0b1`, `4.0.0b2`, …). No stable PyPI release goes out until `mcp 2.0.0` reaches GA — at which point the pins swap to the stable SDK and `4.0.0` ships. The pin-swap is a tracked checklist item on the [Known Gaps](/development/v4-notes/known-gaps) page.
 - **`release/3.x` is the maintenance line.** A `release/3.x` branch is cut from pre-merge `main`. It stays on the SDK v1 line, receives upstream security patches, and serves users who cannot move to the SDK v2 beta yet.
 
+### Release codenames
+
+Following the pun-title convention (`v<version>: <pun>`), the v4 line runs a single "four" motif across the whole cycle, holding the headline name for the stable release the way v3 did ("Three at Last" for `3.0.0`, stage puns for its betas):
+
+| Release | Codename | The nod |
+| --- | --- | --- |
+| `4.0.0a1` (alpha) | **Fourst Contact** | _first contact_ — the first, cautious look at the new engine |
+| `4.0.0b1` (beta) | **Fourgone Conclusion** | _foregone conclusion_ — once the MCP SDK went v2, v4 was inevitable |
+| `4.0.0` (stable) | **Fast Fourward** | _fast forward_ — full speed onto the new foundation |
+
 ## How to read the register
 
 Each subsystem section in the [Change Register](/development/v4-notes/change-register) tags its changes with one of four dispositions:
