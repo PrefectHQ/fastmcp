@@ -19,6 +19,9 @@ The camelCase field bridge and the `McpError` alias are covered in
 
 import importlib
 import inspect
+import subprocess
+import sys
+import textwrap
 
 import pytest
 from mcp_types import ErrorData
@@ -130,14 +133,35 @@ CANONICAL_IMPORTS = [
 
 
 class TestCanonicalReplacementsResolve:
-    @pytest.mark.parametrize(
-        "module_path, name",
-        CANONICAL_IMPORTS,
-        ids=[f"{m}:{n}" for m, n in CANONICAL_IMPORTS],
-    )
-    def test_replacement_symbol_importable(self, module_path, name):
-        module = importlib.import_module(module_path)
-        assert hasattr(module, name)
+    @pytest.mark.subprocess_heavy
+    def test_replacement_symbols_importable(self):
+        # Run in a clean interpreter so this is immune to any in-process import
+        # state that other tests mutate on shared modules (some tests reload or
+        # block-import `fastmcp.*`/`mcp*`, which can leave a shared module object
+        # missing attributes for the rest of a worker's run).
+        pairs = "\n".join(f"{m}:{n}" for m, n in CANONICAL_IMPORTS)
+        script = textwrap.dedent(
+            """
+            import importlib
+
+            missing = []
+            for line in '''{pairs}'''.strip().splitlines():
+                module_path, name = line.split(":")
+                module = importlib.import_module(module_path)
+                if not hasattr(module, name):
+                    missing.append(line)
+            if missing:
+                raise SystemExit("unresolved: " + ", ".join(missing))
+            print("OK")
+            """
+        ).format(pairs=pairs)
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert result.stdout.strip().endswith("OK")
 
 
 # --- Hard removals: modules that no longer exist ---
