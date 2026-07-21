@@ -34,7 +34,6 @@ from mcp.client.auth.extensions.client_credentials import (
 from typing_extensions import override
 
 from fastmcp.client.auth.oauth import TokenStorageAdapter
-from fastmcp.utilities.logging import get_logger
 
 __all__ = [
     "ClientCredentialsOAuthProvider",
@@ -42,8 +41,6 @@ __all__ = [
     "SignedJWTParameters",
     "static_assertion_provider",
 ]
-
-logger = get_logger(__name__)
 
 
 def _normalize_scopes(scopes: str | list[str] | None) -> str | None:
@@ -54,16 +51,22 @@ def _normalize_scopes(scopes: str | list[str] | None) -> str | None:
 
 
 def _resolve_token_storage(
-    token_storage: AsyncKeyValue | None, mcp_url: str
+    token_storage: AsyncKeyValue | None, mcp_url: str, client_id: str
 ) -> TokenStorageAdapter:
     """Wrap a token store in the FastMCP adapter, defaulting to in-memory.
 
     Unlike the interactive `OAuth` provider, M2M providers do not warn when using
     in-memory storage: re-acquiring a token is a single non-interactive request,
     so losing the cache on restart is cheap rather than disruptive.
+
+    The cache is namespaced by ``client_id`` so that two providers with different
+    client identities can share one store against the same MCP endpoint without
+    overwriting each other's tokens.
     """
     store = token_storage or MemoryStore()
-    return TokenStorageAdapter(async_key_value=store, server_url=mcp_url)
+    return TokenStorageAdapter(
+        async_key_value=store, server_url=mcp_url, cache_namespace=client_id
+    )
 
 
 class ClientCredentialsOAuthProvider(_SDKClientCredentialsOAuthProvider):
@@ -144,7 +147,9 @@ class ClientCredentialsOAuthProvider(_SDKClientCredentialsOAuthProvider):
         mcp_url = mcp_url.rstrip("/")
         super().__init__(
             server_url=mcp_url,
-            storage=_resolve_token_storage(self._token_storage, mcp_url),
+            storage=_resolve_token_storage(
+                self._token_storage, mcp_url, self._client_id
+            ),
             client_id=self._client_id,
             client_secret=self._client_secret,
             token_endpoint_auth_method=self._token_endpoint_auth_method,
@@ -163,6 +168,15 @@ class ClientCredentialsOAuthProvider(_SDKClientCredentialsOAuthProvider):
                 "provides the URL automatically from the transport."
             )
         return super().async_auth_flow(request)
+
+    @override
+    async def _perform_authorization(self) -> httpx2.Request:
+        # The inherited flow overwrites client_metadata.scope with the
+        # server-advertised scopes during 401 handling. Restore the caller's
+        # explicit scopes so the token request carries what the caller asked for.
+        if self._scopes is not None:
+            self.context.client_metadata.scope = self._scopes
+        return await super()._perform_authorization()
 
 
 class PrivateKeyJWTOAuthProvider(_SDKPrivateKeyJWTOAuthProvider):
@@ -249,7 +263,9 @@ class PrivateKeyJWTOAuthProvider(_SDKPrivateKeyJWTOAuthProvider):
         mcp_url = mcp_url.rstrip("/")
         super().__init__(
             server_url=mcp_url,
-            storage=_resolve_token_storage(self._token_storage, mcp_url),
+            storage=_resolve_token_storage(
+                self._token_storage, mcp_url, self._client_id
+            ),
             client_id=self._client_id,
             assertion_provider=self._assertion_provider,
             scopes=self._scopes,
@@ -267,3 +283,12 @@ class PrivateKeyJWTOAuthProvider(_SDKPrivateKeyJWTOAuthProvider):
                 "the URL automatically from the transport."
             )
         return super().async_auth_flow(request)
+
+    @override
+    async def _perform_authorization(self) -> httpx2.Request:
+        # The inherited flow overwrites client_metadata.scope with the
+        # server-advertised scopes during 401 handling. Restore the caller's
+        # explicit scopes so the token request carries what the caller asked for.
+        if self._scopes is not None:
+            self.context.client_metadata.scope = self._scopes
+        return await super()._perform_authorization()

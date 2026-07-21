@@ -10,7 +10,6 @@ endpoint, exactly as httpx would while running the auth flow.
 
 import base64
 import warnings
-from base64 import urlsafe_b64decode
 from collections.abc import Callable
 from contextlib import aclosing
 from urllib.parse import urlparse
@@ -18,6 +17,7 @@ from urllib.parse import urlparse
 import httpx2
 import jwt
 import pytest
+from key_value.aio.stores.memory import MemoryStore
 from mcp.client.auth import OAuthTokenError
 
 from fastmcp.client import Client
@@ -41,11 +41,14 @@ def make_m2m_responder(
     token_status: int = 200,
     server_url: str = SERVER_URL,
     auth_server_url: str = AUTH_SERVER_URL,
+    prm_scopes_supported: list[str] | None = None,
 ) -> tuple[Callable[[httpx2.Request], httpx2.Response], dict[str, httpx2.Request]]:
     """Build a responder for the standard M2M discovery + token exchange flow.
 
     Returns the responder and a dict that captures the token request and the
-    final (retried) resource request for assertions.
+    final (retried) resource request for assertions. When ``prm_scopes_supported``
+    is set, the protected-resource metadata advertises those scopes, which the SDK
+    flow would otherwise apply to the token request.
     """
     captured: dict[str, httpx2.Request] = {}
 
@@ -61,13 +64,13 @@ def make_m2m_responder(
             return httpx2.Response(401, headers={"WWW-Authenticate": "Bearer"})
 
         if path.startswith("/.well-known/oauth-protected-resource"):
-            return httpx2.Response(
-                200,
-                json={
-                    "resource": server_url,
-                    "authorization_servers": [auth_server_url],
-                },
-            )
+            prm: dict = {
+                "resource": server_url,
+                "authorization_servers": [auth_server_url],
+            }
+            if prm_scopes_supported is not None:
+                prm["scopes_supported"] = prm_scopes_supported
+            return httpx2.Response(200, json=prm)
 
         if path.startswith(
             "/.well-known/oauth-authorization-server"
@@ -271,6 +274,77 @@ class TestClientCredentialsFlow:
         with pytest.raises(OAuthTokenError, match="Token exchange failed"):
             await drive_auth_flow(provider, responder)
 
+    async def test_explicit_scopes_win_over_server_advertised(self):
+        """A caller's explicit scopes reach the token request even when the
+        server advertises a different set (the inherited flow would otherwise
+        overwrite them during 401 handling)."""
+        provider = ClientCredentialsOAuthProvider(
+            SERVER_URL,
+            client_id="cid",
+            client_secret="secret",
+            scopes=["read", "write"],
+        )
+        responder, captured = make_m2m_responder(
+            token_response={"access_token": "T", "token_type": "Bearer"},
+            prm_scopes_supported=["admin", "superuser"],
+        )
+
+        await drive_auth_flow(provider, responder)
+
+        token_body = form_body(captured["token_request"])
+        assert token_body["scope"] == "read write"
+
+
+class TestTokenCacheIsolation:
+    """Cached tokens are namespaced by client identity, not just server URL."""
+
+    async def test_distinct_client_ids_do_not_share_cached_tokens(self):
+        """Two providers with different client_ids sharing one store against the
+        same endpoint each retain their own token instead of clobbering one
+        another."""
+        store = MemoryStore()
+
+        provider_a = ClientCredentialsOAuthProvider(
+            SERVER_URL,
+            client_id="client-a",
+            client_secret="secret-a",
+            token_storage=store,
+        )
+        provider_b = ClientCredentialsOAuthProvider(
+            SERVER_URL,
+            client_id="client-b",
+            client_secret="secret-b",
+            token_storage=store,
+        )
+
+        responder_a, _ = make_m2m_responder(
+            token_response={
+                "access_token": "TOKEN-A",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+            }
+        )
+        responder_b, _ = make_m2m_responder(
+            token_response={
+                "access_token": "TOKEN-B",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+            }
+        )
+
+        await drive_auth_flow(provider_a, responder_a)
+        requests_b = await drive_auth_flow(provider_b, responder_b)
+
+        # provider_b acquires and uses its own token rather than reloading the
+        # token provider_a wrote to the shared store.
+        assert requests_b[-1].headers["Authorization"] == "Bearer TOKEN-B"
+
+        # Each client's token is preserved under its own namespace.
+        tokens_a = await provider_a.context.storage.get_tokens()
+        tokens_b = await provider_b.context.storage.get_tokens()
+        assert tokens_a is not None and tokens_a.access_token == "TOKEN-A"
+        assert tokens_b is not None and tokens_b.access_token == "TOKEN-B"
+
 
 class TestPrivateKeyJWTFlow:
     """private_key_jwt builds a client assertion and attaches the token."""
@@ -390,8 +464,6 @@ def test_assertion_provider_signs_expected_audience():
     import anyio
 
     assertion = anyio.run(_run)
-    # Sanity-check it is a JWT with three segments.
-    header, payload, _ = assertion.split(".")
-    padded = payload + "=" * (-len(payload) % 4)
-    claims = urlsafe_b64decode(padded)
-    assert b"issuer.example.com" in claims
+    # The assertion is a JWT whose audience is exactly the requested issuer.
+    claims = jwt.decode(assertion, options={"verify_signature": False})
+    assert claims["aud"] == "https://issuer.example.com"
