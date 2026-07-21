@@ -26,8 +26,7 @@ import textwrap
 import pytest
 from mcp_types import ErrorData
 
-import fastmcp
-from fastmcp import Client, FastMCP
+from fastmcp import Client, FastMCP, settings
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.exceptions import McpError
 from fastmcp.server import create_proxy
@@ -258,7 +257,7 @@ class TestRemovedSurfacesFailLoudly:
 
     def test_decorator_mode_setting_removed(self):
         # FASTMCP_DECORATOR_MODE / settings.decorator_mode removed entirely
-        assert not hasattr(fastmcp.settings, "decorator_mode")
+        assert not hasattr(settings, "decorator_mode")
 
     def test_streamable_http_sse_read_timeout_removed(self):
         # sse_read_timeout= was a no-op under SDK v2; configure via
@@ -298,10 +297,12 @@ class TestBehaviorChanges:
             ok = await client.read_resource("files://hello.txt")
             assert ok[0].text == "read:hello.txt"
 
-            # A `..` segment is screened before the handler runs.
-            with pytest.raises(Exception) as exc_info:
+            # A `..` segment is screened before the handler runs and surfaces a
+            # non-leaky INVALID_PARAMS error, not the handler's output.
+            with pytest.raises(McpError) as exc_info:
                 await client.read_resource("files://../etc/passwd")
-            assert "not found" in str(exc_info.value).lower()
+            assert exc_info.value.error.code == -32602
+            assert "not found" in exc_info.value.error.message.lower()
 
     async def test_resource_not_found_uses_invalid_params_code(self):
         mcp = FastMCP("NF")

@@ -188,6 +188,8 @@ These `FastMCP` methods and keywords have warned since 3.0 and are now removed:
 
 The `mount(as_proxy=...)` flag was already meaningless — a mount always invokes the child's lifespan and middleware — so proxying is now explicit: wrap the child in `create_proxy()` before mounting it.
 
+`import_server` → `mount` is the one row here that is not a mechanical swap, because the two never had the same semantics. `import_server` took a **one-time static snapshot** — it copied the child's tools, resources, and prompts at call time, with no live link, and did not run the child's lifespan or middleware. `mount` is a **live composition** — it holds a live link to the child and runs the child's lifespan and middleware. After switching, later changes to the child become visible through the parent, and the child's lifespan and middleware now execute on every request. If you depended on the frozen-copy behavior (a stable snapshot, no child lifecycle), there is no drop-in replacement: register the child's components on the parent directly instead of composing the two servers.
+
 ### Removed tool and decorator parameters
 
 Two `@tool` parameters and two settings are gone:
