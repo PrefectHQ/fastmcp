@@ -19,6 +19,7 @@ import jwt
 import pytest
 from key_value.aio.stores.memory import MemoryStore
 from mcp.client.auth import OAuthTokenError
+from mcp.shared.auth import OAuthToken
 
 from fastmcp.client import Client
 from fastmcp.client.auth import (
@@ -344,6 +345,173 @@ class TestTokenCacheIsolation:
         tokens_b = await provider_b.context.storage.get_tokens()
         assert tokens_a is not None and tokens_a.access_token == "TOKEN-A"
         assert tokens_b is not None and tokens_b.access_token == "TOKEN-B"
+
+    async def test_distinct_scopes_do_not_share_cached_tokens(self):
+        """Two providers with the same client_id but different requested scopes
+        sharing one store each retain their own token: a token issued for one
+        scope set must not be reused for another."""
+        store = MemoryStore()
+
+        provider_read = ClientCredentialsOAuthProvider(
+            SERVER_URL,
+            client_id="cid",
+            client_secret="secret",
+            scopes=["read"],
+            token_storage=store,
+        )
+        provider_write = ClientCredentialsOAuthProvider(
+            SERVER_URL,
+            client_id="cid",
+            client_secret="secret",
+            scopes=["write"],
+            token_storage=store,
+        )
+
+        responder_read, _ = make_m2m_responder(
+            token_response={
+                "access_token": "TOKEN-READ",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+            }
+        )
+        responder_write, _ = make_m2m_responder(
+            token_response={
+                "access_token": "TOKEN-WRITE",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+            }
+        )
+
+        await drive_auth_flow(provider_read, responder_read)
+        requests_write = await drive_auth_flow(provider_write, responder_write)
+
+        # The write-scoped provider acquires its own token instead of reloading
+        # the read-scoped token from the shared store.
+        assert requests_write[-1].headers["Authorization"] == "Bearer TOKEN-WRITE"
+
+        tokens_read = await provider_read.context.storage.get_tokens()
+        tokens_write = await provider_write.context.storage.get_tokens()
+        assert tokens_read is not None and tokens_read.access_token == "TOKEN-READ"
+        assert tokens_write is not None and tokens_write.access_token == "TOKEN-WRITE"
+
+
+class TestPersistentTokenExpiry:
+    """A token reloaded from persistent storage honors its stored expiry."""
+
+    async def test_expired_stored_token_is_refetched(self):
+        """Recreating a provider against a store holding an already-expired token
+        re-fetches instead of trusting the stale token as if it never expires."""
+        store = MemoryStore()
+
+        def make_provider() -> ClientCredentialsOAuthProvider:
+            return ClientCredentialsOAuthProvider(
+                SERVER_URL,
+                client_id="cid",
+                client_secret="secret",
+                scopes=["read"],
+                token_storage=store,
+            )
+
+        # Seed the shared store with a token whose absolute expiry is in the past.
+        seed_provider = make_provider()
+        await seed_provider.context.storage.set_tokens(
+            OAuthToken(access_token="STALE-TOKEN", token_type="Bearer", expires_in=-100)
+        )
+
+        provider = make_provider()
+        responder, _ = make_m2m_responder(
+            token_response={
+                "access_token": "FRESH-TOKEN",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+            }
+        )
+
+        requests = await drive_auth_flow(provider, responder)
+
+        assert requests[-1].headers["Authorization"] == "Bearer FRESH-TOKEN"
+
+
+class TestStepUpScopeAccumulation:
+    """A 403 insufficient_scope step-up unions the challenged scope with the
+    caller's scopes instead of dropping the accumulated grant."""
+
+    async def test_step_up_requests_union_of_scopes(self):
+        token_scopes: list[str] = []
+        require_write = False
+
+        def responder(request: httpx2.Request) -> httpx2.Response:
+            url = str(request.url)
+            path = urlparse(url).path
+
+            if url.startswith(SERVER_URL):
+                auth = request.headers.get("Authorization", "")
+                if not auth:
+                    return httpx2.Response(401, headers={"WWW-Authenticate": "Bearer"})
+                granted = auth.removeprefix("Bearer ").split()
+                # Once the server begins demanding "write", a token lacking it is
+                # challenged for step-up rather than accepted.
+                if require_write and "write" not in granted:
+                    return httpx2.Response(
+                        403,
+                        headers={
+                            "WWW-Authenticate": (
+                                'Bearer error="insufficient_scope", scope="write"'
+                            )
+                        },
+                    )
+                return httpx2.Response(200, text="ok")
+
+            if path.startswith("/.well-known/oauth-protected-resource"):
+                return httpx2.Response(
+                    200,
+                    json={
+                        "resource": SERVER_URL,
+                        "authorization_servers": [AUTH_SERVER_URL],
+                    },
+                )
+
+            if path.startswith(
+                "/.well-known/oauth-authorization-server"
+            ) or path.startswith("/.well-known/openid-configuration"):
+                return httpx2.Response(
+                    200,
+                    json={
+                        "issuer": AUTH_SERVER_URL,
+                        "authorization_endpoint": f"{AUTH_SERVER_URL}/authorize",
+                        "token_endpoint": f"{AUTH_SERVER_URL}/token",
+                        "response_types_supported": ["code"],
+                    },
+                )
+
+            if url == f"{AUTH_SERVER_URL}/token":
+                scope = form_body(request).get("scope", "")
+                token_scopes.append(scope)
+                return httpx2.Response(
+                    200,
+                    json={
+                        "access_token": scope or "noscope",
+                        "token_type": "Bearer",
+                        "expires_in": 3600,
+                    },
+                )
+
+            raise AssertionError(f"unexpected request: {request.method} {url}")
+
+        provider = ClientCredentialsOAuthProvider(
+            SERVER_URL, client_id="cid", client_secret="secret", scopes=["read"]
+        )
+
+        # Initial acquisition requests exactly the caller's scopes.
+        await drive_auth_flow(provider, responder)
+        assert token_scopes[0] == "read"
+
+        # The server now requires an additional scope for the operation.
+        require_write = True
+        await drive_auth_flow(provider, responder)
+
+        # The step-up token request carries the union, not just the caller's scope.
+        assert set(token_scopes[-1].split()) == {"read", "write"}
 
 
 class TestPrivateKeyJWTFlow:

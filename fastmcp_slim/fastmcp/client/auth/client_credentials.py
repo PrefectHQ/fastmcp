@@ -15,6 +15,8 @@ bound to the server URL automatically when passed to `Client(auth=...)`.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Literal
 
@@ -31,6 +33,8 @@ from mcp.client.auth.extensions.client_credentials import (
     SignedJWTParameters,
     static_assertion_provider,
 )
+from mcp.client.auth.oauth2 import OAuthContext
+from mcp.client.auth.utils import extract_field_from_www_auth
 from typing_extensions import override
 
 from fastmcp.client.auth.oauth import TokenStorageAdapter
@@ -50,8 +54,24 @@ def _normalize_scopes(scopes: str | list[str] | None) -> str | None:
     return scopes
 
 
+def _cache_namespace(client_id: str, scopes: str | None) -> str:
+    """Namespace cached tokens by both client identity and requested scopes.
+
+    Two providers that differ in either their ``client_id`` or their requested
+    scopes must not share cached tokens: a token issued for one client or one
+    scope set is not interchangeable with another. Hashing a canonical
+    ``(client_id, scopes)`` pair keeps the namespace unambiguous regardless of the
+    characters either value contains.
+    """
+    identity = json.dumps([client_id, scopes], separators=(",", ":"))
+    return hashlib.sha256(identity.encode()).hexdigest()
+
+
 def _resolve_token_storage(
-    token_storage: AsyncKeyValue | None, mcp_url: str, client_id: str
+    token_storage: AsyncKeyValue | None,
+    mcp_url: str,
+    client_id: str,
+    scopes: str | None,
 ) -> TokenStorageAdapter:
     """Wrap a token store in the FastMCP adapter, defaulting to in-memory.
 
@@ -59,14 +79,67 @@ def _resolve_token_storage(
     in-memory storage: re-acquiring a token is a single non-interactive request,
     so losing the cache on restart is cheap rather than disruptive.
 
-    The cache is namespaced by ``client_id`` so that two providers with different
-    client identities can share one store against the same MCP endpoint without
-    overwriting each other's tokens.
+    The cache is namespaced by client identity and requested scopes so that
+    providers with different credentials or scope sets can share one store against
+    the same MCP endpoint without overwriting each other's tokens.
     """
     store = token_storage or MemoryStore()
     return TokenStorageAdapter(
-        async_key_value=store, server_url=mcp_url, cache_namespace=client_id
+        async_key_value=store,
+        server_url=mcp_url,
+        cache_namespace=_cache_namespace(client_id, scopes),
     )
+
+
+def _is_insufficient_scope_challenge(response: httpx2.Response) -> bool:
+    """True when a response is an RFC 6750 ``insufficient_scope`` step-up challenge."""
+    if response.status_code != 403:
+        return False
+    return extract_field_from_www_auth(response, "error") == "insufficient_scope"
+
+
+async def _restore_token_expiry(context: OAuthContext) -> None:
+    """Restore the persisted absolute token expiry after a token is reloaded.
+
+    The inherited initializer reloads the stored token but not its expiry, so a
+    provider recreated with persistent storage would treat an already-expired
+    token as still valid. Reading the absolute expiry back keeps `is_token_valid`
+    honest, prompting a fresh token request when the stored one has expired.
+    """
+    storage = context.storage
+    if context.current_tokens is None or not isinstance(storage, TokenStorageAdapter):
+        return
+    expiry = await storage.get_token_expiry()
+    if expiry is not None:
+        context.token_expiry_time = expiry
+
+
+async def _drive_flow_tracking_step_up(
+    flow: AsyncGenerator[httpx2.Request, httpx2.Response],
+    on_step_up: Callable[[], None],
+) -> AsyncGenerator[httpx2.Request, httpx2.Response]:
+    """Delegate to the inherited auth flow, flagging step-up challenges.
+
+    On a 403 ``insufficient_scope`` the inherited flow unions the challenged scope
+    with the current one before re-requesting the token. Observing that response
+    lets the provider leave the accumulated scope in place instead of re-pinning
+    the caller's explicit scopes over it.
+    """
+    try:
+        try:
+            outgoing = await anext(flow)
+        except StopAsyncIteration:
+            return
+        while True:
+            response = yield outgoing
+            if _is_insufficient_scope_challenge(response):
+                on_step_up()
+            try:
+                outgoing = await flow.asend(response)
+            except StopAsyncIteration:
+                return
+    finally:
+        await flow.aclose()
 
 
 class ClientCredentialsOAuthProvider(_SDKClientCredentialsOAuthProvider):
@@ -95,6 +168,7 @@ class ClientCredentialsOAuthProvider(_SDKClientCredentialsOAuthProvider):
     """
 
     _bound: bool
+    _in_step_up: bool
 
     def __init__(
         self,
@@ -131,6 +205,7 @@ class ClientCredentialsOAuthProvider(_SDKClientCredentialsOAuthProvider):
         self._token_endpoint_auth_method = token_endpoint_auth_method
         self._token_storage = token_storage
         self._bound = False
+        self._in_step_up = False
 
         if mcp_url is not None:
             self._bind(mcp_url)
@@ -148,7 +223,7 @@ class ClientCredentialsOAuthProvider(_SDKClientCredentialsOAuthProvider):
         super().__init__(
             server_url=mcp_url,
             storage=_resolve_token_storage(
-                self._token_storage, mcp_url, self._client_id
+                self._token_storage, mcp_url, self._client_id, self._scopes
             ),
             client_id=self._client_id,
             client_secret=self._client_secret,
@@ -156,6 +231,11 @@ class ClientCredentialsOAuthProvider(_SDKClientCredentialsOAuthProvider):
             scopes=self._scopes,
         )
         self._bound = True
+
+    @override
+    async def _initialize(self) -> None:
+        await super()._initialize()
+        await _restore_token_expiry(self.context)
 
     @override
     def async_auth_flow(
@@ -167,14 +247,22 @@ class ClientCredentialsOAuthProvider(_SDKClientCredentialsOAuthProvider):
                 "mcp_url to the constructor or use it with Client(auth=...), which "
                 "provides the URL automatically from the transport."
             )
-        return super().async_auth_flow(request)
+        self._in_step_up = False
+        return _drive_flow_tracking_step_up(
+            super().async_auth_flow(request), self._mark_step_up
+        )
+
+    def _mark_step_up(self) -> None:
+        self._in_step_up = True
 
     @override
     async def _perform_authorization(self) -> httpx2.Request:
         # The inherited flow overwrites client_metadata.scope with the
         # server-advertised scopes during 401 handling. Restore the caller's
         # explicit scopes so the token request carries what the caller asked for.
-        if self._scopes is not None:
+        # On a step-up the SDK unions the challenged scope with the current one;
+        # leave that accumulated scope in place instead of clobbering it.
+        if self._scopes is not None and not self._in_step_up:
             self.context.client_metadata.scope = self._scopes
         return await super()._perform_authorization()
 
@@ -214,6 +302,7 @@ class PrivateKeyJWTOAuthProvider(_SDKPrivateKeyJWTOAuthProvider):
     """
 
     _bound: bool
+    _in_step_up: bool
 
     def __init__(
         self,
@@ -247,6 +336,7 @@ class PrivateKeyJWTOAuthProvider(_SDKPrivateKeyJWTOAuthProvider):
         self._scopes = _normalize_scopes(scopes)
         self._token_storage = token_storage
         self._bound = False
+        self._in_step_up = False
 
         if mcp_url is not None:
             self._bind(mcp_url)
@@ -264,13 +354,18 @@ class PrivateKeyJWTOAuthProvider(_SDKPrivateKeyJWTOAuthProvider):
         super().__init__(
             server_url=mcp_url,
             storage=_resolve_token_storage(
-                self._token_storage, mcp_url, self._client_id
+                self._token_storage, mcp_url, self._client_id, self._scopes
             ),
             client_id=self._client_id,
             assertion_provider=self._assertion_provider,
             scopes=self._scopes,
         )
         self._bound = True
+
+    @override
+    async def _initialize(self) -> None:
+        await super()._initialize()
+        await _restore_token_expiry(self.context)
 
     @override
     def async_auth_flow(
@@ -282,13 +377,21 @@ class PrivateKeyJWTOAuthProvider(_SDKPrivateKeyJWTOAuthProvider):
                 "to the constructor or use it with Client(auth=...), which provides "
                 "the URL automatically from the transport."
             )
-        return super().async_auth_flow(request)
+        self._in_step_up = False
+        return _drive_flow_tracking_step_up(
+            super().async_auth_flow(request), self._mark_step_up
+        )
+
+    def _mark_step_up(self) -> None:
+        self._in_step_up = True
 
     @override
     async def _perform_authorization(self) -> httpx2.Request:
         # The inherited flow overwrites client_metadata.scope with the
         # server-advertised scopes during 401 handling. Restore the caller's
         # explicit scopes so the token request carries what the caller asked for.
-        if self._scopes is not None:
+        # On a step-up the SDK unions the challenged scope with the current one;
+        # leave that accumulated scope in place instead of clobbering it.
+        if self._scopes is not None and not self._in_step_up:
             self.context.client_metadata.scope = self._scopes
         return await super()._perform_authorization()
