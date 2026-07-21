@@ -10,16 +10,16 @@ the handshake (`mode="legacy"`) and modern (`mode="auto"`) protocol eras.
 from __future__ import annotations
 
 import pytest
-
-from fastmcp import Client, FastMCP
-from fastmcp.server.completions import normalize_completion
-from fastmcp.types import (
+from mcp_types import (
     Completion,
     CompletionArgument,
     CompletionContext,
     PromptReference,
     ResourceTemplateReference,
 )
+
+from fastmcp import Client, FastMCP
+from fastmcp.server.completions import normalize_completion
 
 # Both protocol eras the connection may negotiate.
 MODES = ["legacy", "auto"]
