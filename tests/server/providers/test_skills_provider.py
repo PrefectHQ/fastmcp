@@ -176,6 +176,26 @@ This is my skill content.
             assert isinstance(result[0], TextResourceContents)
             assert "# My Skill" in result[0].text
 
+    async def test_read_main_file_with_literal_percent_in_name(self, tmp_path: Path):
+        """A custom main_file_name containing a literal '%' must round-trip
+        through the same encode/decode path as supporting files (#4545)."""
+        skill_dir = tmp_path / "percent-main-skill"
+        skill_dir.mkdir()
+        (skill_dir / "MAIN%20FILE.md").write_text("# Demo\n")
+
+        mcp = FastMCP("Test")
+        mcp.add_provider(
+            SkillProvider(skill_path=skill_dir, main_file_name="MAIN%20FILE.md")
+        )
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            main = next(
+                r for r in resources if r.name == "percent-main-skill/MAIN%20FILE.md"
+            )
+            result = await client.read_resource(main.uri)
+            assert "# Demo" in result[0].text
+
     async def test_read_manifest(self, single_skill_dir: Path):
         mcp = FastMCP("Test")
         mcp.add_provider(SkillProvider(skill_path=single_skill_dir))

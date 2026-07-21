@@ -288,7 +288,9 @@ class SkillProvider(Provider):
         # Main skill file
         resources.append(
             SkillResource(
-                uri=AnyUrl(f"skill://{skill.name}/{self._main_file_name}"),
+                uri=AnyUrl(
+                    f"skill://{skill.name}/{quote(self._main_file_name, safe='/')}"
+                ),
                 name=f"{skill.name}/{self._main_file_name}",
                 description=skill.description,
                 mime_type="text/markdown",
