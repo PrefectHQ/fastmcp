@@ -9,6 +9,8 @@ the handshake (`mode="legacy"`) and modern (`mode="auto"`) protocol eras.
 
 from __future__ import annotations
 
+import threading
+
 import pytest
 from mcp_types import (
     Completion,
@@ -179,6 +181,32 @@ async def test_async_completion_handler_is_awaited():
             {"name": "theme", "value": ""},
         )
     assert result.values == ["async-value"]
+
+
+async def test_sync_completion_handler_runs_off_event_loop_thread():
+    """A sync handler is offloaded to a threadpool so blocking work in it can't
+    stall the event loop, matching how sync tools/prompts/resources run."""
+    mcp = FastMCP("threadpool-server")
+
+    @mcp.prompt
+    def poem(theme: str) -> str:
+        return f"Write a poem about {theme}"
+
+    handler_thread: dict[str, int] = {}
+
+    @mcp.completion
+    def complete(ref, argument, context):
+        handler_thread["ident"] = threading.get_ident()
+        return ["value"]
+
+    main_thread = threading.get_ident()
+    async with Client(mcp) as client:
+        result = await client.complete(
+            PromptReference(name="poem"),
+            {"name": "theme", "value": ""},
+        )
+    assert result.values == ["value"]
+    assert handler_thread["ident"] != main_thread
 
 
 def test_completion_decorator_registers_handler():

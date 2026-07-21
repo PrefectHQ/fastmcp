@@ -31,6 +31,10 @@ from fastmcp.server.completions import CompletionValues, normalize_completion
 from fastmcp.server.dependencies import bind_request_context, extract_version_spec
 from fastmcp.server.tasks.config import TaskMeta
 from fastmcp.tools.base import InputRequiredToolResult
+from fastmcp.utilities.async_utils import (
+    call_sync_fn_in_threadpool,
+    is_coroutine_function,
+)
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.pagination import paginate_sequence
 from fastmcp.utilities.versions import VersionSpec, dedupe_with_versions
@@ -419,9 +423,16 @@ class MCPOperationsMixin:
                     completion=mcp_types.Completion(values=[])
                 )
 
-            result = handler(params.ref, params.argument, params.context)
-            if inspect.isawaitable(result):
-                result = await result
+            if is_coroutine_function(handler):
+                raw = handler(params.ref, params.argument, params.context)
+            else:
+                # A sync handler may perform blocking work (a database lookup,
+                # say); run it in a threadpool so it does not stall the event
+                # loop, matching how sync tools/prompts/resources are invoked.
+                raw = await call_sync_fn_in_threadpool(
+                    handler, params.ref, params.argument, params.context
+                )
+            result = await raw if inspect.isawaitable(raw) else raw
             completion = normalize_completion(cast(CompletionValues, result))
             return mcp_types.CompleteResult(completion=completion)
 
