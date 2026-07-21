@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import AsyncGenerator, Awaitable, Callable
+from contextvars import ContextVar
 from typing import Literal
 
 import httpx2
@@ -45,6 +46,12 @@ __all__ = [
     "SignedJWTParameters",
     "static_assertion_provider",
 ]
+
+# Whether the auth flow currently being driven is a 403 step-up rather than an
+# initial authorization. A ContextVar (not instance state) so it stays scoped to
+# the single flow driving it: concurrent flows run in separate tasks and never
+# see each other's value, and each flow resets it on exit.
+_in_step_up: ContextVar[bool] = ContextVar("fastmcp_m2m_in_step_up", default=False)
 
 
 def _normalize_scopes(scopes: str | list[str] | None) -> str | None:
@@ -126,15 +133,16 @@ async def _restore_token_expiry(context: OAuthContext) -> None:
 
 async def _drive_flow_tracking_step_up(
     flow: AsyncGenerator[httpx2.Request, httpx2.Response],
-    on_step_up: Callable[[], None],
 ) -> AsyncGenerator[httpx2.Request, httpx2.Response]:
     """Delegate to the inherited auth flow, flagging step-up challenges.
 
     On a 403 ``insufficient_scope`` the inherited flow unions the challenged scope
-    with the current one before re-requesting the token. Observing that response
-    lets the provider leave the accumulated scope in place instead of re-pinning
-    the caller's explicit scopes over it.
+    with the current one before re-requesting the token. Setting `_in_step_up`
+    lets `_perform_authorization` leave the accumulated scope in place instead of
+    re-pinning the caller's explicit scopes over it. The flag is set and reset
+    inside this generator, so it is scoped to exactly this flow.
     """
+    token = _in_step_up.set(False)
     try:
         try:
             outgoing = await anext(flow)
@@ -143,12 +151,13 @@ async def _drive_flow_tracking_step_up(
         while True:
             response = yield outgoing
             if _is_insufficient_scope_challenge(response):
-                on_step_up()
+                _in_step_up.set(True)
             try:
                 outgoing = await flow.asend(response)
             except StopAsyncIteration:
                 return
     finally:
+        _in_step_up.reset(token)
         await flow.aclose()
 
 
@@ -178,7 +187,6 @@ class ClientCredentialsOAuthProvider(_SDKClientCredentialsOAuthProvider):
     """
 
     _bound: bool
-    _in_step_up: bool
 
     def __init__(
         self,
@@ -215,7 +223,6 @@ class ClientCredentialsOAuthProvider(_SDKClientCredentialsOAuthProvider):
         self._token_endpoint_auth_method = token_endpoint_auth_method
         self._token_storage = token_storage
         self._bound = False
-        self._in_step_up = False
 
         if mcp_url is not None:
             self._bind(mcp_url)
@@ -257,13 +264,7 @@ class ClientCredentialsOAuthProvider(_SDKClientCredentialsOAuthProvider):
                 "mcp_url to the constructor or use it with Client(auth=...), which "
                 "provides the URL automatically from the transport."
             )
-        self._in_step_up = False
-        return _drive_flow_tracking_step_up(
-            super().async_auth_flow(request), self._mark_step_up
-        )
-
-    def _mark_step_up(self) -> None:
-        self._in_step_up = True
+        return _drive_flow_tracking_step_up(super().async_auth_flow(request))
 
     @override
     async def _perform_authorization(self) -> httpx2.Request:
@@ -272,7 +273,7 @@ class ClientCredentialsOAuthProvider(_SDKClientCredentialsOAuthProvider):
         # explicit scopes so the token request carries what the caller asked for.
         # On a step-up the SDK unions the challenged scope with the current one;
         # leave that accumulated scope in place instead of clobbering it.
-        if self._scopes is not None and not self._in_step_up:
+        if self._scopes is not None and not _in_step_up.get():
             self.context.client_metadata.scope = self._scopes
         return await super()._perform_authorization()
 
@@ -290,11 +291,15 @@ class PrivateKeyJWTOAuthProvider(_SDKPrivateKeyJWTOAuthProvider):
 
     Example:
         ```python
+        from pathlib import Path
+
         from fastmcp import Client
         from fastmcp.client.auth import (
             PrivateKeyJWTOAuthProvider,
             SignedJWTParameters,
         )
+
+        private_key_pem = Path("client-signing-key.pem").read_text()
 
         jwt_params = SignedJWTParameters(
             issuer="my-client-id",
@@ -312,7 +317,6 @@ class PrivateKeyJWTOAuthProvider(_SDKPrivateKeyJWTOAuthProvider):
     """
 
     _bound: bool
-    _in_step_up: bool
 
     def __init__(
         self,
@@ -346,7 +350,6 @@ class PrivateKeyJWTOAuthProvider(_SDKPrivateKeyJWTOAuthProvider):
         self._scopes = _normalize_scopes(scopes)
         self._token_storage = token_storage
         self._bound = False
-        self._in_step_up = False
 
         if mcp_url is not None:
             self._bind(mcp_url)
@@ -387,13 +390,7 @@ class PrivateKeyJWTOAuthProvider(_SDKPrivateKeyJWTOAuthProvider):
                 "to the constructor or use it with Client(auth=...), which provides "
                 "the URL automatically from the transport."
             )
-        self._in_step_up = False
-        return _drive_flow_tracking_step_up(
-            super().async_auth_flow(request), self._mark_step_up
-        )
-
-    def _mark_step_up(self) -> None:
-        self._in_step_up = True
+        return _drive_flow_tracking_step_up(super().async_auth_flow(request))
 
     @override
     async def _perform_authorization(self) -> httpx2.Request:
@@ -402,6 +399,6 @@ class PrivateKeyJWTOAuthProvider(_SDKPrivateKeyJWTOAuthProvider):
         # explicit scopes so the token request carries what the caller asked for.
         # On a step-up the SDK unions the challenged scope with the current one;
         # leave that accumulated scope in place instead of clobbering it.
-        if self._scopes is not None and not self._in_step_up:
+        if self._scopes is not None and not _in_step_up.get():
             self.context.client_metadata.scope = self._scopes
         return await super()._perform_authorization()
