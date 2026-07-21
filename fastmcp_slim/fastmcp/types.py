@@ -38,6 +38,12 @@ from mcp_types import (
     Completion as Completion,
 )
 from mcp_types import (
+    CompletionArgument as CompletionArgument,
+)
+from mcp_types import (
+    CompletionContext as CompletionContext,
+)
+from mcp_types import (
     ContentBlock as ContentBlock,
 )
 from mcp_types import (
@@ -74,6 +80,9 @@ from mcp_types import (
     PromptMessage as PromptMessage,
 )
 from mcp_types import (
+    PromptReference as PromptReference,
+)
+from mcp_types import (
     ReadResourceResult as ReadResourceResult,
 )
 from mcp_types import (
@@ -84,6 +93,9 @@ from mcp_types import (
 )
 from mcp_types import (
     ResourceTemplate as ResourceTemplate,
+)
+from mcp_types import (
+    ResourceTemplateReference as ResourceTemplateReference,
 )
 from mcp_types import (
     Root as Root,
@@ -124,6 +136,8 @@ __all__ = [
     "BlobResourceContents",
     "CallToolResult",
     "Completion",
+    "CompletionArgument",
+    "CompletionContext",
     "ContentBlock",
     "CreateMessageResult",
     "ElicitRequest",
@@ -136,10 +150,12 @@ __all__ = [
     "InputRequiredResult",
     "Prompt",
     "PromptMessage",
+    "PromptReference",
     "ReadResourceResult",
     "Resource",
     "ResourceLink",
     "ResourceTemplate",
+    "ResourceTemplateReference",
     "Root",
     "SamplingCapability",
     "SamplingMessage",

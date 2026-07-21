@@ -186,6 +186,34 @@ There is deliberately no compatibility alias for the old spelling.
 
 *Verify:* `fastmcp_slim/fastmcp/server/middleware/caching.py`.
 
+### Server-side argument completion — New (opt-in feature)
+
+A FastMCP server can now answer `completion/complete` requests, suggesting values for prompt arguments and resource-template parameters as a user types. Previously a FastMCP *client* could call `complete()` but a FastMCP *server* had no way to respond — the method was unregistered, so it returned `-32601` (method-not-found) on both eras. The new `@mcp.completion` decorator registers a single server-level handler that receives the reference (a `PromptReference` or `ResourceTemplateReference`), the `CompletionArgument` being completed, and the optional `CompletionContext` of already-supplied argument values, and returns candidates — a list of strings, a `Completion` (to carry the `total`/`has_more` pagination hints), or `None`/empty for a reference it does not recognize (which yields an empty completion, not an error).
+
+```python
+from fastmcp import FastMCP
+from fastmcp.types import PromptReference
+
+mcp = FastMCP("Completion Server")
+
+
+@mcp.prompt
+def write_poem(theme: str) -> str:
+    return f"Write a poem about {theme}"
+
+
+@mcp.completion
+def complete(ref, argument, context):
+    if isinstance(ref, PromptReference) and argument.name == "theme":
+        options = ["nature", "love", "adventure"]
+        return [o for o in options if o.startswith(argument.value)]
+    return None
+```
+
+The completions capability is declared exactly when a handler exists: `add_completion_handler` registers the low-level `completion/complete` handler, and the SDK derives the capability from that handler's presence — a server with no completion handler does not advertise it. FastMCP does not hand-set the capability. The single-handler shape mirrors the SDK's own `completion/complete` surface and FastMCP's existing client-side `Client.complete()`, and it slots into the `@mcp.tool`/`@mcp.prompt`/`@mcp.resource` decorator lineup as another server-level `@mcp.<verb>` registration rather than inventing a per-argument sub-decorator idiom. It works identically on the handshake and modern (`2026-07-28`) eras, since `completion/complete` is a request/response method that flows on every era. `fastmcp.types` gains `PromptReference`, `ResourceTemplateReference`, `CompletionArgument`, and `CompletionContext` for authoring handlers (`Completion` was already re-exported).
+
+*Verify:* `fastmcp_slim/fastmcp/server/completions.py` (handler type + `normalize_completion`), `fastmcp_slim/fastmcp/server/server.py` (`completion` decorator, `add_completion_handler`), `fastmcp_slim/fastmcp/server/mixins/mcp_operations.py` (`_on_complete`), `fastmcp_slim/fastmcp/types.py` (re-exports), `tests/server/test_completions.py`, `docs/servers/completions.mdx`.
+
 ## Client
 
 The `fastmcp.Client` public API is largely preserved. The client stays a wrapper around `mcp.ClientSession`; the first-class `mcp.client.Client` is deliberately not adopted. Two client-surface changes are called out below: the connection `mode` default flips to `"auto"`, and `extensions=` / `result_claims=` are newly surfaced.
