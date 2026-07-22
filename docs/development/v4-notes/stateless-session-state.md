@@ -92,6 +92,8 @@ bucket. Use it when a user needs more than one session.
 
 Async accessors over the server store, scoped to one `(principal, session_id)`:
 
+- `session.id` — the session's id (set for a `session_id`-resolved session; `None`
+  for an injected `UserSession`, which has no distinct id).
 - `await session.get(key, default=None)`
 - `await session.set(key, value)`
 - `await session.delete(key)`

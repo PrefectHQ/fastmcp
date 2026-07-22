@@ -70,6 +70,8 @@ When your application already mints its own identifiers — conversation ids, wo
 
 Both patterns give a tool a `Session`: an async view over one bucket of stored state. Read a value with `await session.get(key, default=None)`, write one with `await session.set(key, value)`, and remove one with `await session.delete(key)`. Values are stored as JSON, so anything JSON-serializable round-trips.
 
+The session's own identifier is available as `session.id` — the id for a session resolved from a `session_id` argument, and `None` for an injected `UserSession`, which has no distinct id because its bucket is the authenticated user.
+
 `await session.clear()` empties the session's state while keeping the session itself valid — the id still resolves, the bucket is just empty. To retire a session entirely, an agent calls `end_session`, which deletes it so the id no longer resolves at all.
 
 ## Isolation

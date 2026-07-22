@@ -126,6 +126,23 @@ class TestSessionRoundTrip:
         assert await session.get("nope") is None
 
 
+class TestSessionIdProperty:
+    def test_id_is_none_without_a_public_id(self):
+        # An injected `UserSession` is built this way — no distinct public id.
+        server = FastMCP("test")
+        assert make_session(server, None, "s1").id is None
+
+    def test_id_returns_the_public_id(self):
+        server = FastMCP("test")
+        session = Session(
+            store=server._state_store,
+            principal=None,
+            session_id="s1",
+            public_id="s1",
+        )
+        assert session.id == "s1"
+
+
 class TestSessionIsolation:
     async def test_distinct_ids_are_isolated(self):
         server = FastMCP("test")

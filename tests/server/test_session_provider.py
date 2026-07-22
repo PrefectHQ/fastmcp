@@ -183,6 +183,22 @@ class TestSessionIdArgument:
             view = await client.call_tool("view_cart", {"session_id": session_id})
             assert view.data == ["apple", "banana"]
 
+    async def test_resolved_session_exposes_its_id(self):
+        """A session resolved from a `session_id` argument carries that id."""
+        server = FastMCP("shop")
+        server.add_provider(SessionProvider())
+
+        @server.tool
+        async def which_session(session_id: SessionId) -> str | None:
+            return (await get_context().get_session(session_id)).id
+
+        async with Client(server) as client:
+            session_id = (await client.call_tool("create_session", {})).data
+            result = (
+                await client.call_tool("which_session", {"session_id": session_id})
+            ).data
+        assert result == session_id
+
     async def test_uncreated_id_is_rejected(self):
         """An id that was never handed out by `create_session` does not resolve."""
         server = build_id_server()

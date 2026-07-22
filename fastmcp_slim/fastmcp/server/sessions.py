@@ -193,11 +193,24 @@ class Session:
         store: PydanticAdapter[StateValue],
         principal: str | None,
         session_id: str,
+        public_id: str | None = None,
     ) -> None:
         self._store = store
         self._principal = principal
         self._session_id = session_id
+        self._public_id = public_id
         self._key = session_storage_key(principal, session_id)
+
+    @property
+    def id(self) -> str | None:
+        """The session's identifier, or `None` for an injected per-user session.
+
+        For a session resolved from a `session_id` argument (or minted by
+        `create_session`) this is that id. An injected `UserSession` has no
+        distinct id — its bucket is the authenticated user — so it is `None`; the
+        internal principal-derived key is deliberately not exposed here.
+        """
+        return self._public_id
 
     async def _load_raw(self) -> dict[str, Any] | None:
         """Read the session's full stored dict, or `None` when the key is unset."""
@@ -401,6 +414,7 @@ async def resolve_session(session_id: str) -> Session:
         store=ctx.fastmcp._state_store,
         principal=current_principal(),
         session_id=session_id,
+        public_id=session_id,
     )
     if not await session._exists():
         logger.debug(
@@ -428,6 +442,7 @@ async def create_session() -> str:
         store=ctx.fastmcp._state_store,
         principal=current_principal(),
         session_id=session_id,
+        public_id=session_id,
     )
     await session._create()
     return session_id
