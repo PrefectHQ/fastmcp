@@ -10,16 +10,18 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-07-07T19:26:14.279827Z"
+exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
 exclude-newer-span = "P1W"
 
 [options.exclude-newer-package]
 mcp-types = false
 prefab-ui = false
 truststore = false
+fastmcp = false
 mcp = false
 httpcore2 = false
 httpx2 = false
+fastmcp-slim = false
 
 [manifest]
 members = [
