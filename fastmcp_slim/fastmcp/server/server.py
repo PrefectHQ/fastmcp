@@ -80,6 +80,11 @@ from fastmcp.server.middleware.middleware import (
 from fastmcp.server.mixins import LifespanMixin, MCPOperationsMixin, TransportMixin
 from fastmcp.server.providers import LocalProvider, Provider
 from fastmcp.server.providers.aggregate import AggregateProvider
+from fastmcp.server.sessions import (
+    DEFAULT_SESSION_TTL,
+    SessionCodec,
+    SessionProvider,
+)
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.server.telemetry import server_span
 from fastmcp.server.transforms import (
@@ -355,6 +360,7 @@ class FastMCP(
         cache_scope: Literal["public", "private"] | None = None,
         tasks: bool | None = None,
         session_state_store: AsyncKeyValue | None = None,
+        session_provider: SessionProvider | None = None,
         sampling_handler: SamplingHandler | None = None,
         sampling_handler_behavior: Literal["always", "fallback"] | None = None,
         client_log_level: mcp_types.LoggingLevel | None = None,
@@ -447,6 +453,15 @@ class FastMCP(
         self._request_state_security: RequestStateSecurity | None = (
             request_state_security
         )
+
+        # Sealed-handle session state (opt-in). The codec is built lazily from the
+        # server's request-state key ring so session handles and `requestState`
+        # share one key; the provider (when present) only sets the handle TTL and
+        # registers the create/end session tools.
+        self._session_provider: SessionProvider | None = session_provider
+        self._session_codec: SessionCodec | None = None
+        if session_provider is not None:
+            session_provider.register(self)
 
         # Server-level SEP-2549 cache hints, applied uniformly to every
         # SDK-cacheable result by the low-level server's runner (raises on
@@ -566,6 +581,26 @@ class FastMCP(
             return []
         else:
             return list(self._mcp_server.icons)
+
+    @property
+    def session_codec(self) -> SessionCodec:
+        """The codec that mints and verifies this server's sealed session handles.
+
+        Built lazily from the server's `request_state_security` key ring (so
+        session handles and `requestState` share one key), or a per-process
+        ephemeral key when no policy is configured. The handle TTL comes from the
+        configured `session_provider`, or the default when none is set.
+        """
+        if self._session_codec is None:
+            ttl = (
+                self._session_provider.ttl
+                if self._session_provider is not None
+                else DEFAULT_SESSION_TTL
+            )
+            self._session_codec = SessionCodec.from_security(
+                self._request_state_security, ttl=ttl
+            )
+        return self._session_codec
 
     @property
     def local_provider(self) -> LocalProvider:

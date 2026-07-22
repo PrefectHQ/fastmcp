@@ -54,6 +54,7 @@ from fastmcp.server.sessions import (
     Scope,
     current_principal,
     get_active_session_identity,
+    session_index_key,
     session_state_key,
     user_state_key,
 )
@@ -1528,6 +1529,48 @@ class Context:
             )
         prefixed_key = self._scoped_state_key(scope, key)
         await self._put_state(prefixed_key, key, value)
+        if scope is Scope.SESSION:
+            await self._record_session_key(key)
+
+    async def _record_session_key(self, key: str) -> None:
+        """Record a user key in the active session's index for later cleanup.
+
+        `end_session` (and `clear_session_state`) enumerate this index to delete
+        a session's state without depending on the store's optional
+        key-enumeration protocol. Best-effort: a lost update under concurrent
+        writes leaves an orphaned key that the state TTL eventually reaps.
+        """
+        identity = get_active_session_identity()
+        if identity is None:
+            return
+        index_key = session_index_key(identity)
+        result = await self.fastmcp._state_store.get(key=index_key)
+        keys: list[str] = list(result.value) if result is not None else []
+        if key in keys:
+            return
+        keys.append(key)
+        await self.fastmcp._state_store.put(
+            key=index_key,
+            value=StateValue(value=keys),
+            ttl=self._STATE_TTL_SECONDS,
+        )
+
+    async def clear_session_state(self) -> None:
+        """Delete all `Scope.SESSION` state for the session bound to this request.
+
+        Removes every key recorded in the active session's index along with the
+        index itself. Raises `NoActiveSessionError` when no verified session is
+        bound to the request.
+        """
+        identity = get_active_session_identity()
+        if identity is None:
+            raise NoActiveSessionError
+        index_key = session_index_key(identity)
+        result = await self.fastmcp._state_store.get(key=index_key)
+        keys: list[str] = list(result.value) if result is not None else []
+        for key in keys:
+            await self.fastmcp._state_store.delete(key=session_state_key(identity, key))
+        await self.fastmcp._state_store.delete(key=index_key)
 
     async def get_state(self, key: str, *, scope: Scope = Scope.REQUEST) -> Any:
         """Get a value from the state store.

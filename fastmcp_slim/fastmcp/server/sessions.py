@@ -26,17 +26,30 @@ import json
 import logging
 import math
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
-from typing import Final, NoReturn
+from functools import lru_cache
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Final,
+    NoReturn,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
+from uuid import uuid4
 
 from mcp.server.auth.provider import principal_components
 from mcp.server.request_state import InvalidRequestState, RequestStateSecurity
 
 from fastmcp.exceptions import FastMCPError
-from fastmcp.server.dependencies import get_access_token
+from fastmcp.server.dependencies import get_access_token, get_context
+
+if TYPE_CHECKING:
+    from fastmcp.server.server import FastMCP
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -185,6 +198,18 @@ def session_state_key(identity: SessionIdentity, key: str) -> str:
     return f"session:{_principal_segment(identity.principal)}:{identity.session_id}:{key}"
 
 
+def session_index_key(identity: SessionIdentity) -> str:
+    """Storage key for a session's key index.
+
+    `Scope.SESSION` writes record their user key here so a session's state can be
+    enumerated and cleared (by `end_session`) without relying on the store's
+    optional key-enumeration protocol — the base `AsyncKeyValue` contract only
+    guarantees get/put/delete. A distinct `session-index:` prefix keeps the index
+    from ever colliding with a `session:...` state key.
+    """
+    return f"session-index:{_principal_segment(identity.principal)}:{identity.session_id}"
+
+
 class _Unset:
     """Sentinel: `unseal` should read the principal from the request context."""
 
@@ -317,3 +342,103 @@ class SessionCodec:
         """Log the real reason and raise a handle with a generic public message."""
         logger.warning("session token rejected: %s", reason)
         raise InvalidSessionToken(reason)
+
+
+@dataclass(frozen=True)
+class Session:
+    """Marks a tool parameter as carrying a sealed session handle.
+
+    Use as `Annotated[str, Session()]` on a tool parameter. The parameter appears
+    in the tool's input schema as a plain string — the client supplies the token
+    it received from `create_session`. Before the tool body runs, the framework
+    unseals and verifies the token (integrity, expiry, and principal binding when
+    authenticated) and binds the resulting `SessionIdentity` onto the request, so
+    `ctx.get_state(scope=Scope.SESSION)` resolves for the duration of the call.
+
+    A missing, malformed, expired, or foreign token fails the call with
+    `InvalidSessionToken` before the body runs — session access never silently
+    degrades.
+
+    The tool body receives the raw token string in the annotated parameter. That
+    value is rarely needed: session state is read and written through
+    `ctx.get_state` / `ctx.set_state` with `Scope.SESSION`, and the annotation's
+    job is to establish identity. Declaring the parameter is enough to require a
+    valid session for the call.
+    """
+
+
+@lru_cache(maxsize=5000)
+def session_parameter_names(fn: Callable[..., object]) -> tuple[str, ...]:
+    """Names of a function's parameters annotated with `Session()`.
+
+    Scans the resolved type hints for `Annotated[..., Session()]` metadata.
+    Returns an empty tuple when the hints cannot be resolved (the function then
+    simply carries no session boundary).
+    """
+    try:
+        hints = get_type_hints(fn, include_extras=True)
+    except (TypeError, NameError):
+        return ()
+    names: list[str] = []
+    for name, hint in hints.items():
+        if name == "return":
+            continue
+        if get_origin(hint) is not Annotated:
+            continue
+        if any(isinstance(meta, Session) for meta in get_args(hint)[1:]):
+            names.append(name)
+    return tuple(names)
+
+
+def create_session() -> str:
+    """Create a new session and return its opaque, sealed handle token.
+
+    Mint a fresh `session_id`, bind it to the request's authenticated principal
+    (if any) and an expiry, and return the sealed token as a plain string. The
+    client stores this token and passes it back as the `Session()` argument on
+    later calls to access `Scope.SESSION` state.
+    """
+    ctx = get_context()
+    return ctx.fastmcp.session_codec.seal(str(uuid4()), current_principal())
+
+
+async def end_session(session: Annotated[str, Session()]) -> str:
+    """End a session and delete all of its `Scope.SESSION` state.
+
+    The `Session()` boundary verifies the token before this body runs, so an
+    invalid or foreign token is rejected up front. All state written under this
+    session is removed; subsequent reads return their defaults.
+    """
+    ctx = get_context()
+    await ctx.clear_session_state()
+    return "session ended"
+
+
+class SessionProvider:
+    """Opt-in lifecycle for sealed-handle session state.
+
+    Wire onto a server with `FastMCP(session_provider=SessionProvider(...))`. It
+    registers two tools:
+
+    - `create_session` mints a sealed handle and returns it as a plain string.
+    - `end_session` verifies a handle and clears that session's state.
+
+    The provider does not own storage: session state lives in the server's
+    configured state store (`FastMCP(session_state_store=...)`), and handles are
+    sealed with the server's `session_codec`, which reuses the server's
+    `request_state_security` key ring (or a per-process ephemeral key when none is
+    configured). `ttl` sets how long a minted handle stays valid, threaded into
+    the server's `SessionCodec`.
+    """
+
+    def __init__(self, *, ttl: float = DEFAULT_SESSION_TTL) -> None:
+        if not (math.isfinite(ttl) and ttl > 0):
+            raise ValueError(
+                f"session ttl must be a positive finite number, got {ttl!r}"
+            )
+        self.ttl = ttl
+
+    def register(self, server: FastMCP) -> None:
+        """Register the `create_session` / `end_session` tools on `server`."""
+        server.add_tool(create_session)
+        server.add_tool(end_session)

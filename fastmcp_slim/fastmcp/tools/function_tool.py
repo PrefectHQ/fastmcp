@@ -6,6 +6,7 @@ import functools
 import inspect
 import logging
 from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from functools import lru_cache
 from types import MethodType
@@ -306,6 +307,14 @@ class FunctionTool(Tool):
         if func_name == "<lambda>":
             raise ValueError("You must provide a name for lambda functions")
 
+        from fastmcp.server.sessions import session_parameter_names
+
+        if len(session_parameter_names(parsed_fn.fn)) > 1:
+            raise ValueError(
+                f"Tool {func_name!r}: at most one parameter may be annotated with "
+                "Session(); a tool binds a single session per call."
+            )
+
         # Inline sync execution has no cancellation checkpoints, so
         # anyio.fail_after cannot preempt the call — the timeout would be
         # silently ignored. Reject the combination so users make an
@@ -392,6 +401,62 @@ class FunctionTool(Tool):
         exec_is_async = is_coroutine_function(wrapper_fn)
         strict = _strict_input_validation()
 
+        # Unseal + verify any `Session()` handle argument and bind its identity
+        # for the duration of the call, so `ctx.get_state(scope=SESSION)`
+        # resolves. A bad handle raises `InvalidSessionToken` before the body
+        # runs. `nullcontext` for tools without a session parameter.
+        with self._session_boundary(arguments):
+            result = await self._run_body(
+                type_adapter, exec_is_async, arguments, strict=strict
+            )
+
+        # An `InputRequiredResult` is the full result of this multi-round-trip
+        # leg (SEP-2322), not tool-output data: wrap it in an
+        # `InputRequiredToolResult` so it flows through the middleware chain as
+        # an ordinary result instead of being serialized as content. The wire
+        # handler reads it back out (see `_on_call_tool`).
+        if isinstance(result, mcp_types.InputRequiredResult):
+            return InputRequiredToolResult(result)
+
+        return self.convert_result(result)
+
+    def _session_boundary(
+        self, arguments: dict[str, Any]
+    ) -> AbstractContextManager[Any]:
+        """Bind the verified session identity for a `Session()`-annotated tool.
+
+        Reads the sealed handle from the annotated argument, unseals and verifies
+        it (integrity, expiry, principal binding), and returns a context manager
+        that binds the resulting identity onto the request. Returns a
+        `nullcontext` for tools with no session parameter. Raises
+        `InvalidSessionToken` for a missing, malformed, expired, or foreign
+        handle before the body runs.
+        """
+        from fastmcp.server.dependencies import get_context
+        from fastmcp.server.sessions import (
+            InvalidSessionToken,
+            bind_session_identity,
+            session_parameter_names,
+        )
+
+        names = session_parameter_names(self.fn)
+        if not names:
+            return nullcontext()
+        token = arguments.get(names[0])
+        if not isinstance(token, str):
+            raise InvalidSessionToken("missing session token")
+        identity = get_context().fastmcp.session_codec.unseal(token)
+        return bind_session_identity(identity)
+
+    async def _run_body(
+        self,
+        type_adapter: TypeAdapter[Any],
+        exec_is_async: bool,
+        arguments: dict[str, Any],
+        *,
+        strict: bool,
+    ) -> Any:
+        """Validate arguments and execute the body, applying any timeout."""
         try:
             if self.timeout is not None:
                 try:
@@ -428,15 +493,7 @@ class FunctionTool(Tool):
             assert original is not None
             raise original from original.__cause__
 
-        # An `InputRequiredResult` is the full result of this multi-round-trip
-        # leg (SEP-2322), not tool-output data: wrap it in an
-        # `InputRequiredToolResult` so it flows through the middleware chain as
-        # an ordinary result instead of being serialized as content. The wire
-        # handler reads it back out (see `_on_call_tool`).
-        if isinstance(result, mcp_types.InputRequiredResult):
-            return InputRequiredToolResult(result)
-
-        return self.convert_result(result)
+        return result
 
     async def _execute(
         self,
