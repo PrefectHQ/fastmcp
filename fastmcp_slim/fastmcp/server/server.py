@@ -8,7 +8,6 @@ import secrets
 from collections.abc import (
     AsyncIterator,
     Callable,
-    Iterable,
     Sequence,
 )
 from contextlib import (
@@ -81,13 +80,6 @@ from fastmcp.server.middleware.middleware import (
 from fastmcp.server.mixins import LifespanMixin, MCPOperationsMixin, TransportMixin
 from fastmcp.server.providers import LocalProvider, Provider
 from fastmcp.server.providers.aggregate import AggregateProvider
-from fastmcp.server.sessions import (
-    SessionProvider,
-    SessionProviderRequiredError,
-    SessionProviderShadowedError,
-    offending_session_id_tool,
-    shadowing_local_tool,
-)
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.server.telemetry import server_span
 from fastmcp.server.transforms import (
@@ -760,12 +752,6 @@ class FastMCP(
                 tools = list(await super().list_tools())
                 tools = await apply_session_transforms(tools)
                 tools = [t for t in tools if is_enabled(t) and not _is_backend_tool(t)]
-                # Enforce the SessionProvider requirement against the effective,
-                # enabled tool set a caller can actually see — not only
-                # decorator-registered ones (a provider-sourced `session_id`
-                # tool needs the same guarantee), and not tools disabled here or
-                # by a session transform, which could never be called anyway.
-                await self._require_session_provider(tools)
 
                 # Rewrite per-tool Prefab renderer URIs based on the tool's
                 # mount-point address. The walk pairs each tool with the
@@ -787,38 +773,6 @@ class FastMCP(
                     authorized.append(tool)
                 return authorized
 
-    async def _require_session_provider(self, tools: Iterable[Tool]) -> None:
-        """Fail loudly if any of `tools` needs session ids but no `SessionProvider` exists.
-
-        A `session_id: SessionId` argument is only usable once `create_session`
-        can mint an id, so a server exposing such a tool must register a
-        `SessionProvider` — whether the tool is decorator-registered or sourced
-        from another `Provider`. This check is order-independent: callers pass
-        the live tool set at the moment of listing or resolving, so a
-        `session_id` tool added after the server is built is still caught. It
-        runs on both the enumeration path (`list_tools`, against every
-        aggregated, effectively-enabled tool) and the resolution path
-        (`_get_tool`, against the one resolved tool, which every tool call
-        passes through), so a tool call cannot reach a handler without the check
-        having run.
-        """
-        if not any(isinstance(p, SessionProvider) for p in self.providers):
-            offending = offending_session_id_tool(tools)
-            if offending is not None:
-                raise SessionProviderRequiredError(tool_name=offending)
-            return
-
-        # A SessionProvider is registered, but static, decorator-registered
-        # components always take precedence over provider-sourced ones: a local
-        # tool named `create_session` or `end_session` would permanently
-        # shadow the provider's own tool of that name, so the provider is
-        # present yet its real lifecycle tool can never run. Local listing is
-        # side-effect-free (no middleware), so this costs nothing extra.
-        local_tools = await self._local_provider._list_tools()
-        shadowed = shadowing_local_tool(local_tools)
-        if shadowed is not None:
-            raise SessionProviderShadowedError(tool_name=shadowed)
-
     async def _get_tool(
         self, name: str, version: VersionSpec | None = None
     ) -> Tool | None:
@@ -837,16 +791,6 @@ class FastMCP(
         tool = await super()._get_tool(name, version)
         if tool is None:
             return None
-
-        # Enforce the SessionProvider requirement against the resolved tool —
-        # whichever provider it came from — before it can be called. Skipped for
-        # a disabled tool: it can never be called, so it should not force a
-        # provider registration the caller has no other reason to add. Checking
-        # only this one tool (rather than re-listing every provider) keeps
-        # resolution free of the side effects a full provider listing could
-        # have (e.g. a mounted sub-server's middleware).
-        if is_enabled(tool) and not _is_backend_tool(tool):
-            await self._require_session_provider([tool])
 
         # Component auth - return None if unauthorized (consistent with list filtering)
         skip_auth, token = _get_auth_context()

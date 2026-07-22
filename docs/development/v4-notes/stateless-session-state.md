@@ -117,7 +117,7 @@ and `end` is a single delete. (Trade-off: concurrent writes to one session race
 on the read-modify-write; session state is small and typically driven serially by
 one agent, so this is acceptable — noted, not hidden.)
 
-## `SessionProvider` — required for `session_id`
+## `SessionProvider`
 
 Session ids are minted by `SessionProvider`, which contributes two tools:
 
@@ -126,8 +126,8 @@ Session ids are minted by `SessionProvider`, which contributes two tools:
 - `end_session(session_id: SessionId)` → validates the id, then deletes the
   session so it no longer resolves.
 
-Because an id is only valid once `create_session` has recorded it, a server whose
-tools declare `session_id: SessionId` **must register a `SessionProvider`**:
+Register it whenever your tools take a `session_id` — providers are the idiomatic
+way to add functionality like this:
 
 ```python
 from fastmcp.server.sessions import SessionProvider
@@ -135,14 +135,16 @@ from fastmcp.server.sessions import SessionProvider
 mcp.add_provider(SessionProvider())
 ```
 
-If a tool declares `session_id` and no provider is registered, FastMCP raises
-`SessionProviderRequiredError` naming the offending tool and the fix. The check
-covers every tool the server can produce, not only decorator-registered ones: on
-`list_tools` it runs against the full aggregated tool set (across all
-providers), and on resolution it runs against the specific tool just resolved —
-so a `session_id` tool sourced from a custom `Provider` is covered exactly like
-one registered with `@mcp.tool`, and there is no way to reach a handler without
-the check having run.
+There is **no enforcement** that a provider is registered, and there was: an
+earlier version scanned the tool set at list/resolve time and raised if a
+`session_id` tool had no provider. That check had to reason about the whole
+composition pipeline — `isinstance` on providers, unwrapping namespaced ones,
+tool transforms, session visibility, enabled state — and produced false
+positives that broke valid servers (a namespaced provider, a session-disabled
+tool). It was deleted. The guarantee never needed it: `get_session` validates
+that an id was recorded (create-then-validate), so a server with no provider
+simply cannot mint ids, and every `get_session` rejects — a misconfiguration
+caught the first time the tools run, not a security hole.
 
 `SessionProvider` subclasses `Provider`, takes **no store** (uses the server's)
 and **no ttl** (the store's). It exists to mint and end owned ids.
@@ -192,9 +194,8 @@ the above:
 5. **`session_id: SessionId`** marker type: string in the schema, auto-filled
    description, `await ctx.get_session(id)` resolver that validates the id.
 6. **`SessionProvider(Provider)`** with `create_session` (records the session) /
-   `end_session` (deletes it), registered explicitly via `add_provider`. A tool
-   declaring `session_id: SessionId` with no provider raises
-   `SessionProviderRequiredError`.
+   `end_session` (deletes it), registered explicitly via `add_provider`. No
+   enforcement that it is present — `get_session`'s validation is the guarantee.
 7. Rewrite the tests to cover both patterns, principal isolation, no-auth
    behavior, and `end_session`.
 

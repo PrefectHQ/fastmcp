@@ -2,8 +2,8 @@
 
 Covers the injected `session: UserSession` per-user pattern, the explicit
 `session_id: SessionId` argument pattern (with its create-then-validate
-lifecycle), and the requirement that a `SessionProvider` be registered whenever a
-tool declares `session_id`. The schema, registration, and lifecycle paths run
+lifecycle), and the `SessionProvider` that supplies the `create_session` /
+`end_session` lifecycle tools. The schema, registration, and lifecycle paths run
 through an in-memory `Client`; the principal-isolation cases drive the tool
 through its full injection + storage path under a simulated authenticated
 principal.
@@ -29,8 +29,6 @@ from fastmcp.server.sessions import (
     InvalidSession,
     SessionId,
     SessionProvider,
-    SessionProviderRequiredError,
-    SessionProviderShadowedError,
     UserSession,
 )
 from fastmcp.tools.base import ToolResult
@@ -407,48 +405,13 @@ class TestSessionProvider:
         assert SESSION_ID_DESCRIPTION in prop["description"]
 
 
-class TestSessionProviderRequirement:
-    async def test_missing_provider_raises_naming_the_tool(self):
-        """A `session_id` tool with no `SessionProvider` fails loudly, naming the
-        offending tool and the fix."""
+class TestNoProviderIsNonFatal:
+    """With the enforcement checks removed, a `session_id` tool without a
+    `SessionProvider` is not a setup error — it simply cannot resolve a session,
+    because no id can be created. The failure surfaces at use, not at listing."""
+
+    async def test_session_id_tool_lists_without_a_provider(self):
         server = FastMCP("shop")
-
-        @server.tool
-        async def add_to_cart(item: str, session_id: SessionId) -> int:
-            return len(item)
-
-        with pytest.raises(SessionProviderRequiredError) as exc_info:
-            await server.list_tools()
-        message = str(exc_info.value)
-        assert "add_to_cart" in message
-        assert "add_provider(SessionProvider())" in message
-
-    async def test_missing_provider_blocks_tool_resolution(self):
-        """The requirement also gates `_get_tool`, so a call cannot slip past."""
-        server = FastMCP("shop")
-
-        @server.tool
-        async def add_to_cart(item: str, session_id: SessionId) -> int:
-            return len(item)
-
-        with pytest.raises(SessionProviderRequiredError):
-            await server.get_tool("add_to_cart")
-
-    async def test_missing_provider_surfaces_over_the_wire(self):
-        """Over the client wire the misconfiguration still fails the call."""
-        server = FastMCP("shop")
-
-        @server.tool
-        async def add_to_cart(item: str, session_id: SessionId) -> int:
-            return len(item)
-
-        async with Client(server) as client:
-            with pytest.raises(Exception):
-                await client.list_tools()
-
-    async def test_registering_the_provider_satisfies_the_requirement(self):
-        server = FastMCP("shop")
-        server.add_provider(SessionProvider())
 
         @server.tool
         async def add_to_cart(item: str, session_id: SessionId) -> int:
@@ -456,96 +419,23 @@ class TestSessionProviderRequirement:
 
         async with Client(server) as client:
             names = {t.name for t in await client.list_tools()}
-        assert {"create_session", "end_session"} <= names
+        assert names == {"add_to_cart"}
 
-    async def test_requirement_triggers_for_tool_added_after_construction(self):
-        """The check re-scans live, so a `session_id` tool added after the server
-        is built still triggers the requirement."""
+    async def test_any_id_is_rejected_without_a_way_to_create_one(self):
         server = FastMCP("shop")
 
-        # No session_id tool yet: listing is fine.
-        await server.list_tools()
-
         @server.tool
-        async def add_to_cart(item: str, session_id: SessionId) -> int:
-            return len(item)
+        async def add_to_cart(item: str, session_id: SessionId) -> str:
+            session = await get_context().get_session(session_id)
+            await session.set("item", item)
+            return "ok"
 
-        with pytest.raises(SessionProviderRequiredError, match="add_to_cart"):
-            await server.list_tools()
-
-    async def test_no_requirement_without_a_session_id_tool(self):
-        """A server with no `session_id` tool needs no provider and lists cleanly."""
-        server = FastMCP("plain")
-
-        @server.tool
-        async def echo(text: str) -> str:
-            return text
-
+        # No provider, so no id was ever minted: resolution rejects any id.
         async with Client(server) as client:
-            names = {t.name for t in await client.list_tools()}
-        assert names == {"echo"}
-
-    async def test_requirement_covers_provider_sourced_tools(self):
-        """A `session_id` tool from a non-local `Provider` is covered too, not
-        only decorator-registered ones (the requirement scans the aggregated
-        tool set, not just `_local_provider`)."""
-        from fastmcp.server.providers.base import Provider
-        from fastmcp.tools.function_tool import FunctionTool
-
-        async def add_to_cart(item: str, session_id: SessionId) -> int:
-            return len(item)
-
-        class CustomProvider(Provider):
-            async def _list_tools(self):
-                return [FunctionTool.from_function(add_to_cart)]
-
-        server = FastMCP("shop")
-        server.add_provider(CustomProvider())
-
-        with pytest.raises(SessionProviderRequiredError, match="add_to_cart"):
-            await server.list_tools()
-        with pytest.raises(SessionProviderRequiredError, match="add_to_cart"):
-            await server.get_tool("add_to_cart")
-
-    async def test_disabled_session_id_tool_does_not_block_others(self):
-        """A disabled `session_id` tool can never be called, so it must not
-        force every other tool's listing or resolution to fail."""
-        server = FastMCP("shop")
-
-        @server.tool
-        async def add_to_cart(item: str, session_id: SessionId) -> int:
-            return len(item)
-
-        @server.tool
-        async def echo(text: str) -> str:
-            return text
-
-        server.disable(names={"add_to_cart"}, components={"tool"})
-
-        async with Client(server) as client:
-            names = {t.name for t in await client.list_tools()}
-            result = await client.call_tool("echo", {"text": "hi"})
-        assert names == {"echo"}
-        assert result.data == "hi"
-
-    async def test_local_tool_shadowing_lifecycle_name_is_rejected(self):
-        """A local tool named `create_session` always wins over the provider's
-        own tool of that name, permanently shadowing it — rejected at setup."""
-        server = FastMCP("shop")
-        server.add_provider(SessionProvider())
-
-        @server.tool
-        async def add_to_cart(item: str, session_id: SessionId) -> int:
-            return len(item)
-
-        @server.tool(name="create_session")
-        async def my_create_session() -> str:
-            return "not a real session"
-
-        with pytest.raises(SessionProviderShadowedError, match="create_session"):
-            await server.list_tools()
-        with pytest.raises(SessionProviderShadowedError, match="create_session"):
-            await server.get_tool("add_to_cart")
+            with pytest.raises(ToolError):
+                await client.call_tool(
+                    "add_to_cart", {"item": "x", "session_id": "made-up"}
+                )
 
 
 class TestSessionIdDescriptionAppending:

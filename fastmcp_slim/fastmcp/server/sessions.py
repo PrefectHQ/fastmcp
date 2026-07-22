@@ -18,11 +18,12 @@ authenticated principal rather than by any client-declared identifier.
 - `session_id: SessionId` (argument): a required string the agent supplies,
   resolved with `await ctx.get_session(session_id)`. The id must first be minted
   by `create_session`; an id that was never created (or was created under a
-  different principal) is rejected. A server with a `session_id` tool must
-  register a `SessionProvider`.
+  different principal) is rejected. This validation is the whole guarantee — an
+  unminted id never resolves, so nothing enforces provider registration.
 - `SessionProvider`: a `Provider` contributing `create_session` / `end_session`
-  tools. Register it explicitly with `mcp.add_provider(SessionProvider())`
-  whenever a tool declares `session_id: SessionId`.
+  tools. Register it with `mcp.add_provider(SessionProvider())` so a tool that
+  takes `session_id` has a way to mint ids; without it, no id can be created, so
+  those tools simply cannot resolve a session.
 
 Isolation is the authenticated principal, not the session id. State keyed by
 `(principal, session_id)` means a request under principal B can never address
@@ -36,7 +37,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Sequence
 from functools import lru_cache
 from types import TracebackType
 from typing import (
@@ -116,45 +117,6 @@ class SessionAuthError(FastMCPError):
         ),
     ) -> None:
         super().__init__(message)
-
-
-class SessionProviderRequiredError(FastMCPError):
-    """A tool declares `session_id: SessionId` but no `SessionProvider` is registered.
-
-    Session ids must be minted by `create_session`, so a server whose tools take a
-    `session_id: SessionId` argument has to register a `SessionProvider` to supply
-    the lifecycle tools. Raised before any tool can be called so the
-    misconfiguration surfaces loudly rather than as a runtime "unknown session".
-    """
-
-    def __init__(self, *, tool_name: str) -> None:
-        super().__init__(
-            f"Tool {tool_name!r} declares a `session_id: SessionId` parameter, but "
-            "no `SessionProvider` is registered to mint and end sessions. Register "
-            "one with `mcp.add_provider(SessionProvider())`."
-        )
-
-
-class SessionProviderShadowedError(FastMCPError):
-    """A decorator-registered tool reuses a `SessionProvider` lifecycle tool's name.
-
-    Static, decorator-registered components always take precedence over
-    provider-sourced ones, so a local tool named `create_session` or
-    `end_session` silently replaces the `SessionProvider`'s own tool of that
-    name — the provider is registered, but its real lifecycle tool can never be
-    reached. Every id such a shadowed `create_session` returns is then rejected
-    by `get_session`, since it was never actually recorded. Raised at setup so
-    the misconfiguration surfaces immediately instead of as a confusing
-    `InvalidSession` on first use.
-    """
-
-    def __init__(self, *, tool_name: str) -> None:
-        super().__init__(
-            f"A local tool is registered as {tool_name!r}, which is also the name "
-            "of a SessionProvider lifecycle tool. The local tool takes precedence "
-            "and permanently shadows the provider's own tool. Rename the local "
-            "tool."
-        )
 
 
 class InvalidSession(FastMCPError):
@@ -531,42 +493,3 @@ class SessionProvider(Provider):
                 Tool.from_function(end_session),
             ]
         return self._tools
-
-
-# The names `SessionProvider` registers its lifecycle tools under. Reserved:
-# a decorator-registered tool sharing one of these names always takes
-# precedence over the provider's own tool (static components beat providers),
-# permanently shadowing it.
-RESERVED_SESSION_TOOL_NAMES: Final[frozenset[str]] = frozenset(
-    {create_session.__name__, end_session.__name__}
-)
-
-
-def shadowing_local_tool(local_tools: Iterable[Tool]) -> str | None:
-    """Name of the first local tool reusing a `SessionProvider` lifecycle name.
-
-    Used to detect the case where a decorator-registered tool is named
-    `create_session` or `end_session`: because static components always take
-    precedence over providers, that local tool permanently shadows the
-    `SessionProvider`'s own tool of the same name, even though the provider is
-    registered and the requirement check passes.
-    """
-    for tool in local_tools:
-        if tool.name in RESERVED_SESSION_TOOL_NAMES:
-            return tool.name
-    return None
-
-
-def offending_session_id_tool(tools: Iterable[Tool]) -> str | None:
-    """Name of the first tool declaring `session_id: SessionId`, or `None`.
-
-    Used to enforce that a `SessionProvider` is registered whenever a tool
-    requires session ids. Only function-backed tools carry resolvable hints, so
-    only those are inspected.
-    """
-    from fastmcp.tools.function_tool import FunctionTool
-
-    for tool in tools:
-        if isinstance(tool, FunctionTool) and session_id_parameter_names(tool.fn):
-            return tool.name
-    return None

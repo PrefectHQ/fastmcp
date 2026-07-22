@@ -42,7 +42,7 @@ Sometimes one user needs more than one bucket — separate carts, parallel conve
 
 Declare a `SessionId` parameter. Unlike `UserSession`, it appears in the input schema as a string, because the agent is the one that supplies it. FastMCP fills in that argument's description for you — instructing the agent to obtain an id and pass it back — so the tool teaches the protocol on its own, with no prompting on your side.
 
-An agent obtains an id by calling `create_session`, and that tool comes from a `SessionProvider`. Register one whenever your tools take a `session_id`. The provider mints ids and ends sessions; a server whose tools declare `session_id` but registers no provider raises a clear error, naming the offending tool, before any tool can be called.
+An agent obtains an id by calling `create_session`, which comes from a `SessionProvider` — [providers](/servers/providers/overview) are how FastMCP contributes functionality like this. Register one whenever your tools take a `session_id`. Without it there is no way to mint an id, so every id is rejected and the tools cannot resolve a session — a mistake you catch the first time you run them.
 
 ```python
 from fastmcp import FastMCP
