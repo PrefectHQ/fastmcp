@@ -31,7 +31,7 @@ async with Client("my_mcp_server.py") as client:
     schema = tools[0].inputSchema  # still works, warns once
 ```
 
-Each bridged read emits a `FastMCPDeprecationWarning` pointing you at the snake_case name (`tools[0].input_schema` here). The bridge covers the fields users actually read: `inputSchema`/`outputSchema` on tools, `mimeType` on resources and content, `isError`/`structuredContent` on tool results, `nextCursor` on paginated results, `serverInfo`/`protocolVersion` on the initialize result, the sampling parameter fields (`systemPrompt`, `maxTokens`, `stopSequences`, `modelPreferences`, `toolChoice`), and `requestedSchema` on elicitation parameters.
+Each bridged read emits a `FastMCPDeprecationWarning` pointing you at the snake_case name (`tools[0].input_schema` here). The bridge covers the fields users actually read: `inputSchema`/`outputSchema` on tools; `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint` on tool annotations; `mimeType` on resources and content; `isError`/`structuredContent` on tool results; `nextCursor` on paginated results; `serverInfo`/`protocolVersion` on the initialize result; the sampling parameter fields (`systemPrompt`, `maxTokens`, `stopSequences`, `modelPreferences`, `toolChoice`); and `requestedSchema` on elicitation parameters.
 
 The bridge is controlled by the `mcp_camelcase_compat` setting, which defaults to on. Set it to `False` (or the environment variable `FASTMCP_MCP_CAMELCASE_COMPAT=false`) to turn the shims off, in which case only the snake_case names resolve:
 

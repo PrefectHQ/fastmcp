@@ -51,6 +51,20 @@ class TestCamelCaseBridge:
         with pytest.warns(FastMCPDeprecationWarning):
             assert tool.outputSchema == {"type": "string"}  # ty: ignore[unresolved-attribute]
 
+    @pytest.mark.parametrize(
+        ("camel", "snake", "value"),
+        [
+            ("readOnlyHint", "read_only_hint", True),
+            ("destructiveHint", "destructive_hint", False),
+            ("idempotentHint", "idempotent_hint", True),
+            ("openWorldHint", "open_world_hint", False),
+        ],
+    )
+    def test_tool_annotations_bridged(self, camel, snake, value):
+        annotations = mcp_types.ToolAnnotations(**{snake: value})
+        with pytest.warns(FastMCPDeprecationWarning):
+            assert getattr(annotations, camel) is value
+
     def test_call_tool_result_is_error_bridged(self):
         result = mcp_types.CallToolResult(content=[], is_error=True)
         with pytest.warns(FastMCPDeprecationWarning):

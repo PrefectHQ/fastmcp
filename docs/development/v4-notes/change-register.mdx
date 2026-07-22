@@ -6,7 +6,7 @@ This is the complete register of user-facing changes from the MCP Python SDK v2 
 
 Each entry is tagged **Absorbed** (public surface unchanged), **Bridged** (shim keeps old code working, usually warning), **Breaking** (user code must change), or **Deprecated** (works, warns, slated for removal). See the [overview](/development/v4-notes/index) for what each disposition means.
 
-**Empirical validation (WS2 upgrade reality-check).** The register's compatibility claims are verified, not predicted. Running unchanged 3.x-era code against this branch, all 11 upgrade scenarios pass or warn — the only failures are the two predicted breaks, user `mcp.types` imports and positional `McpError(ErrorData(...))` construction. Cross-version wire interop between a 3.4.3 peer and this branch is bidirectionally clean across 9 operations (3.4.3 client ↔ v4 server and v4 client ↔ 3.4.3 server over HTTP). All 25 `_ALIASES` bridge entries warn correctly with actionable messages.
+**Empirical validation (WS2 upgrade reality-check).** The register's compatibility claims are verified, not predicted. Running unchanged 3.x-era code against this branch, all 11 upgrade scenarios pass or warn — the only failures are the two predicted breaks, user `mcp.types` imports and positional `McpError(ErrorData(...))` construction. Cross-version wire interop between a 3.4.3 peer and this branch is bidirectionally clean across 9 operations (3.4.3 client ↔ v4 server and v4 client ↔ 3.4.3 server over HTTP). All 29 `_ALIASES` bridge entries warn correctly with actionable messages.
 
 ## Environment
 
@@ -68,7 +68,7 @@ async def read_schema():
         return tools[0].inputSchema  # works, warns; prefer .input_schema
 ```
 
-The bridged fields are exactly those users read, data-driven from an `_ALIASES` table: `inputSchema`/`outputSchema` (Tool); `mimeType` (Resource, ResourceTemplate, TextResourceContents, BlobResourceContents, ImageContent, AudioContent) and `uriTemplate` (ResourceTemplate); `isError`/`structuredContent` (CallToolResult); `hasMore` (Completion); `serverInfo`/`protocolVersion` (InitializeResult); `nextCursor`/`resourceTemplates` (List\*Result); `systemPrompt`/`maxTokens`/`stopSequences`/`modelPreferences`/`toolChoice` (CreateMessageRequestParams); `requestedSchema` (ElicitRequestFormParams). WS2 verified all 25 alias entries warn correctly with actionable messages.
+The bridged fields are exactly those users read, data-driven from an `_ALIASES` table: `inputSchema`/`outputSchema` (Tool); `readOnlyHint`/`destructiveHint`/`idempotentHint`/`openWorldHint` (ToolAnnotations); `mimeType` (Resource, ResourceTemplate, TextResourceContents, BlobResourceContents, ImageContent, AudioContent) and `uriTemplate` (ResourceTemplate); `isError`/`structuredContent` (CallToolResult); `hasMore` (Completion); `serverInfo`/`protocolVersion` (InitializeResult); `nextCursor`/`resourceTemplates` (List\*Result); `systemPrompt`/`maxTokens`/`stopSequences`/`modelPreferences`/`toolChoice` (CreateMessageRequestParams); `requestedSchema` (ElicitRequestFormParams). WS2 verified all 29 alias entries warn correctly with actionable messages.
 
 *Verify:* `fastmcp_slim/fastmcp/_compat.py` (the `_ALIASES` table and `install()`).
 
