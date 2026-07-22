@@ -42,6 +42,12 @@ _ALIASES: dict[type, dict[str, str]] = {
         "inputSchema": "input_schema",
         "outputSchema": "output_schema",
     },
+    mcp_types.ToolAnnotations: {
+        "readOnlyHint": "read_only_hint",
+        "destructiveHint": "destructive_hint",
+        "idempotentHint": "idempotent_hint",
+        "openWorldHint": "open_world_hint",
+    },
     mcp_types.Resource: {
         "mimeType": "mime_type",
     },
