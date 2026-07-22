@@ -21,7 +21,7 @@ from rich.table import Table
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.sampling import SamplingMessage, SamplingParams
 from fastmcp.client.sampling.handlers.anthropic import AnthropicSamplingHandler
-from fastmcp.types import SamplingCapability, SamplingToolsCapability
+from mcp_types import SamplingCapability, SamplingToolsCapability
 
 console = Console()
 
