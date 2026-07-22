@@ -9,6 +9,24 @@ FastMCP 4 builds on the MCP Python SDK v2, and that is the source of every chang
 
 FastMCP 4 absorbs almost all of this for you. Field access is bridged so your existing reads keep working, and the imports you were taught have a stable home in FastMCP itself. The sections below describe what FastMCP handles for you, the small number of changes you must make in your own code, and the deprecation timeline for the compatibility shims.
 
+## Install the v4 prerelease
+
+While FastMCP 4 is in prerelease, pin the alpha and its prerelease protocol dependencies explicitly. For a uv project, add the following to `pyproject.toml`:
+
+```toml
+[project]
+dependencies = ["fastmcp==4.0.0a1"]
+
+[tool.uv]
+constraint-dependencies = [
+    "fastmcp-slim==4.0.0a1",
+    "mcp==2.0.0b2",
+    "mcp-types==2.0.0b2",
+]
+```
+
+Then run `uv lock` or `uv sync` normally. The constraints opt only these transitive packages into their prerelease versions; you do not need `--prerelease allow`, which permits prereleases throughout the dependency graph.
+
 ## Environment requirements
 
 The SDK v2 raises FastMCP's dependency floors, which matters before any of your code runs.
