@@ -12,6 +12,7 @@ principal.
 import re
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import Any
 from uuid import UUID
 
 import pytest
@@ -31,6 +32,18 @@ from fastmcp.server.sessions import (
     SessionProviderRequiredError,
     UserSession,
 )
+from fastmcp.tools.base import ToolResult
+
+
+def result_value(result: ToolResult) -> Any:
+    """The `"result"` field of a direct `Tool.run()` call's structured content.
+
+    `structured_content` is `dict | None` on `ToolResult` (a bare function tool
+    always populates it, but the type isn't narrowed by construction), so this
+    asserts it is present before indexing.
+    """
+    assert result.structured_content is not None
+    return result.structured_content["result"]
 
 
 def make_token(*, subject: str = "user-a") -> SDKAccessToken:
@@ -118,6 +131,8 @@ class TestInjectedSession:
         server = build_injected_server()
         add_tool = await server.get_tool("add_to_cart")
         view_tool = await server.get_tool("view_cart")
+        assert add_tool is not None
+        assert view_tool is not None
 
         async with Context(fastmcp=server):
             with as_principal(make_token(subject="user-a")):
@@ -125,13 +140,15 @@ class TestInjectedSession:
                 second = await add_tool.run({"item": "banana"})
                 view = await view_tool.run({})
 
-        assert second.structured_content["result"] == 2
-        assert view.structured_content["result"] == ["apple", "banana"]
+        assert result_value(second) == 2
+        assert result_value(view) == ["apple", "banana"]
 
     async def test_two_principals_get_isolated_buckets(self):
         server = build_injected_server()
         add_tool = await server.get_tool("add_to_cart")
         view_tool = await server.get_tool("view_cart")
+        assert add_tool is not None
+        assert view_tool is not None
 
         async with Context(fastmcp=server):
             with as_principal(make_token(subject="user-a")):
@@ -139,7 +156,7 @@ class TestInjectedSession:
             with as_principal(make_token(subject="user-b")):
                 view_b = await view_tool.run({})
 
-        assert view_b.structured_content["result"] == []
+        assert result_value(view_b) == []
 
     async def test_user_session_needs_no_provider(self):
         """A server using only `UserSession` requires no `SessionProvider` and
@@ -271,11 +288,13 @@ class TestSessionIdArgument:
         server = build_id_server()
         create_tool = await server.get_tool("create_session")
         view_tool = await server.get_tool("view_cart")
+        assert create_tool is not None
+        assert view_tool is not None
 
         async with Context(fastmcp=server):
             with as_principal(make_token(subject="user-a")):
                 created = await create_tool.run({})
-                session_id = created.structured_content["result"]
+                session_id = result_value(created)
             with as_principal(make_token(subject="user-b")):
                 with pytest.raises(InvalidSession):
                     await view_tool.run({"session_id": session_id})
@@ -283,27 +302,30 @@ class TestSessionIdArgument:
                 # A's own session still resolves.
                 view_a = await view_tool.run({"session_id": session_id})
 
-        assert view_a.structured_content["result"] == []
+        assert result_value(view_a) == []
 
     async def test_two_principals_same_id_are_isolated(self):
         server = build_id_server()
         create_tool = await server.get_tool("create_session")
         add_tool = await server.get_tool("add_to_cart")
         view_tool = await server.get_tool("view_cart")
+        assert create_tool is not None
+        assert add_tool is not None
+        assert view_tool is not None
 
         async with Context(fastmcp=server):
             with as_principal(make_token(subject="user-a")):
-                id_a = (await create_tool.run({})).structured_content["result"]
+                id_a = result_value(await create_tool.run({}))
                 await add_tool.run({"item": "apple", "session_id": id_a})
             with as_principal(make_token(subject="user-b")):
-                id_b = (await create_tool.run({})).structured_content["result"]
+                id_b = result_value(await create_tool.run({}))
                 # B's own session under its own id is empty.
                 view_b = await view_tool.run({"session_id": id_b})
-                assert view_b.structured_content["result"] == []
+                assert result_value(view_b) == []
             with as_principal(make_token(subject="user-a")):
                 view_a = await view_tool.run({"session_id": id_a})
 
-        assert view_a.structured_content["result"] == ["apple"]
+        assert result_value(view_a) == ["apple"]
 
 
 # ---------------------------------------------------------------------------
