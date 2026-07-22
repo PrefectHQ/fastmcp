@@ -130,6 +130,28 @@ class SessionProviderRequiredError(FastMCPError):
         )
 
 
+class SessionProviderShadowedError(FastMCPError):
+    """A decorator-registered tool reuses a `SessionProvider` lifecycle tool's name.
+
+    Static, decorator-registered components always take precedence over
+    provider-sourced ones, so a local tool named `create_session` or
+    `end_session` silently replaces the `SessionProvider`'s own tool of that
+    name — the provider is registered, but its real lifecycle tool can never be
+    reached. Every id such a shadowed `create_session` returns is then rejected
+    by `get_session`, since it was never actually recorded. Raised at setup so
+    the misconfiguration surfaces immediately instead of as a confusing
+    `InvalidSession` on first use.
+    """
+
+    def __init__(self, *, tool_name: str) -> None:
+        super().__init__(
+            f"A local tool is registered as {tool_name!r}, which is also the name "
+            "of a SessionProvider lifecycle tool. The local tool takes precedence "
+            "and permanently shadows the provider's own tool. Rename the local "
+            "tool."
+        )
+
+
 class InvalidSession(FastMCPError):
     """A session id did not resolve to a session created under the current principal.
 
@@ -504,6 +526,30 @@ class SessionProvider(Provider):
                 Tool.from_function(end_session),
             ]
         return self._tools
+
+
+# The names `SessionProvider` registers its lifecycle tools under. Reserved:
+# a decorator-registered tool sharing one of these names always takes
+# precedence over the provider's own tool (static components beat providers),
+# permanently shadowing it.
+RESERVED_SESSION_TOOL_NAMES: Final[frozenset[str]] = frozenset(
+    {create_session.__name__, end_session.__name__}
+)
+
+
+def shadowing_local_tool(local_tools: Iterable[Tool]) -> str | None:
+    """Name of the first local tool reusing a `SessionProvider` lifecycle name.
+
+    Used to detect the case where a decorator-registered tool is named
+    `create_session` or `end_session`: because static components always take
+    precedence over providers, that local tool permanently shadows the
+    `SessionProvider`'s own tool of the same name, even though the provider is
+    registered and the requirement check passes.
+    """
+    for tool in local_tools:
+        if tool.name in RESERVED_SESSION_TOOL_NAMES:
+            return tool.name
+    return None
 
 
 def offending_session_id_tool(tools: Iterable[Tool]) -> str | None:

@@ -30,6 +30,7 @@ from fastmcp.server.sessions import (
     SessionId,
     SessionProvider,
     SessionProviderRequiredError,
+    SessionProviderShadowedError,
     UserSession,
 )
 from fastmcp.tools.base import ToolResult
@@ -504,6 +505,46 @@ class TestSessionProviderRequirement:
         with pytest.raises(SessionProviderRequiredError, match="add_to_cart"):
             await server.list_tools()
         with pytest.raises(SessionProviderRequiredError, match="add_to_cart"):
+            await server.get_tool("add_to_cart")
+
+    async def test_disabled_session_id_tool_does_not_block_others(self):
+        """A disabled `session_id` tool can never be called, so it must not
+        force every other tool's listing or resolution to fail."""
+        server = FastMCP("shop")
+
+        @server.tool
+        async def add_to_cart(item: str, session_id: SessionId) -> int:
+            return len(item)
+
+        @server.tool
+        async def echo(text: str) -> str:
+            return text
+
+        server.disable(names={"add_to_cart"}, components={"tool"})
+
+        async with Client(server) as client:
+            names = {t.name for t in await client.list_tools()}
+            result = await client.call_tool("echo", {"text": "hi"})
+        assert names == {"echo"}
+        assert result.data == "hi"
+
+    async def test_local_tool_shadowing_lifecycle_name_is_rejected(self):
+        """A local tool named `create_session` always wins over the provider's
+        own tool of that name, permanently shadowing it — rejected at setup."""
+        server = FastMCP("shop")
+        server.add_provider(SessionProvider())
+
+        @server.tool
+        async def add_to_cart(item: str, session_id: SessionId) -> int:
+            return len(item)
+
+        @server.tool(name="create_session")
+        async def my_create_session() -> str:
+            return "not a real session"
+
+        with pytest.raises(SessionProviderShadowedError, match="create_session"):
+            await server.list_tools()
+        with pytest.raises(SessionProviderShadowedError, match="create_session"):
             await server.get_tool("add_to_cart")
 
 

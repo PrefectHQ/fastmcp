@@ -30,8 +30,9 @@ State is keyed by `(principal, session_id)`. A request under principal B keys
 into B's own namespace — it can never address A's keys no matter what
 `session_id` it passes. The id only organizes sessions *within* a principal. The
 handle is a bare `uuid4` string; it is **not sealed** — the principal prefix is
-the wall, and an unknown id simply resolves to an empty session in the caller's
-own namespace.
+the wall. Sessions are also create-then-validate (below): an id that was never
+minted by `create_session` under this principal is rejected outright, not
+resolved to an empty session.
 
 ## Two explicit patterns
 
