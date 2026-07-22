@@ -393,6 +393,13 @@ class ParsedFunction:
             if is_class_member_of_type(output_type, ToolResult):
                 output_type = _UnserializableType
 
+            # A bare CallToolResult gives the tool full protocol-level control
+            # over its response, so there is no FastMCP output schema to infer.
+            if isinstance(output_type, type) and issubclass(
+                output_type, mcp_types.CallToolResult
+            ):
+                output_type = _UnserializableType
+
             # If InputRequiredResult survives stripping in any wrapping — bare,
             # via a `type X = ...` alias, Annotated, or a subclass — it is a
             # guard-only return with no output data (a union would have had its
