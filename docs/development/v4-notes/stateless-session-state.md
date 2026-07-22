@@ -66,7 +66,7 @@ from fastmcp.server.dependencies import get_context
 
 @mcp.tool
 async def add_to_cart(item: str, session_id: SessionId) -> str:
-    session = get_context().get_session(session_id)
+    session = await get_context().get_session(session_id)
     cart = await session.get("cart", default=[])
     cart.append(item)
     await session.set("cart", cart)
@@ -81,10 +81,12 @@ auto-populates the argument's description with the protocol:
 > persist state across calls in the same session."
 
 The tool becomes self-teaching — an agent reads the schema and learns the
-create-then-pass contract with no hand-prompting. `ctx.get_session(session_id)`
+create-then-pass contract with no hand-prompting. `await ctx.get_session(session_id)`
 resolves it to a `Session` keyed by `(principal, session_id)` (named
 `get_session`, not `session`, because `ctx.session` already exposes the raw
-`ServerSession`). Use it when a user needs more than one session.
+`ServerSession`), **validating** that the id was created under this principal —
+an unknown or foreign id raises `InvalidSession` rather than opening a fresh
+bucket. Use it when a user needs more than one session.
 
 ## The `Session` object
 
@@ -93,34 +95,33 @@ Async accessors over the server store, scoped to one `(principal, session_id)`:
 - `await session.get(key, default=None)`
 - `await session.set(key, value)`
 - `await session.delete(key)`
-- `await session.clear()`
+- `await session.clear()` — empties user state but **keeps the session valid**.
+- `await session.end()` — deletes the session (what `end_session` calls).
 
 A session's state is stored as a **single dict under one key**
-(`session:{principal}:{session_id}`). `get`/`set`/`delete` read-modify-write that
-dict; `clear` / `end_session` delete the one key. One key per session means one
-TTL per session (the store's), refreshed on write — no key index to maintain, and
-`end_session` is a single delete. (Trade-off: concurrent writes to one session
-race on the read-modify-write; session state is small and typically driven
-serially by one agent, so this is acceptable — noted, not hidden.)
+(`session:{principal}:{session_id}`). That dict holds user state in a `state`
+sub-dict alongside a small `_created` marker, so a created-but-empty session is
+distinguishable from a missing one even if the store collapses empty dicts.
+`get`/`set`/`delete` read-modify-write the sub-dict and never touch the marker;
+`clear` resets the sub-dict but leaves the marker (the session still resolves);
+`end` deletes the key. Namespacing user state under `state` is what keeps a user
+key named `_created` from colliding with the marker. One key per session means
+one TTL per session (the store's), refreshed on write — no key index to maintain,
+and `end` is a single delete. (Trade-off: concurrent writes to one session race
+on the read-modify-write; session state is small and typically driven serially by
+one agent, so this is acceptable — noted, not hidden.)
 
-## `SessionProvider` — auto-wired
+## `SessionProvider` — required for `session_id`
 
 Session ids are minted by `SessionProvider`, which contributes two tools:
 
-- `create_session()` → mints an unguessable `uuid4` and returns it as a string.
-- `end_session(session_id: SessionId)` → clears that session's state.
+- `create_session()` → mints an unguessable `uuid4`, **records** the session
+  under the current principal, and returns the id as a string.
+- `end_session(session_id: SessionId)` → validates the id, then deletes the
+  session so it no longer resolves.
 
-**Declaring a `session_id: SessionId` argument on any tool auto-registers the
-default `SessionProvider`** — the developer does not have to remember
-`add_provider(SessionProvider())`. The `create_session` / `end_session` tools are
-real and appear in the normal tool listing; the visible `session_id` argument
-implies the lifecycle plumbing, so FastMCP wires it. The decision is made when
-tools are listed by scanning the server's registered tools, so it is independent
-of registration order: a `session_id` tool added after construction still
-activates it.
-
-Registering a `SessionProvider` yourself still works and takes precedence — the
-auto-registered one steps aside, so there is never a duplicate:
+Because an id is only valid once `create_session` has recorded it, a server whose
+tools declare `session_id: SessionId` **must register a `SessionProvider`**:
 
 ```python
 from fastmcp.server.sessions import SessionProvider
@@ -128,15 +129,22 @@ from fastmcp.server.sessions import SessionProvider
 mcp.add_provider(SessionProvider())
 ```
 
+If a tool declares `session_id` and no provider is registered, FastMCP raises
+`SessionProviderRequiredError` naming the offending tool and the fix. The check
+runs on both the tool-listing and tool-resolution paths and re-scans the live
+local tool set each time, so it is independent of registration order — a
+`session_id` tool added after construction is still caught before it can be
+called, and there is no way to reach a handler without the check having run.
+
 `SessionProvider` subclasses `Provider`, takes **no store** (uses the server's)
-and **no ttl** (the store's). It exists only to hand out unguessable ids.
+and **no ttl** (the store's). It exists to mint and end owned ids.
 `create_session` matters most without auth, where an unguessable id is the only
 defense against a caller *guessing* onto another session.
 
-**Opt out** with `FastMCP(auto_session_provider=False)`. Use it for
-bring-your-own-key apps: a tool takes a `session_id` whose value is the caller's
-own session/user identity, so `create_session` is unwanted. With auto-wiring off
-you can still `add_provider(SessionProvider())` explicitly if you want it.
+When an application already mints its own identifiers — conversation ids, workflow
+ids — take them as ordinary string arguments rather than `SessionId`, and register
+no provider; `SessionId` is specifically the create-then-pass contract backed by
+`create_session`.
 
 ## Security
 
@@ -174,10 +182,11 @@ the above:
    wire into the same parameter-detection path as `Context`. `UserSession` is the
    injection marker; the injected value is a `Session`.
 5. **`session_id: SessionId`** marker type: string in the schema, auto-filled
-   description, `ctx.get_session(id)` resolver.
-6. **`SessionProvider(Provider)`** with `create_session` / `end_session`,
-   auto-registered when a tool declares `session_id: SessionId` (or added
-   explicitly via `add_provider`); opt out with `auto_session_provider=False`.
+   description, `await ctx.get_session(id)` resolver that validates the id.
+6. **`SessionProvider(Provider)`** with `create_session` (records the session) /
+   `end_session` (deletes it), registered explicitly via `add_provider`. A tool
+   declaring `session_id: SessionId` with no provider raises
+   `SessionProviderRequiredError`.
 7. Rewrite the tests to cover both patterns, principal isolation, no-auth
    behavior, and `end_session`.
 

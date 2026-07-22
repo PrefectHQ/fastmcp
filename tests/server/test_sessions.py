@@ -21,7 +21,9 @@ from fastmcp.server.sessions import (
 )
 
 
-def make_token(*, subject: str = "user-a", client_id: str = "client-1") -> SDKAccessToken:
+def make_token(
+    *, subject: str = "user-a", client_id: str = "client-1"
+) -> SDKAccessToken:
     return SDKAccessToken(
         token="opaque",
         client_id=client_id,
@@ -161,3 +163,46 @@ class TestFalsyValues:
         await session.set("flag", False)
         assert await session.get("count", default=99) == 0
         assert await session.get("flag", default=True) is False
+
+
+class TestLifecycleMarker:
+    async def test_uncreated_session_does_not_exist(self):
+        server = FastMCP("test")
+        session = make_session(server, None, "s1")
+        assert await session._exists() is False
+
+    async def test_created_session_exists(self):
+        server = FastMCP("test")
+        session = make_session(server, None, "s1")
+        await session._create()
+        assert await session._exists() is True
+
+    async def test_writing_state_does_not_clobber_the_marker(self):
+        server = FastMCP("test")
+        session = make_session(server, None, "s1")
+        await session._create()
+        # A user key literally named like the marker cannot collide with it,
+        # because user state lives in a namespaced sub-dict.
+        await session.set("_created", "user-value")
+        await session.set("cart", ["apple"])
+        await session.delete("cart")
+        assert await session._exists() is True
+        assert await session.get("_created") == "user-value"
+
+    async def test_clear_keeps_the_session_but_empties_state(self):
+        server = FastMCP("test")
+        session = make_session(server, None, "s1")
+        await session._create()
+        await session.set("cart", ["apple"])
+        await session.clear()
+        assert await session._exists() is True
+        assert await session.get("cart") is None
+
+    async def test_end_removes_the_session_entirely(self):
+        server = FastMCP("test")
+        session = make_session(server, None, "s1")
+        await session._create()
+        await session.set("cart", ["apple"])
+        await session.end()
+        assert await session._exists() is False
+        assert await session.get("cart") is None

@@ -13,15 +13,16 @@ authenticated principal rather than by any client-declared identifier.
 - `session: UserSession` (injected): a per-user bucket, dependency-injected like
   `ctx: Context` and keyed by the request's authenticated principal. Requires
   auth. `UserSession` is the injection annotation; the injected value is a
-  `Session`.
+  `Session`. It is always available under auth — no `create_session`, no
+  provider, no validation.
 - `session_id: SessionId` (argument): a required string the agent supplies,
-  resolved with `ctx.get_session(session_id)`. Works with or without auth, but
-  only isolates between callers under auth. Declaring one auto-wires the default
-  `SessionProvider` (its `create_session` / `end_session` tools) unless the
-  developer already registered one or opted out.
+  resolved with `await ctx.get_session(session_id)`. The id must first be minted
+  by `create_session`; an id that was never created (or was created under a
+  different principal) is rejected. A server with a `session_id` tool must
+  register a `SessionProvider`.
 - `SessionProvider`: a `Provider` contributing `create_session` / `end_session`
-  tools. Registered automatically when a tool declares `session_id: SessionId`,
-  or explicitly via `add_provider`.
+  tools. Register it explicitly with `mcp.add_provider(SessionProvider())`
+  whenever a tool declares `session_id: SessionId`.
 
 Isolation is the authenticated principal, not the session id. State keyed by
 `(principal, session_id)` means a request under principal B can never address
@@ -34,7 +35,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import weakref
+import time
 from collections.abc import Callable, Iterable, Sequence
 from functools import lru_cache
 from types import TracebackType
@@ -56,12 +57,15 @@ from uncalled_for import Dependency
 from fastmcp.exceptions import FastMCPError
 from fastmcp.server.dependencies import get_access_token, get_context
 from fastmcp.server.providers.base import Provider
+from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
     from key_value.aio.adapters.pydantic import PydanticAdapter
 
-    from fastmcp.server.server import FastMCP, StateValue
+    from fastmcp.server.server import StateValue
     from fastmcp.tools.base import Tool
+
+logger = get_logger(__name__)
 
 
 # The description the framework auto-populates onto a `SessionId` argument so an
@@ -71,6 +75,15 @@ SESSION_ID_DESCRIPTION: Final[str] = (
     "Session identifier. Call `create_session` to obtain one, then pass it here "
     "to persist state across calls in the same session."
 )
+
+# Reserved top-level keys in a session's stored dict. User state lives under
+# `_STATE_KEY` (a sub-dict), and `_MARKER_KEY` records that the session was
+# created. Keeping user state in a sub-dict means normal `set`/`delete`/`clear`
+# can never collide with or clobber the creation marker, so a created session
+# stays distinguishable from a missing one — including after `clear()`, which
+# empties the sub-dict but leaves the marker in place.
+_MARKER_KEY: Final[str] = "_created"
+_STATE_KEY: Final[str] = "state"
 
 
 class SessionAuthError(FastMCPError):
@@ -89,6 +102,37 @@ class SessionAuthError(FastMCPError):
             "argument for cross-call state on unauthenticated connections."
         ),
     ) -> None:
+        super().__init__(message)
+
+
+class SessionProviderRequiredError(FastMCPError):
+    """A tool declares `session_id: SessionId` but no `SessionProvider` is registered.
+
+    Session ids must be minted by `create_session`, so a server whose tools take a
+    `session_id: SessionId` argument has to register a `SessionProvider` to supply
+    the lifecycle tools. Raised before any tool can be called so the
+    misconfiguration surfaces loudly rather than as a runtime "unknown session".
+    """
+
+    def __init__(self, *, tool_name: str) -> None:
+        super().__init__(
+            f"Tool {tool_name!r} declares a `session_id: SessionId` parameter, but "
+            "no `SessionProvider` is registered to mint and end sessions. Register "
+            "one with `mcp.add_provider(SessionProvider())`."
+        )
+
+
+class InvalidSession(FastMCPError):
+    """A session id did not resolve to a session created under the current principal.
+
+    Raised by `ctx.get_session(session_id)` when the id was never created, or was
+    created under a different principal. The public message is deliberately
+    generic — the specific reason (which id, which principal) is logged at debug
+    level, not returned to the caller, so an attacker cannot distinguish "unknown
+    id" from "belongs to someone else".
+    """
+
+    def __init__(self, message: str = "Invalid or unknown session.") -> None:
         super().__init__(message)
 
 
@@ -122,7 +166,7 @@ def session_storage_key(principal: str | None, session_id: str) -> str:
 
     Keyed by `(principal, session_id)`: the principal is the isolation wall, the
     id organizes sessions within it. A session's whole state lives under this one
-    key as a dict, so one key means one store TTL per session and `clear` is a
+    key as a dict, so one key means one store TTL per session and `end` is a
     single delete.
     """
     return f"session:{_principal_segment(principal)}:{session_id}"
@@ -131,10 +175,13 @@ def session_storage_key(principal: str | None, session_id: str) -> str:
 class Session:
     """Async accessors over one `(principal, session_id)` bucket of state.
 
-    A session's state is a single dict stored under one key. `get`/`set`/`delete`
-    read-modify-write that dict; `clear` deletes the key. Writes never impose a
-    TTL — retention is entirely the server store's (configure it on the store you
-    pass to `FastMCP(session_state_store=...)`).
+    A session's state is a single dict stored under one key. That dict holds user
+    state in a `state` sub-dict and a small creation marker alongside it, so a
+    created-but-empty session is still distinguishable from a missing one.
+    `get`/`set`/`delete` read-modify-write the sub-dict; `clear` empties the
+    sub-dict but keeps the session valid; `end` deletes the whole key. Writes
+    never impose a TTL — retention is entirely the server store's (configure it on
+    the store you pass to `FastMCP(session_state_store=...)`).
 
     Concurrent writes to one session race on the read-modify-write; session state
     is small and typically driven serially by one agent, so this is acceptable.
@@ -152,40 +199,91 @@ class Session:
         self._session_id = session_id
         self._key = session_storage_key(principal, session_id)
 
-    async def _load(self) -> dict[str, Any]:
-        """Read the session's state dict, or an empty dict when unset."""
+    async def _load_raw(self) -> dict[str, Any] | None:
+        """Read the session's full stored dict, or `None` when the key is unset."""
         result = await self._store.get(key=self._key)
         if result is None:
-            return {}
+            return None
         value = result.value
-        return dict(value) if isinstance(value, dict) else {}
+        return dict(value) if isinstance(value, dict) else None
 
-    async def _save(self, data: dict[str, Any]) -> None:
-        """Write the session's state dict back under its single key (no TTL)."""
+    async def _save_raw(self, data: dict[str, Any]) -> None:
+        """Write the session's full dict back under its single key (no TTL)."""
         from fastmcp.server.server import StateValue
 
         await self._store.put(key=self._key, value=StateValue(value=data))
 
+    @staticmethod
+    def _state_of(raw: dict[str, Any] | None) -> dict[str, Any]:
+        """The user-state sub-dict of a raw stored dict (empty when absent)."""
+        if raw is None:
+            return {}
+        state = raw.get(_STATE_KEY)
+        return dict(state) if isinstance(state, dict) else {}
+
+    async def _exists(self) -> bool:
+        """Whether a session record exists for this `(principal, session_id)`.
+
+        True only once `create_session` has written the creation marker. A raw
+        store entry without the marker (e.g. an injected `UserSession` bucket) is
+        not a created session and does not satisfy this check.
+        """
+        raw = await self._load_raw()
+        return raw is not None and _MARKER_KEY in raw
+
+    async def _create(self) -> None:
+        """Write the initial record so the session exists (called by `create_session`)."""
+        raw = await self._load_raw() or {}
+        raw[_MARKER_KEY] = time.time()
+        raw.setdefault(_STATE_KEY, {})
+        await self._save_raw(raw)
+
     async def get(self, key: str, default: Any = None) -> Any:
         """Return the value for `key`, or `default` when it is not set."""
-        data = await self._load()
-        return data.get(key, default)
+        raw = await self._load_raw()
+        return self._state_of(raw).get(key, default)
 
     async def set(self, key: str, value: Any) -> None:
-        """Store `value` under `key` in this session (read-modify-write)."""
-        data = await self._load()
-        data[key] = value
-        await self._save(data)
+        """Store `value` under `key` in this session (read-modify-write).
+
+        Preserves the creation marker: only the user-state sub-dict is touched.
+        """
+        raw = await self._load_raw() or {}
+        state = self._state_of(raw)
+        state[key] = value
+        raw[_STATE_KEY] = state
+        await self._save_raw(raw)
 
     async def delete(self, key: str) -> None:
-        """Remove `key` from this session, if present."""
-        data = await self._load()
-        if key in data:
-            del data[key]
-            await self._save(data)
+        """Remove `key` from this session, if present (preserves the marker)."""
+        raw = await self._load_raw()
+        if raw is None:
+            return
+        state = self._state_of(raw)
+        if key in state:
+            del state[key]
+            raw[_STATE_KEY] = state
+            await self._save_raw(raw)
 
     async def clear(self) -> None:
-        """Delete the entire session — its one key and all of its state."""
+        """Empty the session's user state but keep the session valid.
+
+        The user-state sub-dict is reset to empty while the creation marker stays
+        in place, so a cleared session still resolves through `ctx.get_session`.
+        To invalidate a session entirely, use `end` (what `end_session` calls).
+        """
+        raw = await self._load_raw()
+        if raw is None:
+            return
+        raw[_STATE_KEY] = {}
+        await self._save_raw(raw)
+
+    async def end(self) -> None:
+        """Invalidate the session — delete its one key and all of its state.
+
+        After this the id no longer resolves through `ctx.get_session`. This is
+        what `end_session` calls; `clear` only empties state and keeps the session.
+        """
         await self._store.delete(key=self._key)
 
 
@@ -199,9 +297,9 @@ class UserSession(Session):
     an ordinary `Session`, so `await session.get(...)`, `.set`, `.delete`, and
     `.clear` all work exactly as on any other `Session`.
 
-    Use `UserSession` when one state bucket per user is what you want, with
-    nothing for the agent to pass. For distinct sessions the agent selects, take a
-    `session_id: SessionId` argument instead.
+    Unlike `session_id: SessionId`, the per-user bucket needs no `create_session`,
+    no `SessionProvider`, and no validation — it is always available under auth,
+    keyed directly by the caller's identity.
 
     ```python
     from fastmcp.server.sessions import UserSession
@@ -289,28 +387,67 @@ def CurrentSession() -> Session:
     return cast("Session", _CurrentSession())
 
 
+async def resolve_session(session_id: str) -> Session:
+    """Resolve and validate a session id against the current principal's store.
+
+    Reads the record for `(current_principal, session_id)` and returns a `Session`
+    only when it exists — i.e. was written by `create_session` under this same
+    principal. An id that was never created, or created under a different
+    principal, raises `InvalidSession`; the specific reason is logged at debug
+    level and never returned to the caller.
+    """
+    ctx = get_context()
+    session = Session(
+        store=ctx.fastmcp._state_store,
+        principal=current_principal(),
+        session_id=session_id,
+    )
+    if not await session._exists():
+        logger.debug(
+            "Rejected session id %r: no record for the current principal.",
+            session_id,
+        )
+        raise InvalidSession
+    return session
+
+
 async def create_session() -> str:
     """Create a new session and return its identifier.
 
-    Mints an unguessable `uuid4` and returns it as a string. Store it and pass it
-    back as a `session_id` argument on later calls to persist state across a
-    session. State is keyed by the authenticated principal, so the id organizes
-    sessions within a user; on an unauthenticated connection the id is the only
-    thing standing between callers, which is why it is unguessable.
+    Mints an unguessable `uuid4`, records an initial session owned by the current
+    principal, and returns the id as a string. Store it and pass it back as a
+    `session_id` argument on later calls to persist state across a session — only
+    an id created this way resolves. State is keyed by the authenticated
+    principal, so the id organizes sessions within a user; on an unauthenticated
+    connection the id is the only thing standing between callers, which is why it
+    is unguessable.
     """
-    return str(uuid4())
+    session_id = str(uuid4())
+    ctx = get_context()
+    session = Session(
+        store=ctx.fastmcp._state_store,
+        principal=current_principal(),
+        session_id=session_id,
+    )
+    await session._create()
+    return session_id
 
 
 async def end_session(session_id: SessionId) -> str:
-    """End a session and delete all of its state."""
-    await get_context().get_session(session_id).clear()
+    """End a session and delete all of its state.
+
+    Validates the id like any other resolution (an unknown or foreign id is
+    rejected), then deletes the session's key so the id no longer resolves.
+    """
+    session = await resolve_session(session_id)
+    await session.end()
     return "session ended"
 
 
 class SessionProvider(Provider):
-    """Opt-in provider contributing the session lifecycle tools.
+    """Provider contributing the session lifecycle tools.
 
-    Add it like any other provider:
+    Register it whenever a tool declares a `session_id: SessionId` argument:
 
     ```python
     from fastmcp.server.sessions import SessionProvider
@@ -320,13 +457,15 @@ class SessionProvider(Provider):
 
     It registers two tools:
 
-    - `create_session()` mints an unguessable `uuid4` and returns it.
-    - `end_session(session_id)` clears that session's state.
+    - `create_session()` mints an unguessable `uuid4`, records the session, and
+      returns the id.
+    - `end_session(session_id)` invalidates that session and deletes its state.
 
     It owns no storage (session state lives in the server's configured
     `session_state_store`) and imposes no TTL (retention is the store's). It
-    exists only to hand out unguessable ids — a tool can take a `session_id`
-    argument and accept any caller-supplied id without it.
+    exists to mint and end owned session ids — a server whose tools take a
+    `session_id` argument requires one, or those tools raise
+    `SessionProviderRequiredError` before they can be called.
     """
 
     def __init__(self) -> None:
@@ -344,53 +483,16 @@ class SessionProvider(Provider):
         return self._tools
 
 
-def tools_declare_session_id(tools: Iterable[Tool]) -> bool:
-    """Whether any tool in `tools` declares a `session_id: SessionId` parameter.
+def offending_session_id_tool(tools: Iterable[Tool]) -> str | None:
+    """Name of the first tool declaring `session_id: SessionId`, or `None`.
 
-    Checks each function-backed tool's resolved hints for the `SessionId` marker.
-    Used to decide whether the default `SessionProvider` should be auto-registered.
+    Used to enforce that a `SessionProvider` is registered whenever a tool
+    requires session ids. Only function-backed tools carry resolvable hints, so
+    only those are inspected.
     """
     from fastmcp.tools.function_tool import FunctionTool
 
-    return any(
-        isinstance(tool, FunctionTool) and session_id_parameter_names(tool.fn)
-        for tool in tools
-    )
-
-
-class _ImplicitSessionProvider(SessionProvider):
-    """Server-owned `SessionProvider` that activates only when it is needed.
-
-    Consulted directly by the server's tool listing/lookup (it is deliberately
-    kept out of the public `providers` list so it never perturbs provider indices
-    or user introspection). It contributes its `create_session` / `end_session`
-    tools only when every condition holds:
-
-    - the server has not opted out (`FastMCP(auto_session_provider=False)`),
-    - no `SessionProvider` was registered explicitly (a manual one wins), and
-    - at least one locally registered tool declares a `session_id: SessionId`
-      argument.
-
-    Detection scans the server's own registered tools (the `LocalProvider`'s
-    decorator / `add_tool` set), which is read fresh at list time — so activation
-    is independent of the order in which tools and providers are registered (a
-    `session_id` tool added after construction still activates it) and never
-    invokes another provider's listing (a mounted sub-server wires its own
-    `SessionProvider` and is not scanned here, so its middleware is never run as a
-    side effect of this decision).
-    """
-
-    def __init__(self, server: FastMCP) -> None:
-        super().__init__()
-        self._server_ref = weakref.ref(server)
-
-    async def _list_tools(self) -> Sequence[Tool]:
-        server = self._server_ref()
-        if server is None or not server._auto_session_provider:
-            return []
-        if any(isinstance(p, SessionProvider) for p in server.providers):
-            return []
-        local_tools = await server._local_provider._list_tools()
-        if not tools_declare_session_id(local_tools):
-            return []
-        return await super()._list_tools()
+    for tool in tools:
+        if isinstance(tool, FunctionTool) and session_id_parameter_names(tool.fn):
+            return tool.name
+    return None

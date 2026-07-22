@@ -80,7 +80,11 @@ from fastmcp.server.middleware.middleware import (
 from fastmcp.server.mixins import LifespanMixin, MCPOperationsMixin, TransportMixin
 from fastmcp.server.providers import LocalProvider, Provider
 from fastmcp.server.providers.aggregate import AggregateProvider
-from fastmcp.server.sessions import _ImplicitSessionProvider
+from fastmcp.server.sessions import (
+    SessionProvider,
+    SessionProviderRequiredError,
+    offending_session_id_tool,
+)
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.server.telemetry import server_span
 from fastmcp.server.transforms import (
@@ -356,7 +360,6 @@ class FastMCP(
         cache_scope: Literal["public", "private"] | None = None,
         tasks: bool | None = None,
         session_state_store: AsyncKeyValue | None = None,
-        auto_session_provider: bool = True,
         sampling_handler: SamplingHandler | None = None,
         sampling_handler_behavior: Literal["always", "fallback"] | None = None,
         client_log_level: mcp_types.LoggingLevel | None = None,
@@ -397,18 +400,6 @@ class FastMCP(
         self.add_provider(self._local_provider)
         for p in providers or []:
             self.add_provider(p)
-
-        # Auto-register the default SessionProvider when a tool declares a
-        # `session_id: SessionId` argument. The implicit provider is consulted by
-        # the server's tool listing/lookup (kept out of the public `providers`
-        # list) and only contributes its `create_session` / `end_session` tools
-        # when one is declared and no explicit SessionProvider was added. Set
-        # auto_session_provider=False to opt out (e.g. bring-your-own-key apps
-        # that supply their own session ids and never want create_session).
-        self._auto_session_provider: bool = auto_session_provider
-        self._implicit_session_provider: _ImplicitSessionProvider = (
-            _ImplicitSessionProvider(self)
-        )
 
         for t in transforms or []:
             self.add_transform(t)
@@ -763,11 +754,8 @@ class FastMCP(
             with server_span("tools/list", "tools/list", self.name, "tool", ""):
                 # Get all tools, apply session transforms, then filter enabled
                 # and model-visible (app-only tools are hidden from the model).
-                # The implicit session provider is consulted here (rather than
-                # sitting in `self.providers`) so it never perturbs the public
-                # provider list or its indices.
+                await self._require_session_provider_if_needed()
                 tools = list(await super().list_tools())
-                tools += list(await self._implicit_session_provider.list_tools())
                 tools = await apply_session_transforms(tools)
                 tools = [t for t in tools if is_enabled(t) and not _is_backend_tool(t)]
 
@@ -791,6 +779,25 @@ class FastMCP(
                     authorized.append(tool)
                 return authorized
 
+    async def _require_session_provider_if_needed(self) -> None:
+        """Fail loudly if a tool needs session ids but no `SessionProvider` exists.
+
+        A `session_id: SessionId` argument is only usable once `create_session`
+        can mint an id, so a server with such a tool must register a
+        `SessionProvider`. This check is order-independent: it re-scans the live
+        local tool set on every list/resolve rather than deciding once at
+        construction, so a `session_id` tool added after the server is built is
+        still caught. It runs on both the enumeration path (`list_tools`) and the
+        resolution path (`_get_tool`, which every tool call passes through), so a
+        tool call cannot reach a handler without the check having run.
+        """
+        if any(isinstance(p, SessionProvider) for p in self.providers):
+            return
+        local_tools = await self._local_provider._list_tools()
+        offending = offending_session_id_tool(local_tools)
+        if offending is not None:
+            raise SessionProviderRequiredError(tool_name=offending)
+
     async def _get_tool(
         self, name: str, version: VersionSpec | None = None
     ) -> Tool | None:
@@ -805,13 +812,12 @@ class FastMCP(
         Returns:
             The tool if found and authorized, None if not found or unauthorized.
         """
+        # Enforce the SessionProvider requirement before resolving anything: every
+        # tool call passes through here, so this gate cannot be bypassed.
+        await self._require_session_provider_if_needed()
+
         # Get tool from AggregateProvider (handles aggregation and namespacing)
         tool = await super()._get_tool(name, version)
-        if tool is None:
-            # Fall back to the implicit session provider (create_session /
-            # end_session), which is consulted here rather than living in
-            # `self.providers`.
-            tool = await self._implicit_session_provider.get_tool(name, version)
         if tool is None:
             return None
 

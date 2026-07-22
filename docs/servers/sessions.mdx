@@ -42,34 +42,41 @@ Sometimes one user needs more than one bucket — separate carts, parallel conve
 
 Declare a `SessionId` parameter. Unlike `UserSession`, it appears in the input schema as a string, because the agent is the one that supplies it. FastMCP fills in that argument's description for you — instructing the agent to obtain an id and pass it back — so the tool teaches the protocol on its own, with no prompting on your side.
 
+An agent obtains an id by calling `create_session`, and that tool comes from a `SessionProvider`. Register one whenever your tools take a `session_id`. The provider mints ids and ends sessions; a server whose tools declare `session_id` but registers no provider raises a clear error, naming the offending tool, before any tool can be called.
+
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.sessions import SessionId
+from fastmcp.server.sessions import SessionId, SessionProvider
 from fastmcp.server.dependencies import get_context
 
 mcp = FastMCP("shop")
+mcp.add_provider(SessionProvider())
 
 
 @mcp.tool
 async def add_to_cart(item: str, session_id: SessionId) -> str:
-    session = get_context().get_session(session_id)
+    session = await get_context().get_session(session_id)
     cart = await session.get("cart", default=[])
     cart.append(item)
     await session.set("cart", cart)
     return f"{len(cart)} items in cart."
 ```
 
-An agent obtains an id by calling `create_session`. FastMCP registers that tool — along with `end_session` — automatically, the moment any tool on the server declares a `SessionId`. The lifecycle tools are only meaningful once a session argument exists, so wiring them by hand would be one more thing to forget; declaring the argument is the whole opt-in. When your application already mints its own identifiers — conversation ids, workflow ids — pass `auto_session_provider=False` to `FastMCP` and hand those ids in directly instead.
+A session id is real and owned: `create_session` records it under the current user, and only an id created that way resolves. Passing an id that was never created — or one created by a different user — raises rather than quietly opening a fresh bucket, so a typo or a stolen id fails loudly instead of misrouting state.
+
+When your application already mints its own identifiers — conversation ids, workflow ids — take them as ordinary string arguments rather than `SessionId`, and skip the provider entirely; `SessionId` is specifically the create-then-pass contract backed by `create_session`.
 
 ## The session object
 
-Both patterns give a tool a `Session`: an async view over one bucket of stored state. Read a value with `await session.get(key, default=None)`, write one with `await session.set(key, value)`, remove one with `await session.delete(key)`, and empty the whole session with `await session.clear()`. Values are stored as JSON, so anything JSON-serializable round-trips.
+Both patterns give a tool a `Session`: an async view over one bucket of stored state. Read a value with `await session.get(key, default=None)`, write one with `await session.set(key, value)`, and remove one with `await session.delete(key)`. Values are stored as JSON, so anything JSON-serializable round-trips.
+
+`await session.clear()` empties the session's state while keeping the session itself valid — the id still resolves, the bucket is just empty. To retire a session entirely, an agent calls `end_session`, which deletes it so the id no longer resolves at all.
 
 ## Isolation
 
 Every session is keyed by two things, in this order: the authenticated user, then the session id. The order is the whole security model. The user is the wall; the id only organizes sessions *within* that wall.
 
-On an authenticated request the user comes from the validated token, which the caller cannot forge. Two different users can pass the very same session id and never reach each other's data, because each id is namespaced under its user's identity. This makes a session id safe to expose — it travels through the agent's context and your logs, and on its own it grants nothing. Guessing another user's id leads nowhere: it just resolves to an empty session in the guesser's own namespace.
+On an authenticated request the user comes from the validated token, which the caller cannot forge. Two different users can pass the very same session id and never reach each other's data, because each id is namespaced under its user's identity. This makes a session id safe to expose — it travels through the agent's context and your logs, and on its own it grants nothing. Guessing another user's id leads nowhere: it was created under *their* namespace, so in the guesser's namespace it simply does not exist and the call is rejected.
 
 Without authentication there is no user to key on, and the guarantee changes.
 
@@ -77,7 +84,7 @@ Without authentication there is no user to key on, and the guarantee changes.
 
 ## Storage and lifetime
 
-Session state lives in the server's [storage backend](/servers/storage-backends) — in-memory by default, or Redis or another shared store when a fleet of servers must see the same sessions. Because the store owns retention, it owns expiry: set a TTL on the store and sessions age out on their own, while `end_session` (or `session.clear()`) removes one immediately. FastMCP never imposes a lifetime of its own — the store you configure is the single place session data lives and expires.
+Session state lives in the server's [storage backend](/servers/storage-backends) — in-memory by default, or Redis or another shared store when a fleet of servers must see the same sessions. Because the store owns retention, it owns expiry: set a TTL on the store and sessions age out on their own, while `end_session` removes one immediately. FastMCP never imposes a lifetime of its own — the store you configure is the single place session data lives and expires.
 
 ## Relationship to request state
 
