@@ -86,7 +86,19 @@ Without authentication there is no user to key on, and the guarantee changes.
 
 ## Storage and lifetime
 
-Session state lives in the server's [storage backend](/servers/storage-backends) — in-memory by default, or Redis or another shared store when a fleet of servers must see the same sessions. Because the store owns retention, it owns expiry: set a TTL on the store and sessions age out on their own, while `end_session` removes one immediately. FastMCP never imposes a lifetime of its own — the store you configure is the single place session data lives and expires.
+Session state lives in the server's [storage backend](/servers/storage-backends) — in-memory by default, or Redis or another shared store when a fleet of servers must see the same sessions. Because the store owns retention, it owns expiry: FastMCP writes session state without a TTL of its own, so the store you configure is the single place session data lives and expires. To give every session a default lifetime, wrap the store so writes without an explicit TTL get one — for example, the `key-value` library's TTL-clamp wrapper takes a `missing_ttl`:
+
+```python
+from key_value.aio.stores.redis import RedisStore
+from key_value.aio.wrappers.ttl_clamp import TTLClampWrapper
+
+store = RedisStore(url="redis://localhost:6379")
+store = TTLClampWrapper(store, min_ttl=0, max_ttl=86400, missing_ttl=3600)
+
+mcp = FastMCP("shop", session_state_store=store)
+```
+
+Now a session expires an hour after its last write, and `end_session` still removes one immediately.
 
 ## Relationship to request state
 

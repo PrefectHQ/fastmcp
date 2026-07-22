@@ -105,8 +105,10 @@ Async accessors over the server store, scoped to one `(principal, session_id)`:
 - `await session.end()` — deletes the session (what `end_session` calls).
 
 A session's state is stored as a **single dict under one key**
-(`session:{principal}:{session_id}`). That dict holds user state in a `state`
-sub-dict alongside a small `_created` marker, so a created-but-empty session is
+(`session:{sha256(principal)}:{session_id}`, and `session:anon:{session_id}` when
+unauthenticated — the principal is hashed into a fixed-length, delimiter-safe
+segment, never embedded raw). That dict holds user state in a `state` sub-dict
+alongside a small `_created` marker, so a created-but-empty session is
 distinguishable from a missing one even if the store collapses empty dicts.
 `get`/`set`/`delete` read-modify-write the sub-dict and never touch the marker;
 `clear` resets the sub-dict but leaves the marker (the session still resolves);

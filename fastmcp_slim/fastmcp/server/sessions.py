@@ -475,9 +475,9 @@ class SessionProvider(Provider):
 
     It owns no storage (session state lives in the server's configured
     `session_state_store`) and imposes no TTL (retention is the store's). It
-    exists to mint and end owned session ids — a server whose tools take a
-    `session_id` argument requires one, or those tools raise
-    `SessionProviderRequiredError` before they can be called.
+    exists to mint and end owned session ids. Registration is not enforced: with
+    no provider, no id can be created, so every `ctx.get_session(...)` rejects —
+    a `session_id` tool without a provider simply cannot resolve a session.
     """
 
     def __init__(self) -> None:
