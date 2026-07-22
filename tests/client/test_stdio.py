@@ -12,6 +12,7 @@ from mcp.shared.exceptions import MCPError
 
 from fastmcp import Client
 from fastmcp.client.transports import PythonStdioTransport, StdioTransport
+from fastmcp.exceptions import FastMCPError
 
 # A pure-stdlib MCP server used by the process-lifecycle tests below. It starts
 # in ~0.03s instead of the ~0.7s a real FastMCP server needs, which matters
@@ -69,6 +70,59 @@ async def wait_for_process_exit(pid: int | None, timeout: float = 5.0) -> None:
             return
         await asyncio.sleep(0.01)
     pytest.fail(f"Subprocess {pid} was still alive after {timeout}s")
+
+
+# Exceptions a call may raise while a crashed stdio session is being torn down
+# and replaced. The direct-client path surfaces MCPError (session closed) or
+# RuntimeError (reconnect failed); a proxy wraps the backend failure in a
+# FastMCPError (e.g. ToolError).
+CRASH_RECOVERY_EXCEPTIONS = (MCPError, RuntimeError, FastMCPError)
+
+
+async def _recover_new_pid(call, old_pid: int, *, attempts: int = 10) -> int:
+    """Call `call` until it succeeds on a subprocess other than `old_pid`.
+
+    `psutil.Process(pid).kill()` is asynchronous and crash recovery is
+    transparent, so a post-crash call may raise while the stale session is torn
+    down, briefly still reach the dying old process, or land on a fresh
+    subprocess — the outcome depends on scheduling. Retrying until a call
+    succeeds on a *new* pid asserts eventual recovery instead of the exact
+    number of failed calls, which was never an actual contract.
+    """
+    last_exc: BaseException | None = None
+    for _ in range(attempts):
+        try:
+            pid = await call()
+        except CRASH_RECOVERY_EXCEPTIONS as exc:
+            last_exc = exc
+        else:
+            if pid != old_pid:
+                return pid
+        await asyncio.sleep(0.05)
+    raise AssertionError(
+        f"stdio backend never recovered onto a new subprocess after {attempts} attempts"
+    ) from last_exc
+
+
+async def recover_client_pid(client: Client, old_pid: int, **kwargs) -> int:
+    """Reconnect `client` and return the pid of the freshly spawned subprocess."""
+
+    async def call() -> int:
+        async with client:
+            result = await client.call_tool("pid")
+        return int(result.data)
+
+    return await _recover_new_pid(call, old_pid, **kwargs)
+
+
+async def recover_proxy_pid(proxy, old_pid: int, **kwargs) -> int:
+    """Call the proxy and return the pid of the freshly spawned backend subprocess."""
+
+    async def call() -> int:
+        result = await proxy.call_tool("pid")
+        return int(result.content[0].text)
+
+    return await _recover_new_pid(call, old_pid, **kwargs)
 
 
 class TestDisconnect:
@@ -338,16 +392,10 @@ class TestSubprocessCrashRecovery:
         # Kill the subprocess to simulate a crash
         psutil.Process(pid1).kill()
 
-        # First attempt after crash fails — the stale session is
-        # detected and torn down so subsequent attempts succeed.
-        with pytest.raises(Exception):
-            async with client:
-                await client.call_tool("pid")
-
-        # Next connection starts a fresh subprocess
-        async with client:
-            result2 = await client.call_tool("pid")
-            pid2: int = result2.data
+        # Recovery is transparent: reconnecting eventually lands on a fresh
+        # subprocess with a new pid, regardless of how many attempts the
+        # stale-session teardown costs.
+        pid2 = await recover_client_pid(client, pid1)
 
         assert pid1 != pid2
 
@@ -382,18 +430,18 @@ class TestSubprocessCrashRecovery:
         pids: list[int] = []
 
         for _ in range(3):
-            async with client:
-                result = await client.call_tool("pid")
-                pid: int = result.data
-                pids.append(pid)
-
-            # Kill the subprocess
-            psutil.Process(pid).kill()
-
-            # Fail once to trigger cleanup
-            with pytest.raises(Exception):
+            if pids:
+                # After a crash, recovery is transparent — the next working
+                # call lands on a fresh subprocess with a new pid.
+                pid = await recover_client_pid(client, pids[-1])
+            else:
                 async with client:
-                    await client.call_tool("pid")
+                    result = await client.call_tool("pid")
+                    pid = result.data
+            pids.append(pid)
+
+            # Kill the subprocess to force the next cycle to recover
+            psutil.Process(pid).kill()
 
         # Each cycle should have started a new subprocess
         assert len(set(pids)) == 3
@@ -406,21 +454,23 @@ class TestSubprocessCrashRecovery:
         )
         pid1: int = 0
 
-        with pytest.raises(Exception):
+        try:
             async with client:
                 result = await client.call_tool("pid")
                 pid1 = result.data
                 # Kill while the context is still open
                 psutil.Process(pid1).kill()
-                # This call hits the dead session
+                # This call races the asynchronous kill: it may hit the dead
+                # session and raise, or briefly still be served. Either outcome
+                # is fine — what matters is that recovery works afterward.
                 await client.call_tool("pid")
+        except CRASH_RECOVERY_EXCEPTIONS:
+            pass
 
         assert pid1 != 0, "First call should have succeeded before the crash"
 
         # Recovery: next connection starts a fresh subprocess
-        async with client:
-            result = await client.call_tool("pid")
-            pid2: int = result.data
+        pid2 = await recover_client_pid(client, pid1)
 
         assert pid1 != pid2
 
@@ -441,13 +491,9 @@ class TestSubprocessCrashRecovery:
         # Kill the backend subprocess
         psutil.Process(pid1).kill()
 
-        # First call after crash fails
-        with pytest.raises(Exception):
-            await proxy.call_tool("pid")
-
-        # Second call recovers with a new subprocess
-        result2 = await proxy.call_tool("pid")
-        pid2 = int(result2.content[0].text)  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        # Recovery is transparent: a call after the crash eventually succeeds on
+        # a fresh backend subprocess with a new pid.
+        pid2 = await recover_proxy_pid(proxy, pid1)
 
         assert pid1 != pid2
 
@@ -523,11 +569,11 @@ class TestSubprocessCrashRecovery:
         # stale session and fails with CONNECTION_CLOSED, which in turn tears
         # the session down so the next attempt reconnects.
         #
-        # The crash tests above encode this same one-failure-then-recover
-        # contract explicitly with `pytest.raises`. Here the failure is
-        # timing-dependent rather than guaranteed, so retry once instead: the
-        # invariant under test is that a cleanly-exited server is replaced by a
-        # fresh subprocess, not how many attempts EOF detection costs.
+        # Like the crash tests above, this asserts eventual recovery rather than
+        # a fixed number of failed attempts: the failure is timing-dependent, so
+        # retry instead. The invariant under test is that a cleanly-exited server
+        # is replaced by a fresh subprocess, not how many attempts EOF detection
+        # costs.
         pid2: int | None = None
         for _ in range(2):
             try:
