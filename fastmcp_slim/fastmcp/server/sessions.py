@@ -1,41 +1,42 @@
-"""Stateless session state: the scoped-state vocabulary and the session codec.
+"""Stateless session state: server-side per-user and per-session storage.
 
-This module provides the security core for cross-request state on modern
-(stateless) MCP connections. It has two parts:
+Modern (2026-07-28) MCP connections are stateless by construction — every
+request builds a fresh connection whose in-memory state is discarded when the
+request returns. This module gives tools two explicit ways to keep state across
+calls, both backed by the server's existing state store and both isolated by the
+authenticated principal rather than by any client-declared identifier.
 
-- `Scope`: the storage-isolation vocabulary shared by `ctx.get_state` /
-  `ctx.set_state`. `REQUEST` is today's per-connection state, `USER` keys off the
-  authenticated principal, and `SESSION` keys off a sealed session handle.
-- `SessionCodec`: mints and verifies the sealed session handle. A handle binds a
-  server-minted `session_id` to the authenticated principal (when present) and an
-  expiry, sealed with the SDK's AES-GCM request-state codec. Unlike the SDK's
-  per-request `requestState` seal, a session handle binds **principal + expiry
-  only**, so it survives across different tool calls rather than a single round.
+- `Session`: async `get`/`set`/`delete`/`clear` over a single dict stored under
+  one key, scoped to a `(principal, session_id)` pair.
+- `session: Session` (injected): a per-user bucket, dependency-injected like
+  `ctx: Context` and keyed by the request's authenticated principal. Requires
+  auth.
+- `session_id: SessionId` (argument): a required string the agent supplies,
+  resolved with `ctx.session(session_id)`. Works with or without auth, but only
+  isolates between callers under auth.
+- `SessionProvider`: an opt-in `Provider` contributing `create_session` /
+  `end_session` tools.
 
-The `Session()` annotation and the request boundary that unseals the handle and
-binds it onto the request context live in a later increment. This module only
-provides the primitives and the context slot they populate.
+Isolation is the authenticated principal, not the session id. State keyed by
+`(principal, session_id)` means a request under principal B can never address
+principal A's keys, no matter what `session_id` it passes; the id only organizes
+sessions within a principal. Without auth there is no principal wall — a session
+id is a bearer capability and sessions are not a boundary between clients.
 """
 
 from __future__ import annotations
 
-import enum
 import hashlib
-import hmac
 import json
-import logging
-import math
-import time
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
-from contextvars import ContextVar, Token
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
 from functools import lru_cache
+from types import TracebackType
 from typing import (
     TYPE_CHECKING,
     Annotated,
+    Any,
     Final,
-    NoReturn,
+    cast,
     get_args,
     get_origin,
     get_type_hints,
@@ -43,123 +44,45 @@ from typing import (
 from uuid import uuid4
 
 from mcp.server.auth.provider import principal_components
-from mcp.server.request_state import InvalidRequestState, RequestStateSecurity
+from uncalled_for import Dependency
 
 from fastmcp.exceptions import FastMCPError
 from fastmcp.server.dependencies import get_access_token, get_context
+from fastmcp.server.providers.base import Provider
 
 if TYPE_CHECKING:
-    from fastmcp.server.server import FastMCP
+    from key_value.aio.adapters.pydantic import PydanticAdapter
 
-logger: logging.Logger = logging.getLogger(__name__)
-
-# Default lifetime of a sealed session handle. Session handles must outlive a
-# single request (they are threaded through many tool calls), so this defaults
-# far above the SDK request-state codec's 600s per-round default. Configurable
-# per `SessionCodec`.
-DEFAULT_SESSION_TTL: Final[float] = 3600.0
-
-# Envelope version stamped into every sealed payload. The AES-GCM codec already
-# binds its own "v1." wire prefix into the seal; this is the *payload* schema
-# version, independent of the codec's token format.
-_ENVELOPE_VERSION: Final[int] = 1
+    from fastmcp.server.server import StateValue
+    from fastmcp.tools.base import Tool
 
 
-class Scope(enum.Enum):
-    """Storage isolation for `ctx.get_state` / `ctx.set_state`.
-
-    The scope selects both the storage key prefix and the isolation guarantee:
-
-    - `REQUEST`: per-request connection state. Dies with the request on a modern
-      (stateless) connection; persists across requests on a stateful one. This is
-      the historical default and the only scope that works without auth or a
-      session handle.
-    - `SESSION`: keyed by `(principal, session_id)` where `session_id` comes from
-      a verified sealed handle bound onto the request context. Sealed and
-      principal-bound when authenticated; unforgeable (but not cross-client
-      isolated) when unauthenticated.
-    - `USER`: keyed by the authenticated principal; spans every session for that
-      user. Requires authentication.
-    """
-
-    REQUEST = "request"
-    SESSION = "session"
-    USER = "user"
+# The description the framework auto-populates onto a `SessionId` argument so an
+# agent reading the tool schema learns the create-then-pass contract with no
+# hand-prompting.
+SESSION_ID_DESCRIPTION: Final[str] = (
+    "Session identifier. Call `create_session` to obtain one, then pass it here "
+    "to persist state across calls in the same session."
+)
 
 
-@dataclass(frozen=True)
-class SessionIdentity:
-    """The verified identity carried by a sealed session handle.
+class SessionAuthError(FastMCPError):
+    """An injected `session: Session` was requested with no authenticated principal.
 
-    `principal` is the authenticated `(client_id, issuer, subject)` triple encoded
-    as a compact JSON string, or `None` when the handle was minted on an
-    unauthenticated connection.
-    """
-
-    session_id: str
-    principal: str | None
-
-
-class SessionError(FastMCPError):
-    """Base class for session-state errors."""
-
-
-class InvalidSessionToken(SessionError):
-    """A sealed session handle failed verification.
-
-    Raised for foreign, expired, tampered, or malformed handles. The rejection
-    reason is captured on `.reason` and logged, never placed on the public
-    message, so a boundary that surfaces this to the wire cannot leak *why* a
-    handle was rejected (mirroring the SDK request-state boundary's stance).
-    """
-
-    def __init__(self, reason: str) -> None:
-        self.reason = reason
-        super().__init__("invalid or expired session token")
-
-
-class NoActiveSessionError(SessionError):
-    """`Scope.SESSION` state was accessed with no verified session on the request.
-
-    Modern (stateless) connections carry no protocol session, so a client must
-    obtain a sealed handle (via `create_session`) and thread it into later calls
-    for `SESSION`-scoped state to resolve.
+    Per-user session injection keys off the request's authenticated principal, so
+    it is only meaningful under auth. A tool that needs cross-call state without
+    auth should take a `session_id: SessionId` argument instead.
     """
 
     def __init__(
         self,
         message: str = (
-            "no active session — call `create_session` and pass its token as the "
-            "session argument to access Scope.SESSION state"
+            "Injected `session: Session` requires an authenticated principal, but "
+            "this request is unauthenticated. Use a `session_id: SessionId` "
+            "argument for cross-call state on unauthenticated connections."
         ),
     ) -> None:
         super().__init__(message)
-
-
-# The verified session identity for the current request. A later increment's
-# boundary sets this after unsealing the handle argument; scoped-state reads it.
-_active_session_identity: ContextVar[SessionIdentity | None] = ContextVar(
-    "fastmcp_active_session_identity", default=None
-)
-
-
-@contextmanager
-def bind_session_identity(identity: SessionIdentity) -> Iterator[SessionIdentity]:
-    """Bind a verified session identity onto the current request context.
-
-    Used by the session boundary (and tests) to make `Scope.SESSION` state
-    resolvable for the duration of a request.
-    """
-    token: Token[SessionIdentity | None] = _active_session_identity.set(identity)
-    try:
-        yield identity
-    finally:
-        _active_session_identity.reset(token)
-
-
-def get_active_session_identity() -> SessionIdentity | None:
-    """Return the verified session identity bound to the current request, if any."""
-    return _active_session_identity.get()
 
 
 def current_principal() -> str | None:
@@ -178,202 +101,104 @@ def current_principal() -> str | None:
 def _principal_segment(principal: str | None) -> str:
     """A fixed-length, delimiter-safe key segment for a principal.
 
-    Hashing keeps arbitrary principal strings from injecting the `:` key
+    Hashing keeps an arbitrary principal string from injecting the `:` key
     delimiter and bounds the key length. `None` (unauthenticated) collapses to a
-    single shared `anon` segment.
+    single shared `anon` segment — without a principal there is no isolation wall.
     """
     if principal is None:
         return "anon"
-    digest = hashlib.sha256(principal.encode("utf-8", "surrogatepass")).hexdigest()
-    return digest
+    return hashlib.sha256(principal.encode("utf-8", "surrogatepass")).hexdigest()
 
 
-def user_state_key(principal: str, key: str) -> str:
-    """Storage key for `Scope.USER` state: keyed by principal."""
-    return f"user:{_principal_segment(principal)}:{key}"
+def session_storage_key(principal: str | None, session_id: str) -> str:
+    """The single storage key holding a session's state dict.
 
-
-def session_state_key(identity: SessionIdentity, key: str) -> str:
-    """Storage key for `Scope.SESSION` state: keyed by `(principal, session_id)`."""
-    return f"session:{_principal_segment(identity.principal)}:{identity.session_id}:{key}"
-
-
-def session_index_key(identity: SessionIdentity) -> str:
-    """Storage key for a session's key index.
-
-    `Scope.SESSION` writes record their user key here so a session's state can be
-    enumerated and cleared (by `end_session`) without relying on the store's
-    optional key-enumeration protocol — the base `AsyncKeyValue` contract only
-    guarantees get/put/delete. A distinct `session-index:` prefix keeps the index
-    from ever colliding with a `session:...` state key.
+    Keyed by `(principal, session_id)`: the principal is the isolation wall, the
+    id organizes sessions within it. A session's whole state lives under this one
+    key as a dict, so one key means one store TTL per session and `clear` is a
+    single delete.
     """
-    return f"session-index:{_principal_segment(identity.principal)}:{identity.session_id}"
+    return f"session:{_principal_segment(principal)}:{session_id}"
 
 
-class _Unset:
-    """Sentinel: `unseal` should read the principal from the request context."""
+class Session:
+    """Async accessors over one `(principal, session_id)` bucket of state.
 
+    A session's state is a single dict stored under one key. `get`/`set`/`delete`
+    read-modify-write that dict; `clear` deletes the key. Writes never impose a
+    TTL — retention is entirely the server store's (configure it on the store you
+    pass to `FastMCP(session_state_store=...)`).
 
-_UNSET: Final[_Unset] = _Unset()
-
-
-class SessionCodec:
-    """Mints and verifies sealed session handles.
-
-    A handle is an opaque, URL-safe token minted server-side. Its payload —
-    `{session_id, principal, exp}` — is sealed with the SDK's AES-GCM request-state
-    codec, so a client can neither read nor forge it. On use the codec unseals it,
-    verifies it has not expired, and — when the request carries an authenticated
-    principal — verifies the handle's principal matches. Foreign, expired, or
-    tampered handles raise `InvalidSessionToken`.
-
-    Reuse the server's `request_state_security` key policy so session handles and
-    the SDK's `requestState` share one key ring; when the server sets no policy,
-    `from_security(None)` mints an ephemeral per-process key (single-process safe,
-    matching the SDK boundary's default).
+    Concurrent writes to one session race on the read-modify-write; session state
+    is small and typically driven serially by one agent, so this is acceptable.
     """
 
     def __init__(
         self,
-        security: RequestStateSecurity,
         *,
-        ttl: float = DEFAULT_SESSION_TTL,
+        store: PydanticAdapter[StateValue],
+        principal: str | None,
+        session_id: str,
     ) -> None:
-        if not (math.isfinite(ttl) and ttl > 0):
-            raise ValueError(f"session ttl must be a positive finite number, got {ttl!r}")
-        # Reuse only the raw AES-GCM codec (seal/unseal over bytes). The policy's
-        # ttl / audience / bind_principal belong to the SDK's per-request boundary
-        # and deliberately do NOT govern session handles.
-        self._codec = security.codec
-        self._ttl = ttl
+        self._store = store
+        self._principal = principal
+        self._session_id = session_id
+        self._key = session_storage_key(principal, session_id)
 
-    @classmethod
-    def from_security(
-        cls,
-        security: RequestStateSecurity | None,
-        *,
-        ttl: float = DEFAULT_SESSION_TTL,
-    ) -> SessionCodec:
-        """Build a codec from a server's request-state policy, or an ephemeral key.
+    async def _load(self) -> dict[str, Any]:
+        """Read the session's state dict, or an empty dict when unset."""
+        result = await self._store.get(key=self._key)
+        if result is None:
+            return {}
+        value = result.value
+        return dict(value) if isinstance(value, dict) else {}
 
-        Pass the server's configured `request_state_security` to bind session
-        handles to the same shared key ring. Pass `None` (no server policy) to
-        seal under a per-process ephemeral key.
-        """
-        if security is None:
-            security = RequestStateSecurity.ephemeral()
-        return cls(security, ttl=ttl)
+    async def _save(self, data: dict[str, Any]) -> None:
+        """Write the session's state dict back under its single key (no TTL)."""
+        from fastmcp.server.server import StateValue
 
-    def seal(self, session_id: str, principal: str | None) -> str:
-        """Mint a sealed handle binding `session_id` to `principal` with an expiry.
+        await self._store.put(key=self._key, value=StateValue(value=data))
 
-        `principal` is the compact-JSON principal string (see `current_principal`)
-        or `None` on an unauthenticated connection.
-        """
-        payload = {
-            "v": _ENVELOPE_VERSION,
-            "sid": session_id,
-            "p": principal,
-            "exp": time.time() + self._ttl,
-        }
-        raw = json.dumps(payload, separators=(",", ":")).encode()
-        return self._codec.seal(raw)
+    async def get(self, key: str, default: Any = None) -> Any:
+        """Return the value for `key`, or `default` when it is not set."""
+        data = await self._load()
+        return data.get(key, default)
 
-    def unseal(
-        self,
-        token: str,
-        *,
-        request_principal: str | None | _Unset = _UNSET,
-    ) -> SessionIdentity:
-        """Verify a sealed handle and return its identity.
+    async def set(self, key: str, value: Any) -> None:
+        """Store `value` under `key` in this session (read-modify-write)."""
+        data = await self._load()
+        data[key] = value
+        await self._save(data)
 
-        Checks integrity (AES-GCM), expiry, and — when the request carries an
-        authenticated principal — that the handle's principal matches it. A handle
-        minted under a principal but replayed on a request with a *different* or
-        *absent* principal is rejected, as is one minted without a principal but
-        presented under authentication (principal drift, mirroring the SDK
-        boundary).
+    async def delete(self, key: str) -> None:
+        """Remove `key` from this session, if present."""
+        data = await self._load()
+        if key in data:
+            del data[key]
+            await self._save(data)
 
-        By default the request principal is read from the current auth context;
-        tests may pass `request_principal` explicitly to exercise the match logic
-        without an auth context.
-
-        Raises:
-            InvalidSessionToken: Malformed, tampered, expired, or foreign handle.
-        """
-        if isinstance(request_principal, _Unset):
-            request_principal = current_principal()
-
-        try:
-            raw = self._codec.unseal(token)
-        except InvalidRequestState as exc:
-            self._reject(str(exc))
-
-        try:
-            claims = json.loads(raw)
-            version = claims["v"]
-            session_id = claims["sid"]
-            principal = claims["p"]
-            exp = claims["exp"]
-        except (ValueError, KeyError, TypeError):
-            self._reject("malformed")
-
-        if version != _ENVELOPE_VERSION or not isinstance(session_id, str):
-            self._reject("malformed")
-        if principal is not None and not isinstance(principal, str):
-            self._reject("malformed")
-
-        now = time.time()
-        # Stated positively so a NaN exp fails the comparison and rejects.
-        if not isinstance(exp, (int, float)) or isinstance(exp, bool) or not (now < exp):
-            self._reject("expired")
-
-        if request_principal is not None:
-            if principal is None or not hmac.compare_digest(principal, request_principal):
-                self._reject("principal mismatch")
-        elif principal is not None:
-            # Handle bound to a principal, replayed on an unauthenticated request:
-            # a downgrade that would leak a user's session. Reject.
-            self._reject("principal drift")
-
-        return SessionIdentity(session_id=session_id, principal=principal)
-
-    def _reject(self, reason: str) -> NoReturn:
-        """Log the real reason and raise a handle with a generic public message."""
-        logger.warning("session token rejected: %s", reason)
-        raise InvalidSessionToken(reason)
+    async def clear(self) -> None:
+        """Delete the entire session — its one key and all of its state."""
+        await self._store.delete(key=self._key)
 
 
-@dataclass(frozen=True)
-class Session:
-    """Marks a tool parameter as carrying a sealed session handle.
+class _SessionIdMarker:
+    """Metadata marker identifying a `SessionId`-annotated parameter."""
 
-    Use as `Annotated[str, Session()]` on a tool parameter. The parameter appears
-    in the tool's input schema as a plain string — the client supplies the token
-    it received from `create_session`. Before the tool body runs, the framework
-    unseals and verifies the token (integrity, expiry, and principal binding when
-    authenticated) and binds the resulting `SessionIdentity` onto the request, so
-    `ctx.get_state(scope=Scope.SESSION)` resolves for the duration of the call.
 
-    A missing, malformed, expired, or foreign token fails the call with
-    `InvalidSessionToken` before the body runs — session access never silently
-    degrades.
-
-    The tool body receives the raw token string in the annotated parameter. That
-    value is rarely needed: session state is read and written through
-    `ctx.get_state` / `ctx.set_state` with `Scope.SESSION`, and the annotation's
-    job is to establish identity. Declaring the parameter is enough to require a
-    valid session for the call.
-    """
+# A `session_id: SessionId` parameter is a plain required string in the input
+# schema (the agent supplies it); the marker lets the framework recognize it and
+# auto-populate its description with the create-then-pass contract.
+SessionId = Annotated[str, _SessionIdMarker()]
 
 
 @lru_cache(maxsize=5000)
-def session_parameter_names(fn: Callable[..., object]) -> tuple[str, ...]:
-    """Names of a function's parameters annotated with `Session()`.
+def session_id_parameter_names(fn: Callable[..., object]) -> tuple[str, ...]:
+    """Names of a function's parameters annotated with `SessionId`.
 
-    Scans the resolved type hints for `Annotated[..., Session()]` metadata.
+    Scans resolved type hints for `Annotated[str, _SessionIdMarker()]` metadata.
     Returns an empty tuple when the hints cannot be resolved (the function then
-    simply carries no session boundary).
+    simply carries no auto-populated session-id description).
     """
     try:
         hints = get_type_hints(fn, include_extras=True)
@@ -385,60 +210,100 @@ def session_parameter_names(fn: Callable[..., object]) -> tuple[str, ...]:
             continue
         if get_origin(hint) is not Annotated:
             continue
-        if any(isinstance(meta, Session) for meta in get_args(hint)[1:]):
+        if any(isinstance(meta, _SessionIdMarker) for meta in get_args(hint)[1:]):
             names.append(name)
     return tuple(names)
 
 
-def create_session() -> str:
-    """Create a new session and return its opaque, sealed handle token.
+class _CurrentSession(Dependency["Session"]):
+    """Dependency that injects a per-user `Session` keyed by the request principal.
 
-    Mint a fresh `session_id`, bind it to the request's authenticated principal
-    (if any) and an expiry, and return the sealed token as a plain string. The
-    client stores this token and passes it back as the `Session()` argument on
-    later calls to access `Scope.SESSION` state.
+    Mirrors `_CurrentContext`: a bare `session: Session` parameter is rewritten to
+    default to this dependency, so it is excluded from the input schema and
+    resolved at call time. Raises `SessionAuthError` when the request carries no
+    authenticated principal.
     """
-    ctx = get_context()
-    return ctx.fastmcp.session_codec.seal(str(uuid4()), current_principal())
+
+    async def __aenter__(self) -> Session:
+        principal = current_principal()
+        if principal is None:
+            raise SessionAuthError
+        ctx = get_context()
+        return Session(
+            store=ctx.fastmcp._state_store,
+            principal=principal,
+            session_id=principal,
+        )
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        return None
 
 
-async def end_session(session: Annotated[str, Session()]) -> str:
-    """End a session and delete all of its `Scope.SESSION` state.
+def CurrentSession() -> Session:
+    """Inject the per-user `Session` for the current authenticated principal.
 
-    The `Session()` boundary verifies the token before this body runs, so an
-    invalid or foreign token is rejected up front. All state written under this
-    session is removed; subsequent reads return their defaults.
+    Rarely written explicitly — a bare `session: Session` parameter is rewritten
+    to this. Provided for parity with `CurrentContext()` when an explicit default
+    is preferred.
     """
-    ctx = get_context()
-    await ctx.clear_session_state()
+    return cast("Session", _CurrentSession())
+
+
+async def create_session() -> str:
+    """Create a new session and return its identifier.
+
+    Mints an unguessable `uuid4` and returns it as a string. Store it and pass it
+    back as a `session_id` argument on later calls to persist state across a
+    session. State is keyed by the authenticated principal, so the id organizes
+    sessions within a user; on an unauthenticated connection the id is the only
+    thing standing between callers, which is why it is unguessable.
+    """
+    return str(uuid4())
+
+
+async def end_session(session_id: SessionId) -> str:
+    """End a session and delete all of its state."""
+    await get_context().get_session(session_id).clear()
     return "session ended"
 
 
-class SessionProvider:
-    """Opt-in lifecycle for sealed-handle session state.
+class SessionProvider(Provider):
+    """Opt-in provider contributing the session lifecycle tools.
 
-    Wire onto a server with `FastMCP(session_provider=SessionProvider(...))`. It
-    registers two tools:
+    Add it like any other provider:
 
-    - `create_session` mints a sealed handle and returns it as a plain string.
-    - `end_session` verifies a handle and clears that session's state.
+    ```python
+    from fastmcp.server.sessions import SessionProvider
 
-    The provider does not own storage: session state lives in the server's
-    configured state store (`FastMCP(session_state_store=...)`), and handles are
-    sealed with the server's `session_codec`, which reuses the server's
-    `request_state_security` key ring (or a per-process ephemeral key when none is
-    configured). `ttl` sets how long a minted handle stays valid, threaded into
-    the server's `SessionCodec`.
+    mcp.add_provider(SessionProvider())
+    ```
+
+    It registers two tools:
+
+    - `create_session()` mints an unguessable `uuid4` and returns it.
+    - `end_session(session_id)` clears that session's state.
+
+    It owns no storage (session state lives in the server's configured
+    `session_state_store`) and imposes no TTL (retention is the store's). It
+    exists only to hand out unguessable ids — a tool can take a `session_id`
+    argument and accept any caller-supplied id without it.
     """
 
-    def __init__(self, *, ttl: float = DEFAULT_SESSION_TTL) -> None:
-        if not (math.isfinite(ttl) and ttl > 0):
-            raise ValueError(
-                f"session ttl must be a positive finite number, got {ttl!r}"
-            )
-        self.ttl = ttl
+    def __init__(self) -> None:
+        super().__init__()
+        self._tools: list[Tool] | None = None
 
-    def register(self, server: FastMCP) -> None:
-        """Register the `create_session` / `end_session` tools on `server`."""
-        server.add_tool(create_session)
-        server.add_tool(end_session)
+    async def _list_tools(self) -> Sequence[Tool]:
+        if self._tools is None:
+            from fastmcp.tools.base import Tool
+
+            self._tools = [
+                Tool.from_function(create_session),
+                Tool.from_function(end_session),
+            ]
+        return self._tools

@@ -64,7 +64,7 @@ from fastmcp.server.dependencies import get_context
 
 @mcp.tool
 async def add_to_cart(item: str, session_id: SessionId) -> str:
-    session = get_context().session(session_id)
+    session = get_context().get_session(session_id)
     cart = await session.get("cart", default=[])
     cart.append(item)
     await session.set("cart", cart)
@@ -79,9 +79,10 @@ auto-populates the argument's description with the protocol:
 > persist state across calls in the same session."
 
 The tool becomes self-teaching — an agent reads the schema and learns the
-create-then-pass contract with no hand-prompting. `ctx.session(session_id)`
-resolves it to a `Session` keyed by `(principal, session_id)`. Use it when a user
-needs more than one session.
+create-then-pass contract with no hand-prompting. `ctx.get_session(session_id)`
+resolves it to a `Session` keyed by `(principal, session_id)` (named
+`get_session`, not `session`, because `ctx.session` already exposes the raw
+`ServerSession`). Use it when a user needs more than one session.
 
 ## The `Session` object
 
@@ -157,7 +158,7 @@ the above:
 4. **`session: Session`** injection (principal-keyed; error without auth) — wire
    into the same parameter-detection path as `Context`.
 5. **`session_id: SessionId`** marker type: string in the schema, auto-filled
-   description, `ctx.session(id)` resolver.
+   description, `ctx.get_session(id)` resolver.
 6. **`SessionProvider(Provider)`** with `create_session` / `end_session`, added via
    `add_provider`.
 7. Rewrite the tests to cover both patterns, principal isolation, no-auth

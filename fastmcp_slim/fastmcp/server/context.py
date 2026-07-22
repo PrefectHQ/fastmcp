@@ -29,7 +29,6 @@ from uncalled_for import SharedContext
 
 import fastmcp
 from fastmcp.exceptions import (
-    AuthorizationError,
     FastMCPDeprecationWarning,
     ToolError,
 )
@@ -49,15 +48,7 @@ from fastmcp.server.sampling.run import (
     sample_step_impl,
 )
 from fastmcp.server.server import FastMCP, StateValue
-from fastmcp.server.sessions import (
-    NoActiveSessionError,
-    Scope,
-    current_principal,
-    get_active_session_identity,
-    session_index_key,
-    session_state_key,
-    user_state_key,
-)
+from fastmcp.server.sessions import Session, current_principal
 from fastmcp.server.transforms.visibility import (
     Visibility,
 )
@@ -1438,31 +1429,48 @@ class Context:
         """Create session-prefixed key for state storage."""
         return f"{self.session_id}:{key}"
 
-    def _scoped_state_key(self, scope: Scope, key: str) -> str:
-        """Resolve the storage key for a non-``REQUEST`` scope.
+    def get_session(self, session_id: str) -> Session:
+        """Resolve a `Session` for an explicit `session_id`, keyed by principal.
 
-        ``USER`` keys off the authenticated principal and raises when there is no
-        authentication; ``SESSION`` keys off ``(principal, session_id)`` from the
-        verified session handle bound onto the request and raises when no session
-        is active.
+        State is keyed by `(principal, session_id)`: the authenticated principal
+        is the isolation wall and `session_id` organizes sessions within it. Two
+        principals passing the *same* `session_id` reach different buckets. On an
+        unauthenticated request there is no principal wall — the id alone is the
+        key, so sessions are not a boundary between callers.
+
+        Pair with a `session_id: SessionId` tool argument (the agent obtains an id
+        from `create_session` and passes it back). For a single per-user bucket
+        with nothing for the agent to pass, inject `session: Session` instead.
         """
-        if scope is Scope.USER:
-            principal = current_principal()
-            if principal is None:
-                raise AuthorizationError(
-                    "Scope.USER state requires authentication, but no "
-                    "authenticated principal is present on this request."
-                )
-            return user_state_key(principal, key)
-        if scope is Scope.SESSION:
-            identity = get_active_session_identity()
-            if identity is None:
-                raise NoActiveSessionError
-            return session_state_key(identity, key)
-        raise ValueError(f"Unsupported scope: {scope!r}")
+        return Session(
+            store=self.fastmcp._state_store,
+            principal=current_principal(),
+            session_id=session_id,
+        )
 
-    async def _put_state(self, prefixed_key: str, key: str, value: Any) -> None:
-        """Store a value in the shared state store, translating serialize errors."""
+    async def set_state(
+        self, key: str, value: Any, *, serializable: bool = True
+    ) -> None:
+        """Set a value in the state store.
+
+        By default, values are stored in the session-scoped state store and
+        persist across requests within the same MCP session. Values must be
+        JSON-serializable (dicts, lists, strings, numbers, etc.).
+
+        For non-serializable values (e.g., HTTP clients, database connections),
+        pass ``serializable=False``. These values are stored in a request-scoped
+        dict and only live for the current MCP request (tool call, resource
+        read, or prompt render). They will not be available in subsequent
+        requests.
+
+        The key is automatically prefixed with the session identifier.
+        """
+        prefixed_key = self._make_state_key(key)
+        if not serializable:
+            self._request_state[prefixed_key] = value
+            return
+        # Clear any request-scoped shadow so the session value is visible
+        self._request_state.pop(prefixed_key, None)
         try:
             await self.fastmcp._state_store.put(
                 key=prefixed_key,
@@ -1482,128 +1490,27 @@ class Context:
                 ) from e
             raise
 
-    async def set_state(
-        self,
-        key: str,
-        value: Any,
-        *,
-        serializable: bool = True,
-        scope: Scope = Scope.REQUEST,
-    ) -> None:
-        """Set a value in the state store.
-
-        The ``scope`` selects the storage isolation (see `Scope`):
-
-        - ``Scope.REQUEST`` (default): per-request connection state, keyed by the
-          session identifier. This preserves the historical behavior — on a
-          modern (stateless) connection it lives only for the request; on a
-          stateful connection it persists across requests in the same session.
-        - ``Scope.USER``: keyed by the authenticated principal; spans sessions.
-          Raises ``AuthorizationError`` when the request is unauthenticated.
-        - ``Scope.SESSION``: keyed by ``(principal, session_id)`` from a verified
-          session handle. Raises ``NoActiveSessionError`` when no session is
-          bound to the request.
-
-        By default, values are stored in the persisted state store and must be
-        JSON-serializable (dicts, lists, strings, numbers, etc.).
-
-        For non-serializable values (e.g., HTTP clients, database connections),
-        pass ``serializable=False``. These are stored in a request-scoped dict
-        that only lives for the current MCP request and are only supported with
-        ``Scope.REQUEST``.
-        """
-        if scope is Scope.REQUEST:
-            prefixed_key = self._make_state_key(key)
-            if not serializable:
-                self._request_state[prefixed_key] = value
-                return
-            # Clear any request-scoped shadow so the persisted value is visible
-            self._request_state.pop(prefixed_key, None)
-            await self._put_state(prefixed_key, key, value)
-            return
-
-        if not serializable:
-            raise ValueError(
-                "serializable=False is only supported with Scope.REQUEST; "
-                f"{scope} state is persisted and must be serializable."
-            )
-        prefixed_key = self._scoped_state_key(scope, key)
-        await self._put_state(prefixed_key, key, value)
-        if scope is Scope.SESSION:
-            await self._record_session_key(key)
-
-    async def _record_session_key(self, key: str) -> None:
-        """Record a user key in the active session's index for later cleanup.
-
-        `end_session` (and `clear_session_state`) enumerate this index to delete
-        a session's state without depending on the store's optional
-        key-enumeration protocol. Best-effort: a lost update under concurrent
-        writes leaves an orphaned key that the state TTL eventually reaps.
-        """
-        identity = get_active_session_identity()
-        if identity is None:
-            return
-        index_key = session_index_key(identity)
-        result = await self.fastmcp._state_store.get(key=index_key)
-        keys: list[str] = list(result.value) if result is not None else []
-        if key in keys:
-            return
-        keys.append(key)
-        await self.fastmcp._state_store.put(
-            key=index_key,
-            value=StateValue(value=keys),
-            ttl=self._STATE_TTL_SECONDS,
-        )
-
-    async def clear_session_state(self) -> None:
-        """Delete all `Scope.SESSION` state for the session bound to this request.
-
-        Removes every key recorded in the active session's index along with the
-        index itself. Raises `NoActiveSessionError` when no verified session is
-        bound to the request.
-        """
-        identity = get_active_session_identity()
-        if identity is None:
-            raise NoActiveSessionError
-        index_key = session_index_key(identity)
-        result = await self.fastmcp._state_store.get(key=index_key)
-        keys: list[str] = list(result.value) if result is not None else []
-        for key in keys:
-            await self.fastmcp._state_store.delete(key=session_state_key(identity, key))
-        await self.fastmcp._state_store.delete(key=index_key)
-
-    async def get_state(self, key: str, *, scope: Scope = Scope.REQUEST) -> Any:
+    async def get_state(self, key: str) -> Any:
         """Get a value from the state store.
 
-        With ``Scope.REQUEST`` (default), checks request-scoped state first (set
-        with ``serializable=False``), then falls back to the persisted store.
-        ``Scope.USER`` and ``Scope.SESSION`` read only from the persisted store
-        under their scoped key (see `set_state` for the isolation rules and the
-        errors raised when auth or a session is missing).
+        Checks request-scoped state first (set with ``serializable=False``),
+        then falls back to the session-scoped state store.
 
         Returns None if the key is not found.
         """
-        if scope is Scope.REQUEST:
-            prefixed_key = self._make_state_key(key)
-            if prefixed_key in self._request_state:
-                return self._request_state[prefixed_key]
-        else:
-            prefixed_key = self._scoped_state_key(scope, key)
+        prefixed_key = self._make_state_key(key)
+        if prefixed_key in self._request_state:
+            return self._request_state[prefixed_key]
         result = await self.fastmcp._state_store.get(key=prefixed_key)
         return result.value if result is not None else None
 
-    async def delete_state(self, key: str, *, scope: Scope = Scope.REQUEST) -> None:
+    async def delete_state(self, key: str) -> None:
         """Delete a value from the state store.
 
-        With ``Scope.REQUEST`` (default), removes from both the request-scoped and
-        persisted stores. ``Scope.USER`` and ``Scope.SESSION`` remove from the
-        persisted store under their scoped key.
+        Removes from both request-scoped and session-scoped stores.
         """
-        if scope is Scope.REQUEST:
-            prefixed_key = self._make_state_key(key)
-            self._request_state.pop(prefixed_key, None)
-        else:
-            prefixed_key = self._scoped_state_key(scope, key)
+        prefixed_key = self._make_state_key(key)
+        self._request_state.pop(prefixed_key, None)
         await self.fastmcp._state_store.delete(key=prefixed_key)
 
     # -------------------------------------------------------------------------

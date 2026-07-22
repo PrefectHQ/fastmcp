@@ -272,10 +272,11 @@ except ImportError:
 
 
 def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
-    """Transform ctx: Context into ctx: Context = CurrentContext().
+    """Transform injected-by-type params into Dependency-defaulted params.
 
-    Transforms ALL params typed as Context to use Docket's DI system,
-    unless they already have a Dependency-based default (like CurrentContext()).
+    Transforms ALL params typed as Context (into ``= CurrentContext()``) and as
+    Session (into ``= CurrentSession()``) to use Docket's DI system, unless they
+    already have a Dependency-based default.
 
     This unifies the legacy type annotation DI with Docket's Depends() system,
     allowing both patterns to work through a single resolution path.
@@ -291,6 +292,7 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
         Function with modified signature (same function object, updated __signature__)
     """
     from fastmcp.server.context import Context
+    from fastmcp.server.sessions import Session
 
     # Get the function's signature
     try:
@@ -307,13 +309,20 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
     # First pass: identify which params need transformation
     params_to_transform: set[str] = set()
     optional_context_params: set[str] = set()
+    session_params: set[str] = set()
     for name, param in sig.parameters.items():
         annotation = type_hints.get(name, param.annotation)
+        if isinstance(param.default, Dependency):
+            continue
         if is_class_member_of_type(annotation, Context):
-            if not isinstance(param.default, Dependency):
-                params_to_transform.add(name)
-                if param.default is None:
-                    optional_context_params.add(name)
+            params_to_transform.add(name)
+            if param.default is None:
+                optional_context_params.add(name)
+        elif is_class_member_of_type(annotation, Session):
+            # `session: Session` rides the same DI path as `ctx: Context`:
+            # injected per authenticated principal, excluded from the schema.
+            params_to_transform.add(name)
+            session_params.add(name)
 
     if not params_to_transform:
         return fn
@@ -334,12 +343,16 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
     var_keyword: list[P] = []  # **kwargs (at most one)
 
     for name, param in sig.parameters.items():
-        # Transform Context params by adding CurrentContext default
+        # Transform injected-by-type params by adding a Dependency default
         if name in params_to_transform:
             # We use CurrentContext() instead of Depends(get_context) because
             # get_context() returns the Context which is an AsyncContextManager,
             # and the DI system would try to enter it again (it's already entered)
-            if name in optional_context_params:
+            if name in session_params:
+                from fastmcp.server.sessions import CurrentSession
+
+                param = param.replace(default=CurrentSession())
+            elif name in optional_context_params:
                 param = param.replace(default=OptionalCurrentContext())
             else:
                 param = param.replace(default=CurrentContext())
