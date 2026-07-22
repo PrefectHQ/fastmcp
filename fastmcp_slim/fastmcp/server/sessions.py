@@ -7,15 +7,21 @@ calls, both backed by the server's existing state store and both isolated by the
 authenticated principal rather than by any client-declared identifier.
 
 - `Session`: async `get`/`set`/`delete`/`clear` over a single dict stored under
-  one key, scoped to a `(principal, session_id)` pair.
-- `session: Session` (injected): a per-user bucket, dependency-injected like
+  one key, scoped to a `(principal, session_id)` pair. This is the state-accessor
+  object a handler works with — the value returned by `ctx.get_session(id)` and
+  injected for a `UserSession` parameter.
+- `session: UserSession` (injected): a per-user bucket, dependency-injected like
   `ctx: Context` and keyed by the request's authenticated principal. Requires
-  auth.
+  auth. `UserSession` is the injection annotation; the injected value is a
+  `Session`.
 - `session_id: SessionId` (argument): a required string the agent supplies,
-  resolved with `ctx.session(session_id)`. Works with or without auth, but only
-  isolates between callers under auth.
-- `SessionProvider`: an opt-in `Provider` contributing `create_session` /
-  `end_session` tools.
+  resolved with `ctx.get_session(session_id)`. Works with or without auth, but
+  only isolates between callers under auth. Declaring one auto-wires the default
+  `SessionProvider` (its `create_session` / `end_session` tools) unless the
+  developer already registered one or opted out.
+- `SessionProvider`: a `Provider` contributing `create_session` / `end_session`
+  tools. Registered automatically when a tool declares `session_id: SessionId`,
+  or explicitly via `add_provider`.
 
 Isolation is the authenticated principal, not the session id. State keyed by
 `(principal, session_id)` means a request under principal B can never address
@@ -28,7 +34,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable, Sequence
+import weakref
+from collections.abc import Callable, Iterable, Sequence
 from functools import lru_cache
 from types import TracebackType
 from typing import (
@@ -53,7 +60,7 @@ from fastmcp.server.providers.base import Provider
 if TYPE_CHECKING:
     from key_value.aio.adapters.pydantic import PydanticAdapter
 
-    from fastmcp.server.server import StateValue
+    from fastmcp.server.server import FastMCP, StateValue
     from fastmcp.tools.base import Tool
 
 
@@ -67,7 +74,7 @@ SESSION_ID_DESCRIPTION: Final[str] = (
 
 
 class SessionAuthError(FastMCPError):
-    """An injected `session: Session` was requested with no authenticated principal.
+    """An injected `session: UserSession` was requested with no authenticated principal.
 
     Per-user session injection keys off the request's authenticated principal, so
     it is only meaningful under auth. A tool that needs cross-call state without
@@ -77,8 +84,8 @@ class SessionAuthError(FastMCPError):
     def __init__(
         self,
         message: str = (
-            "Injected `session: Session` requires an authenticated principal, but "
-            "this request is unauthenticated. Use a `session_id: SessionId` "
+            "Injected `session: UserSession` requires an authenticated principal, "
+            "but this request is unauthenticated. Use a `session_id: SessionId` "
             "argument for cross-call state on unauthenticated connections."
         ),
     ) -> None:
@@ -182,6 +189,34 @@ class Session:
         await self._store.delete(key=self._key)
 
 
+class UserSession(Session):
+    """Annotation marker for the injected per-user session.
+
+    A `session: UserSession` parameter is **dependency-injected** like
+    `ctx: Context`: keyed by the request's authenticated principal, excluded from
+    the input schema, and requiring auth (it raises `SessionAuthError` with no
+    principal). It is the injection *annotation* — the value a handler receives is
+    an ordinary `Session`, so `await session.get(...)`, `.set`, `.delete`, and
+    `.clear` all work exactly as on any other `Session`.
+
+    Use `UserSession` when one state bucket per user is what you want, with
+    nothing for the agent to pass. For distinct sessions the agent selects, take a
+    `session_id: SessionId` argument instead.
+
+    ```python
+    from fastmcp.server.sessions import UserSession
+
+    @mcp.tool
+    async def remember(fact: str, session: UserSession) -> str:
+        await session.set("fact", fact)
+        return "noted"
+    ```
+
+    Subclasses `Session` only so the framework's type-based injection detector can
+    key off it; it adds no behavior and is never instantiated directly.
+    """
+
+
 class _SessionIdMarker:
     """Metadata marker identifying a `SessionId`-annotated parameter."""
 
@@ -218,7 +253,7 @@ def session_id_parameter_names(fn: Callable[..., object]) -> tuple[str, ...]:
 class _CurrentSession(Dependency["Session"]):
     """Dependency that injects a per-user `Session` keyed by the request principal.
 
-    Mirrors `_CurrentContext`: a bare `session: Session` parameter is rewritten to
+    Mirrors `_CurrentContext`: a `session: UserSession` parameter is rewritten to
     default to this dependency, so it is excluded from the input schema and
     resolved at call time. Raises `SessionAuthError` when the request carries no
     authenticated principal.
@@ -247,7 +282,7 @@ class _CurrentSession(Dependency["Session"]):
 def CurrentSession() -> Session:
     """Inject the per-user `Session` for the current authenticated principal.
 
-    Rarely written explicitly — a bare `session: Session` parameter is rewritten
+    Rarely written explicitly — a `session: UserSession` parameter is rewritten
     to this. Provided for parity with `CurrentContext()` when an explicit default
     is preferred.
     """
@@ -307,3 +342,55 @@ class SessionProvider(Provider):
                 Tool.from_function(end_session),
             ]
         return self._tools
+
+
+def tools_declare_session_id(tools: Iterable[Tool]) -> bool:
+    """Whether any tool in `tools` declares a `session_id: SessionId` parameter.
+
+    Checks each function-backed tool's resolved hints for the `SessionId` marker.
+    Used to decide whether the default `SessionProvider` should be auto-registered.
+    """
+    from fastmcp.tools.function_tool import FunctionTool
+
+    return any(
+        isinstance(tool, FunctionTool) and session_id_parameter_names(tool.fn)
+        for tool in tools
+    )
+
+
+class _ImplicitSessionProvider(SessionProvider):
+    """Server-owned `SessionProvider` that activates only when it is needed.
+
+    Consulted directly by the server's tool listing/lookup (it is deliberately
+    kept out of the public `providers` list so it never perturbs provider indices
+    or user introspection). It contributes its `create_session` / `end_session`
+    tools only when every condition holds:
+
+    - the server has not opted out (`FastMCP(auto_session_provider=False)`),
+    - no `SessionProvider` was registered explicitly (a manual one wins), and
+    - at least one locally registered tool declares a `session_id: SessionId`
+      argument.
+
+    Detection scans the server's own registered tools (the `LocalProvider`'s
+    decorator / `add_tool` set), which is read fresh at list time — so activation
+    is independent of the order in which tools and providers are registered (a
+    `session_id` tool added after construction still activates it) and never
+    invokes another provider's listing (a mounted sub-server wires its own
+    `SessionProvider` and is not scanned here, so its middleware is never run as a
+    side effect of this decision).
+    """
+
+    def __init__(self, server: FastMCP) -> None:
+        super().__init__()
+        self._server_ref = weakref.ref(server)
+
+    async def _list_tools(self) -> Sequence[Tool]:
+        server = self._server_ref()
+        if server is None or not server._auto_session_provider:
+            return []
+        if any(isinstance(p, SessionProvider) for p in server.providers):
+            return []
+        local_tools = await server._local_provider._list_tools()
+        if not tools_declare_session_id(local_tools):
+            return []
+        return await super()._list_tools()

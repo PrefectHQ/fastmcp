@@ -275,8 +275,8 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
     """Transform injected-by-type params into Dependency-defaulted params.
 
     Transforms ALL params typed as Context (into ``= CurrentContext()``) and as
-    Session (into ``= CurrentSession()``) to use Docket's DI system, unless they
-    already have a Dependency-based default.
+    UserSession (into ``= CurrentSession()``) to use Docket's DI system, unless
+    they already have a Dependency-based default.
 
     This unifies the legacy type annotation DI with Docket's Depends() system,
     allowing both patterns to work through a single resolution path.
@@ -292,7 +292,7 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
         Function with modified signature (same function object, updated __signature__)
     """
     from fastmcp.server.context import Context
-    from fastmcp.server.sessions import Session
+    from fastmcp.server.sessions import UserSession
 
     # Get the function's signature
     try:
@@ -318,9 +318,11 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
             params_to_transform.add(name)
             if param.default is None:
                 optional_context_params.add(name)
-        elif is_class_member_of_type(annotation, Session):
-            # `session: Session` rides the same DI path as `ctx: Context`:
-            # injected per authenticated principal, excluded from the schema.
+        elif is_class_member_of_type(annotation, UserSession):
+            # `session: UserSession` rides the same DI path as `ctx: Context`:
+            # injected per authenticated principal, excluded from the schema. A
+            # bare `session: Session` is NOT injected — only the `UserSession`
+            # marker keys the per-user injection.
             params_to_transform.add(name)
             session_params.add(name)
 

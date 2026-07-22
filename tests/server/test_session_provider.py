@@ -1,10 +1,11 @@
 """End-to-end tests for the two session-state patterns and `SessionProvider`.
 
-Covers the injected `session: Session` per-user pattern, the explicit
+Covers the injected `session: UserSession` per-user pattern, the explicit
 `session_id: SessionId` argument pattern, and the `SessionProvider` lifecycle
-tools. The schema, registration, and unauthenticated paths run through an
-in-memory `Client`; the principal-isolation cases drive the tool through its full
-injection + storage path under a simulated authenticated principal.
+tools (registered explicitly and auto-wired). The schema, registration, and
+unauthenticated paths run through an in-memory `Client`; the principal-isolation
+cases drive the tool through its full injection + storage path under a simulated
+authenticated principal.
 """
 
 import re
@@ -23,9 +24,9 @@ from fastmcp.server.context import Context
 from fastmcp.server.dependencies import get_context
 from fastmcp.server.sessions import (
     SESSION_ID_DESCRIPTION,
-    Session,
     SessionId,
     SessionProvider,
+    UserSession,
 )
 
 
@@ -52,18 +53,18 @@ def as_principal(token: SDKAccessToken | None) -> Iterator[None]:
 
 
 def build_injected_server() -> FastMCP:
-    """Server whose cart tools inject a per-user `session: Session`."""
+    """Server whose cart tools inject a per-user `session: UserSession`."""
     server = FastMCP("shop")
 
     @server.tool
-    async def add_to_cart(item: str, session: Session) -> int:
+    async def add_to_cart(item: str, session: UserSession) -> int:
         cart = await session.get("cart", default=[])
         cart.append(item)
         await session.set("cart", cart)
         return len(cart)
 
     @server.tool
-    async def view_cart(session: Session) -> list[str]:
+    async def view_cart(session: UserSession) -> list[str]:
         return await session.get("cart", default=[])
 
     return server
@@ -90,7 +91,7 @@ def build_id_server() -> FastMCP:
 
 
 # ---------------------------------------------------------------------------
-# Injected `session: Session`
+# Injected `session: UserSession`
 # ---------------------------------------------------------------------------
 
 
@@ -251,6 +252,125 @@ class TestSessionProvider:
         assert SESSION_ID_DESCRIPTION in prop["description"]
 
 
+class TestAutoRegisteredSessionProvider:
+    async def test_session_id_tool_auto_wires_the_provider(self):
+        """Declaring `session_id: SessionId` makes create/end available with no
+        explicit add_provider call."""
+        server = FastMCP("shop")
+
+        @server.tool
+        async def add_to_cart(item: str, session_id: SessionId) -> int:
+            session = get_context().get_session(session_id)
+            cart = await session.get("cart", default=[])
+            cart.append(item)
+            await session.set("cart", cart)
+            return len(cart)
+
+        async with Client(server) as client:
+            names = {t.name for t in await client.list_tools()}
+        assert {"create_session", "end_session"} <= names
+
+    async def test_auto_wired_lifecycle_round_trips(self):
+        server = FastMCP("shop")
+
+        @server.tool
+        async def add_to_cart(item: str, session_id: SessionId) -> int:
+            session = get_context().get_session(session_id)
+            cart = await session.get("cart", default=[])
+            cart.append(item)
+            await session.set("cart", cart)
+            return len(cart)
+
+        async with Client(server) as client:
+            session_id = (await client.call_tool("create_session", {})).data
+            await client.call_tool(
+                "add_to_cart", {"item": "apple", "session_id": session_id}
+            )
+            await client.call_tool("end_session", {"session_id": session_id})
+
+    async def test_not_registered_without_a_session_id_tool(self):
+        """A server with no `session_id` tool gets no lifecycle tools."""
+        server = FastMCP("plain")
+
+        @server.tool
+        async def echo(text: str) -> str:
+            return text
+
+        async with Client(server) as client:
+            names = {t.name for t in await client.list_tools()}
+        assert "create_session" not in names
+        assert "end_session" not in names
+
+    async def test_injected_session_alone_does_not_auto_wire(self):
+        """The injected `UserSession` pattern needs no `create_session`, so it does
+        not trigger auto-registration."""
+        server = build_injected_server()
+        async with Client(server) as client:
+            names = {t.name for t in await client.list_tools()}
+        assert "create_session" not in names
+
+    async def test_manual_provider_is_not_doubled(self):
+        """An explicitly added SessionProvider suppresses the implicit one — only
+        one create_session / end_session is listed."""
+        server = FastMCP("shop")
+        server.add_provider(SessionProvider())
+
+        @server.tool
+        async def add_to_cart(item: str, session_id: SessionId) -> int:
+            return len(item)
+
+        async with Client(server) as client:
+            tools = await client.list_tools()
+        create = [t for t in tools if t.name == "create_session"]
+        end = [t for t in tools if t.name == "end_session"]
+        assert len(create) == 1
+        assert len(end) == 1
+
+    async def test_tool_added_after_construction_still_wires(self):
+        """Auto-registration is decided at list time, so a `session_id` tool added
+        after the server is built still activates the provider."""
+        server = FastMCP("shop")
+
+        async with Client(server) as client:
+            names = {t.name for t in await client.list_tools()}
+        assert "create_session" not in names
+
+        @server.tool
+        async def add_to_cart(item: str, session_id: SessionId) -> int:
+            return len(item)
+
+        async with Client(server) as client:
+            names = {t.name for t in await client.list_tools()}
+        assert {"create_session", "end_session"} <= names
+
+    async def test_opt_out_disables_auto_registration(self):
+        """`auto_session_provider=False` (bring-your-own-key) suppresses the
+        lifecycle tools even when a `session_id` tool is declared."""
+        server = FastMCP("shop", auto_session_provider=False)
+
+        @server.tool
+        async def add_to_cart(item: str, session_id: SessionId) -> int:
+            return len(item)
+
+        async with Client(server) as client:
+            names = {t.name for t in await client.list_tools()}
+        assert "create_session" not in names
+        assert "end_session" not in names
+
+    async def test_opt_out_still_allows_explicit_provider(self):
+        """Opting out of auto-registration does not block a manually added one."""
+        server = FastMCP("shop", auto_session_provider=False)
+        server.add_provider(SessionProvider())
+
+        @server.tool
+        async def add_to_cart(item: str, session_id: SessionId) -> int:
+            return len(item)
+
+        async with Client(server) as client:
+            names = {t.name for t in await client.list_tools()}
+        assert {"create_session", "end_session"} <= names
+
+
 class TestSessionIdDescriptionAppending:
     async def test_author_description_is_preserved_and_appended(self):
         server = FastMCP("s")
@@ -270,6 +390,4 @@ class TestSessionIdDescriptionAppending:
         assert "The handle for this workflow." in desc
         assert SESSION_ID_DESCRIPTION in desc
         # Author text comes first, contract appended after.
-        assert re.search(
-            r"handle for this workflow\.\s+Session identifier\.", desc
-        )
+        assert re.search(r"handle for this workflow\.\s+Session identifier\.", desc)

@@ -1440,7 +1440,7 @@ class Context:
 
         Pair with a `session_id: SessionId` tool argument (the agent obtains an id
         from `create_session` and passes it back). For a single per-user bucket
-        with nothing for the agent to pass, inject `session: Session` instead.
+        with nothing for the agent to pass, inject `session: UserSession` instead.
         """
         return Session(
             store=self.fastmcp._state_store,
