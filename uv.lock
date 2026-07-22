@@ -17,11 +17,12 @@ exclude-newer-span = "P1W"
 mcp-types = false
 prefab-ui = false
 truststore = false
+fastmcp-slim = false
 fastmcp = false
 mcp = false
 httpcore2 = false
+fastmcp-remote = false
 httpx2 = false
-fastmcp-slim = false
 
 [manifest]
 members = [
