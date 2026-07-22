@@ -160,6 +160,7 @@
                       "servers/dependency-injection",
                       "servers/lifespan",
                       "servers/storage-backends",
+                      "servers/sessions",
                       "servers/tasks",
                       "servers/versioning"
                     ]

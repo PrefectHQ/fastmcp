@@ -1,0 +1,84 @@
+---
+title: Session State
+sidebarTitle: Sessions
+description: Persist state across requests on stateless connections.
+icon: id-badge
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="4.0.0" />
+
+The modern MCP protocol (`2026-07-28`) is stateless. Every request stands alone: the server builds a fresh connection to handle it and discards everything when it returns. There is no session to hang state on, so a tool that wants to remember something between calls — the items in a cart, the thread of a conversation, a running total — has nowhere to keep it. Store it on the connection and it vanishes the moment the request finishes.
+
+This is a deliberate choice in the protocol. Weighing protocol-level sessions against statelessness, the MCP working group [chose statelessness](https://github.com/modelcontextprotocol/transports-wg/blob/main/docs/sessions-vs-sessionless-decision.md) and moved session semantics up to the application: the server hands the client an identifier, and the client passes it back as an argument on later calls. Their own example is a shopping cart — the server returns a `basket_id`, and the client includes it in each subsequent `add_item` and `checkout` call.
+
+FastMCP implements that pattern as **session state**, and adds the one thing the bare handle lacks: isolation. State is stored server-side and keyed to the authenticated user, so a handle is inert in anyone else's hands. You pick one of two shapes per tool, depending on whether a user has a single bucket of state or many.
+
+## Per-user state
+
+Most tools that remember things want one bucket per user — their preferences, their history, their accumulated context. Declare a `UserSession` parameter and FastMCP injects it, keyed to the authenticated user. It behaves like the request [context](/servers/context): it never appears in the tool's input schema and the caller passes nothing, because the user's identity comes from their validated credentials and selects the right bucket automatically.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.sessions import UserSession
+
+mcp = FastMCP("assistant")
+
+
+@mcp.tool
+async def remember(fact: str, session: UserSession) -> str:
+    facts = await session.get("facts", default=[])
+    facts.append(fact)
+    await session.set("facts", facts)
+    return f"Remembered {len(facts)} facts."
+```
+
+Because the bucket is chosen from the caller's identity, `UserSession` requires [authentication](/servers/auth/authentication). On an unauthenticated request there is no user to key on, so the tool raises a clear error rather than guessing at a bucket.
+
+## Distinct sessions
+
+Sometimes one user needs more than one bucket — separate carts, parallel conversations, independent workflows. Now the caller has to say *which* session it means, so the identifier becomes a tool argument.
+
+Declare a `SessionId` parameter. Unlike `UserSession`, it appears in the input schema as a string, because the agent is the one that supplies it. FastMCP fills in that argument's description for you — instructing the agent to obtain an id and pass it back — so the tool teaches the protocol on its own, with no prompting on your side.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.sessions import SessionId
+from fastmcp.server.dependencies import get_context
+
+mcp = FastMCP("shop")
+
+
+@mcp.tool
+async def add_to_cart(item: str, session_id: SessionId) -> str:
+    session = get_context().get_session(session_id)
+    cart = await session.get("cart", default=[])
+    cart.append(item)
+    await session.set("cart", cart)
+    return f"{len(cart)} items in cart."
+```
+
+An agent obtains an id by calling `create_session`. FastMCP registers that tool — along with `end_session` — automatically, the moment any tool on the server declares a `SessionId`. The lifecycle tools are only meaningful once a session argument exists, so wiring them by hand would be one more thing to forget; declaring the argument is the whole opt-in. When your application already mints its own identifiers — conversation ids, workflow ids — pass `auto_session_provider=False` to `FastMCP` and hand those ids in directly instead.
+
+## The session object
+
+Both patterns give a tool a `Session`: an async view over one bucket of stored state. Read a value with `await session.get(key, default=None)`, write one with `await session.set(key, value)`, remove one with `await session.delete(key)`, and empty the whole session with `await session.clear()`. Values are stored as JSON, so anything JSON-serializable round-trips.
+
+## Isolation
+
+Every session is keyed by two things, in this order: the authenticated user, then the session id. The order is the whole security model. The user is the wall; the id only organizes sessions *within* that wall.
+
+On an authenticated request the user comes from the validated token, which the caller cannot forge. Two different users can pass the very same session id and never reach each other's data, because each id is namespaced under its user's identity. This makes a session id safe to expose — it travels through the agent's context and your logs, and on its own it grants nothing. Guessing another user's id leads nowhere: it just resolves to an empty session in the guesser's own namespace.
+
+Without authentication there is no user to key on, and the guarantee changes.
+
+**An unauthenticated session is a bearer handle: whoever holds the id can read and write it.** Ids from `create_session` are unguessable, which keeps a caller from stumbling onto another session, but that is guess-resistance, not isolation — a leaked id is a leaked session. Treat unauthenticated sessions as single-tenant: sound for a personal server with one trusted client, never a boundary between tenants. Multi-tenant isolation requires authentication.
+
+## Storage and lifetime
+
+Session state lives in the server's [storage backend](/servers/storage-backends) — in-memory by default, or Redis or another shared store when a fleet of servers must see the same sessions. Because the store owns retention, it owns expiry: set a TTL on the store and sessions age out on their own, while `end_session` (or `session.clear()`) removes one immediately. FastMCP never imposes a lifetime of its own — the store you configure is the single place session data lives and expires.
+
+## Relationship to request state
+
+The request [context](/servers/context) also carries state, through `ctx.set_state` and `ctx.get_state`, and the two solve different problems. Context state is scoped to a single request — the right place for a value that a middleware sets and a handler reads within the same call. Session state is what persists *across* requests. When you need a value to survive from one tool call to the next, reach for `UserSession` or `SessionId`; when it only needs to live for the current request, keep it on the context.

@@ -217,6 +217,10 @@ messages = result.messages
 
 Store data that persists across multiple requests within the same MCP session. Session state is automatically keyed by the client's session, ensuring isolation between different clients.
 
+<Note>
+This cross-request persistence relies on a session-based (handshake-era) connection. The modern (`2026-07-28`) protocol is stateless and has no session, so on those connections `ctx.set_state` is scoped to the single request. For state that persists across requests on any connection — keyed to the authenticated user and safe across tenants — use [Session State](/servers/sessions).
+</Note>
+
 ```python
 from fastmcp import FastMCP, Context
 
