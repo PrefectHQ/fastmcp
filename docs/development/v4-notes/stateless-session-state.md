@@ -133,10 +133,12 @@ mcp.add_provider(SessionProvider())
 
 If a tool declares `session_id` and no provider is registered, FastMCP raises
 `SessionProviderRequiredError` naming the offending tool and the fix. The check
-runs on both the tool-listing and tool-resolution paths and re-scans the live
-local tool set each time, so it is independent of registration order — a
-`session_id` tool added after construction is still caught before it can be
-called, and there is no way to reach a handler without the check having run.
+covers every tool the server can produce, not only decorator-registered ones: on
+`list_tools` it runs against the full aggregated tool set (across all
+providers), and on resolution it runs against the specific tool just resolved —
+so a `session_id` tool sourced from a custom `Provider` is covered exactly like
+one registered with `@mcp.tool`, and there is no way to reach a handler without
+the check having run.
 
 `SessionProvider` subclasses `Provider`, takes **no store** (uses the server's)
 and **no ttl** (the store's). It exists to mint and end owned ids.

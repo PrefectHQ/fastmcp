@@ -85,6 +85,14 @@ SESSION_ID_DESCRIPTION: Final[str] = (
 _MARKER_KEY: Final[str] = "_created"
 _STATE_KEY: Final[str] = "state"
 
+# Fixed session-id suffix for the injected per-user bucket. The principal is
+# already hashed into the key's namespace segment (`_principal_segment`), which
+# alone makes the bucket unique per user — using the *raw* principal again as
+# the id suffix would embed unhashed identity data (issuer, client id, subject)
+# in the storage key and in any logs that record it. A reserved constant avoids
+# that while a `create_session`-minted uuid4 can never collide with it.
+_USER_SESSION_ID: Final[str] = "_user"
+
 
 class SessionAuthError(FastMCPError):
     """An injected `session: UserSession` was requested with no authenticated principal.
@@ -378,7 +386,7 @@ class _CurrentSession(Dependency["Session"]):
         return Session(
             store=ctx.fastmcp._state_store,
             principal=principal,
-            session_id=principal,
+            session_id=_USER_SESSION_ID,
         )
 
     async def __aexit__(

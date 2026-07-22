@@ -167,6 +167,44 @@ class TestInjectedSession:
         assert "create_session" not in names
         assert "end_session" not in names
 
+    async def test_storage_key_does_not_embed_the_raw_principal(self):
+        """The injected session is stored under the reserved per-user id, not
+        under the raw principal JSON — proven by reconstructing a `Session`
+        against the reserved id and reading back what injection wrote."""
+        from fastmcp.server.sessions import (
+            _USER_SESSION_ID,
+            Session,
+            current_principal,
+            session_storage_key,
+        )
+
+        server = build_injected_server()
+        add_tool = await server.get_tool("add_to_cart")
+        assert add_tool is not None
+
+        token = make_token(subject="user-a")
+        async with Context(fastmcp=server):
+            with as_principal(token):
+                await add_tool.run({"item": "apple"})
+                principal = current_principal()
+
+        assert principal is not None
+        assert token.subject is not None
+        # The raw principal never appears in the storage key itself.
+        key = session_storage_key(principal, _USER_SESSION_ID)
+        assert principal not in key
+        assert token.subject not in key
+        assert token.client_id not in key
+
+        # And the reserved-id reconstruction reads back what injection wrote,
+        # proving injection actually used `_USER_SESSION_ID` as the session id.
+        reconstructed = Session(
+            store=server._state_store,
+            principal=principal,
+            session_id=_USER_SESSION_ID,
+        )
+        assert await reconstructed.get("cart") == ["apple"]
+
 
 # ---------------------------------------------------------------------------
 # Explicit `session_id: SessionId` — create then validate
@@ -445,6 +483,28 @@ class TestSessionProviderRequirement:
         async with Client(server) as client:
             names = {t.name for t in await client.list_tools()}
         assert names == {"echo"}
+
+    async def test_requirement_covers_provider_sourced_tools(self):
+        """A `session_id` tool from a non-local `Provider` is covered too, not
+        only decorator-registered ones (the requirement scans the aggregated
+        tool set, not just `_local_provider`)."""
+        from fastmcp.server.providers.base import Provider
+        from fastmcp.tools.function_tool import FunctionTool
+
+        async def add_to_cart(item: str, session_id: SessionId) -> int:
+            return len(item)
+
+        class CustomProvider(Provider):
+            async def _list_tools(self):
+                return [FunctionTool.from_function(add_to_cart)]
+
+        server = FastMCP("shop")
+        server.add_provider(CustomProvider())
+
+        with pytest.raises(SessionProviderRequiredError, match="add_to_cart"):
+            await server.list_tools()
+        with pytest.raises(SessionProviderRequiredError, match="add_to_cart"):
+            await server.get_tool("add_to_cart")
 
 
 class TestSessionIdDescriptionAppending:

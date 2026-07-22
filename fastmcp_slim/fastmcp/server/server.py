@@ -8,6 +8,7 @@ import secrets
 from collections.abc import (
     AsyncIterator,
     Callable,
+    Iterable,
     Sequence,
 )
 from contextlib import (
@@ -754,8 +755,13 @@ class FastMCP(
             with server_span("tools/list", "tools/list", self.name, "tool", ""):
                 # Get all tools, apply session transforms, then filter enabled
                 # and model-visible (app-only tools are hidden from the model).
-                await self._require_session_provider_if_needed()
                 tools = list(await super().list_tools())
+                # Enforce the SessionProvider requirement against every tool a
+                # caller can see, not only decorator-registered ones: a
+                # provider-sourced `session_id: SessionId` tool needs the same
+                # guarantee. Checked against the full aggregated list (already in
+                # hand here), so this costs no extra provider listing.
+                self._require_session_provider(tools)
                 tools = await apply_session_transforms(tools)
                 tools = [t for t in tools if is_enabled(t) and not _is_backend_tool(t)]
 
@@ -779,22 +785,23 @@ class FastMCP(
                     authorized.append(tool)
                 return authorized
 
-    async def _require_session_provider_if_needed(self) -> None:
-        """Fail loudly if a tool needs session ids but no `SessionProvider` exists.
+    def _require_session_provider(self, tools: Iterable[Tool]) -> None:
+        """Fail loudly if any of `tools` needs session ids but no `SessionProvider` exists.
 
         A `session_id: SessionId` argument is only usable once `create_session`
-        can mint an id, so a server with such a tool must register a
-        `SessionProvider`. This check is order-independent: it re-scans the live
-        local tool set on every list/resolve rather than deciding once at
-        construction, so a `session_id` tool added after the server is built is
-        still caught. It runs on both the enumeration path (`list_tools`) and the
-        resolution path (`_get_tool`, which every tool call passes through), so a
-        tool call cannot reach a handler without the check having run.
+        can mint an id, so a server exposing such a tool must register a
+        `SessionProvider` — whether the tool is decorator-registered or sourced
+        from another `Provider`. This check is order-independent: callers pass
+        the live tool set at the moment of listing or resolving, so a
+        `session_id` tool added after the server is built is still caught. It
+        runs on both the enumeration path (`list_tools`, against every
+        aggregated tool) and the resolution path (`_get_tool`, against the one
+        resolved tool, which every tool call passes through), so a tool call
+        cannot reach a handler without the check having run.
         """
         if any(isinstance(p, SessionProvider) for p in self.providers):
             return
-        local_tools = await self._local_provider._list_tools()
-        offending = offending_session_id_tool(local_tools)
+        offending = offending_session_id_tool(tools)
         if offending is not None:
             raise SessionProviderRequiredError(tool_name=offending)
 
@@ -812,14 +819,17 @@ class FastMCP(
         Returns:
             The tool if found and authorized, None if not found or unauthorized.
         """
-        # Enforce the SessionProvider requirement before resolving anything: every
-        # tool call passes through here, so this gate cannot be bypassed.
-        await self._require_session_provider_if_needed()
-
         # Get tool from AggregateProvider (handles aggregation and namespacing)
         tool = await super()._get_tool(name, version)
         if tool is None:
             return None
+
+        # Enforce the SessionProvider requirement against the resolved tool —
+        # whichever provider it came from — before it can be called. Checking
+        # only this one tool (rather than re-listing every provider) keeps
+        # resolution free of the side effects a full provider listing could
+        # have (e.g. a mounted sub-server's middleware).
+        self._require_session_provider([tool])
 
         # Component auth - return None if unauthorized (consistent with list filtering)
         skip_auth, token = _get_auth_context()
