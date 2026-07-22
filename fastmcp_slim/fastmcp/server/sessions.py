@@ -71,9 +71,14 @@ logger = get_logger(__name__)
 # The description the framework auto-populates onto a `SessionId` argument so an
 # agent reading the tool schema learns the create-then-pass contract with no
 # hand-prompting.
+# Deliberately names no specific tool. The session-creation tool can be renamed
+# by composition — mounting a server under a namespace exposes it as, e.g.,
+# `child_create_session` — so hard-coding a tool name here would point agents at
+# a tool that does not exist under that mount. Describing the capability keeps
+# the contract correct regardless of how the lifecycle tool is named.
 SESSION_ID_DESCRIPTION: Final[str] = (
-    "Session identifier. Call `create_session` to obtain one, then pass it here "
-    "to persist state across calls in the same session."
+    "Session identifier. Use a tool to create a session, then pass the resulting "
+    "id here to persist state across calls in the same session."
 )
 
 # Reserved top-level keys in a session's stored dict. User state lives under

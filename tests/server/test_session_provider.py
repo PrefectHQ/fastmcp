@@ -569,3 +569,32 @@ class TestSessionIdDescriptionAppending:
         assert SESSION_ID_DESCRIPTION in desc
         # Author text comes first, contract appended after.
         assert re.search(r"handle for this workflow\.\s+Session identifier\.", desc)
+
+    async def test_description_survives_namespaced_mount(self):
+        """The contract names no specific tool, so it stays correct when a mount
+        renames the lifecycle tool under a namespace — the description must not
+        point agents at an unqualified `create_session` that does not exist
+        under that mount."""
+        child = FastMCP("child")
+        child.add_provider(SessionProvider())
+
+        @child.tool
+        async def workflow(session_id: SessionId) -> str:
+            return session_id
+
+        parent = FastMCP("parent")
+        parent.mount(child, namespace="child")
+
+        async with Client(parent) as client:
+            tools = {t.name: t for t in await client.list_tools()}
+
+        # The lifecycle tool is renamed under the namespace...
+        assert "child_create_session" in tools
+        assert "create_session" not in tools
+        # ...yet the session_id contract still resolves correctly, because it
+        # describes the capability rather than naming a tool.
+        desc = tools["child_workflow"].input_schema["properties"]["session_id"][
+            "description"
+        ]
+        assert desc == SESSION_ID_DESCRIPTION
+        assert "create_session" not in desc

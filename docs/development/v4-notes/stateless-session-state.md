@@ -78,11 +78,14 @@ async def add_to_cart(item: str, session_id: SessionId) -> str:
 the agent supplies it. `SessionId` is a marker type so the framework
 auto-populates the argument's description with the protocol:
 
-> "Session identifier. Call `create_session` to obtain one, then pass it here to
-> persist state across calls in the same session."
+> "Session identifier. Use a tool to create a session, then pass the resulting id
+> here to persist state across calls in the same session."
 
 The tool becomes self-teaching — an agent reads the schema and learns the
-create-then-pass contract with no hand-prompting. `await ctx.get_session(session_id)`
+create-then-pass contract with no hand-prompting. The description names no
+specific tool: composition can rename the lifecycle tool (mounting under a
+namespace exposes it as `child_create_session`), so it points at the
+*capability* rather than a name that may not exist under that mount. `await ctx.get_session(session_id)`
 resolves it to a `Session` keyed by `(principal, session_id)` (named
 `get_session`, not `session`, because `ctx.session` already exposes the raw
 `ServerSession`), **validating** that the id was created under this principal —
