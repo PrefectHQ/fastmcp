@@ -1,172 +1,176 @@
 # Stateless session state (2026-07-28)
 
-> Design proposal. Status: building.
+> Design spec. Status: building.
 
 ## Problem
 
 The `2026-07-28` era is stateless by protocol construction: each request builds a
 fresh `Connection`, `connection.session_id` is always `None`, and
-`connection.state` is a new dict that is discarded when the request returns. So
-`ctx.session_id` mints a throwaway `uuid4` per request, and `ctx.set_state` /
-`ctx.get_state` **silently never round-trip** — no error, just lost data.
+`connection.state` is a new dict discarded when the request returns. So
+`ctx.session_id` mints a throwaway `uuid4` per request and `ctx.set_state` /
+`ctx.get_state` **silently never round-trip** — no error, just lost data. A user
+who wants cross-call state (a cart, a conversation, accumulated context) has no
+safe mechanism, and the failure is invisible.
 
-Users who want cross-call state on a modern connection (a cart, a conversation,
-accumulated context) have no safe mechanism today, and the failure is invisible:
-the code reads as "works" while quietly returning the wrong thing.
+The one identifier every modern request carries that is stable and
+**non-spoofable** is the authenticated principal — `get_access_token().claims["sub"]`,
+or the `(client_id, issuer, subject)` triple. Everything else on the wire is
+client-declared and forgeable.
 
-The one thing every modern request carries that is stable and *non-spoofable* is
-the authenticated principal — `get_access_token().claims["sub"]`, or the
-`(client_id, issuer, subject)` triple. Everything else on the wire
-(`client_info`, `client_capabilities`) is client-declared and forgeable.
+## The model
 
-## Goals
+State lives **server-side** in the one `AsyncKeyValue` (py-key-value) store the
+server already holds (`session_state_store`). The framework calls `get`/`put`/
+`delete` and **never imposes a TTL** — retention is entirely the store's
+(configure it on the store you pass: a Redis TTL, a py-key-value TTL wrapper,
+whatever). There is no second store and no framework-owned TTL knob.
 
-- Offer secure, cross-request **session-scoped state** on modern connections.
-- Work with **any client** — no reliance on client-side `_meta` cooperation. The
-  session handle travels as a normal tool argument.
-- **Non-spoofable isolation** when authenticated; an **unforgeable** handle even
-  without auth.
-- Reuse what exists: the SDK's AES-GCM sealed envelope
-  (`mcp.server.request_state`) and FastMCP's `AsyncKeyValue` store abstraction.
-- Replace silent data loss with **clear errors**.
+Isolation comes from the **authenticated principal, not from the session id.**
+State is keyed by `(principal, session_id)`. A request under principal B keys
+into B's own namespace — it can never address A's keys no matter what
+`session_id` it passes. The id only organizes sessions *within* a principal. The
+handle is a bare `uuid4` string; it is **not sealed** — the principal prefix is
+the wall, and an unknown id simply resolves to an empty session in the caller's
+own namespace.
 
-## Non-goals
+## Two explicit patterns
 
-- Server→client push or notifications for session lifecycle (that is the
-  subscriptions workstream).
-- Reconstructing handshake-era session semantics on modern connections.
+A tool opts into exactly one, on purpose. There is deliberately **no** optional
+"id if given, else default" parameter — that would silently misroute a call
+whose id the agent forgot to pass into the shared per-user bucket, which is the
+invisible-degradation failure this whole feature exists to remove.
 
-## Design
-
-### One surface: scoped state
-
-Extend the existing `ctx.get_state` / `ctx.set_state` with a `scope`:
-
-```python
-ctx.get_state("cart", scope=Scope.SESSION)   # sealed session handle; many per principal
-ctx.get_state("prefs", scope=Scope.USER)     # authenticated principal; spans sessions
-ctx.get_state("scratch", scope=Scope.REQUEST) # per-request; dies with the request (today)
-```
-
-The scope selects the storage key prefix and the isolation guarantee:
-
-| Scope | Key prefix | Isolation |
-| --- | --- | --- |
-| `REQUEST` | the per-request connection | request lifetime only |
-| `SESSION` | `(principal, session_id)` | sealed + principal-bound (auth) / unforgeable (no auth) |
-| `USER` | `principal` | auth-bound; requires authentication |
-
-`USER` scope *is* the auth-tuple option; `SESSION` scope *is* the sealed token.
-`set_state`/`get_state` already exist and already key off `session_id` — this
-makes the scope **explicit** instead of implicitly-session and silently broken on
-modern.
-
-### The session handle (sealed token)
-
-A session is identified by a token minted server-side:
-
-- payload = `{session_id, principal, exp}`, AES-GCM sealed via the SDK's
-  `AESGCMRequestStateCodec` under a `RequestStateSecurity` key.
-- On use, the framework unseals, verifies expiry, and — when auth is present —
-  verifies the token's principal matches the request's authenticated principal.
-  Foreign, expired, or tampered → rejected with a clear error; the client never
-  learns why.
-
-Unlike the MRTR `request_state` seal, the session token binds **principal +
-expiry only** (it drops the SDK boundary's per-request binding), so it survives
-across *different* tool calls rather than a single round.
-
-### Transport: tool argument (decided)
-
-The handle travels as a **tool argument**, not `_meta` — `_meta` would require
-client-side cooperation, and the point is to work with any client. The framework
-may peek `_meta` first as an optimization, but the contract is argument-based. An
-annotation marks the parameter and owns the crypto:
+### Per-user state — injected
 
 ```python
-from typing import Annotated
-from fastmcp import FastMCP
-from fastmcp.server.dependencies import get_context
-from fastmcp.sessions import Session, Scope
-
-mcp = FastMCP("shop")
-
+from fastmcp.server.sessions import Session
 
 @mcp.tool
-def add_to_cart(item: str, session: Annotated[str, Session()]) -> str:
-    ctx = get_context()
-    cart = ctx.get_state("cart", scope=Scope.SESSION, default=[])
-    cart.append(item)
-    ctx.set_state("cart", cart, scope=Scope.SESSION)
-    return f"{len(cart)} items in cart"
+async def remember(fact: str, session: Session) -> str:
+    await session.set("fact", fact)
+    return "noted"
 ```
 
-The `Session()` annotation names the parameter carrying the sealed token. The
-framework unseals + verifies it once, binds the session identity to the request
-context, and the tool body reads/writes through `ctx.get_state(scope=SESSION)`.
-Authors never touch crypto or key schemes.
+`session: Session` is **dependency-injected** (like `ctx: Context`): keyed by the
+request's authenticated principal, not present in the input schema, nothing for
+the agent to pass. Requires auth — with no principal it raises a clear error. Use
+it when one bucket per user is what you want.
 
-### SessionProvider
-
-An opt-in provider that supplies the lifecycle:
-
-- Registers `create_session` and `end_session` tools. The client calls
-  `create_session`, receives an opaque sealed token, and threads it into later
-  calls.
-- Owns the backing store — an `AsyncKeyValue` (default `MemoryStore`; a Redis
-  store for multi-replica), keyed by `(principal, session_id)`.
-- Applies a TTL so abandoned sessions clear without an explicit `end_session`.
+### Distinct sessions — an argument
 
 ```python
-mcp = FastMCP("shop", session_provider=SessionProvider(store=redis_store, ttl=3600))
+from fastmcp.server.sessions import SessionId
+from fastmcp.server.dependencies import get_context
+
+@mcp.tool
+async def add_to_cart(item: str, session_id: SessionId) -> str:
+    session = get_context().session(session_id)
+    cart = await session.get("cart", default=[])
+    cart.append(item)
+    await session.set("cart", cart)
+    return f"{len(cart)} items"
 ```
 
-### Guarantee tiers
+`session_id: SessionId` is a **required string argument** — it *is* in the schema,
+the agent supplies it. `SessionId` is a marker type so the framework
+auto-populates the argument's description with the protocol:
 
-- **Authenticated:** the token binds the principal; a token echoed under a
-  different principal is rejected by the seal. Strong cross-client isolation,
-  multiple sessions per user.
-- **Unauthenticated:** no principal to bind, but the seal is still unforgeable —
-  a client cannot fabricate a valid token or guess into another session. This is
-  single-tenant-safe; there is no cross-client wall beyond unforgeability, and
-  the docs say so plainly.
+> "Session identifier. Call `create_session` to obtain one, then pass it here to
+> persist state across calls in the same session."
 
-### Fallback
+The tool becomes self-teaching — an agent reads the schema and learns the
+create-then-pass contract with no hand-prompting. `ctx.session(session_id)`
+resolves it to a `Session` keyed by `(principal, session_id)`. Use it when a user
+needs more than one session.
 
-When the transport genuinely has a session (handshake / stateful, an
-`mcp-session-id` is present), `SESSION` scope can key off it directly with no
-token round-trip. The sealed-token path is the modern/stateless story.
+## The `Session` object
 
-### Gating: no more silent loss
+Async accessors over the server store, scoped to one `(principal, session_id)`:
 
-On a modern connection with no valid handle:
+- `await session.get(key, default=None)`
+- `await session.set(key, value)`
+- `await session.delete(key)`
+- `await session.clear()`
 
-- `SESSION` access raises a clear error naming the fix ("no active session — call
-  `create_session` and pass its token").
-- `USER` access without auth raises a clear auth-required error.
-- `REQUEST` always works.
+A session's state is stored as a **single dict under one key**
+(`session:{principal}:{session_id}`). `get`/`set`/`delete` read-modify-write that
+dict; `clear` / `end_session` delete the one key. One key per session means one
+TTL per session (the store's), refreshed on write — no key index to maintain, and
+`end_session` is a single delete. (Trade-off: concurrent writes to one session
+race on the read-modify-write; session state is small and typically driven
+serially by one agent, so this is acceptable — noted, not hidden.)
 
-This replaces today's silent per-request `uuid4`.
+## `SessionProvider` — optional
 
-## Build plan
+Session ids are minted by an opt-in provider, added like any other:
 
-1. **Scoped store.** `Scope` enum; `get_state` / `set_state(scope=)` over a
-   pluggable `AsyncKeyValue`; `REQUEST` keeps current behavior; `SESSION` / `USER`
-   error-gate when unavailable.
-2. **Session codec.** Seal / unseal `{session_id, principal, exp}` via the SDK
-   AES-GCM codec; verify principal + expiry; reject foreign / expired / tampered.
-3. **SessionProvider.** `create_session` / `end_session` tools, `AsyncKeyValue`
-   store, TTL, `(principal, session_id)` key scheme.
-4. **`Session()` annotation + boundary.** Unseal / verify the token argument once,
-   bind identity to the request context; error-gate cleanly.
-5. **Docs.** The scoped-state guide, the two-tier guarantee doc, and the migration
-   note from the old `set_state`.
+```python
+from fastmcp.server.sessions import SessionProvider
 
-## Open questions
+mcp.add_provider(SessionProvider())
+```
 
-- Handle shape: inject a `SessionHandle` object vs. keep it pure
-  `ctx.get_state(scope=SESSION)`? (Proposed: context-primary; the annotation only
-  establishes identity.)
-- `USER` key: `sub` alone, or the full `(client_id, issuer, subject)` triple?
-- `create_session` return shape — the sealed token as a plain string the model
-  echoes back on later calls.
+`SessionProvider` subclasses `Provider` and contributes two tools:
+
+- `create_session()` → mints an unguessable `uuid4` and returns it as a string.
+- `end_session(session_id: SessionId)` → clears that session's state.
+
+It takes **no store** (uses the server's) and **no ttl** (the store's). It exists
+only to hand out unguessable ids. It is not required: a tool can take a
+`session_id` and the id can be anything the caller supplies — an app that already
+has its own session/user identity passes that directly (bring-your-own-key).
+`create_session` matters most without auth, where an unguessable id is the only
+defense against a caller *guessing* onto another session.
+
+## Security
+
+Keyed by `(principal, session_id)`:
+
+- **Authenticated → strong isolation.** `principal` is the validated token
+  subject, unforgeable. B keys into B's namespace; A's data is unreachable no
+  matter what id B passes. Guessing is pointless; a session id appearing in agent
+  context or logs is harmless (it is not a capability without the principal).
+  Caller-chosen ids are safe here.
+- **Unauthenticated → single-tenant-safe only.** No principal, so the key is just
+  the id in a shared namespace: the id becomes a bearer capability, and exposure
+  in logs/conversation leaks the session. `create_session`'s `uuid4` gives
+  guess-*resistance*, not isolation. Documented in bold: not a tenant boundary;
+  without auth, force minted ids and never treat sessions as a wall between
+  clients.
+- **Isolation is auth; the id is organization.** No id scheme substitutes for a
+  principal, which is why sealing the handle buys nothing load-bearing and is
+  dropped.
+- **Not FastMCP's job:** transport (use TLS), encryption at rest (the store's), a
+  malicious *authorized* client acting within its rights.
+
+## Rework plan (from the current prototype)
+
+The prototype (`sessions.py`, `context.py`, `function_tool.py`, `server.py`) built
+a `Scope` enum, a sealed `SessionCodec`, and `ctx.get_state(scope=...)`. Rework to
+the above:
+
+1. **Remove `Scope`** and the `scope=` parameter; revert `ctx.get_state`/
+   `set_state` to their original request-scoped behavior.
+2. **Remove the `SessionCodec`/sealing** — ids are bare `uuid4`.
+3. **`Session` object** with async `get`/`set`/`delete`/`clear` over the server
+   store, single-dict-per-session key scheme.
+4. **`session: Session`** injection (principal-keyed; error without auth) — wire
+   into the same parameter-detection path as `Context`.
+5. **`session_id: SessionId`** marker type: string in the schema, auto-filled
+   description, `ctx.session(id)` resolver.
+6. **`SessionProvider(Provider)`** with `create_session` / `end_session`, added via
+   `add_provider`.
+7. Rewrite the tests to cover both patterns, principal isolation, no-auth
+   behavior, and `end_session`.
+
+## Docs plan
+
+Written against the final API once the rework verifies:
+
+- A concept guide — why stateless removes the session, the two patterns, when to
+  reach for each. Why before how.
+- A security page — the two tiers, "isolation is auth, the id is organization,"
+  the bold no-multitenant-without-auth warning.
+- Fully runnable examples for both patterns (pass the doc-import guard, register
+  in `docs.json`).
+- A migration note from the old `ctx.session_id` / `set_state`.
