@@ -460,6 +460,26 @@ class TestSessionIdDescriptionAppending:
         # Author text comes first, contract appended after.
         assert re.search(r"handle for this workflow\.\s+Session identifier\.", desc)
 
+    async def test_contract_is_not_duplicated_when_author_repeats_it(self):
+        """An author who already includes the contract text doesn't get it twice."""
+        from typing import Annotated
+
+        from pydantic import Field
+
+        server = FastMCP("s")
+        server.add_provider(SessionProvider())
+
+        @server.tool
+        async def resume(
+            session_id: Annotated[SessionId, Field(description=SESSION_ID_DESCRIPTION)],
+        ) -> str:
+            return session_id
+
+        async with Client(server) as client:
+            tools = {t.name: t for t in await client.list_tools()}
+        desc = tools["resume"].input_schema["properties"]["session_id"]["description"]
+        assert desc.count(SESSION_ID_DESCRIPTION) == 1
+
     async def test_description_survives_namespaced_mount(self):
         """The contract names no specific tool, so it stays correct when a mount
         renames the lifecycle tool under a namespace — the description must not

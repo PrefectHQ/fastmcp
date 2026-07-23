@@ -362,11 +362,12 @@ class ParsedFunction:
             if param_name not in properties:
                 continue
             existing = properties[param_name].get("description")
-            properties[param_name]["description"] = (
-                f"{existing}\n\n{SESSION_ID_DESCRIPTION}"
-                if existing
-                else SESSION_ID_DESCRIPTION
-            )
+            if not existing:
+                properties[param_name]["description"] = SESSION_ID_DESCRIPTION
+            elif SESSION_ID_DESCRIPTION not in existing:
+                properties[param_name]["description"] = (
+                    f"{existing}\n\n{SESSION_ID_DESCRIPTION}"
+                )
 
         output_schema = None
         # Get the return annotation from the signature

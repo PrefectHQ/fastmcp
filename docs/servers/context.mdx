@@ -215,7 +215,7 @@ messages = result.messages
 
 <VersionBadge version="3.0.0" />
 
-Store data that persists across multiple requests within the same MCP session. Session state is automatically keyed by the client's session, ensuring isolation between different clients.
+On a session-based (handshake-era) connection, `ctx.set_state` persists data across multiple requests within the same MCP session, automatically keyed by the client's session for isolation between clients. On the modern stateless protocol it is request-scoped instead — see the note below.
 
 <Note>
 This cross-request persistence relies on a session-based (handshake-era) connection. The modern (`2026-07-28`) protocol is stateless and has no session, so on those connections `ctx.set_state` is scoped to the single request. For state that persists across requests on any connection — keyed to the authenticated user and safe across tenants — use [Session State](/servers/sessions).
