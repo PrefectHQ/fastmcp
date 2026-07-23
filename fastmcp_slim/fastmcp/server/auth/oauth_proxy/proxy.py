@@ -919,6 +919,17 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             value=proxy_client,
         )
 
+        # The SDK's RegistrationHandler serializes this same `client_info` object
+        # into the DCR response after we return. Left untouched it would echo the
+        # SDK's default `client_secret_post` (or a requested `client_secret_basic`)
+        # and a generated secret — a confidential method the proxy never enforces
+        # and does not advertise in server metadata. Normalize it to the public
+        # client we actually store so the registration response, stored client, and
+        # advertised `token_endpoint_auth_methods_supported` all agree.
+        client_info.token_endpoint_auth_method = "none"
+        client_info.client_secret = None
+        client_info.client_secret_expires_at = None
+
         # Log redirect URIs to help users discover what patterns they might need
         if client_info.redirect_uris:
             for uri in client_info.redirect_uris:
