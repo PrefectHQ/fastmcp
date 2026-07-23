@@ -411,7 +411,7 @@
             "icon": "code"
           }
         ],
-        "version": "v4"
+        "version": "v4.0.0 (alpha 1)"
       },
       {
         "$ref": "./v3-navigation.json"
