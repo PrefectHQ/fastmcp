@@ -1,0 +1,30 @@
+---
+title: "What's New in FastMCP 4"
+sidebarTitle: "What's New"
+description: The story behind FastMCP 4 — a new protocol era, a rebuilt engine, and what it means for your servers.
+icon: sparkles
+---
+
+FastMCP 4 is an engine swap. The framework now runs on the MCP Python SDK v2, and with that foundation it steps into the protocol's next era while continuing to speak to every client that came before. Most of the change is invisible from your code: a typical FastMCP 3 server runs on FastMCP 4 untouched. The sections below are the parts worth knowing — what changed underneath, and why the version number moved.
+
+<Note>
+FastMCP 4 is in **alpha**. The pieces described here are stable enough to build against and try, but the release series is still landing. Pin an exact version and expect sharp edges.
+</Note>
+
+## Every protocol era
+
+A FastMCP 4 server speaks to clients across the protocol transition from a single deployment. The MCP SDK negotiates the era each client understands: the sessionless `2026-07-28` protocol for clients that have moved forward, and the older session-based handshake versions for everyone else. One server answers both.
+
+This supersedes FastMCP's earlier "latest protocol only" stance, and it matters most during a transition. You no longer fork your deployment or gate clients by version to adopt the new protocol — the same server that serves a modern client serves a legacy one, and the era is decided per connection rather than per server.
+
+The `2026-07-28` protocol is sessionless: each request stands alone, with no standing connection back to the client. That trade buys horizontal scalability, and it removes the server's ability to push a request back to the client mid-call. The features that depended on that back-channel — imperative `ctx.elicit`, `ctx.list_roots`, and sampling — are unavailable on a modern connection and continue to work on the session-based eras. Elicitation returns through the multi-round [guard pattern](/servers/elicitation#elicitation-on-the-modern-protocol), where a tool asks for input by returning a result rather than calling back into the client.
+
+## Sampling
+
+Server-initiated sampling is deprecated in FastMCP 4. `ctx.sample` and `ctx.sample_step` borrowed the client's model through the same back-channel the `2026-07-28` protocol removed, and unlike elicitation there is no round-trip pattern that reconstructs it. The migration is to call an LLM directly from your server instead of reaching back through the client. This is the architectural shift that most justifies the major version, so [Sampling](/servers/sampling) covers the reasoning and the replacement in full.
+
+## The SDK v2 engine
+
+Underneath, the MCP Python SDK v2 rewrote the protocol layer: it moved the protocol types out of `mcp.types` into a standalone `mcp_types` package, renamed every wire field from camelCase to snake_case, and reworked the server's request-handling model. FastMCP absorbs nearly all of it. Objects you read back still resolve their old camelCase names through a compatibility bridge, and the types you import have a stable home.
+
+What's left for you is small and mechanical — a few imports, one change to how errors are constructed, and custom HTTP clients moving to `httpx2`. When you're ready to move a server over, [Upgrading from FastMCP 3](/getting-started/upgrading/from-fastmcp-3) walks through every change and what it looks like in practice.

@@ -76,7 +76,7 @@ A few client behaviors that touch the SDK are preserved so you don't have to cha
 
 ## What you must change
 
-Three things are on you.
+Everything above, FastMCP handled for you. What remains lives in your own code, where FastMCP can't reach it — your imports, how you construct errors, the custom HTTP clients you hand to a transport, and any place you reach past FastMCP's surfaces into the raw SDK objects. Each surfaces as a clear failure at import or call time, and each is a mechanical fix.
 
 **Your own `mcp.types` imports.** FastMCP can re-export types, but it can't rewrite imports in your code. Any `from mcp.types import X` or `import mcp.types` in your server or client fails at import time with:
 

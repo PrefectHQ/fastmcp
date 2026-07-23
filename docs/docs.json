@@ -16,7 +16,7 @@
       "dark": "#475569",
       "light": "#1e3a5f"
     },
-    "content": "FastMCP 4 is in alpha — you're reading the v4 docs. [What's new](/getting-started/upgrading/from-fastmcp-3) · [FastMCP 3 docs](/v3/getting-started/welcome)"
+    "content": "FastMCP 4 is in alpha — you're reading the v4 docs. [What's new](/getting-started/whats-new) · [FastMCP 3 docs](/v3/getting-started/welcome)"
   },
   "colors": {
     "dark": "#f72585",
@@ -89,7 +89,8 @@
                 "pages": [
                   "getting-started/welcome",
                   "getting-started/installation",
-                  "getting-started/quickstart"
+                  "getting-started/quickstart",
+                  "getting-started/whats-new"
                 ]
               },
               {
