@@ -110,8 +110,26 @@ A cluster of protocol features tracked for v4. Their statuses have diverged:
 
 - **Cache hints — shipped (#4464).** Server-level authoring (`FastMCP(cache_ttl=..., cache_scope=...)`, SEP-2549) stamps every cacheable result, and the FastMCP client honors hints with an opt-in response cache.
 - **OpenTelemetry — shipped (#4481).** Spans are on by default (a no-op without an exporter), with SDK-aligned attributes and a `FASTMCP_ENABLE_TELEMETRY=false` off-switch.
-- **Extensions — client side shipped (#4572).** `Client(extensions=..., result_claims=...)` advertises opt-in client extensions (SEP-2133). The cross-era reconciliation of the `extensions` / MCP Apps capability advertisement is still open (the capability is stripped at pre-2026 negotiated versions — sdk-feedback #2).
+- **Extensions — client side shipped (#4572).** `Client(extensions=..., result_claims=...)` advertises opt-in client extensions (SEP-2133). The server side is a Designed workstream in its own right (see [FastMCP-native extension API](#fastmcp-native-extension-api)). The cross-era reconciliation of the `extensions` / MCP Apps capability advertisement is still open (the capability is stripped at pre-2026 negotiated versions — sdk-feedback #2).
 - **Subscriptions — not started.** A `subscriptions/listen` surface backed by a subscription bus.
+
+## FastMCP-native extension API
+
+**Status: Designed.**
+
+MCP extensions (SEP-2133) are optional, capability-negotiated protocol features identified by a reverse-DNS string — `io.modelcontextprotocol/ui` (MCP Apps), `io.modelcontextprotocol/tasks` (SEP-2663). They are a genuinely new abstraction in SDK v2; they did not exist in v1. The SDK exposes them through an `Extension` server class that contributes a capability, additive request methods, and a `tools/call` interceptor, plus a symmetric `ClientExtension` with result claims and notification bindings.
+
+FastMCP already forwards `ClientExtension` natively (`Client(extensions=...)`, #4572). The **server** side does not use the SDK's `Extension` class at all: MCP Apps predates the abstraction, so FastMCP hand-splices the `ui` capability into `get_capabilities()` on the low-level server and walks tool metadata directly. That worked for one extension, but every new protocol extension currently means bespoke surgery on core.
+
+The Designed work is a FastMCP-native server extension API — a single registration point (`mcp.add_extension(...)`) that contributes a negotiated capability, request methods, and a `tools/call` interceptor, with access to FastMCP-level constructs the SDK's `Extension` withholds (the component registry, `Context`, auth scope). It is designed against the SEP-2663 tasks extension because tasks exercises the full surface — capability *and* methods *and* interception *and* client claims/notifications — where MCP Apps exercises only a subset. Tasks is the pathfinder; MCP Apps migrates onto the extension API as a fast-follow, deleting the hand-rolled splices, and confirms the design generalizes. The discriminator that keeps the extension API distinct from [middleware](/servers/middleware): an extension is a *negotiated contract change* the client must understand, where middleware is unilateral server behavior the client never sees. Delete a capability advertisement and nothing about the client changes — that is middleware, not an extension.
+
+## Background tasks (SEP-2663)
+
+**Status: Designed — approved for implementation.**
+
+Background tasks return to the modern era as `fastmcp-tasks`, an in-repo optional package rebuilt on the `io.modelcontextprotocol/tasks` extension (SEP-2663, Final, merged upstream 2026-05-15). SEP-2663 supersedes SEP-1686 but keeps its polling core: a client that advertises the tasks capability issues an augmented `tools/call`; the server decides whether to run it as a task and returns a `CreateTaskResult` carrying a server-generated task id; the client polls `tasks/get` until terminal and reads the result inlined there. FastMCP's existing SEP-1686 wire layer is removed while the Docket/Redis execution engine underneath moves into `fastmcp-tasks` intact — the spec moved toward what FastMCP already built, so the rebuild is mostly deletion plus a thin wire adapter. `task=True` stays the authoring surface (gated by the `fastmcp[tasks]` extra and an explicit `mcp.add_extension(TasksExtension(...))`, the first consumer of the [extension API](#fastmcp-native-extension-api) above), so a server that already uses tasks needs no code change. Scope for v1 is polling-only and `tools/call`-only.
+
+The full design — wire delta, the engine/wire split, packaging, client experience, sequencing, risks, and the five resolved decisions — is on the dedicated [Background Tasks (SEP-2663)](/development/v4-notes/background-tasks) page.
 
 ## SDK delegation, round two
 
