@@ -671,10 +671,11 @@ class Client(
 
     @property
     def server_info(self) -> mcp_types.Implementation | None:
-        """The server's advertised identity, or `None` when disconnected.
+        """The session's server identity, or `None` when disconnected.
 
         Populated from whichever negotiation result the era produced (the
-        `InitializeResult` on legacy, the `DiscoverResult` on modern).
+        `InitializeResult` on legacy, the `DiscoverResult` on modern). A directly
+        pinned modern version uses a synthesized identity with an empty name.
         """
         session = self._session_state.session
         return session.server_info if session is not None else None
@@ -909,9 +910,9 @@ class Client(
         if self.initialize_result is None:
             raise RuntimeError(
                 "The client negotiated a modern protocol era (server/discover), which has "
-                "no InitializeResult. Read client.protocol_version, client.server_info, "
-                "client.server_capabilities, and client.instructions instead, or construct "
-                "the client with mode='legacy'."
+                "no InitializeResult. Inspect client.protocol_version, client.server_info, "
+                "client.server_capabilities, and client.instructions for the metadata "
+                "available in this mode, or construct the client with mode='legacy'."
             )
         return self.initialize_result
 
