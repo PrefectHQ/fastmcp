@@ -8,15 +8,16 @@ authenticated principal rather than by any client-declared identifier.
 
 - `Session`: async `get`/`set`/`delete`/`clear` over a single dict stored under
   one key, scoped to a `(principal, session_id)` pair. This is the state-accessor
-  object a handler works with — the value returned by `ctx.get_session(id)` and
-  injected for a `UserSession` parameter.
+  object a handler works with — the value the standalone `get_session(id)`
+  returns and the value injected for a `UserSession` parameter.
 - `session: UserSession` (injected): a per-user bucket, dependency-injected like
   `ctx: Context` and keyed by the request's authenticated principal. Requires
   auth. `UserSession` is the injection annotation; the injected value is a
   `Session`. It is always available under auth — no `create_session`, no
   provider, no validation.
 - `session_id: SessionId` (argument): a required string the agent supplies,
-  resolved with `await ctx.get_session(session_id)`. The id must first be minted
+  resolved with the standalone `await get_session(session_id)`. The id is
+  minted
   by `create_session`; an id that was never created (or was created under a
   different principal) is rejected. This validation is the whole guarantee — an
   unminted id never resolves, so nothing enforces provider registration.
@@ -123,7 +124,7 @@ class SessionAuthError(FastMCPError):
 class InvalidSession(FastMCPError):
     """A session id did not resolve to a session created under the current principal.
 
-    Raised by `ctx.get_session(session_id)` when the id was never created, or was
+    Raised by `get_session(session_id)` when the id was never created, or was
     created under a different principal. The public message is deliberately
     generic — the specific reason (which id, which principal) is logged at debug
     level, not returned to the caller, so an attacker cannot distinguish "unknown
@@ -280,7 +281,7 @@ class Session:
         """Empty the session's user state but keep the session valid.
 
         The user-state sub-dict is reset to empty while the creation marker stays
-        in place, so a cleared session still resolves through `ctx.get_session`.
+        in place, so a cleared session still resolves through `get_session`.
         To invalidate a session entirely, use `end` (what `end_session` calls).
         """
         raw = await self._load_raw()
@@ -292,7 +293,7 @@ class Session:
     async def end(self) -> None:
         """Invalidate the session — delete its one key and all of its state.
 
-        After this the id no longer resolves through `ctx.get_session`. This is
+        After this the id no longer resolves through `get_session`. This is
         what `end_session` calls; `clear` only empties state and keeps the session.
         """
         await self._store.delete(key=self._key)
@@ -415,14 +416,23 @@ def CurrentSession() -> Session:
     return cast("Session", _CurrentSession())
 
 
-async def resolve_session(session_id: str) -> Session:
-    """Resolve and validate a session id against the current principal's store.
+async def get_session(session_id: str) -> Session:
+    """Resolve and validate a `Session` for an explicit `session_id`.
 
-    Reads the record for `(current_principal, session_id)` and returns a `Session`
-    only when it exists — i.e. was written by `create_session` under this same
-    principal. An id that was never created, or created under a different
-    principal, raises `InvalidSession`; the specific reason is logged at debug
-    level and never returned to the caller.
+    Pair with a `session_id: SessionId` tool argument (the agent obtains an id
+    from `create_session` and passes it back). For a single per-user bucket with
+    nothing for the agent to pass, inject `session: UserSession` instead.
+
+    State is keyed by `(principal, session_id)`: the authenticated principal is
+    the isolation wall and `session_id` organizes sessions within it. The id must
+    have been minted by `create_session` under the current principal; an id that
+    was never created, or created under a different principal, raises
+    `InvalidSession` rather than resolving to a fresh empty bucket (the specific
+    reason is logged at debug level, never returned to the caller).
+
+    This is a standalone function, not a `Context` method, so it needs no
+    foreground context — it works from a `task=True` tool's Docket worker as well
+    as a normal request.
     """
     session = Session(
         store=get_server()._state_store,
@@ -467,7 +477,7 @@ async def end_session(session_id: SessionId) -> str:
     Validates the id like any other resolution (an unknown or foreign id is
     rejected), then deletes the session's key so the id no longer resolves.
     """
-    session = await resolve_session(session_id)
+    session = await get_session(session_id)
     await session.end()
     return "session ended"
 
@@ -492,7 +502,7 @@ class SessionProvider(Provider):
     It owns no storage (session state lives in the server's configured
     `session_state_store`) and imposes no TTL (retention is the store's). It
     exists to mint and end owned session ids. Registration is not enforced: with
-    no provider, no id can be created, so every `ctx.get_session(...)` rejects —
+    no provider, no id can be created, so every `get_session(...)` rejects —
     a `session_id` tool without a provider simply cannot resolve a session.
     """
 

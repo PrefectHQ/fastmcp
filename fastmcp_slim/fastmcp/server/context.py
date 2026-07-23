@@ -48,7 +48,6 @@ from fastmcp.server.sampling.run import (
     sample_step_impl,
 )
 from fastmcp.server.server import FastMCP, StateValue
-from fastmcp.server.sessions import Session, resolve_session
 from fastmcp.server.transforms.visibility import (
     Visibility,
 )
@@ -1428,26 +1427,6 @@ class Context:
     def _make_state_key(self, key: str) -> str:
         """Create session-prefixed key for state storage."""
         return f"{self.session_id}:{key}"
-
-    async def get_session(self, session_id: str) -> Session:
-        """Resolve and validate a `Session` for an explicit `session_id`.
-
-        State is keyed by `(principal, session_id)`: the authenticated principal
-        is the isolation wall and `session_id` organizes sessions within it. Two
-        principals passing the *same* `session_id` reach different buckets. On an
-        unauthenticated request there is no principal wall — the id alone is the
-        key, so sessions are not a boundary between callers.
-
-        The id must have been minted by `create_session` under the current
-        principal. An id that was never created, or created under a different
-        principal, raises `InvalidSession` rather than resolving to a fresh empty
-        bucket.
-
-        Pair with a `session_id: SessionId` tool argument (the agent obtains an id
-        from `create_session` and passes it back). For a single per-user bucket
-        with nothing for the agent to pass, inject `session: UserSession` instead.
-        """
-        return await resolve_session(session_id)
 
     async def set_state(
         self, key: str, value: Any, *, serializable: bool = True

@@ -62,12 +62,11 @@ so its `get`/`set`/`delete`/`clear` accessors work as usual.
 ### Distinct sessions — an argument
 
 ```python
-from fastmcp.server.sessions import SessionId
-from fastmcp.server.dependencies import get_context
+from fastmcp.server.sessions import SessionId, get_session
 
 @mcp.tool
 async def add_to_cart(item: str, session_id: SessionId) -> str:
-    session = await get_context().get_session(session_id)
+    session = await get_session(session_id)
     cart = await session.get("cart", default=[])
     cart.append(item)
     await session.set("cart", cart)
@@ -85,12 +84,14 @@ The tool becomes self-teaching — an agent reads the schema and learns the
 create-then-pass contract with no hand-prompting. The description names no
 specific tool: composition can rename the lifecycle tool (mounting under a
 namespace exposes it as `child_create_session`), so it points at the
-*capability* rather than a name that may not exist under that mount. `await ctx.get_session(session_id)`
-resolves it to a `Session` keyed by `(principal, session_id)` (named
-`get_session`, not `session`, because `ctx.session` already exposes the raw
-`ServerSession`), **validating** that the id was created under this principal —
-an unknown or foreign id raises `InvalidSession` rather than opening a fresh
-bucket. Use it when a user needs more than one session.
+*capability* rather than a name that may not exist under that mount.
+
+The standalone `await get_session(session_id)` resolves the id to a `Session`
+keyed by `(principal, session_id)`, **validating** that it was created under this
+principal — an unknown or foreign id raises `InvalidSession` rather than opening a
+fresh bucket. It is a plain function, not a `Context` method, so it needs no
+foreground context and works from a `task=True` tool's worker. Use this pattern
+when a user needs more than one session.
 
 ## The `Session` object
 
@@ -194,7 +195,8 @@ the above:
    wire into the same parameter-detection path as `Context`. `UserSession` is the
    injection marker; the injected value is a `Session`.
 5. **`session_id: SessionId`** marker type: string in the schema, auto-filled
-   description, `await ctx.get_session(id)` resolver that validates the id.
+   description, standalone `await get_session(id)` resolver that validates the id
+   (works from a task worker — no foreground context needed).
 6. **`SessionProvider(Provider)`** with `create_session` (records the session) /
    `end_session` (deletes it), registered explicitly via `add_provider`. No
    enforcement that it is present — `get_session`'s validation is the guarantee.

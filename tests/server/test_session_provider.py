@@ -23,13 +23,13 @@ from mcp.server.auth.provider import AccessToken as SDKAccessToken
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.context import Context
-from fastmcp.server.dependencies import get_context
 from fastmcp.server.sessions import (
     SESSION_ID_DESCRIPTION,
     InvalidSession,
     SessionId,
     SessionProvider,
     UserSession,
+    get_session,
 )
 from fastmcp.tools.base import ToolResult
 
@@ -92,7 +92,7 @@ def build_id_server() -> FastMCP:
 
     @server.tool
     async def add_to_cart(item: str, session_id: SessionId) -> int:
-        session = await get_context().get_session(session_id)
+        session = await get_session(session_id)
         cart = await session.get("cart", default=[])
         cart.append(item)
         await session.set("cart", cart)
@@ -100,7 +100,7 @@ def build_id_server() -> FastMCP:
 
     @server.tool
     async def view_cart(session_id: SessionId) -> list[str]:
-        session = await get_context().get_session(session_id)
+        session = await get_session(session_id)
         return await session.get("cart", default=[])
 
     return server
@@ -244,7 +244,7 @@ class TestSessionIdArgument:
 
         @server.tool
         async def which_session(session_id: SessionId) -> str | None:
-            return (await get_context().get_session(session_id)).id
+            return (await get_session(session_id)).id
 
         async with Client(server) as client:
             session_id = (await client.call_tool("create_session", {})).data
@@ -292,7 +292,7 @@ class TestSessionIdArgument:
 
         @server.tool
         async def add_to_cart(item: str, session_id: SessionId) -> int:
-            session = await get_context().get_session(session_id)
+            session = await get_session(session_id)
             cart = await session.get("cart", default=[])
             cart.append(item)
             await session.set("cart", cart)
@@ -300,13 +300,13 @@ class TestSessionIdArgument:
 
         @server.tool
         async def clear_cart(session_id: SessionId) -> str:
-            session = await get_context().get_session(session_id)
+            session = await get_session(session_id)
             await session.clear()
             return "cleared"
 
         @server.tool
         async def view_cart(session_id: SessionId) -> list[str]:
-            session = await get_context().get_session(session_id)
+            session = await get_session(session_id)
             return await session.get("cart", default=[])
 
         async with Client(server) as client:
@@ -426,7 +426,7 @@ class TestNoProviderIsNonFatal:
 
         @server.tool
         async def add_to_cart(item: str, session_id: SessionId) -> str:
-            session = await get_context().get_session(session_id)
+            session = await get_session(session_id)
             await session.set("item", item)
             return "ok"
 

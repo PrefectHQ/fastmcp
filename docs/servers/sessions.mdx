@@ -46,8 +46,7 @@ An agent obtains an id by calling `create_session`, which comes from a `SessionP
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.sessions import SessionId, SessionProvider
-from fastmcp.server.dependencies import get_context
+from fastmcp.server.sessions import SessionId, SessionProvider, get_session
 
 mcp = FastMCP("shop")
 mcp.add_provider(SessionProvider())
@@ -55,12 +54,14 @@ mcp.add_provider(SessionProvider())
 
 @mcp.tool
 async def add_to_cart(item: str, session_id: SessionId) -> str:
-    session = await get_context().get_session(session_id)
+    session = await get_session(session_id)
     cart = await session.get("cart", default=[])
     cart.append(item)
     await session.set("cart", cart)
     return f"{len(cart)} items in cart."
 ```
+
+`get_session` resolves and validates the id, returning a [`Session`](#the-session-object). It is a standalone function, not a context method, so it needs no foreground context and works from a [background task](/servers/tasks)'s worker as well as a normal request.
 
 A session id is real and owned: `create_session` records it under the current user, and only an id created that way resolves. Passing an id that was never created — or one created by a different user — raises rather than quietly opening a fresh bucket, so a typo or a stolen id fails loudly instead of misrouting state.
 
