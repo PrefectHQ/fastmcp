@@ -23,7 +23,7 @@ The `Context` object provides a clean interface to access MCP features within yo
 - **Prompt Access**: List and retrieve prompts registered with the server
 - **LLM Sampling**: Request the client's LLM to generate text based on provided messages
 - **User Elicitation**: Request structured input from users during tool execution
-- **Session State**: Store data that persists across requests within an MCP session
+- **Request State**: Pass values and non-serializable resources between middleware and handlers within a request (for state that persists across requests, see [Session State](/servers/sessions))
 - **Session Visibility**: [Control which components are visible](/servers/visibility#per-session-visibility) to the current session
 - **Request Information**: Access metadata about the current request
 - **Server Access**: When needed, access the underlying FastMCP server instance
@@ -71,7 +71,7 @@ async def data_analysis_request(dataset: str, ctx: Context = CurrentContext()) -
 
 - Dependency parameters are automatically excluded from the MCP schema—clients never see them.
 - Context methods are async, so your function usually needs to be async as well.
-- **Each MCP request receives a new context object.** Request-scoped values, including non-serializable state, are not available in subsequent requests. Serializable session state stored with `ctx.set_state()` persists across requests in the same MCP session.
+- **Each MCP request receives a new context object.** State set with `ctx.set_state()` is scoped to that request and is not available in subsequent ones. To persist state across requests, use [Session State](/servers/sessions).
 - Context is only available during a request; attempting to use context methods outside a request will raise errors.
 
 ### Legacy Type-Hint Injection
@@ -211,112 +211,62 @@ messages = result.messages
 - **`ctx.list_prompts() -> list[MCPPrompt]`**: Returns list of all available prompts
 - **`ctx.get_prompt(name: str, arguments: dict[str, Any] | None = None) -> GetPromptResult`**: Get a specific prompt with optional arguments
 
-### Session State
+### Request State
 
 <VersionBadge version="3.0.0" />
 
-Store data that persists across multiple requests within the same MCP session. Session state is automatically keyed by the client's session, ensuring isolation between different clients.
+Request state carries values *within a single request*, across the middleware → handler pipeline. A request runs through any middleware you've added and then the handler — separate functions that don't share a stack frame, so a plain local variable can't pass anything between them. `ctx.set_state` / `ctx.get_state` is that channel.
 
-```python
-from fastmcp import FastMCP, Context
-
-mcp = FastMCP("stateful-app")
-
-@mcp.tool
-async def increment_counter(ctx: Context) -> int:
-    """Increment a counter that persists across tool calls."""
-    count = await ctx.get_state("counter") or 0
-    await ctx.set_state("counter", count + 1)
-    return count + 1
-
-@mcp.tool
-async def get_counter(ctx: Context) -> int:
-    """Get the current counter value."""
-    return await ctx.get_state("counter") or 0
-```
-
-Each client session has its own isolated state—two different clients calling `increment_counter` will each have their own counter.
-
-**Method signatures:**
-- **`await ctx.set_state(key, value, *, serializable=True)`**: Store a value in session state
-- **`await ctx.get_state(key)`**: Retrieve a value (returns None if not found)
-- **`await ctx.delete_state(key)`**: Remove a value from session state
-
-<Note>
-State methods are async and require `await`. State expires after 1 day to prevent unbounded memory growth.
-</Note>
-
-#### Non-Serializable Values
-
-By default, state values must be JSON-serializable (dicts, lists, strings, numbers, etc.) so they can be persisted across requests. For non-serializable values like HTTP clients or database connections, pass `serializable=False`:
-
-```python
-@mcp.tool
-async def my_tool(ctx: Context) -> str:
-    # This object can't be JSON-serialized
-    client = SomeHTTPClient(base_url="https://api.example.com")
-    await ctx.set_state("client", client, serializable=False)
-
-    # Retrieve it later in the same request
-    client = await ctx.get_state("client")
-    return await client.fetch("/data")
-```
-
-Values stored with `serializable=False` only live for the current MCP request (a single tool call, resource read, or prompt render). They will not be available in subsequent requests within the session.
-
-#### Custom Storage Backends
-
-By default, session state uses an in-memory store suitable for single-server deployments. For distributed or serverless deployments, provide a custom storage backend:
-
-```python
-from key_value.aio.stores.redis import RedisStore
-
-# Use Redis for distributed state
-mcp = FastMCP("distributed-app", session_state_store=RedisStore(...))
-```
-
-Any backend compatible with the [py-key-value-aio](https://github.com/strawgate/py-key-value) `AsyncKeyValue` protocol works. See [Storage Backends](/servers/storage-backends) for more options including Redis, DynamoDB, and MongoDB.
-
-#### State and Mounted Servers
-
-Each `FastMCP` instance has its own session state store. When you `mount()` a child server, state set on the parent is not visible to tools on the child, and vice versa:
+The common case is a middleware that resolves something once and every tool reads it, rather than each tool recomputing it:
 
 ```python
 from fastmcp import FastMCP, Context
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 
-parent = FastMCP("Parent")
-child = FastMCP("Child")
-parent.mount(child, namespace="child")
+mcp = FastMCP("app")
 
-class Stasher(Middleware):
+
+class Enrich(Middleware):
     async def on_call_tool(self, context: MiddlewareContext, call_next):
-        await context.fastmcp_context.set_state("user", "alice")
+        await context.fastmcp_context.set_state("caller", "alice")
         return await call_next(context)
 
-parent.add_middleware(Stasher())
 
-@child.tool
+mcp.add_middleware(Enrich())
+
+
+@mcp.tool
 async def whoami(ctx: Context) -> str:
-    return await ctx.get_state("user") or "unknown"  # returns "unknown"
+    return await ctx.get_state("caller") or "unknown"
 ```
 
-To share state across the mount boundary, pass the same store to both servers:
+The state is scoped to the one request and discarded when it returns. State is also inherited by mounted children, so a value a parent middleware sets is visible to a mounted server's tools within the same request.
+
+**Method signatures:**
+
+- **`await ctx.set_state(key, value, *, serializable=True)`** — store a value
+- **`await ctx.get_state(key)`** — retrieve a value (returns `None` if not set)
+- **`await ctx.delete_state(key)`** — remove a value
+
+#### Non-serializable resources
+
+The most useful thing request state holds is objects you *can't* persist — a database connection or an HTTP client that a middleware or the [lifespan](/servers/lifespan) opens and a handler uses. Pass `serializable=False`:
 
 ```python
-from key_value.aio.stores.memory import MemoryStore
+@mcp.tool
+async def my_tool(ctx: Context) -> str:
+    client = SomeHTTPClient(base_url="https://api.example.com")
+    await ctx.set_state("client", client, serializable=False)
 
-store = MemoryStore()
-parent = FastMCP("Parent", session_state_store=store)
-child = FastMCP("Child", session_state_store=store)
-parent.mount(child, namespace="child")
+    client = await ctx.get_state("client")
+    return await client.fetch("/data")
 ```
 
-Alternatively, state set with `serializable=False` lives on the request context and is inherited by mounted children automatically — use it when the value is request-scoped and does not need to persist across tool calls.
+A `serializable=False` value lives on the request context for the current call only. It is inherently request-scoped — a live connection can't be serialized and stored — which is exactly why it belongs here rather than in a persistent store.
 
-#### State During Initialization
+#### Persisting across requests
 
-State set during `on_initialize` middleware persists to subsequent tool calls when using the same session object (STDIO, SSE, single-server HTTP). For distributed/serverless HTTP deployments where different machines handle init and tool calls, state is isolated by the `mcp-session-id` header.
+Request state does not survive from one call to the next. When you need a cart, a conversation, or any state that outlives a single request, use [Session State](/servers/sessions) — it stores server-side, keyed by the authenticated user, and works on every protocol era. (On session-based, handshake-era connections, serializable request state also persists across the session, but Session State is the deliberate, cross-era way to do it.)
 
 ### Session Visibility
 

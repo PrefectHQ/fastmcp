@@ -1,0 +1,169 @@
+---
+title: fastmcp-remote
+description: Bridge remote MCP servers into stdio-only MCP hosts with uvx fastmcp-remote.
+icon: bridge
+---
+
+`fastmcp-remote` is FastMCP's standalone stdio bridge for remote MCP servers. Use it when an MCP host expects to launch a local command, but the server you want to use is hosted over Streamable HTTP or SSE.
+
+```json
+{
+  "mcpServers": {
+    "linear": {
+      "command": "uvx",
+      "args": ["fastmcp-remote", "https://mcp.linear.app/mcp"]
+    }
+  }
+}
+```
+
+The package is powered by FastMCP. It builds one FastMCP client for the remote URL, exposes that client as a local stdio proxy, and keeps the executable focused on that bridge. For running Python server files, local project environments, FastMCP config files, and development reload loops, use [`fastmcp run`](/cli/running).
+
+The command shape follows the original [`mcp-remote`](https://github.com/geelen/mcp-remote) npm project, which established this stdio-to-remote bridge pattern for MCP hosts.
+
+## Installation
+
+Most MCP hosts can run `fastmcp-remote` directly through `uvx`, so you usually do not need to install it yourself:
+
+```bash
+uvx fastmcp-remote https://example.com/mcp
+```
+
+If your host requires an already-installed command, install the package with your Python package manager:
+
+```bash
+uv tool install fastmcp-remote
+```
+
+## Host Configuration
+
+For hosts that use `mcpServers` JSON configuration, set the command to `uvx` and pass `fastmcp-remote` plus the remote server URL as arguments:
+
+```json
+{
+  "mcpServers": {
+    "remote-api": {
+      "command": "uvx",
+      "args": ["fastmcp-remote", "https://example.com/mcp"]
+    }
+  }
+}
+```
+
+## Endpoint URLs and Connection Status
+
+Pass the full MCP endpoint URL for the remote server. Many FastMCP HTTP servers expose MCP at `/mcp`, so a local development server may need `http://localhost:8000/mcp` rather than `http://localhost:8000`.
+
+`fastmcp-remote` starts a local stdio bridge, then connects to the upstream server when the MCP host initializes that bridge. If the upstream server is unavailable, the URL does not point to an MCP endpoint, or authentication cannot complete, initialization fails and the host should report the remote server as failed. After initialization succeeds, later tool, resource, prompt, and ping requests continue to proxy through the same remote server configuration.
+
+OAuth is enabled automatically for HTTPS servers. The first connection opens the browser-based OAuth flow when the server requires authentication, then stores tokens locally for future runs.
+
+To pass a bearer token or another custom header directly, provide `--header` in `Name: Value` form. The header name ends at the first colon, so values can contain additional colons. Quote the header when the value contains spaces, just like any other shell argument. An `Authorization` header disables OAuth by default:
+
+```json
+{
+  "mcpServers": {
+    "private-api": {
+      "command": "uvx",
+      "args": [
+        "fastmcp-remote",
+        "https://example.com/mcp",
+        "--header",
+        "Authorization: Bearer <token>"
+      ]
+    }
+  }
+}
+```
+
+Repeat `--header` to send multiple headers:
+
+```bash
+uvx fastmcp-remote https://example.com/mcp \
+  --header "Authorization: Bearer <token>" \
+  --header "X-Workspace: production" \
+  --header "X-Client-Name: My MCP Host" \
+  --header "X-Callback-Url: https://example.com/oauth/callback"
+```
+
+Some MCP hosts on Windows have trouble preserving spaces inside command arguments. Put the spaced value in an environment variable and reference it from the header value:
+
+```json
+{
+  "mcpServers": {
+    "remote-api": {
+      "command": "uvx",
+      "args": [
+        "fastmcp-remote",
+        "https://example.com/mcp",
+        "--header",
+        "Authorization:${AUTH_HEADER}"
+      ],
+      "env": {
+        "AUTH_HEADER": "Bearer <token>"
+      }
+    }
+  }
+}
+```
+
+For local development servers over plain HTTP, disable OAuth when the server is unauthenticated:
+
+```bash
+uvx fastmcp-remote http://localhost:8000/mcp --auth none
+```
+
+## Self-Signed Certificates
+
+For servers behind a self-signed certificate, point `--verify` at a CA bundle that trusts the certificate:
+
+```bash
+uvx fastmcp-remote https://internal.example.com/mcp --verify /path/to/ca-bundle.pem
+```
+
+To disable certificate verification entirely, pass `--verify false`. This is insecure and should only be used for trusted servers on private networks:
+
+```bash
+uvx fastmcp-remote https://internal.example.com/mcp --verify false
+```
+
+To trust a CA bundle without a flag, set the standard `SSL_CERT_FILE` environment variable, which OpenSSL reads automatically:
+
+```bash
+SSL_CERT_FILE=/path/to/ca-bundle.pem uvx fastmcp-remote https://internal.example.com/mcp
+```
+
+## OAuth Storage
+
+OAuth tokens are stored under `~/.fastmcp/remote` by default. Set `FASTMCP_REMOTE_CONFIG_DIR` to use another directory:
+
+```bash
+FASTMCP_REMOTE_CONFIG_DIR=~/.config/fastmcp-remote uvx fastmcp-remote https://example.com/mcp
+```
+
+Use `--resource` to isolate tokens for a particular remote server identity:
+
+```bash
+uvx fastmcp-remote https://example.com/mcp --resource example-prod
+```
+
+If the remote authorization server requires a fixed callback port or hostname, pass them after the URL:
+
+```bash
+uvx fastmcp-remote https://example.com/mcp 3334 --host 127.0.0.1
+```
+
+## Options
+
+| Option | Description |
+| ------ | ----------- |
+| `--transport` | Choose `http` or `sse`. Defaults to `http`. |
+| `--header` | Add a header to upstream requests, for example `--header "Authorization: Bearer <token>"`. Values may contain colons. Quote headers whose values contain spaces. Use `${VAR}` to expand environment variables inside values. Repeat for multiple headers. |
+| `--auth` | Choose `oauth` or `none`. The default uses OAuth unless an `Authorization` header is provided. |
+| `--verify` | Control TLS certificate verification. Pass a path to a CA bundle to trust a self-signed certificate, or `false` to disable verification (insecure). Defaults to verification enabled. |
+| `--resource` | Isolate OAuth token storage for a named remote resource. |
+| `--host` | Set the OAuth callback hostname. Defaults to `localhost`. |
+| `--auth-timeout` | Set how long to wait for the OAuth callback. Defaults to 300 seconds. |
+| `--ignore-tool` | Hide tools whose names match a glob pattern. Repeat for multiple patterns. |
+| `--debug` | Enable debug logging. |
+| `--silent` | Suppress non-critical logs. |

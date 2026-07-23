@@ -1,0 +1,71 @@
+---
+title: "What's New in FastMCP 4"
+sidebarTitle: "What's New"
+description: The capabilities that define FastMCP 4 — a rebuilt engine, a new protocol era, and a stateless protocol made practical.
+icon: sparkles
+---
+
+FastMCP 4 is a major version because its engine changed. The framework is now built on the MCP Python SDK v2, a ground-up rebuild of the protocol layer, and on that foundation it adds a new protocol era, first-class extensions, stateless state, enterprise identity, and more. Most FastMCP 3 servers run on it untouched — the major version signals how much moved underneath, and what that movement unlocks.
+
+<Note>
+FastMCP 4 is in **alpha**. Everything below is available today except background tasks, which arrive in the next alpha. Pin an exact version and expect sharp edges.
+</Note>
+
+## Built on the MCP Python SDK v2
+
+The defining change in FastMCP 4 is the one you mostly can't see. The MCP Python SDK v2 rewrote the protocol layer end to end: it split the protocol types into a standalone `mcp_types` package, renamed every wire field from camelCase to snake_case, replaced the server's request-handling model, and made server-side middleware and multi-era serving first-class. FastMCP absorbs nearly all of it — your reads stay working through a compatibility bridge, and the handful of changes left in your code are mechanical.
+
+The major version is the signal. Even where your surface is unchanged, the behavior underneath is substantially different, and bumping to 4.0 is how we tell you that plainly rather than slipping a new engine in under a patch release.
+
+The rebuild also pulls the protocol's recent evolution forward in a single step. A batch of accepted MCP proposals arrives with SDK v2, and FastMCP 4 surfaces each one: capability-negotiated extensions (SEP-2133), multi-round-trip elicitation for sessionless connections (SEP-2322), response cache hints (SEP-2549), spec-standard error codes (SEP-2164), the enterprise identity-assertion grant (SEP-990), and the sessionless `2026-07-28` protocol itself, which removes server-initiated requests (SEP-2577). The rest of this page is what those add up to.
+
+## Every protocol era
+
+A FastMCP 4 server answers clients across the protocol transition from one deployment. The MCP SDK negotiates the era per connection — the sessionless `2026-07-28` protocol for clients that have moved forward, the session-based handshake for everyone else — and any replica behind a plain load balancer can serve a modern request. This supersedes FastMCP's earlier "latest protocol only" stance: you adopt the new protocol without forking your deployment or gating clients by version.
+
+The modern protocol is sessionless, so it drops the server's ability to call back into the client mid-request (SEP-2577). Imperative `ctx.elicit` and `ctx.list_roots` move to a request-shaped pattern on modern connections, and server-initiated sampling — which has no such replacement — is [deprecated](/servers/sampling). Everything else about writing a server is unchanged.
+
+## State without a session
+
+A stateless protocol raises an obvious question: if every request is a fresh connection, where does a tool keep a shopping cart, a conversation, or a running total? FastMCP 4 follows the MCP working group's own decision to reject protocol-level sessions in favor of *explicit state handles* (SEP-2567) — the server hands out an identifier, and the client passes it back.
+
+Two shapes cover the cases. `UserSession` is injected like `Context` and keyed to the authenticated user, so a tool reads and writes one bucket of state with nothing to pass around. `SessionId` is an explicit handle a tool mints and the caller supplies as an argument, for when one user holds many independent states. Both store their data server-side in the storage backend, keyed to the authenticated user — so a handle is inert in anyone else's hands. See [Session State](/servers/sessions).
+
+## Background tasks
+
+Long-running work runs as a background task: the server accepts the call, returns a handle, and the client polls for the result while the work proceeds. Tasks left the core MCP spec during the SDK v2 rebuild and returned as the `io.modelcontextprotocol/tasks` extension (SEP-2663), which FastMCP 4 implements end to end in the optional `fastmcp-tasks` package. The durable execution engine that made FastMCP 3's tasks reliable carries straight over, and `@mcp.tool(task=True)` remains the only authoring surface — so the wire protocol modernizing underneath costs you no code change. See [Background Tasks](/development/v4-notes/background-tasks) for the design; the runtime arrives in the next alpha.
+
+## Server extensions
+
+Background tasks are the first capability built on a more general one: FastMCP 4 makes MCP extensions — capability-negotiated protocol features named by a reverse-DNS string (SEP-2133) — a first-class surface. `FastMCP.add_extension()` lets an extension advertise a capability, add request methods, intercept `tools/call`, and run a lifespan hook, all with full access to the component registry, `Context`, and auth. The same extensions flow through the client with `Client(extensions=...)`. A cross-cutting protocol feature stops being surgery on core and becomes a supported plugin.
+
+## Enterprise identity
+
+FastMCP 4 ships a complete server-side implementation of identity assertion (SEP-990): enterprise "on-behalf-of" access, where a corporate identity provider issues a signed assertion, the user's agent presents it, and the server mints a short-lived token — no browser login and no per-user consent screen. Behind one parameter on the existing auth providers, FastMCP performs the full signature verification, binding checks, replay rejection, and scoped token issuance.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth import IdentityAssertion, OAuthProxy
+
+auth = OAuthProxy(
+    # existing upstream configuration unchanged
+    identity_assertion=IdentityAssertion(trusted_issuers=["https://login.acme-corp.com"]),
+)
+mcp = FastMCP("Internal API", auth=auth)
+```
+
+The asserted subject flows into the normal auth context, so tools read it through `get_access_token()` like any other identity. See [Identity Assertion](/servers/auth/oauth-proxy#identity-assertion-sep-990).
+
+## Faster and safer
+
+Two more capabilities arrive by default. Response caching (SEP-2549) lets a server stamp freshness hints on its results that a caching [client](/clients/client#response-caching) reuses without a round trip, and a distributed `KeyValueResponseCacheStore` backs that cache with Redis or any key-value store, so a fleet of clients or proxy replicas shares fills.
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP("Weather", cache_ttl=300, cache_scope="public")
+```
+
+Security tightened in the same release: every templated resource screens its parameters for path traversal, absolute paths, and null bytes before the handler runs — [path security](/servers/resources#path-security) on by default, covering mounted and proxied templates too.
+
+When you're ready to move a server to v4, [Upgrading from FastMCP 3](/getting-started/upgrading/from-fastmcp-3) walks through every change and what it looks like in practice.

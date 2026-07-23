@@ -21,7 +21,7 @@ from mcp_types import (
     ToolExecution,
 )
 from mcp_types import Tool as MCPTool
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
 from fastmcp.utilities.authorization import AuthCheck
@@ -87,6 +87,8 @@ def default_serializer(data: Any) -> str:
 
 
 class ToolResult(BaseModel):
+    _raw_mcp_result: CallToolResult | None = PrivateAttr(default=None)
+
     content: list[ContentBlock] = Field(
         description="List of content blocks for the tool result"
     )
@@ -152,11 +154,26 @@ class ToolResult(BaseModel):
             is_error=is_error,
         )
 
+    @classmethod
+    def from_mcp_result(cls, result: CallToolResult) -> ToolResult:
+        """Wrap a protocol result while preserving its exact wire representation."""
+        tool_result = cls(
+            content=result.content,
+            structured_content=result.structured_content,
+            meta=result.meta,
+            is_error=result.is_error,
+        )
+        tool_result._raw_mcp_result = result
+        return tool_result
+
     def to_mcp_result(
         self,
     ) -> (
         list[ContentBlock] | tuple[list[ContentBlock], dict[str, Any]] | CallToolResult
     ):
+        if self._raw_mcp_result is not None:
+            return self._raw_mcp_result
+
         # An error result must round-trip through CallToolResult so isError
         # reaches the client; the plain content/tuple returns can't carry it.
         if self.meta is not None or self.is_error:
@@ -345,6 +362,9 @@ class Tool(FastMCPComponent):
         """
         if isinstance(raw_value, ToolResult):
             return raw_value
+
+        if isinstance(raw_value, CallToolResult):
+            return ToolResult.from_mcp_result(raw_value)
 
         if _HAS_PREFAB:
             if isinstance(raw_value, _PrefabApp):

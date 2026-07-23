@@ -1,0 +1,153 @@
+---
+title: Background Tasks (SEP-2663)
+---
+
+**Status: Designed — approved for implementation.** This page is the approved design for rebuilding FastMCP's background-task support on the `io.modelcontextprotocol/tasks` extension. It supersedes the earlier "delete the task machinery" direction recorded during the SDK v2 migration. Implementation is sequenced behind the [extension API](#the-extension-api); the [Feature Program](/development/v4-notes/feature-program#background-tasks-sep-2663) carries the one-line status.
+
+## TL;DR
+
+Background tasks are not dead. The MCP spec moved them out of core and into a **Final, merged** extension — `io.modelcontextprotocol/tasks` (SEP-2663) — that keeps the polling model FastMCP already implements. **No SDK, in any language, ships a runtime for it yet.** FastMCP owns the only production-shaped execution engine (Docket/Redis) built for a near-identical protocol.
+
+The plan: **rebuild task support on SEP-2663 as `fastmcp-tasks`, an in-repo optional package**, gated by `task=True` exactly as MCP Apps is gated by `app=True`. Remove the SEP-1686 *wire layer*; keep and re-home the *execution engine*. Along the way, introduce a **FastMCP-native server extension API** so tasks (and later Apps) plug in through one documented mechanism instead of bespoke surgery on core.
+
+Net effect: a server that already uses `@mcp.tool(task=True)` needs **no code change**, and FastMCP plausibly becomes the first runtime implementation of the tasks extension anywhere.
+
+## Background: where tasks stand today
+
+FastMCP 3 shipped background tasks against **SEP-1686**, the task protocol that briefly lived in the core MCP spec. The implementation is ~4,000 lines across server, client, CLI, and an SDK shim, split into two very different halves:
+
+- **A wire layer** — capability advertisement, the `tasks/get|result|list|cancel` handlers, a `CreateTaskResult` on augmented `tools/call`, and a Redis-backed *push* relay that lets a worker reach a client to deliver notifications and elicitation requests.
+- **An execution engine** — [Docket](https://github.com/chrisguidry/docket) (queue, worker, result store, TTL, `memory://` or `redis://` backends) plus FastMCP-built durability: auth-scoped compound keys that isolate task access by caller, request-context snapshot/restore across worker processes, argument-coercion parity with the sync path, and the `fastmcp tasks worker` CLI.
+
+The SDK v2 migration removed SEP-1686 from the core spec. The v4 design notes, until now, recorded the consequence as "delete the task machinery; users who need tasks stay on FastMCP 3." That was the right call **given the information at the time** — the assumption was that the successor protocol either didn't exist or wasn't implementable. Both halves of that assumption turned out to be wrong.
+
+## What changed upstream: SEP-2663
+
+Tasks were reworked, not removed. **SEP-2663 ("Tasks Extension") is Final and was merged upstream on 2026-05-15**, superseding SEP-1686. It defines the `io.modelcontextprotocol/tasks` extension, a capability-negotiated feature layered on the SEP-2133 extensions mechanism. It keeps SEP-1686's polling core and tightens it.
+
+**The wire shape:**
+
+1. Client advertises the tasks capability (per-request, in `_meta`). This is *consent* — "I can handle a task result" — not a request to run one.
+2. Client issues a normal `tools/call`. **The server decides** whether to run it as a task.
+3. If tasked, the server returns a `CreateTaskResult` (a claimed result shape carrying `resultType: "task"`) with a **server-generated** `taskId`.
+4. Client polls `tasks/get` until the status is terminal; the result is **inlined** into that response.
+5. In-task input (elicit/sample/roots requested *during* execution) is **poll-based**: status flips to `input_required`, outstanding requests appear in an `inputRequests` map, and the client answers via `tasks/update`.
+6. `tasks/cancel` is cooperative. Optional push exists (`notifications/tasks` over `subscriptions/listen`) but servers need not send it.
+
+**Delta from SEP-1686** — and the striking thing is that most of it is *deletion*, because the spec moved toward what FastMCP already built:
+
+| Dimension | SEP-1686 (old) | SEP-2663 (new) | FastMCP today |
+| --- | --- | --- | --- |
+| Task-id generation | Client-generated | **Server**-generated | Already server-generated |
+| `tasks/list` | Present | **Removed** (enumeration risk) | Already a stub returning `[]` |
+| Result retrieval | Separate `tasks/result` | **Inlined** into `tasks/get` | Merge two handlers into one |
+| `tasks/delete` | Present | **Removed** (rely on TTL) | TTL is Docket-native |
+| Creation race | `notifications/tasks/created` | **Durable-creation MUST** | One read-your-writes check away |
+| In-task input | Push relay + `_meta` tagging | **Poll**: `input_required` + `tasks/update` | Replaces the hairiest module |
+| Statuses | 7 (incl. `submitted`, `unknown`) | 5 | Shrinks a mapping table |
+| Augmentable requests | Any | **`tools/call` only** | Tools-only surface (see scope) |
+| LB routing | Unspecified | `Mcp-Name: <taskId>` header | Moot with shared Redis |
+
+**Critically: no runtime exists.** The `ext-tasks` repo is schema + prose only. The TypeScript and Python SDKs carry the wire types and conformance fixtures — no client/server implementation. The field is open.
+
+## The decision
+
+**Build it.** Two facts flip the earlier "delete and wait" call:
+
+1. **The spec is what FastMCP already implements**, minus a push relay it can now shed. The rebuild is dominated by deletion and a thin new wire adapter, not a from-scratch effort.
+2. **FastMCP is uniquely positioned.** SEP-2663 *assumes* a durable server-side store, server-minted high-entropy ids, eventual-consistency-aware creation, and multi-node routing — precisely what Docket/Redis provides. No other framework has this built.
+
+Maintaining the SEP-1686 machinery through the migration is dead weight (it's the sole reason for the `_sdk_patches.py` shim, the `TaskNotificationHandler`, and a cluster of protocol-era xfails). Rebuilding on SEP-2663 clears that debt *and* produces a flagship v4 capability with a zero-code-change migration story.
+
+## Architecture
+
+### Engine and wire split
+
+The existing code already separates cleanly along this line; the rebuild makes the boundary a package boundary.
+
+- **Removed:** the SEP-1686 wire layer — capability advertisement, the four CRUD handlers, and (the big win) the entire Redis push relay (`server/tasks/elicitation.py`, `notifications.py`), which existed only because SEP-1686 had no poll-based in-task input channel. SEP-2663's `input_required`/`tasks/update` replaces it; the request/response store survives, the push envelope does not.
+- **Kept and re-homed:** the Docket execution engine, the auth-scoped key encoding (this is our *authorization* layer for `tasks/get`/`update`/`cancel` — stronger than the spec's "taskIds may be bearer tokens"), context snapshot/restore, argument coercion, and the worker CLI. All of it is wire-agnostic.
+- **New:** a thin SEP-2663 wire adapter — capability, the `tasks/get`/`update`/`cancel` methods, and a `tools/call` interceptor that decides-and-tasks.
+
+### Packaging
+
+`fastmcp-tasks` becomes an in-repo `uv` workspace member on the `fastmcp_remote` template (own `pyproject.toml`, lockstep-versioned, re-exported through the `fastmcp` metapackage). The DX parallel with MCP Apps is exact:
+
+| Concern | MCP Apps | Background tasks |
+| --- | --- | --- |
+| Authoring flag (core) | `@mcp.tool(app=True)` | `@mcp.tool(task=True)` |
+| Optional package | `prefab-ui` | `fastmcp-tasks` |
+| Extra | `fastmcp[apps]` | `fastmcp[tasks]` |
+| Missing-package behavior | Loud install hint | Loud install hint at server build |
+
+**Core keeps only the declaration:** `task=True` / `TaskConfig` is metadata on a component, with no engine import. Everything else — engine and wire adapter — lives in the `fastmcp-tasks` package. The existing `[tasks]` extra re-points from the SEP-1686 machinery to `fastmcp-tasks`, so `pip install fastmcp[tasks]` and `task=True` keep working with modern wire underneath.
+
+Activation stays **implicit-but-loud** (the existing `require_docket()` pattern, not silent degradation): `task=True` anywhere triggers a lazy import of `fastmcp-tasks` at build time; a missing install raises immediately. A tool the author marked as a task silently running inline would be a correctness bug, not a graceful fallback.
+
+### The extension API
+
+MCP extensions (SEP-2133) are a **genuinely new abstraction in SDK v2** — they did not exist in v1. So MCP Apps hand-rolling its integration wasn't a wrong choice; it predates the tool. Today FastMCP's **server** bypasses the SDK's `Extension` class entirely (it hand-splices the `ui` capability onto the low-level server and walks tool metadata directly), while the **client** forwards `ClientExtension` natively. Every new protocol extension currently means bespoke core surgery.
+
+Tasks is the forcing function to fix that. The design adds a single registration point:
+
+```python test="skip"
+from fastmcp import FastMCP
+from fastmcp_tasks import TasksExtension
+
+mcp = FastMCP("Server")
+mcp.add_extension(TasksExtension(url="redis://..."))   # required to enable tasks
+
+
+@mcp.tool(task=True)          # intent: this tool CAN run as a task
+async def crunch(dataset: str) -> str:
+    ...
+```
+
+`add_extension` is **required** for `task=True` to work — it is not autodetected from the presence of `task=True` flags. This is deliberate. The extension needs configuration that has to live somewhere (backend URL, worker concurrency, TTL defaults), and `add_extension(TasksExtension(...))` is its natural home; autodetection would only scatter that config into settings/env and hide the moment of enablement. Requiring it also keeps capability advertisement honest — the server advertises the `tasks` capability iff the extension is registered — and removes the worst footgun, a tool silently running on an in-memory backend in production because nobody configured Redis. The two concerns stay cleanly separated: `task=True` is per-component intent ("this tool *can* be a task"); `add_extension` is server-wide enablement and config ("this server *runs* tasks, here's how"). Using `task=True` with no extension registered is a loud build-time error.
+
+The extension API contributes a negotiated capability, additive request methods, and a `tools/call` interceptor — with access to FastMCP-level constructs the SDK's `Extension` withholds (the component registry, `Context`, auth scope). It is **designed against tasks** because tasks exercises the full surface (capability + methods + interception + client claims + notifications), where Apps exercises only a subset. Apps migrates onto the extension API as a fast-follow, deleting the hand-rolled splices and confirming the design generalizes.
+
+**Extension vs. middleware** — the discriminator, so we do not over-apply this: an extension is a *negotiated contract change the client must understand*; middleware is *unilateral server behavior the client never sees*. PII detection, auth, rate limiting → [middleware](/servers/middleware). Tasks, Apps → extensions. Litmus test: delete the capability advertisement — if nothing about the client's behavior changes, it was middleware.
+
+### Client experience
+
+SEP-2663 removed the client-side "make this a task" flag — the server decides. That maps onto FastMCP's existing two-tier client surface, the **friendly** `call_tool` vs the **low-level** `call_tool_mcp`, so there is almost no new API:
+
+- **`call_tool(name, args)` (friendly)** — advertises the capability and, if the server tasks the call, **transparently drives the poll loop** and returns the finished result. Whether the server tasked it is invisible. The machinery already exists: the migration wired claim-resolution through `call_tool_mcp`'s `allow_claimed` path, so a returned `CreateTaskResult` is finished into an ordinary `CallToolResult`. In-task `input_required` routes through the client's **existing elicitation handler**, answered via `tasks/update` — so background elicitation looks identical to foreground elicitation, with zero new client API.
+- **`call_tool_mcp(...)` (low-level)** — hands back the raw `CreateTaskResult` claimed shape for callers managing the task themselves.
+- **A "return quickly" flag on the friendly interface** yields the `Task` handle (`.status()`, `.wait()`, `.cancel()`, awaitable) without blocking — the escape hatch for progress and cancellation.
+
+Server-side, `TaskConfig` modes translate directly: `required` → always task (`-32003` for non-declaring clients), `optional` → task iff the client declared, `forbidden` → never.
+
+## Sequencing
+
+1. **Design + unit-test the extension API** against tasks' full surface (capability, methods, interception, client claims/notifications) — as its own testable layer, proven in isolation with a trivial in-test extension before any tasks logic lands on it.
+2. **Build `fastmcp-tasks`** — extract the engine from the removed SEP-1686 layer, write the SEP-2663 adapter, port the client half.
+3. **Migrate MCP Apps onto the extension API** — fast-follow, off the critical path, with Apps' existing green tests as the regression net.
+
+Tasks leads because only it exercises the full API surface; leading with the Apps subset would design us into a corner. Apps becomes the second consumer that confirms generality.
+
+## Scope for v1 (non-goals)
+
+- **Polling only.** The optional `notifications/tasks` push and `subscriptions/listen` integration are deferred to a later `fastmcp-tasks` version. This lets the second Redis notification queue die rather than be ported.
+- **`tools/call` only — do not lead the spec.** SEP-2663 augments `tools/call` only. FastMCP 3 offered `task=True` on prompts and resources *ahead* of the SDK under SEP-1686, and that was a mistake: it produced wire-inexpressible capability, a permanent xfail cluster, and the sdk-feedback #3 gap. The rebuild does **not** repeat it — `task=` is a tools-only surface, and the generic prompt/resource task spine is dropped rather than carried. If the spec extends augmentation later, the surface grows with it.
+- **Ship experimental.** The `ext-tasks` schema is labeled experimental with no releases; `fastmcp-tasks` ships labeled experimental initially and revs on its own cadence when the schema moves.
+
+## Risks
+
+| Risk | Mitigation |
+| --- | --- |
+| **Spec churn** (extension is experimental) | Thin wire adapter over a wire-agnostic engine; ship experimental; SEP itself is Final, so the polling model is stable even if field names move. |
+| **Era gating** — SDK strips `capabilities.extensions` at pre-2026 negotiated versions (sdk-feedback #2) | Advertisement effectively requires the 2026-07-28 era. FastMCP 3 covers legacy tasks. **#2 now gates a flagship feature → escalate upstream.** |
+| **Co-developing a new abstraction + greenfield feature** | Build and unit-test the extension API in isolation first (step 1) before tasks logic lands on it. |
+| **Naming confusion** — `[tasks]` extra re-points under the same name | Deliberate changelog note; user code and the extra name are unchanged, only the wire modernizes. |
+
+## Design decisions (resolved)
+
+These were the open forks; the maintainer has settled them. Recorded here so the direction is unambiguous going into implementation.
+
+1. **Wire adapter location — in the `fastmcp-tasks` package.** The engine *and* the SEP-2663 wire adapter live in the package; core carries only the `task=True` declaration. This isolates the experimental schema's churn from core, at the cost of diverging from the Apps precedent (where the `ui` wire glue lives in core today — Apps will converge onto this model when it migrates to the extension API).
+2. **Extension API shape — a FastMCP-native `mcp.add_extension()`, required to enable tasks.** Chosen over a thin pass-through to the SDK's `MCPServer(extensions=...)` because the FastMCP-native API can hand extensions the `Context`, component registry, and auth scope the SDK's `Extension` withholds. `add_extension` is **required** for `task=True` (not autodetected) — it is the single home for backend config and the honest source of capability advertisement. See [The extension API](#the-extension-api).
+3. **Client default — transparent completion on the friendly interface.** `call_tool` drives the poll loop and returns the finished result; `call_tool_mcp` exposes the raw `CreateTaskResult`; a "return quickly" flag yields the `Task` handle. See [Client experience](#client-experience).
+4. **Experimental labeling — yes.** `fastmcp-tasks` ships labeled experimental for at least one minor cycle, tracking the experimental `ext-tasks` schema.
+5. **Resource/prompt spine — dropped; tools-only.** The rebuild does not lead the SDK on augmentable request types, correcting the SEP-1686-era mistake. See [Scope for v1](#scope-for-v1-non-goals).

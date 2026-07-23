@@ -123,6 +123,38 @@ class TestToolResultIsError:
         assert result.is_error is True
         assert result.content[0].text == "upstream boom"
 
+    def test_raw_call_tool_result_is_preserved(self):
+        tool = Tool.from_function(lambda: None, name="test_tool")
+        raw_result = CallToolResult(
+            content=[TextContent(type="text", text="upstream boom")],
+            structured_content={"code": 42},
+            is_error=True,
+            _meta={"source": "upstream"},
+        )
+
+        result = tool.convert_result(raw_result)
+
+        assert result.to_mcp_result() is raw_result
+
+    async def test_raw_call_tool_result_preserves_protocol_fields(self):
+        mcp = FastMCP()
+
+        raw_result = CallToolResult(
+            content=[TextContent(type="text", text="upstream boom")],
+            structured_content={"code": 42},
+            is_error=True,
+            _meta={"source": "upstream"},
+        )
+
+        @mcp.tool
+        def failing() -> CallToolResult:
+            return raw_result
+
+        async with Client(mcp) as client:
+            result = await client.call_tool_mcp("failing", {})
+
+        assert result.model_dump(by_alias=True) == raw_result.model_dump(by_alias=True)
+
 
 class TestUnionReturnTypes:
     """Tests for tools with union return types."""

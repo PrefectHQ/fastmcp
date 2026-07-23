@@ -190,6 +190,30 @@ class LifespanMixin:
             # Reset server ContextVar
             _current_server.reset(server_token)
 
+    @asynccontextmanager
+    async def _extensions_lifespan(self: FastMCP) -> AsyncIterator[None]:
+        """Enter each registered extension's lifespan, exit them on shutdown.
+
+        Extension lifespans are entered once per runtime tree, at the root. A
+        mounted child sees ``_lifespan_root_active`` set by its
+        ``FastMCPProvider`` and defers to the root, exactly as
+        ``_docket_lifespan`` does for the shared Docket: an extension whose
+        lifespan starts shared infrastructure (a task-queue backend and worker,
+        say) is therefore owned by the tree root, and mounted children reach it
+        through the same context rather than starting a second copy.
+
+        Extensions are entered in registration order; the ``AsyncExitStack``
+        exits them in reverse on teardown.
+        """
+        if _lifespan_root_active.get() or not self._extensions:
+            yield
+            return
+
+        async with AsyncExitStack() as stack:
+            for extension in self._extensions.values():
+                await stack.enter_async_context(extension.lifespan())
+            yield
+
     def _capture_shared_context(self: FastMCP) -> None:
         """Snapshot the live ``SharedContext`` ContextVar values.
 
@@ -238,6 +262,7 @@ class LifespanMixin:
         try:
             user_lifespan_result = await stack.enter_async_context(self._lifespan(self))
             await stack.enter_async_context(self._docket_lifespan())
+            await stack.enter_async_context(self._extensions_lifespan())
 
             self._lifespan_result = user_lifespan_result
             self._lifespan_result_set = True

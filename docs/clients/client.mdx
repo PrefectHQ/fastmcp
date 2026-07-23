@@ -123,7 +123,7 @@ async with client:
 
 ## Connection Lifecycle
 
-The client uses context managers for connection management. When you enter the context, the client establishes a connection and performs an MCP initialization handshake with the server. This handshake exchanges capabilities, server metadata, and instructions.
+The client uses context managers for connection management. When you enter the context, the client establishes a connection and negotiates the protocol era with the server. Metadata returned by either legacy initialization or modern discovery is exposed through the same client properties.
 
 ```python
 from fastmcp import Client, FastMCP
@@ -136,10 +136,12 @@ def greet(name: str) -> str:
     return f"Hello, {name}!"
 
 async with Client(mcp) as client:
-    # Initialization already happened automatically
-    print(f"Server: {client.initialize_result.server_info.name}")
-    print(f"Instructions: {client.initialize_result.instructions}")
-    print(f"Capabilities: {client.initialize_result.capabilities.tools}")
+    # Protocol negotiation already happened automatically
+    assert client.server_info is not None
+    assert client.server_capabilities is not None
+    print(f"Server: {client.server_info.name}")
+    print(f"Instructions: {client.instructions}")
+    print(f"Capabilities: {client.server_capabilities.tools}")
 ```
 
 For advanced scenarios where you need precise control over when initialization happens, disable automatic initialization and call `initialize()` manually:
@@ -199,12 +201,16 @@ You can also pin a specific modern protocol version to adopt it directly, withou
 client = Client("https://example.com/mcp", mode="2026-07-28")
 ```
 
-Once connected, the negotiated version and the server's advertised capabilities are available as properties. Both are populated regardless of which era was negotiated, and both are `None` while the client is disconnected.
+Once connected, the negotiated version, server identity, capabilities, and instructions are available as properties. They are populated from either the legacy `InitializeResult` or modern `DiscoverResult`, and reset to `None` when the client disconnects. `instructions` is also `None` when the server does not provide any.
+
+When you pin a modern version directly, the client skips discovery and adopts that version with minimal synthesized metadata. In that mode, `server_info` has an empty name and `instructions` is `None`.
 
 ```python
 async with Client("https://example.com/mcp", mode="auto") as client:
     print(client.protocol_version)      # e.g. "2026-07-28"
+    print(client.server_info)           # Implementation | None
     print(client.server_capabilities)   # ServerCapabilities | None
+    print(client.instructions)          # str | None
 ```
 
 <Note>

@@ -1,0 +1,92 @@
+---
+title: Examples
+sidebarTitle: Examples
+description: Example apps you can run right now.
+icon: images
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.2.0" />
+
+Each tile below is a working FastMCP server you can run with `fastmcp dev apps` or connect to from any MCP host. Source lives in `examples/apps/` in the repository.
+
+<Columns cols={2}>
+  <Tile href="#sales-dashboard" title="Sales Dashboard" description="Metrics, charts, and deal pipeline">
+    <div style={{overflow: "hidden", width: "100%"}}>
+      <img src="/apps/images/app-example-sales-dashboard.png" />
+    </div>
+  </Tile>
+  <Tile href="#system-monitor" title="System Monitor" description="Live CPU, memory, disk with auto-refresh">
+    <img src="/apps/images/app-example-system-dashboard.png" />
+  </Tile>
+  <Tile href="#quiz" title="Quiz" description="LLM-generated trivia with scoring">
+    <img src="/apps/images/app-example-quiz.png" />
+  </Tile>
+  <Tile href="#interactive-map" title="Interactive Map" description="Geocoded addresses on Leaflet">
+    <img src="/apps/images/app-example-map.png" />
+  </Tile>
+  <Tile href="/apps/providers/file-upload" title="File Upload" description="Drag-and-drop upload provider">
+    <img src="/apps/images/app-file-upload.png" />
+  </Tile>
+  <Tile href="/apps/providers/approval" title="Approval" description="Human-in-the-loop confirmation">
+    <img src="/apps/images/app-approval.png" />
+  </Tile>
+  <Tile href="/apps/providers/choice" title="Choice" description="Clickable option selection">
+    <img src="/apps/images/app-choice.png" />
+  </Tile>
+  <Tile href="/apps/providers/form" title="Form Input" description="Pydantic model forms">
+    <img src="/apps/images/app-form.png" />
+  </Tile>
+  <Tile href="/apps/generative" title="Generative UI" description="LLM writes the UI at runtime">
+    <img src="/apps/images/app-showcase.png" />
+  </Tile>
+</Columns>
+
+## Running the examples
+
+Preview any example in your browser with the dev server:
+
+```bash
+pip install "fastmcp[apps]"
+fastmcp dev apps examples/apps/sales_dashboard/sales_dashboard_server.py
+```
+
+The dev UI lets you pick a tool and fill in arguments. In a real deployment the LLM provides those arguments from conversation context — the quiz example especially shines when connected to a host like Goose or Claude Desktop, where the LLM generates the questions itself.
+
+## Standalone apps
+
+### Sales dashboard
+
+A full dashboard with KPI metrics, revenue trends, segment breakdown, and a deal pipeline table. Shows what you can build with a single `app=True` tool and Prefab's chart and data components.
+
+```bash
+fastmcp dev apps examples/apps/sales_dashboard/sales_dashboard_server.py
+```
+
+### System monitor
+
+Reads live CPU, memory, and disk stats from your machine using `psutil`. Auto-refreshes via `SetInterval` calling a backend tool, with a dropdown to control the refresh rate. The chart accumulates up to 100 data points over time.
+
+```bash
+pip install psutil
+fastmcp dev apps examples/apps/system_monitor/system_monitor_server.py
+```
+
+### Quiz
+
+The LLM generates trivia questions and passes them to the tool. The user answers via buttons, sees correct/incorrect feedback, and tracks score across questions. Demonstrates multi-turn client-side state with FastMCPApp.
+
+```bash
+fastmcp dev apps examples/apps/quiz/quiz_server.py
+```
+
+### Interactive map
+
+Accepts addresses or place names, geocodes them via OpenStreetMap Nominatim (free, no API key), and renders an interactive Leaflet map using Prefab's `Embed` component with inline HTML. A reminder that Prefab apps can break out of built-in components when they need to.
+
+```bash
+fastmcp dev apps examples/apps/map/map_server.py
+```
+
+For ready-made building blocks like approvals, choice pickers, file uploads, and Pydantic forms, see the [Providers](/apps/providers/approval) group.

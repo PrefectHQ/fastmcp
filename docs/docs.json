@@ -16,7 +16,7 @@
       "dark": "#475569",
       "light": "#1e3a5f"
     },
-    "content": "Meet [Prefect Horizon](https://prefect.io/horizon?utm_source=gofastmcp&utm_medium=docs&utm_campaign=docs_banner&utm_content=sitewide_banner), the enterprise MCP gateway built by the team behind FastMCP"
+    "content": "FastMCP 4 is in alpha — you're reading the v4 docs. [What's new](/getting-started/whats-new) · [FastMCP 3 docs](/v3/getting-started/welcome)"
   },
   "colors": {
     "dark": "#f72585",
@@ -89,7 +89,8 @@
                 "pages": [
                   "getting-started/welcome",
                   "getting-started/installation",
-                  "getting-started/quickstart"
+                  "getting-started/quickstart",
+                  "getting-started/whats-new"
                 ]
               },
               {
@@ -160,6 +161,7 @@
                       "servers/dependency-injection",
                       "servers/lifespan",
                       "servers/storage-backends",
+                      "servers/sessions",
                       "servers/tasks",
                       "servers/versioning"
                     ]
@@ -378,6 +380,7 @@
                           "development/v4-notes/index",
                           "development/v4-notes/change-register",
                           "development/v4-notes/feature-program",
+                          "development/v4-notes/background-tasks",
                           "development/v4-notes/protocol-2026",
                           "development/v4-notes/known-gaps"
                         ]
@@ -410,7 +413,10 @@
             "icon": "code"
           }
         ],
-        "version": "v3"
+        "version": "v4.0.0 (alpha 1)"
+      },
+      {
+        "$ref": "./v3-navigation.json"
       },
       {
         "$ref": "./v2-navigation.json"

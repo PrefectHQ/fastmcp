@@ -248,6 +248,9 @@ class TestPinnedMode:
         async with Client(fastmcp_server, mode=LATEST_MODERN_VERSION) as client:
             assert client.protocol_version == LATEST_MODERN_VERSION
             assert client.initialize_result is None
+            assert client.server_info is not None
+            assert client.server_info.name == ""
+            assert client.instructions is None
 
     async def test_pinned_modern_call_tool(self, fastmcp_server):
         async with Client(fastmcp_server, mode=LATEST_MODERN_VERSION) as client:
@@ -256,10 +259,20 @@ class TestPinnedMode:
 
 
 class TestConnectionProperties:
+    @pytest.mark.parametrize("mode", ["legacy", "auto"])
+    async def test_server_metadata_available_across_eras(self, mode):
+        server = FastMCP("MetadataServer", instructions="Use the metadata tools.")
+        async with Client(server, mode=mode) as client:
+            assert client.server_info is not None
+            assert client.server_info.name == "MetadataServer"
+            assert client.instructions == "Use the metadata tools."
+
     async def test_properties_none_before_connect(self, fastmcp_server):
         client = Client(fastmcp_server, mode="auto")
         assert client.protocol_version is None
         assert client.server_capabilities is None
+        assert client.server_info is None
+        assert client.instructions is None
 
     async def test_properties_none_after_disconnect(self, fastmcp_server):
         client = Client(fastmcp_server, mode="auto")
@@ -267,6 +280,8 @@ class TestConnectionProperties:
             assert client.protocol_version is not None
         assert client.protocol_version is None
         assert client.server_capabilities is None
+        assert client.server_info is None
+        assert client.instructions is None
 
 
 class TestManualNegotiation:

@@ -643,8 +643,9 @@ class Client(
         """Get the result of the initialization request.
 
         `None` on a modern (`server/discover`) connection, which negotiates via a
-        `DiscoverResult` rather than an `InitializeResult`. Use `protocol_version` /
-        `server_capabilities` for era-neutral access to the negotiated identity.
+        `DiscoverResult` rather than an `InitializeResult`. Use `protocol_version`,
+        `server_info`, `server_capabilities`, and `instructions` for era-neutral
+        access to the negotiated server metadata.
         """
         return self._session_state.initialize_result
 
@@ -667,6 +668,27 @@ class Client(
         """
         session = self._session_state.session
         return session.server_capabilities if session is not None else None
+
+    @property
+    def server_info(self) -> mcp_types.Implementation | None:
+        """The session's server identity, or `None` when disconnected.
+
+        Populated from whichever negotiation result the era produced (the
+        `InitializeResult` on legacy, the `DiscoverResult` on modern). A directly
+        pinned modern version uses a synthesized identity with an empty name.
+        """
+        session = self._session_state.session
+        return session.server_info if session is not None else None
+
+    @property
+    def instructions(self) -> str | None:
+        """The server's instructions, or `None` when absent or disconnected.
+
+        Populated from whichever negotiation result the era produced (the
+        `InitializeResult` on legacy, the `DiscoverResult` on modern).
+        """
+        session = self._session_state.session
+        return session.instructions if session is not None else None
 
     def set_roots(self, roots: RootsList | RootsHandler) -> None:
         """Set the roots for the client. This does not automatically call `send_roots_list_changed`."""
@@ -853,8 +875,9 @@ class Client(
 
         With `mode="auto"` or a pinned modern version, connect-time negotiation may adopt
         the modern `server/discover` era, which has no `InitializeResult`; in that case
-        this method raises. Read `protocol_version` / `server_capabilities` instead, or use
-        `mode="legacy"` when you need the handshake result.
+        this method raises. Read `protocol_version`, `server_info`,
+        `server_capabilities`, and `instructions` instead, or use `mode="legacy"`
+        when you need the handshake result.
 
         Args:
             timeout: Optional timeout for the initialization request (seconds or timedelta).
@@ -887,8 +910,9 @@ class Client(
         if self.initialize_result is None:
             raise RuntimeError(
                 "The client negotiated a modern protocol era (server/discover), which has "
-                "no InitializeResult. Read client.protocol_version / client.server_capabilities "
-                "instead, or construct the client with mode='legacy'."
+                "no InitializeResult. Inspect client.protocol_version, client.server_info, "
+                "client.server_capabilities, and client.instructions for the metadata "
+                "available in this mode, or construct the client with mode='legacy'."
             )
         return self.initialize_result
 
