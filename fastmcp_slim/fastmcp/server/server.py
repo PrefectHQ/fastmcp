@@ -105,6 +105,7 @@ if TYPE_CHECKING:
     from fastmcp.client.client import SDKServer
     from fastmcp.client.sampling import SamplingHandler
     from fastmcp.client.transports import ClientTransport, ClientTransportT
+    from fastmcp.server.extensions import ServerExtension
     from fastmcp.server.providers.openapi import ComponentFn as OpenAPIComponentFn
     from fastmcp.server.providers.openapi import RouteMap
     from fastmcp.server.providers.openapi import RouteMapFn as OpenAPIRouteMapFn
@@ -522,6 +523,12 @@ class FastMCP(
 
         self.middleware: list[Middleware] = list(middleware or [])
 
+        # Registered server extensions (SEP-2133), keyed by reverse-DNS
+        # identifier. Populated by add_extension; consumed by the low-level
+        # server (capability advertisement), the tool-call path (interception),
+        # and the lifespan manager (extension lifespans).
+        self._extensions: dict[str, ServerExtension] = {}
+
         if dereference_schemas:
             from fastmcp.server.middleware.dereference import (
                 DereferenceRefsMiddleware,
@@ -634,6 +641,64 @@ class FastMCP(
 
     def add_middleware(self, middleware: Middleware) -> None:
         self.middleware.append(middleware)
+
+    def add_extension(self, extension: ServerExtension) -> None:
+        """Register a server extension (SEP-2133).
+
+        An extension contributes a negotiated capability, additive request
+        methods, a `tools/call` interceptor, and an optional lifespan — each
+        with access to FastMCP-level constructs (the component registry,
+        `Context`, auth scope). Its capability is advertised only while it is
+        registered.
+
+        The extension is bound to this server (so its handlers and interceptor
+        can reach it), its method bindings are wired onto the low-level server,
+        and it is recorded for capability advertisement, interception, and
+        lifespan entry. Registering two extensions with the same identifier is
+        an error.
+        """
+        from fastmcp.server.extensions import (
+            build_method_handler,
+            validate_extension_identifier,
+        )
+
+        validate_extension_identifier(
+            extension.identifier, owner=type(extension).__name__
+        )
+        if extension.identifier in self._extensions:
+            raise ValueError(
+                f"An extension with identifier {extension.identifier!r} is "
+                "already registered."
+            )
+
+        extension._bind(self)
+        for binding in extension.methods():
+            self._mcp_server.add_request_handler(
+                binding.method,
+                binding.params_type,
+                build_method_handler(binding),
+            )
+        self._extensions[extension.identifier] = extension
+
+    def _compose_tool_call_interceptors(
+        self, call_next: CallNext[Any, Any]
+    ) -> CallNext[Any, Any]:
+        """Nest every extension's `tools/call` interceptor around ``call_next``.
+
+        Composes at the innermost point of the tool-call dispatch — after the
+        FastMCP middleware chain, before the tool body — so each interceptor is
+        the last gate before execution. First-registered extension is outermost.
+        A server with no extensions returns ``call_next`` unchanged, so there is
+        zero behaviour change.
+        """
+        from fastmcp.server.extensions import wrap_tool_call_interceptor
+
+        chain = call_next
+        for extension in reversed(list(self._extensions.values())):
+            chain = cast(
+                "CallNext[Any, Any]", wrap_tool_call_interceptor(extension, chain)
+            )
+        return chain
 
     def add_provider(self, provider: Provider, *, namespace: str = "") -> None:
         """Add a provider for dynamic tools, resources, and prompts.
@@ -1347,14 +1412,21 @@ class FastMCP(
                     method="tools/call",
                     fastmcp_context=ctx,
                 )
+                # Extension tools/call interceptors compose here, at the
+                # innermost point of dispatch: the FastMCP middleware chain wraps
+                # the whole thing (so it observes every call), and the
+                # interceptors sit between it and the tool body (so each is the
+                # last gate before execution).
                 return await self._dispatch_component_middleware(
                     context=mw_context,
-                    call_next=lambda context: self.call_tool(
-                        context.message.name,
-                        context.message.arguments or {},
-                        version=version,
-                        run_middleware=False,
-                        task_meta=task_meta,
+                    call_next=self._compose_tool_call_interceptors(
+                        lambda context: self.call_tool(
+                            context.message.name,
+                            context.message.arguments or {},
+                            version=version,
+                            run_middleware=False,
+                            task_meta=task_meta,
+                        )
                     ),
                 )
 

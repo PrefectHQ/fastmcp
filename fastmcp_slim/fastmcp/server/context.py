@@ -11,6 +11,7 @@ from logging import Logger
 from typing import Any, Literal, cast, overload
 
 import mcp_types
+from key_value.aio.errors import SerializationError
 from mcp import LoggingLevel, ServerSession
 from mcp.server.context import ServerRequestContext
 from mcp_types import (
@@ -27,7 +28,10 @@ from typing_extensions import TypeVar
 from uncalled_for import SharedContext
 
 import fastmcp
-from fastmcp.exceptions import FastMCPDeprecationWarning, ToolError
+from fastmcp.exceptions import (
+    FastMCPDeprecationWarning,
+    ToolError,
+)
 from fastmcp.resources.base import ResourceResult
 from fastmcp.server.dependencies import FastMCPRequestContext, fastmcp_request_ctx
 from fastmcp.server.elicitation import (
@@ -1453,10 +1457,10 @@ class Context:
                 value=StateValue(value=value),
                 ttl=self._STATE_TTL_SECONDS,
             )
-        except Exception as e:
-            # Catch serialization errors from Pydantic (ValueError) or
-            # the key_value library (SerializationError). Both contain
-            # "serialize" in the message. Other exceptions propagate as-is.
+        except (ValueError, SerializationError) as e:
+            # Pydantic raises PydanticSerializationError (a ValueError) and the
+            # key_value library raises SerializationError; both carry "serialize"
+            # in the message. Other ValueErrors propagate unchanged.
             if "serialize" in str(e).lower():
                 raise TypeError(
                     f"Value for state key {key!r} is not serializable. "

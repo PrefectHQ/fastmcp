@@ -500,10 +500,24 @@ class LowLevelServer(_Server[LifespanResultT]):
             protocol_version=protocol_version,
         )
 
+        # Advertise every registered extension's settings under
+        # capabilities.extensions[identifier]. The hand-rolled UI splice stays
+        # for now (MCP Apps migrates onto the extension API in a later phase);
+        # the two coexist. Advertisement is unconditional — the SDK's pre-2026
+        # version sieve strips capabilities.extensions on legacy eras, a known
+        # limitation (sdk-feedback #2).
         existing_extensions = capabilities.extensions or {}
+        registered_extensions = {
+            extension.identifier: extension.settings()
+            for extension in self.fastmcp._extensions.values()
+        }
         return capabilities.model_copy(
             update={
                 "tasks": get_task_capabilities(),
-                "extensions": {**existing_extensions, UI_EXTENSION_ID: {}},
+                "extensions": {
+                    **existing_extensions,
+                    UI_EXTENSION_ID: {},
+                    **registered_extensions,
+                },
             }
         )

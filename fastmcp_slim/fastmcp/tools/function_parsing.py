@@ -349,6 +349,26 @@ class ParsedFunction:
                 ):
                     properties[param_name]["description"] = param_desc
 
+        # Auto-populate the create-then-pass contract onto `SessionId`-annotated
+        # parameters so an agent learns it straight from the schema. Append to any
+        # author-provided description rather than clobbering it.
+        from fastmcp.server.sessions import (
+            SESSION_ID_DESCRIPTION,
+            session_id_parameter_names,
+        )
+
+        properties = input_schema.get("properties", {})
+        for param_name in session_id_parameter_names(fn):
+            if param_name not in properties:
+                continue
+            existing = properties[param_name].get("description")
+            if not existing:
+                properties[param_name]["description"] = SESSION_ID_DESCRIPTION
+            elif SESSION_ID_DESCRIPTION not in existing:
+                properties[param_name]["description"] = (
+                    f"{existing}\n\n{SESSION_ID_DESCRIPTION}"
+                )
+
         output_schema = None
         # Get the return annotation from the signature
         sig = inspect.signature(fn)
@@ -391,6 +411,13 @@ class ParsedFunction:
             # ToolResult subclasses should suppress schema generation just
             # like ToolResult itself — replace_type only does exact matching.
             if is_class_member_of_type(output_type, ToolResult):
+                output_type = _UnserializableType
+
+            # A bare CallToolResult gives the tool full protocol-level control
+            # over its response, so there is no FastMCP output schema to infer.
+            if isinstance(output_type, type) and issubclass(
+                output_type, mcp_types.CallToolResult
+            ):
                 output_type = _UnserializableType
 
             # If InputRequiredResult survives stripping in any wrapping — bare,

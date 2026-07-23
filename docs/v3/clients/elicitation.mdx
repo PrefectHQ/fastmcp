@@ -1,0 +1,138 @@
+---
+title: User Elicitation
+sidebarTitle: Elicitation
+description: Handle server requests for structured user input.
+icon: message-question
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx";
+
+<VersionBadge version="2.10.0" />
+
+Use this when you need to respond to server requests for user input during tool execution.
+
+Elicitation allows MCP servers to request structured input from users during operations. Instead of requiring all inputs upfront, servers can interactively ask for missing parameters, request clarification, or gather additional context.
+
+## Handler Template
+
+```python
+from fastmcp import Client
+from fastmcp.client.elicitation import ElicitResult, ElicitRequestParams, RequestContext
+
+async def elicitation_handler(
+    message: str,
+    response_type: type | None,
+    params: ElicitRequestParams,
+    context: RequestContext
+) -> ElicitResult | object:
+    """
+    Handle server requests for user input.
+
+    Args:
+        message: The prompt to display to the user
+        response_type: Python dataclass type for the response (None if no data expected)
+        params: Original MCP elicitation parameters including raw JSON schema
+        context: Request context with metadata
+
+    Returns:
+        - Data directly (implicitly accepts the elicitation)
+        - ElicitResult for explicit control over the action
+    """
+    # Present the message and collect input
+    user_input = input(f"{message}: ")
+
+    if not user_input:
+        return ElicitResult(action="decline")
+
+    # Create response using the provided dataclass type
+    return response_type(value=user_input)
+
+client = Client(
+    "my_mcp_server.py",
+    elicitation_handler=elicitation_handler,
+)
+```
+
+## How It Works
+
+When a server needs user input, it sends an elicitation request with a message prompt and a JSON schema describing the expected response structure. FastMCP automatically converts this schema into a Python dataclass type, making it easy to construct properly typed responses without manually parsing JSON schemas.
+
+The handler receives four parameters:
+
+<Card icon="code" title="Handler Parameters">
+<ResponseField name="message" type="str">
+  The prompt message to display to the user
+</ResponseField>
+
+<ResponseField name="response_type" type="type | None">
+  A Python dataclass type that FastMCP created from the server's JSON schema. Use this to construct your response with proper typing. If the server requests an empty object, this will be `None`.
+</ResponseField>
+
+<ResponseField name="params" type="ElicitRequestParams">
+  The original MCP elicitation parameters, including the raw JSON schema in `params.requestedSchema`
+</ResponseField>
+
+<ResponseField name="context" type="RequestContext">
+  Request context containing metadata about the elicitation request
+</ResponseField>
+</Card>
+
+## Response Actions
+
+You can return data directly, which implicitly accepts the elicitation:
+
+```python
+async def elicitation_handler(message, response_type, params, context):
+    user_input = input(f"{message}: ")
+    return response_type(value=user_input)  # Implicit accept
+```
+
+Or return an `ElicitResult` for explicit control over the action:
+
+```python
+from fastmcp.client.elicitation import ElicitResult
+
+async def elicitation_handler(message, response_type, params, context):
+    user_input = input(f"{message}: ")
+
+    if not user_input:
+        return ElicitResult(action="decline")  # User declined
+
+    if user_input == "cancel":
+        return ElicitResult(action="cancel")   # Cancel entire operation
+
+    return ElicitResult(
+        action="accept",
+        content=response_type(value=user_input)
+    )
+```
+
+**Action types:**
+- **`accept`**: User provided valid input. Include the data in the `content` field.
+- **`decline`**: User chose not to provide the requested information. Omit `content`.
+- **`cancel`**: User cancelled the entire operation. Omit `content`.
+
+## Example
+
+A file management tool might ask which directory to create:
+
+```python
+from fastmcp import Client
+from fastmcp.client.elicitation import ElicitResult
+
+async def elicitation_handler(message, response_type, params, context):
+    print(f"Server asks: {message}")
+
+    user_response = input("Your response: ")
+
+    if not user_response:
+        return ElicitResult(action="decline")
+
+    # Use the response_type dataclass to create a properly structured response
+    return response_type(value=user_response)
+
+client = Client(
+    "my_mcp_server.py",
+    elicitation_handler=elicitation_handler
+)
+```

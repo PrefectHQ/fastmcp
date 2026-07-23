@@ -1,0 +1,1481 @@
+---
+title: v3.0 Feature Tracking
+---
+
+This document tracks major features in FastMCP v3.0 for release notes preparation.
+
+## 3.0.0rc1
+
+### SamplingTool Conversion Helpers
+
+Server tools (FunctionTool and TransformedTool) can now be passed directly to sampling methods via `SamplingTool.from_callable_tool()` ([#3062](https://github.com/PrefectHQ/fastmcp/pull/3062)). Previously, tools defined with `@mcp.tool` had to be recreated as functions for use in `ctx.sample()`. Now `ctx.sample()` and `ctx.sample_step()` accept these tool instances directly.
+
+```python
+@mcp.tool
+def search(query: str) -> str:
+    """Search the web."""
+    return do_search(query)
+
+# Use tool directly in sampling
+result = await ctx.sample(
+    "Research Python frameworks",
+    tools=[search]  # FunctionTool works directly!
+)
+```
+
+### Google GenAI Sampling Handler
+
+FastMCP now includes a sampling handler for Google's Gemini models ([#2977](https://github.com/jlowin/fastmcp/pull/2977)). This enables MCP clients to use Google's GenAI models with the sampling protocol, including full tool calling support.
+
+```python
+from fastmcp import Client
+from fastmcp.client.sampling.handlers.google_genai import GoogleGenaiSamplingHandler
+from google.genai import Client as GoogleGenaiClient
+
+# Initialize the handler
+handler = GoogleGenaiSamplingHandler(
+    default_model="gemini-2.0-flash-exp",
+    client=GoogleGenaiClient(),  # Optional - creates one if not provided
+)
+
+# Use with MCP sampling (handler is configured at Client construction)
+async with Client("http://server/mcp", sampling_handler=handler) as client:
+    result = await client.sample(
+        messages=[...],
+        tools=[...],
+    )
+```
+
+Key features:
+- Converts MCP tool schemas to Google's function calling format
+- Supports all Google GenAI models that implement function calling
+- Handles nullable types, nested objects, and arrays in tool schemas
+- Properly maps tool choices (`auto`, `required`, `none`) to Google's configuration
+- Preserves model preferences from MCP sampling parameters
+
+The handler joins the existing Anthropic and OpenAI handlers, providing a consistent interface for model-agnostic sampling across providers.
+
+### Concurrent Tool Execution in Sampling
+
+When an LLM returns multiple tool calls in a single sampling response, they can now be executed concurrently ([#3022](https://github.com/PrefectHQ/fastmcp/pull/3022)). Default behavior remains sequential; opt in with `tool_concurrency`. Tools can declare `sequential=True` to force sequential execution even when concurrency is enabled.
+
+```python
+result = await context.sample(
+    messages="Fetch weather for NYC and LA",
+    tools=[fetch_weather],
+    tool_concurrency=0,  # Unlimited parallel execution
+)
+```
+
+### OpenAPI `validate_output` Option
+
+`OpenAPIProvider` and `FastMCP.from_openapi()` now accept `validate_output=False` to skip output schema validation ([#3134](https://github.com/PrefectHQ/fastmcp/pull/3134)). Useful when backends don't conform to their own OpenAPI response schemas — structured JSON still flows through, only the strict schema checking is disabled.
+
+```python
+mcp = FastMCP.from_openapi(
+    openapi_spec=spec,
+    client=client,
+    validate_output=False,
+)
+```
+
+### Auth Token Injection and Azure OBO Dependencies
+
+New dependency injection for accessing the authenticated user's token directly in tool parameters ([#2918](https://github.com/PrefectHQ/fastmcp/pull/2918)). Works with any auth provider.
+
+```python
+from fastmcp.server.dependencies import CurrentAccessToken, TokenClaim
+from fastmcp.server.auth import AccessToken
+
+@mcp.tool()
+async def my_tool(
+    token: AccessToken = CurrentAccessToken,
+    user_id: str = TokenClaim("oid"),
+): ...
+```
+
+For Azure/Entra, the new `fastmcp[azure]` extra adds `EntraOBOToken`, which handles the On-Behalf-Of token exchange declaratively:
+
+```python
+from fastmcp.server.auth.providers.azure import EntraOBOToken
+
+@mcp.tool()
+async def get_emails(
+    graph_token: str = EntraOBOToken(["https://graph.microsoft.com/Mail.Read"]),
+):
+    # graph_token is ready — OBO exchange happened automatically
+    ...
+```
+
+### `generate-cli` Agent Skill Generation
+
+`fastmcp generate-cli` now produces a `SKILL.md` alongside the CLI script ([#3115](https://github.com/PrefectHQ/fastmcp/pull/3115)) — a Claude Code agent skill with pre-computed invocation syntax for every tool. Agents reading the skill can call tools immediately without running `--help`. On by default; pass `--no-skill` to opt out.
+
+### Background Task Notification Queue
+
+Background tasks now use a distributed Redis notification queue for reliable delivery ([#2906](https://github.com/PrefectHQ/fastmcp/pull/2906)). Elicitation switches from polling to BLPOP (single blocking call instead of ~7,200 round-trips/hour), and notification delivery retries up to 3x with TTL-based expiration.
+
+### Async Auth Checks
+
+Auth check functions can now be `async`, enabling authorization decisions that depend on asynchronous operations like reading server state via `Context.get_state` or calling external services ([#3150](https://github.com/PrefectHQ/fastmcp/issues/3150)). Sync and async checks can be freely mixed. Previously, passing an async function as an auth check would silently pass (coroutine objects are truthy).
+
+### Optional `$ref` Dereferencing in Schemas
+
+Schema `$ref` dereferencing — which inlines all `$defs` for compatibility with MCP clients that don't handle `$ref` — is now controlled by the `dereference_schemas` constructor kwarg ([#3141](https://github.com/PrefectHQ/fastmcp/issues/3141)). Default is `True` (dereference on) because the non-compliant clients are popular and the failure mode is silent breakage that server authors can't diagnose. Opt out when you know your clients handle `$ref` and want smaller schemas:
+
+```python
+mcp = FastMCP("my-server", dereference_schemas=False)
+```
+
+Dereferencing is implemented as middleware (`DereferenceRefsMiddleware`) that runs at serve-time, so schemas are stored with `$ref` intact and only inlined when sent to clients.
+
+### Breaking: Deprecated `FastMCP()` Constructor Kwargs Removed
+
+Sixteen deprecated keyword arguments have been removed from `FastMCP.__init__`. Passing any of them now raises `TypeError` with a migration hint. Environment variables (e.g., `FASTMCP_HOST`) continue to work — only the constructor kwargs moved.
+
+**Transport/server settings** (`host`, `port`, `log_level`, `debug`, `sse_path`, `message_path`, `streamable_http_path`, `json_response`, `stateless_http`): Pass to `run()`, `run_http_async()`, or `http_app()` as appropriate, or set via environment variables.
+
+```python
+# Before
+mcp = FastMCP("server", host="0.0.0.0", port=8080)
+mcp.run()
+
+# After
+mcp = FastMCP("server")
+mcp.run(transport="http", host="0.0.0.0", port=8080)
+```
+
+**Duplicate handling** (`on_duplicate_tools`, `on_duplicate_resources`, `on_duplicate_prompts`): Use the unified `on_duplicate=` parameter.
+
+**Tag filtering** (`include_tags`, `exclude_tags`): Use `server.enable(tags=..., only=True)` and `server.disable(tags=...)` after construction.
+
+**Tool serializer** (`tool_serializer`): Return `ToolResult` from tools instead.
+
+**Tool transformations** (`tool_transformations`): Use `server.add_transform(ToolTransform(...))` after construction.
+
+The `_deprecated_settings` attribute and `.settings` property are also removed. `ExperimentalSettings` has been deleted (dead code).
+
+### Breaking: `ui=` Renamed to `app=`
+
+The MCP Apps decorator parameter has been renamed from `ui=ToolUI(...)` / `ui=ResourceUI(...)` to `app=AppConfig(...)` ([#3117](https://github.com/PrefectHQ/fastmcp/pull/3117)). `ToolUI` and `ResourceUI` are consolidated into a single `AppConfig` class. Wire format is unchanged. See the MCP Apps section under beta2 for full details.
+## 3.0.0beta2
+
+### CLI: `fastmcp list` and `fastmcp call`
+
+New client-side CLI commands for querying and invoking tools on any MCP server — remote URLs, local Python files, MCPConfig JSON, or arbitrary stdio commands. Especially useful for giving LLMs that don't have built-in MCP support access to MCP tools via shell commands.
+
+```bash
+# Discover tools on a server
+fastmcp list http://localhost:8000/mcp
+fastmcp list server.py
+fastmcp list --command 'npx -y @modelcontextprotocol/server-github'
+
+# Call a tool
+fastmcp call server.py greet name=World
+fastmcp call http://localhost:8000/mcp search query=hello limit=5
+fastmcp call server.py create_item '{"name": "Widget", "tags": ["a", "b"]}'
+```
+
+Key features:
+- Tool arguments are auto-coerced using the tool's JSON schema (`limit=5` → int)
+- Single JSON objects work as positional args alongside `key=value` and `--input-json`
+- `--input-schema` / `--output-schema` for full JSON schemas, `--json` for machine-readable output
+- `--transport sse` for SSE servers, `--command` for stdio servers
+- Auto OAuth for HTTP targets (no-ops if server doesn't require auth)
+- Fuzzy tool name matching suggests alternatives on typos
+- Interactive terminal elicitation for tools that request user input mid-execution
+
+Documentation: [CLI Querying](/cli/client)
+
+### CLI: `fastmcp discover` and name-based resolution
+
+`fastmcp discover` scans editor configs (Claude Desktop, Claude Code, Cursor, Gemini CLI, Goose) and project-level `mcp.json` files for MCP server definitions. Discovered servers can be referenced by name — or `source:name` for precision — in `fastmcp list` and `fastmcp call`.
+
+```bash
+# See all configured servers
+fastmcp discover
+
+# Use a server by name
+fastmcp list weather
+fastmcp call weather get_forecast city=London
+
+# Target a specific source with source:name
+fastmcp list claude-code:my-server
+fastmcp call cursor:weather get_forecast city=London
+
+# Filter discovery to specific sources
+fastmcp discover --source claude-code --source cursor
+```
+
+Documentation: [CLI Querying](/cli/client)
+
+### CLI: Expanded Reload File Watching
+
+The `--reload` flag now watches a comprehensive set of file types, making it suitable for MCP apps with frontend bundles ([#3028](https://github.com/PrefectHQ/fastmcp/pull/3028)). Previously limited to `.py` files, it now watches JavaScript, TypeScript, HTML, CSS, config files, and media assets.
+
+### CLI: fastmcp install stdio
+
+The new `fastmcp install stdio` command generates full `uv run` commands for running FastMCP servers over stdio ([#3032](https://github.com/PrefectHQ/fastmcp/pull/3032)).
+
+```bash
+# Generate command for a server
+fastmcp install stdio server.py
+
+# Outputs:
+# uv run --directory /path/to/project fastmcp run server.py
+```
+
+The command automatically detects the project directory and generates the appropriate `uv run` invocation, making it easy to integrate FastMCP servers with MCP clients.
+
+### CIMD (Client ID Metadata Documents)
+
+CIMD provides an alternative to Dynamic Client Registration for OAuth-authenticated MCP servers. Instead of registering with each server dynamically, clients host a static JSON document at an HTTPS URL. That URL becomes the client's `client_id`, and servers verify identity through domain ownership.
+
+**Client usage:**
+
+```python
+from fastmcp import Client
+from fastmcp.client.auth import OAuth
+
+async with Client(
+    "https://mcp-server.example.com/mcp",
+    auth=OAuth(
+        client_metadata_url="https://myapp.example.com/oauth/client.json",
+    ),
+) as client:
+    await client.ping()
+```
+
+The `OAuth` helper now supports deferred binding — `mcp_url` is optional when using `OAuth` with `Client(auth=...)`, since the transport provides the server URL automatically.
+
+**CLI tools for document management:**
+
+```bash
+# Generate a CIMD document
+fastmcp auth cimd create --name "My App" \
+  --redirect-uri "http://localhost:*/callback" \
+  --client-id "https://myapp.example.com/oauth/client.json" \
+  --output client.json
+
+# Validate a hosted document
+fastmcp auth cimd validate https://myapp.example.com/oauth/client.json
+```
+
+**Server-side support:**
+
+CIMD is enabled by default on `OAuthProxy` and its provider subclasses (GitHub, Google, etc.). The server-side implementation includes SSRF-hardened document fetching with DNS pinning, dual redirect URI validation (both CIMD document patterns and proxy patterns must match), HTTP cache-aware revalidation, and `private_key_jwt` assertion validation for clients that need stronger authentication than public client auth.
+
+Key details:
+- CIMD URLs must be HTTPS with a non-root path
+- `token_endpoint_auth_method` limited to `none` or `private_key_jwt` (no shared secrets)
+- `redirect_uris` in CIMD documents support wildcard port patterns (`http://localhost:*/callback`)
+- Servers fetch and cache documents with standard HTTP caching (ETag, Last-Modified, Cache-Control)
+- CIMD is a protocol-level feature — any auth provider implementing the spec can support it
+
+Documentation: [CIMD Authentication](/clients/auth/cimd), [OAuth Proxy CIMD config](/servers/auth/oauth-proxy#cimd-support)
+
+### Pre-Registered OAuth Clients
+
+The `OAuth` client helper now accepts `client_id` and `client_secret` parameters for servers where the client is already registered ([#3086](https://github.com/PrefectHQ/fastmcp/pull/3086)). This bypasses Dynamic Client Registration entirely — useful when DCR is disabled, or when the server has pre-provisioned credentials for your application.
+
+```python
+from fastmcp import Client
+from fastmcp.client.auth import OAuth
+
+async with Client(
+    "https://mcp-server.example.com/mcp",
+    auth=OAuth(
+        client_id="my-registered-app",
+        client_secret="my-secret",
+        scopes=["read", "write"],
+    ),
+) as client:
+    await client.ping()
+```
+
+The static credentials are injected before the OAuth flow begins, so the client never attempts DCR. If the server rejects the credentials, the error surfaces immediately rather than retrying with fresh registration (which can't help for fixed credentials). Public clients can omit `client_secret`.
+
+Documentation: [Pre-Registered Clients](/clients/auth/oauth#pre-registered-clients)
+
+### CLI: `fastmcp generate-cli`
+
+`fastmcp generate-cli` connects to any MCP server, reads its tool schemas, and writes a standalone Python CLI script where every tool becomes a typed subcommand with flags, help text, and tab completion ([#3065](https://github.com/PrefectHQ/fastmcp/pull/3065)). The insight is that MCP tool schemas already contain everything a CLI framework needs — parameter names, types, descriptions, required/optional status — so the generator maps JSON Schema directly into [cyclopts](https://cyclopts.readthedocs.io/) commands.
+
+```bash
+# Generate from any server spec
+fastmcp generate-cli weather
+fastmcp generate-cli http://localhost:8000/mcp
+fastmcp generate-cli server.py my_weather_cli.py
+
+# Use the generated script
+python my_weather_cli.py call-tool get_forecast --city London --days 3
+python my_weather_cli.py list-tools
+python my_weather_cli.py read-resource docs://readme
+```
+
+The generated script embeds the resolved transport (URL or stdio command), so it's self-contained — users don't need to know about MCP or FastMCP to use it. Supports `-f` to overwrite existing files, and name-based resolution via `fastmcp discover`.
+
+Documentation: [Generate CLI](/cli/generate-cli)
+
+### CLI: Goose Integration
+
+New `fastmcp install goose` command that generates a `goose://extension?...` deeplink URL and opens it, prompting Goose to install the server as a STDIO extension ([#3040](https://github.com/PrefectHQ/fastmcp/pull/3040)). Goose requires `uvx` rather than `uv run`, so the command builds the appropriate invocation automatically.
+
+```bash
+fastmcp install goose server.py
+fastmcp install goose server.py --with pandas --python 3.11
+```
+
+Also adds a full integration guide at [Goose Integration](/integrations/goose).
+
+### ResponseLimitingMiddleware
+
+New middleware for controlling tool response sizes, preventing large outputs from overwhelming LLM context windows ([#3072](https://github.com/PrefectHQ/fastmcp/pull/3072)). Text responses are truncated at UTF-8 character boundaries; structured responses (tools with `output_schema`) raise `ToolError` since truncation would corrupt the schema.
+
+```python
+from fastmcp.server.middleware.response_limiting import ResponseLimitingMiddleware
+
+# Limit all tool responses to 500KB
+mcp.add_middleware(ResponseLimitingMiddleware(max_size=500_000))
+
+# Limit only specific tools, raise errors instead of truncating
+mcp.add_middleware(ResponseLimitingMiddleware(
+    max_size=100_000,
+    tools=["search", "fetch_data"],
+    raise_on_unstructured=True,
+))
+```
+
+Key features:
+- Configurable size limit (default 1MB)
+- Tool-specific filtering via `tools` parameter
+- Size metadata added to result's `meta` field for monitoring
+- Configurable `raise_on_structured` and `raise_on_unstructured` behavior
+
+Documentation: [Middleware](/servers/middleware)
+
+### Background Task Context (SEP-1686)
+
+`Context` now works transparently in background tasks running in Docket workers ([#2905](https://github.com/PrefectHQ/fastmcp/pull/2905)). Previously, tools running as background tasks couldn't use `ctx.elicit()` because there was no active request context. Now, when a tool executes in a Docket worker, `Context` detects this via its `task_id` and routes elicitation through Redis-based coordination: the task sets its status to `input_required`, sends a `notifications/tasks/updated` notification with elicitation metadata, and waits for the client to respond via `tasks/sendInput`.
+
+```python
+@mcp.tool(task=True)
+async def interactive_task(ctx: Context) -> str:
+    # Works transparently in both foreground and background task modes
+    result = await ctx.elicit("Please provide additional input", str)
+
+    if isinstance(result, AcceptedElicitation):
+        return f"You provided: {result.data}"
+    else:
+        return "Elicitation was declined or cancelled"
+```
+
+`ctx.is_background_task` and `ctx.task_id` are available for tools that need to branch on execution mode.
+
+### `require_auth` Removed
+
+The `require_auth` authorization check introduced in beta1 has been removed in favor of scope-based authorization via `require_scopes` ([#3103](https://github.com/PrefectHQ/fastmcp/pull/3103)). Since configuring an `AuthProvider` already rejects unauthenticated requests at the transport level, `require_auth` was redundant — `require_scopes` provides the same guarantee with better granularity. The beta1 Component Authorization section has been updated to reflect this.
+
+### MCP Apps (SDK Compatibility)
+
+Support for [MCP Apps](https://modelcontextprotocol.io/specification/2025-06-18/server/apps) — the spec extension that lets MCP servers deliver interactive UIs via sandboxed iframes. Extension negotiation, typed UI metadata on tools and resources, and the `ui://` resource scheme. No component DSL, renderer, or `FastMCPApp` class yet — those are future phases.
+
+**Breaking change from beta 2:** The `ui=` parameter on `@mcp.tool()` and `@mcp.resource()` has been renamed to `app=`, and the `ToolUI`/`ResourceUI` classes have been consolidated into a single `AppConfig` class. This follows the established `task=True`/`TaskConfig` pattern. The wire format (`meta["ui"]`, `_meta.ui`) is unchanged.
+
+**Registering tools with app metadata:**
+
+```python
+from fastmcp import FastMCP
+from fastmcp.apps import AppConfig, ResourceCSP, ResourcePermissions
+
+mcp = FastMCP("My Server")
+
+# Register the HTML bundle as a ui:// resource with CSP
+@mcp.resource(
+    "ui://my-app/view.html",
+    app=AppConfig(
+        csp=ResourceCSP(resource_domains=["https://unpkg.com"]),
+        permissions=ResourcePermissions(clipboard_write={}),
+    ),
+)
+def app_html() -> str:
+    from pathlib import Path
+    return Path("./dist/index.html").read_text()
+
+# Tool with UI — clients render an iframe alongside the result
+@mcp.tool(app=AppConfig(resource_uri="ui://my-app/view.html"))
+async def list_users() -> list[dict]:
+    return [{"id": "1", "name": "Alice"}]
+
+# App-only tool — visible to the UI but hidden from the model
+@mcp.tool(app=AppConfig(resource_uri="ui://my-app/view.html", visibility=["app"]))
+async def delete_user(id: str) -> dict:
+    return {"deleted": True}
+```
+
+The `app=` parameter accepts `True` (enable with defaults), an `AppConfig` instance, or a raw dict for forward compatibility. It merges into `meta["ui"]` — alongside any other metadata you set.
+
+**`ui://` resources** automatically get the correct MIME type (`text/html;profile=mcp-app`) unless you override it explicitly.
+
+**Extension negotiation**: The server advertises `io.modelcontextprotocol/ui` in `capabilities.extensions`. UI metadata (`_meta.ui`) always flows through to clients — the MCP Apps spec assigns visibility enforcement to the host, not the server. Tools can check whether the connected client supports a given extension at runtime via `ctx.client_supports_extension()`:
+
+```python
+from fastmcp import Context
+from fastmcp.apps import AppConfig, UI_EXTENSION_ID
+
+@mcp.tool(app=AppConfig(resource_uri="ui://dashboard"))
+async def dashboard(ctx: Context) -> dict:
+    data = compute_dashboard()
+    if ctx.client_supports_extension(UI_EXTENSION_ID):
+        return data
+    return {"summary": format_text(data)}
+```
+
+**Key details:**
+- `AppConfig` fields: `resource_uri`, `visibility`, `csp`, `permissions`, `domain`, `prefers_border` (all optional). On resources, `resource_uri` and `visibility` are validated as not-applicable and will raise `ValueError` if set.
+- `csp` accepts a `ResourceCSP` model with structured domain lists: `connect_domains`, `resource_domains`, `frame_domains`, `base_uri_domains`
+- `permissions` accepts a `ResourcePermissions` model: `camera`, `microphone`, `geolocation`, `clipboard_write` (each set to `{}` to request)
+- `AppConfig` uses `extra="allow"` for forward compatibility with future spec additions
+- Models use Pydantic aliases for wire format (`resourceUri`, `prefersBorder`, `connectDomains`, `clipboardWrite`)
+- Resource metadata (including CSP/permissions) is propagated to `resources/read` response content items so hosts can read it when rendering the iframe
+- `ctx.client_supports_extension(id)` is a general-purpose method — works for any extension, not just MCP Apps
+- `structuredContent` in tool results already works via `ToolResult` — MCP Apps clients use this to pass data into the iframe
+- The server does not strip `_meta.ui` for non-UI clients; per the spec, visibility enforcement is the host's responsibility
+
+**Future phases** will add a component DSL for building UIs declaratively, an in-repo renderer, and a `FastMCPApp` class.
+
+Implementation: `fastmcp_slim/fastmcp/server/apps.py` (models and constants), with integration points in `server.py` (decorator parameters), `low_level.py` (extension advertisement), and `context.py` (`client_supports_extension` method).
+
+---
+
+## 3.0.0beta1
+
+### Provider-Based Architecture
+
+v3.0 introduces a provider-based component system that replaces v2's static-only registration ([#2622](https://github.com/PrefectHQ/fastmcp/pull/2622)). Providers dynamically source tools, resources, templates, and prompts at runtime.
+
+**Core abstraction** (`fastmcp_slim/fastmcp/server/providers/base.py`):
+```python
+class Provider:
+    async def list_tools(self) -> Sequence[Tool]: ...
+    async def get_tool(self, name: str) -> Tool | None: ...
+    async def list_resources(self) -> Sequence[Resource]: ...
+    async def get_resource(self, uri: str) -> Resource | None: ...
+    async def list_resource_templates(self) -> Sequence[ResourceTemplate]: ...
+    async def get_resource_template(self, uri: str) -> ResourceTemplate | None: ...
+    async def list_prompts(self) -> Sequence[Prompt]: ...
+    async def get_prompt(self, name: str) -> Prompt | None: ...
+```
+
+Providers support:
+- **Lifecycle management**: `async def lifespan()` for setup/teardown
+- **Visibility control**: `enable()` / `disable()` with name, version, tags, components, and allowlist mode
+- **Transform stacking**: `provider.add_transform(Namespace(...))`, `provider.add_transform(ToolTransform(...))`
+
+### LocalProvider
+
+`LocalProvider` (`fastmcp_slim/fastmcp/server/providers/local_provider.py`) manages components registered via decorators. Can be used standalone and attached to multiple servers:
+
+```python
+from fastmcp.server.providers import LocalProvider
+
+provider = LocalProvider()
+
+@provider.tool
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+# Attach to multiple servers
+server1 = FastMCP("Server1", providers=[provider])
+server2 = FastMCP("Server2", providers=[provider])
+```
+
+### ProxyProvider
+
+`ProxyProvider` (`fastmcp_slim/fastmcp/server/providers/proxy.py`) proxies components from remote MCP servers via a client factory. Used by `create_proxy()` and `FastMCP.mount()` for remote server integration.
+
+```python
+from fastmcp.server import create_proxy
+
+# Create proxy to remote server
+server = create_proxy("http://remote-server/mcp")
+```
+
+### OpenAPIProvider
+
+`OpenAPIProvider` (`fastmcp_slim/fastmcp/server/providers/openapi/provider.py`) creates MCP components from OpenAPI specifications. Routes map HTTP operations to tools, resources, or templates based on configurable rules.
+
+```python
+from fastmcp.server.providers.openapi import OpenAPIProvider
+import httpx
+
+client = httpx.AsyncClient(base_url="https://api.example.com")
+provider = OpenAPIProvider(openapi_spec=spec, client=client)
+
+mcp = FastMCP("API Server", providers=[provider])
+```
+
+Features:
+- Automatic route-to-component mapping (GET → resource, POST/PUT/DELETE → tool)
+- Custom route mappings via `route_maps` or `route_map_fn`
+- Component customization via `mcp_component_fn`
+- Name collision detection and handling
+
+### FastMCPProvider
+
+`FastMCPProvider` (`fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py`) wraps a FastMCP server to enable mounting one server onto another. Components delegate execution through the wrapped server's middleware chain.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.providers import FastMCPProvider
+from fastmcp.server.transforms import Namespace
+
+main = FastMCP("Main")
+sub = FastMCP("Sub")
+
+@sub.tool
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+# Mount with namespace
+provider = FastMCPProvider(sub)
+provider.add_transform(Namespace("sub"))
+main.add_provider(provider)
+# Tool accessible as "sub_greet"
+```
+
+### Transforms
+
+Transforms modify components (tools, resources, prompts) as they flow from providers to clients ([#2836](https://github.com/PrefectHQ/fastmcp/pull/2836)). They use a middleware pattern where each transform receives a `call_next` callable to continue the chain.
+
+**Built-in transforms** (`fastmcp_slim/fastmcp/server/transforms/`):
+
+- `Namespace` - adds prefixes to names (`tool` → `api_tool`) and path segments to URIs (`data://x` → `data://api/x`)
+- `ToolTransform` - modifies tool schemas (rename, description, tags, argument transforms)
+- `Visibility` - sets visibility state on components by key or tag (backs `enable()`/`disable()` API)
+- `VersionFilter` - filters components by version range (`version_gte`, `version_lt`)
+- `ResourcesAsTools` - exposes resources as tools for tool-only clients
+- `PromptsAsTools` - exposes prompts as tools for tool-only clients
+
+```python
+from fastmcp.server.transforms import Namespace, ToolTransform
+from fastmcp.tools.tool_transform import ToolTransformConfig
+
+provider = SomeProvider()
+provider.add_transform(Namespace("api"))
+provider.add_transform(ToolTransform({
+    "api_verbose_tool_name": ToolTransformConfig(name="short")
+}))
+
+# Stacking composes transformations
+# "foo" → "api_foo" (namespace) → "short" (rename)
+```
+
+**Custom transforms** subclass `Transform` and override needed methods:
+
+```python
+from collections.abc import Sequence
+from fastmcp.server.transforms import Transform, GetToolNext
+from fastmcp.tools import Tool
+
+class TagFilter(Transform):
+    def __init__(self, required_tags: set[str]):
+        self.required_tags = required_tags
+
+    async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
+        return [t for t in tools if t.tags & self.required_tags]
+
+    async def get_tool(self, name: str, call_next: GetToolNext) -> Tool | None:
+        tool = await call_next(name)
+        return tool if tool and tool.tags & self.required_tags else None
+```
+
+Transforms apply at two levels:
+- **Provider-level**: `provider.add_transform()` - affects only that provider's components
+- **Server-level**: `server.add_transform()` - affects all components from all providers
+
+Documentation: `docs/servers/transforms/transforms.mdx`, `docs/servers/visibility.mdx`
+
+### ResourcesAsTools and PromptsAsTools
+
+These transforms expose resources and prompts as tools for clients that only support the tools protocol. Each transform generates two tools that provide listing and access functionality.
+
+**ResourcesAsTools** generates `list_resources` and `read_resource` tools:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.transforms import ResourcesAsTools
+
+mcp = FastMCP("Server")
+
+@mcp.resource("data://config")
+def get_config() -> dict:
+    return {"setting": "value"}
+
+mcp.add_transform(ResourcesAsTools(mcp))
+# Now has list_resources and read_resource tools
+```
+
+The `list_resources` tool returns JSON with resource metadata. The `read_resource` tool accepts a URI and returns the resource content, preserving both text and binary data through base64 encoding.
+
+**PromptsAsTools** generates `list_prompts` and `get_prompt` tools:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.transforms import PromptsAsTools
+
+mcp = FastMCP("Server")
+
+@mcp.prompt
+def analyze_code(code: str, language: str = "python") -> str:
+    return f"Analyze this {language} code:\n{code}"
+
+mcp.add_transform(PromptsAsTools(mcp))
+# Now has list_prompts and get_prompt tools
+```
+
+The `list_prompts` tool returns JSON with prompt metadata including argument information. The `get_prompt` tool accepts a prompt name and optional arguments dict, returning the rendered prompt as a messages array. Non-text content (like embedded resources) is preserved as structured JSON.
+
+Both transforms:
+- Capture a provider reference at construction for deferred querying
+- Route through `FastMCP.read_resource()` / `FastMCP.render_prompt()` when the provider is FastMCP, ensuring middleware chains execute
+- Fall back to direct provider methods for plain providers
+- Return JSON for easy parsing by tool-only clients
+
+Documentation: `docs/servers/transforms/resources-as-tools.mdx`, `docs/servers/transforms/prompts-as-tools.mdx`
+
+---
+
+### Session-Scoped State
+
+v3.0 changes context state from request-scoped to session-scoped. State now persists across multiple tool calls within the same MCP session.
+
+```python
+@mcp.tool
+async def increment_counter(ctx: Context) -> int:
+    count = await ctx.get_state("counter") or 0
+    await ctx.set_state("counter", count + 1)
+    return count + 1
+```
+
+State is automatically keyed by session ID, ensuring isolation between different clients. The implementation uses [pykeyvalue](https://github.com/strawgate/py-key-value) for pluggable storage backends:
+
+```python
+from key_value.aio.stores.redis import RedisStore
+
+# Use Redis for distributed deployments
+mcp = FastMCP("server", session_state_store=RedisStore(...))
+```
+
+**Key details:**
+- Methods are now async: `await ctx.get_state()`, `await ctx.set_state()`, `await ctx.delete_state()`
+- State expires after 1 day (TTL) to prevent unbounded memory growth
+- Works during `on_initialize` middleware when using the same session object
+- For distributed HTTP, session identity comes from the `mcp-session-id` header
+
+Documentation: `docs/servers/context.mdx`
+
+---
+
+### Visibility System
+
+Components can be enabled/disabled using the visibility system. Each `enable()` or `disable()` call adds a stateless Visibility transform that marks components via internal metadata. Later transforms override earlier ones.
+
+```python
+mcp = FastMCP("Server")
+
+# Disable by name and component type
+mcp.disable(names={"dangerous_tool"}, components=["tool"])
+
+# Disable by tag
+mcp.disable(tags={"admin"})
+
+# Disable by version
+mcp.disable(names={"old_tool"}, version="1.0", components=["tool"])
+
+# Allowlist mode - only show components with these tags
+mcp.enable(tags={"public"}, only=True)
+
+# Enable overrides earlier disable (later transform wins)
+mcp.disable(tags={"internal"})
+mcp.enable(names={"safe_tool"})  # safe_tool is visible despite internal tag
+```
+
+Works at both server and provider level. Supports:
+- **Blocklist mode** (default): All components visible except explicitly disabled
+- **Allowlist mode** (`only=True`): Only explicitly enabled components visible
+- **Tag-based filtering**: Enable/disable groups of components by tag
+- **Override semantics**: Later transforms override earlier marks (enable after disable = enabled)
+- **Transform ordering**: Visibility transforms are injected at the point you call them, so component state is known
+
+#### Per-Session Visibility
+
+Server-level visibility changes affect all connected clients. For per-session control, use `Context` methods that apply rules only to the current session ([#2917](https://github.com/PrefectHQ/fastmcp/pull/2917)):
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.context import Context
+
+mcp = FastMCP("Server")
+
+@mcp.tool(tags={"premium"})
+def premium_analysis(data: str) -> str:
+    return f"Premium analysis of: {data}"
+
+@mcp.tool
+async def unlock_premium(ctx: Context) -> str:
+    """Unlock premium features for this session only."""
+    await ctx.enable_components(tags={"premium"})
+    return "Premium features unlocked"
+
+@mcp.tool
+async def reset_features(ctx: Context) -> str:
+    """Reset to default feature set."""
+    await ctx.reset_visibility()
+    return "Features reset to defaults"
+
+# Globally disabled - sessions unlock individually
+mcp.disable(tags={"premium"})
+```
+
+Session visibility methods:
+- `await ctx.enable_components(...)`: Enable components for this session
+- `await ctx.disable_components(...)`: Disable components for this session
+- `await ctx.reset_visibility()`: Clear session rules, return to global defaults
+
+Session rules override global transforms. FastMCP automatically sends `ToolListChangedNotification` (and resource/prompt equivalents) to affected sessions when visibility changes.
+
+Documentation: `docs/servers/visibility.mdx`
+
+---
+
+### Component Versioning
+
+v3.0 introduces versioning support for tools, resources, and prompts. Components can declare a version, and when multiple versions of the same component exist, the highest version is automatically exposed to clients.
+
+**Declaring versions:**
+
+```python
+@mcp.tool(version="1.0")
+def add(x: int, y: int) -> int:
+    return x + y
+
+@mcp.tool(version="2.0")
+def add(x: int, y: int, z: int = 0) -> int:
+    return x + y + z
+
+# Only v2.0 is exposed to clients via list_tools()
+# Calling "add" invokes the v2.0 implementation
+```
+
+**Version comparison:**
+- Uses PEP 440 semantic versioning (1.10 > 1.9 > 1.2)
+- Falls back to string comparison for non-PEP 440 versions (dates like `2025-01-15` work)
+- Unversioned components sort lower than any versioned component
+- The `v` prefix is normalized (`v1.0` equals `1.0`)
+
+**Version visibility in meta:**
+
+List operations expose all available versions in the component's `meta` field:
+
+```python
+tools = await client.list_tools()
+# Each tool's meta includes:
+# - meta["fastmcp"]["version"]: the version of this component ("2.0")
+# - meta["fastmcp"]["versions"]: all available versions ["2.0", "1.0"]
+```
+
+**Retrieving and calling specific versions:**
+
+```python
+# Get the highest version (default)
+tool = await server.get_tool("add")
+
+# Get a specific version
+tool_v1 = await server.get_tool("add", version="1.0")
+
+# Call a specific version
+result = await server.call_tool("add", {"x": 1, "y": 2}, version="1.0")
+```
+
+**Client version requests:**
+
+The FastMCP client supports version selection:
+
+```python
+async with Client(server) as client:
+    # Call specific tool version
+    result = await client.call_tool("add", {"x": 1, "y": 2}, version="1.0")
+
+    # Get specific prompt version
+    prompt = await client.get_prompt("my_prompt", {"text": "..."}, version="2.0")
+```
+
+For generic MCP clients, pass version via `_meta` in arguments:
+
+```json
+{
+  "x": 1,
+  "y": 2,
+  "_meta": {
+    "fastmcp": {
+      "version": "1.0"
+    }
+  }
+}
+```
+
+**VersionFilter transform:**
+
+The `VersionFilter` transform enables serving different API versions from a single codebase:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.providers import LocalProvider
+from fastmcp.server.transforms import VersionFilter
+
+# Define components on a shared provider
+components = LocalProvider()
+
+@components.tool(version="1.0")
+def calculate(x: int, y: int) -> int:
+    return x + y
+
+@components.tool(version="2.0")
+def calculate(x: int, y: int, z: int = 0) -> int:
+    return x + y + z
+
+# Create servers that share the provider with different filters
+api_v1 = FastMCP("API v1", providers=[components])
+api_v1.add_transform(VersionFilter(version_lt="2.0"))
+
+api_v2 = FastMCP("API v2", providers=[components])
+api_v2.add_transform(VersionFilter(version_gte="2.0"))
+```
+
+Parameters mirror comparison operators:
+- `version_gte`: Versions >= this value pass through
+- `version_lt`: Versions < this value pass through
+
+**Key format:**
+
+Component keys now include a version suffix using `@` as a delimiter:
+- Versioned: `tool:add@1.0`, `resource:data://config@2.0`
+- Unversioned: `tool:add@`, `resource:data://config@`
+
+The `@` is always present (even for unversioned components) to enable unambiguous parsing of URIs that may contain `@`.
+
+---
+
+### Type-Safe Canonical Results
+
+v3.0 introduces type-safe result classes that provide explicit control over component responses while supporting MCP runtime metadata: `ToolResult` ([#2736](https://github.com/PrefectHQ/fastmcp/pull/2736)), `ResourceResult` ([#2734](https://github.com/PrefectHQ/fastmcp/pull/2734)), and `PromptResult` ([#2738](https://github.com/PrefectHQ/fastmcp/pull/2738)).
+
+#### ToolResult
+
+`ToolResult` (`fastmcp_slim/fastmcp/tools/tool.py:79`) provides structured tool responses:
+
+```python
+from fastmcp.tools import ToolResult
+
+@mcp.tool
+def process(data: str) -> ToolResult:
+    return ToolResult(
+        content=[TextContent(type="text", text="Done")],
+        structured_content={"status": "success", "count": 42},
+        meta={"processing_time_ms": 150}
+    )
+```
+
+Fields:
+- `content`: List of MCP ContentBlocks (text, images, etc.)
+- `structured_content`: Dict matching tool's output schema
+- `meta`: Runtime metadata passed to MCP as `_meta`
+
+#### ResourceResult
+
+`ResourceResult` (`fastmcp_slim/fastmcp/resources/resource.py:117`) provides structured resource responses:
+
+```python
+from fastmcp.resources import ResourceResult, ResourceContent
+
+@mcp.resource("data://items")
+def get_items() -> ResourceResult:
+    return ResourceResult(
+        contents=[
+            ResourceContent({"key": "value"}),  # auto-serialized to JSON
+            ResourceContent(b"binary data"),
+        ],
+        meta={"count": 2}
+    )
+```
+
+Accepts strings, bytes, or `list[ResourceContent]` for flexible content handling.
+
+#### PromptResult
+
+`PromptResult` (`fastmcp_slim/fastmcp/prompts/prompt.py:109`) provides structured prompt responses:
+
+```python
+from fastmcp.prompts import PromptResult, Message
+
+@mcp.prompt
+def conversation() -> PromptResult:
+    return PromptResult(
+        messages=[
+            Message("What's the weather?"),
+            Message("It's sunny today.", role="assistant"),
+        ],
+        meta={"generated_at": "2024-01-01"}
+    )
+```
+
+---
+
+### Background Tasks (SEP-1686)
+
+v3.0 implements MCP SEP-1686 for background task execution via Docket integration.
+
+**Configuration** (`fastmcp_slim/fastmcp/server/tasks/config.py`):
+
+```python
+from fastmcp.server.tasks import TaskConfig
+
+@mcp.tool(task=TaskConfig(mode="required"))
+async def long_running_task():
+    # Must be executed as background task
+    ...
+
+@mcp.tool(task=TaskConfig(mode="optional"))
+async def flexible_task():
+    # Supports both sync and task execution
+    ...
+
+@mcp.tool(task=True)  # Shorthand for mode="optional"
+async def simple_task():
+    ...
+```
+
+Task modes:
+- `"forbidden"`: Component does not support task execution (default)
+- `"optional"`: Supports both synchronous and task execution
+- `"required"`: Must be executed as background task
+
+Requires Docket server for task scheduling and result polling.
+
+---
+
+### Decorators Return Functions
+
+v3.0 changes what decorators (`@tool`, `@resource`, `@prompt`) return ([#2856](https://github.com/PrefectHQ/fastmcp/pull/2856)). Decorators now return the original function unchanged, rather than transforming it into a component object.
+
+**v3 behavior (default):**
+```python
+@mcp.tool
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+# greet is still your function - call it directly
+greet("World")  # "Hello, World!"
+```
+
+**Why this matters:**
+- Functions stay callable - useful for testing and reuse
+- Instance methods just work: `mcp.add_tool(obj.method)`
+- Matches how Flask, FastAPI, and Typer decorators behave
+
+**For v2 compatibility:**
+
+```python
+import fastmcp
+
+# v2 behavior: decorators return FunctionTool/FunctionResource/FunctionPrompt objects
+fastmcp.settings.decorator_mode = "object"
+```
+
+Environment variable: `FASTMCP_DECORATOR_MODE=object`
+
+---
+
+### CLI Auto-Reload
+
+The `--reload` flag enables file watching with automatic server restarts for development ([#2816](https://github.com/PrefectHQ/fastmcp/pull/2816)).
+
+```bash
+# Watch for changes and restart
+fastmcp run server.py --reload
+
+# Watch specific directories
+fastmcp run server.py --reload --reload-dir ./src --reload-dir ./lib
+
+# Works with any transport
+fastmcp run server.py --reload --transport http --port 8080
+```
+
+Implementation (`fastmcp_slim/fastmcp/cli/run.py`):
+- Uses `watchfiles` for efficient file monitoring
+- Runs server as subprocess for clean restarts
+- Stateless mode for seamless reconnection after restart
+- stdio: Full MCP features including elicitation
+- HTTP: Limited bidirectional features during reload
+
+Also available with `fastmcp dev inspector`:
+```bash
+fastmcp dev inspector server.py  # Includes --reload by default
+```
+
+---
+
+### Component Authorization
+
+v3.0 introduces callable-based authorization for tools, resources, and prompts ([#2855](https://github.com/PrefectHQ/fastmcp/pull/2855)).
+
+**Component-level auth**:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth import require_scopes
+
+mcp = FastMCP()
+
+@mcp.tool(auth=require_scopes("write"))
+def protected_tool(): ...
+
+@mcp.resource("data://secret", auth=require_scopes("read"))
+def secret_data(): ...
+
+@mcp.prompt(auth=require_scopes("admin"))
+def admin_prompt(): ...
+```
+
+**Server-wide auth via middleware**:
+
+```python
+from fastmcp.server.middleware import AuthMiddleware
+from fastmcp.server.auth import require_scopes, restrict_tag
+
+# Require specific scope for all components
+mcp = FastMCP(middleware=[AuthMiddleware(auth=require_scopes("api"))])
+
+# Tag-based restrictions
+mcp = FastMCP(middleware=[
+    AuthMiddleware(auth=restrict_tag("admin", scopes=["admin"]))
+])
+```
+
+Built-in checks:
+- `require_scopes(*scopes)`: Requires specific OAuth scopes
+- `restrict_tag(tag, scopes)`: Requires scopes only for tagged components
+
+Custom checks receive `AuthContext` with `token` and `component`:
+
+```python
+def custom_check(ctx: AuthContext) -> bool:
+    return ctx.token is not None and "admin" in ctx.token.scopes
+```
+
+STDIO transport bypasses all auth checks (no OAuth concept).
+
+---
+
+### FileSystemProvider
+
+v3.0 introduces `FileSystemProvider`, a fundamentally different approach to organizing MCP servers. Instead of importing a server instance and decorating functions with `@server.tool`, you use standalone decorators in separate files and let the provider discover them.
+
+**The problem it solves**: Traditional servers require coordination between files—either tool files import the server (creating coupling) or the server imports all tool modules (creating a registry bottleneck). FileSystemProvider removes this coupling entirely.
+
+**Usage** ([#2823](https://github.com/PrefectHQ/fastmcp/pull/2823)):
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.providers import FileSystemProvider
+
+# Scans mcp/ directory for decorated functions
+mcp = FastMCP("server", providers=[FileSystemProvider("mcp/")])
+```
+
+**Tool files are self-contained**:
+
+```python
+# mcp/tools/greet.py
+from fastmcp.tools import tool
+
+@tool
+def greet(name: str) -> str:
+    """Greet someone by name."""
+    return f"Hello, {name}!"
+```
+
+Features:
+- **Standalone decorators**: `@tool`, `@resource`, `@prompt` from `fastmcp.tools`, `fastmcp.resources`, `fastmcp.prompts` ([#2832](https://github.com/PrefectHQ/fastmcp/pull/2832))
+- **Reload mode**: `FileSystemProvider("mcp/", reload=True)` re-scans on every request for development
+- **Package support**: Directories with `__init__.py` support relative imports
+- **Warning deduplication**: Broken imports warn once per file modification
+
+Documentation: [FileSystemProvider](/servers/providers/filesystem)
+
+---
+
+### SkillsProvider
+
+v3.0 introduces `SkillsProvider` for exposing agent skills as MCP resources ([#2944](https://github.com/PrefectHQ/fastmcp/pull/2944)). Skills are directories containing instructions and supporting files that teach AI assistants how to perform tasks—used by Claude Code, Cursor, VS Code Copilot, and other AI coding tools.
+
+**Usage**:
+
+```python
+from pathlib import Path
+from fastmcp import FastMCP
+from fastmcp.server.providers.skills import SkillsDirectoryProvider
+
+mcp = FastMCP("Skills Server")
+mcp.add_provider(SkillsDirectoryProvider(roots=Path.home() / ".claude" / "skills"))
+```
+
+Each subdirectory with a `SKILL.md` file becomes a discoverable skill. Clients see:
+- `skill://{name}/SKILL.md` - Main instruction file
+- `skill://{name}/_manifest` - JSON listing of all files with sizes and hashes
+- `skill://{name}/{path}` - Supporting files (via template or resources)
+
+**Two-layer architecture**:
+- `SkillProvider` - Handles a single skill folder
+- `SkillsDirectoryProvider` - Scans directories, creates a `SkillProvider` per valid skill
+
+**Vendor providers** with locked default paths:
+
+| Provider | Directory |
+|----------|-----------|
+| `ClaudeSkillsProvider` | `~/.claude/skills/` |
+| `CursorSkillsProvider` | `~/.cursor/skills/` |
+| `VSCodeSkillsProvider` | `~/.copilot/skills/` |
+| `CodexSkillsProvider` | `/etc/codex/skills/`, `~/.codex/skills/` |
+| `GeminiSkillsProvider` | `~/.gemini/skills/` |
+| `GooseSkillsProvider` | `~/.config/agents/skills/` |
+| `CopilotSkillsProvider` | `~/.copilot/skills/` |
+| `OpenCodeSkillsProvider` | `~/.config/opencode/skills/` |
+
+**Progressive disclosure**: By default, supporting files are hidden from `list_resources()` and accessed via template. Set `supporting_files="resources"` for full enumeration.
+
+Documentation: [Skills Provider](/servers/providers/skills)
+
+---
+
+### OpenTelemetry Tracing
+
+v3.0 adds OpenTelemetry instrumentation for observability into server and client operations ([#2869](https://github.com/PrefectHQ/fastmcp/pull/2869)).
+
+**Server spans**: Created for tool calls, resource reads, and prompt renders with attributes including component key, provider type, session ID, and auth context.
+
+**Client spans**: Wrap outgoing calls with W3C trace context propagation via request meta.
+
+```python
+# Tracing is passive - configure an OTel SDK to export spans
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+
+provider = TracerProvider()
+provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+trace.set_tracer_provider(provider)
+
+# Use fastmcp normally - spans export to your configured backend
+```
+
+Components provide their own span attributes through a `get_span_attributes()` method that subclasses override—this lets LocalProvider, FastMCPProvider, and ProxyProvider each include relevant context (original names, backend URIs, etc.).
+
+Documentation: [Telemetry](/servers/telemetry)
+
+---
+
+### Pagination
+
+v3.0 adds pagination support for list operations when servers expose many components ([#2903](https://github.com/PrefectHQ/fastmcp/pull/2903)).
+
+```python
+from fastmcp import FastMCP
+
+# Enable pagination with 50 items per page
+server = FastMCP("ComponentRegistry", list_page_size=50)
+```
+
+When `list_page_size` is set, `tools/list`, `resources/list`, `resources/templates/list`, and `prompts/list` paginate responses with `nextCursor` for subsequent pages.
+
+**Client behavior**: The FastMCP Client fetches all pages automatically—`list_tools()` and similar methods return the complete list. For manual pagination (memory constraints, progress reporting), use `_mcp` variants:
+
+```python
+async with Client(server) as client:
+    result = await client.list_tools_mcp()
+    while result.nextCursor:
+        result = await client.list_tools_mcp(cursor=result.nextCursor)
+```
+
+Documentation: [Pagination](/servers/pagination)
+
+---
+
+### Composable Lifespans
+
+Lifespans can be combined with the `|` operator for modular setup/teardown ([#2828](https://github.com/PrefectHQ/fastmcp/pull/2828)):
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.lifespan import lifespan
+
+@lifespan
+async def db_lifespan(server):
+    db = await connect_db()
+    try:
+        yield {"db": db}
+    finally:
+        await db.close()
+
+@lifespan
+async def cache_lifespan(server):
+    cache = await connect_cache()
+    try:
+        yield {"cache": cache}
+    finally:
+        await cache.close()
+
+mcp = FastMCP("server", lifespan=db_lifespan | cache_lifespan)
+```
+
+Both enter lifespans in order and exit in reverse (LIFO). Context dicts are merged.
+
+Also adds `combine_lifespans()` utility for FastAPI integration:
+
+```python
+from fastmcp.utilities.lifespan import combine_lifespans
+
+app = FastAPI(lifespan=combine_lifespans(app_lifespan, mcp_app.lifespan))
+```
+
+Documentation: [Lifespan](/servers/lifespan)
+
+---
+
+### Tool Timeout
+
+Tools can limit foreground execution time with a `timeout` parameter ([#2872](https://github.com/PrefectHQ/fastmcp/pull/2872)):
+
+```python
+@mcp.tool(timeout=30.0)
+async def fetch_data(url: str) -> dict:
+    """Fetch with 30-second timeout."""
+    ...
+```
+
+When exceeded, clients receive MCP error code `-32000`. Both sync and async tools are supported—sync functions run in thread pools so the timeout applies regardless of execution model.
+
+Note: This timeout applies to foreground execution only. Background tasks (`task=True`) execute in Docket workers where this timeout isn't enforced.
+
+---
+
+### PingMiddleware
+
+Sends periodic server-to-client pings to keep long-lived connections alive ([#2838](https://github.com/PrefectHQ/fastmcp/pull/2838)):
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.middleware import PingMiddleware
+
+mcp = FastMCP("server")
+mcp.add_middleware(PingMiddleware(interval_ms=5000))
+```
+
+The middleware starts a background ping task on first message from each session, using the session's existing task group for automatic cleanup when the session ends.
+
+---
+
+### Context.transport Property
+
+Tools can detect which transport is active ([#2850](https://github.com/PrefectHQ/fastmcp/pull/2850)):
+
+```python
+from fastmcp import FastMCP, Context
+
+mcp = FastMCP("example")
+
+@mcp.tool
+def my_tool(ctx: Context) -> str:
+    if ctx.transport == "stdio":
+        return "short response"
+    return "detailed response with more context"
+```
+
+Returns `Literal["stdio", "sse", "streamable-http"]` when running, or `None` outside a server context.
+
+---
+
+### Automatic Threadpool for Sync Functions
+
+Synchronous tools, resources, and prompts now automatically run in a threadpool, preventing event loop blocking during concurrent requests ([#2865](https://github.com/PrefectHQ/fastmcp/pull/2865)):
+
+```python
+import time
+
+@mcp.tool
+def slow_tool():
+    time.sleep(10)  # No longer blocks other requests
+    return "done"
+```
+
+Three concurrent calls now execute in parallel (~10s) rather than sequentially (30s). Uses `anyio.to_thread.run_sync()` which properly propagates contextvars, so `Context` and `Depends` continue to work.
+
+---
+
+### CLI Update Notifications
+
+The CLI notifies users when a newer FastMCP version is available on PyPI ([#2840](https://github.com/PrefectHQ/fastmcp/pull/2840)).
+
+**Setting**: `FASTMCP_CHECK_FOR_UPDATES`
+- `"stable"` - Check for stable releases (default)
+- `"prerelease"` - Include alpha/beta/rc versions
+- `"off"` - Disable
+
+12-hour cache, 2-second timeout, fails silently on network errors.
+
+---
+
+### Deprecated Features
+
+These emit deprecation warnings but continue to work.
+
+#### Mount Prefix Parameter
+
+The `prefix` parameter for `mount()` renamed to `namespace`:
+
+```python
+# Deprecated
+main.mount(subserver, prefix="api")
+
+# New
+main.mount(subserver, namespace="api")
+```
+
+#### Tag Filtering, Tool Serializer, Tool Transformations Init Parameters
+
+These constructor parameters have been **removed** (not just deprecated) as of rc1. See "Breaking: Deprecated `FastMCP()` Constructor Kwargs Removed" in the rc1 section above. The `add_tool_transformation()` and `remove_tool_transformation()` methods remain as deprecated shims.
+
+---
+
+### Breaking Changes
+
+#### WSTransport Removed
+
+The deprecated `WSTransport` client transport has been removed ([#2826](https://github.com/PrefectHQ/fastmcp/pull/2826)). Use `StreamableHttpTransport` instead.
+
+#### Decorators Return Functions
+
+Decorators (`@tool`, `@resource`, `@prompt`) now return the original function instead of component objects. Code that treats the decorated function as a `FunctionTool`, `FunctionResource`, or `FunctionPrompt` will break.
+
+```python
+# v2.x
+@mcp.tool
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+isinstance(greet, FunctionTool)  # True
+
+# v3.0
+@mcp.tool
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+isinstance(greet, FunctionTool)  # False
+callable(greet)                  # True - it's still your function
+greet("World")                   # "Hello, World!"
+```
+
+Set `FASTMCP_DECORATOR_MODE=object` or `fastmcp.settings.decorator_mode = "object"` for v2 behavior.
+
+#### Component Enable/Disable Moved to Server/Provider
+
+The `enabled` field and `enable()`/`disable()` methods removed from component objects:
+
+```python
+# v2.x
+tool = await server.get_tool("my_tool")
+tool.disable()
+
+# v3.0
+server.disable(names={"my_tool"}, components=["tool"])
+```
+
+#### Component Lookup Methods
+
+Server lookup and listing methods have updated signatures:
+
+- Parameter names: `get_tool(name=...)`, `get_resource(uri=...)`, etc. (was `key`)
+- Plural listing methods renamed: `get_tools()` → `list_tools()`, `get_resources()` → `list_resources()`, etc.
+- Return types: `list_tools()`, `list_resources()`, etc. return lists instead of dicts
+
+```python
+# v2.x
+tools = await server.get_tools()
+tool = tools["my_tool"]
+
+# v3.0
+tools = await server.list_tools()
+tool = next((t for t in tools if t.name == "my_tool"), None)
+```
+
+#### Prompt Return Types
+
+Prompt functions now use `Message` instead of `mcp.types.PromptMessage`:
+
+```python
+# v2.x
+from mcp.types import PromptMessage, TextContent
+
+@mcp.prompt
+def my_prompt() -> PromptMessage:
+    return PromptMessage(role="user", content=TextContent(type="text", text="Hello"))
+
+# v3.0
+from fastmcp.prompts import Message
+
+@mcp.prompt
+def my_prompt() -> Message:
+    return Message("Hello")  # role defaults to "user"
+```
+
+#### Auth Provider Environment Variables Removed
+
+Auth providers no longer auto-load from environment variables ([#2752](https://github.com/PrefectHQ/fastmcp/pull/2752)):
+
+```python
+# v2.x - auto-loaded from FASTMCP_SERVER_AUTH_GITHUB_*
+auth = GitHubProvider()
+
+# v3.0 - explicit configuration
+import os
+auth = GitHubProvider(
+    client_id=os.environ["GITHUB_CLIENT_ID"],
+    client_secret=os.environ["GITHUB_CLIENT_SECRET"],
+)
+```
+
+See `docs/development/v3-notes/auth-provider-env-vars.mdx` for rationale.
+
+#### Server Banner Environment Variable
+
+`FASTMCP_SHOW_CLI_BANNER` → `FASTMCP_SHOW_SERVER_BANNER` ([#2771](https://github.com/PrefectHQ/fastmcp/pull/2771))
+
+Now applies to all server startup methods, not just the CLI.
+
+#### Context State Methods Are Async
+
+`ctx.set_state()` and `ctx.get_state()` are now async and session-scoped:
+
+```python
+# v2.x
+ctx.set_state("key", "value")
+value = ctx.get_state("key")
+
+# v3.0
+await ctx.set_state("key", "value")
+value = await ctx.get_state("key")
+```
+
+State now persists across requests within a session. See "Session-Scoped State" above.

@@ -1,0 +1,120 @@
+---
+title: "What is the Model Context Protocol (MCP)?"
+sidebarTitle: "What is MCP?"
+description: "An introduction to the core concepts of the Model Context Protocol (MCP), explaining what it is, why it's useful, and how it works."
+icon: "diagram-project"
+---
+
+The Model Context Protocol (MCP) is an open standard designed to solve a fundamental problem in AI development: how can Large Language Models (LLMs) reliably and securely interact with external tools, data, and services?
+
+It's the **bridge between the probabilistic, non-deterministic world of AI and the deterministic, reliable world of your code and data.**
+
+While you could build a custom REST API for your LLM, MCP provides a specialized, standardized "port" for AI-native communication. Think of it as **USB-C for AI**: a single, well-defined interface for connecting any compliant LLM to any compliant tool or data source.
+
+This guide provides a high-level overview of the protocol itself. We'll use **FastMCP**, the leading Python framework for MCP, to illustrate the concepts with simple code examples.
+
+## Why Do We Need a Protocol?
+
+With countless APIs already in existence, the most common question is: "Why do we need another one?"
+
+The answer lies in **standardization**. The AI ecosystem is fragmented. Every model provider has its own way of defining and calling tools. MCP's goal is to create a common language that offers several key advantages:
+
+1.  **Interoperability:** Build one MCP server, and it can be used by any MCP-compliant client (Claude, Gemini, OpenAI, custom agents, etc.) without custom integration code. This is the protocol's most important promise.
+2.  **Discoverability:** Clients can dynamically ask a server what it's capable of at runtime. They receive a structured, machine-readable "menu" of tools and resources.
+3.  **Security & Safety:** MCP provides a clear, sandboxed boundary. An LLM can't execute arbitrary code on your server; it can only *request* to run the specific, typed, and validated functions you explicitly expose.
+4.  **Composability:** You can build small, specialized MCP servers and combine them to create powerful, complex applications.
+
+## Core MCP Components 
+
+An MCP server exposes its capabilities through three primary components: Tools, Resources, and Prompts.
+
+### Tools: Executable Actions
+
+Tools are functions that the LLM can ask the server to execute. They are the action-oriented part of MCP.
+
+In the spirit of a REST API, you can think of **Tools as being like `POST` requests.** They are used to *perform an action*, *change state*, or *trigger a side effect*, like sending an email, adding a user to a database, or making a calculation.
+
+With FastMCP, creating a tool is as simple as decorating a Python function.
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP()
+
+# This function is now an MCP tool named "get_weather"
+@mcp.tool
+def get_weather(city: str) -> dict:
+    """Gets the current weather for a specific city."""
+    # In a real app, this would call a weather API
+    return {"city": city, "temperature": "72F", "forecast": "Sunny"}
+```
+
+[**Learn more about Tools →**](/servers/tools)
+
+### Resources: Read-Only Data
+
+Resources are data sources that the LLM can read. They are used to load information into the LLM's context, providing it with knowledge it doesn't have from its training data.
+
+Following the REST API analogy, **Resources are like `GET` requests.** Their purpose is to *retrieve information* idempotently, ideally without causing side effects. A resource can be anything from a static text file to a dynamic piece of data from a database. Each resource is identified by a unique URI.
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP()
+
+# This function provides a resource at the URI "system://status"
+@mcp.resource("system://status")
+def get_system_status() -> dict:
+    """Returns the current operational status of the service."""
+    return {"status": "all systems normal"}
+```
+
+#### Resource Templates
+
+You can also create **Resource Templates** for dynamic data. A client could request `users://42/profile` to get the profile for a specific user.
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP()
+
+# This template provides user data for any given user ID
+@mcp.resource("users://{user_id}/profile")
+def get_user_profile(user_id: str) -> dict:
+    """Returns the profile for a specific user."""
+    # Fetch user from a database...
+    return {"id": user_id, "name": "Zaphod Beeblebrox"}
+```
+
+[**Learn more about Resources & Templates →**](/servers/resources)
+
+### Prompts: Reusable Instructions
+
+Prompts are reusable, parameterized message templates. They provide a way to define consistent, structured instructions that a client can request to guide the LLM's behavior for a specific task.
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP()
+
+@mcp.prompt
+def summarize_text(text_to_summarize: str) -> str:
+    """Creates a prompt asking the LLM to summarize a piece of text."""
+    return f"""
+        Please provide a concise, one-paragraph summary of the following text:
+        
+        {text_to_summarize}
+        """
+```
+
+[**Learn more about Prompts →**](/servers/prompts)
+
+## Advanced Capabilities
+
+Beyond the core components, MCP also supports more advanced interaction patterns, such as a server requesting that the *client's* LLM generate a completion (known as **sampling**), or a server sending asynchronous **notifications** to a client. These features enable more complex, bidirectional workflows and are fully supported by FastMCP.
+
+## Next Steps
+
+Now that you understand the core concepts of the Model Context Protocol, you're ready to start building. The best place to begin is our step-by-step tutorial.
+
+[**Tutorial: How to Create an MCP Server in Python →**](/tutorials/create-mcp-server)

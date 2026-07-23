@@ -392,6 +392,29 @@ class FunctionTool(Tool):
         exec_is_async = is_coroutine_function(wrapper_fn)
         strict = _strict_input_validation()
 
+        result = await self._run_body(
+            type_adapter, exec_is_async, arguments, strict=strict
+        )
+
+        # An `InputRequiredResult` is the full result of this multi-round-trip
+        # leg (SEP-2322), not tool-output data: wrap it in an
+        # `InputRequiredToolResult` so it flows through the middleware chain as
+        # an ordinary result instead of being serialized as content. The wire
+        # handler reads it back out (see `_on_call_tool`).
+        if isinstance(result, mcp_types.InputRequiredResult):
+            return InputRequiredToolResult(result)
+
+        return self.convert_result(result)
+
+    async def _run_body(
+        self,
+        type_adapter: TypeAdapter[Any],
+        exec_is_async: bool,
+        arguments: dict[str, Any],
+        *,
+        strict: bool,
+    ) -> Any:
+        """Validate arguments and execute the body, applying any timeout."""
         try:
             if self.timeout is not None:
                 try:
@@ -428,15 +451,7 @@ class FunctionTool(Tool):
             assert original is not None
             raise original from original.__cause__
 
-        # An `InputRequiredResult` is the full result of this multi-round-trip
-        # leg (SEP-2322), not tool-output data: wrap it in an
-        # `InputRequiredToolResult` so it flows through the middleware chain as
-        # an ordinary result instead of being serialized as content. The wire
-        # handler reads it back out (see `_on_call_tool`).
-        if isinstance(result, mcp_types.InputRequiredResult):
-            return InputRequiredToolResult(result)
-
-        return self.convert_result(result)
+        return result
 
     async def _execute(
         self,

@@ -40,6 +40,7 @@ from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
 )
+from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import find_kwarg_by_type, is_class_member_of_type
 
 if TYPE_CHECKING:
@@ -48,6 +49,9 @@ if TYPE_CHECKING:
 
     from fastmcp.server.context import Context
     from fastmcp.server.server import FastMCP
+    from fastmcp.server.sessions import Session
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -161,6 +165,7 @@ __all__ = [
     "get_http_headers",
     "get_http_request",
     "get_server",
+    "get_session",
     "get_task_context",
     "get_task_session",
     "is_docket_available",
@@ -272,10 +277,11 @@ except ImportError:
 
 
 def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
-    """Transform ctx: Context into ctx: Context = CurrentContext().
+    """Transform injected-by-type params into Dependency-defaulted params.
 
-    Transforms ALL params typed as Context to use Docket's DI system,
-    unless they already have a Dependency-based default (like CurrentContext()).
+    Transforms ALL params typed as Context (into ``= CurrentContext()``) and as
+    UserSession (into ``= CurrentSession()``) to use Docket's DI system, unless
+    they already have a Dependency-based default.
 
     This unifies the legacy type annotation DI with Docket's Depends() system,
     allowing both patterns to work through a single resolution path.
@@ -291,6 +297,7 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
         Function with modified signature (same function object, updated __signature__)
     """
     from fastmcp.server.context import Context
+    from fastmcp.server.sessions import UserSession
 
     # Get the function's signature
     try:
@@ -307,13 +314,28 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
     # First pass: identify which params need transformation
     params_to_transform: set[str] = set()
     optional_context_params: set[str] = set()
+    session_params: set[str] = set()
+    optional_session_params: set[str] = set()
     for name, param in sig.parameters.items():
         annotation = type_hints.get(name, param.annotation)
+        if isinstance(param.default, Dependency):
+            continue
         if is_class_member_of_type(annotation, Context):
-            if not isinstance(param.default, Dependency):
-                params_to_transform.add(name)
-                if param.default is None:
-                    optional_context_params.add(name)
+            params_to_transform.add(name)
+            if param.default is None:
+                optional_context_params.add(name)
+        elif is_class_member_of_type(annotation, UserSession):
+            # `session: UserSession` rides the same DI path as `ctx: Context`:
+            # injected per authenticated principal, excluded from the schema. A
+            # bare `session: Session` is NOT injected — only the `UserSession`
+            # marker keys the per-user injection.
+            params_to_transform.add(name)
+            # A `UserSession | None = None` param opts into the unauthenticated
+            # case: inject `None` instead of raising, mirroring optional Context.
+            if param.default is None:
+                optional_session_params.add(name)
+            else:
+                session_params.add(name)
 
     if not params_to_transform:
         return fn
@@ -334,12 +356,20 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
     var_keyword: list[P] = []  # **kwargs (at most one)
 
     for name, param in sig.parameters.items():
-        # Transform Context params by adding CurrentContext default
+        # Transform injected-by-type params by adding a Dependency default
         if name in params_to_transform:
             # We use CurrentContext() instead of Depends(get_context) because
             # get_context() returns the Context which is an AsyncContextManager,
             # and the DI system would try to enter it again (it's already entered)
-            if name in optional_context_params:
+            if name in session_params:
+                from fastmcp.server.sessions import CurrentSession
+
+                param = param.replace(default=CurrentSession())
+            elif name in optional_session_params:
+                from fastmcp.server.sessions import OptionalCurrentSession
+
+                param = param.replace(default=OptionalCurrentSession())
+            elif name in optional_context_params:
                 param = param.replace(default=OptionalCurrentContext())
             else:
                 param = param.replace(default=CurrentContext())
@@ -450,6 +480,41 @@ def get_server() -> FastMCP:
     if server is None:
         raise RuntimeError("FastMCP server instance is no longer available")
     return server
+
+
+async def get_session(session_id: str) -> Session:
+    """Resolve and validate a `Session` for an explicit `session_id`.
+
+    Pair with a `session_id: SessionId` tool argument (the agent obtains an id
+    from `create_session` and passes it back). For a single per-user bucket with
+    nothing for the agent to pass, inject `session: UserSession` instead.
+
+    State is keyed by `(principal, session_id)`: the authenticated principal is
+    the isolation wall and `session_id` organizes sessions within it. The id must
+    have been minted by `create_session` under the current principal; an id that
+    was never created, or created under a different principal, raises
+    `InvalidSession` rather than resolving to a fresh empty bucket (the specific
+    reason is logged at debug level, never returned to the caller).
+
+    Like `get_server()`, this resolves through the task-aware server, so it needs
+    no foreground context — it works from a `task=True` tool's Docket worker as
+    well as a normal request.
+    """
+    from fastmcp.server.sessions import InvalidSession, Session, current_principal
+
+    session = Session(
+        store=get_server()._state_store,
+        principal=current_principal(),
+        session_id=session_id,
+        public_id=session_id,
+    )
+    if not await session._exists():
+        logger.debug(
+            "Rejected session id %r: no record for the current principal.",
+            session_id,
+        )
+        raise InvalidSession
+    return session
 
 
 def get_http_request() -> Request:
