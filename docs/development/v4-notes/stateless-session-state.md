@@ -62,7 +62,8 @@ so its `get`/`set`/`delete`/`clear` accessors work as usual.
 ### Distinct sessions — an argument
 
 ```python
-from fastmcp.server.sessions import SessionId, get_session
+from fastmcp.server.sessions import SessionId
+from fastmcp.server.dependencies import get_session
 
 @mcp.tool
 async def add_to_cart(item: str, session_id: SessionId) -> str:

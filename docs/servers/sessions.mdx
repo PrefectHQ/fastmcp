@@ -46,7 +46,8 @@ An agent obtains an id by calling `create_session`, which comes from a `SessionP
 
 ```python
 from fastmcp import FastMCP
-from fastmcp.server.sessions import SessionId, SessionProvider, get_session
+from fastmcp.server.sessions import SessionId, SessionProvider
+from fastmcp.server.dependencies import get_session
 
 mcp = FastMCP("shop")
 mcp.add_provider(SessionProvider())

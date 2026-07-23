@@ -23,13 +23,13 @@ from mcp.server.auth.provider import AccessToken as SDKAccessToken
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.context import Context
+from fastmcp.server.dependencies import get_session
 from fastmcp.server.sessions import (
     SESSION_ID_DESCRIPTION,
     InvalidSession,
     SessionId,
     SessionProvider,
     UserSession,
-    get_session,
 )
 from fastmcp.tools.base import ToolResult
 

@@ -58,7 +58,7 @@ from mcp.server.auth.provider import principal_components
 from uncalled_for import Dependency
 
 from fastmcp.exceptions import FastMCPError
-from fastmcp.server.dependencies import get_access_token, get_server
+from fastmcp.server.dependencies import get_access_token, get_server, get_session
 from fastmcp.server.providers.base import Provider
 from fastmcp.utilities.logging import get_logger
 
@@ -414,39 +414,6 @@ def CurrentSession() -> Session:
     is preferred.
     """
     return cast("Session", _CurrentSession())
-
-
-async def get_session(session_id: str) -> Session:
-    """Resolve and validate a `Session` for an explicit `session_id`.
-
-    Pair with a `session_id: SessionId` tool argument (the agent obtains an id
-    from `create_session` and passes it back). For a single per-user bucket with
-    nothing for the agent to pass, inject `session: UserSession` instead.
-
-    State is keyed by `(principal, session_id)`: the authenticated principal is
-    the isolation wall and `session_id` organizes sessions within it. The id must
-    have been minted by `create_session` under the current principal; an id that
-    was never created, or created under a different principal, raises
-    `InvalidSession` rather than resolving to a fresh empty bucket (the specific
-    reason is logged at debug level, never returned to the caller).
-
-    This is a standalone function, not a `Context` method, so it needs no
-    foreground context — it works from a `task=True` tool's Docket worker as well
-    as a normal request.
-    """
-    session = Session(
-        store=get_server()._state_store,
-        principal=current_principal(),
-        session_id=session_id,
-        public_id=session_id,
-    )
-    if not await session._exists():
-        logger.debug(
-            "Rejected session id %r: no record for the current principal.",
-            session_id,
-        )
-        raise InvalidSession
-    return session
 
 
 async def create_session() -> str:

@@ -40,6 +40,7 @@ from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
 )
+from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import find_kwarg_by_type, is_class_member_of_type
 
 if TYPE_CHECKING:
@@ -48,6 +49,9 @@ if TYPE_CHECKING:
 
     from fastmcp.server.context import Context
     from fastmcp.server.server import FastMCP
+    from fastmcp.server.sessions import Session
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -161,6 +165,7 @@ __all__ = [
     "get_http_headers",
     "get_http_request",
     "get_server",
+    "get_session",
     "get_task_context",
     "get_task_session",
     "is_docket_available",
@@ -465,6 +470,41 @@ def get_server() -> FastMCP:
     if server is None:
         raise RuntimeError("FastMCP server instance is no longer available")
     return server
+
+
+async def get_session(session_id: str) -> Session:
+    """Resolve and validate a `Session` for an explicit `session_id`.
+
+    Pair with a `session_id: SessionId` tool argument (the agent obtains an id
+    from `create_session` and passes it back). For a single per-user bucket with
+    nothing for the agent to pass, inject `session: UserSession` instead.
+
+    State is keyed by `(principal, session_id)`: the authenticated principal is
+    the isolation wall and `session_id` organizes sessions within it. The id must
+    have been minted by `create_session` under the current principal; an id that
+    was never created, or created under a different principal, raises
+    `InvalidSession` rather than resolving to a fresh empty bucket (the specific
+    reason is logged at debug level, never returned to the caller).
+
+    Like `get_server()`, this resolves through the task-aware server, so it needs
+    no foreground context — it works from a `task=True` tool's Docket worker as
+    well as a normal request.
+    """
+    from fastmcp.server.sessions import InvalidSession, Session, current_principal
+
+    session = Session(
+        store=get_server()._state_store,
+        principal=current_principal(),
+        session_id=session_id,
+        public_id=session_id,
+    )
+    if not await session._exists():
+        logger.debug(
+            "Rejected session id %r: no record for the current principal.",
+            session_id,
+        )
+        raise InvalidSession
+    return session
 
 
 def get_http_request() -> Request:
