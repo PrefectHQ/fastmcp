@@ -182,6 +182,7 @@
                           "servers/auth/oauth-proxy",
                           "servers/auth/oidc-proxy",
                           "servers/auth/full-oauth-server",
+                          "servers/auth/api-key-oauth",
                           "servers/auth/multi-auth"
                         ]
                       },
