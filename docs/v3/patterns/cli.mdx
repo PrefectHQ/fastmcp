@@ -1,0 +1,851 @@
+---
+title: FastMCP CLI
+sidebarTitle: CLI
+description: Learn how to use the FastMCP command-line interface
+icon: terminal
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+
+FastMCP provides a command-line interface (CLI) that makes it easy to run, develop, and install your MCP servers. The CLI is automatically installed when you install FastMCP.
+
+```bash
+fastmcp --help
+```
+
+## Commands Overview
+
+| Command | Purpose | Dependency Management |
+| ------- | ------- | --------------------- |
+| `list` | List tools on any MCP server | **Supports:** URLs, local files, MCPConfig JSON, stdio commands. **Deps:** N/A (connects to existing servers) |
+| `call` | Call a tool on any MCP server | **Supports:** URLs, local files, MCPConfig JSON, stdio commands. **Deps:** N/A (connects to existing servers) |
+| `run` | Run a FastMCP server directly | **Supports:** Local files, factory functions, URLs, fastmcp.json configs, MCP configs. **Deps:** Uses your local environment directly. With `--python`, `--with`, `--project`, or `--with-requirements`: Runs via `uv run` subprocess. With fastmcp.json: Automatically manages dependencies based on configuration |
+| `dev` | Run a server with the MCP Inspector for testing | **Supports:** Local files and fastmcp.json configs. **Deps:** Always runs via `uv run` subprocess (never uses your local environment); dependencies must be specified or available in a uv-managed project. With fastmcp.json: Uses configured dependencies |
+| `install` | Install a server in MCP client applications | **Supports:** Local files and fastmcp.json configs. **Deps:** Creates an isolated environment; dependencies must be explicitly specified with `--with` and/or `--with-editable`. With fastmcp.json: Uses configured dependencies |
+| `inspect` | Generate a JSON report about a FastMCP server | **Supports:** Local files and fastmcp.json configs. **Deps:** Uses your current environment; you are responsible for ensuring all dependencies are available |
+| `project prepare` | Create a persistent uv project from fastmcp.json environment config | **Supports:** fastmcp.json configs only. **Deps:** Creates a uv project directory with all dependencies pre-installed for reuse with `--project` flag |
+| `auth cimd` | Create and validate CIMD documents for OAuth authentication | N/A |
+| `version` | Display version information | N/A |
+
+## `fastmcp list`
+
+List tools available on any MCP server. This works with remote URLs, local Python files, MCPConfig JSON files, and arbitrary stdio commands. Together with `fastmcp call`, these commands are especially useful for giving LLMs that don't have built-in MCP support access to MCP tools via shell commands.
+
+```bash
+fastmcp list http://localhost:8000/mcp
+fastmcp list server.py
+fastmcp list mcp.json
+fastmcp list --command 'npx -y @modelcontextprotocol/server-github'
+```
+
+By default, the output shows each tool's signature and description. Use `--input-schema` or `--output-schema` to include full JSON schemas, or `--json` for machine-readable output.
+
+### Options
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Command | `--command` | Connect to a stdio server command (e.g. `'npx -y @mcp/server'`) |
+| Transport | `--transport`, `-t` | Force transport type for URL targets (`http` or `sse`) |
+| Resources | `--resources` | Also list resources |
+| Prompts | `--prompts` | Also list prompts |
+| Input Schema | `--input-schema` | Show full input schemas |
+| Output Schema | `--output-schema` | Show full output schemas |
+| JSON | `--json` | Output as JSON |
+| Timeout | `--timeout` | Connection timeout in seconds |
+| Auth | `--auth` | Auth method: `oauth` (default for HTTP), a bearer token, or `none` to disable |
+
+### Server Targets
+
+The `<server>` argument accepts:
+
+1. **URLs** — `http://` or `https://` endpoints. Uses Streamable HTTP by default; pass `--transport sse` for SSE servers.
+2. **Python files** — `.py` files are run via `fastmcp run` automatically.
+3. **MCPConfig JSON** — `.json` files with an `mcpServers` key are treated as multi-server configs.
+4. **Stdio commands** — Use `--command` to connect to any MCP server via stdio (e.g. `npx`, `uvx`).
+
+### Examples
+
+```bash
+# List tools on a remote server
+fastmcp list http://localhost:8000/mcp
+
+# List tools from a local Python file
+fastmcp list server.py
+
+# Include full input schemas
+fastmcp list server.py --input-schema
+
+# Machine-readable JSON
+fastmcp list server.py --json
+
+# SSE server
+fastmcp list http://localhost:8000/mcp --transport sse
+
+# Stdio command
+fastmcp list --command 'npx -y @modelcontextprotocol/server-github'
+
+# Include resources and prompts
+fastmcp list server.py --resources --prompts
+```
+
+## `fastmcp call`
+
+Call a tool on any MCP server. Arguments can be passed as `key=value` pairs, a single JSON object, or via `--input-json`.
+
+```bash
+fastmcp call server.py greet name=World
+fastmcp call http://localhost:8000/mcp search query=hello limit=5
+fastmcp call server.py create_item '{"name": "x", "tags": ["a", "b"]}'
+```
+
+Tool arguments are automatically coerced to the correct type based on the tool's input schema — string values like `limit=5` become integers when the schema expects one.
+
+### Options
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Command | `--command` | Connect to a stdio server command (e.g. `'npx -y @mcp/server'`) |
+| Transport | `--transport`, `-t` | Force transport type for URL targets (`http` or `sse`) |
+| Input JSON | `--input-json` | JSON string of tool arguments (merged with key=value args) |
+| JSON | `--json` | Output raw JSON result |
+| Timeout | `--timeout` | Connection timeout in seconds |
+| Auth | `--auth` | Auth method: `oauth` (default for HTTP), a bearer token, or `none` to disable |
+
+### Argument Passing
+
+There are three ways to pass arguments:
+
+**Key=value pairs** are the simplest for flat arguments. Values are coerced using the tool's JSON schema (strings become ints, bools, etc.):
+
+```bash
+fastmcp call server.py search query=hello limit=5 verbose=true
+```
+
+**A single JSON object** works when you have structured or nested arguments:
+
+```bash
+fastmcp call server.py create_item '{"name": "Widget", "tags": ["new", "sale"]}'
+```
+
+**`--input-json`** provides a base dict that key=value pairs can override:
+
+```bash
+fastmcp call server.py search --input-json '{"query": "hello", "limit": 5}' limit=10
+```
+
+### Examples
+
+```bash
+# Call a tool with simple args
+fastmcp call server.py greet name=World
+
+# Call with JSON object
+fastmcp call server.py create '{"name": "x", "tags": ["a"]}'
+
+# Get JSON output for scripting
+fastmcp call server.py add a=3 b=4 --json
+
+# Call a tool on a remote server
+fastmcp call http://localhost:8000/mcp search query=hello
+
+# Call via stdio command
+fastmcp call --command 'npx -y @mcp/server' tool_name arg=value
+
+# Disable OAuth for HTTP targets
+fastmcp call http://localhost:8000/mcp search query=hello --auth none
+```
+
+<Tip>
+If you call a tool that doesn't exist, FastMCP will suggest similar tool names. Use `fastmcp list` to see all available tools on a server.
+</Tip>
+
+## `fastmcp run`
+
+Run a FastMCP server directly or proxy a remote server.
+
+```bash
+fastmcp run server.py
+```
+
+<Tip>
+By default, this command runs the server directly in your current Python environment. You are responsible for ensuring all dependencies are available. When using `--python`, `--with`, `--project`, or `--with-requirements` options, it runs the server via `uv run` subprocess instead.
+</Tip>
+
+### Options
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Transport | `--transport`, `-t` | Transport protocol to use (`stdio`, `http`, or `sse`) |
+| Host | `--host` | Host to bind to when using http transport (default: 127.0.0.1) |
+| Port | `--port`, `-p` | Port to bind to when using http transport (default: 8000) |
+| Path | `--path` | Path to bind to when using http transport (default: `/mcp/` or `/sse/` for SSE) |
+| Log Level | `--log-level`, `-l` | Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL) |
+| No Banner | `--no-banner` | Disable the startup banner display |
+| Auto-Reload | `--reload` / `--no-reload` | Enable auto-reload on file changes (development mode) |
+| Reload Directories | `--reload-dir` | Directories to watch for changes (can be used multiple times) |
+| No Environment | `--skip-env` | Skip environment setup with uv (use when already in a uv environment) |
+| Python Version | `--python` | Python version to use (e.g., 3.10, 3.11) |
+| Additional Packages | `--with` | Additional packages to install (can be used multiple times) |
+| Project Directory | `--project` | Run the command within the given project directory |
+| Requirements File | `--with-requirements` | Requirements file to install dependencies from |
+
+
+### Entrypoints
+<VersionBadge version="2.3.5" />
+
+The `fastmcp run` command supports the following entrypoints:
+
+1. **[Inferred server instance](#inferred-server-instance)**: `server.py` - imports the module and looks for a FastMCP server instance named `mcp`, `server`, or `app`. Errors if no such object is found.
+2. **[Explicit server entrypoint](#explicit-server-entrypoint)**: `server.py:custom_name` - imports and uses the specified server entrypoint  
+3. **[Factory function](#factory-function)**: `server.py:create_server` - calls the specified function (sync or async) to create a server instance
+4. **[Remote server proxy](#remote-server-proxy)**: `https://example.com/mcp-server` - connects to a remote server and creates a **local proxy server**
+5. **[FastMCP configuration file](#fastmcp-configuration)**: `fastmcp.json` - runs servers using FastMCP's declarative configuration format (auto-detects files in current directory)
+6. **MCP configuration file**: `mcp.json` - runs servers defined in a standard MCP configuration file
+
+<Warning>
+Note: When using `fastmcp run` with a local file, it **completely ignores** the `if __name__ == "__main__"` block. This means:
+- Any setup code in `__main__` will NOT run
+- Server configuration in `__main__` is bypassed  
+- `fastmcp run` finds your server entrypoint/factory and runs it with its own transport settings
+
+If you need setup code to run, use the **factory pattern** instead.
+</Warning>
+
+#### Inferred Server Instance
+
+If you provide a path to a file, `fastmcp run` will load the file and look for a FastMCP server instance stored as a variable named `mcp`, `server`, or `app`. If no such object is found, it will raise an error.
+
+For example, if you have a file called `server.py` with the following content:
+
+```python server.py
+from fastmcp import FastMCP
+
+mcp = FastMCP("MyServer")
+```
+
+You can run it with:
+
+```bash
+fastmcp run server.py
+```
+
+#### Explicit Server Entrypoint
+
+If your server is stored as a variable with a custom name, or you want to be explicit about which server to run, you can use the following syntax to load a specific server entrypoint:
+
+```bash
+fastmcp run server.py:custom_name
+```
+
+For example, if you have a file called `server.py` with the following content:
+
+```python
+from fastmcp import FastMCP
+
+my_server = FastMCP("CustomServer")
+
+@my_server.tool
+def hello() -> str:
+    return "Hello from custom server!"
+```
+
+You can run it with:
+
+```bash
+fastmcp run server.py:my_server
+```
+
+#### Factory Function
+<VersionBadge version="2.11.2" />
+
+Since `fastmcp run` ignores the `if __name__ == "__main__"` block, you can use a factory function to run setup code before your server starts. Factory functions are called without any arguments and must return a FastMCP server instance. Both sync and async factory functions are supported.
+
+The syntax for using a factory function is the same as for an explicit server entrypoint: `fastmcp run server.py:factory_fn`. FastMCP will automatically detect that you have identified a function rather than a server Instance
+
+For example, if you have a file called `server.py` with the following content:
+
+```python
+from fastmcp import FastMCP
+
+async def create_server() -> FastMCP:
+    mcp = FastMCP("MyServer")
+    
+    @mcp.tool
+    def add(x: int, y: int) -> int:
+        return x + y
+    
+    # Setup that runs with fastmcp run
+    tool = await mcp.get_tool("add")
+    tool.disable()
+    
+    return mcp
+```
+
+You can run it with:
+
+```bash
+fastmcp run server.py:create_server
+```
+
+#### Remote Server Proxy
+
+FastMCP run can also start a local proxy server that connects to a remote server. This is useful when you want to run a remote server locally for testing or development purposes, or to use with a client that doesn't support direct connections to remote servers.
+
+To start a local proxy, you can use the following syntax:
+
+```bash
+fastmcp run https://example.com/mcp
+```
+
+#### FastMCP Configuration
+<VersionBadge version="2.11.4" />
+
+FastMCP supports declarative configuration through `fastmcp.json` files. When you run `fastmcp run` without arguments, it automatically looks for a `fastmcp.json` file in the current directory:
+
+```bash
+# Auto-detect fastmcp.json in current directory
+fastmcp run
+
+# Or explicitly specify a configuration file
+fastmcp run my-config.fastmcp.json
+```
+
+The configuration file handles dependencies, environment variables, and transport settings. Command-line arguments override configuration file values:
+
+```bash
+# Override port from config file
+fastmcp run fastmcp.json --port 8080
+
+# Skip environment setup when already in a uv environment
+fastmcp run fastmcp.json --skip-env
+```
+
+<Note>
+The `--skip-env` flag is useful when:
+- You're already in an activated virtual environment
+- You're inside a Docker container with pre-installed dependencies  
+- You're in a uv-managed environment (prevents infinite recursion)
+- You want to test the server without environment setup
+</Note>
+
+See [Server Configuration](/deployment/server-configuration) for detailed documentation on fastmcp.json.
+
+#### MCP Configuration
+
+FastMCP can also run servers defined in a standard MCP configuration file. This is useful when you want to run multiple servers from a single file, or when you want to use a client that doesn't support direct connections to remote servers.
+
+To run a MCP configuration file, you can use the following syntax:
+
+```bash
+fastmcp run mcp.json
+```
+
+This will run all the servers defined in the file.
+
+## `fastmcp dev`
+
+The `dev` command group contains development tools for MCP servers.
+
+### `fastmcp dev inspector`
+
+Run a MCP server with the [MCP Inspector](https://github.com/modelcontextprotocol/inspector) for testing. Auto-reload is enabled by default, so your server automatically restarts when you save changes to source files.
+
+```bash
+fastmcp dev inspector server.py
+```
+
+<Tip>
+This command always runs your server via `uv run` subprocess (never your local environment) to work with the MCP Inspector. Dependencies can be:
+- Specified using `--with` and/or `--with-editable` options
+- Defined in a `fastmcp.json` configuration file
+- Available in a uv-managed project
+
+When using `fastmcp.json`, the dev command automatically uses the configured dependencies.
+</Tip>
+
+<Warning>
+The `dev inspector` command is a shortcut for testing a server over STDIO only. When the Inspector launches, you may need to:
+1. Select "STDIO" from the transport dropdown
+2. Connect manually
+
+This command does not support HTTP testing. To test a server over Streamable HTTP or SSE:
+1. Start your server manually with the appropriate transport using either the command line:
+   ```bash
+   fastmcp run server.py --transport http
+   ```
+   or by setting the transport in your code:
+   ```bash
+   python server.py  # Assuming your __main__ block sets Streamable HTTP transport
+   ```
+2. Open the MCP Inspector separately and connect to your running server
+</Warning>
+
+#### Options
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Editable Package | `--with-editable`, `-e` | Directory containing pyproject.toml to install in editable mode |
+| Additional Packages | `--with` | Additional packages to install (can be used multiple times) |
+| Inspector Version | `--inspector-version` | Version of the MCP Inspector to use |
+| UI Port | `--ui-port` | Port for the MCP Inspector UI |
+| Server Port | `--server-port` | Port for the MCP Inspector Proxy server |
+| Auto-Reload | `--reload` / `--no-reload` | Enable/disable auto-reload on file changes (enabled by default) |
+| Reload Directories | `--reload-dir` | Directories to watch for changes (can be used multiple times) |
+| Python Version | `--python` | Python version to use (e.g., 3.10, 3.11) |
+| Project Directory | `--project` | Run the command within the given project directory |
+| Requirements File | `--with-requirements` | Requirements file to install dependencies from |
+
+#### Entrypoints
+
+The `dev inspector` command supports local FastMCP server files and configuration:
+
+1. **Inferred server instance**: `server.py` - imports the module and looks for a FastMCP server instance named `mcp`, `server`, or `app`. Errors if no such object is found.
+2. **Explicit server entrypoint**: `server.py:custom_name` - imports and uses the specified server entrypoint
+3. **Factory function**: `server.py:create_server` - calls the specified function (sync or async) to create a server instance
+4. **FastMCP configuration**: `fastmcp.json` - uses FastMCP's declarative configuration (auto-detects in current directory)
+
+<Warning>
+The `dev inspector` command **only supports local files and fastmcp.json** - no URLs, remote servers, or standard MCP configuration files.
+</Warning>
+
+**Examples**
+
+```bash
+# Run dev server with editable mode and additional packages
+fastmcp dev inspector server.py -e . --with pandas --with matplotlib
+
+# Run dev server with fastmcp.json configuration (auto-detects)
+fastmcp dev inspector
+
+# Run dev server with explicit fastmcp.json file
+fastmcp dev inspector dev.fastmcp.json
+
+# Run dev server with specific Python version
+fastmcp dev inspector server.py --python 3.11
+
+# Run dev server with requirements file
+fastmcp dev inspector server.py --with-requirements requirements.txt
+
+# Run dev server within a specific project directory
+fastmcp dev inspector server.py --project /path/to/project
+```
+
+## `fastmcp install`
+<VersionBadge version="2.10.3" />
+
+Install a MCP server in MCP client applications. FastMCP currently supports the following clients:
+
+- **Claude Code** - Installs via Claude Code's built-in MCP management system
+- **Claude Desktop** - Installs via direct configuration file modification
+- **Cursor** - Installs via deeplink that opens Cursor for user confirmation
+- **Gemini CLI** - Installs via Gemini CLI's built-in MCP management system
+- **Goose** - Installs via deeplink that opens Goose for user confirmation (uses `uvx`)
+- **MCP JSON** - Generates standard MCP JSON configuration for manual use
+- **Stdio** - Outputs the shell command to run a server over stdio transport
+
+```bash
+fastmcp install claude-code server.py
+fastmcp install claude-desktop server.py
+fastmcp install cursor server.py
+fastmcp install gemini-cli server.py
+fastmcp install goose server.py
+fastmcp install mcp-json server.py
+fastmcp install stdio server.py
+```
+
+Note that for security reasons, MCP clients usually run every server in a completely isolated environment. Therefore, all dependencies must be explicitly specified using the `--with` and/or `--with-editable` options (following `uv` conventions) or by attaching them to your server in code via the `dependencies` parameter. You should not assume that the MCP server will have access to your local environment.
+
+<Warning>
+**`uv` must be installed and available in your system PATH**. Both Claude Desktop and Cursor run in isolated environments and need `uv` to manage dependencies. On macOS, install `uv` globally with Homebrew for Claude Desktop compatibility: `brew install uv`.
+</Warning>
+
+<Note>
+**Python Version Considerations**: The install commands now support the `--python` option to specify a Python version directly. You can also use `--project` to run within a specific project directory or `--with-requirements` to install dependencies from a requirements file.
+</Note>
+
+<Tip>
+**FastMCP `install` commands focus on local server files with STDIO transport.** For remote servers running with HTTP or SSE transport, use your client's native configuration - FastMCP's value is simplifying the complex local setup with dependencies and `uv` commands.
+</Tip>
+
+### Options
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Server Name | `--server-name`, `-n` | Custom name for the server (defaults to server's name attribute or file name) |
+| Editable Package | `--with-editable`, `-e` | Directory containing pyproject.toml to install in editable mode |
+| Additional Packages | `--with` | Additional packages to install (can be used multiple times) |
+| Environment Variables | `--env` | Environment variables in KEY=VALUE format (can be used multiple times) |
+| Environment File | `--env-file`, `-f` | Load environment variables from a .env file |
+| Python Version | `--python` | Python version to use (e.g., 3.10, 3.11) |
+| Project Directory | `--project` | Run the command within the given project directory |
+| Requirements File | `--with-requirements` | Requirements file to install dependencies from |
+
+### Entrypoints
+
+The `install` command supports local FastMCP server files and configuration:
+
+1. **Inferred server instance**: `server.py` - imports the module and looks for a FastMCP server instance named `mcp`, `server`, or `app`. Errors if no such object is found.
+2. **Explicit server entrypoint**: `server.py:custom_name` - imports and uses the specified server entrypoint  
+3. **Factory function**: `server.py:create_server` - calls the specified function (sync or async) to create a server instance
+4. **FastMCP configuration**: `fastmcp.json` - uses FastMCP's declarative configuration with dependencies and settings
+
+<Note>
+Factory functions are particularly useful for install commands since they allow setup code to run that would otherwise be ignored when the MCP client runs your server. When using fastmcp.json, dependencies are automatically handled.
+</Note>
+
+<Warning>
+The `install` command **only supports local files and fastmcp.json** - no URLs, remote servers, or standard MCP configuration files. For remote servers, use your MCP client's native configuration.
+</Warning>
+
+**Examples**
+
+```bash
+# Auto-detects server entrypoint (looks for 'mcp', 'server', or 'app')
+fastmcp install claude-desktop server.py
+
+# Install with fastmcp.json configuration (auto-detects)
+fastmcp install claude-desktop
+
+# Install with explicit fastmcp.json file
+fastmcp install claude-desktop my-config.fastmcp.json
+
+# Uses specific server entrypoint
+fastmcp install claude-desktop server.py:my_server
+
+# With custom name and dependencies
+fastmcp install claude-desktop server.py:my_server --server-name "My Analysis Server" --with pandas
+
+# Install in Claude Code with environment variables
+fastmcp install claude-code server.py --env API_KEY=secret --env DEBUG=true
+
+# Install in Cursor with environment variables
+fastmcp install cursor server.py --env API_KEY=secret --env DEBUG=true
+
+# Install with environment file
+fastmcp install cursor server.py --env-file .env
+
+# Install in Goose (uses uvx deeplink)
+fastmcp install goose server.py --with pandas
+
+# Install with specific Python version
+fastmcp install claude-desktop server.py --python 3.11
+
+# Install with requirements file
+fastmcp install claude-code server.py --with-requirements requirements.txt
+
+# Install within a project directory
+fastmcp install cursor server.py --project /path/to/project
+
+# Generate MCP JSON configuration
+fastmcp install mcp-json server.py --name "My Server" --with pandas
+
+# Copy JSON configuration to clipboard
+fastmcp install mcp-json server.py --copy
+
+# Output the stdio command for running a server
+fastmcp install stdio server.py
+
+# Output the stdio command from a fastmcp.json (includes configured dependencies)
+fastmcp install stdio fastmcp.json
+
+# Copy the stdio command to clipboard
+fastmcp install stdio server.py --copy
+```
+
+### MCP JSON Generation
+
+The `mcp-json` subcommand generates standard MCP JSON configuration that can be used with any MCP-compatible client. This is useful when:
+
+- Working with MCP clients not directly supported by FastMCP
+- Creating configuration for CI/CD environments  
+- Sharing server configurations with others
+- Integration with custom tooling
+
+The generated JSON follows the standard MCP server configuration format used by Claude Desktop, VS Code, Cursor, and other MCP clients, with the server name as the root key:
+
+```json
+{
+  "server-name": {
+    "command": "uv",
+    "args": [
+      "run",
+      "--with",
+      "fastmcp",
+      "fastmcp",
+      "run",
+      "/path/to/server.py"
+    ],
+    "env": {
+      "API_KEY": "value"
+    }
+  }
+}
+```
+
+<Note>
+To use this configuration with your MCP client, you'll typically need to add it to the client's `mcpServers` object. Consult your client's documentation for any specific configuration requirements or formatting needs.
+</Note>
+
+**Options specific to mcp-json:**
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Copy to Clipboard | `--copy` | Copy configuration to clipboard instead of printing to stdout |
+
+### Stdio Command
+
+The `stdio` subcommand outputs the shell command an MCP host uses to start your server over stdio transport. Use it when you need a ready-to-paste `uv run --with fastmcp fastmcp run ...` command for a tool or script without a dedicated install target.
+
+```bash
+# Print the command to stdout
+fastmcp install stdio server.py
+
+# Output: uv run --with fastmcp fastmcp run /absolute/path/to/server.py
+```
+
+When you pass a `fastmcp.json`, FastMCP automatically includes dependencies from the configuration:
+
+```bash
+fastmcp install stdio fastmcp.json
+
+# Output: uv run --with fastmcp --with pillow --with 'qrcode[pil]>=8.0' fastmcp run /absolute/path/to/qr_server.py
+```
+
+Use `--copy` to send the command directly to your clipboard:
+
+```bash
+fastmcp install stdio server.py --copy
+# ✓ Command copied to clipboard
+```
+
+**Options specific to stdio:**
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Copy to Clipboard | `--copy` | Copy command to clipboard instead of printing to stdout |
+
+## `fastmcp inspect`
+
+<VersionBadge version="2.9.0" />
+
+Inspect a FastMCP server to view summary information or generate a detailed JSON report.
+
+```bash
+# Show text summary
+fastmcp inspect server.py
+
+# Output FastMCP JSON to stdout
+fastmcp inspect server.py --format fastmcp
+
+# Save MCP JSON to file (format required with -o)
+fastmcp inspect server.py --format mcp -o manifest.json
+```
+
+### Options
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Format | `--format`, `-f` | Output format: `fastmcp` (FastMCP-specific) or `mcp` (MCP protocol). Required when using `-o` |
+| Output File | `--output`, `-o` | Save JSON report to file instead of stdout. Requires `--format` |
+
+### Output Formats
+
+#### FastMCP Format (`--format fastmcp`)
+The default and most comprehensive format, includes all FastMCP-specific metadata:
+- Server name, instructions, and version
+- FastMCP version and MCP version
+- Tool tags and enabled status
+- Output schemas for tools
+- Annotations and custom metadata
+- Uses snake_case field names
+- **Use this for**: Complete server introspection and debugging FastMCP servers
+
+#### MCP Protocol Format (`--format mcp`)
+Shows exactly what MCP clients will see via the protocol:
+- Only includes standard MCP protocol fields
+- Matches output from `client.list_tools()`, `client.list_prompts()`, etc.
+- Uses camelCase field names (e.g., `inputSchema`)
+- Excludes FastMCP-specific fields like tags and enabled status
+- **Use this for**: Debugging client visibility and ensuring MCP compatibility
+
+### Entrypoints
+
+The `inspect` command supports local FastMCP server files and configuration:
+
+1. **Inferred server instance**: `server.py` - imports the module and looks for a FastMCP server instance named `mcp`, `server`, or `app`. Errors if no such object is found.
+2. **Explicit server entrypoint**: `server.py:custom_name` - imports and uses the specified server entrypoint  
+3. **Factory function**: `server.py:create_server` - calls the specified function (sync or async) to create a server instance
+4. **FastMCP configuration**: `fastmcp.json` - inspects servers defined with FastMCP's declarative configuration
+
+<Warning>
+The `inspect` command **only supports local files and fastmcp.json** - no URLs, remote servers, or standard MCP configuration files.
+</Warning>
+
+### Examples
+
+```bash
+# Show text summary (no JSON output)
+fastmcp inspect server.py
+# Output: 
+# Server: MyServer
+# Instructions: A helpful MCP server
+# Version: 1.0.0
+#
+# Components:
+#   Tools: 5
+#   Prompts: 2
+#   Resources: 3
+#   Templates: 1
+#
+# Environment:
+#   FastMCP: 2.0.0
+#   MCP: 1.0.0
+#
+# Use --format [fastmcp|mcp] for complete JSON output
+
+# Output FastMCP format to stdout
+fastmcp inspect server.py --format fastmcp
+
+# Specify server entrypoint
+fastmcp inspect server.py:my_server
+
+# Output MCP protocol format to stdout
+fastmcp inspect server.py --format mcp
+
+# Save to file (format required)
+fastmcp inspect server.py --format fastmcp -o server-manifest.json
+
+# Save MCP format with custom server object
+fastmcp inspect server.py:my_server --format mcp -o mcp-manifest.json
+
+# Error: format required with output file
+fastmcp inspect server.py -o output.json
+# Error: --format is required when using -o/--output
+```
+
+## `fastmcp project prepare`
+
+Create a persistent uv project directory from a fastmcp.json file's environment configuration. This allows you to pre-install all dependencies once and reuse them with the `--project` flag.
+
+```bash
+fastmcp project prepare fastmcp.json --output-dir ./env
+```
+
+### Options
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Output Directory | `--output-dir` | **Required.** Directory where the persistent uv project will be created |
+
+### Usage Pattern
+
+```bash
+# Step 1: Prepare the environment (installs dependencies)
+fastmcp project prepare fastmcp.json --output-dir ./my-env
+
+# Step 2: Run using the prepared environment (fast, no dependency installation)
+fastmcp run fastmcp.json --project ./my-env
+```
+
+The prepare command creates a uv project with:
+- A `pyproject.toml` containing all dependencies from the fastmcp.json
+- A `.venv` with all packages pre-installed
+- A `uv.lock` file for reproducible environments
+
+This is useful when you want to separate environment setup from server execution, such as in deployment scenarios where dependencies are installed once and the server is run multiple times.
+
+## `fastmcp auth`
+
+<VersionBadge version="3.0.0" />
+
+Authentication-related utilities and configuration commands.
+
+### `fastmcp auth cimd create`
+
+Generate a CIMD (Client ID Metadata Document) for hosting. This creates a JSON document that you can host at an HTTPS URL to use as your OAuth client identity.
+
+```bash
+fastmcp auth cimd create --name "My App" --redirect-uri "http://localhost:*/callback"
+```
+
+#### Options
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Name | `--name` | **Required.** Human-readable name of the client application |
+| Redirect URI | `--redirect-uri` | **Required.** Allowed redirect URIs (can specify multiple) |
+| Client URI | `--client-uri` | URL of the client's home page |
+| Logo URI | `--logo-uri` | URL of the client's logo image |
+| Scope | `--scope` | Space-separated list of scopes the client may request |
+| Output | `--output`, `-o` | Output file path (default: stdout) |
+| Pretty | `--pretty` | Pretty-print JSON output (default: true) |
+
+#### Example
+
+```bash
+# Generate document to stdout
+fastmcp auth cimd create \
+    --name "My Production App" \
+    --redirect-uri "http://localhost:*/callback" \
+    --redirect-uri "https://myapp.example.com/callback" \
+    --client-uri "https://myapp.example.com" \
+    --scope "read write"
+
+# Save to file
+fastmcp auth cimd create \
+    --name "My App" \
+    --redirect-uri "http://localhost:*/callback" \
+    --output client.json
+```
+
+The generated document includes a placeholder `client_id` that you must update to match the URL where you'll host the document before deploying.
+
+### `fastmcp auth cimd validate`
+
+Validate a hosted CIMD document by fetching it from its URL and checking that it conforms to the CIMD specification.
+
+```bash
+fastmcp auth cimd validate https://myapp.example.com/oauth/client.json
+```
+
+#### Options
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Timeout | `--timeout`, `-t` | HTTP request timeout in seconds (default: 10) |
+
+The validator checks:
+
+- The URL is a valid CIMD URL (HTTPS with non-root path)
+- The document is valid JSON and conforms to the CIMD schema
+- The `client_id` field in the document matches the URL
+- No shared-secret authentication methods are used
+
+On success, it displays the document details:
+
+```
+→ Fetching https://myapp.example.com/oauth/client.json...
+✓ Valid CIMD document
+
+Document details:
+  client_id: https://myapp.example.com/oauth/client.json
+  client_name: My App
+  token_endpoint_auth_method: none
+  redirect_uris:
+    • http://localhost:*/callback
+```
+
+## `fastmcp version`
+
+Display version information about FastMCP and related components.
+
+```bash
+fastmcp version
+```
+
+### Options
+
+| Option | Flag | Description |
+| ------ | ---- | ----------- |
+| Copy to Clipboard | `--copy` | Copy version information to clipboard |

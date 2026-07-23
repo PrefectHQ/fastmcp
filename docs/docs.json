@@ -16,7 +16,7 @@
       "dark": "#475569",
       "light": "#1e3a5f"
     },
-    "content": "Meet [Prefect Horizon](https://prefect.io/horizon?utm_source=gofastmcp&utm_medium=docs&utm_campaign=docs_banner&utm_content=sitewide_banner), the enterprise MCP gateway built by the team behind FastMCP"
+    "content": "FastMCP 4 is in alpha — you're reading the v4 docs. [What's new](/getting-started/upgrading/from-fastmcp-3) · [FastMCP 3 docs](/v3/getting-started/welcome)"
   },
   "colors": {
     "dark": "#f72585",
@@ -411,7 +411,10 @@
             "icon": "code"
           }
         ],
-        "version": "v3"
+        "version": "v4"
+      },
+      {
+        "$ref": "./v3-navigation.json"
       },
       {
         "$ref": "./v2-navigation.json"

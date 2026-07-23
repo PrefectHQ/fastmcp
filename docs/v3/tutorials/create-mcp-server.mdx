@@ -1,0 +1,198 @@
+---
+title: "How to Create an MCP Server in Python"
+sidebarTitle: "Creating an MCP Server"
+description: "A step-by-step guide to building a Model Context Protocol (MCP) server using Python and FastMCP, from basic tools to dynamic resources."
+icon: server
+---
+
+So you want to build a Model Context Protocol (MCP) server in Python. The goal is to create a service that can provide tools and data to AI models like Claude, Gemini, or others that support the protocol. While the [MCP specification](https://modelcontextprotocol.io/specification/) is powerful, implementing it from scratch involves a lot of boilerplate: handling JSON-RPC, managing session state, and correctly formatting requests and responses.
+
+This is where **FastMCP** comes in. It's a high-level framework that handles all the protocol complexities for you, letting you focus on what matters: writing the Python functions that power your server.
+
+This guide will walk you through creating a fully-featured MCP server from scratch using FastMCP.
+
+<Tip>
+Every code block in this tutorial is a complete, runnable example. You can copy and paste it into a file and run it, or paste it directly into a Python REPL like IPython to try it out.
+</Tip>
+
+### Prerequisites
+
+Make sure you have FastMCP installed. If not, follow the [installation guide](/getting-started/installation).
+
+```bash
+pip install fastmcp
+```
+
+
+## Step 1: Create the Basic Server
+
+Every FastMCP application starts with an instance of the `FastMCP` class. This object acts as the container for all your tools and resources.
+
+Create a new file called `my_mcp_server.py`:
+
+```python my_mcp_server.py
+from fastmcp import FastMCP
+
+# Create a server instance with a descriptive name
+mcp = FastMCP(name="My First MCP Server")
+```
+
+That's it! You have a valid (though empty) MCP server. Now, let's add some functionality.
+
+## Step 2: Add a Tool
+
+Tools are functions that an LLM can execute. Let's create a simple tool that adds two numbers.
+
+To do this, simply write a standard Python function and decorate it with `@mcp.tool`.
+
+```python my_mcp_server.py {5-8}
+from fastmcp import FastMCP
+
+mcp = FastMCP(name="My First MCP Server")
+
+@mcp.tool
+def add(a: int, b: int) -> int:
+    """Adds two integer numbers together."""
+    return a + b
+```
+
+FastMCP automatically handles the rest:
+- **Tool Name:** It uses the function name (`add`) as the tool's name.
+- **Description:** It uses the function's docstring as the tool's description for the LLM.
+- **Schema:** It inspects the type hints (`a: int`, `b: int`) to generate a JSON schema for the inputs.
+
+This is the core philosophy of FastMCP: **write Python, not protocol boilerplate.**
+
+## Step 3: Expose Data with Resources
+
+Resources provide read-only data to the LLM. You can define a resource by decorating a function with `@mcp.resource`, providing a unique URI.
+
+Let's expose a simple configuration dictionary as a resource.
+
+```python my_mcp_server.py {10-13}
+from fastmcp import FastMCP
+
+mcp = FastMCP(name="My First MCP Server")
+
+@mcp.tool
+def add(a: int, b: int) -> int:
+    """Adds two integer numbers together."""
+    return a + b
+
+@mcp.resource("resource://config")
+def get_config() -> dict:
+    """Provides the application's configuration."""
+    return {"version": "1.0", "author": "MyTeam"}
+```
+
+When a client requests the URI `resource://config`, FastMCP will execute the `get_config` function and return its output (serialized as JSON) to the client. The function is only called when the resource is requested, enabling lazy-loading of data.
+
+## Step 4: Generate Dynamic Content with Resource Templates
+
+Sometimes, you need to generate resources based on parameters. This is what **Resource Templates** are for. You define them using the same `@mcp.resource` decorator but with placeholders in the URI.
+
+Let's create a template that provides a personalized greeting.
+
+```python my_mcp_server.py {15-17}
+from fastmcp import FastMCP
+
+mcp = FastMCP(name="My First MCP Server")
+
+@mcp.tool
+def add(a: int, b: int) -> int:
+    """Adds two integer numbers together."""
+    return a + b
+
+@mcp.resource("resource://config")
+def get_config() -> dict:
+    """Provides the application's configuration."""
+    return {"version": "1.0", "author": "MyTeam"}
+
+@mcp.resource("greetings://{name}")
+def personalized_greeting(name: str) -> str:
+    """Generates a personalized greeting for the given name."""
+    return f"Hello, {name}! Welcome to the MCP server."
+```
+
+Now, clients can request dynamic URIs:
+- `greetings://Ford` will call `personalized_greeting(name="Ford")`.
+- `greetings://Marvin` will call `personalized_greeting(name="Marvin")`.
+
+FastMCP automatically maps the `{name}` placeholder in the URI to the `name` parameter in your function.
+
+## Step 5: Run the Server
+
+To make your server executable, add a `__main__` block to your script that calls `mcp.run()`.
+
+```python my_mcp_server.py {19-20}
+from fastmcp import FastMCP
+
+mcp = FastMCP(name="My First MCP Server")
+
+@mcp.tool
+def add(a: int, b: int) -> int:
+    """Adds two integer numbers together."""
+    return a + b
+
+@mcp.resource("resource://config")
+def get_config() -> dict:
+    """Provides the application's configuration."""
+    return {"version": "1.0", "author": "MyTeam"}
+
+@mcp.resource("greetings://{name}")
+def personalized_greeting(name: str) -> str:
+    """Generates a personalized greeting for the given name."""
+    return f"Hello, {name}! Welcome to the MCP server."
+
+if __name__ == "__main__":
+    mcp.run()
+```
+
+Now you can run your server from the command line:
+```bash
+python my_mcp_server.py
+```
+This starts the server using the default **STDIO transport**, which is how clients like Claude Desktop communicate with local servers. To learn about other transports, like HTTP, see the [Running Your Server](/deployment/running-server) guide.
+
+## The Complete Server
+
+Here is the full code for `my_mcp_server.py` (click to expand):
+
+```python my_mcp_server.py [expandable]
+from fastmcp import FastMCP
+
+# 1. Create the server
+mcp = FastMCP(name="My First MCP Server")
+
+# 2. Add a tool
+@mcp.tool
+def add(a: int, b: int) -> int:
+    """Adds two integer numbers together."""
+    return a + b
+
+# 3. Add a static resource
+@mcp.resource("resource://config")
+def get_config() -> dict:
+    """Provides the application's configuration."""
+    return {"version": "1.0", "author": "MyTeam"}
+
+# 4. Add a resource template for dynamic content
+@mcp.resource("greetings://{name}")
+def personalized_greeting(name: str) -> str:
+    """Generates a personalized greeting for the given name."""
+    return f"Hello, {name}! Welcome to the MCP server."
+
+# 5. Make the server runnable
+if __name__ == "__main__":
+    mcp.run()
+```
+
+## Next Steps
+
+You've successfully built an MCP server! From here, you can explore more advanced topics:
+
+-   [**Tools in Depth**](/servers/tools): Learn about asynchronous tools, error handling, and custom return types.
+-   [**Resources & Templates**](/servers/resources): Discover different resource types, including files and HTTP endpoints.
+-   [**Prompts**](/servers/prompts): Create reusable prompt templates for your LLM.
+-   [**Running Your Server**](/deployment/running-server): Deploy your server with different transports like HTTP.
+
