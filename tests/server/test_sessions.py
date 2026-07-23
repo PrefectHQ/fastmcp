@@ -4,6 +4,7 @@ Covers the principal helpers, the `(principal, session_id)` key scheme, and the
 `Session` object's read-modify-write behavior against a real server store.
 """
 
+import functools
 import json
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -16,7 +17,9 @@ from mcp.server.auth.provider import principal_components
 from fastmcp.server.server import FastMCP
 from fastmcp.server.sessions import (
     Session,
+    SessionId,
     current_principal,
+    session_id_parameter_names,
     session_storage_key,
 )
 
@@ -223,3 +226,38 @@ class TestLifecycleMarker:
         await session.end()
         assert await session._exists() is False
         assert await session.get("cart") is None
+
+
+class TestSessionIdParameterNames:
+    def test_detects_plain_parameter(self):
+        def tool(item: str, session_id: SessionId) -> None: ...
+
+        assert session_id_parameter_names(tool) == ("session_id",)
+
+    def test_none_when_absent(self):
+        def tool(item: str) -> None: ...
+
+        assert session_id_parameter_names(tool) == ()
+
+    def test_partial_positional_binding_is_dropped(self):
+        # A positionally bound leading argument is no longer part of the tool's
+        # argument surface; the `session_id` that remains is still detected.
+        def tool(item: str, session_id: SessionId) -> None: ...
+
+        bound = functools.partial(tool, "apple")
+        assert session_id_parameter_names(bound) == ("session_id",)
+
+    def test_partial_binding_the_session_id_positionally_drops_it(self):
+        def tool(session_id: SessionId, item: str) -> None: ...
+
+        bound = functools.partial(tool, "s1")
+        assert session_id_parameter_names(bound) == ()
+
+    def test_partial_keyword_binding_stays_detected(self):
+        # A keyword-bound partial argument remains overridable by the caller, so
+        # it is still in the tool's input schema — detection tracks the schema
+        # and keeps populating its description.
+        def tool(item: str, session_id: SessionId) -> None: ...
+
+        bound = functools.partial(tool, session_id="s1")
+        assert session_id_parameter_names(bound) == ("session_id",)

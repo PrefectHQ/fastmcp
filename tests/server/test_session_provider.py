@@ -157,6 +157,65 @@ class TestInjectedSession:
 
         assert result_value(view_b) == []
 
+    async def test_injected_value_is_a_user_session_instance(self):
+        """The handler receives a `UserSession`, not a bare `Session` — so
+        `isinstance(session, UserSession)` holds for code that keys off it."""
+        server = FastMCP("shop")
+
+        @server.tool
+        async def whoami(session: UserSession) -> bool:
+            return isinstance(session, UserSession)
+
+        tool = await server.get_tool("whoami")
+        assert tool is not None
+        async with Context(fastmcp=server):
+            with as_principal(make_token()):
+                result = await tool.run({})
+        assert result_value(result) is True
+
+    async def test_optional_session_is_none_without_auth(self):
+        """`session: UserSession | None = None` injects `None` on an
+        unauthenticated request instead of raising."""
+        server = FastMCP("shop")
+
+        @server.tool
+        async def maybe(session: UserSession | None = None) -> bool:
+            return session is None
+
+        tool = await server.get_tool("maybe")
+        assert tool is not None
+        async with Context(fastmcp=server):
+            result = await tool.run({})
+        assert result_value(result) is True
+
+    async def test_optional_session_is_present_with_auth(self):
+        """The same optional parameter injects a real `UserSession` when the
+        request is authenticated."""
+        server = FastMCP("shop")
+
+        @server.tool
+        async def maybe(session: UserSession | None = None) -> bool:
+            return isinstance(session, UserSession)
+
+        tool = await server.get_tool("maybe")
+        assert tool is not None
+        async with Context(fastmcp=server):
+            with as_principal(make_token()):
+                result = await tool.run({})
+        assert result_value(result) is True
+
+    async def test_optional_session_not_in_input_schema(self):
+        """An optional injected session is still excluded from the schema."""
+        server = FastMCP("shop")
+
+        @server.tool
+        async def maybe(session: UserSession | None = None) -> bool:
+            return session is None
+
+        async with Client(server) as client:
+            tools = {t.name: t for t in await client.list_tools()}
+        assert "session" not in tools["maybe"].input_schema.get("properties", {})
+
     async def test_user_session_needs_no_provider(self):
         """A server using only `UserSession` requires no `SessionProvider` and
         lists no lifecycle tools."""

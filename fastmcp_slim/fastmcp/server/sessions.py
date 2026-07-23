@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import functools
 import hashlib
+import inspect
 import json
 import time
 from collections.abc import Callable, Sequence
@@ -305,9 +306,10 @@ class UserSession(Session):
     A `session: UserSession` parameter is **dependency-injected** like
     `ctx: Context`: keyed by the request's authenticated principal, excluded from
     the input schema, and requiring auth (it raises `SessionAuthError` with no
-    principal). It is the injection *annotation* — the value a handler receives is
-    an ordinary `Session`, so `await session.get(...)`, `.set`, `.delete`, and
-    `.clear` all work exactly as on any other `Session`.
+    principal). It doubles as the injection *annotation* and the injected
+    type — the value a handler receives is a `UserSession`, which subclasses
+    `Session`, so `await session.get(...)`, `.set`, `.delete`, and `.clear` all
+    work exactly as on any other `Session`.
 
     Unlike `session_id: SessionId`, the per-user bucket needs no `create_session`,
     no `SessionProvider`, and no validation — it is always available under auth,
@@ -323,7 +325,7 @@ class UserSession(Session):
     ```
 
     Subclasses `Session` only so the framework's type-based injection detector can
-    key off it; it adds no behavior and is never instantiated directly.
+    key off it; it adds no behavior of its own.
     """
 
 
@@ -349,12 +351,11 @@ def session_id_parameter_names(fn: Callable[..., object]) -> tuple[str, ...]:
     partial object — FastMCP supports registering a partial as a tool, and its
     schema is still built from the underlying function, so its `SessionId`
     parameters must be detected here too. Parameters the partial has already
-    bound are dropped, matching the tool's actual argument surface.
+    bound — positionally or by keyword — are dropped, matching the tool's actual
+    argument surface (the partial's own signature already reflects this).
     """
     target: object = fn
-    bound: set[str] = set()
     while isinstance(target, functools.partial):
-        bound.update(target.keywords or {})
         target = target.func
     if not callable(target):
         return ()
@@ -362,15 +363,42 @@ def session_id_parameter_names(fn: Callable[..., object]) -> tuple[str, ...]:
         hints = get_type_hints(target, include_extras=True)
     except (TypeError, NameError):
         return ()
+    # `inspect.signature` on the (possibly partial) callable reports only the
+    # parameters still open to callers — a partial's bound positional and keyword
+    # arguments are already removed — so it is the source of truth for the tool's
+    # argument surface. Fall back to accepting every hinted name if the signature
+    # cannot be read.
+    try:
+        remaining = set(inspect.signature(fn).parameters)
+    except (TypeError, ValueError):
+        remaining = None
     names: list[str] = []
     for name, hint in hints.items():
-        if name == "return" or name in bound:
+        if name == "return" or (remaining is not None and name not in remaining):
             continue
         if get_origin(hint) is not Annotated:
             continue
         if any(isinstance(meta, _SessionIdMarker) for meta in get_args(hint)[1:]):
             names.append(name)
     return tuple(names)
+
+
+def _current_user_session() -> UserSession | None:
+    """Build the per-user session for the current principal, or `None` if unauth.
+
+    Resolves the store through `get_server()` rather than `get_context()`: a
+    `task=True` tool whose only injected dependency is `UserSession` runs in a
+    Docket worker with no foreground context, and `get_server()` is task-aware (it
+    resolves via the task-server map in a worker).
+    """
+    principal = current_principal()
+    if principal is None:
+        return None
+    return UserSession(
+        store=get_server()._state_store,
+        principal=principal,
+        session_id=_USER_SESSION_ID,
+    )
 
 
 class _CurrentSession(Dependency["Session"]):
@@ -383,19 +411,31 @@ class _CurrentSession(Dependency["Session"]):
     """
 
     async def __aenter__(self) -> Session:
-        principal = current_principal()
-        if principal is None:
+        session = _current_user_session()
+        if session is None:
             raise SessionAuthError
-        # Resolve the store through `get_server()` rather than `get_context()`:
-        # a `task=True` tool whose only injected dependency is `UserSession` runs
-        # in a Docket worker with no foreground context, and `get_server()` is
-        # task-aware (it resolves via the task-server map in a worker).
-        server = get_server()
-        return Session(
-            store=server._state_store,
-            principal=principal,
-            session_id=_USER_SESSION_ID,
-        )
+        return session
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        return None
+
+
+class _OptionalCurrentSession(Dependency["Session | None"]):
+    """Dependency for an *optional* per-user session (`session: UserSession | None`).
+
+    Mirrors `_OptionalCurrentContext`: when the request carries no authenticated
+    principal it injects `None` instead of raising, so a handler that declares the
+    parameter optional (default `None`) can run on unauthenticated requests and
+    branch on whether a session is available.
+    """
+
+    async def __aenter__(self) -> Session | None:
+        return _current_user_session()
 
     async def __aexit__(
         self,
@@ -414,6 +454,15 @@ def CurrentSession() -> Session:
     is preferred.
     """
     return cast("Session", _CurrentSession())
+
+
+def OptionalCurrentSession() -> Session | None:
+    """Inject the per-user `Session`, or `None` when the request is unauthenticated.
+
+    Rarely written explicitly — a `session: UserSession | None = None` parameter
+    is rewritten to this. Provided for parity with `OptionalCurrentContext()`.
+    """
+    return cast("Session | None", _OptionalCurrentSession())
 
 
 async def create_session() -> str:

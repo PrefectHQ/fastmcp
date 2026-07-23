@@ -315,6 +315,7 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
     params_to_transform: set[str] = set()
     optional_context_params: set[str] = set()
     session_params: set[str] = set()
+    optional_session_params: set[str] = set()
     for name, param in sig.parameters.items():
         annotation = type_hints.get(name, param.annotation)
         if isinstance(param.default, Dependency):
@@ -329,7 +330,12 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
             # bare `session: Session` is NOT injected — only the `UserSession`
             # marker keys the per-user injection.
             params_to_transform.add(name)
-            session_params.add(name)
+            # A `UserSession | None = None` param opts into the unauthenticated
+            # case: inject `None` instead of raising, mirroring optional Context.
+            if param.default is None:
+                optional_session_params.add(name)
+            else:
+                session_params.add(name)
 
     if not params_to_transform:
         return fn
@@ -359,6 +365,10 @@ def transform_context_annotations(fn: Callable[..., Any]) -> Callable[..., Any]:
                 from fastmcp.server.sessions import CurrentSession
 
                 param = param.replace(default=CurrentSession())
+            elif name in optional_session_params:
+                from fastmcp.server.sessions import OptionalCurrentSession
+
+                param = param.replace(default=OptionalCurrentSession())
             elif name in optional_context_params:
                 param = param.replace(default=OptionalCurrentContext())
             else:
