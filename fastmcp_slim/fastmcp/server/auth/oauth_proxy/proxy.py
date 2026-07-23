@@ -26,6 +26,7 @@ from collections import OrderedDict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, Literal
+from urllib.parse import urlencode
 
 import anyio
 import httpx2
@@ -788,6 +789,40 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         code_challenge = urlsafe_b64encode(challenge_bytes).decode().rstrip("=")
 
         return code_verifier, code_challenge
+
+    def _build_upstream_authorize_url(
+        self, txn_id: str, transaction: dict[str, Any]
+    ) -> str:
+        """Construct the upstream IdP authorization URL using stored transaction data."""
+        query_params: dict[str, Any] = {
+            "response_type": "code",
+            "client_id": self._upstream_client_id,
+            "redirect_uri": f"{str(self.base_url).rstrip('/')}{self._redirect_path}",
+            "state": txn_id,
+        }
+
+        scopes_to_use = transaction.get("scopes") or self.required_scopes or []
+        if scopes_to_use:
+            query_params["scope"] = " ".join(scopes_to_use)
+
+        proxy_code_verifier = transaction.get("proxy_code_verifier")
+        if proxy_code_verifier:
+            challenge_bytes = hashlib.sha256(proxy_code_verifier.encode()).digest()
+            proxy_code_challenge = (
+                urlsafe_b64encode(challenge_bytes).decode().rstrip("=")
+            )
+            query_params["code_challenge"] = proxy_code_challenge
+            query_params["code_challenge_method"] = "S256"
+
+        if self._forward_resource:
+            if resource := transaction.get("resource"):
+                query_params["resource"] = resource
+
+        if self._extra_authorize_params:
+            query_params.update(self._extra_authorize_params)
+
+        separator = "&" if "?" in self._upstream_authorization_endpoint else "?"
+        return f"{self._upstream_authorization_endpoint}{separator}{urlencode(query_params)}"
 
     # -------------------------------------------------------------------------
     # Client Registration (Local Implementation)
