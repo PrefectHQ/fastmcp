@@ -34,6 +34,7 @@ id is a bearer capability and sessions are not a boundary between clients.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import time
@@ -56,7 +57,7 @@ from mcp.server.auth.provider import principal_components
 from uncalled_for import Dependency
 
 from fastmcp.exceptions import FastMCPError
-from fastmcp.server.dependencies import get_access_token, get_context
+from fastmcp.server.dependencies import get_access_token, get_server
 from fastmcp.server.providers.base import Provider
 from fastmcp.utilities.logging import get_logger
 
@@ -342,14 +343,27 @@ def session_id_parameter_names(fn: Callable[..., object]) -> tuple[str, ...]:
     Scans resolved type hints for `Annotated[str, _SessionIdMarker()]` metadata.
     Returns an empty tuple when the hints cannot be resolved (the function then
     simply carries no auto-populated session-id description).
+
+    `functools.partial` is unwrapped first, since `get_type_hints` rejects a
+    partial object — FastMCP supports registering a partial as a tool, and its
+    schema is still built from the underlying function, so its `SessionId`
+    parameters must be detected here too. Parameters the partial has already
+    bound are dropped, matching the tool's actual argument surface.
     """
+    target: object = fn
+    bound: set[str] = set()
+    while isinstance(target, functools.partial):
+        bound.update(target.keywords or {})
+        target = target.func
+    if not callable(target):
+        return ()
     try:
-        hints = get_type_hints(fn, include_extras=True)
+        hints = get_type_hints(target, include_extras=True)
     except (TypeError, NameError):
         return ()
     names: list[str] = []
     for name, hint in hints.items():
-        if name == "return":
+        if name == "return" or name in bound:
             continue
         if get_origin(hint) is not Annotated:
             continue
@@ -371,9 +385,13 @@ class _CurrentSession(Dependency["Session"]):
         principal = current_principal()
         if principal is None:
             raise SessionAuthError
-        ctx = get_context()
+        # Resolve the store through `get_server()` rather than `get_context()`:
+        # a `task=True` tool whose only injected dependency is `UserSession` runs
+        # in a Docket worker with no foreground context, and `get_server()` is
+        # task-aware (it resolves via the task-server map in a worker).
+        server = get_server()
         return Session(
-            store=ctx.fastmcp._state_store,
+            store=server._state_store,
             principal=principal,
             session_id=_USER_SESSION_ID,
         )
@@ -406,9 +424,8 @@ async def resolve_session(session_id: str) -> Session:
     principal, raises `InvalidSession`; the specific reason is logged at debug
     level and never returned to the caller.
     """
-    ctx = get_context()
     session = Session(
-        store=ctx.fastmcp._state_store,
+        store=get_server()._state_store,
         principal=current_principal(),
         session_id=session_id,
         public_id=session_id,
@@ -434,9 +451,8 @@ async def create_session() -> str:
     is unguessable.
     """
     session_id = str(uuid4())
-    ctx = get_context()
     session = Session(
-        store=ctx.fastmcp._state_store,
+        store=get_server()._state_store,
         principal=current_principal(),
         session_id=session_id,
         public_id=session_id,
