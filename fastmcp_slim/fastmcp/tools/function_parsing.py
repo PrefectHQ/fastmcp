@@ -349,6 +349,26 @@ class ParsedFunction:
                 ):
                     properties[param_name]["description"] = param_desc
 
+        # Auto-populate the create-then-pass contract onto `SessionId`-annotated
+        # parameters so an agent learns it straight from the schema. Append to any
+        # author-provided description rather than clobbering it.
+        from fastmcp.server.sessions import (
+            SESSION_ID_DESCRIPTION,
+            session_id_parameter_names,
+        )
+
+        properties = input_schema.get("properties", {})
+        for param_name in session_id_parameter_names(fn):
+            if param_name not in properties:
+                continue
+            existing = properties[param_name].get("description")
+            if not existing:
+                properties[param_name]["description"] = SESSION_ID_DESCRIPTION
+            elif SESSION_ID_DESCRIPTION not in existing:
+                properties[param_name]["description"] = (
+                    f"{existing}\n\n{SESSION_ID_DESCRIPTION}"
+                )
+
         output_schema = None
         # Get the return annotation from the signature
         sig = inspect.signature(fn)
