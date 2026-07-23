@@ -2312,26 +2312,18 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 # always be overridden to advertise support — not just when
                 # CIMD or identity assertion is also enabled.
                 metadata.authorization_response_iss_parameter_supported = True
+                # Every client the proxy authenticates at the token endpoint is
+                # public: DCR-registered and synthesized clients are stored with
+                # `token_endpoint_auth_method="none"`, and CIMD clients use
+                # `private_key_jwt`. The SDK's default advertisement of
+                # `client_secret_basic`/`client_secret_post` is misleading — the
+                # proxy never enforces a downstream client secret — so we override
+                # it to reflect the methods actually supported.
+                auth_methods = ["none"]
                 if self._cimd_manager is not None:
                     metadata.client_id_metadata_document_supported = True
-                    existing = metadata.token_endpoint_auth_methods_supported or []
-                    metadata.token_endpoint_auth_methods_supported = [
-                        *existing,
-                        "private_key_jwt",
-                        "none",
-                    ]
-                if self._identity_assertion is not None:
-                    # DCR clients are public (`token_endpoint_auth_method="none"`),
-                    # so a metadata consumer must see `none` advertised to use the
-                    # jwt-bearer grant — even when CIMD (which also adds it) is off.
-                    methods_supported = (
-                        metadata.token_endpoint_auth_methods_supported or []
-                    )
-                    if "none" not in methods_supported:
-                        metadata.token_endpoint_auth_methods_supported = [
-                            *methods_supported,
-                            "none",
-                        ]
+                    auth_methods.append("private_key_jwt")
+                metadata.token_endpoint_auth_methods_supported = auth_methods
                 handler = MetadataHandler(metadata)
                 methods = route.methods or ["GET", "OPTIONS"]
 
