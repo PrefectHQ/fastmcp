@@ -8,7 +8,7 @@ icon: sparkles
 FastMCP 4 is a major version because its engine changed. The framework is now built on the MCP Python SDK v2, a ground-up rebuild of the protocol layer, and on that foundation it adds a new protocol era, first-class extensions, stateless state, enterprise identity, and more. Most FastMCP 3 servers run on it untouched — the major version signals how much moved underneath, and what that movement unlocks.
 
 <Note>
-FastMCP 4 is in **alpha**. Most of what's below is ready to build against today; background tasks and stateless state are landing across the alpha series. Pin an exact version and expect sharp edges.
+FastMCP 4 is in **alpha**. Everything below is available today except background tasks, which arrive in the next alpha. Pin an exact version and expect sharp edges.
 </Note>
 
 ## Built on the MCP Python SDK v2
@@ -29,11 +29,11 @@ The modern protocol is sessionless, so it drops the server's ability to call bac
 
 A stateless protocol raises an obvious question: if every request is a fresh connection, where does a tool keep a shopping cart, a conversation, or a running total? FastMCP 4 follows the MCP working group's own decision to reject protocol-level sessions in favor of *explicit state handles* (SEP-2567) — the server hands out an identifier, and the client passes it back.
 
-Two shapes cover the cases. `UserSession` is injected like `Context` and keyed to the authenticated user, so a tool reads and writes one bucket of state with nothing to pass around. `SessionId` is an explicit handle a tool mints and the caller supplies as an argument, for when one user holds many independent states. Both store their data server-side in the storage backend, keyed to the authenticated principal — so a handle is inert in anyone else's hands. This lands across the alpha series.
+Two shapes cover the cases. `UserSession` is injected like `Context` and keyed to the authenticated user, so a tool reads and writes one bucket of state with nothing to pass around. `SessionId` is an explicit handle a tool mints and the caller supplies as an argument, for when one user holds many independent states. Both store their data server-side in the storage backend, keyed to the authenticated user — so a handle is inert in anyone else's hands. See [Session State](/servers/sessions).
 
 ## Background tasks
 
-Long-running work runs as a background task: the server accepts the call, returns a handle, and the client polls for the result while the work proceeds. Tasks left the core MCP spec during the SDK v2 rebuild and returned as the `io.modelcontextprotocol/tasks` extension (SEP-2663), which FastMCP 4 implements end to end in the optional `fastmcp-tasks` package. The durable execution engine that made FastMCP 3's tasks reliable carries straight over, and `@mcp.tool(task=True)` remains the only authoring surface — so the wire protocol modernizing underneath costs you no code change. See [Background Tasks](/development/v4-notes/background-tasks) for the design; the runtime lands across the alpha series.
+Long-running work runs as a background task: the server accepts the call, returns a handle, and the client polls for the result while the work proceeds. Tasks left the core MCP spec during the SDK v2 rebuild and returned as the `io.modelcontextprotocol/tasks` extension (SEP-2663), which FastMCP 4 implements end to end in the optional `fastmcp-tasks` package. The durable execution engine that made FastMCP 3's tasks reliable carries straight over, and `@mcp.tool(task=True)` remains the only authoring surface — so the wire protocol modernizing underneath costs you no code change. See [Background Tasks](/development/v4-notes/background-tasks) for the design; the runtime arrives in the next alpha.
 
 ## Server extensions
 
