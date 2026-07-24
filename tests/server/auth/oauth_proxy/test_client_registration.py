@@ -304,6 +304,80 @@ class TestApplicationTypeRegistration:
             await oauth_proxy.register_client(client_info)
 
 
+class TestApplicationTypeRegistrationOverHTTP:
+    """SEP-837: application_type is honored on the real POST /register route.
+
+    The SDK's RegistrationHandler parses application_type but drops it before
+    calling register_client, so these tests exercise the actual ASGI route to
+    prove FastMCP recovers the value end to end (a direct register_client call
+    would not catch the SDK dropping the field)."""
+
+    async def _register(self, oauth_proxy, payload: dict):
+        app = Starlette(routes=oauth_proxy.get_routes())
+        transport = httpx2.ASGITransport(app=app)
+        async with httpx2.AsyncClient(
+            transport=transport,
+            base_url="https://myserver.com",
+        ) as client:
+            return await client.post("/register", json=payload)
+
+    async def test_web_client_with_loopback_rejected_over_http(self, oauth_proxy):
+        response = await self._register(
+            oauth_proxy,
+            {
+                "redirect_uris": ["http://localhost:12345/callback"],
+                "application_type": "web",
+            },
+        )
+
+        assert response.status_code == 400
+        body = response.json()
+        assert body["error"] == "invalid_redirect_uri"
+        assert "application_type 'web'" in body["error_description"]
+
+    async def test_web_client_with_https_accepted_over_http(self, oauth_proxy):
+        response = await self._register(
+            oauth_proxy,
+            {
+                "redirect_uris": ["https://client.example.com/callback"],
+                "application_type": "web",
+            },
+        )
+
+        assert response.status_code == 201
+        body = response.json()
+        assert body["application_type"] == "web"
+
+        stored = await oauth_proxy.get_client(body["client_id"])
+        assert stored is not None
+        assert stored.application_type == "web"
+
+    async def test_native_client_with_loopback_accepted_over_http(self, oauth_proxy):
+        response = await self._register(
+            oauth_proxy,
+            {
+                "redirect_uris": ["http://localhost:12345/callback"],
+                "application_type": "native",
+            },
+        )
+
+        assert response.status_code == 201
+        body = response.json()
+        assert body["application_type"] == "native"
+
+    async def test_default_application_type_is_native_over_http(self, oauth_proxy):
+        """Omitting application_type over HTTP defaults to native, so a loopback
+        redirect is accepted (preserving pre-SEP-837 behavior)."""
+        response = await self._register(
+            oauth_proxy,
+            {"redirect_uris": ["http://localhost:12345/callback"]},
+        )
+
+        assert response.status_code == 201
+        body = response.json()
+        assert body["application_type"] == "native"
+
+
 class TestUpstreamClientIdFallback:
     """Tests for clients that skip DCR and use the upstream client_id directly."""
 

@@ -497,6 +497,51 @@ class TestOAuthProxyCIMDClient:
             client.validate_redirect_uri(AnyUrl("http://localhost:9999/other"))
 
 
+class TestStoredApplicationTypeAtAuthorization:
+    """SEP-837: a stored client's application_type is enforced at authorization."""
+
+    def test_web_client_rejects_loopback_at_authorization(self):
+        """A registered web client cannot later authorize a loopback redirect."""
+        client = ProxyDCRClient(
+            client_id="web",
+            client_secret="secret",
+            redirect_uris=[AnyUrl("https://client.example.com/callback")],
+            application_type="web",
+        )
+
+        uri = client.validate_redirect_uri(
+            AnyUrl("https://client.example.com/callback")
+        )
+        assert str(uri) == "https://client.example.com/callback"
+
+        with pytest.raises(InvalidRedirectUriError, match="application_type 'web'"):
+            client.validate_redirect_uri(AnyUrl("http://localhost:8080/callback"))
+
+    def test_web_client_rejects_loopback_even_when_pattern_allows(self):
+        """The application_type check applies on top of the global allowlist."""
+        client = ProxyDCRClient(
+            client_id="web",
+            client_secret="secret",
+            redirect_uris=[AnyUrl("https://client.example.com/callback")],
+            application_type="web",
+            allowed_redirect_uri_patterns=["http://localhost:*", "https://*/*"],
+        )
+
+        with pytest.raises(InvalidRedirectUriError, match="application_type 'web'"):
+            client.validate_redirect_uri(AnyUrl("http://localhost:8080/callback"))
+
+    def test_native_client_accepts_loopback_at_authorization(self):
+        client = ProxyDCRClient(
+            client_id="native",
+            client_secret="secret",
+            redirect_uris=[AnyUrl("http://localhost:8080/callback")],
+            application_type="native",
+        )
+
+        uri = client.validate_redirect_uri(AnyUrl("http://localhost:55555/callback"))
+        assert str(uri) == "http://localhost:55555/callback"
+
+
 class TestApplicationTypeRedirectRules:
     """SEP-837: application_type governs the web vs native redirect rules."""
 
@@ -534,11 +579,26 @@ class TestApplicationTypeRedirectRules:
             "http://[::1]:9000/callback",
             "com.example.app:/oauth/callback",
             "cursor://anysphere.cursor-mcp/oauth/callback",
+            "myapp://callback",
             "https://client.example.com/callback",
         ],
     )
     def test_native_accepts_loopback_and_custom_schemes(self, uri: str):
         assert is_redirect_uri_allowed_for_application_type(uri, "native") is True
+
+    @pytest.mark.parametrize(
+        "uri",
+        [
+            "http://client.example.com/callback",
+            "http://example.com:8080/callback",
+            "ftp://files.example.com/callback",
+            "ws://socket.example.com/callback",
+            "wss://socket.example.com/callback",
+        ],
+    )
+    def test_native_rejects_non_loopback_http_and_network_schemes(self, uri: str):
+        """Native clients may not use non-loopback http or transport schemes."""
+        assert is_redirect_uri_allowed_for_application_type(uri, "native") is False
 
     @pytest.mark.parametrize("application_type", ["web", "native"])
     @pytest.mark.parametrize(

@@ -25,6 +25,7 @@ from base64 import urlsafe_b64encode
 from collections import OrderedDict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from typing import Any, Literal
 from urllib.parse import urlencode
 
@@ -42,6 +43,7 @@ from key_value.aio.stores.filetree import (
 )
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from mcp.server.auth.handlers.metadata import MetadataHandler
+from mcp.server.auth.handlers.register import RegistrationHandler
 from mcp.server.auth.middleware.client_auth import ClientAuthenticator
 from mcp.server.auth.provider import (
     AccessToken,
@@ -58,10 +60,14 @@ from mcp.server.auth.settings import (
     ClientRegistrationOptions,
     RevocationOptions,
 )
-from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
-from pydantic import AnyHttpUrl, AnyUrl, SecretStr
+from mcp.shared.auth import (
+    OAuthClientInformationFull,
+    OAuthClientMetadata,
+    OAuthToken,
+)
+from pydantic import AnyHttpUrl, AnyUrl, SecretStr, ValidationError
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, RedirectResponse
+from starlette.responses import HTMLResponse, RedirectResponse, Response
 from starlette.routing import Route
 from typing_extensions import override
 
@@ -114,6 +120,52 @@ from fastmcp.utilities.logging import get_logger
 logger = get_logger(__name__)
 
 _REFRESH_LOCK_CACHE_SIZE = 10_000
+
+#: SEP-837: the client's declared `application_type`, recovered from the raw DCR
+#: request body by `_ApplicationTypeRegistrationHandler` before the SDK's
+#: `RegistrationHandler` runs. The SDK parses `application_type` into
+#: `OAuthClientMetadata` but drops it when it builds the
+#: `OAuthClientInformationFull` handed to `register_client`, so this ContextVar
+#: is the only place the real value survives into the provider. It is `None` when
+#: `register_client` is called directly (outside the HTTP route) or when the body
+#: failed to parse, in which case the object's own `application_type` is used.
+_pending_application_type: ContextVar[Literal["web", "native"] | None] = ContextVar(
+    "_pending_application_type", default=None
+)
+
+
+class _ApplicationTypeRegistrationHandler:
+    """Recover the DCR `application_type` the SDK handler drops (SEP-837).
+
+    The SDK's `RegistrationHandler` validates the request body into an
+    `OAuthClientMetadata` (which carries `application_type`) but omits the field
+    when constructing the `OAuthClientInformationFull` it passes to
+    `register_client`. This thin wrapper re-parses `application_type` from the
+    same request body and publishes it on a ContextVar so `register_client` can
+    enforce the web/native redirect rules, then delegates to the SDK handler
+    unchanged. Reading `request.body()` here is safe: Starlette caches the body,
+    so the SDK handler's own read returns the same bytes.
+    """
+
+    def __init__(self, handler: RegistrationHandler) -> None:
+        self._handler = handler
+
+    async def handle(self, request: Request) -> Response:
+        application_type: Literal["web", "native"] | None = None
+        try:
+            metadata = OAuthClientMetadata.model_validate_json(await request.body())
+        except ValidationError:
+            # Let the SDK handler surface the validation error verbatim.
+            application_type = None
+        else:
+            application_type = metadata.application_type
+
+        token = _pending_application_type.set(application_type)
+        try:
+            return await self._handler.handle(request)
+        finally:
+            _pending_application_type.reset(token)
+
 
 #: Marker claim identifying a FastMCP access token minted from a SEP-990 ID-JAG.
 #: These tokens are self-contained (they carry the asserted subject directly) and
@@ -908,6 +960,16 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Create a ProxyDCRClient with configured redirect URI validation
         if client_info.client_id is None:
             raise ValueError("client_id is required for client registration")
+
+        # SEP-837: the SDK's RegistrationHandler drops application_type when it
+        # builds this object, so prefer the value the HTTP route recovered from
+        # the raw request body. Fall back to the object's own field for direct
+        # (non-HTTP) callers. Write it back so the DCR response echoes the type.
+        pending_application_type = _pending_application_type.get()
+        if pending_application_type is not None:
+            client_info.application_type = pending_application_type
+        application_type = client_info.application_type
+
         if client_info.redirect_uris:
             for redirect_uri in client_info.redirect_uris:
                 if not validate_redirect_uri(
@@ -923,12 +985,12 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 # (the SDK default) may use loopback and private-use schemes.
                 if not is_redirect_uri_allowed_for_application_type(
                     redirect_uri,
-                    client_info.application_type,
+                    application_type,
                 ):
                     raise RegistrationError(
                         "invalid_redirect_uri",
                         f"Redirect URI '{redirect_uri}' is not allowed for "
-                        f"application_type '{client_info.application_type}'.",
+                        f"application_type '{application_type}'.",
                     )
 
         redirect_uris = client_info.redirect_uris or [AnyUrl("http://localhost")]
@@ -958,7 +1020,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             grant_types=registered_grant_types,
             scope=client_info.scope or self._default_scope_str,
             token_endpoint_auth_method="none",
-            application_type=client_info.application_type,
+            application_type=application_type,
             allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
             client_name=getattr(client_info, "client_name", None),
         )
@@ -2349,6 +2411,35 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         path="/token",
                         endpoint=cors_middleware(
                             token_handler.handle, ["POST", "OPTIONS"]
+                        ),
+                        methods=["POST", "OPTIONS"],
+                    )
+                )
+            elif (
+                isinstance(route, Route)
+                and route.path == "/register"
+                and route.methods is not None
+                and "POST" in route.methods
+            ):
+                # SEP-837: wrap the SDK RegistrationHandler so the client's
+                # declared application_type (which the SDK parses but drops before
+                # calling register_client) survives into the provider and its
+                # web/native redirect rules are enforced over HTTP.
+                registration_options = (
+                    self.client_registration_options or ClientRegistrationOptions()
+                )
+                sdk_registration_handler = RegistrationHandler(
+                    provider=self,
+                    options=registration_options,
+                )
+                registration_handler = _ApplicationTypeRegistrationHandler(
+                    sdk_registration_handler
+                )
+                custom_routes.append(
+                    Route(
+                        path="/register",
+                        endpoint=cors_middleware(
+                            registration_handler.handle, ["POST", "OPTIONS"]
                         ),
                         methods=["POST", "OPTIONS"],
                     )

@@ -18,6 +18,26 @@ UNSAFE_REDIRECT_URI_SCHEMES = frozenset(
     }
 )
 
+#: Standard network-transport URI schemes that address a remote endpoint rather
+#: than an OS-registered native application. SEP-837 native clients may use
+#: private-use / custom schemes, but these schemes would deliver an
+#: authorization code to a network service, so they are rejected.
+NON_REDIRECT_NETWORK_SCHEMES = frozenset(
+    {
+        "ftp",
+        "ftps",
+        "sftp",
+        "tftp",
+        "ssh",
+        "ws",
+        "wss",
+        "gopher",
+        "telnet",
+        "ldap",
+        "ldaps",
+    }
+)
+
 
 def add_query_params(url: str, params: dict[str, str]) -> str:
     """Append query parameters to a URL while preserving existing parameters.
@@ -331,10 +351,15 @@ def is_redirect_uri_allowed_for_application_type(
     `application_type` governs which redirect URIs a Dynamically Registered
     Client may use (RFC 7591 §2, OpenID Connect Dynamic Client Registration §2):
 
-    - `"web"` clients must use `https` redirect URIs and must not use loopback
-      hosts. Custom/private-use schemes and `http` loopback URIs are rejected.
-    - `"native"` clients may use loopback URLs (`http://127.0.0.1`,
-      `http://localhost`, `http://[::1]`) and custom/private-use URI schemes.
+    - `"web"` clients must use `https` redirect URIs on a non-loopback host.
+      Loopback `http`, `https://localhost`, and custom/private-use schemes are
+      rejected.
+    - `"native"` clients may use loopback `http` URLs (`http://127.0.0.1`,
+      `http://localhost`, `http://[::1]`, any port), `https` claimed URLs, and
+      OS-registered private-use / custom URI schemes (e.g. `com.example.app:/`,
+      `myapp://`). Non-loopback plain `http` and network-transport schemes
+      (`ftp:`, `ws:`, `wss:`, ...) that cannot deliver a code to a native app
+      are rejected.
 
     Unsafe browser schemes (`javascript:`, `data:`, `file:`, `vbscript:`) are
     always rejected regardless of `application_type`, layering on top of
@@ -342,23 +367,30 @@ def is_redirect_uri_allowed_for_application_type(
 
     The MCP SDK defaults `application_type` to `"native"` because MCP clients
     typically register loopback redirect URIs, so omitting the field preserves
-    the permissive behavior clients relied on before this check existed.
+    the behavior clients relied on before this check existed.
     """
     uri_str = str(redirect_uri)
 
     if _is_unsafe_redirect_uri(uri_str):
         return False
 
-    if application_type != "web":
-        # "native" (and the SDK default): loopback http and custom/private-use
-        # schemes are permitted; unsafe schemes were already rejected above.
-        return True
-
-    # "web": require an https redirect URI on a non-loopback host.
     parsed = urlparse(uri_str)
-    if parsed.scheme.lower() != "https":
-        return False
-    return not _is_loopback_host(parsed.hostname)
+    scheme = parsed.scheme.lower()
+
+    if application_type == "web":
+        # "web": require an https redirect URI on a non-loopback host.
+        if scheme != "https":
+            return False
+        return not _is_loopback_host(parsed.hostname)
+
+    # "native" (and the SDK default).
+    if scheme == "http":
+        # Native apps may only use http for loopback redirects (RFC 8252 §7.3).
+        return _is_loopback_host(parsed.hostname)
+    # Reject network-transport schemes (ftp/ws/...) that address a remote
+    # endpoint and cannot deliver a code to the local app; allow https claimed
+    # URLs and OS-registered private-use / custom app schemes.
+    return scheme not in NON_REDIRECT_NETWORK_SCHEMES
 
 
 def validate_redirect_uri(

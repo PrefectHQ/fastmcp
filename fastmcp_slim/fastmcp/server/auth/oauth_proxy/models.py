@@ -14,6 +14,7 @@ from pydantic import AnyUrl, BaseModel, Field, ValidationError
 
 from fastmcp.server.auth.cimd import CIMDDocument
 from fastmcp.server.auth.redirect_validation import (
+    is_redirect_uri_allowed_for_application_type,
     matches_allowed_pattern,
     validate_redirect_uri,
 )
@@ -218,6 +219,22 @@ class ProxyDCRClient(OAuthClientInformationFull):
     cimd_fetched_at: float | None = Field(default=None)
     allow_unregistered_redirect_uris: bool = Field(default=False, exclude=True)
 
+    def _enforce_application_type(self, redirect_uri: AnyUrl) -> None:
+        """Reject a redirect URI that violates the client's application_type.
+
+        SEP-837: the web/native distinction is enforced at registration, but a
+        stored web client must not later authorize a loopback or custom-scheme
+        redirect URI (nor a native client an unsafe scheme), so the same rule is
+        applied here on the authorization path.
+        """
+        if not is_redirect_uri_allowed_for_application_type(
+            redirect_uri, self.application_type
+        ):
+            raise InvalidRedirectUriError(
+                f"Redirect URI '{redirect_uri}' is not allowed for "
+                f"application_type '{self.application_type}'."
+            )
+
     def validate_redirect_uri(self, redirect_uri: AnyUrl | None) -> AnyUrl:
         """Validate redirect URI against proxy patterns and optionally CIMD redirect_uris.
 
@@ -251,6 +268,7 @@ class ProxyDCRClient(OAuthClientInformationFull):
                         f"Redirect URI '{resolved}' does not match allowed patterns."
                     )
 
+                self._enforce_application_type(resolved)
                 return resolved
 
             raise InvalidRedirectUriError(
@@ -262,6 +280,8 @@ class ProxyDCRClient(OAuthClientInformationFull):
                 raise InvalidRedirectUriError(
                     f"Redirect URI '{redirect_uri}' uses an unsafe scheme."
                 )
+
+            self._enforce_application_type(redirect_uri)
 
             cimd_redirect_uris = (
                 self.cimd_document.redirect_uris if self.cimd_document else None
@@ -316,4 +336,5 @@ class ProxyDCRClient(OAuthClientInformationFull):
             raise InvalidRedirectUriError(
                 f"Redirect URI '{resolved}' does not match allowed patterns."
             )
+        self._enforce_application_type(resolved)
         return resolved

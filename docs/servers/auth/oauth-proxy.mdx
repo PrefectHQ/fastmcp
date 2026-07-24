@@ -585,6 +585,21 @@ auth = OAuthProxy(
 
 Check your server logs for "Client registered with redirect_uri" messages to identify what URLs your clients use.
 
+### Application Type (Web vs. Native)
+
+During Dynamic Client Registration, a client may declare an `application_type` (per RFC 7591 and SEP-837) that governs which redirect URIs it is allowed to use. The OAuth proxy honors this field both at registration and when authorizing a redirect.
+
+`application_type` defaults to `"native"` because MCP clients typically run locally and register loopback callbacks. Clients that omit the field keep the permissive behavior described above. A client that explicitly registers as `"web"` is held to the stricter browser-app rules.
+
+| `application_type` | Allowed redirect URIs |
+| ------------------ | --------------------- |
+| `"native"` (default) | Loopback `http` (`http://127.0.0.1`, `http://localhost`, `http://[::1]`, any port), `https`, and OS-registered private-use/custom schemes (e.g. `com.example.app:/callback`, `myapp://callback`) |
+| `"web"` | `https` on a non-loopback host only |
+
+Both types always reject unsafe browser schemes (`javascript:`, `data:`, `file:`, `vbscript:`), and native clients additionally reject non-loopback plain `http` and network-transport schemes such as `ftp:` or `ws:`.
+
+A redirect URI that violates the declared type is refused during registration with a `RegistrationError` (`invalid_redirect_uri`). For example, a `"web"` client that registers `http://localhost:12345/callback` is rejected, since web clients must use a non-loopback `https` callback. Configure remote, browser-based clients as `application_type="web"` and give them an `https` callback URL.
+
 ## CIMD Support
 
 <VersionBadge version="3.0.0" />
