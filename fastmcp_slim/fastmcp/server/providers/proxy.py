@@ -21,6 +21,7 @@ from mcp import ClientSession
 from mcp.server.connection import Connection
 from mcp.server.context import ServerRequestContext
 from mcp.shared.exceptions import MCPError
+from mcp.shared.inbound import x_mcp_header_map
 from mcp_types import (
     METHOD_NOT_FOUND,
     BlobResourceContents,
@@ -289,6 +290,18 @@ class ProxyTool(Tool):
                         "mcp_types.RequestParamsMeta | None",
                         inject_trace_context(meta) or None,
                     )
+                    # SEP-2243: a modern backend rejects a `tools/call` whose
+                    # `x-mcp-header` argument is not mirrored into an `Mcp-Param-*`
+                    # header. The SDK client emits those headers only for tools it
+                    # has listed (it caches the annotation map on `list_tools`),
+                    # but a proxied call goes straight to `call_tool` on a fresh
+                    # session. Seed the session's map from the backend tool's
+                    # advertised schema so the header is emitted and the call is
+                    # accepted; an unannotated schema yields an empty map and no
+                    # headers, matching the client's own behavior.
+                    header_map = x_mcp_header_map(self.parameters)
+                    if header_map:
+                        client.session._x_mcp_header_maps[backend_name] = header_map
                     result = await client._await_with_session_monitoring(
                         client.session.call_tool(
                             name=backend_name,

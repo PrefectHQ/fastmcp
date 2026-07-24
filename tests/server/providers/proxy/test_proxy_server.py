@@ -1582,3 +1582,36 @@ async def test_proxy_preserves_x_mcp_header_annotation():
 
     (tool,) = [t for t in tools if t.name == "route"]
     assert tool.input_schema["properties"]["tenant"]["x-mcp-header"] == "Tenant"
+
+
+async def test_proxy_forwards_mcp_param_header_to_modern_http_backend():
+    """A proxy in front of a modern Streamable-HTTP backend routes an annotated call (SEP-2243).
+
+    A modern backend validates that an `x-mcp-header` argument is mirrored into an
+    `Mcp-Param-*` header and rejects the call with `HEADER_MISMATCH` when it is
+    missing. The SDK client caches the annotation map on `list_tools`, but a
+    proxied `tools/call` goes straight to `call_tool` on a fresh backend session,
+    so the proxy must seed the map itself. This exercises the real validating HTTP
+    hop end to end.
+    """
+    from typing import Annotated
+
+    from pydantic import Field
+
+    backend = FastMCP("Backend")
+
+    @backend.tool
+    def route(
+        tenant: Annotated[str, Field(json_schema_extra={"x-mcp-header": "Tenant"})],
+    ) -> str:
+        return f"routed:{tenant}"
+
+    async with run_server_async(backend, transport="http") as url:
+        # mode="auto" negotiates the modern protocol with the HTTP backend, so
+        # the proxy->backend hop is the validating one. (ProxyClient defaults to
+        # legacy, which neither emits nor validates these headers.)
+        proxy = create_proxy(ProxyClient(StreamableHttpTransport(url), mode="auto"))
+        async with Client(proxy) as client:
+            result = await client.call_tool("route", {"tenant": "acme"})
+
+    assert result.data == "routed:acme"

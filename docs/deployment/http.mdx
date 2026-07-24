@@ -151,13 +151,17 @@ Use `host_origin_protection="auto"` to protect localhost-bound direct servers wh
 
 ### Gateway Routing Headers
 
-A gateway, load balancer, or reverse proxy in front of your MCP server often needs to route a request before it reads the JSON-RPC body — the body may be an SSE stream, or the gateway may simply want to avoid parsing it. Streamable HTTP clients built on the MCP Python SDK (including FastMCP's own client) attach routing information to each request as HTTP headers so an intermediary can dispatch on headers alone:
+A gateway, load balancer, or reverse proxy in front of your MCP server often needs to route a request before it reads the JSON-RPC body — the body may be an SSE stream, or the gateway may simply want to avoid parsing it. On a connection that negotiates the modern `2026-07-28` protocol, Streamable HTTP clients built on the MCP Python SDK (including FastMCP's own client) attach routing information to each request as HTTP headers so an intermediary can dispatch on headers alone:
 
 - `Mcp-Method` carries the JSON-RPC method (for example `tools/call`) on every request.
 - `Mcp-Name` carries the target's name on named operations — the tool name for `tools/call`, the prompt name for `prompts/get`, the resource URI for `resources/read`.
 - `Mcp-Param-*` carries selected argument values for a `tools/call`, one header per opted-in parameter.
 
 FastMCP's HTTP transport neither strips nor rewrites these headers, so a gateway sees them exactly as the client sent them. The `Host`/`Origin` request guard inspects only `Host` and `Origin` and leaves the routing headers untouched.
+
+<Warning>
+These headers are a feature of the modern `2026-07-28` protocol. A client connected over an earlier protocol revision — including one running in legacy mode or one that has fallen back to a legacy server — sends no routing headers at all. Design gateway routing to require the headers rather than assume their presence: if a request arrives without them, fall back to inspecting the body or route it to a default backend, rather than dropping it.
+</Warning>
 
 To expose an argument as an `Mcp-Param-*` header, annotate the parameter with the `x-mcp-header` JSON Schema extension. FastMCP carries the annotation into the tool's advertised input schema, and a conforming client mirrors the argument into a header named `Mcp-Param-<token>`:
 
