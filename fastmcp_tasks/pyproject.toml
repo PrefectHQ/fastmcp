@@ -54,4 +54,13 @@ fallback-version = "0.0.0"
 dependencies = [
     "fastmcp-slim[server]=={{ version }}",
     "pydocket>=0.20.0",
+    # burner-redis 0.1.7's Windows build crashes the interpreter (native fault,
+    # no Python traceback) running the memory:// backend under pytest-xdist —
+    # reproduced on GitHub Actions windows-latest, confirmed absent on
+    # macOS/Linux with the same versions. pydocket only floors it at >=0.1.6, so
+    # capping pydocket alone is not enough: a resolver is free to pick the
+    # newest burner-redis satisfying that floor regardless. Pin burner-redis
+    # directly (which in turn caps pydocket to <0.20.2, the last release that
+    # doesn't itself require burner-redis>=0.1.7) until upstream ships a fix.
+    "burner-redis<0.1.7",
 ]
