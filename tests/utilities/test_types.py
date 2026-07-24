@@ -282,10 +282,25 @@ class TestAudio:
         assert audio.data == b"test"
         assert audio._mime_type == "audio/wav"  # Default for raw data
 
+    def test_mime_type_from_format(self):
+        """Test MIME type normalization from audio format."""
+
+        expected = {
+            "wav": "audio/wav",
+            "mp3": "audio/mpeg",
+            "ogg": "audio/ogg",
+            "m4a": "audio/mp4",
+            "flac": "audio/flac",
+        }
+
+        for fmt, mime in expected.items():
+            audio = Audio(data=b"test", format=fmt)
+            assert audio._mime_type == mime
+
     def test_audio_initialization_with_format(self):
         """Test audio initialization with a specific format."""
         audio = Audio(data=b"test", format="mp3")
-        assert audio._mime_type == "audio/mp3"
+        assert audio._mime_type == "audio/mpeg"
 
     def test_missing_data_and_path_raises_error(self):
         """Test that error is raised when neither path nor data is provided."""
@@ -335,7 +350,7 @@ class TestAudio:
         content = audio.to_audio_content()
 
         assert content.type == "audio"
-        assert content.mime_type == "audio/mp3"
+        assert content.mime_type == "audio/mpeg"
         assert content.data == base64.b64encode(test_data).decode()
 
     def test_to_audio_content_error(self, monkeypatch):
