@@ -50,7 +50,7 @@ def _sync_result_to_wire(result: ToolResult) -> dict[str, Any]:
         content, structured_content = mcp_result
         call_tool_result = mcp_types.CallToolResult(
             content=content,
-            structuredContent=structured_content,
+            structured_content=structured_content,
         )
     else:
         call_tool_result = mcp_types.CallToolResult(content=mcp_result)
