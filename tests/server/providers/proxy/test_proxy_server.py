@@ -1554,3 +1554,31 @@ class TestProxyProviderTransportErrors:
         with pytest.raises(MCPError, match="Client failed to connect"):
             async with Client(proxy, mode=mode) as client:
                 await client.list_tools()
+
+
+async def test_proxy_preserves_x_mcp_header_annotation():
+    """A proxy re-advertises a backend tool's `x-mcp-header` annotation (SEP-2243).
+
+    The routing headers are per-hop: the SDK client regenerates them on each
+    HTTP request. For `Mcp-Param-*` to be emitted on the proxy->backend hop (and
+    on the caller->proxy hop), the proxy must carry the backend's `x-mcp-header`
+    schema annotation through to its own advertised tool schema.
+    """
+    from typing import Annotated
+
+    from pydantic import Field
+
+    backend = FastMCP("Backend")
+
+    @backend.tool
+    def route(
+        tenant: Annotated[str, Field(json_schema_extra={"x-mcp-header": "Tenant"})],
+    ) -> str:
+        return tenant
+
+    proxy = create_proxy(backend)
+    async with Client(proxy) as client:
+        tools = await client.list_tools()
+
+    (tool,) = [t for t in tools if t.name == "route"]
+    assert tool.input_schema["properties"]["tenant"]["x-mcp-header"] == "Tenant"

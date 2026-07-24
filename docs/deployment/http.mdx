@@ -149,6 +149,42 @@ export FASTMCP_HTTP_ALLOWED_ORIGINS='["https://app.example.com"]'
 
 Use `host_origin_protection="auto"` to protect localhost-bound direct servers while allowing ASGI, serverless, and reverse-proxy deployments to keep their existing Host handling unless they configure explicit trust rules. Use `host_origin_protection=False` to keep the request guard disabled.
 
+### Gateway Routing Headers
+
+A gateway, load balancer, or reverse proxy in front of your MCP server often needs to route a request before it reads the JSON-RPC body — the body may be an SSE stream, or the gateway may simply want to avoid parsing it. Streamable HTTP clients built on the MCP Python SDK (including FastMCP's own client) attach routing information to each request as HTTP headers so an intermediary can dispatch on headers alone:
+
+- `Mcp-Method` carries the JSON-RPC method (for example `tools/call`) on every request.
+- `Mcp-Name` carries the target's name on named operations — the tool name for `tools/call`, the prompt name for `prompts/get`, the resource URI for `resources/read`.
+- `Mcp-Param-*` carries selected argument values for a `tools/call`, one header per opted-in parameter.
+
+FastMCP's HTTP transport neither strips nor rewrites these headers, so a gateway sees them exactly as the client sent them. The `Host`/`Origin` request guard inspects only `Host` and `Origin` and leaves the routing headers untouched.
+
+To expose an argument as an `Mcp-Param-*` header, annotate the parameter with the `x-mcp-header` JSON Schema extension. FastMCP carries the annotation into the tool's advertised input schema, and a conforming client mirrors the argument into a header named `Mcp-Param-<token>`:
+
+```python
+from typing import Annotated
+
+from pydantic import Field
+
+from fastmcp import FastMCP
+
+mcp = FastMCP("My Server")
+
+@mcp.tool
+def query_tenant(
+    tenant: Annotated[str, Field(json_schema_extra={"x-mcp-header": "Tenant"})],
+    sql: str,
+) -> str:
+    """A call to this tool sends the tenant value as an `Mcp-Param-Tenant` header."""
+    ...
+```
+
+A gateway can now route on `Mcp-Param-Tenant` — for example, pinning each tenant to a dedicated backend — without inspecting the request body. The annotation is only permitted on `string`, `integer`, and `boolean` parameters. These headers advertise routing intent; treat them as untrusted hints, since the server still validates the request body as the source of truth.
+
+<Tip>
+When you put a FastMCP [proxy](/servers/proxy) in front of another server, the proxy re-advertises each backend tool's `x-mcp-header` annotation, so routing headers work across the proxy hop as well. The headers themselves are regenerated per hop rather than forwarded verbatim, since each describes a single HTTP request.
+</Tip>
+
 ### Health Checks
 
 Health check endpoints are essential for monitoring your deployed server and ensuring it's responding correctly. FastMCP allows you to add custom routes alongside your MCP endpoints, making it easy to implement health checks that work with both deployment approaches.
