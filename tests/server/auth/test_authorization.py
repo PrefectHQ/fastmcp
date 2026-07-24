@@ -8,7 +8,7 @@ from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
-from fastmcp.exceptions import AuthorizationError
+from fastmcp.exceptions import AuthorizationError, InsufficientScopeError
 from fastmcp.server.auth import (
     AccessToken,
     AuthContext,
@@ -1008,3 +1008,129 @@ class TestComponentAuthDenialMessage:
             assert "not found or not authorized" in message
         finally:
             auth_context_var.reset(tok)
+
+
+# =============================================================================
+# Tests for component-level scope step-up signalling (SEP-2350)
+# =============================================================================
+
+
+class TestInsufficientScopeSignal:
+    """A scope shortfall on a globally-authorized component is surfaced as an
+    ``InsufficientScopeError`` naming the unmet scopes, the component-level
+    analog of the transport-level ``insufficient_scope`` challenge. The named
+    scopes are only those the token lacks, so an existing grant accumulates
+    rather than being replaced when the caller re-authorizes.
+    """
+
+    async def test_call_tool_missing_scope_names_required_scope(self):
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=require_scopes("api"))])
+
+        @mcp.tool
+        def api_tool() -> str:
+            return "ok"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            with pytest.raises(InsufficientScopeError) as exc_info:
+                await mcp.call_tool("api_tool", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert exc_info.value.required_scopes == ["api"]
+        assert "api" in str(exc_info.value)
+
+    async def test_insufficient_scope_error_is_authorization_error(self):
+        # Existing `except AuthorizationError` sites must still catch it.
+        assert issubclass(InsufficientScopeError, AuthorizationError)
+
+    async def test_call_tool_sufficient_scope_passes(self):
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=require_scopes("api"))])
+
+        @mcp.tool
+        def api_tool() -> str:
+            return "ok"
+
+        tok = set_token(make_token(scopes=["api", "read"]))
+        try:
+            result = await mcp.call_tool("api_tool", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert result.content[0].text == "ok"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+
+    async def test_shortfall_names_only_unmet_scopes(self):
+        # The token already carries "read"; only the missing "api" is named, so a
+        # re-authorization accumulates scopes rather than dropping "read".
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=require_scopes("read", "api"))])
+
+        @mcp.tool
+        def api_tool() -> str:
+            return "ok"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            with pytest.raises(InsufficientScopeError) as exc_info:
+                await mcp.call_tool("api_tool", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert exc_info.value.required_scopes == ["api"]
+
+    async def test_missing_token_is_not_insufficient_scope(self):
+        # No token is an authentication failure (RFC 6750 §3.1), not a scope
+        # shortfall: it must not be turned into an insufficient_scope signal.
+        mcp = FastMCP(middleware=[AuthMiddleware(auth=require_scopes("api"))])
+
+        @mcp.tool
+        def api_tool() -> str:
+            return "ok"
+
+        with pytest.raises(AuthorizationError) as exc_info:
+            await mcp.call_tool("api_tool", {})
+
+        assert not isinstance(exc_info.value, InsufficientScopeError)
+
+    async def test_non_scope_denial_stays_opaque_and_names_no_scope(self):
+        # A non-scope check (e.g. a custom tenant policy) fails first and
+        # short-circuits before the scope check runs. The denial must stay a
+        # plain AuthorizationError and must NOT disclose or request the "admin"
+        # scope for a component the caller could not otherwise reach.
+        def deny_tenant(ctx: AuthContext) -> bool:
+            return False
+
+        mcp = FastMCP(
+            middleware=[
+                AuthMiddleware(auth=[deny_tenant, require_scopes("admin")]),
+            ]
+        )
+
+        @mcp.tool
+        def api_tool() -> str:
+            return "ok"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            with pytest.raises(AuthorizationError) as exc_info:
+                await mcp.call_tool("api_tool", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert not isinstance(exc_info.value, InsufficientScopeError)
+        assert "admin" not in str(exc_info.value)
+
+    async def test_restrict_tag_shortfall_names_scope(self):
+        mcp = make_restricted_tag_server()
+
+        @mcp.tool(tags={"admin"})
+        def admin_tool() -> str:
+            return "ok"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            with pytest.raises(InsufficientScopeError) as exc_info:
+                await mcp.call_tool("admin_tool", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert exc_info.value.required_scopes == ["admin"]

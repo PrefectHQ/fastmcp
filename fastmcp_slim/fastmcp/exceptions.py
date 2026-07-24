@@ -95,6 +95,30 @@ class AuthorizationError(FastMCPError):
     """Error when authorization check fails."""
 
 
+class InsufficientScopeError(AuthorizationError):
+    """Authorization failed because the token is missing required OAuth scopes.
+
+    Unlike a bare ``AuthorizationError``, this carries the specific scopes the
+    caller must obtain. A component-level scope shortfall can then be signalled
+    as a spec-correct ``insufficient_scope`` step-up (SEP-2350 / RFC 6750 §3),
+    naming exactly what to re-authorize for instead of an opaque denial. The
+    named scopes are only the *unmet* ones, so an existing grant is accumulated
+    rather than replaced when the caller re-authorizes.
+    """
+
+    def __init__(
+        self,
+        required_scopes: list[str],
+        *,
+        message: str | None = None,
+    ) -> None:
+        self.required_scopes = list(required_scopes)
+        if message is None:
+            named = ", ".join(self.required_scopes) or "(unknown)"
+            message = f"Insufficient scope. Required: {named}"
+        super().__init__(message)
+
+
 def to_mcp_error(exc: Exception, *, default_code: int = INTERNAL_ERROR) -> MCPError:
     """Translate a FastMCP exception into a wire-format ``MCPError``.
 
