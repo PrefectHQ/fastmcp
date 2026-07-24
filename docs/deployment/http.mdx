@@ -741,9 +741,7 @@ If you're using the [OAuth Proxy](/servers/auth/oauth-proxy), FastMCP issues its
 
 **Default Behavior (Development Only):**
 
-By default, FastMCP automatically manages cryptographic keys:
-- **Mac/Windows**: Keys are generated and stored in your system keyring, surviving server restarts. Suitable **only** for development and local testing.
-- **Linux**: Keys are ephemeral (random salt at startup), so tokens are invalidated on restart.
+By default, FastMCP automatically manages cryptographic keys the same way on every platform: the signing key is deterministically derived from your OAuth client secret, so it survives server restarts as long as the secret doesn't change. Suitable **only** for development and local testing.
 
 This automatic approach is convenient for development but not suitable for production deployments.
 
