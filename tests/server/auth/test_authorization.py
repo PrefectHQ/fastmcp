@@ -1057,7 +1057,7 @@ class TestInsufficientScopeSignal:
         finally:
             auth_context_var.reset(tok)
 
-        assert result.content[0].text == "ok"
+        assert result.content[0].text == "ok"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
     async def test_shortfall_names_only_unmet_scopes(self):
         # The token already carries "read"; only the missing "api" is named, so a
