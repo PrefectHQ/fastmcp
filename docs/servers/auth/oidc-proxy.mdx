@@ -149,7 +149,7 @@ Set this if your provider requires a specific authentication method and the defa
   Secret used to sign FastMCP JWT tokens issued to clients. Accepts any string or bytes - will be derived into a proper 32-byte cryptographic key using HKDF.
 
   **Default behavior (`None`):**
-  The key is deterministically derived from `upstream_client_secret` using HKDF, on every platform. Because the derivation is deterministic, the same key is produced across restarts as long as `upstream_client_secret` doesn't change, so tokens remain valid without any extra configuration. This convenience makes it **only** suitable for development and local testing.
+  The key is deterministically derived from `client_secret` using HKDF, on every platform. Because the derivation is deterministic, the same key is produced across restarts as long as `client_secret` doesn't change, so tokens remain valid without any extra configuration. This convenience makes it **only** suitable for development and local testing.
 
   **For production:**
   Provide an explicit `jwt_signing_key` (e.g., from an environment variable) rather than relying on the auto-derived key.
