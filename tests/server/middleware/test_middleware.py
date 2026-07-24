@@ -2,8 +2,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-import mcp.types
+import mcp_types
 import pytest
+from mcp.server.context import ServerRequestContext
 
 from fastmcp import Client, FastMCP
 from fastmcp.server.context import Context
@@ -16,7 +17,7 @@ class Recording:
     # the hook is the name of the hook that was called, e.g. "on_list_tools"
     hook: str
     context: MiddlewareContext
-    result: mcp.types.ServerResult | None
+    result: mcp_types.ServerResult | None
 
 
 class RecordingMiddleware(Middleware):
@@ -152,15 +153,18 @@ def mcp_server(recording_middleware):
 
     mcp.add_middleware(recording_middleware)
 
-    # Register progress handler
-    @mcp._mcp_server.progress_notification()
+    # Register a progress notification handler (v2 API: (ctx, params)).
     async def handle_progress(
-        progress_token: str | int,
-        progress: float,
-        total: float | None,
-        message: str | None,
-    ):
-        print("HI")
+        _ctx: ServerRequestContext,
+        _params: mcp_types.ProgressNotificationParams,
+    ) -> None:
+        pass
+
+    mcp._mcp_server.add_notification_handler(
+        "notifications/progress",
+        mcp_types.ProgressNotificationParams,
+        handle_progress,
+    )
 
     return mcp
 
@@ -172,7 +176,10 @@ class TestMiddlewareHooks:
         async with Client(mcp_server) as client:
             await client.call_tool("add", {"a": 1, "b": 2})
 
-        assert recording_middleware.assert_called(at_least=9)
+        # The floor is lower than a legacy connection's 11: the modern
+        # `server/discover` negotiation fires 2 generic hooks, vs. 5 for the
+        # older `initialize` request plus its `notifications/initialized`.
+        assert recording_middleware.assert_called(at_least=8)
         assert recording_middleware.assert_called(method="tools/call", at_least=3)
         assert recording_middleware.assert_called(hook="on_message", at_least=1)
         assert recording_middleware.assert_called(hook="on_request", at_least=1)
@@ -295,7 +302,8 @@ class TestMiddlewareHooks:
     async def test_initialize(
         self, mcp_server: FastMCP, recording_middleware: RecordingMiddleware
     ):
-        async with Client(mcp_server) as client:
+        # `ping` only exists on the older protocol, so this pins that era.
+        async with Client(mcp_server, mode="legacy") as client:
             await client.ping()
 
         assert recording_middleware.assert_called(at_least=1)
@@ -391,7 +399,7 @@ class TestMiddlewareHooks:
             templates = await client.list_resource_templates()
 
         assert len(templates) == 1
-        assert str(templates[0].uriTemplate) == "resource://public/{x}"
+        assert str(templates[0].uri_template) == "resource://public/{x}"
 
     async def test_list_prompts_filtering_middleware(self):
         """Test that middleware can filter prompts."""
@@ -433,8 +441,8 @@ class TestMiddlewareHooks:
         class CallToolMiddleware(Middleware):
             async def on_call_tool(
                 self,
-                context: MiddlewareContext[mcp.types.CallToolRequestParams],
-                call_next: CallNext[mcp.types.CallToolRequestParams, ToolResult],
+                context: MiddlewareContext[mcp_types.CallToolRequestParams],
+                call_next: CallNext[mcp_types.CallToolRequestParams, ToolResult],
             ):
                 # modify argument
                 if context.message.name == "add":
@@ -566,7 +574,7 @@ class TestApplyMiddlewareParameter:
 
         assert len(result.messages) == 1
         # content is TextContent | EmbeddedResource, but we know it's TextContent from the test
-        assert isinstance(result.messages[0].content, mcp.types.TextContent)
+        assert isinstance(result.messages[0].content, mcp_types.TextContent)
         assert result.messages[0].content.text == "Hello, World!"
         assert recording.assert_called(hook="on_get_prompt", times=1)
 
@@ -587,7 +595,7 @@ class TestApplyMiddlewareParameter:
 
         assert len(result.messages) == 1
         # content is TextContent | EmbeddedResource, but we know it's TextContent from the test
-        assert isinstance(result.messages[0].content, mcp.types.TextContent)
+        assert isinstance(result.messages[0].content, mcp_types.TextContent)
         assert result.messages[0].content.text == "Hello, World!"
         # Middleware should not have been called
         assert len(recording.calls) == 0

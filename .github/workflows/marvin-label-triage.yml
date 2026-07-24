@@ -49,13 +49,16 @@ jobs:
           PROMPT<<PROMPT_END
           You're an issue triage assistant for FastMCP, a Python framework for building Model Context Protocol servers and clients. Your task is to analyze issues/PRs and apply appropriate labels.
 
-          IMPORTANT: Your primary action should be to apply labels using mcp__github__update_issue. DO NOT post comments EXCEPT when applying the too-long label (see below).
+          IMPORTANT: Your primary action should be to apply labels using the locked-down helper `.github/scripts/triage-label.sh`. DO NOT post comments EXCEPT when applying the too-long label (see below).
 
           CRITICAL — LABEL MECHANICS:
-          - `mcp__github__update_issue` REPLACES all labels on the issue — it does not add to them.
-          - Before applying labels, read the issue's current labels with `mcp__github__get_issue`.
-          - Always include any existing labels you want to keep alongside the new ones.
+          - Apply labels ONLY through the helper, which adds or removes repository labels on THIS issue/PR. It already knows the target repo and number (from the workflow environment) — you never pass them:
+            add:    `bash .github/scripts/triage-label.sh add "label1" "label2"`
+            remove: `bash .github/scripts/triage-label.sh remove "label1"`
+          - The helper uses the additive REST labels endpoint, so it works for both issues and PRs and never clobbers labels applied by other workflows — notably the Require Issue Link workflow's `missing-issue-link` control label, which must survive or an auto-closed PR won't reopen when its author is assigned.
+          - The helper is your ONLY GitHub write access. Do NOT use raw `gh api`, `gh issue edit`, `gh pr edit`, or any other mutation — they are not available to you.
           - Only apply labels that exist in the repository (from `gh label list` in step 1). Never invent labels.
+          - Use `remove` only to correct a label you believe is wrong, and never remove the control labels `missing-issue-link`, `bypass-issue-check`, or `trusted-contributor`.
 
           Issue/PR Information:
           - REPO: ${{ github.repository }}
@@ -131,7 +134,7 @@ jobs:
           - DON'T MERGE: Only if PR author explicitly states it's not ready
 
           4. Apply selected labels:
-             Use mcp__github__update_issue to apply your selected labels
+             Add them with `bash .github/scripts/triage-label.sh add "label1" "label2"`.
              DO NOT post any comments unless applying too-long (see above)
           PROMPT_END
           EOF
@@ -140,6 +143,7 @@ jobs:
         run: rm -rf ~/.claude/.locks ~/.local/state/claude/locks || true
 
       - name: Run Marvin for Issue Triage
+        id: marvin
         uses: anthropics/claude-code-action@v1
         with:
           github_token: ${{ steps.marvin-token.outputs.token }}
@@ -149,11 +153,82 @@ jobs:
           allowed_non_write_users: "*"
           allowed_bots: "marvin-context-protocol"
           claude_args: |
-            --allowedTools Bash(gh label list),mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__update_issue,mcp__github__add_issue_comment,mcp__github__get_pull_request_files
+            --allowedTools "Bash(gh label list:*)","Bash(bash .github/scripts/triage-label.sh:*)",mcp__github__get_issue,mcp__github__get_issue_comments,mcp__github__add_issue_comment,mcp__github__get_pull_request,mcp__github__get_pull_request_files
           settings: |
             {
-              "model": "claude-sonnet-4-6",
+              "model": "claude-sonnet-5",
               "env": {
-                "GH_TOKEN": "${{ steps.marvin-token.outputs.token }}"
+                "GH_TOKEN": "${{ steps.marvin-token.outputs.token }}",
+                "TRIAGE_REPO": "${{ github.repository }}",
+                "TRIAGE_NUMBER": "${{ github.event.issue.number || github.event.pull_request.number || inputs.issue_number }}"
               }
             }
+
+      # Triage is fire-and-forget: nobody watches a green run, so a broken
+      # allowlist has to fail the job or it goes unnoticed indefinitely — a
+      # mangled pattern silently produced zero labels across a dozen PRs
+      # because the run still reported success.
+      #
+      # Only denials of commands we MEANT to grant indicate that breakage. An
+      # agent reaching for something never on the allowlist (falling back to
+      # `gh issue view` when the API is down, say) is behaving normally, and
+      # failing on that would cry wolf during every GitHub incident.
+      - name: Fail if an allowlisted tool was denied
+        if: always() && steps.marvin.conclusion != 'skipped'
+        env:
+          EXECUTION_FILE: ${{ steps.marvin.outputs.execution_file }}
+        run: |
+          file="${EXECUTION_FILE:-}"
+          if [[ -z "$file" || ! -s "$file" ]]; then
+            file="${RUNNER_TEMP}/claude-execution-output.json"
+          fi
+          # A missing or empty log means we cannot tell a clean run from a
+          # blocked one, which is the exact failure this step exists to catch.
+          if [[ ! -s "$file" ]]; then
+            echo "::error::No Marvin execution log found; cannot verify tool permissions."
+            exit 1
+          fi
+
+          # The persisted log carries a `permission_denials` array on each
+          # `type: result` entry; the `permission_denials_count` scalar only
+          # appears in the action's condensed stdout summary, never on disk.
+          # Anchor to result entries rather than recursing with `..`, which
+          # descends into each denial's `tool_input` and double-counts any
+          # denied command that happens to mention the field name.
+          if ! summary=$(jq -sr '
+                [ .[] | if type == "array" then .[] else . end ]
+                | map(select(type == "object" and .type == "result"))
+                | map(.permission_denials // []) | flatten
+                | map(.tool_input.command // "")
+                | { total: length,
+                    granted: map(select(
+                      startswith("gh label list")
+                      or startswith("bash .github/scripts/triage-label.sh")
+                    ))
+                  }
+                | "\(.total)\t\(.granted | length)\t\(.granted | join(" | "))"
+              ' "$file"); then
+            echo "::error::Could not parse Marvin execution log ($file)."
+            exit 1
+          fi
+          IFS=$'\t' read -r total granted commands <<<"$summary"
+          echo "Denied tool calls: $total (of which allowlisted: $granted)"
+
+          if [[ "$granted" -gt 0 ]]; then
+            echo "::error::Marvin was denied $granted call(s) to tools this workflow grants, so it could not apply labels: ${commands}. The --allowedTools value is not reaching the permission matcher intact — claude_args is lexed with shell-quote, so any Bash(...) pattern containing a space must be quoted or it is split into fragments."
+            exit 1
+          fi
+          if [[ "$total" -gt 0 ]]; then
+            echo "::notice::Marvin was denied $total call(s), none of them to tools this workflow grants. That is expected when it probes for a tool we deliberately withhold; the allowlist is intact."
+          fi
+
+      - name: Upload Marvin execution log
+        if: always() && steps.marvin.conclusion != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: marvin-triage-execution-log
+          path: |
+            ${{ steps.marvin.outputs.execution_file }}
+            ${{ runner.temp }}/claude-execution-output.json
+          if-no-files-found: ignore
+          retention-days: 14

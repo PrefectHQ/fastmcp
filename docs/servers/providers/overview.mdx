@@ -57,9 +57,9 @@ Transforms can be added to individual providers (affecting just that source) or 
 
 ## Provider Order
 
-When a client requests a tool, FastMCP queries providers in registration order. The first provider that has the tool handles the request.
+When a client requests a component by name or URI, FastMCP queries providers and returns the highest matching version across the providers that have it. For unversioned components, or for components with equal versions, provider registration order is the tie-breaker.
 
-`LocalProvider` is always first, so your decorator-defined tools take precedence. Additional providers are queried in the order you added them. This means if two providers have a tool with the same name, the first one wins.
+`LocalProvider` is always registered first, so your decorator-defined components take precedence over equal-version components from mounted or proxied providers. Additional providers are registered in the order you add them.
 
 ## When to Care About Providers
 

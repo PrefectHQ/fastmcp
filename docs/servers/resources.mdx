@@ -90,6 +90,10 @@ def get_application_status() -> str:
   A human-readable name. If not provided, defaults to function name
 </ParamField>
 
+<ParamField body="title" type="str | None">
+  A human-readable display title for the resource or template
+</ParamField>
+
 <ParamField body="description" type="str | None">
   Explanation of the resource. If not provided, defaults to docstring
 </ParamField>
@@ -100,11 +104,6 @@ def get_application_status() -> str:
 
 <ParamField body="tags" type="set[str] | None">
   A set of strings used to categorize the resource. These can be used by the server and, in some cases, by clients to filter or group available resources.
-</ParamField>
-
-<ParamField body="enabled" type="bool" default="True">
-  <Warning>Deprecated in v3.0.0. Use `mcp.enable()` / `mcp.disable()` at the server level instead.</Warning>
-  A boolean to enable or disable the resource. See [Component Visibility](#component-visibility) for the recommended approach.
 </ParamField>
 
 <ParamField body="icons" type="list[Icon] | None">
@@ -144,14 +143,16 @@ For decorating instance or class methods, use the standalone `@resource` decorat
 
 ### Return Values
 
-Resource functions must return one of three types:
+Resource functions can return these supported shapes:
 
 -   **`str`**: Sent as `TextResourceContents` (with `mime_type="text/plain"` by default).
 -   **`bytes`**: Base64 encoded and sent as `BlobResourceContents`. You should specify an appropriate `mime_type` (e.g., `"image/png"`, `"application/octet-stream"`).
--   **`ResourceResult`**: Full control over contents, MIME types, and metadata. See [ResourceResult](#resourceresult) below.
+-   **JSON-native values** (`dict`, `list`, `tuple`, numbers, booleans, or `None`): Serialized to JSON text, keeping the resource's declared MIME type — which is `text/plain` unless you set one. Pass `mime_type="application/json"` on the decorator whenever clients rely on the content type to parse the payload.
+-   **`list[ResourceContent]`**: Multiple content items with per-item MIME types and metadata.
+-   **`ResourceResult`**: Full control over contents, MIME types, and result-level metadata. See [ResourceResult](#resourceresult) below.
 
 <Note>
-To return structured data like dicts or lists, serialize them to JSON strings using `json.dumps()`. This explicit approach ensures your type checker catches errors during development rather than at runtime when a client reads the resource.
+For custom classes that are not JSON-native, return a `ResourceResult` or wrap values in a `ResourceContent` list so serialization and MIME types are explicit.
 </Note>
 
 #### ResourceResult
@@ -231,7 +232,7 @@ def get_public(): return "public"
 def get_secret(): return "secret"
 
 # Disable specific resources by key
-mcp.disable(keys={"resource:data://secret"})
+mcp.disable(names={"data://secret"})
 
 # Disable resources by tag
 mcp.disable(tags={"internal"})
@@ -350,7 +351,7 @@ if data_dir_path.is_dir():
 -   `TextResource`: For simple string content.
 -   `BinaryResource`: For raw `bytes` content.
 -   `FileResource`: Reads content from a local file path. Handles text/binary modes, encoding, and lazy reading.
--   `HttpResource`: Fetches content from an HTTP(S) URL (requires `httpx`).
+-   `HttpResource`: Fetches content from an HTTP(S) URL (requires `httpx2`).
 -   `DirectoryResource`: Lists files in a local directory (returns JSON).
 -   (`FunctionResource`: Internal class used by `@mcp.resource`).
 
@@ -369,8 +370,8 @@ def example_resource() -> str:
 
 # These operations trigger notifications:
 mcp.add_resource(example_resource)                   # Sends resources/list_changed notification
-mcp.disable(keys={"resource:data://example"})        # Sends resources/list_changed notification
-mcp.enable(keys={"resource:data://example"})         # Sends resources/list_changed notification
+mcp.disable(names={"data://example"})  # Sends resources/list_changed notification
+mcp.enable(names={"data://example"})   # Sends resources/list_changed notification
 ```
 
 Notifications are only sent when these operations occur within an active MCP request context (e.g., when called from within a tool or other MCP operation). Operations performed during server initialization do not trigger notifications.
@@ -522,11 +523,87 @@ Wildcard parameters are useful when:
 
 Note that like regular parameters, each wildcard parameter must still be a named parameter in your function signature, and all required function parameters must appear in the URI template.
 
-#### Filesystem Path Safety
+#### Path Security
 
-Template parameters are decoded before your function receives them. A standard `{filename}` parameter matches one URI segment before decoding, so a request like `files://a%2Fb` passes `filename="a/b"` to the handler. Treat template values as untrusted decoded URI data whenever they determine filesystem paths.
+<VersionBadge version="4.0.0" />
 
-Validate the final resolved path against an allowed root before reading:
+Template parameters are extracted from the request URI and decoded before your function receives them, so a path-traversal payload like `../` or an absolute path can reach a handler that builds filesystem paths or upstream URLs. FastMCP screens every templated resource's parameter values **before the handler runs**, and this screening is **on by default**.
+
+By default, a parameter value is rejected if its `..` path segments would escape the value's own starting depth, if it looks like an absolute path, or if it contains a null byte. A rejected read surfaces a clean "resource not found" error to the client and logs the reason at debug level, so the failing parameter and policy are never revealed on the wire.
+
+The traversal check is component-based and tracks net depth: `..` only counts against you when it climbs above where the value starts. `../secret`, a bare `..`, and `a/../../b` are rejected; `foo/../bar` is allowed because it never leaves the starting directory, and values that merely *contain* dots — `HEAD~3..HEAD`, `v1..v2`, `file.tar.gz`, dotfiles like `.env` — all pass. Screening runs on the decoded value, so `..%2F` is caught the same as a literal `../`. This bounds relative escapes; anchoring the *final* path inside a root directory is still your handler's job (for example with `safe_join`), since only the handler knows what the value is joined to.
+
+```python
+from pathlib import Path
+
+from fastmcp import FastMCP
+
+mcp = FastMCP(name="DocsServer")
+
+DOCS_ROOT = Path("/srv/docs")
+
+
+@mcp.resource("docs://{path*}")
+def read_doc(path: str) -> str:
+    # A request for docs://../secret is rejected before this runs.
+    return (DOCS_ROOT / path).read_text(encoding="utf-8")
+```
+
+##### Exempting parameters
+
+Some parameters legitimately carry values that look like traversal — a git ref, a version range, an opaque token. Exempt them by name with `ResourceSecurity`:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.resources import ResourceSecurity
+
+mcp = FastMCP(name="DocsServer")
+
+
+@mcp.resource(
+    "git://diff/{ref}",
+    security=ResourceSecurity(exempt_params={"ref"}),
+)
+def git_diff(ref: str) -> str:
+    # ref="HEAD~3..HEAD" is allowed
+    ...
+```
+
+##### Disabling screening
+
+Pass `security=None` to turn screening off for a single component:
+
+```python
+from fastmcp import FastMCP
+
+mcp = FastMCP(name="DocsServer")
+
+
+@mcp.resource("raw://{value}", security=None)
+def raw(value: str) -> str: ...
+```
+
+Or set a server-wide default with `resource_security`, which applies to every templated resource that does not set its own `security`:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.resources import ResourceSecurity
+
+# Relax one check across the whole server:
+relaxed = FastMCP(
+    name="DocsServer",
+    resource_security=ResourceSecurity(reject_absolute_paths=False),
+)
+
+# Or disable screening entirely across the server:
+unscreened = FastMCP(name="DocsServer", resource_security=None)
+```
+
+A per-component `security` always overrides the server default.
+
+<Warning>
+Screening rejects the obvious injection shapes, but it does not know your filesystem root. When a parameter determines a real path, still resolve it against an allowed root and confirm containment before reading — screening and containment are complementary layers.
+</Warning>
 
 ```python
 from pathlib import Path
@@ -547,8 +624,6 @@ def read_doc(filename: str) -> str:
 
     return requested_path.read_text(encoding="utf-8")
 ```
-
-Use wildcard parameters (`{path*}`) for resources whose URI shape intentionally includes slashes, and apply the same containment check before accessing the filesystem.
 
 #### Query Parameters
 

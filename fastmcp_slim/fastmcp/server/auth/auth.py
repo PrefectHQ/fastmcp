@@ -21,8 +21,10 @@ from mcp.server.auth.provider import (
 )
 from mcp.server.auth.provider import (
     AuthorizationCode,
+    IdentityAssertionParams,
     OAuthAuthorizationServerProvider,
     RefreshToken,
+    TokenError,
 )
 from mcp.server.auth.provider import (
     TokenVerifier as TokenVerifierProtocol,
@@ -36,7 +38,7 @@ from mcp.server.auth.settings import (
     ClientRegistrationOptions,
     RevocationOptions,
 )
-from mcp.shared.auth import OAuthClientInformationFull
+from mcp.shared.auth import JWT_BEARER_GRANT_TYPE, OAuthClientInformationFull
 from pydantic import AnyHttpUrl, Field
 from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
@@ -74,7 +76,22 @@ class TokenHandler(_SDKTokenHandler):
     """
 
     async def handle(self, request: Any):
-        """Wrap SDK handle() and transform auth error responses."""
+        """Wrap SDK handle() and transform auth error responses.
+
+        The SEP-990 jwt-bearer (ID-JAG) grant is dispatched here rather than by
+        the SDK. The SDK requires a confidential client (a stored client_secret)
+        before it will call `exchange_identity_assertion`. FastMCP OAuth-proxy
+        clients are always public (`token_endpoint_auth_method="none"`, no stored
+        secret), and in the proxy trust model the ID-JAG — validated against a
+        trusted issuer — is the authoritative grant, not a per-client secret.
+        So when identity assertion is enabled we authenticate the client and
+        dispatch the grant ourselves, without the SDK's confidential precondition.
+        """
+        if self.identity_assertion_enabled:
+            id_jag_response = await self._maybe_handle_id_jag(request)
+            if id_jag_response is not None:
+                return id_jag_response
+
         response = await super().handle(request)
 
         # Transform 401 unauthorized_client -> invalid_client
@@ -117,6 +134,80 @@ class TokenHandler(_SDKTokenHandler):
                 pass  # Not JSON or unexpected format, return as-is
 
         return response
+
+    async def _maybe_handle_id_jag(self, request: Request):
+        """Dispatch the SEP-990 jwt-bearer grant, or None to fall through.
+
+        Returns a response for the jwt-bearer grant (ID-JAG), or None when the
+        request is not a jwt-bearer grant so the SDK handler runs normally.
+        """
+        form_data = await request.form()
+        if form_data.get("grant_type") != JWT_BEARER_GRANT_TYPE:
+            return None
+
+        try:
+            client_info = await self.client_authenticator.authenticate_request(request)
+        except AuthenticationError as e:
+            return PydanticJSONResponse(
+                content=TokenErrorResponse(
+                    error="invalid_client",
+                    error_description=e.message,
+                ),
+                status_code=401,
+                headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+            )
+
+        # Dispatching the jwt-bearer grant ourselves bypasses the SDK's
+        # `grant_type not in client_info.grant_types` check, so enforce it here:
+        # a client may only use the ID-JAG grant if it registered for it. On the
+        # proxy, DCR adds this grant type to registered clients when identity
+        # assertion is enabled, so legitimately-registered clients are accepted
+        # while clients registered only for authorization_code/refresh_token are not.
+        if JWT_BEARER_GRANT_TYPE not in client_info.grant_types:
+            return self.response(
+                TokenErrorResponse(
+                    error="unsupported_grant_type",
+                    error_description=(
+                        "Unsupported grant type (supported grant types are "
+                        f"{client_info.grant_types})"
+                    ),
+                )
+            )
+
+        assertion = form_data.get("assertion")
+        if not isinstance(assertion, str) or not assertion:
+            return self.response(
+                TokenErrorResponse(
+                    error="invalid_request",
+                    error_description="Missing assertion",
+                )
+            )
+
+        scope = form_data.get("scope")
+        resource = form_data.get("resource")
+        params = IdentityAssertionParams(
+            assertion=assertion,
+            scopes=scope.split(" ") if isinstance(scope, str) and scope else None,
+            resource=resource if isinstance(resource, str) else None,
+        )
+
+        try:
+            tokens = await self.provider.exchange_identity_assertion(
+                client_info, params
+            )
+        except TokenError as e:
+            # Per MCP spec, invalid/expired grants MUST return 401 (the SDK path is
+            # transformed the same way in handle()).
+            status_code = 401 if e.error == "invalid_grant" else 400
+            return PydanticJSONResponse(
+                content=TokenErrorResponse(
+                    error=e.error, error_description=e.error_description
+                ),
+                status_code=status_code,
+                headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+            )
+
+        return self.response(tokens)
 
 
 # Expected assertion type for private_key_jwt
@@ -257,6 +348,26 @@ class AuthProvider(TokenVerifierProtocol):
         """
         raise NotImplementedError("Subclasses must implement verify_token")
 
+    @property
+    def scopes_supported(self) -> list[str]:
+        """Scopes advertised in protected resource metadata."""
+        return self.required_scopes
+
+    @property
+    def challenge_scopes(self) -> list[str]:
+        """Scopes clients must request to access this resource."""
+        return self.get_challenge_scopes()
+
+    def get_challenge_scopes(
+        self, required_scopes: list[str] | None = None
+    ) -> list[str]:
+        """Translate validation scopes into scopes clients should request.
+
+        Providers whose authorization server uses a different scope format can
+        override this method to translate any effective set of validation scopes.
+        """
+        return self.required_scopes if required_scopes is None else required_scopes
+
     def set_mcp_path(self, mcp_path: str | None) -> None:
         """Set the MCP endpoint path and compute resource URL.
 
@@ -394,17 +505,6 @@ class TokenVerifier(AuthProvider):
             required_scopes=required_scopes,
         )
 
-    @property
-    def scopes_supported(self) -> list[str]:
-        """Scopes to advertise in OAuth metadata.
-
-        Defaults to required_scopes. Override in subclasses when the
-        advertised scopes differ from the validation scopes (e.g., Azure AD
-        where tokens contain short-form scopes but clients request full URI
-        scopes).
-        """
-        return self.required_scopes or []
-
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify a bearer token and return access info if valid."""
         raise NotImplementedError("Subclasses must implement verify_token")
@@ -434,6 +534,7 @@ class RemoteAuthProvider(AuthProvider):
         resource_base_url: AnyHttpUrl | str | None = None,
         resource_name: str | None = None,
         resource_documentation: AnyHttpUrl | None = None,
+        challenge_scopes: list[str] | None = None,
     ):
         """Initialize the remote auth provider.
 
@@ -451,6 +552,8 @@ class RemoteAuthProvider(AuthProvider):
                 uses the token verifier's scopes_supported property. Use this
                 when the scopes clients request differ from the scopes that
                 appear in tokens (e.g., Azure AD full URI scopes vs short-form).
+            challenge_scopes: Request-facing form of the required validation scopes.
+                When omitted, scope translation delegates to the token verifier.
             resource_name: Optional name for the protected resource
             resource_documentation: Optional documentation URL for the protected resource
         """
@@ -462,8 +565,33 @@ class RemoteAuthProvider(AuthProvider):
         self.token_verifier = token_verifier
         self.authorization_servers = authorization_servers
         self._scopes_supported = scopes_supported
+        self._challenge_scopes = challenge_scopes
         self.resource_name = resource_name
         self.resource_documentation = resource_documentation
+
+    @property
+    def scopes_supported(self) -> list[str]:
+        """Scopes advertised in protected resource metadata."""
+        if self._scopes_supported is not None:
+            return self._scopes_supported
+        return self.token_verifier.scopes_supported
+
+    def get_challenge_scopes(
+        self, required_scopes: list[str] | None = None
+    ) -> list[str]:
+        """Translate effective validation scopes for the authorization server."""
+        effective_scopes = (
+            self.required_scopes if required_scopes is None else required_scopes
+        )
+        if (
+            effective_scopes == self.required_scopes
+            and self._challenge_scopes is not None
+        ):
+            return self._challenge_scopes
+        translator = getattr(self.token_verifier, "get_challenge_scopes", None)
+        if translator is None:
+            return effective_scopes
+        return translator(effective_scopes)
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify token using the configured token verifier."""
@@ -494,11 +622,7 @@ class RemoteAuthProvider(AuthProvider):
                 create_protected_resource_routes(
                     resource_url=resource_url,
                     authorization_servers=self.authorization_servers,
-                    scopes_supported=(
-                        self._scopes_supported
-                        if self._scopes_supported is not None
-                        else self.token_verifier.scopes_supported
-                    ),
+                    scopes_supported=self.scopes_supported,
                     resource_name=self.resource_name,
                     resource_documentation=self.resource_documentation,
                 )
@@ -587,6 +711,28 @@ class MultiAuth(AuthProvider):
         if self.server is not None:
             self._sources.append(self.server)
         self._sources.extend(self.verifiers)
+
+    @property
+    def scopes_supported(self) -> list[str]:
+        """Scopes advertised by the delegated auth server."""
+        if self.server is not None:
+            return self.server.scopes_supported
+        return self.required_scopes
+
+    def get_challenge_scopes(
+        self, required_scopes: list[str] | None = None
+    ) -> list[str]:
+        """Translate effective scopes through an unambiguous auth source."""
+        effective_scopes = (
+            self.required_scopes if required_scopes is None else required_scopes
+        )
+        if self.server is not None:
+            return self.server.get_challenge_scopes(effective_scopes)
+        if len(self.verifiers) == 1:
+            translator = getattr(self.verifiers[0], "get_challenge_scopes", None)
+            if translator is not None:
+                return translator(effective_scopes)
+        return effective_scopes
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify a token by trying the server, then each verifier in order.
@@ -720,6 +866,16 @@ class OAuthProvider(
         """
         return await self.load_access_token(token)
 
+    @property
+    def scopes_supported(self) -> list[str]:
+        """Scopes advertised by this authorization server."""
+        if (
+            self.client_registration_options
+            and self.client_registration_options.valid_scopes
+        ):
+            return self.client_registration_options.valid_scopes
+        return self.required_scopes
+
     def get_routes(
         self,
         mcp_path: str | None = None,
@@ -781,16 +937,10 @@ class OAuthProvider(
 
         # Add protected resource routes if this server is also acting as a resource server
         if self._resource_url:
-            supported_scopes = (
-                self.client_registration_options.valid_scopes
-                if self.client_registration_options
-                and self.client_registration_options.valid_scopes
-                else self.required_scopes
-            )
             protected_routes = create_protected_resource_routes(
                 resource_url=self._resource_url,
                 authorization_servers=[self.issuer_url],
-                scopes_supported=supported_scopes,
+                scopes_supported=self.scopes_supported,
             )
             oauth_routes.extend(protected_routes)
 

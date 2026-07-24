@@ -1,0 +1,68 @@
+[project]
+name = "fastmcp-tasks"
+dynamic = ["version", "dependencies"]
+description = "Background task execution for FastMCP servers via the io.modelcontextprotocol/tasks extension (SEP-2663)."
+authors = [{ name = "Jeremiah Lowin" }]
+
+requires-python = ">=3.10"
+readme = "README.md"
+license = "Apache-2.0"
+
+keywords = [
+    "mcp",
+    "fastmcp tasks",
+    "background tasks",
+    "model context protocol",
+    "fastmcp",
+]
+classifiers = [
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://gofastmcp.com"
+Repository = "https://github.com/PrefectHQ/fastmcp"
+Documentation = "https://gofastmcp.com"
+
+[build-system]
+requires = ["hatchling", "uv-dynamic-versioning>=0.7.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["fastmcp_tasks"]
+
+[tool.uv-dynamic-versioning]
+vcs = "git"
+style = "pep440"
+bump = true
+fallback-version = "0.0.0"
+
+[tool.hatch.metadata.hooks.uv-dynamic-versioning]
+dependencies = [
+    "fastmcp-slim[server]=={{ version }}",
+    "pydocket>=0.20.0",
+    # burner-redis 0.1.7's Windows build crashes the interpreter (native fault,
+    # no Python traceback) running the memory:// backend under pytest-xdist —
+    # reproduced on GitHub Actions windows-latest, confirmed absent on
+    # macOS/Linux with the same versions (full suite green there under the
+    # identical upgraded dependencies). pydocket only floors it at >=0.1.6, so
+    # capping pydocket alone is not enough: a resolver is free to pick the
+    # newest burner-redis satisfying that floor regardless. Pin burner-redis
+    # directly on Windows only (which in turn caps pydocket to <0.20.2 there,
+    # the last release that doesn't itself require burner-redis>=0.1.7) until
+    # upstream ships a fix — other platforms are unaffected and stay unpinned.
+    "burner-redis<0.1.7; sys_platform == 'win32'",
+]

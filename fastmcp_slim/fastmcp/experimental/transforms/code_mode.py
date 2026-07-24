@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol
 if TYPE_CHECKING:
     from pydantic_monty import ResourceLimits
 
-from mcp.types import TextContent
+from mcp_types import TextContent
 from pydantic import Field
 
 from fastmcp.exceptions import NotFoundError, ToolError

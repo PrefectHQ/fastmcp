@@ -2,11 +2,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-import mcp.types
+import mcp_types
 import pytest
+from mcp.server.context import ServerRequestContext
 
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
+from fastmcp.server import create_proxy
 from fastmcp.server.context import Context
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.base import ToolResult
@@ -17,7 +19,7 @@ class Recording:
     # the hook is the name of the hook that was called, e.g. "on_list_tools"
     hook: str
     context: MiddlewareContext
-    result: mcp.types.ServerResult | None
+    result: mcp_types.ServerResult | None
 
 
 class RecordingMiddleware(Middleware):
@@ -153,15 +155,18 @@ def mcp_server(recording_middleware):
 
     mcp.add_middleware(recording_middleware)
 
-    # Register progress handler
-    @mcp._mcp_server.progress_notification()
+    # Register a progress notification handler (v2 API: (ctx, params)).
     async def handle_progress(
-        progress_token: str | int,
-        progress: float,
-        total: float | None,
-        message: str | None,
-    ):
-        print("HI")
+        _ctx: ServerRequestContext,
+        _params: mcp_types.ProgressNotificationParams,
+    ) -> None:
+        pass
+
+    mcp._mcp_server.add_notification_handler(
+        "notifications/progress",
+        mcp_types.ProgressNotificationParams,
+        handle_progress,
+    )
 
     return mcp
 
@@ -471,7 +476,7 @@ class TestProxyServer:
     ):
         # proxy server will have its tools listed as well as called in order to
         # apply transforms and filters prior to the call.
-        proxy_server = FastMCP.as_proxy(mcp_server, name="Proxy Server")
+        proxy_server = create_proxy(mcp_server, name="Proxy Server")
         async with Client(proxy_server) as client:
             await client.call_tool("add", {"a": 1, "b": 2})
 
@@ -488,7 +493,7 @@ class TestProxyServer:
     ):
         """Tests that tags on remote FastMCP servers are visible to middleware
         via proxy. See https://github.com/PrefectHQ/fastmcp/issues/1300"""
-        proxy_server = FastMCP.as_proxy(mcp_server, name="Proxy Server")
+        proxy_server = create_proxy(mcp_server, name="Proxy Server")
 
         TAGS = []
 
@@ -517,8 +522,8 @@ class TestToolCallDenial:
         class AuthMiddleware(Middleware):
             async def on_call_tool(
                 self,
-                context: MiddlewareContext[mcp.types.CallToolRequestParams],
-                call_next: CallNext[mcp.types.CallToolRequestParams, ToolResult],
+                context: MiddlewareContext[mcp_types.CallToolRequestParams],
+                call_next: CallNext[mcp_types.CallToolRequestParams, ToolResult],
             ) -> ToolResult:
                 tool_name = context.message.name
                 if tool_name.lower() == "restricted_tool":
@@ -560,8 +565,8 @@ class TestToolCallDenial:
         class SelectiveAuthMiddleware(Middleware):
             async def on_call_tool(
                 self,
-                context: MiddlewareContext[mcp.types.CallToolRequestParams],
-                call_next: CallNext[mcp.types.CallToolRequestParams, ToolResult],
+                context: MiddlewareContext[mcp_types.CallToolRequestParams],
+                call_next: CallNext[mcp_types.CallToolRequestParams, ToolResult],
             ) -> ToolResult:
                 tool_name = context.message.name
 

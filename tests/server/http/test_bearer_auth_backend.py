@@ -12,11 +12,6 @@ class TestBearerAuthBackendTokenVerifierIntegration:
     """Test BearerAuthBackend works with TokenVerifier protocol."""
 
     @pytest.fixture
-    def rsa_key_pair(self) -> RSAKeyPair:
-        """Generate RSA key pair for testing."""
-        return RSAKeyPair.generate()
-
-    @pytest.fixture
     def jwt_verifier(self, rsa_key_pair: RSAKeyPair) -> JWTVerifier:
         """Create JWTVerifier for testing."""
         return JWTVerifier(

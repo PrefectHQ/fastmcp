@@ -1,0 +1,197 @@
+name: Marvin Test Failure Analysis
+
+on:
+  workflow_run:
+    workflows: ["Tests", "Run static analysis"]
+    types:
+      - completed
+
+concurrency:
+  group: marvin-test-failure-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+jobs:
+  marvin-test-failure:
+    # Only run if the test workflow failed
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+      actions: read # Required for Claude to read CI results
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Generate Marvin App token
+        id: marvin-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.MARVIN_APP_ID }}
+          private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+
+      # Install UV package manager
+      - name: Install UV
+        uses: astral-sh/setup-uv@v7
+
+      # Install dependencies
+      - name: Install dependencies
+        run: uv sync --all-packages --group dev
+
+      - name: Set analysis prompt
+        id: analysis-prompt
+        run: |
+          cat >> $GITHUB_OUTPUT << 'EOF'
+          PROMPT<<PROMPT_END
+          You're a test failure analysis assistant for FastMCP, a Python framework for building Model Context Protocol servers and clients.
+
+          # Your Task
+          A GitHub Actions workflow has failed. Your job is to:
+          1. Analyze the test failure(s) to understand what went wrong
+          2. Identify the root cause of the failure(s)
+          3. Suggest a clear, actionable solution to fix the failure(s)
+
+          # Response Proportionality
+          Match your response length to the complexity of the failure. Not every failure needs a full investigation:
+
+          **Trivial failures** (formatting, linting) — post a short, direct comment. No collapsible sections, no root-cause deep-dive. Example:
+          > CI failed: `ruff format` reformatted 2 files. Run `uv run ruff format .` locally and push.
+
+          **Pre-existing flaky tests** unrelated to the PR — say so briefly. Don't write a full analysis of a test the PR didn't touch. Example:
+          > CI failed due to a pre-existing flaky test (`test_name`) unrelated to this PR's changes. Safe to re-run.
+
+          **Real failures caused by the PR** — these deserve the full analysis format below. Spend your effort here.
+
+          # Getting Started
+          1. Call the generate_agents_md tool to get a high-level summary of the project
+          2. Get the pull request associated with this workflow run from the GitHub repository: ${{ github.repository }}
+             - The workflow run ID is: ${{ github.event.workflow_run.id }}
+             - The workflow run was triggered by: ${{ github.event.workflow_run.event }}
+             - Use GitHub MCP tools to get PR details and workflow run information
+          3. Use the GitHub MCP tools to fetch job logs and failure information:
+             - Use get_workflow_run to get details about the failed workflow
+             - Use list_workflow_jobs to see which jobs failed
+             - Use get_job_logs with failed_only=true to get logs for failed jobs
+             - Use summarize_run_log_failures to get an AI summary of what failed
+          4. Analyze the failures to understand the root cause
+          5. Search the codebase for relevant files, tests, and implementations
+
+          # Your Response
+          Post a comment on the pull request with your analysis.
+
+          Lead with a tl;dr — 1-2 sentences that tell the developer what broke and what to do about it. This should be visible without expanding anything.
+
+          Push supporting detail into collapsible `<details>` blocks. The reader should be able to act on your comment without expanding a single one. Think of details blocks as appendices — there if someone wants to dig deeper, not required for the main message.
+
+          For real (non-trivial) failures, use this structure:
+
+          **tl;dr**: What failed and what to do (1-2 sentences, always visible)
+
+          **Root Cause**: Why it failed (a short paragraph, always visible)
+
+          **Fix**: Specific files and changes needed (always visible)
+
+          <details>
+          <summary>Log excerpts</summary>
+          Relevant failure output
+          </details>
+
+          <details>
+          <summary>Related files</summary>
+          Files relevant to the failure
+          </details>
+
+          # Quality Standards
+          - Every claim needs evidence: file paths, line numbers, log excerpts. Never say "the test fails" without citing which test and what the error was.
+          - Focus on facts from the logs and code, not speculation. If you can't determine the root cause, say so clearly — "I don't know" is better than a wrong diagnosis.
+          - If your only suggestion is a bad one (disable the test, increase the timeout, etc.), say so honestly rather than dressing it up.
+          - Do not paste raw CLI output (e.g., prek progress bars, pytest collection output) into the comment body. Quote only the relevant failure lines.
+          - Always include specific file names, tool names, and test names in your summary. Never leave a sentence with a blank where a name should be.
+
+          # Self-Review Before Posting
+          Before posting your comment, re-read it as the PR author would. Ask:
+          - Can I act on this without expanding any `<details>` block?
+          - Does every claim cite a specific file, line, or log excerpt?
+          - Am I telling them something they can't already see in the CI logs, or just restating them?
+          If your comment doesn't add value beyond what the logs already show, don't post it.
+
+          # STOP SIGNALS
+          If anyone on the PR has asked the bot to stop — e.g., "stop", "go away", "don't comment", "no more bot comments" — exit immediately without further action. This includes past comments in the thread, not just the most recent one.
+
+          If you are posting the same suggestion as you have previously made, do not post the suggestion again.
+
+          # IMPORTANT: EDIT YOUR COMMENT
+          Do not post a new comment every time you triage a failing workflow. If a previous comment has been posted by you (marvin)
+          in a previous triage, edit that comment do not add a new comment for each failure. Be sure to include a note that you've edited
+          your comment to reflect the latest analysis. Don't worry about keeping the old content around, there's comment history for
+          that.
+
+          # Available Tools
+          - You can run make commands (e.g., `make lint`, `make typecheck`, `make sync`) to build, test, or lint the code
+          - You can also run git commands (e.g., `git status`, `git log`, `git diff`) to inspect the repository
+          - You can use WebSearch and WebFetch to research errors, stack traces, or related issues
+          - For bash commands, you are limited to make and git commands only
+
+          # Problems Encountered
+          If you encounter any problems during your analysis (e.g., unable to fetch logs, tools not working), document them clearly so the team knows what limitations you faced.
+          PROMPT_END
+          EOF
+
+      - name: Setup GitHub MCP Server
+        run: |
+          mkdir -p /tmp/mcp-config
+          cat > /tmp/mcp-config/mcp-servers.json << 'EOF'
+          {
+            "mcpServers": {
+              "repository-summary": {
+                "type": "http",
+                "url": "https://agents-md-generator.fastmcp.app/mcp"
+              },
+              "code-search": {
+                "type": "http",
+                "url": "https://public-code-search.fastmcp.app/mcp"
+              },
+              "github-research": {
+                "type": "stdio",
+                "command": "uvx",
+                "args": [
+                  "github-research-mcp"
+                ],
+                "env": {
+                  "DISABLE_SUMMARIES": "true",
+                  "GITHUB_PERSONAL_ACCESS_TOKEN": "${{ secrets.GITHUB_TOKEN }}"
+                }
+              }
+            }
+          }
+          EOF
+
+      - name: Clean up stale Claude locks
+        run: rm -rf ~/.claude/.locks ~/.local/state/claude/locks || true
+
+      - name: Run Claude Code
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          github_token: ${{ steps.marvin-token.outputs.token }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY_FOR_CI }}
+          bot_name: "Marvin Context Protocol"
+
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          additional_permissions: |
+            actions: read
+
+          prompt: ${{ steps.analysis-prompt.outputs.PROMPT }}
+          claude_args: |
+            --allowed-tools mcp__repository-summary,mcp__code-search,mcp__github-research,WebSearch,WebFetch,"Bash(make:*)","Bash(git:*)"
+            --mcp-config /tmp/mcp-config/mcp-servers.json

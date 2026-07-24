@@ -5,15 +5,15 @@ from contextlib import suppress
 from unittest.mock import AsyncMock, call
 
 import pytest
-from mcp import McpError
-from mcp.types import TextResourceContents
+from mcp import MCPError
+from mcp_types import TextResourceContents
 
 from fastmcp import Context
 from fastmcp.client import Client
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.server.dependencies import get_http_request
 from fastmcp.server.server import FastMCP
-from fastmcp.utilities.tests import run_server_async
+from fastmcp.utilities.tests import ASGIServer, asgi_server
 
 
 def create_test_server() -> FastMCP:
@@ -90,8 +90,8 @@ async def streamable_http_server(request):
         fastmcp.settings.stateless_http = True
 
     server = create_test_server()
-    async with run_server_async(server) as url:
-        yield url
+    async with asgi_server(server) as running_server:
+        yield running_server
 
     if stateless_http:
         fastmcp.settings.stateless_http = False
@@ -101,8 +101,8 @@ async def streamable_http_server(request):
 async def streamable_http_server_with_streamable_http_alias():
     """Test that the "streamable-http" transport alias works."""
     server = create_test_server()
-    async with run_server_async(server, transport="streamable-http") as url:
-        yield url
+    async with asgi_server(server, transport="streamable-http") as running_server:
+        yield running_server
 
 
 @pytest.fixture
@@ -147,34 +147,30 @@ async def nested_server():
         await asyncio.wait_for(server_task, timeout=2.0)
 
 
-async def test_ping(streamable_http_server: str):
+async def test_ping(streamable_http_server: ASGIServer):
     """Test pinging the server."""
-    async with Client(
-        transport=StreamableHttpTransport(streamable_http_server)
-    ) as client:
+    # `ping` is a handshake-era method, so this pins the legacy era.
+    async with streamable_http_server.client(mode="legacy") as client:
         result = await client.ping()
         assert result is True
 
 
 async def test_ping_with_streamable_http_alias(
-    streamable_http_server_with_streamable_http_alias: str,
+    streamable_http_server_with_streamable_http_alias: ASGIServer,
 ):
     """Test pinging the server."""
-    async with Client(
-        transport=StreamableHttpTransport(
-            streamable_http_server_with_streamable_http_alias
-        )
+    # `ping` is a handshake-era method, so this pins the legacy era.
+    async with streamable_http_server_with_streamable_http_alias.client(
+        mode="legacy"
     ) as client:
         result = await client.ping()
         assert result is True
 
 
-async def test_http_headers(streamable_http_server: str):
+async def test_http_headers(streamable_http_server: ASGIServer):
     """Test getting HTTP headers from the server."""
-    async with Client(
-        transport=StreamableHttpTransport(
-            streamable_http_server, headers={"X-DEMO-HEADER": "ABC"}
-        )
+    async with streamable_http_server.client(
+        headers={"X-DEMO-HEADER": "ABC"}
     ) as client:
         raw_result = await client.read_resource("request://headers")
         assert isinstance(raw_result[0], TextResourceContents)
@@ -183,23 +179,22 @@ async def test_http_headers(streamable_http_server: str):
         assert json_result["x-demo-header"] == "ABC"
 
 
-async def test_session_id_callback(streamable_http_server: str):
+async def test_session_id_callback(streamable_http_server: ASGIServer):
     """Test getting mcp-session-id from the transport."""
-    transport = StreamableHttpTransport(streamable_http_server)
+    transport = streamable_http_server.transport()
     assert transport.get_session_id() is None
-    async with Client(transport=transport):
+    async with Client(transport=transport, mode="legacy"):
         session_id = transport.get_session_id()
         assert session_id is not None
 
 
 @pytest.mark.parametrize("streamable_http_server", [True, False], indirect=True)
-async def test_greet_with_progress_tool(streamable_http_server: str):
+async def test_greet_with_progress_tool(streamable_http_server: ASGIServer):
     """Test calling the greet tool."""
     progress_handler = AsyncMock(return_value=None)
 
-    async with Client(
-        transport=StreamableHttpTransport(streamable_http_server),
-        progress_handler=progress_handler,
+    async with streamable_http_server.client(
+        progress_handler=progress_handler
     ) as client:
         result = await client.call_tool("greet_with_progress", {"name": "Alice"})
         assert result.data == "Hello, Alice!"
@@ -213,7 +208,7 @@ async def test_greet_with_progress_tool(streamable_http_server: str):
 
 
 @pytest.mark.parametrize("streamable_http_server", [True, False], indirect=True)
-async def test_elicitation_tool(streamable_http_server: str, request):
+async def test_elicitation_tool(streamable_http_server: ASGIServer, request):
     """Test calling the elicitation tool in both stateless and stateful modes."""
 
     async def elicitation_handler(message, response_type, params, ctx):
@@ -223,37 +218,37 @@ async def test_elicitation_tool(streamable_http_server: str, request):
     if stateless_http:
         pytest.xfail("Elicitation is not supported in stateless HTTP mode")
 
-    async with Client(
-        transport=StreamableHttpTransport(streamable_http_server),
-        elicitation_handler=elicitation_handler,
+    # Server-initiated elicitation is handshake-era only.
+    async with streamable_http_server.client(
+        elicitation_handler=elicitation_handler, mode="legacy"
     ) as client:
         result = await client.call_tool("elicit")
         assert result.data == "You said your name was: Alice!"
 
 
 @pytest.mark.parametrize("streamable_http_server", [True], indirect=True)
-async def test_stateless_http_rejects_get_sse(streamable_http_server: str):
+async def test_stateless_http_rejects_get_sse(streamable_http_server: ASGIServer):
     """Stateless servers should reject GET SSE requests with 405."""
-    import httpx
-
-    async with httpx.AsyncClient() as http_client:
-        response = await http_client.get(streamable_http_server)
+    async with streamable_http_server.http_client() as http_client:
+        response = await http_client.get(streamable_http_server.url)
         assert response.status_code == 405
 
 
 @pytest.mark.parametrize("streamable_http_server", [True], indirect=True)
-async def test_stateless_http_still_accepts_post(streamable_http_server: str):
+async def test_stateless_http_still_accepts_post(
+    streamable_http_server: ASGIServer,
+):
     """Stateless servers should still handle POST requests normally."""
-    async with Client(
-        transport=StreamableHttpTransport(streamable_http_server)
-    ) as client:
+    async with streamable_http_server.client() as client:
         result = await client.call_tool("greet", {"name": "World"})
         assert result.data == "Hello, World!"
 
 
 async def test_nested_streamable_http_server_resolves_correctly(nested_server: str):
     """Test patch for https://github.com/modelcontextprotocol/python-sdk/pull/659"""
-    async with Client(transport=StreamableHttpTransport(nested_server)) as client:
+    async with Client(
+        transport=StreamableHttpTransport(nested_server), mode="legacy"
+    ) as client:
         result = await client.ping()
         assert result is True
 
@@ -263,29 +258,21 @@ async def test_nested_streamable_http_server_resolves_correctly(nested_server: s
     reason="Timeout tests are flaky on Windows. Timeouts *are* supported but the tests are unreliable.",
 )
 class TestTimeout:
-    async def test_timeout(self, streamable_http_server: str):
+    async def test_timeout(self, streamable_http_server: ASGIServer):
         # note this transport behaves differently than others and raises
-        # McpError from the *client* context
-        with pytest.raises(McpError, match="Timed out"):
-            async with Client(
-                transport=StreamableHttpTransport(streamable_http_server),
-                timeout=0.02,
-            ) as client:
+        # MCPError from the *client* context
+        with pytest.raises(MCPError, match="timed out"):
+            async with streamable_http_server.client(timeout=0.02) as client:
                 await client.call_tool("sleep", {"seconds": 0.05})
 
-    async def test_timeout_tool_call(self, streamable_http_server: str):
-        async with Client(
-            transport=StreamableHttpTransport(streamable_http_server),
-        ) as client:
-            with pytest.raises(McpError):
+    async def test_timeout_tool_call(self, streamable_http_server: ASGIServer):
+        async with streamable_http_server.client() as client:
+            with pytest.raises(MCPError):
                 await client.call_tool("sleep", {"seconds": 0.2}, timeout=0.1)
 
     async def test_timeout_tool_call_overrides_client_timeout(
-        self, streamable_http_server: str
+        self, streamable_http_server: ASGIServer
     ):
-        async with Client(
-            transport=StreamableHttpTransport(streamable_http_server),
-            timeout=2,
-        ) as client:
-            with pytest.raises(McpError):
+        async with streamable_http_server.client(timeout=2) as client:
+            with pytest.raises(MCPError):
                 await client.call_tool("sleep", {"seconds": 0.2}, timeout=0.1)

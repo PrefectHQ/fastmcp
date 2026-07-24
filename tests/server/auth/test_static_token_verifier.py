@@ -1,6 +1,6 @@
 """Tests for StaticTokenVerifier integration with FastMCP."""
 
-import httpx
+import httpx2
 
 from fastmcp.server import FastMCP
 from fastmcp.server.auth import AccessToken
@@ -27,6 +27,7 @@ class TestStaticTokenVerifier:
                     "client_id": "test-client",
                     "scopes": ["read", "write"],
                     "expires_at": None,
+                    "sub": "user-42",
                 },
                 "scoped-token": {"client_id": "limited-client", "scopes": ["read"]},
             }
@@ -39,12 +40,14 @@ class TestStaticTokenVerifier:
         assert result.scopes == ["read", "write"]
         assert result.token == "valid-token"
         assert result.expires_at is None
+        assert result.subject == "user-42"
 
-        # Test token with different scopes
+        # Test token with different scopes and no "sub" entry
         result = await verifier.verify_token("scoped-token")
         assert isinstance(result, AccessToken)
         assert result.client_id == "limited-client"
         assert result.scopes == ["read"]
+        assert result.subject is None
 
         # Test invalid token
         result = await verifier.verify_token("invalid-token")
@@ -66,8 +69,8 @@ class TestStaticTokenVerifier:
         app = server.http_app(transport="http")
 
         # Test unauthenticated request gets 401 (use exact path match to avoid redirect)
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app), base_url="http://test"
         ) as client:
             response = await client.post("/mcp")
             assert response.status_code == 401
@@ -89,8 +92,8 @@ class TestStaticTokenVerifier:
         app = server.http_app(transport="http")
 
         # Test that non-matching path gets 307 redirect
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app), base_url="http://test"
         ) as client:
             response = await client.post("/mcp/", follow_redirects=False)
             assert response.status_code == 307

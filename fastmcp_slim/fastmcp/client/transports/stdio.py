@@ -12,7 +12,11 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from typing_extensions import Unpack
 
-from fastmcp.client.transports.base import ClientTransport, SessionKwargs
+from fastmcp.client.transports.base import (
+    ClientTransport,
+    SessionKwargs,
+    TransportOptions,
+)
 from fastmcp.utilities.logging import get_logger
 
 logger = get_logger(__name__)
@@ -63,17 +67,27 @@ class StdioTransport(ClientTransport):
         self.log_file = log_file
 
         self._session: ClientSession | None = None
+        self._session_options: TransportOptions | None = None
+        self._active_sessions = 0
+        self._connect_lock = anyio.Lock()
         self._connect_task: asyncio.Task | None = None
         self._ready_event = anyio.Event()
         self._stop_event = anyio.Event()
 
     @contextlib.asynccontextmanager
     async def connect_session(
-        self, **session_kwargs: Unpack[SessionKwargs]
+        self,
+        *,
+        transport_options: TransportOptions | None = None,
+        **session_kwargs: Unpack[SessionKwargs],
     ) -> AsyncIterator[ClientSession]:
         try:
-            await self.connect(**session_kwargs)
-            yield cast(ClientSession, self._session)
+            await self.connect(transport_options=transport_options, **session_kwargs)
+            self._active_sessions += 1
+            try:
+                yield cast(ClientSession, self._session)
+            finally:
+                self._active_sessions -= 1
         finally:
             if not self.keep_alive:
                 await self.disconnect()
@@ -81,47 +95,76 @@ class StdioTransport(ClientTransport):
                 logger.debug("Stdio transport has keep_alive=True, not disconnecting")
 
     async def connect(
-        self, **session_kwargs: Unpack[SessionKwargs]
+        self,
+        *,
+        transport_options: TransportOptions | None = None,
+        **session_kwargs: Unpack[SessionKwargs],
     ) -> ClientSession | None:
-        # If the connect task completed or the session's streams are dead,
-        # the subprocess has exited. Tear down so we can start fresh.
-        if self._connect_task is not None and (
-            self._connect_task.done() or self._is_session_dead()
-        ):
-            await self.disconnect()
+        options = transport_options or TransportOptions()
 
-        if self._connect_task is not None:
-            return
+        # Serialized so concurrent callers can't each decide to replace the
+        # session and race to spawn competing subprocesses.
+        async with self._connect_lock:
+            # A kept-alive session was built for one client's options; handing it
+            # to a client that wants different ones would silently give it the
+            # first client's behavior. Rebuild it when it's idle; refuse when
+            # another client is using it, since tearing it down would break them.
+            if self._connect_task is not None and self._session_options != options:
+                if self._active_sessions:
+                    raise RuntimeError(
+                        "This stdio transport has a live session built for different "
+                        "connection options and another client is still using it. "
+                        "Sharing one transport across clients that need different "
+                        "sessions is not supported; give each client its own transport."
+                    )
+                await self.disconnect()
 
-        session_future: asyncio.Future[ClientSession] = asyncio.Future()
+            # If the connect task completed or the session's streams are dead,
+            # the subprocess has exited. Tear down so we can start fresh.
+            if self._connect_task is not None and (
+                self._connect_task.done() or self._is_session_dead()
+            ):
+                await self.disconnect()
 
-        # start the connection task
-        self._connect_task = asyncio.create_task(
-            _stdio_transport_connect_task(
-                command=self.command,
-                args=self.args,
-                env=self.env,
-                cwd=self.cwd,
-                log_file=self.log_file,
-                # TODO(ty): remove when ty supports Unpack[TypedDict] inference
-                session_kwargs=session_kwargs,  # type: ignore[arg-type]
-                ready_event=self._ready_event,
-                stop_event=self._stop_event,
-                session_future=session_future,
+            if self._connect_task is not None:
+                return
+
+            session_future: asyncio.Future[ClientSession] = asyncio.Future()
+
+            # Recorded before the connect completes: while it is in flight the
+            # session already belongs to these options, and a concurrent caller
+            # comparing against an unset value would read it as a mismatch and
+            # tear down the connection being established.
+            self._session_options = options
+
+            # start the connection task
+            self._connect_task = asyncio.create_task(
+                _stdio_transport_connect_task(
+                    command=self.command,
+                    args=self.args,
+                    env=self.env,
+                    cwd=self.cwd,
+                    log_file=self.log_file,
+                    # TODO(ty): remove when ty supports Unpack[TypedDict] inference
+                    session_kwargs=session_kwargs,  # type: ignore[arg-type]
+                    transport_options=options,
+                    ready_event=self._ready_event,
+                    stop_event=self._stop_event,
+                    session_future=session_future,
+                )
             )
-        )
 
-        # wait for the client to be ready before returning
-        await self._ready_event.wait()
+            # wait for the client to be ready before returning
+            await self._ready_event.wait()
 
-        # Check if connect task completed with an exception (early failure)
-        if self._connect_task.done():
-            exception = self._connect_task.exception()
-            if exception is not None:
-                raise exception
+            # Check if connect task completed with an exception (early failure)
+            if self._connect_task.done():
+                exception = self._connect_task.exception()
+                if exception is not None:
+                    raise exception
 
-        self._session = await session_future
-        return self._session
+            self._session = await session_future
+            return self._session
 
     async def disconnect(self):
         if self._connect_task is None:
@@ -130,33 +173,47 @@ class StdioTransport(ClientTransport):
         # signal the connection task to stop
         self._stop_event.set()
 
-        # wait for the connection task to finish cleanly
-        with contextlib.suppress(Exception):
-            await self._connect_task
+        # Wait without propagating the connection task's cancellation into
+        # this caller. Cancellation of this wait therefore still belongs to
+        # the caller and must propagate normally.
+        connect_task = self._connect_task
+        await asyncio.wait({connect_task})
+        try:
+            _ = connect_task.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.debug(
+                "Suppressed exception from stdio connection task during disconnect",
+                exc_info=True,
+            )
 
         # reset variables and events for potential future reconnects
         self._connect_task = None
         self._session = None
+        self._session_options = None
         self._stop_event = anyio.Event()
         self._ready_event = anyio.Event()
 
     def _is_session_dead(self) -> bool:
-        """Check if the session's underlying streams have been closed.
+        """Check whether the session's underlying connection has closed.
 
-        Checks both the write stream (stdin to subprocess) and the read
-        stream (stdout from subprocess).  On some platforms the write-side
-        pipe lingers after the process exits, so the read-side check
-        (which reflects stdout_reader detecting the dead process) is the
-        more reliable signal.
+        SDK v2 drives the session through a `JSONRPCDispatcher` rather than
+        exposing raw read/write streams: when the subprocess exits, the
+        dispatcher's read loop ends and marks itself closed (or never-running).
+        Detect that so a keep_alive transport tears the stale session down and
+        reconnects instead of reusing a dead subprocess.
         """
         if self._session is None:
             return False
-        try:
-            if self._session._write_stream.statistics().open_send_streams == 0:
-                return True
-            return self._session._read_stream.statistics().open_send_streams == 0
-        except AttributeError:
+        dispatcher = getattr(self._session, "_dispatcher", None)
+        if dispatcher is None:
             return False
+        # A dispatcher that has closed, or that started running and then
+        # stopped, indicates the connection is gone. `_running` is False before
+        # the read loop starts too, so only treat "not running" as dead once the
+        # dispatcher has been closed.
+        return bool(getattr(dispatcher, "_closed", False))
 
     async def close(self):
         await self.disconnect()
@@ -179,6 +236,7 @@ async def _stdio_transport_connect_task(
     cwd: str | None,
     log_file: Path | TextIO | None,
     session_kwargs: SessionKwargs,
+    transport_options: TransportOptions,
     ready_event: anyio.Event,
     stop_event: anyio.Event,
     session_future: asyncio.Future[ClientSession],
@@ -210,7 +268,9 @@ async def _stdio_transport_connect_task(
                 read_stream, write_stream = transport
                 session_future.set_result(
                     await stack.enter_async_context(
-                        ClientSession(read_stream, write_stream, **session_kwargs)
+                        transport_options.session_class(
+                            read_stream, write_stream, **session_kwargs
+                        )
                     )
                 )
 

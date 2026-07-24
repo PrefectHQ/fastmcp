@@ -177,10 +177,11 @@ class TestComponentManagementRoutes:
 class TestAuthComponentManagementRoutes:
     """Test the component management routes with authentication for tools, resources, and prompts."""
 
-    def setup_method(self):
+    @pytest.fixture(autouse=True)
+    def setup(self, rsa_key_pair: RSAKeyPair):
         """Set up test fixtures."""
-        # Generate a key pair and create an auth provider
-        key_pair = RSAKeyPair.generate()
+        # Create an auth provider from the shared test key pair
+        key_pair = rsa_key_pair
         self.auth = JWTVerifier(
             public_key=key_pair.public_key,
             issuer="https://dev.example.com",
@@ -463,9 +464,10 @@ class TestComponentManagerWithPath:
 class TestComponentManagerWithPathAuth:
     """Test component manager routes with auth when mounted at a custom path."""
 
-    def setup_method(self):
-        # Generate a key pair and create an auth provider
-        key_pair = RSAKeyPair.generate()
+    @pytest.fixture(autouse=True)
+    def setup(self, rsa_key_pair: RSAKeyPair):
+        # Create an auth provider from the shared test key pair
+        key_pair = rsa_key_pair
         self.auth = JWTVerifier(
             public_key=key_pair.public_key,
             issuer="https://dev.example.com",

@@ -115,6 +115,58 @@ jobs:
           echo "fastmcp-slim ${SLIM_VERSION} is not available on PyPI; refusing to publish fastmcp." >&2
           exit 1
 
+      - name: Verify matching fastmcp-tasks is published
+        run: |
+          TASKS_VERSION=$(python - <<'PY'
+          import email.parser
+          import re
+          import zipfile
+          from pathlib import Path
+
+          wheel = next(Path("dist").glob("fastmcp-*.whl"))
+          metadata_name = next(
+              name for name in zipfile.ZipFile(wheel).namelist()
+              if name.endswith(".dist-info/METADATA")
+          )
+          metadata = email.parser.Parser().parsestr(
+              zipfile.ZipFile(wheel).read(metadata_name).decode()
+          )
+          # fastmcp-tasks is pinned via the optional `tasks` extra, so its
+          # Requires-Dist entry carries an `extra == "tasks"` marker — unlike the
+          # base slim dependency, do not skip marked entries here.
+          for value in metadata.get_all("Requires-Dist", []):
+              requirement, _, _marker = value.partition(";")
+              match = re.fullmatch(r"fastmcp-tasks==([^;\s]+)", requirement.strip())
+              if match:
+                  print(match.group(1))
+                  break
+          else:
+              raise RuntimeError("Could not find the fastmcp-tasks extra dependency")
+          PY
+          )
+
+          for attempt in {1..12}; do
+            if python - "$TASKS_VERSION" <<'PY'
+          import json
+          import sys
+          import urllib.request
+
+          version = sys.argv[1]
+          url = f"https://pypi.org/pypi/fastmcp-tasks/{version}/json"
+          with urllib.request.urlopen(url, timeout=30) as response:
+              json.load(response)
+          PY
+            then
+              exit 0
+            fi
+
+            echo "fastmcp-tasks ${TASKS_VERSION} is not available on PyPI yet; retrying (${attempt}/12)."
+            sleep 10
+          done
+
+          echo "fastmcp-tasks ${TASKS_VERSION} is not available on PyPI; refusing to publish fastmcp (the [tasks] extra would be uninstallable)." >&2
+          exit 1
+
       - name: Publish fastmcp to PyPI
         run: uv publish -v dist/fastmcp-*.tar.gz dist/fastmcp-*.whl
 
@@ -133,5 +185,19 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.workflow_run.head_sha }}
 
+      - name: Check release line
+        id: release_line
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git fetch origin "${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
+          if git merge-base --is-ancestor HEAD "refs/remotes/origin/${DEFAULT_BRANCH}"; then
+            echo "update_published_docs=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "update_published_docs=false" >> "$GITHUB_OUTPUT"
+            echo "Release commit is not on ${DEFAULT_BRANCH}; skipping published-docs update."
+          fi
+
       - name: Point published-docs at published release
+        if: steps.release_line.outputs.update_published_docs == 'true'
         run: git push --force origin "HEAD:published-docs"

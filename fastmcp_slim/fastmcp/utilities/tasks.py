@@ -13,6 +13,13 @@ from fastmcp.utilities.async_utils import is_coroutine_function
 
 TaskMode = Literal["forbidden", "optional", "required"]
 
+#: Reverse-DNS identifier of the SEP-2663 tasks extension. A tool declared with
+#: ``task=True`` requires an extension with this identifier to be registered on
+#: the server (``mcp.add_extension(...)``); the ``fastmcp-tasks`` package
+#: provides it. Kept here as pure declaration so core can check for the
+#: extension without importing the tasks package.
+TASKS_EXTENSION_ID = "io.modelcontextprotocol/tasks"
+
 DEFAULT_POLL_INTERVAL = timedelta(seconds=5)
 DEFAULT_POLL_INTERVAL_MS = int(DEFAULT_POLL_INTERVAL.total_seconds() * 1000)
 DEFAULT_TTL_MS = 60_000
@@ -58,10 +65,6 @@ class TaskConfig:
         """Validate that a function is compatible with this task config."""
         if not self.supports_tasks():
             return
-
-        from fastmcp.server.dependencies import require_docket
-
-        require_docket(f"`task=True` on function '{name}'")
 
         fn_to_check = fn
         if (

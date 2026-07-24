@@ -13,6 +13,10 @@ Use this when you need to tell servers what local resources the client has acces
 
 Roots inform servers about resources the client can provide. Servers can use this information to adjust behavior or provide more relevant responses.
 
+<Note>
+**Roots require the older MCP protocol.** A server reads roots by sending a request down to the client, and protocol version `2026-07-28` removed the server's ability to do that. Clients default to `mode="auto"`, which negotiates the newest version both sides support, so the examples below pass `mode="legacy"`. See [protocol negotiation](/clients/client#protocol-negotiation).
+</Note>
+
 ## Static Roots
 
 Provide a list of roots when creating the client:
@@ -22,6 +26,7 @@ from fastmcp import Client
 
 client = Client(
     "my_mcp_server.py",
+    mode="legacy",
     roots=["/path/to/root1", "/path/to/root2"]
 )
 ```
@@ -40,6 +45,7 @@ async def roots_callback(context: RequestContext) -> list[str]:
 
 client = Client(
     "my_mcp_server.py",
+    mode="legacy",
     roots=roots_callback
 )
 ```

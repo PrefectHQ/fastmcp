@@ -1,6 +1,6 @@
 from typing import cast
 
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.sampling import RequestContext, SamplingMessage, SamplingParams
@@ -12,7 +12,7 @@ class TestAutomaticToolLoop:
 
     async def test_automatic_tool_loop_executes_tools(self):
         """Test that ctx.sample() automatically executes tool calls."""
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
         call_count = 0
         tool_was_called = False
@@ -42,7 +42,7 @@ class TestAutomaticToolLoop:
                         )
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 # Second call: return final response
@@ -50,7 +50,7 @@ class TestAutomaticToolLoop:
                     role="assistant",
                     content=[TextContent(type="text", text="The weather is sunny!")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -75,7 +75,7 @@ class TestAutomaticToolLoop:
 
     async def test_automatic_tool_loop_multiple_tools(self):
         """Test that multiple tool calls in one response are all executed."""
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
         executed_tools: list[str] = []
 
@@ -110,14 +110,14 @@ class TestAutomaticToolLoop:
                         ),
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Done!")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -135,7 +135,7 @@ class TestAutomaticToolLoop:
 
     async def test_automatic_tool_loop_handles_unknown_tool(self):
         """Test that unknown tool names result in error being passed to LLM."""
-        from mcp.types import (
+        from mcp_types import (
             CreateMessageResultWithTools,
             ToolResultContent,
             ToolUseContent,
@@ -165,14 +165,14 @@ class TestAutomaticToolLoop:
                         )
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Handled error")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -201,7 +201,7 @@ class TestAutomaticToolLoop:
                 tool_result = msg.content
                 break
         assert tool_result is not None
-        assert tool_result.isError is True
+        assert tool_result.is_error is True
         # Content is list of TextContent objects
         assert isinstance(tool_result.content[0], TextContent)
         error_text = tool_result.content[0].text
@@ -210,7 +210,7 @@ class TestAutomaticToolLoop:
 
     async def test_automatic_tool_loop_handles_tool_exception(self):
         """Test that tool exceptions are caught and passed to LLM as errors."""
-        from mcp.types import (
+        from mcp_types import (
             CreateMessageResultWithTools,
             ToolResultContent,
             ToolUseContent,
@@ -239,14 +239,14 @@ class TestAutomaticToolLoop:
                         )
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Handled error")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -275,7 +275,7 @@ class TestAutomaticToolLoop:
                 tool_result = msg.content
                 break
         assert tool_result is not None
-        assert tool_result.isError is True
+        assert tool_result.is_error is True
         # Content is list of TextContent objects
         assert isinstance(tool_result.content[0], TextContent)
         error_text = tool_result.content[0].text
@@ -285,26 +285,27 @@ class TestAutomaticToolLoop:
     async def test_concurrent_tool_execution_default_sequential(self):
         """Test that tools execute sequentially by default."""
         import asyncio
-        import time
 
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
-        execution_order: list[tuple[str, float]] = []
+        # Ordering is guaranteed structurally (the loop awaits each tool call
+        # to completion before starting the next when tool_concurrency is
+        # None), so no real delay is needed to prove it - a single
+        # `asyncio.sleep(0)` still yields control to the event loop.
+        execution_order: list[str] = []
 
         async def slow_tool_a(x: int) -> int:
             """Slow tool A."""
-            start = time.time()
-            execution_order.append(("tool_a_start", start))
-            await asyncio.sleep(0.1)
-            execution_order.append(("tool_a_end", time.time()))
+            execution_order.append("tool_a_start")
+            await asyncio.sleep(0)
+            execution_order.append("tool_a_end")
             return x * 2
 
         async def slow_tool_b(y: int) -> int:
             """Slow tool B."""
-            start = time.time()
-            execution_order.append(("tool_b_start", start))
-            await asyncio.sleep(0.1)
-            execution_order.append(("tool_b_end", time.time()))
+            execution_order.append("tool_b_start")
+            await asyncio.sleep(0)
+            execution_order.append("tool_b_end")
             return y + 10
 
         call_count = 0
@@ -333,14 +334,14 @@ class TestAutomaticToolLoop:
                         ),
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Done!")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -359,30 +360,39 @@ class TestAutomaticToolLoop:
 
         assert result.data == "Done!"
         # Verify sequential execution: tool_a must complete before tool_b starts
-        events = [e[0] for e in execution_order]
-        assert events == ["tool_a_start", "tool_a_end", "tool_b_start", "tool_b_end"]
+        assert execution_order == [
+            "tool_a_start",
+            "tool_a_end",
+            "tool_b_start",
+            "tool_b_end",
+        ]
 
     async def test_concurrent_tool_execution_unlimited(self):
         """Test unlimited parallel tool execution with tool_concurrency=0."""
         import asyncio
-        import time
 
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
-        execution_times: dict[str, dict[str, float]] = {}
+        # tool_a blocks on an event that only tool_b sets. This is only
+        # satisfiable if both tools are genuinely running concurrently: under
+        # sequential execution tool_b would never start (tool_a would never
+        # finish awaiting it) and the test would fail via the wait_for
+        # timeout rather than racing on wall-clock timestamps.
+        execution_order: list[str] = []
+        tool_b_started = asyncio.Event()
 
         async def slow_tool_a(x: int) -> int:
             """Slow tool A."""
-            execution_times["tool_a"] = {"start": time.time()}
-            await asyncio.sleep(0.1)
-            execution_times["tool_a"]["end"] = time.time()
+            execution_order.append("tool_a_start")
+            await asyncio.wait_for(tool_b_started.wait(), timeout=1.0)
+            execution_order.append("tool_a_end")
             return x * 2
 
         async def slow_tool_b(y: int) -> int:
             """Slow tool B."""
-            execution_times["tool_b"] = {"start": time.time()}
-            await asyncio.sleep(0.1)
-            execution_times["tool_b"]["end"] = time.time()
+            execution_order.append("tool_b_start")
+            tool_b_started.set()
+            execution_order.append("tool_b_end")
             return y + 10
 
         call_count = 0
@@ -411,14 +421,14 @@ class TestAutomaticToolLoop:
                         ),
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Done!")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -436,26 +446,41 @@ class TestAutomaticToolLoop:
             result = await client.call_tool("test_tool", {})
 
         assert result.data == "Done!"
-        # Verify parallel execution: both tools should overlap in time
-        assert "tool_a" in execution_times
-        assert "tool_b" in execution_times
-        # tool_b should start before tool_a finishes (overlap)
-        assert execution_times["tool_b"]["start"] < execution_times["tool_a"]["end"]
+        # Verify parallel execution: tool_b started and finished entirely
+        # inside tool_a's blocked wait, which is only possible if the two
+        # tools were running concurrently.
+        assert execution_order == [
+            "tool_a_start",
+            "tool_b_start",
+            "tool_b_end",
+            "tool_a_end",
+        ]
 
     async def test_concurrent_tool_execution_bounded(self):
         """Test bounded parallel execution with tool_concurrency=2."""
         import asyncio
-        import time
 
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
-        execution_order: list[tuple[str, float]] = []
+        # tool_1 and tool_2 each block until *both* have started, which is
+        # only possible if two slots are occupied simultaneously (proving
+        # concurrency=2 admits two tools at once). tool_3 has no blocking
+        # branch, so its appearance in the log tells us when the real
+        # semaphore in the implementation let it in - only after a slot
+        # frees, i.e. after tool_1 or tool_2 finishes.
+        execution_order: list[str] = []
+        both_started = asyncio.Event()
+        started_names: set[str] = set()
 
-        async def slow_tool(name: str, duration: float = 0.1) -> str:
-            """Generic slow tool."""
-            execution_order.append((f"{name}_start", time.time()))
-            await asyncio.sleep(duration)
-            execution_order.append((f"{name}_end", time.time()))
+        async def slow_tool(name: str) -> str:
+            """Generic tool used to observe bounded concurrency."""
+            execution_order.append(f"{name}_start")
+            if name in ("tool_1", "tool_2"):
+                started_names.add(name)
+                if {"tool_1", "tool_2"} <= started_names:
+                    both_started.set()
+                await asyncio.wait_for(both_started.wait(), timeout=1.0)
+            execution_order.append(f"{name}_end")
             return f"{name} done"
 
         call_count = 0
@@ -475,30 +500,30 @@ class TestAutomaticToolLoop:
                             type="tool_use",
                             id="call_1",
                             name="slow_tool",
-                            input={"name": "tool_1", "duration": 0.1},
+                            input={"name": "tool_1"},
                         ),
                         ToolUseContent(
                             type="tool_use",
                             id="call_2",
                             name="slow_tool",
-                            input={"name": "tool_2", "duration": 0.1},
+                            input={"name": "tool_2"},
                         ),
                         ToolUseContent(
                             type="tool_use",
                             id="call_3",
                             name="slow_tool",
-                            input={"name": "tool_3", "duration": 0.05},
+                            input={"name": "tool_3"},
                         ),
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Done!")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -517,38 +542,39 @@ class TestAutomaticToolLoop:
 
         assert result.data == "Done!"
         # Verify that at most 2 tools run concurrently
-        events = [e[0] for e in execution_order]
         # First 2 tools should start before either ends
-        assert events[0] in ["tool_1_start", "tool_2_start"]
-        assert events[1] in ["tool_1_start", "tool_2_start"]
+        assert execution_order[0] in ["tool_1_start", "tool_2_start"]
+        assert execution_order[1] in ["tool_1_start", "tool_2_start"]
         # Third tool should start after at least one of the first two finishes
-        tool_3_start_idx = events.index("tool_3_start")
+        tool_3_start_idx = execution_order.index("tool_3_start")
         assert (
-            "tool_1_end" in events[:tool_3_start_idx]
-            or "tool_2_end" in events[:tool_3_start_idx]
+            "tool_1_end" in execution_order[:tool_3_start_idx]
+            or "tool_2_end" in execution_order[:tool_3_start_idx]
         )
 
     async def test_sequential_tool_forces_sequential_execution(self):
         """Test that sequential=True forces all tools to execute sequentially."""
         import asyncio
-        import time
 
-        from mcp.types import CreateMessageResultWithTools, ToolUseContent
+        from mcp_types import CreateMessageResultWithTools, ToolUseContent
 
-        execution_order: list[tuple[str, float]] = []
+        # A sequential=True tool in the batch forces the whole batch through
+        # the plain for-loop path (see run.py's `requires_sequential`), so
+        # ordering is guaranteed structurally and no real delay is needed.
+        execution_order: list[str] = []
 
         async def normal_tool(x: int) -> int:
             """Normal tool."""
-            execution_order.append(("normal_start", time.time()))
-            await asyncio.sleep(0.05)
-            execution_order.append(("normal_end", time.time()))
+            execution_order.append("normal_start")
+            await asyncio.sleep(0)
+            execution_order.append("normal_end")
             return x * 2
 
         async def sequential_tool(y: int) -> int:
             """Sequential tool."""
-            execution_order.append(("sequential_start", time.time()))
-            await asyncio.sleep(0.05)
-            execution_order.append(("sequential_end", time.time()))
+            execution_order.append("sequential_start")
+            await asyncio.sleep(0)
+            execution_order.append("sequential_end")
             return y + 10
 
         call_count = 0
@@ -577,14 +603,14 @@ class TestAutomaticToolLoop:
                         ),
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Done!")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -607,20 +633,19 @@ class TestAutomaticToolLoop:
 
         assert result.data == "Done!"
         # Verify sequential execution: first tool must complete before second starts
-        events = [e[0] for e in execution_order]
-        assert events[0] in ["normal_start", "sequential_start"]
-        assert events[1] in ["normal_end", "sequential_end"]
+        assert execution_order[0] in ["normal_start", "sequential_start"]
+        assert execution_order[1] in ["normal_end", "sequential_end"]
         # Ensure the second tool starts after the first ends
-        if events[0] == "normal_start":
-            assert events[1] == "normal_end"
-            assert events[2] == "sequential_start"
+        if execution_order[0] == "normal_start":
+            assert execution_order[1] == "normal_end"
+            assert execution_order[2] == "sequential_start"
         else:
-            assert events[1] == "sequential_end"
-            assert events[2] == "normal_start"
+            assert execution_order[1] == "sequential_end"
+            assert execution_order[2] == "normal_start"
 
     async def test_concurrent_tool_execution_error_handling(self):
         """Test that errors are captured per-tool in parallel execution."""
-        from mcp.types import (
+        from mcp_types import (
             CreateMessageResultWithTools,
             ToolResultContent,
             ToolUseContent,
@@ -651,14 +676,14 @@ class TestAutomaticToolLoop:
                         ),
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Handled errors")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -682,22 +707,39 @@ class TestAutomaticToolLoop:
         tool_results = cast(list[ToolResultContent], tool_result_message.content)
         assert len(tool_results) == 2
         # One should be success, one should be error
-        assert any(not r.isError for r in tool_results)
-        assert any(r.isError for r in tool_results)
+        assert any(not r.is_error for r in tool_results)
+        assert any(r.is_error for r in tool_results)
 
     async def test_concurrent_tool_result_order_preserved(self):
         """Test that tool results maintain the same order as tool calls."""
         import asyncio
 
-        from mcp.types import (
+        from mcp_types import (
             CreateMessageResultWithTools,
             ToolResultContent,
             ToolUseContent,
         )
 
-        async def tool_with_delay(value: int, delay: float) -> int:
-            """Tool that takes variable time."""
-            await asyncio.sleep(delay)
+        # Chain events so the tools finish in a different order (2, 3, 1)
+        # than they were called (1, 2, 3), without depending on real delays:
+        # tool 2 finishes immediately and unblocks tool 3, which finishes and
+        # unblocks tool 1. This only resolves if all three run concurrently -
+        # under sequential execution tool 1 would deadlock waiting on tool 3,
+        # which itself would never have been started yet.
+        tool_2_done = asyncio.Event()
+        tool_3_done = asyncio.Event()
+
+        async def tool_with_delay(value: int) -> int:
+            """Tool that finishes out of call order."""
+            if value == 1:
+                await asyncio.wait_for(tool_3_done.wait(), timeout=1.0)
+            elif value == 3:
+                await asyncio.wait_for(tool_2_done.wait(), timeout=1.0)
+
+            if value == 2:
+                tool_2_done.set()
+            elif value == 3:
+                tool_3_done.set()
             return value
 
         messages_received: list[list[SamplingMessage]] = []
@@ -708,7 +750,7 @@ class TestAutomaticToolLoop:
             messages_received.append(list(messages))
 
             if len(messages_received) == 1:
-                # Tools with different delays - later tools finish first
+                # Call order is 1, 2, 3 but they finish out of order (2, 3, 1)
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[
@@ -716,30 +758,30 @@ class TestAutomaticToolLoop:
                             type="tool_use",
                             id="call_1",
                             name="tool_with_delay",
-                            input={"value": 1, "delay": 0.15},
+                            input={"value": 1},
                         ),
                         ToolUseContent(
                             type="tool_use",
                             id="call_2",
                             name="tool_with_delay",
-                            input={"value": 2, "delay": 0.05},
+                            input={"value": 2},
                         ),
                         ToolUseContent(
                             type="tool_use",
                             id="call_3",
                             name="tool_with_delay",
-                            input={"value": 3, "delay": 0.1},
+                            input={"value": 3},
                         ),
                     ],
                     model="test-model",
-                    stopReason="toolUse",
+                    stop_reason="toolUse",
                 )
             else:
                 return CreateMessageResultWithTools(
                     role="assistant",
                     content=[TextContent(type="text", text="Done!")],
                     model="test-model",
-                    stopReason="endTurn",
+                    stop_reason="endTurn",
                 )
 
         mcp = FastMCP(sampling_handler=sampling_handler)
@@ -761,9 +803,9 @@ class TestAutomaticToolLoop:
         tool_result_message = messages_received[1][-1]
         tool_results = cast(list[ToolResultContent], tool_result_message.content)
         assert len(tool_results) == 3
-        assert tool_results[0].toolUseId == "call_1"
-        assert tool_results[1].toolUseId == "call_2"
-        assert tool_results[2].toolUseId == "call_3"
+        assert tool_results[0].tool_use_id == "call_1"
+        assert tool_results[1].tool_use_id == "call_2"
+        assert tool_results[2].tool_use_id == "call_3"
         # Check values are correct
         result_texts = [cast(TextContent, r.content[0]).text for r in tool_results]
         assert result_texts == ["1", "2", "3"]

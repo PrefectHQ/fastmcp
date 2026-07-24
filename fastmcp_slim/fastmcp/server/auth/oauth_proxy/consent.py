@@ -13,9 +13,8 @@ import hmac
 import json
 import secrets
 import time
-from base64 import urlsafe_b64encode
-from typing import TYPE_CHECKING, Any
-from urllib.parse import urlencode, urlparse
+from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from pydantic import AnyUrl
 from starlette.requests import Request
@@ -23,7 +22,10 @@ from starlette.responses import HTMLResponse, RedirectResponse
 
 from fastmcp.server.auth.oauth_proxy.models import ProxyDCRClient
 from fastmcp.server.auth.oauth_proxy.ui import create_consent_html
-from fastmcp.server.auth.redirect_validation import validate_redirect_uri
+from fastmcp.server.auth.redirect_validation import (
+    build_client_redirect,
+    validate_redirect_uri,
+)
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.ui import create_secure_html_response
 
@@ -274,43 +276,6 @@ class ConsentMixin:
             return False
         return hmac.compare_digest(actual, expected_token)
 
-    def _build_upstream_authorize_url(
-        self: OAuthProxy, txn_id: str, transaction: dict[str, Any]
-    ) -> str:
-        """Construct the upstream IdP authorization URL using stored transaction data."""
-        query_params: dict[str, Any] = {
-            "response_type": "code",
-            "client_id": self._upstream_client_id,
-            "redirect_uri": f"{str(self.base_url).rstrip('/')}{self._redirect_path}",
-            "state": txn_id,
-        }
-
-        scopes_to_use = transaction.get("scopes") or self.required_scopes or []
-        if scopes_to_use:
-            query_params["scope"] = " ".join(scopes_to_use)
-
-        # If PKCE forwarding was enabled, include the proxy challenge
-        proxy_code_verifier = transaction.get("proxy_code_verifier")
-        if proxy_code_verifier:
-            challenge_bytes = hashlib.sha256(proxy_code_verifier.encode()).digest()
-            proxy_code_challenge = (
-                urlsafe_b64encode(challenge_bytes).decode().rstrip("=")
-            )
-            query_params["code_challenge"] = proxy_code_challenge
-            query_params["code_challenge_method"] = "S256"
-
-        # Forward resource indicator if present in transaction
-        if self._forward_resource:
-            if resource := transaction.get("resource"):
-                query_params["resource"] = resource
-
-        # Extra configured parameters
-        if self._extra_authorize_params:
-            query_params.update(self._extra_authorize_params)
-
-        separator = "&" if "?" in self._upstream_authorization_endpoint else "?"
-        return f"{self._upstream_authorization_endpoint}{separator}{urlencode(query_params)}"
-
     async def _handle_consent(
         self: OAuthProxy, request: Request
     ) -> HTMLResponse | RedirectResponse:
@@ -388,9 +353,12 @@ class ConsentMixin:
                         "error": "access_denied",
                         "state": txn.get("client_state") or "",
                     }
-                    sep = "&" if "?" in txn["client_redirect_uri"] else "?"
                     return RedirectResponse(
-                        url=f"{txn['client_redirect_uri']}{sep}{urlencode(callback_params)}",
+                        url=build_client_redirect(
+                            txn["client_redirect_uri"],
+                            callback_params,
+                            iss=str(self.base_url),
+                        ),
                         status_code=302,
                     )
             else:
@@ -563,9 +531,8 @@ class ConsentMixin:
                 "error": "access_denied",
                 "state": txn.get("client_state") or "",
             }
-            sep = "&" if "?" in txn["client_redirect_uri"] else "?"
-            client_callback_url = (
-                f"{txn['client_redirect_uri']}{sep}{urlencode(callback_params)}"
+            client_callback_url = build_client_redirect(
+                txn["client_redirect_uri"], callback_params, iss=str(self.base_url)
             )
             response = RedirectResponse(url=client_callback_url, status_code=302)
 

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, Literal, cast
 
 import anyio
-from mcp.types import (
+from mcp_types import (
     ClientCapabilities,
     CreateMessageResult,
     CreateMessageResultWithTools,
@@ -24,8 +24,8 @@ from mcp.types import (
     ToolResultContent,
     ToolUseContent,
 )
-from mcp.types import CreateMessageRequestParams as SamplingParams
-from mcp.types import Tool as SDKTool
+from mcp_types import CreateMessageRequestParams as SamplingParams
+from mcp_types import Tool as SDKTool
 from opentelemetry.trace import SpanKind, Status, StatusCode
 from pydantic import ValidationError
 from typing_extensions import TypeVar
@@ -33,7 +33,7 @@ from typing_extensions import TypeVar
 from fastmcp import settings
 from fastmcp.exceptions import ToolError
 from fastmcp.server.sampling.sampling_tool import SamplingTool
-from fastmcp.telemetry import get_tracer
+from fastmcp.telemetry import get_tracer, restore_dropped_attributes
 from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.tools.tool_transform import TransformedTool
 from fastmcp.utilities.async_utils import gather
@@ -88,7 +88,7 @@ class SampleStep:
     def is_tool_use(self) -> bool:
         """True if the LLM is requesting tool execution."""
         if isinstance(self.response, CreateMessageResultWithTools):
-            return self.response.stopReason == "toolUse"
+            return self.response.stop_reason == "toolUse"
         return False
 
     @property
@@ -138,12 +138,19 @@ def _parse_model_preferences(
 # --- Standalone functions for sample_step() ---
 
 
-def determine_handler_mode(context: Context, needs_tools: bool) -> bool:
+def determine_handler_mode(
+    context: Context, needs_tools: bool, *, client_available: bool = True
+) -> bool:
     """Determine whether to use fallback handler or client for sampling.
 
     Args:
         context: The MCP context.
         needs_tools: Whether the sampling request requires tool support.
+        client_available: Whether the client back-channel can be reached at all.
+            On modern (2026-07-28) connections the server-initiated createMessage
+            back-channel was removed (SEP-2577), so the client can never serve a
+            sampling request; pass False there to force the server-side handler
+            path (``"fallback"`` behaves like ``"always"`` when a handler exists).
 
     Returns:
         True if fallback handler should be used, False to use client.
@@ -154,11 +161,13 @@ def determine_handler_mode(context: Context, needs_tools: bool) -> bool:
     fastmcp = context.fastmcp
     session = context.session
 
-    # Check what capabilities the client has
-    has_sampling = session.check_client_capability(
+    # Check what capabilities the client has. On connections without a
+    # back-channel the client can never serve the request regardless of the
+    # capabilities it advertised, so treat both as unavailable.
+    has_sampling = client_available and session.check_client_capability(
         capability=ClientCapabilities(sampling=SamplingCapability())
     )
-    has_tools_capability = session.check_client_capability(
+    has_tools_capability = client_available and session.check_client_capability(
         capability=ClientCapabilities(
             sampling=SamplingCapability(tools=SamplingToolsCapability())
         )
@@ -222,15 +231,18 @@ async def call_sampling_handler(
     result = context.fastmcp.sampling_handler(
         messages,
         SamplingParams(
-            systemPrompt=system_prompt,
+            system_prompt=system_prompt,
             messages=messages,
             temperature=temperature,
-            maxTokens=max_tokens,
-            modelPreferences=_parse_model_preferences(model_preferences),
+            max_tokens=max_tokens,
+            model_preferences=_parse_model_preferences(model_preferences),
             tools=sdk_tools,
-            toolChoice=tool_choice,
+            tool_choice=tool_choice,
         ),
-        context.request_context,
+        # SamplingHandler is typed against the SDK's RequestContext placeholder,
+        # but FastMCP hands handlers its own FastMCPRequestContext wrapper at
+        # runtime; the two aren't structurally related in the type system.
+        context.request_context,  # ty: ignore[invalid-argument-type]
     )
 
     if inspect.isawaitable(result):
@@ -244,7 +256,7 @@ async def call_sampling_handler(
             role="assistant",
             content=TextContent(type="text", text=result),
             model="unknown",
-            stopReason="endTurn",
+            stop_reason="endTurn",
         )
 
     return result
@@ -287,29 +299,44 @@ async def execute_tools(
         if tool is None:
             return ToolResultContent(
                 type="tool_result",
-                toolUseId=tool_use.id,
+                tool_use_id=tool_use.id,
                 content=[
                     TextContent(
                         type="text",
                         text=f"Error: Unknown tool '{tool_use.name}'",
                     )
                 ],
-                isError=True,
+                is_error=True,
             )
 
         tracer = get_tracer()
+        span_attrs = {
+            "gen_ai.tool.name": tool_use.name,
+            "fastmcp.tool.use_id": tool_use.id,
+        }
         with tracer.start_as_current_span(
             f"sampling tool {tool_use.name}",
             kind=SpanKind.INTERNAL,
+            attributes=span_attrs,
         ) as span:
+            # Restore: `attributes=span_attrs` above lets on_start hooks and
+            # the sampler see these values at creation time. But OTel's
+            # Tracer.start_span builds the span from
+            # `sampling_result.attributes`, not the `attributes` kwarg
+            # directly — a custom Sampler whose SamplingResult.attributes
+            # defaults to None silently drops everything we passed. This
+            # only fires when the span ends up with no attributes at all, so
+            # any sampler that supplied attributes of its own — forwarding
+            # ours, redacting or replacing some, or substituting entirely its
+            # own — is left untouched, as is an SDK attribute limit that
+            # evicted some.
             if span.is_recording():
-                span.set_attribute("gen_ai.tool.name", tool_use.name)
-                span.set_attribute("fastmcp.tool.use_id", tool_use.id)
+                restore_dropped_attributes(span, span_attrs)
             try:
                 result_value = await tool.run(tool_use.input)
                 return ToolResultContent(
                     type="tool_result",
-                    toolUseId=tool_use.id,
+                    tool_use_id=tool_use.id,
                     content=[TextContent(type="text", text=str(result_value))],
                 )
             except ToolError as e:
@@ -324,9 +351,9 @@ async def execute_tools(
                 )
                 return ToolResultContent(
                     type="tool_result",
-                    toolUseId=tool_use.id,
+                    tool_use_id=tool_use.id,
                     content=[TextContent(type="text", text=str(e))],
-                    isError=True,
+                    is_error=True,
                 )
             except Exception as e:
                 if span.is_recording():
@@ -340,9 +367,9 @@ async def execute_tools(
                     error_text = f"Error executing tool '{tool_use.name}': {e}"
                 return ToolResultContent(
                     type="tool_result",
-                    toolUseId=tool_use.id,
+                    tool_use_id=tool_use.id,
                     content=[TextContent(type="text", text=error_text)],
-                    isError=True,
+                    is_error=True,
                 )
 
     # Check if any tool requires sequential execution
@@ -363,7 +390,7 @@ async def execute_tools(
     # Execute in parallel
     if tool_concurrency == 0:
         # Unlimited parallel execution
-        return await gather(*[_execute_single_tool(tc) for tc in tool_calls])
+        return await gather(_execute_single_tool(tc) for tc in tool_calls)
     else:
         # Bounded parallel execution with semaphore
         semaphore = anyio.Semaphore(tool_concurrency)
@@ -372,7 +399,7 @@ async def execute_tools(
             async with semaphore:
                 return await _execute_single_tool(tool_use)
 
-        return await gather(*[bounded_execute(tc) for tc in tool_calls])
+        return await gather(bounded_execute(tc) for tc in tool_calls)
 
 
 # --- Helper functions for sampling ---
@@ -495,11 +522,17 @@ async def sample_step_impl(
     auto_execute_tools: bool = True,
     mask_error_details: bool | None = None,
     tool_concurrency: int | None = None,
+    client_available: bool = True,
 ) -> SampleStep:
     """Implementation of Context.sample_step().
 
     Make a single LLM sampling call. This is a stateless function that makes
     exactly one LLM call and optionally executes any requested tools.
+
+    When ``client_available`` is False (e.g. a modern 2026-07-28 connection with
+    no back-channel), the client is never used and a configured sampling handler
+    serves the request; the caller is responsible for raising a clear era error
+    when no handler can serve it.
     """
     # Convert messages to SamplingMessage objects
     current_messages = prepare_messages(messages)
@@ -514,7 +547,9 @@ async def sample_step_impl(
     )
 
     # Determine whether to use fallback handler or client
-    use_fallback = determine_handler_mode(context, bool(sampling_tools))
+    use_fallback = determine_handler_mode(
+        context, bool(sampling_tools), client_available=client_available
+    )
 
     # Build tool choice
     effective_tool_choice: ToolChoice | None = None
@@ -524,24 +559,36 @@ async def sample_step_impl(
                 f"Invalid tool_choice: {tool_choice!r}. "
                 "Must be 'auto', 'required', or 'none'."
             )
-        effective_tool_choice = ToolChoice(
-            mode=cast(Literal["auto", "required", "none"], tool_choice)
-        )
+        effective_tool_choice = ToolChoice.model_validate({"mode": tool_choice})
 
     # Effective max_tokens
     effective_max_tokens = max_tokens if max_tokens is not None else 512
 
     # Make the LLM call
     tracer = get_tracer()
+    span_attrs = {
+        "mcp.method.name": "sampling/createMessage",
+        "fastmcp.server.name": context.fastmcp.name,
+    }
     with tracer.start_as_current_span(
         "sampling create_message",
         kind=SpanKind.CLIENT,
+        attributes=span_attrs,
         record_exception=False,
         set_status_on_exception=False,
     ) as span:
+        # Restore: `attributes=span_attrs` above lets on_start hooks and the
+        # sampler see these values at creation time. But OTel's
+        # Tracer.start_span builds the span from
+        # `sampling_result.attributes`, not the `attributes` kwarg directly —
+        # a custom Sampler whose SamplingResult.attributes defaults to None
+        # silently drops everything we passed. This only fires when the span
+        # ends up with no attributes at all, so any sampler that supplied
+        # attributes of its own — forwarding ours, redacting or replacing
+        # some, or substituting entirely its own — is left untouched, as is
+        # an SDK attribute limit that evicted some.
         if span.is_recording():
-            span.set_attribute("mcp.method.name", "sampling/createMessage")
-            span.set_attribute("fastmcp.server.name", context.fastmcp.name)
+            restore_dropped_attributes(span, span_attrs)
         try:
             if use_fallback:
                 response = await call_sampling_handler(
@@ -555,7 +602,9 @@ async def sample_step_impl(
                     tool_choice=effective_tool_choice,
                 )
             else:
-                response = await context.session.create_message(
+                # Deprecated upstream in SDK v2 but deliberately kept per compat
+                # directive; removed with the multi-round-trip follow-up.
+                response = await context.session.create_message(  # ty: ignore[deprecated]
                     messages=current_messages,
                     system_prompt=system_prompt,
                     temperature=temperature,
@@ -575,7 +624,7 @@ async def sample_step_impl(
     # Check if this is a tool use response
     is_tool_use_response = (
         isinstance(response, CreateMessageResultWithTools)
-        and response.stopReason == "toolUse"
+        and response.stop_reason == "toolUse"
     )
 
     # Always include the assistant response in history
@@ -628,12 +677,18 @@ async def sample_impl(
     result_type: type[ResultT] | None = None,
     mask_error_details: bool | None = None,
     tool_concurrency: int | None = None,
+    client_available: bool = True,
 ) -> SamplingResult[ResultT]:
     """Implementation of Context.sample().
 
     Send a sampling request to the client and await the response. This method
     runs to completion automatically, executing a tool loop until the LLM
     provides a final text response.
+
+    When ``client_available`` is False (e.g. a modern 2026-07-28 connection with
+    no back-channel), the client is never used and a configured sampling handler
+    serves the request; the caller is responsible for raising a clear era error
+    when no handler can serve it.
     """
     # Safety limit to prevent infinite loops
     max_iterations = 100
@@ -670,6 +725,7 @@ async def sample_impl(
             tool_choice=tool_choice,
             mask_error_details=mask_error_details,
             tool_concurrency=tool_concurrency,
+            client_available=client_available,
         )
 
         # Check for final_response tool call for structured output
@@ -718,7 +774,7 @@ async def sample_impl(
                                 content=[
                                     ToolResultContent(
                                         type="tool_result",
-                                        toolUseId=tool_call.id,
+                                        tool_use_id=tool_call.id,
                                         content=[
                                             TextContent(
                                                 type="text",
@@ -728,7 +784,7 @@ async def sample_impl(
                                                 ),
                                             )
                                         ],
-                                        isError=True,
+                                        is_error=True,
                                     )
                                 ],
                             )

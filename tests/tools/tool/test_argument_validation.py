@@ -86,23 +86,32 @@ class TestToolBodyErrors:
 
 
 class TestTaskArgumentValidation:
-    """The task-execution path (coerce_task_arguments) converts arg errors too."""
+    """The task-execution path (coerce_task_arguments) converts arg errors too.
+
+    The coercion logic moved to ``fastmcp_tasks.components`` during the
+    SEP-1686 -> SEP-2663 migration, keyed by component type instead of being a
+    method on the component.
+    """
 
     def test_coerce_task_arguments_wrong_type(self):
+        from fastmcp_tasks.components import coerce_task_arguments
+
         def tool_fn(n: int) -> int:
             return n
 
         tool = Tool.from_function(tool_fn)
         with pytest.raises(ValidationError):
-            tool.coerce_task_arguments({"n": "not-an-int"})
+            coerce_task_arguments(tool, {"n": "not-an-int"})
 
     def test_coerce_task_arguments_constraint_violation(self):
+        from fastmcp_tasks.components import coerce_task_arguments
+
         def tool_fn(n: Annotated[int, Field(le=10)]) -> int:
             return n
 
         tool = Tool.from_function(tool_fn)
         with pytest.raises(ValidationError):
-            tool.coerce_task_arguments({"n": 20})
+            coerce_task_arguments(tool, {"n": 20})
 
 
 class TestValidCallsStillWork:

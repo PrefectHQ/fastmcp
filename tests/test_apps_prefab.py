@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from mcp.types import TextContent
+from mcp_types import TextContent
 from prefab_ui.app import PROTOCOL_VERSION, PrefabApp
 from prefab_ui.components import Column, Heading, Text
 from prefab_ui.components.base import Component

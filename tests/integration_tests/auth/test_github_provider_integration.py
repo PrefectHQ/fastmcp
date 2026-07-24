@@ -17,7 +17,7 @@ import time
 from collections.abc import AsyncGenerator
 from urllib.parse import parse_qs, urlencode, urlparse
 
-import httpx
+import httpx2
 import pytest
 
 from fastmcp import FastMCP
@@ -216,7 +216,7 @@ async def test_github_oauth_authorization_redirect(github_server: str):
     parsed = urlparse(github_server)
     base_url = f"{parsed.scheme}://{parsed.netloc}"
 
-    async with httpx.AsyncClient() as http_client:
+    async with httpx2.AsyncClient() as http_client:
         # Step 1: Register OAuth client (DCR)
         register_response = await http_client.post(
             f"{base_url}/register",
@@ -311,13 +311,13 @@ async def test_github_oauth_server_metadata(github_server: str):
     """Test OAuth server metadata discovery."""
     from urllib.parse import urlparse
 
-    import httpx
+    import httpx2
 
     # Extract base URL from server URL
     parsed = urlparse(github_server)
     base_url = f"{parsed.scheme}://{parsed.netloc}"
 
-    async with httpx.AsyncClient() as http_client:
+    async with httpx2.AsyncClient() as http_client:
         # Test OAuth authorization server metadata
         metadata_response = await http_client.get(
             f"{base_url}/.well-known/oauth-authorization-server"
@@ -337,8 +337,12 @@ async def test_github_oauth_server_metadata(github_server: str):
 
 
 async def test_github_oauth_unauthorized_access(github_server: str):
-    """Test that unauthenticated requests are rejected."""
-    import httpx
+    """Test that unauthenticated requests are rejected.
+
+    SDK v2 surfaces the server's 401 as an MCPError ("Server returned an error
+    response") rather than re-raising the raw httpx2.HTTPStatusError.
+    """
+    from mcp.shared.exceptions import MCPError
 
     from fastmcp.client.transports import StreamableHttpTransport
 
@@ -346,7 +350,7 @@ async def test_github_oauth_unauthorized_access(github_server: str):
     unauthorized_client = Client(transport=StreamableHttpTransport(github_server))
 
     # Attempt to connect without authentication should fail
-    with pytest.raises(httpx.HTTPStatusError, match="401 Unauthorized"):
+    with pytest.raises(MCPError, match="error response"):
         async with unauthorized_client:
             pass
 
@@ -355,8 +359,10 @@ async def test_github_oauth_with_mock(github_client_with_mock: Client):
     """Test complete GitHub OAuth flow with mocked callback."""
 
     async with github_client_with_mock:
-        # Test that we can ping the server (requires successful OAuth)
-        assert await github_client_with_mock.ping()
+        # Reaching the server at all requires successful OAuth. `list_tools` stands
+        # in for `ping` here because it works in either protocol era, and a default
+        # client negotiates the modern one, which has no `ping` method.
+        assert await github_client_with_mock.list_tools()
 
         # Test that we can call protected tools
         result = await github_client_with_mock.call_tool("get_protected_data", {})
@@ -371,13 +377,13 @@ async def test_github_oauth_mock_only_accepts_mock_tokens(github_server_with_moc
     """Test that the mock token verifier only accepts mock tokens, not real ones."""
     from urllib.parse import urlparse
 
-    import httpx
+    import httpx2
 
     # Extract base URL
     parsed = urlparse(github_server_with_mock)
     base_url = f"{parsed.scheme}://{parsed.netloc}"
 
-    async with httpx.AsyncClient() as http_client:
+    async with httpx2.AsyncClient() as http_client:
         # Test that a fake "real" GitHub token is rejected
         fake_real_token = "gho_real_token_should_be_rejected"
 

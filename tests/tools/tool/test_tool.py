@@ -3,7 +3,7 @@ from datetime import timedelta
 import pytest
 from dirty_equals import HasName
 from inline_snapshot import snapshot
-from mcp.types import (
+from mcp_types import (
     AudioContent,
     ImageContent,
     ToolExecution,
@@ -251,8 +251,6 @@ class TestToolFromFunction:
         assert isinstance(result.content[0], AudioContent)
 
     async def test_tool_with_file_return(self):
-        from pydantic import AnyUrl
-
         def file_tool(data: bytes) -> File:
             return File(data=data, format="octet-stream")
 
@@ -265,8 +263,8 @@ class TestToolFromFunction:
             {
                 "type": "resource",
                 "resource": {
-                    "uri": AnyUrl("file:///resource.octet-stream"),
-                    "mimeType": "application/octet-stream",
+                    "uri": "file:///resource.octet-stream",
+                    "mime_type": "application/octet-stream",
                     "blob": "dGVzdC5iaW4=",
                 },
             }
@@ -342,6 +340,32 @@ class TestToolFromFunction:
             ValueError, match=r"Functions with \*args are not supported as tools"
         ):
             Tool.from_function(func)
+
+    def test_tool_with_positional_only_parameters_not_allowed(self):
+        def func(a: int, /, b: int) -> int:
+            return a + b
+
+        with pytest.raises(
+            ValueError,
+            match=(
+                "Functions with positional-only parameters are not supported as "
+                "tools.*standard parameters"
+            ),
+        ):
+            Tool.from_function(func)
+
+    def test_tool_with_keyword_capable_parameters(self):
+        def func(a: int, *, b: int) -> int:
+            return a + b
+
+        tool = Tool.from_function(func)
+
+        assert tool.parameters["type"] == "object"
+        assert tool.parameters["required"] == ["a", "b"]
+        assert tool.parameters["properties"] == {
+            "a": {"type": "integer"},
+            "b": {"type": "integer"},
+        }
 
     def test_tool_with_varkwargs_not_allowed(self):
         def func(a: int, b: int, **kwargs: int) -> int:
@@ -542,12 +566,12 @@ class TestToolExecutionField:
             name="my_tool",
             description="A tool with execution",
             parameters={"type": "object", "properties": {}},
-            execution=ToolExecution(taskSupport="optional"),
+            execution=ToolExecution(task_support="optional"),
         )
 
         mcp_tool = tool.to_mcp_tool()
         assert mcp_tool.execution is not None
-        assert mcp_tool.execution.taskSupport == "optional"
+        assert mcp_tool.execution.task_support == "optional"
 
     def test_tool_without_execution_field(self):
         """Test that Tool without execution returns None."""
@@ -566,13 +590,13 @@ class TestToolExecutionField:
             name="my_tool",
             description="A tool",
             parameters={"type": "object", "properties": {}},
-            execution=ToolExecution(taskSupport="optional"),
+            execution=ToolExecution(task_support="optional"),
         )
 
-        override_execution = ToolExecution(taskSupport="required")
+        override_execution = ToolExecution(task_support="required")
         mcp_tool = tool.to_mcp_tool(execution=override_execution)
         assert mcp_tool.execution is not None
-        assert mcp_tool.execution.taskSupport == "required"
+        assert mcp_tool.execution.task_support == "required"
 
     async def test_function_tool_task_config_still_works(self):
         """FunctionTool should still derive execution from task_config."""
@@ -585,7 +609,7 @@ class TestToolExecutionField:
 
         # FunctionTool sets execution from task_config
         assert mcp_tool.execution is not None
-        assert mcp_tool.execution.taskSupport == "optional"
+        assert mcp_tool.execution.task_support == "optional"
 
     def test_tool_execution_required_mode(self):
         """Test that Tool can store required execution mode."""
@@ -593,12 +617,12 @@ class TestToolExecutionField:
             name="my_tool",
             description="A tool with required execution",
             parameters={"type": "object", "properties": {}},
-            execution=ToolExecution(taskSupport="required"),
+            execution=ToolExecution(task_support="required"),
         )
 
         mcp_tool = tool.to_mcp_tool()
         assert mcp_tool.execution is not None
-        assert mcp_tool.execution.taskSupport == "required"
+        assert mcp_tool.execution.task_support == "required"
 
     def test_tool_execution_forbidden_mode(self):
         """Test that Tool can store forbidden execution mode."""
@@ -606,9 +630,9 @@ class TestToolExecutionField:
             name="my_tool",
             description="A tool with forbidden execution",
             parameters={"type": "object", "properties": {}},
-            execution=ToolExecution(taskSupport="forbidden"),
+            execution=ToolExecution(task_support="forbidden"),
         )
 
         mcp_tool = tool.to_mcp_tool()
         assert mcp_tool.execution is not None
-        assert mcp_tool.execution.taskSupport == "forbidden"
+        assert mcp_tool.execution.task_support == "forbidden"

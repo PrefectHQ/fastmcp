@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import functools
 import inspect
-import warnings
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from types import MethodType
 from typing import (
-    TYPE_CHECKING,
     Any,
     Literal,
     Protocol,
@@ -18,26 +16,22 @@ from typing import (
     runtime_checkable,
 )
 
-from mcp.types import Annotations, Icon
+from mcp_types import Annotations, Icon
 from pydantic import AnyUrl
 from pydantic.json_schema import SkipJsonSchema
 
-import fastmcp
-from fastmcp.decorators import resolve_task_config
-from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.resources.base import Resource, ResourceResult
+from fastmcp.resources.security import (
+    INHERIT_SECURITY,
+    InheritSecurity,
+    ResourceSecurity,
+)
 from fastmcp.utilities.async_utils import (
     call_sync_fn_in_threadpool,
     is_coroutine_function,
 )
 from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.mime import resolve_ui_mime_type
-from fastmcp.utilities.tasks import TaskConfig
-
-if TYPE_CHECKING:
-    from docket import Docket
-
-    from fastmcp.resources.template import ResourceTemplate
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -66,9 +60,9 @@ class ResourceMeta:
     mime_type: str | None = None
     annotations: Annotations | None = None
     meta: dict[str, Any] | None = None
-    task: bool | TaskConfig | None = None
     auth: AuthCheck | list[AuthCheck] | None = None
     enabled: bool = True
+    security: ResourceSecurity | None | InheritSecurity = INHERIT_SECURITY
 
 
 class FunctionResource(Resource):
@@ -103,7 +97,6 @@ class FunctionResource(Resource):
         tags: set[str] | None = None,
         annotations: Annotations | None = None,
         meta: dict[str, Any] | None = None,
-        task: bool | TaskConfig | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> FunctionResource:
         """Create a FunctionResource from a function.
@@ -130,7 +123,6 @@ class FunctionResource(Resource):
                     tags,
                     annotations,
                     meta,
-                    task,
                     auth,
                 ]
             )
@@ -158,7 +150,6 @@ class FunctionResource(Resource):
                 mime_type=mime_type,
                 annotations=annotations,
                 meta=meta,
-                task=task,
                 auth=auth,
             )
 
@@ -168,16 +159,6 @@ class FunctionResource(Resource):
         func_name = (
             metadata.name or getattr(fn, "__name__", None) or fn.__class__.__name__
         )
-
-        # Normalize task to TaskConfig and validate
-        task_value = metadata.task
-        if task_value is None:
-            task_config = TaskConfig(mode="forbidden")
-        elif isinstance(task_value, bool):
-            task_config = TaskConfig.from_bool(task_value)
-        else:
-            task_config = task_value
-        task_config.validate_function(fn, func_name)
 
         # if the fn is a callable class, we need to get the __call__ method from here out
         if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
@@ -214,7 +195,6 @@ class FunctionResource(Resource):
             tags=metadata.tags or set(),
             annotations=metadata.annotations,
             meta=metadata.meta,
-            task_config=task_config,
             auth=metadata.auth,
         )
 
@@ -239,12 +219,6 @@ class FunctionResource(Resource):
 
         return result
 
-    def register_with_docket(self, docket: Docket) -> None:
-        """Register this resource with docket for background execution."""
-        if not self.task_config.supports_tasks():
-            return
-        docket.register(self.fn, names=[self.key])
-
 
 def resource(
     uri: str,
@@ -258,8 +232,8 @@ def resource(
     tags: set[str] | None = None,
     annotations: Annotations | dict[str, Any] | None = None,
     meta: dict[str, Any] | None = None,
-    task: bool | TaskConfig | None = None,
     auth: AuthCheck | list[AuthCheck] | None = None,
+    security: ResourceSecurity | None | InheritSecurity = INHERIT_SECURITY,
 ) -> Callable[[F], F]:
     """Standalone decorator to mark a function as an MCP resource.
 
@@ -275,51 +249,6 @@ def resource(
             "Use @resource('uri') instead of @resource"
         )
 
-    def create_resource(fn: Callable[..., Any]) -> FunctionResource | ResourceTemplate:
-        from fastmcp.resources.template import ResourceTemplate
-        from fastmcp.server.dependencies import without_injected_parameters
-
-        resolved = resolve_task_config(task)
-        has_uri_params = "{" in uri and "}" in uri
-        wrapper_fn = without_injected_parameters(fn)
-        has_func_params = bool(inspect.signature(wrapper_fn).parameters)
-
-        # Create metadata first
-        resource_meta = ResourceMeta(
-            uri=uri,
-            name=name,
-            version=version,
-            title=title,
-            description=description,
-            icons=icons,
-            tags=tags,
-            mime_type=mime_type,
-            annotations=annotations,
-            meta=meta,
-            task=resolved,
-            auth=auth,
-        )
-
-        if has_uri_params or has_func_params:
-            # ResourceTemplate doesn't have metadata support yet, so pass individual params
-            return ResourceTemplate.from_function(
-                fn=fn,
-                uri_template=uri,
-                name=name,
-                version=version,
-                title=title,
-                description=description,
-                icons=icons,
-                mime_type=mime_type,
-                tags=tags,
-                annotations=annotations,
-                meta=meta,
-                task=resolved,
-                auth=auth,
-            )
-        else:
-            return FunctionResource.from_function(fn, metadata=resource_meta)
-
     def attach_metadata(fn: F) -> F:
         metadata = ResourceMeta(
             uri=uri,
@@ -332,22 +261,14 @@ def resource(
             mime_type=mime_type,
             annotations=annotations,
             meta=meta,
-            task=task,
             auth=auth,
+            security=security,
         )
         target = fn.__func__ if isinstance(fn, staticmethod | MethodType) else fn
         cast(Any, target).__fastmcp__ = metadata
         return fn
 
     def decorator(fn: F) -> F:
-        if fastmcp.settings.decorator_mode == "object":
-            warnings.warn(
-                "decorator_mode='object' is deprecated and will be removed in a future version. "
-                "Decorators now return the original function with metadata attached.",
-                FastMCPDeprecationWarning,
-                stacklevel=3,
-            )
-            return create_resource(fn)  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
         return attach_metadata(fn)
 
     return decorator

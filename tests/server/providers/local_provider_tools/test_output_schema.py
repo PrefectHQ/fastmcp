@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 import pytest
-from mcp.types import (
+from mcp_types import (
     TextContent,
 )
 from pydantic import AnyUrl, BaseModel, TypeAdapter

@@ -12,7 +12,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
-from mcp.server.fastmcp import FastMCP as FastMCP1x
+from mcp.server.mcpserver import MCPServer as SDKServer
 from watchfiles import Change, awatch
 
 import fastmcp
@@ -97,10 +97,15 @@ def create_client_server(url: str) -> Any:
         A FastMCP server instance
     """
     try:
-        import fastmcp
-
-        client = fastmcp.Client(url)
-        server = create_proxy(client)
+        # Hand `create_proxy` the URL rather than a pre-built `Client`. A Client
+        # target is treated as caller-configured and pinned, so its era would be
+        # fixed at construction — and since `Client` now defaults to `"auto"`,
+        # that would pin this proxy's upstream to the modern era and break
+        # handshake-era clients connecting to it (`ping`, server-initiated
+        # forwarding). Passing the URL lets the proxy mirror each front
+        # connection's negotiated era instead, so `fastmcp run <URL>` serves
+        # both eras.
+        server = create_proxy(url)
         return server
     except Exception as e:
         logger.error(f"Failed to create client for URL {url}: {e}")
@@ -233,8 +238,8 @@ async def run_command(
 
     # Run the server
 
-    # handle v1 servers
-    if isinstance(server, FastMCP1x):
+    # handle the SDK's own high-level MCPServer (not a fastmcp.FastMCP)
+    if isinstance(server, SDKServer):
         await run_v1_server_async(server, host=host, port=port, transport=transport)
         return
 
@@ -309,7 +314,7 @@ def run_module_command(
 
 
 async def run_v1_server_async(
-    server: FastMCP1x,
+    server: SDKServer,
     host: str | None = None,
     port: int | None = None,
     transport: TransportType | None = None,
@@ -322,18 +327,21 @@ async def run_v1_server_async(
         port: Port to bind to
         transport: Transport protocol to use
     """
+    # In v1 (MCPServer), host/port are no longer stored on `settings`; they are
+    # passed directly to the transport runners as keyword arguments.
+    bind_kwargs: dict[str, Any] = {}
     if host is not None:
-        server.settings.host = host
+        bind_kwargs["host"] = host
     if port is not None:
-        server.settings.port = port
+        bind_kwargs["port"] = port
 
     match transport:
         case "stdio":
             await server.run_stdio_async()
         case "http" | "streamable-http" | None:
-            await server.run_streamable_http_async()
+            await server.run_streamable_http_async(**bind_kwargs)
         case "sse":
-            await server.run_sse_async()
+            await server.run_sse_async(**bind_kwargs)
 
 
 def _watch_filter(_change: Change, path: str) -> bool:

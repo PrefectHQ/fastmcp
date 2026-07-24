@@ -1,0 +1,178 @@
+---
+title: Goose 🤝 FastMCP
+sidebarTitle: Goose
+description: Install and use FastMCP servers in Goose
+icon: message-smile
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+import { LocalFocusTip } from "/snippets/local-focus.mdx"
+
+<LocalFocusTip />
+
+[Goose](https://block.github.io/goose/) is an open-source AI agent from Block that supports MCP servers as extensions. FastMCP can install your server directly into Goose using its deeplink protocol — one command opens Goose with an install dialog ready to go.
+
+## Requirements
+
+This integration uses Goose's deeplink protocol to register your server as a STDIO extension running via `uvx`. You must have Goose installed on your system for the deeplink to open automatically.
+
+For remote deployments, configure your FastMCP server with HTTP transport and add it to Goose directly using `goose configure` or the config file.
+
+## Create a Server
+
+The examples in this guide will use the following simple dice-rolling server, saved as `server.py`.
+
+```python server.py
+import random
+from fastmcp import FastMCP
+
+mcp = FastMCP(name="Dice Roller")
+
+@mcp.tool
+def roll_dice(n_dice: int) -> list[int]:
+    """Roll `n_dice` 6-sided dice and return the results."""
+    return [random.randint(1, 6) for _ in range(n_dice)]
+
+if __name__ == "__main__":
+    mcp.run()
+```
+
+## Install the Server
+
+### FastMCP CLI
+<VersionBadge version="3.0.0" />
+
+The easiest way to install a FastMCP server in Goose is using the `fastmcp install goose` command. This generates a `goose://` deeplink and opens it, prompting Goose to install the server.
+
+```bash
+fastmcp install goose server.py
+```
+
+The install command supports the same `file.py:object` notation as the `run` command. If no object is specified, it will automatically look for a FastMCP server object named `mcp`, `server`, or `app` in your file:
+
+```bash
+# These are equivalent if your server object is named 'mcp'
+fastmcp install goose server.py
+fastmcp install goose server.py:mcp
+
+# Use explicit object name if your server has a different name
+fastmcp install goose server.py:my_custom_server
+```
+
+Under the hood, the generated command uses `uvx` to run your server in an isolated environment. Goose requires `uvx` rather than `uv run`, so the install produces a command like:
+
+```bash
+uvx --with pandas fastmcp run /path/to/server.py
+```
+
+#### Dependencies
+
+Use the `--with` flag to specify additional packages your server needs:
+
+```bash
+fastmcp install goose server.py --with pandas --with requests
+```
+
+Alternatively, you can use a `fastmcp.json` configuration file (recommended):
+
+```json fastmcp.json
+{
+  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
+  "source": {
+    "path": "server.py",
+    "entrypoint": "mcp"
+  },
+  "environment": {
+    "dependencies": ["pandas", "requests"]
+  }
+}
+```
+
+#### Python Version
+
+Use `--python` to specify which Python version your server should use:
+
+```bash
+fastmcp install goose server.py --python 3.11
+```
+
+<Note>
+The Goose install uses `uvx`, which does not support `--project`, `--with-requirements`, or `--with-editable`. If you need these options, use `fastmcp install mcp-json` to generate a full configuration and add it to Goose manually.
+</Note>
+
+#### Environment Variables
+
+Goose's deeplink protocol does not support environment variables. If your server needs them (like API keys), you have two options:
+
+1. **Configure after install**: Run `goose configure` and add environment variables to the extension.
+2. **Manual config**: Use `fastmcp install mcp-json` to generate the full configuration, then add it to `~/.config/goose/config.yaml` with the `envs` field.
+
+### Manual Configuration
+
+For more control, you can manually edit Goose's configuration file at `~/.config/goose/config.yaml`:
+
+```yaml
+extensions:
+  dice-roller:
+    name: Dice Roller
+    cmd: uvx
+    args: [fastmcp, run, /path/to/server.py]
+    enabled: true
+    type: stdio
+    timeout: 300
+```
+
+#### Dependencies
+
+When manually configuring, add packages using `--with` flags in the args:
+
+```yaml
+extensions:
+  dice-roller:
+    name: Dice Roller
+    cmd: uvx
+    args: [--with, pandas, --with, requests, fastmcp, run, /path/to/server.py]
+    enabled: true
+    type: stdio
+    timeout: 300
+```
+
+#### Environment Variables
+
+Environment variables can be specified in the `envs` field:
+
+```yaml
+extensions:
+  weather-server:
+    name: Weather Server
+    cmd: uvx
+    args: [fastmcp, run, /path/to/weather_server.py]
+    enabled: true
+    envs:
+      API_KEY: your-api-key
+      DEBUG: "true"
+    type: stdio
+    timeout: 300
+```
+
+You can also use `goose configure` to add extensions interactively, which prompts for environment variables.
+
+<Warning>
+**`uvx` (from `uv`) must be installed and available in your system PATH**. Goose uses `uvx` to run Python-based extensions in isolated environments.
+</Warning>
+
+## Using the Server
+
+Once your server is installed, you can start using your FastMCP server with Goose.
+
+Try asking Goose something like:
+
+> "Roll some dice for me"
+
+Goose will automatically detect your `roll_dice` tool and use it to fulfill your request, returning something like:
+
+> 🎲 Here are your dice rolls: 4, 6, 4
+>
+> You rolled 3 dice with a total of 14!
+
+Goose can now access all the tools, resources, and prompts you've defined in your FastMCP server.

@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 from urllib.parse import urlparse
 
-import httpx
+import httpx2
 from pydantic import (
     AnyUrl,
     BaseModel,
@@ -137,7 +137,9 @@ class _TransformingMCPServerMixin(BaseModel):
             ) from exc
 
         transport = cast("ClientTransport", super().to_transport())  # ty: ignore[unresolved-attribute]
-        client = Client(transport=transport, name=client_name)
+        # The proxy that wraps this client forwards the initialize handshake and
+        # server-initiated features, which require the legacy era.
+        client = Client(transport=transport, name=client_name, mode="legacy")
         wrapped_mcp_server = create_proxy(client, name=server_name)
 
         if self.include_tags is not None:
@@ -162,7 +164,16 @@ class _TransformingMCPServerMixin(BaseModel):
                 )
             ) from exc
 
-        return FastMCPTransport(mcp=self._to_server_and_underlying_transport()[0])
+        transport = FastMCPTransport(mcp=self._to_server_and_underlying_transport()[0])
+        # The wrapped proxy talks to its upstream over the legacy era (it pins
+        # the backend client to `mode="legacy"` to forward the initialize
+        # handshake and server-initiated features). Mark the wrapper legacy-only
+        # so a default `Client(config)` on `mode="auto"` negotiates legacy with
+        # it too, keeping both legs on the same era — otherwise a modern
+        # frontend would receive a forwarded server-initiated request that the
+        # modern era has no back-channel for.
+        transport.legacy_only = True
+        return transport
 
 
 class StdioMCPServer(BaseModel):
@@ -229,9 +240,9 @@ class RemoteMCPServer(BaseModel):
 
     # Authentication
     auth: Annotated[
-        str | Literal["oauth"] | httpx.Auth | None,
+        str | Literal["oauth"] | httpx2.Auth | None,
         Field(
-            description='Either a string representing a Bearer token, the literal "oauth" to use OAuth authentication, or an httpx.Auth instance for custom authentication.',
+            description='Either a string representing a Bearer token, the literal "oauth" to use OAuth authentication, or an httpx2.Auth instance for custom authentication.',
         ),
     ] = None
 
@@ -274,7 +285,6 @@ class RemoteMCPServer(BaseModel):
                 self.url,
                 headers=self.headers,
                 auth=self.auth,
-                sse_read_timeout=self.sse_read_timeout,
             )
 
 

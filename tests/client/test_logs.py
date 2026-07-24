@@ -2,7 +2,7 @@ import logging
 
 import pytest
 from mcp import LoggingLevel
-from mcp.types import LoggingMessageNotificationParams
+from mcp_types import LoggingMessageNotificationParams
 
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.logging import LogMessage, create_log_callback
@@ -95,7 +95,11 @@ class TestSetLoggingLevel:
     async def test_set_logging_level(self, fastmcp_server: FastMCP):
         """Client can set the minimum log level and lower-level messages are suppressed."""
         log_handler = LogHandler()
-        async with Client(fastmcp_server, log_handler=log_handler.handle_log) as client:
+        # client.set_logging_level is a legacy-only RPC (deprecated per SEP-2577);
+        # it does not exist on the modern protocol.
+        async with Client(
+            fastmcp_server, mode="legacy", log_handler=log_handler.handle_log
+        ) as client:
             await client.set_logging_level("warning")
             await client.call_tool(
                 "echo_log", {"message": "debug msg", "level": "debug"}
@@ -115,7 +119,9 @@ class TestSetLoggingLevel:
     async def test_set_logging_level_debug_allows_all(self, fastmcp_server: FastMCP):
         """Setting level to debug allows all messages through."""
         log_handler = LogHandler()
-        async with Client(fastmcp_server, log_handler=log_handler.handle_log) as client:
+        async with Client(
+            fastmcp_server, mode="legacy", log_handler=log_handler.handle_log
+        ) as client:
             await client.set_logging_level("debug")
             await client.call_tool(
                 "echo_log", {"message": "debug msg", "level": "debug"}
@@ -169,7 +175,9 @@ class TestSetLoggingLevel:
             await context.log(message=message, level=level)
 
         log_handler = LogHandler()
-        async with Client(mcp, log_handler=log_handler.handle_log) as client:
+        async with Client(
+            mcp, mode="legacy", log_handler=log_handler.handle_log
+        ) as client:
             await client.set_logging_level("warning")
             await client.call_tool("echo_log", {"message": "info msg", "level": "info"})
             await client.call_tool(
@@ -191,7 +199,7 @@ class TestDefaultLogHandler:
         """Test that default_log_handler routes server logs to appropriate Python log levels."""
         from unittest.mock import MagicMock, patch
 
-        from mcp.types import LoggingMessageNotificationParams
+        from mcp_types import LoggingMessageNotificationParams
 
         from fastmcp.client.logging import default_log_handler
 
@@ -242,7 +250,7 @@ class TestDefaultLogHandler:
         """Test that default_log_handler works when logger name is None."""
         from unittest.mock import MagicMock, patch
 
-        from mcp.types import LoggingMessageNotificationParams
+        from mcp_types import LoggingMessageNotificationParams
 
         from fastmcp.client.logging import default_log_handler
 
@@ -265,7 +273,7 @@ class TestDefaultLogHandler:
         """Test that default_log_handler handles dict data correctly."""
         from unittest.mock import MagicMock, patch
 
-        from mcp.types import LoggingMessageNotificationParams
+        from mcp_types import LoggingMessageNotificationParams
 
         from fastmcp.client.logging import default_log_handler
 
@@ -291,7 +299,7 @@ class TestDefaultLogHandler:
         """Test that default_log_handler handles list data correctly."""
         from unittest.mock import MagicMock, patch
 
-        from mcp.types import LoggingMessageNotificationParams
+        from mcp_types import LoggingMessageNotificationParams
 
         from fastmcp.client.logging import default_log_handler
 
@@ -316,7 +324,7 @@ class TestDefaultLogHandler:
         """Test that default_log_handler handles numeric data correctly."""
         from unittest.mock import MagicMock, patch
 
-        from mcp.types import LoggingMessageNotificationParams
+        from mcp_types import LoggingMessageNotificationParams
 
         from fastmcp.client.logging import default_log_handler
 

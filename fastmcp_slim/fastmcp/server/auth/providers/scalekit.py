@@ -7,7 +7,7 @@ authentication for seamless MCP client authentication.
 
 from __future__ import annotations
 
-import httpx
+import httpx2
 from pydantic import AnyHttpUrl
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -181,7 +181,7 @@ class ScalekitProvider(RemoteAuthProvider):
                 logger.debug(
                     "Fetching Scalekit OAuth metadata: metadata_url=%s", metadata_url
                 )
-                async with httpx.AsyncClient() as client:
+                async with httpx2.AsyncClient() as client:
                     response = await client.get(metadata_url)
                     response.raise_for_status()
                     metadata = response.json()

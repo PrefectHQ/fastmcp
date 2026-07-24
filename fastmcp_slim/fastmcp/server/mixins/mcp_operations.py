@@ -2,16 +2,39 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Sequence
+import inspect
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
-import mcp.types
-from mcp.shared.exceptions import McpError
-from mcp.types import ContentBlock
-from pydantic import AnyUrl
+import mcp_types
+from mcp.server.context import ServerRequestContext
+from mcp.shared.exceptions import MCPError
+from mcp_types import (
+    INVALID_PARAMS,
+    CallToolRequestParams,
+    CompleteRequestParams,
+    EmptyResult,
+    GetPromptRequestParams,
+    PaginatedRequestParams,
+    ReadResourceRequestParams,
+    SetLevelRequestParams,
+)
+from mcp_types.version import MODERN_PROTOCOL_VERSIONS
+from pydantic import BaseModel
 
-from fastmcp.exceptions import DisabledError, NotFoundError
-from fastmcp.server.tasks.config import TaskMeta
+from fastmcp.exceptions import (
+    DisabledError,
+    FastMCPError,
+    NotFoundError,
+    to_mcp_error,
+)
+from fastmcp.server.completions import CompletionValues, normalize_completion
+from fastmcp.server.dependencies import bind_request_context, extract_version_spec
+from fastmcp.tools.base import InputRequiredToolResult, ToolResult
+from fastmcp.utilities.async_utils import (
+    call_sync_fn_in_threadpool,
+    is_coroutine_function,
+)
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.pagination import paginate_sequence
 from fastmcp.utilities.versions import VersionSpec, dedupe_with_versions
@@ -29,7 +52,7 @@ def _apply_pagination(
     cursor: str | None,
     page_size: int | None,
 ) -> tuple[list[PaginateT], str | None]:
-    """Apply pagination to items, raising McpError for invalid cursors.
+    """Apply pagination to items, raising MCPError for invalid cursors.
 
     If page_size is None, returns all items without pagination.
     """
@@ -38,336 +61,366 @@ def _apply_pagination(
     try:
         return paginate_sequence(items, cursor, page_size)
     except ValueError as e:
-        raise McpError(mcp.types.ErrorData(code=-32602, message=str(e))) from e
+        raise MCPError(code=INVALID_PARAMS, message=str(e)) from e
+
+
+def _normalize_call_tool_result(
+    result: Any,
+) -> mcp_types.CallToolResult:
+    """Normalize a tool's ``to_mcp_result()`` output into a ``CallToolResult``.
+
+    ``ToolResult.to_mcp_result()`` returns one of three shapes for backward
+    compatibility: a ``CallToolResult`` (error/meta case), a bare
+    ``list[ContentBlock]`` (unstructured), or a ``(content, structured)`` tuple.
+    The SDK v2 runner requires a ``BaseModel`` result, so wrap the shorthand
+    forms here (the SDK's old ``call_tool`` decorator used to do this).
+    """
+    if isinstance(result, mcp_types.CallToolResult):
+        return result
+    if isinstance(result, tuple):
+        content, structured = result
+        return mcp_types.CallToolResult(content=content, structured_content=structured)
+    return mcp_types.CallToolResult(content=result)
+
+
+def _version_from_ctx(ctx: ServerRequestContext) -> VersionSpec | None:
+    """Extract the FastMCP component version from the request's lifted _meta."""
+    from fastmcp.server.dependencies import _lift_meta
+
+    version_str = extract_version_spec(_lift_meta(ctx))
+    return VersionSpec(eq=version_str) if version_str else None
 
 
 class MCPOperationsMixin:
     """Mixin providing MCP protocol handler setup and wire-format handlers.
 
-    Note: Methods registered with SDK decorators (e.g., _list_tools_mcp, _call_tool_mcp)
-    cannot use `self: FastMCP` type hints because the SDK's `get_type_hints()` fails
-    to resolve FastMCP at runtime (it's only available under TYPE_CHECKING). When
-    type hints fail to resolve, the SDK falls back to calling handlers with no arguments.
-    These methods use untyped `self` to avoid this issue.
+    Handlers are registered via ``add_request_handler(method, params_type,
+    handler)`` on the low-level SDK server. Each adapter takes
+    ``(ctx: ServerRequestContext, params)`` and returns the bare SDK result
+    model (no ``ServerResult`` wrapping — the SDK v2 runner serializes the
+    result itself).
     """
 
     def _setup_handlers(self: FastMCP) -> None:
-        """Set up core MCP protocol handlers.
-
-        List handlers use SDK decorators that pass the request object to our handler
-        (needed for pagination cursor). The SDK also populates caches like _tool_cache.
-
-        Exception: list_resource_templates SDK decorator doesn't pass the request,
-        so we register that handler directly.
-
-        The call_tool decorator is from the SDK (supports CreateTaskResult + validate_input).
-        The read_resource and get_prompt decorators are from LowLevelServer to add
-        CreateTaskResult support until the SDK provides it natively.
-        """
-        self._mcp_server.list_tools()(self._list_tools_mcp)
-        self._mcp_server.list_resources()(self._list_resources_mcp)
-        self._mcp_server.list_prompts()(self._list_prompts_mcp)
-
-        # list_resource_templates SDK decorator doesn't pass the request to handlers,
-        # so we register directly to get cursor access for pagination
-        self._mcp_server.request_handlers[mcp.types.ListResourceTemplatesRequest] = (
-            self._wrap_list_handler(self._list_resource_templates_mcp)
+        """Register core MCP protocol handlers with the low-level SDK server."""
+        s = self._mcp_server
+        s.add_request_handler("tools/list", PaginatedRequestParams, self._on_list_tools)
+        s.add_request_handler(
+            "resources/list", PaginatedRequestParams, self._on_list_resources
+        )
+        s.add_request_handler(
+            "resources/templates/list",
+            PaginatedRequestParams,
+            self._on_list_resource_templates,
+        )
+        s.add_request_handler(
+            "prompts/list", PaginatedRequestParams, self._on_list_prompts
+        )
+        s.add_request_handler("tools/call", CallToolRequestParams, self._on_call_tool)
+        s.add_request_handler(
+            "resources/read", ReadResourceRequestParams, self._on_read_resource
+        )
+        s.add_request_handler(
+            "prompts/get", GetPromptRequestParams, self._on_get_prompt
+        )
+        s.add_request_handler(
+            "logging/setLevel", SetLevelRequestParams, self._on_set_logging_level
         )
 
-        self._mcp_server.call_tool(validate_input=self.strict_input_validation)(
-            self._call_tool_mcp
-        )
-        self._mcp_server.read_resource()(self._read_resource_mcp)
-        self._mcp_server.get_prompt()(self._get_prompt_mcp)
-        self._mcp_server.set_logging_level()(self._set_logging_level_mcp)
+    async def _on_list_tools(
+        self: FastMCP,
+        ctx: ServerRequestContext,
+        params: PaginatedRequestParams | None,
+    ) -> mcp_types.ListToolsResult:
+        """List all available tools. Supports pagination via params.cursor."""
+        with bind_request_context(ctx):
+            logger.debug(f"[{self.name}] Handler called: list_tools")
 
-        # Register SEP-1686 task protocol handlers
-        self._setup_task_protocol_handlers()
+            tools = dedupe_with_versions(
+                list(await self.list_tools()), lambda t: t.name
+            )
+            sdk_tools = [tool.to_mcp_tool(name=tool.name) for tool in tools]
+            cursor = params.cursor if params else None
+            page, next_cursor = _apply_pagination(
+                sdk_tools, cursor, self._list_page_size
+            )
+            return mcp_types.ListToolsResult(tools=page, next_cursor=next_cursor)
 
-    def _wrap_list_handler(
-        self: FastMCP, handler: Callable[..., Awaitable[Any]]
-    ) -> Callable[..., Awaitable[mcp.types.ServerResult]]:
-        """Wrap a list handler to pass the request and return ServerResult."""
+    async def _on_list_resources(
+        self: FastMCP,
+        ctx: ServerRequestContext,
+        params: PaginatedRequestParams | None,
+    ) -> mcp_types.ListResourcesResult:
+        """List all available resources. Supports pagination via params.cursor."""
+        with bind_request_context(ctx):
+            logger.debug(f"[{self.name}] Handler called: list_resources")
 
-        async def wrapper(request: Any) -> mcp.types.ServerResult:
-            result = await handler(request)
-            return mcp.types.ServerResult(result)
-
-        return wrapper
-
-    async def _list_tools_mcp(
-        self, request: mcp.types.ListToolsRequest
-    ) -> mcp.types.ListToolsResult:
-        """
-        List all available tools, in the format expected by the low-level MCP
-        server. Supports pagination when list_page_size is configured.
-        """
-        # Cast self to FastMCP for type checking (see class docstring for why
-        # we can't use `self: FastMCP` annotation on SDK-registered handlers)
-        server = cast("FastMCP", self)
-        logger.debug(f"[{server.name}] Handler called: list_tools")
-
-        tools = dedupe_with_versions(list(await server.list_tools()), lambda t: t.name)
-        sdk_tools = [tool.to_mcp_tool(name=tool.name) for tool in tools]
-
-        # SDK may pass None for internal cache refresh despite type hint
-        cursor = (
-            request.params.cursor if request is not None and request.params else None
-        )
-        page, next_cursor = _apply_pagination(sdk_tools, cursor, server._list_page_size)
-        return mcp.types.ListToolsResult(tools=page, nextCursor=next_cursor)
-
-    async def _list_resources_mcp(
-        self, request: mcp.types.ListResourcesRequest
-    ) -> mcp.types.ListResourcesResult:
-        """
-        List all available resources, in the format expected by the low-level MCP
-        server. Supports pagination when list_page_size is configured.
-        """
-        server = cast("FastMCP", self)
-        logger.debug(f"[{server.name}] Handler called: list_resources")
-
-        resources = dedupe_with_versions(
-            list(await server.list_resources()), lambda r: str(r.uri)
-        )
-        sdk_resources = [
-            resource.to_mcp_resource(uri=str(resource.uri)) for resource in resources
-        ]
-
-        cursor = request.params.cursor if request.params else None
-        page, next_cursor = _apply_pagination(
-            sdk_resources, cursor, server._list_page_size
-        )
-        return mcp.types.ListResourcesResult(resources=page, nextCursor=next_cursor)
-
-    async def _list_resource_templates_mcp(
-        self, request: mcp.types.ListResourceTemplatesRequest
-    ) -> mcp.types.ListResourceTemplatesResult:
-        """
-        List all available resource templates, in the format expected by the low-level MCP
-        server. Supports pagination when list_page_size is configured.
-        """
-        server = cast("FastMCP", self)
-        logger.debug(f"[{server.name}] Handler called: list_resource_templates")
-
-        templates = dedupe_with_versions(
-            list(await server.list_resource_templates()), lambda t: t.uri_template
-        )
-        sdk_templates = [
-            template.to_mcp_template(uriTemplate=template.uri_template)
-            for template in templates
-        ]
-        cursor = request.params.cursor if request.params else None
-        page, next_cursor = _apply_pagination(
-            sdk_templates, cursor, server._list_page_size
-        )
-        return mcp.types.ListResourceTemplatesResult(
-            resourceTemplates=page, nextCursor=next_cursor
-        )
-
-    async def _list_prompts_mcp(
-        self, request: mcp.types.ListPromptsRequest
-    ) -> mcp.types.ListPromptsResult:
-        """
-        List all available prompts, in the format expected by the low-level MCP
-        server. Supports pagination when list_page_size is configured.
-        """
-        server = cast("FastMCP", self)
-        logger.debug(f"[{server.name}] Handler called: list_prompts")
-
-        prompts = dedupe_with_versions(
-            list(await server.list_prompts()), lambda p: p.name
-        )
-        sdk_prompts = [prompt.to_mcp_prompt(name=prompt.name) for prompt in prompts]
-        cursor = request.params.cursor if request.params else None
-        page, next_cursor = _apply_pagination(
-            sdk_prompts, cursor, server._list_page_size
-        )
-        return mcp.types.ListPromptsResult(prompts=page, nextCursor=next_cursor)
-
-    async def _call_tool_mcp(
-        self, key: str, arguments: dict[str, Any]
-    ) -> (
-        list[ContentBlock]
-        | tuple[list[ContentBlock], dict[str, Any]]
-        | mcp.types.CallToolResult
-        | mcp.types.CreateTaskResult
-    ):
-        """
-        Handle MCP 'callTool' requests.
-
-        Extracts task metadata from MCP request context and passes it explicitly
-        to call_tool(). The tool's _run() method handles the backgrounding decision,
-        ensuring middleware runs before Docket.
-
-        Args:
-            key: The name of the tool to call
-            arguments: Arguments to pass to the tool
-
-        Returns:
-            Tool result or CreateTaskResult for background execution
-        """
-        server = cast("FastMCP", self)
-        logger.debug(
-            f"[{server.name}] Handler called: call_tool %s with %s", key, arguments
-        )
-
-        try:
-            # Extract version and task metadata from request context.
-            # fn_key is set by call_tool() after finding the tool.
-            version_str: str | None = None
-            task_meta: TaskMeta | None = None
-            try:
-                ctx = server._mcp_server.request_context
-                # Extract version from _meta.fastmcp
-                if ctx.meta:
-                    meta_dict = ctx.meta.model_dump(exclude_none=True)
-                    version_str = meta_dict.get("fastmcp", {}).get("version")
-                # Extract SEP-1686 task metadata
-                if ctx.experimental.is_task:
-                    mcp_task_meta = ctx.experimental.task_metadata
-                    task_meta_dict = mcp_task_meta.model_dump(exclude_none=True)
-                    task_meta = TaskMeta(ttl=task_meta_dict.get("ttl"))
-            except (AttributeError, LookupError):
-                pass
-
-            version = VersionSpec(eq=version_str) if version_str else None
-            result = await server.call_tool(
-                key, arguments, version=version, task_meta=task_meta
+            resources = dedupe_with_versions(
+                list(await self.list_resources()), lambda r: str(r.uri)
+            )
+            sdk_resources = [
+                resource.to_mcp_resource(uri=str(resource.uri))
+                for resource in resources
+            ]
+            cursor = params.cursor if params else None
+            page, next_cursor = _apply_pagination(
+                sdk_resources, cursor, self._list_page_size
+            )
+            return mcp_types.ListResourcesResult(
+                resources=page, next_cursor=next_cursor
             )
 
-            if isinstance(result, mcp.types.CreateTaskResult):
-                return result
-            return result.to_mcp_result()
+    async def _on_list_resource_templates(
+        self: FastMCP,
+        ctx: ServerRequestContext,
+        params: PaginatedRequestParams | None,
+    ) -> mcp_types.ListResourceTemplatesResult:
+        """List all available resource templates. Supports pagination."""
+        with bind_request_context(ctx):
+            logger.debug(f"[{self.name}] Handler called: list_resource_templates")
 
-        except DisabledError as e:
-            raise NotFoundError(f"Unknown tool: {key!r}") from e
-        except NotFoundError as e:
-            raise NotFoundError(f"Unknown tool: {key!r}") from e
-
-    async def _read_resource_mcp(
-        self, uri: AnyUrl | str
-    ) -> mcp.types.ReadResourceResult | mcp.types.CreateTaskResult:
-        """Handle MCP 'readResource' requests.
-
-        Extracts task metadata from MCP request context and passes it explicitly
-        to read_resource(). The resource's _read() method handles the backgrounding
-        decision, ensuring middleware runs before Docket.
-
-        Args:
-            uri: The resource URI
-
-        Returns:
-            ReadResourceResult or CreateTaskResult for background execution
-        """
-        server = cast("FastMCP", self)
-        logger.debug(f"[{server.name}] Handler called: read_resource %s", uri)
-
-        try:
-            # Extract version and task metadata from request context.
-            version_str: str | None = None
-            task_meta: TaskMeta | None = None
-            try:
-                ctx = server._mcp_server.request_context
-                # Extract version from _meta.fastmcp.version if provided
-                if ctx.meta:
-                    meta_dict = ctx.meta.model_dump(exclude_none=True)
-                    fastmcp_meta = meta_dict.get("fastmcp") or {}
-                    version_str = fastmcp_meta.get("version")
-                # Extract SEP-1686 task metadata
-                if ctx.experimental.is_task:
-                    mcp_task_meta = ctx.experimental.task_metadata
-                    task_meta_dict = mcp_task_meta.model_dump(exclude_none=True)
-                    task_meta = TaskMeta(ttl=task_meta_dict.get("ttl"))
-            except (AttributeError, LookupError):
-                pass
-
-            version = VersionSpec(eq=version_str) if version_str else None
-            result = await server.read_resource(
-                str(uri), version=version, task_meta=task_meta
+            templates = dedupe_with_versions(
+                list(await self.list_resource_templates()), lambda t: t.uri_template
+            )
+            sdk_templates = [
+                template.to_mcp_template(uri_template=template.uri_template)
+                for template in templates
+            ]
+            cursor = params.cursor if params else None
+            page, next_cursor = _apply_pagination(
+                sdk_templates, cursor, self._list_page_size
+            )
+            return mcp_types.ListResourceTemplatesResult(
+                resource_templates=page, next_cursor=next_cursor
             )
 
-            if isinstance(result, mcp.types.CreateTaskResult):
-                return result
-            return result.to_mcp_result(uri)
-        except DisabledError as e:
-            raise McpError(
-                mcp.types.ErrorData(
-                    code=-32002, message=f"Resource not found: {str(uri)!r}"
+    async def _on_list_prompts(
+        self: FastMCP,
+        ctx: ServerRequestContext,
+        params: PaginatedRequestParams | None,
+    ) -> mcp_types.ListPromptsResult:
+        """List all available prompts. Supports pagination via params.cursor."""
+        with bind_request_context(ctx):
+            logger.debug(f"[{self.name}] Handler called: list_prompts")
+
+            prompts = dedupe_with_versions(
+                list(await self.list_prompts()), lambda p: p.name
+            )
+            sdk_prompts = [prompt.to_mcp_prompt(name=prompt.name) for prompt in prompts]
+            cursor = params.cursor if params else None
+            page, next_cursor = _apply_pagination(
+                sdk_prompts, cursor, self._list_page_size
+            )
+            return mcp_types.ListPromptsResult(prompts=page, next_cursor=next_cursor)
+
+    async def _on_call_tool(
+        self: FastMCP,
+        ctx: ServerRequestContext,
+        params: CallToolRequestParams,
+    ) -> mcp_types.CallToolResult | mcp_types.InputRequiredResult | BaseModel:
+        """Handle MCP 'tools/call' requests.
+
+        A guard tool (SEP-2322 multi-round-trip) requests client input by
+        returning an ``InputRequiredResult`` from its body; the run machinery
+        wraps that in an ``InputRequiredToolResult`` (a ``ToolResult``
+        subclass), which flows back through the middleware chain as an ordinary
+        result. Here we unwrap it and hand the raw ``InputRequiredResult`` to
+        the runner so it reaches the wire as ``resultType: "input_required"``
+        (the request-state boundary seals its ``requestState`` on egress). This
+        result shape only exists at 2026-07-28; on an earlier connection the
+        runner cannot serialize it, so we reject with a clear era error rather
+        than let it fail as a generic "invalid result".
+        """
+        with bind_request_context(ctx):
+            key = params.name
+            arguments = params.arguments or {}
+            logger.debug(
+                f"[{self.name}] Handler called: call_tool %s with %s", key, arguments
+            )
+
+            version = _version_from_ctx(ctx)
+
+            try:
+                result = await self.call_tool(key, arguments, version=version)
+            except (DisabledError, NotFoundError):
+                # Unknown/disabled tool: return an error result (matching the
+                # v1 SDK's call_tool behavior) so the client surfaces a
+                # ToolError rather than a raw protocol error.
+                return mcp_types.CallToolResult(
+                    content=[
+                        mcp_types.TextContent(
+                            type="text", text=f"Unknown tool: {key!r}"
+                        )
+                    ],
+                    is_error=True,
                 )
-            ) from e
-        except NotFoundError as e:
-            raise McpError(
-                mcp.types.ErrorData(code=-32002, message=f"Resource not found: {e}")
-            ) from e
+            except FastMCPError as e:
+                # Tool-visible errors (ToolError, ValidationError, ...) must be
+                # RETURNED as an error result, never raised — the SDK v2 runner
+                # turns a raise into a -32603 wire error. Masking already
+                # happened inside call_tool.
+                return mcp_types.CallToolResult(
+                    content=[mcp_types.TextContent(type="text", text=str(e))],
+                    is_error=True,
+                )
 
-    async def _get_prompt_mcp(
-        self, name: str, arguments: dict[str, Any] | None
-    ) -> mcp.types.GetPromptResult | mcp.types.CreateTaskResult:
-        """Handle MCP 'getPrompt' requests.
+            if not isinstance(result, ToolResult):
+                # An extension's tools/call interceptor produced a non-ToolResult
+                # wire result — the tasks extension's CreateTaskResult when it ran
+                # the call as a task. Core does not interpret extension result
+                # shapes; hand it straight to the runner, which serializes it for
+                # the negotiated protocol version.
+                return result
 
-        Extracts task metadata from MCP request context and passes it explicitly
-        to render_prompt(). The prompt's _render() method handles the backgrounding
-        decision, ensuring middleware runs before Docket.
+            if isinstance(result, InputRequiredToolResult):
+                # A guard tool requested client input (SEP-2322). The
+                # multi-round-trip result type only exists at 2026-07-28; on an
+                # earlier connection the runner cannot serialize it, so name the
+                # era problem instead of failing as a generic "invalid result".
+                if ctx.protocol_version not in MODERN_PROTOCOL_VERSIONS:
+                    raise MCPError(
+                        code=INVALID_PARAMS,
+                        message=(
+                            f"Tool {key!r} returned an InputRequiredResult to request "
+                            "client input, but the multi-round-trip result type "
+                            "(SEP-2322) only exists at MCP 2026-07-28; this connection "
+                            f"negotiated {ctx.protocol_version!r}. Use ctx.elicit() for "
+                            "server-initiated input on handshake-era connections."
+                        ),
+                    )
+                return result.input_required
+            return _normalize_call_tool_result(result.to_mcp_result())
 
-        Args:
-            name: The prompt name
-            arguments: Prompt arguments
+    async def _on_read_resource(
+        self: FastMCP,
+        ctx: ServerRequestContext,
+        params: ReadResourceRequestParams,
+    ) -> mcp_types.ReadResourceResult:
+        """Handle MCP 'resources/read' requests."""
+        with bind_request_context(ctx):
+            uri = params.uri
+            logger.debug(f"[{self.name}] Handler called: read_resource %s", uri)
 
-        Returns:
-            GetPromptResult or CreateTaskResult for background execution
-        """
-        server = cast("FastMCP", self)
-        logger.debug(
-            f"[{server.name}] Handler called: get_prompt %s with %s", name, arguments
-        )
+            version = _version_from_ctx(ctx)
 
-        try:
-            # Extract version and task metadata from request context.
-            # fn_key is set by render_prompt() after finding the prompt.
-            version_str: str | None = None
-            task_meta: TaskMeta | None = None
             try:
-                ctx = server._mcp_server.request_context
-                # Extract version from request-level _meta.fastmcp.version
-                if ctx.meta:
-                    meta_dict = ctx.meta.model_dump(exclude_none=True)
-                    version_str = meta_dict.get("fastmcp", {}).get("version")
-                # Extract SEP-1686 task metadata
-                if ctx.experimental.is_task:
-                    mcp_task_meta = ctx.experimental.task_metadata
-                    task_meta_dict = mcp_task_meta.model_dump(exclude_none=True)
-                    task_meta = TaskMeta(ttl=task_meta_dict.get("ttl"))
-            except (AttributeError, LookupError):
-                pass
+                result = await self.read_resource(str(uri), version=version)
+            except (DisabledError, NotFoundError) as e:
+                raise to_mcp_error(
+                    NotFoundError(f"Resource not found: {str(uri)!r}")
+                ) from e
+            except FastMCPError as e:
+                # Resource-visible errors (ResourceError, ValidationError, ...)
+                # must reach the wire as an MCPError. Resources have no
+                # error-result shape the way tools do, so the equivalent of
+                # _on_call_tool's error result is a translated MCPError: at
+                # 2026-07-28 the runner only preserves MCPError/ValidationError
+                # messages and masks anything else as "Internal server error",
+                # which would hide a legitimate client-input error. Masking
+                # already happened inside read_resource.
+                raise to_mcp_error(e) from e
 
-            version = VersionSpec(eq=version_str) if version_str else None
-            result = await server.render_prompt(
-                name, arguments, version=version, task_meta=task_meta
+            return result.to_mcp_result(uri)
+
+    async def _on_get_prompt(
+        self: FastMCP,
+        ctx: ServerRequestContext,
+        params: GetPromptRequestParams,
+    ) -> mcp_types.GetPromptResult:
+        """Handle MCP 'prompts/get' requests."""
+        with bind_request_context(ctx):
+            name = params.name
+            arguments = params.arguments
+            logger.debug(
+                f"[{self.name}] Handler called: get_prompt %s with %s",
+                name,
+                arguments,
             )
 
-            if isinstance(result, mcp.types.CreateTaskResult):
-                return result
-            return result.to_mcp_prompt_result()
-        except DisabledError as e:
-            raise NotFoundError(f"Unknown prompt: {name!r}") from e
-        except NotFoundError:
-            raise
+            version = _version_from_ctx(ctx)
 
-    async def _set_logging_level_mcp(self, level: mcp.types.LoggingLevel) -> None:
+            try:
+                result = await self.render_prompt(name, arguments, version=version)
+            except (DisabledError, NotFoundError) as e:
+                raise to_mcp_error(NotFoundError(f"Unknown prompt: {name!r}")) from e
+            except FastMCPError as e:
+                # Prompt-visible errors (PromptError, ValidationError, ...) must
+                # reach the wire as an MCPError for the same reason as
+                # resources: at 2026-07-28 anything that is not an
+                # MCPError/ValidationError is masked as "Internal server error".
+                # Masking already happened inside render_prompt.
+                raise to_mcp_error(e) from e
+
+            return result.to_mcp_prompt_result()
+
+    async def _on_set_logging_level(
+        self: FastMCP,
+        ctx: ServerRequestContext,
+        params: SetLevelRequestParams,
+    ) -> mcp_types.EmptyResult:
         """Handle MCP 'logging/setLevel' requests.
 
-        Stores the requested minimum log level on the session so that
-        subsequent log messages below this level are suppressed.
+        Stores the requested minimum log level keyed by session id so that
+        subsequent log messages below this level are suppressed. v2 sessions are
+        per-request, so this state lives on the FastMCP server.
         """
-        from fastmcp.server.low_level import MiddlewareServerSession
+        from fastmcp.server.context import _log_level_session_key
 
-        server = cast("FastMCP", self)
-        logger.debug(f"[{server.name}] Handler called: set_logging_level %s", level)
-        try:
-            ctx = server._mcp_server.request_context
-            session = ctx.session
-            if isinstance(session, MiddlewareServerSession):
-                session._minimum_logging_level = level
-        except LookupError:
-            pass
+        with bind_request_context(ctx) as rc:
+            logger.debug(
+                f"[{self.name}] Handler called: set_logging_level %s", params.level
+            )
+            session_id = _log_level_session_key(rc.session)
+            self._client_log_levels[session_id] = params.level
+            return EmptyResult()
+
+    async def _on_complete(
+        self: FastMCP,
+        ctx: ServerRequestContext,
+        params: CompleteRequestParams,
+    ) -> mcp_types.CompleteResult:
+        """Handle MCP 'completion/complete' requests.
+
+        Routes to the server's registered completion handler (set via
+        ``@mcp.completion``). The handler switches on the reference and argument
+        and returns candidate values. A handler that does not recognize the
+        reference/argument returns ``None`` or an empty sequence, which becomes
+        an empty completion rather than an error — an unknown reference is not a
+        protocol failure. This handler is registered on the low-level server
+        only once a completion handler exists, so the completions capability is
+        declared exactly when the server can answer.
+        """
+        with bind_request_context(ctx):
+            logger.debug(f"[{self.name}] Handler called: complete %s", params.ref)
+            handler = self._completion_handler
+            if handler is None:
+                return mcp_types.CompleteResult(
+                    completion=mcp_types.Completion(values=[])
+                )
+
+            if is_coroutine_function(handler):
+                raw = handler(params.ref, params.argument, params.context)
+            else:
+                # A sync handler may perform blocking work (a database lookup,
+                # say); run it in a threadpool so it does not stall the event
+                # loop, matching how sync tools/prompts/resources are invoked.
+                raw = await call_sync_fn_in_threadpool(
+                    handler, params.ref, params.argument, params.context
+                )
+            result = await raw if inspect.isawaitable(raw) else raw
+            completion = normalize_completion(cast(CompletionValues, result))
+            return mcp_types.CompleteResult(completion=completion)
+
+    def _register_completion_handler(self: FastMCP) -> None:
+        """Register the low-level ``completion/complete`` handler.
+
+        Called when a completion handler is set (via
+        ``add_completion_handler``) so the SDK derives the completions
+        capability from the handler's presence. Registration is idempotent —
+        re-registering replaces the handler.
+        """
+        self._mcp_server.add_request_handler(
+            "completion/complete",
+            CompleteRequestParams,
+            self._on_complete,
+        )

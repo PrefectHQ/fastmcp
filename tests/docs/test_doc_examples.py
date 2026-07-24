@@ -121,6 +121,13 @@ def test_doc_examples_quality():
             syntax_failures.append(err)
             continue
 
+        # Frozen version snapshots (docs/v2/, docs/v3/) document older FastMCP
+        # releases, so their imports are validated against a package that no
+        # longer ships them. Syntax-check them above, but skip live-import
+        # validation.
+        if Path(ex.path).relative_to(DOCS_DIR).parts[0] in ("v2", "v3"):
+            continue
+
         import_failures.extend(_check_fastmcp_imports(ex))
 
     total = len(examples)

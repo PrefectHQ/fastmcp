@@ -9,8 +9,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Annotated, Any, Generic, Union, get_args, get_origin, get_type_hints
 
-import mcp.types
+import mcp_types
 from pydantic import BaseModel, PydanticSchemaGenerationError
+from typing_extensions import TypeAliasType
 from typing_extensions import TypeVar as TypeVarExt
 
 from fastmcp.tools.base import ToolResult, resolve_serialize_by_alias
@@ -21,7 +22,6 @@ from fastmcp.utilities.types import (
     Audio,
     File,
     Image,
-    create_function_without_params,
     get_cached_typeadapter,
     is_class_member_of_type,
     replace_type,
@@ -54,6 +54,103 @@ def _contains_prefab_type(tp: Any) -> bool:
     if origin is Union or origin is types.UnionType or origin is Annotated:
         return any(_contains_prefab_type(a) for a in get_args(tp))
     return False
+
+
+def _unwrap_type_alias(tp: Any) -> Any:
+    """Resolve a PEP 695 ``type X = ...`` alias to its underlying value.
+
+    ``get_origin()`` returns ``None`` for a ``TypeAliasType``, so an alias that
+    factors out a guard union (``type Result = str | InputRequiredResult``) — or
+    a lone aliased arm — would otherwise slip past union detection. Resolving to
+    ``__value__`` (repeatedly, for chained aliases) restores the concrete type.
+    """
+    while isinstance(tp, TypeAliasType):
+        tp = tp.__value__
+    return tp
+
+
+def _is_input_required_type(tp: Any) -> bool:
+    """True when *tp* is the `InputRequiredResult` type (SEP-2322).
+
+    Resolves a `TypeAliasType` and peels an `Annotated` wrapper first, so an
+    aliased arm or a metadata-carrying arm such as
+    ``Annotated[InputRequiredResult, Field(...)]`` is recognized as a guard
+    signal, not just the bare class.
+    """
+    tp = _unwrap_type_alias(tp)
+    if get_origin(tp) is Annotated:
+        tp = _unwrap_type_alias(get_args(tp)[0])
+    return isinstance(tp, type) and issubclass(tp, mcp_types.InputRequiredResult)
+
+
+def _contains_input_required(tp: Any) -> bool:
+    """True when `InputRequiredResult` appears anywhere in *tp*.
+
+    Recurses through `TypeAliasType`, `Annotated`, and unions so a guard arm is
+    found even when factored through a composed alias (``str | Value`` where
+    ``Value = int | InputRequiredResult``).
+    """
+    tp = _unwrap_type_alias(tp)
+    if _is_input_required_type(tp):
+        return True
+    origin = get_origin(tp)
+    if origin is Union or origin is types.UnionType or origin is Annotated:
+        return any(_contains_input_required(a) for a in get_args(tp))
+    return False
+
+
+def _residual_union_arms(tp: Any) -> list[Any]:
+    """Flatten a (possibly aliased/nested) union into its non-guard arms.
+
+    Every `InputRequiredResult` arm is dropped at any depth, and aliased union
+    arms are flattened inline so the residual is a flat union of data arms.
+    """
+    arms: list[Any] = []
+    for arm in get_args(_unwrap_type_alias(tp)):
+        if _is_input_required_type(arm):
+            continue
+        unwrapped = _unwrap_type_alias(arm)
+        arm_origin = get_origin(unwrapped)
+        if arm_origin is Union or arm_origin is types.UnionType:
+            arms.extend(_residual_union_arms(unwrapped))
+        elif arm_origin is Annotated:
+            arms.append(_strip_input_required(arm))
+        else:
+            arms.append(arm)
+    return arms
+
+
+def _strip_input_required(tp: Any) -> Any:
+    """Remove `InputRequiredResult` arms from a union return annotation.
+
+    A guard tool typically annotates its return as ``X | InputRequiredResult``;
+    the ``InputRequiredResult`` arm is a suspend signal, not output data, so it
+    is dropped before schema derivation. Stripping recurses through
+    `TypeAliasType` and nested unions, so a guard arm factored through an alias
+    (even ``str | Value`` where ``Value = int | InputRequiredResult``) is still
+    removed. A non-union annotation, or one with no such arm, is returned
+    unchanged. A bare ``InputRequiredResult`` annotation (no other arm) is left
+    intact and suppressed downstream like other non-serializable return types.
+    """
+    if not _contains_input_required(tp):
+        return tp
+    unwrapped = _unwrap_type_alias(tp)
+    origin = get_origin(unwrapped)
+    if origin is Annotated:
+        # Annotated[X | InputRequiredResult, meta] — strip inside, keep metadata.
+        inner, *metadata = get_args(unwrapped)
+        return Annotated[(_strip_input_required(inner), *metadata)]
+    if origin is not Union and origin is not types.UnionType:
+        # A bare InputRequiredResult (possibly via a `type X = ...` alias): left
+        # intact, but returned de-aliased so the downstream subclass/exact-type
+        # suppression recognizes it and emits no output schema.
+        return unwrapped
+    residual = _residual_union_arms(unwrapped)
+    if not residual:
+        return tp
+    if len(residual) == 1:
+        return residual[0]
+    return Union[tuple(residual)]  # noqa: UP007
 
 
 def _unwrap_model(tp: Any) -> type[BaseModel] | None:
@@ -178,33 +275,27 @@ class ParsedFunction:
     def from_function(
         cls,
         fn: Callable[..., Any],
-        exclude_args: list[str] | None = None,
         validate: bool = True,
         wrap_non_object_output_schema: bool = True,
     ) -> ParsedFunction:
         if validate:
             sig = inspect.signature(fn)
-            # Reject functions with *args or **kwargs
+            # Reject signatures that cannot be represented by MCP's
+            # object-shaped tool arguments.
             for param in sig.parameters.values():
+                if param.kind == inspect.Parameter.POSITIONAL_ONLY:
+                    raise ValueError(
+                        "Functions with positional-only parameters are not "
+                        "supported as tools because MCP passes tool arguments by "
+                        "name. Replace them with standard parameters that can be "
+                        "passed as keywords."
+                    )
                 if param.kind == inspect.Parameter.VAR_POSITIONAL:
                     raise ValueError("Functions with *args are not supported as tools")
                 if param.kind == inspect.Parameter.VAR_KEYWORD:
                     raise ValueError(
                         "Functions with **kwargs are not supported as tools"
                     )
-
-            # Reject exclude_args that don't exist in the function or don't have a default value
-            if exclude_args:
-                for arg_name in exclude_args:
-                    if arg_name not in sig.parameters:
-                        raise ValueError(
-                            f"Parameter '{arg_name}' in exclude_args does not exist in function."
-                        )
-                    param = sig.parameters[arg_name]
-                    if param.default == inspect.Parameter.empty:
-                        raise ValueError(
-                            f"Parameter '{arg_name}' in exclude_args must have a default value."
-                        )
 
         # collect name and description before we potentially modify the function
         fn_name = getattr(fn, "__name__", None) or fn.__class__.__name__
@@ -241,19 +332,10 @@ class ParsedFunction:
         # Handle injected parameters (Context, Docket dependencies)
         wrapper_fn = without_injected_parameters(fn)
 
-        # Also handle exclude_args with non-serializable types (issue #2431)
-        # This must happen before Pydantic tries to serialize the parameters
-        if exclude_args:
-            wrapper_fn = create_function_without_params(wrapper_fn, list(exclude_args))
-
         input_type_adapter = get_cached_typeadapter(wrapper_fn)
         input_schema = input_type_adapter.json_schema()
 
-        # Compress and handle exclude_args
-        prune_params = list(exclude_args) if exclude_args else None
-        input_schema = compress_schema(
-            input_schema, prune_params=prune_params, prune_titles=True
-        )
+        input_schema = compress_schema(input_schema, prune_titles=True)
 
         # Inject parameter descriptions from the docstring into the schema.
         # Explicit annotations (Field(description=...), Annotated[x, "..."])
@@ -266,6 +348,26 @@ class ParsedFunction:
                     and "description" not in properties[param_name]
                 ):
                     properties[param_name]["description"] = param_desc
+
+        # Auto-populate the create-then-pass contract onto `SessionId`-annotated
+        # parameters so an agent learns it straight from the schema. Append to any
+        # author-provided description rather than clobbering it.
+        from fastmcp.server.sessions import (
+            SESSION_ID_DESCRIPTION,
+            session_id_parameter_names,
+        )
+
+        properties = input_schema.get("properties", {})
+        for param_name in session_id_parameter_names(fn):
+            if param_name not in properties:
+                continue
+            existing = properties[param_name].get("description")
+            if not existing:
+                properties[param_name]["description"] = SESSION_ID_DESCRIPTION
+            elif SESSION_ID_DESCRIPTION not in existing:
+                properties[param_name]["description"] = (
+                    f"{existing}\n\n{SESSION_ID_DESCRIPTION}"
+                )
 
         output_schema = None
         # Get the return annotation from the signature
@@ -286,6 +388,13 @@ class ParsedFunction:
         # Save original for return_type before any schema-related replacement
         original_output_type = output_type
 
+        # An `InputRequiredResult` return arm (SEP-2322 guard tools) is a
+        # control-flow signal, not data: strip it so the residual arms drive
+        # output-schema derivation (mirrors the SDK's func_metadata). The tool
+        # body still returns it at runtime; the tool pipeline passes it through
+        # to the wire without touching the output schema.
+        output_type = _strip_input_required(output_type)
+
         if output_type not in (inspect._empty, None, Any, ...):
             # bytes can't be represented as structured JSON output — skip schema
             if _contains_bytes_type(output_type):
@@ -304,6 +413,22 @@ class ParsedFunction:
             if is_class_member_of_type(output_type, ToolResult):
                 output_type = _UnserializableType
 
+            # A bare CallToolResult gives the tool full protocol-level control
+            # over its response, so there is no FastMCP output schema to infer.
+            if isinstance(output_type, type) and issubclass(
+                output_type, mcp_types.CallToolResult
+            ):
+                output_type = _UnserializableType
+
+            # If InputRequiredResult survives stripping in any wrapping — bare,
+            # via a `type X = ...` alias, Annotated, or a subclass — it is a
+            # guard-only return with no output data (a union would have had its
+            # guard arms stripped above). Suppress the schema wholesale; matching
+            # `run()`'s subclass-aware control handling and covering every alias
+            # shape that exact-match replace_type below would miss.
+            if _contains_input_required(output_type):
+                output_type = _UnserializableType
+
             # there are a variety of types that we don't want to attempt to
             # serialize because they are either used by FastMCP internally,
             # or are MCP content types that explicitly don't form structured
@@ -317,11 +442,14 @@ class ParsedFunction:
                         Audio,
                         File,
                         ToolResult,
-                        mcp.types.TextContent,
-                        mcp.types.ImageContent,
-                        mcp.types.AudioContent,
-                        mcp.types.ResourceLink,
-                        mcp.types.EmbeddedResource,
+                        mcp_types.TextContent,
+                        mcp_types.ImageContent,
+                        mcp_types.AudioContent,
+                        mcp_types.ResourceLink,
+                        mcp_types.EmbeddedResource,
+                        # A guard tool's suspend signal is control flow, not
+                        # output data (any residual bare arm is suppressed).
+                        mcp_types.InputRequiredResult,
                         *_PREFAB_TYPES,
                     ),
                     _UnserializableType,

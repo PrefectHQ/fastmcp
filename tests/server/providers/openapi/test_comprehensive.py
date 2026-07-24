@@ -3,13 +3,16 @@
 import json
 from unittest.mock import AsyncMock, Mock
 
-import httpx
+import httpx2
 import pytest
-from httpx import Response
+from httpx2 import Response
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.server.providers.openapi import OpenAPIProvider
+
+# Real client used only to delegate build_request on mocked clients - never sends.
+_request_builder = httpx2.AsyncClient()
 
 
 def create_openapi_server(
@@ -369,7 +372,7 @@ class TestOpenAPIComprehensive:
         self, comprehensive_openapi_spec
     ):
         """Test server initialization with comprehensive spec."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             provider = OpenAPIProvider(
                 openapi_spec=comprehensive_openapi_spec,
                 client=client,
@@ -402,7 +405,7 @@ class TestOpenAPIComprehensive:
 
     async def test_openapi_31_compatibility(self, openapi_31_spec):
         """Test that OpenAPI 3.1 specs work correctly."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             server = create_openapi_server(
                 openapi_spec=openapi_31_spec,
                 client=client,
@@ -418,7 +421,7 @@ class TestOpenAPIComprehensive:
 
     async def test_parameter_collision_handling(self, comprehensive_openapi_spec):
         """Test that parameter collisions are handled correctly."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             server = create_openapi_server(
                 openapi_spec=comprehensive_openapi_spec,
                 client=client,
@@ -430,7 +433,7 @@ class TestOpenAPIComprehensive:
                 collision_tool = next(
                     tool for tool in tools if tool.name == "collision_test"
                 )
-                schema = collision_tool.inputSchema
+                schema = collision_tool.input_schema
                 properties = schema["properties"]
 
                 # Should have unique parameter names for colliding parameters
@@ -449,7 +452,7 @@ class TestOpenAPIComprehensive:
 
     async def test_deep_object_parameters(self, comprehensive_openapi_spec):
         """Test deepObject parameter handling."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             server = create_openapi_server(
                 openapi_spec=comprehensive_openapi_spec,
                 client=client,
@@ -461,7 +464,7 @@ class TestOpenAPIComprehensive:
                 search_tool = next(
                     tool for tool in tools if tool.name == "search_users"
                 )
-                schema = search_tool.inputSchema
+                schema = search_tool.input_schema
                 properties = schema["properties"]
 
                 # Should have flattened deepObject parameters
@@ -475,9 +478,10 @@ class TestOpenAPIComprehensive:
     async def test_request_building_and_execution(self, comprehensive_openapi_spec):
         """Test that requests are built and executed correctly."""
         # Create a mock client that tracks requests
-        mock_client = Mock(spec=httpx.AsyncClient)
+        mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = "https://api.example.com"
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         # Mock successful response
         mock_response = Mock(spec=Response)
@@ -516,9 +520,10 @@ class TestOpenAPIComprehensive:
         self, comprehensive_openapi_spec
     ):
         """Test that tool uses localhost fallback when client has no base_url."""
-        mock_client = Mock(spec=httpx.AsyncClient)
-        mock_client.base_url = httpx.URL("")  # Empty URL, same as httpx default
+        mock_client = Mock(spec=httpx2.AsyncClient)
+        mock_client.base_url = httpx2.URL("")  # Empty URL, same as httpx default
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         mock_response = Mock(spec=Response)
         mock_response.status_code = 200
@@ -548,9 +553,10 @@ class TestOpenAPIComprehensive:
         self, comprehensive_openapi_spec
     ):
         """Test complex request with both parameters and body."""
-        mock_client = Mock(spec=httpx.AsyncClient)
+        mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = "https://api.example.com"
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         mock_response = Mock(spec=Response)
         mock_response.status_code = 201
@@ -596,9 +602,10 @@ class TestOpenAPIComprehensive:
 
     async def test_query_parameters(self, comprehensive_openapi_spec):
         """Test query parameter handling."""
-        mock_client = Mock(spec=httpx.AsyncClient)
+        mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = "https://api.example.com"
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         mock_response = Mock(spec=Response)
         mock_response.status_code = 200
@@ -634,9 +641,10 @@ class TestOpenAPIComprehensive:
 
     async def test_error_handling(self, comprehensive_openapi_spec):
         """Test error handling for HTTP errors."""
-        mock_client = Mock(spec=httpx.AsyncClient)
+        mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = "https://api.example.com"
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         # Mock HTTP error response
         mock_response = Mock(spec=Response)
@@ -647,7 +655,7 @@ class TestOpenAPIComprehensive:
 
         # Configure raise_for_status to raise HTTPStatusError
         def raise_for_status():
-            raise httpx.HTTPStatusError(
+            raise httpx2.HTTPStatusError(
                 "404 Not Found", request=Mock(), response=mock_response
             )
 
@@ -670,7 +678,7 @@ class TestOpenAPIComprehensive:
 
     async def test_schema_refs_resolution(self, comprehensive_openapi_spec):
         """Test that schema references are resolved correctly."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             server = create_openapi_server(
                 openapi_spec=comprehensive_openapi_spec,
                 client=client,
@@ -681,7 +689,7 @@ class TestOpenAPIComprehensive:
 
                 # Find create_user tool which uses schema refs
                 create_tool = next(tool for tool in tools if tool.name == "create_user")
-                schema = create_tool.inputSchema
+                schema = create_tool.input_schema
                 properties = schema["properties"]
 
                 # Should have resolved User schema properties
@@ -691,7 +699,7 @@ class TestOpenAPIComprehensive:
 
     async def test_optional_vs_required_parameters(self, comprehensive_openapi_spec):
         """Test handling of optional vs required parameters."""
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             server = create_openapi_server(
                 openapi_spec=comprehensive_openapi_spec,
                 client=client,
@@ -702,7 +710,7 @@ class TestOpenAPIComprehensive:
 
                 # Check list_users tool - has optional query parameters
                 list_tool = next(tool for tool in tools if tool.name == "list_users")
-                schema = list_tool.inputSchema
+                schema = list_tool.input_schema
                 # Query parameters should be optional
                 # (may not appear in required list)
                 # This test just ensures the schema is well-formed
@@ -712,7 +720,7 @@ class TestOpenAPIComprehensive:
                 search_tool = next(
                     tool for tool in tools if tool.name == "search_users"
                 )
-                search_schema = search_tool.inputSchema
+                search_schema = search_tool.input_schema
                 # Should have some required parameters
                 assert len(search_schema["properties"]) > 0
 
@@ -723,7 +731,7 @@ class TestOpenAPIComprehensive:
         # Time the provider creation
         start_time = time.time()
 
-        async with httpx.AsyncClient(base_url="https://api.example.com") as client:
+        async with httpx2.AsyncClient(base_url="https://api.example.com") as client:
             provider = OpenAPIProvider(
                 openapi_spec=comprehensive_openapi_spec,
                 client=client,
@@ -746,12 +754,13 @@ class TestOpenAPIComprehensive:
         self, comprehensive_openapi_spec
     ):
         """ReadTimeout should surface a clear error, not an empty string."""
-        mock_client = Mock(spec=httpx.AsyncClient)
+        mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = "https://api.example.com"
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         # httpx internally raises ReadTimeout with an empty message
-        mock_client.send = AsyncMock(side_effect=httpx.ReadTimeout(""))
+        mock_client.send = AsyncMock(side_effect=httpx2.ReadTimeout(""))
 
         server = create_openapi_server(
             openapi_spec=comprehensive_openapi_spec,
@@ -864,9 +873,10 @@ class TestOpenAPIPostEdgeCases:
 
     async def test_post_with_body_params(self, post_spec_with_empty_content_schema):
         """POST with body parameters should build the request correctly."""
-        mock_client = Mock(spec=httpx.AsyncClient)
+        mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = "https://api.example.com"
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         mock_response = Mock(spec=Response)
         mock_response.status_code = 201
@@ -896,9 +906,10 @@ class TestOpenAPIPostEdgeCases:
         self, post_spec_with_empty_content_schema
     ):
         """POST with both path parameters and body should route args correctly."""
-        mock_client = Mock(spec=httpx.AsyncClient)
+        mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = "https://api.example.com"
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         mock_response = Mock(spec=Response)
         mock_response.status_code = 200
@@ -933,9 +944,10 @@ class TestOpenAPIPostEdgeCases:
         from fastmcp.utilities.openapi.director import RequestDirector
         from fastmcp.utilities.openapi.models import HTTPRoute
 
-        mock_client = Mock(spec=httpx.AsyncClient)
+        mock_client = Mock(spec=httpx2.AsyncClient)
         mock_client.base_url = "https://api.example.com"
         mock_client.headers = None
+        mock_client.build_request = _request_builder.build_request
 
         route = HTTPRoute(
             path="/test",

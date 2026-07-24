@@ -1,0 +1,53 @@
+---
+title: 2026-07-28 Protocol Support
+---
+
+FastMCP v4 serves the sessionless `2026-07-28` protocol era and the session-based handshake eras from a single server, with per-connection auto-detection. This page catalogs what FastMCP provides for the modern era — both the protocol machinery it inherits from the MCP Python SDK and the capabilities FastMCP implements itself on top of that layer. It is the reference for what a v4 deployment can actually do on the modern protocol today.
+
+## Identity assertion (SEP-990)
+
+SEP-990 defines enterprise "on-behalf-of" access: a corporate identity provider (Okta, Microsoft Entra, etc.) issues a signed *ID-JAG* asserting an employee's identity, the employee's agent presents it at the MCP authorization server's token endpoint via the RFC 7523 `jwt-bearer` grant, and receives a short-lived access token — no browser login, no per-user consent screen, and revocation lives at the IdP.
+
+The protocol layer for this flow — grant parsing, the `exchange_identity_assertion` provider hook, and metadata advertisement — comes from the SDK. The validation and issuance logic that makes the flow actually work is FastMCP's implementation, and enabling it is one parameter on the existing auth providers:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth import OAuthProxy, IdentityAssertion
+
+auth = OAuthProxy(
+    ...,  # existing upstream configuration unchanged
+    identity_assertion=IdentityAssertion(
+        trusted_issuers=["https://login.acme-corp.com"],
+    ),
+)
+mcp = FastMCP("Internal API", auth=auth)
+```
+
+Behind that one parameter, FastMCP performs the full SEP-990 §5.1 / RFC 7523 §3 processing: JWKS-based signature verification with automatic OIDC discovery of issuer keys, `typ`/`iss`/`aud`/`sub` validation, temporal checks (`exp`, `iat`, `nbf`, maximum assertion lifetime), enforcement of the assertion's signed `client_id` and `resource` bindings, `jti` replay rejection, scope derivation from the signed assertion (client requests can narrow but never widen), short-lived token issuance with no refresh token, and revocation tracking for the issued tokens. The asserted subject flows into the normal FastMCP auth context, so tools read it through `get_access_token()` like any other identity. See [Identity Assertion](/servers/auth/oauth-proxy#identity-assertion-sep-990) for the full documentation.
+
+This slots into FastMCP's existing authorization-server stack — the OAuth proxy's dynamic client registration, the consent flow, and self-issued JWTs — which is what makes a one-parameter enterprise deployment possible.
+
+## Modern-era capability inventory
+
+The complete picture of what a FastMCP v4 server and client provide on the `2026-07-28` era:
+
+| Capability | What FastMCP provides |
+| --- | --- |
+| **Dual-era serving** | One server answers both `server/discover` (modern, sessionless) and `initialize` (handshake) connections, auto-detected per connection. Any replica behind a plain load balancer can answer a modern request. |
+| **Identity assertion (SEP-990)** | Complete server-side implementation, one parameter to enable (above). |
+| **Authorization server** | Full AS stack: `OAuthProxy` bridges DCR-expecting MCP clients to non-DCR enterprise IdPs, ~18 built-in providers, consent UI, self-issued JWTs, protected-resource metadata (RFC 9728). |
+| **Cache hints (SEP-2549)** | Server-level authoring (`FastMCP(cache_ttl=..., cache_scope=...)`) stamps every cacheable result; the FastMCP client honors hints with an opt-in response cache. |
+| **Distributed response caching** | `KeyValueResponseCacheStore` backs the client cache with any key-value store (Redis, memory, filetree), so a fleet of clients or proxy replicas shares cache fills across processes. |
+| **Resource path security** | Templated resource parameters are screened for traversal, absolute paths, and null bytes before handlers run — on by default, including provider-sourced and mounted templates. |
+| **Client protocol negotiation** | `Client(mode="auto")` — the default as of v4 — probes `server/discover` and falls back to the classic handshake; the client answers multi-round-trip `input_required` requests through its existing handlers. Pin `mode="legacy"` to force the handshake. |
+| **Elicitation on the modern protocol (SEP-2322)** | Tools request user input via multi-round trips: a tool returns an `InputRequiredResult` and re-runs per round, reading the client's answers off `ctx.input_responses` / `ctx.request_state` (the [guard pattern](/servers/elicitation#elicitation-on-the-modern-protocol)). Each round is a complete request→response cycle; the framework seals `request_state` on the wire and unseals it before the tool runs, and a shared-key `request_state_security` policy carries state across replicas. On handshake-era connections returning this result produces a clear era error. |
+| **Spec-standard errors (SEP-2164)** | Missing-resource reads return `-32602`; push-feature calls on modern connections fail with clear era-specific errors rather than generic method-not-found. |
+| **Middleware** | Typed per-method hooks (`on_call_tool`, `on_list_tools`, …) and a suite of built-ins (auth, rate limiting, caching, error handling, logging, timing, and more). |
+| **Composition** | `mount()`, providers, proxying, and tool transforms compose servers dynamically at runtime, with lifespans and middleware driven through the SDK session manager. |
+| **Pagination** | Declarative `FastMCP(list_page_size=...)` paginates all list operations in the high-level server; the client auto-paginates with cycle detection. |
+| **Telemetry** | OpenTelemetry spans on by default (no-op without an exporter), SDK-aligned attributes (`mcp.method.name`, `mcp.protocol.version`, `gen_ai.*`), plus auth and provider-delegation spans; `FASTMCP_ENABLE_TELEMETRY=false` disables cleanly. |
+| **Background tasks (SEP-2663)** | `fastmcp-tasks` implements the `io.modelcontextprotocol/tasks` extension end to end: `mcp.add_extension(TasksExtension())` plus `task=True` runs a tool as a background task, driven by the same Docket engine FastMCP 3 used. A client transparently completes a tasked call; gathering input mid-task uses the same guard pattern as foreground multi-round-trip tools, so a tool is written once and works either way. Modern-protocol only — the `task=True` runtime this replaced (SEP-1686) is gone entirely, not bridged. See [Background Tasks (SEP-2663)](/development/v4-notes/background-tasks) for the design and [servers/tasks](/servers/tasks) for usage. |
+
+## Still in the program
+
+Elicitation on the modern protocol is now shipped in its **guard form** — a tool returns an `InputRequiredResult` and re-runs per round to gather user input via multi-round trips (see [Elicitation on the modern protocol](/servers/elicitation#elicitation-on-the-modern-protocol)). The declarative `Resolve(...)` layer over that primitive remains staged, tracked in the [Feature Program](/development/v4-notes/feature-program), along with the unified `subscriptions/listen` stream. The [Known Gaps](/development/v4-notes/known-gaps) page tracks the upstream dependencies that gate them.

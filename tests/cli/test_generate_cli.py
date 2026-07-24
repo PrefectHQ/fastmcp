@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-import mcp.types
+import mcp_types
 import pytest
 
 from fastmcp import FastMCP
@@ -148,9 +148,9 @@ class TestSerializeTransport:
 
 class TestToolFunctionSource:
     def test_required_param(self):
-        tool = mcp.types.Tool(
+        tool = mcp_types.Tool(
             name="greet",
-            inputSchema={
+            input_schema={
                 "properties": {"name": {"type": "string", "description": "Who"}},
                 "required": ["name"],
             },
@@ -162,9 +162,9 @@ class TestToolFunctionSource:
         assert "_call_tool('greet', {'name': name})" in source
 
     def test_optional_param(self):
-        tool = mcp.types.Tool(
+        tool = mcp_types.Tool(
             name="search",
-            inputSchema={
+            input_schema={
                 "properties": {
                     "query": {"type": "string", "description": "Search query"},
                     "limit": {"type": "integer", "description": "Max results"},
@@ -178,9 +178,9 @@ class TestToolFunctionSource:
         assert "= None" in source
 
     def test_param_with_default(self):
-        tool = mcp.types.Tool(
+        tool = mcp_types.Tool(
             name="fetch",
-            inputSchema={
+            input_schema={
                 "properties": {
                     "url": {"type": "string", "description": "URL"},
                     "timeout": {
@@ -197,18 +197,18 @@ class TestToolFunctionSource:
         assert "= 30" in source
 
     def test_no_params(self):
-        tool = mcp.types.Tool(
+        tool = mcp_types.Tool(
             name="ping",
-            inputSchema={"properties": {}},
+            input_schema={"properties": {}},
         )
         source = _tool_function_source(tool)
         assert "async def ping(" in source
         assert "_call_tool('ping', {})" in source
 
     def test_preserves_underscores(self):
-        tool = mcp.types.Tool(
+        tool = mcp_types.Tool(
             name="get_forecast",
-            inputSchema={
+            input_schema={
                 "properties": {"city": {"type": "string"}},
                 "required": ["city"],
             },
@@ -217,18 +217,18 @@ class TestToolFunctionSource:
         assert "async def get_forecast(" in source
 
     def test_sanitizes_tool_name(self):
-        tool = mcp.types.Tool(
+        tool = mcp_types.Tool(
             name="my.tool/v2",
-            inputSchema={"properties": {}},
+            input_schema={"properties": {}},
         )
         source = _tool_function_source(tool)
         assert "async def my_tool_v2(" in source
         assert "name='my.tool/v2'" in source
 
     def test_sanitizes_param_name(self):
-        tool = mcp.types.Tool(
+        tool = mcp_types.Tool(
             name="fetch",
-            inputSchema={
+            input_schema={
                 "properties": {"content-type": {"type": "string", "description": "CT"}},
                 "required": ["content-type"],
             },
@@ -238,10 +238,10 @@ class TestToolFunctionSource:
         assert "'content-type': content_type" in source
 
     def test_description_in_docstring(self):
-        tool = mcp.types.Tool(
+        tool = mcp_types.Tool(
             name="greet",
             description="Say hello to someone.",
-            inputSchema={
+            input_schema={
                 "properties": {"name": {"type": "string"}},
                 "required": ["name"],
             },
@@ -250,10 +250,10 @@ class TestToolFunctionSource:
         assert "'''Say hello to someone.'''" in source
 
     def test_description_with_quotes(self):
-        tool = mcp.types.Tool(
+        tool = mcp_types.Tool(
             name="fetch",
             description="Fetch data from 'source' API.",
-            inputSchema={
+            input_schema={
                 "properties": {"url": {"type": "string"}},
                 "required": ["url"],
             },
@@ -265,10 +265,10 @@ class TestToolFunctionSource:
         compile(source, "<test>", "exec")
 
     def test_array_of_strings_parameter(self):
-        tool = mcp.types.Tool(
+        tool = mcp_types.Tool(
             name="tag_items",
             description="Tag multiple items.",
-            inputSchema={
+            input_schema={
                 "properties": {
                     "item_id": {"type": "string"},
                     "tags": {"type": "array", "items": {"type": "string"}},
@@ -285,10 +285,10 @@ class TestToolFunctionSource:
         compile(source, "<test>", "exec")
 
     def test_complex_object_parameter(self):
-        tool = mcp.types.Tool(
+        tool = mcp_types.Tool(
             name="create_user",
             description="Create a user.",
-            inputSchema={
+            input_schema={
                 "properties": {
                     "name": {"type": "string"},
                     "metadata": {
@@ -318,10 +318,10 @@ class TestToolFunctionSource:
         compile(source, "<test>", "exec")
 
     def test_nested_array_parameter(self):
-        tool = mcp.types.Tool(
+        tool = mcp_types.Tool(
             name="batch_process",
             description="Process batches.",
-            inputSchema={
+            input_schema={
                 "properties": {
                     "batches": {
                         "type": "array",
@@ -346,9 +346,9 @@ class TestToolFunctionSource:
 
     def test_complex_type_with_default(self):
         """Test that complex types with defaults are JSON-serialized."""
-        tool = mcp.types.Tool(
+        tool = mcp_types.Tool(
             name="configure",
-            inputSchema={
+            input_schema={
                 "properties": {
                     "options": {
                         "type": "object",
@@ -367,9 +367,9 @@ class TestToolFunctionSource:
 
     def test_name_collision_detection(self):
         """Test that parameter name collisions are detected."""
-        tool = mcp.types.Tool(
+        tool = mcp_types.Tool(
             name="test",
-            inputSchema={
+            input_schema={
                 "properties": {
                     "content-type": {"type": "string"},
                     "content_type": {"type": "string"},
@@ -409,22 +409,22 @@ class TestDeriveServerName:
 
 
 class TestGenerateCliScript:
-    def _make_tools(self) -> list[mcp.types.Tool]:
+    def _make_tools(self) -> list[mcp_types.Tool]:
         return [
-            mcp.types.Tool(
+            mcp_types.Tool(
                 name="greet",
                 description="Say hello",
-                inputSchema={
+                input_schema={
                     "properties": {
                         "name": {"type": "string", "description": "Who to greet"},
                     },
                     "required": ["name"],
                 },
             ),
-            mcp.types.Tool(
+            mcp_types.Tool(
                 name="add_numbers",
                 description="Add two numbers",
-                inputSchema={
+                input_schema={
                     "properties": {
                         "a": {"type": "integer", "description": "First number"},
                         "b": {"type": "integer", "description": "Second number"},
@@ -507,10 +507,10 @@ class TestGenerateCliScript:
 
     def test_compiles_with_unusual_names(self):
         tools = [
-            mcp.types.Tool(
+            mcp_types.Tool(
                 name="my.tool/v2",
                 description="A tool with dots and slashes",
-                inputSchema={
+                input_schema={
                     "properties": {
                         "content-type": {"type": "string", "description": "CT"},
                     },
@@ -771,10 +771,10 @@ class TestGenerateSkillContent:
 
     def test_tool_sections(self):
         tools = [
-            mcp.types.Tool(
+            mcp_types.Tool(
                 name="greet",
                 description="Say hello",
-                inputSchema={
+                input_schema={
                     "type": "object",
                     "properties": {
                         "name": {"type": "string", "description": "Who to greet"}
@@ -794,9 +794,9 @@ class TestGenerateSkillContent:
 
     def test_frontmatter_with_tools_starts_at_column_zero(self):
         tools = [
-            mcp.types.Tool(
+            mcp_types.Tool(
                 name="greet",
-                inputSchema={"type": "object", "properties": {}},
+                input_schema={"type": "object", "properties": {}},
             ),
         ]
         content = generate_skill_content("weather", "cli.py", tools)
@@ -804,10 +804,10 @@ class TestGenerateSkillContent:
 
     def test_optional_param(self):
         tools = [
-            mcp.types.Tool(
+            mcp_types.Tool(
                 name="search",
                 description="Search things",
-                inputSchema={
+                input_schema={
                     "type": "object",
                     "properties": {
                         "query": {"type": "string"},
@@ -824,10 +824,10 @@ class TestGenerateSkillContent:
 
     def test_complex_json_param(self):
         tools = [
-            mcp.types.Tool(
+            mcp_types.Tool(
                 name="create",
                 description="Create item",
-                inputSchema={
+                input_schema={
                     "type": "object",
                     "properties": {
                         "data": {
@@ -844,10 +844,10 @@ class TestGenerateSkillContent:
 
     def test_no_params_tool(self):
         tools = [
-            mcp.types.Tool(
+            mcp_types.Tool(
                 name="ping",
                 description="Ping the server",
-                inputSchema={"type": "object", "properties": {}},
+                input_schema={"type": "object", "properties": {}},
             ),
         ]
         content = generate_skill_content("test", "cli.py", tools)
@@ -863,10 +863,10 @@ class TestGenerateSkillContent:
 
     def test_pipe_in_description_escaped(self):
         tools = [
-            mcp.types.Tool(
+            mcp_types.Tool(
                 name="test",
                 description="Test",
-                inputSchema={
+                input_schema={
                     "type": "object",
                     "properties": {
                         "mode": {"type": "string", "description": "a|b|c"},
@@ -879,10 +879,10 @@ class TestGenerateSkillContent:
 
     def test_union_type_pipes_escaped(self):
         tools = [
-            mcp.types.Tool(
+            mcp_types.Tool(
                 name="test",
                 description="Test",
-                inputSchema={
+                input_schema={
                     "type": "object",
                     "properties": {
                         "val": {"type": ["string", "null"]},
@@ -896,10 +896,10 @@ class TestGenerateSkillContent:
 
     def test_boolean_param_no_value_placeholder(self):
         tools = [
-            mcp.types.Tool(
+            mcp_types.Tool(
                 name="run",
                 description="Run something",
-                inputSchema={
+                input_schema={
                     "type": "object",
                     "properties": {
                         "verbose": {"type": "boolean", "description": "Verbose output"},

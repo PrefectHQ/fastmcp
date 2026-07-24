@@ -8,7 +8,7 @@ import ssl
 from collections.abc import AsyncIterator
 from typing import Any, Literal, cast
 
-import httpx
+import httpx2
 from mcp import ClientSession
 from mcp.client.sse import sse_client
 from mcp.shared._httpx_utils import McpHttpClientFactory
@@ -16,20 +16,32 @@ from pydantic import AnyUrl
 from typing_extensions import Unpack
 
 from fastmcp.client.auth.bearer import BearerAuth
+from fastmcp.client.auth.client_credentials import (
+    ClientCredentialsOAuthProvider,
+    PrivateKeyJWTOAuthProvider,
+)
 from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.dependencies import get_http_headers
-from fastmcp.client.transports.base import ClientTransport, SessionKwargs
+from fastmcp.client.transports.base import (
+    ClientTransport,
+    SessionKwargs,
+    TransportOptions,
+)
 from fastmcp.utilities.timeout import normalize_timeout_to_timedelta
 
 
 class SSETransport(ClientTransport):
     """Transport implementation that connects to an MCP server via Server-Sent Events."""
 
+    # SSE predates the sessionless modern era and cannot serve it; a client with
+    # `mode="auto"` negotiates the legacy handshake directly over SSE.
+    legacy_only = True
+
     def __init__(
         self,
         url: str | AnyUrl,
         headers: dict[str, str] | None = None,
-        auth: httpx.Auth | Literal["oauth"] | str | None = None,
+        auth: httpx2.Auth | Literal["oauth"] | str | None = None,
         sse_read_timeout: datetime.timedelta | float | int | None = None,
         httpx_client_factory: McpHttpClientFactory | None = None,
         verify: ssl.SSLContext | bool | str | None = None,
@@ -61,12 +73,10 @@ class SSETransport(ClientTransport):
 
         self._set_auth(auth)
 
-        self.forward_incoming_headers: bool = False
-
         self.sse_read_timeout = normalize_timeout_to_timedelta(sse_read_timeout)
 
-    def _set_auth(self, auth: httpx.Auth | Literal["oauth"] | str | None):
-        resolved: httpx.Auth | None
+    def _set_auth(self, auth: httpx2.Auth | Literal["oauth"] | str | None):
+        resolved: httpx2.Auth | None
         if auth == "oauth":
             resolved = OAuth(
                 self.url,
@@ -77,16 +87,21 @@ class SSETransport(ClientTransport):
             auth._bind(self.url)
             # Only inject the transport's factory into OAuth if OAuth still
             # has the bare default — preserve any factory the caller attached
-            if auth.httpx_client_factory is httpx.AsyncClient:
+            if auth.httpx_client_factory is httpx2.AsyncClient:
                 factory = self.httpx_client_factory or self._make_verify_factory()
                 if factory is not None:
                     auth.httpx_client_factory = factory
+            resolved = auth
+        elif isinstance(
+            auth, (ClientCredentialsOAuthProvider, PrivateKeyJWTOAuthProvider)
+        ):
+            auth._bind(self.url)
             resolved = auth
         elif isinstance(auth, str):
             resolved = BearerAuth(auth)
         else:
             resolved = auth
-        self.auth: httpx.Auth | None = resolved
+        self.auth: httpx2.Auth | None = resolved
 
     def _make_verify_factory(self) -> McpHttpClientFactory | None:
         if self.verify is None:
@@ -95,11 +110,11 @@ class SSETransport(ClientTransport):
 
         def factory(
             headers: dict[str, str] | None = None,
-            timeout: httpx.Timeout | None = None,
-            auth: httpx.Auth | None = None,
-        ) -> httpx.AsyncClient:
+            timeout: httpx2.Timeout | None = None,
+            auth: httpx2.Auth | None = None,
+        ) -> httpx2.AsyncClient:
             if timeout is None:
-                timeout = httpx.Timeout(30.0, read=300.0)
+                timeout = httpx2.Timeout(30.0, read=300.0)
             kwargs: dict[str, Any] = {
                 "follow_redirects": True,
                 "timeout": timeout,
@@ -109,21 +124,25 @@ class SSETransport(ClientTransport):
                 kwargs["headers"] = headers
             if auth is not None:
                 kwargs["auth"] = auth
-            return httpx.AsyncClient(**kwargs)
+            return httpx2.AsyncClient(**kwargs)
 
         return cast(McpHttpClientFactory, factory)
 
     @contextlib.asynccontextmanager
     async def connect_session(
-        self, **session_kwargs: Unpack[SessionKwargs]
+        self,
+        *,
+        transport_options: TransportOptions | None = None,
+        **session_kwargs: Unpack[SessionKwargs],
     ) -> AsyncIterator[ClientSession]:
+        options = transport_options or TransportOptions()
         client_kwargs: dict[str, Any] = {}
 
         # When used in a proxy, forward the inbound request's authorization
         # header to the upstream server. This is off by default so that a
         # plain Client used inside a server tool handler doesn't accidentally
         # leak the caller's credentials to an unrelated remote server.
-        if self.forward_incoming_headers:
+        if options.forward_incoming_headers:
             client_kwargs["headers"] = (
                 get_http_headers(include={"authorization"}) | self.headers
             )
@@ -134,11 +153,11 @@ class SSETransport(ClientTransport):
         # instead we simply leave the kwarg out if it's not provided
         if self.sse_read_timeout is not None:
             client_kwargs["sse_read_timeout"] = self.sse_read_timeout.total_seconds()
-        if session_kwargs.get("read_timeout_seconds") is not None:
-            read_timeout_seconds = cast(
-                datetime.timedelta, session_kwargs.get("read_timeout_seconds")
-            )
-            client_kwargs["timeout"] = read_timeout_seconds.total_seconds()
+        # SDK v2 session read timeouts are float seconds (see SessionKwargs);
+        # sse_client's `timeout` param is likewise float seconds.
+        read_timeout_seconds = session_kwargs.get("read_timeout_seconds")
+        if read_timeout_seconds is not None:
+            client_kwargs["timeout"] = read_timeout_seconds
 
         if self.httpx_client_factory is not None:
             client_kwargs["httpx_client_factory"] = self.httpx_client_factory
@@ -149,7 +168,7 @@ class SSETransport(ClientTransport):
 
         async with sse_client(self.url, auth=self.auth, **client_kwargs) as transport:
             read_stream, write_stream = transport
-            async with ClientSession(
+            async with options.session_class(
                 read_stream, write_stream, **session_kwargs
             ) as session:
                 yield session

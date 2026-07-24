@@ -1,0 +1,312 @@
+{
+  "dropdowns": [
+    {
+      "dropdown": "Documentation",
+      "groups": [
+        {
+          "group": "Get Started",
+          "pages": [
+            "v3/getting-started/welcome",
+            "v3/getting-started/installation",
+            "v3/getting-started/quickstart"
+          ]
+        },
+        {
+          "group": "Servers",
+          "pages": [
+            "v3/servers/server",
+            {
+              "collapsed": true,
+              "group": "Core Components",
+              "icon": "toolbox",
+              "pages": [
+                "v3/servers/tools",
+                "v3/servers/resources",
+                "v3/servers/prompts",
+                "v3/servers/context"
+              ]
+            },
+            {
+              "collapsed": true,
+              "group": "Working with Tools",
+              "icon": "wand-magic-sparkles",
+              "pages": [
+                "v3/servers/transforms/transforms",
+                "v3/servers/transforms/tool-transformation",
+                "v3/servers/transforms/code-mode",
+                "v3/servers/transforms/tool-search",
+                "v3/servers/transforms/namespace",
+                "v3/servers/visibility",
+                "v3/servers/transforms/resources-as-tools",
+                "v3/servers/transforms/prompts-as-tools",
+                "v3/servers/tool-fingerprinting"
+              ]
+            },
+            {
+              "collapsed": true,
+              "group": "MCP Providers",
+              "icon": "layer-group",
+              "pages": [
+                "v3/servers/providers/overview",
+                "v3/servers/providers/local",
+                "v3/servers/providers/filesystem",
+                "v3/servers/providers/proxy",
+                "v3/servers/providers/skills",
+                "v3/servers/composition",
+                "v3/servers/providers/custom"
+              ]
+            },
+            {
+              "collapsed": true,
+              "group": "Interactivity",
+              "icon": "comments",
+              "pages": [
+                "v3/servers/elicitation",
+                "v3/servers/sampling",
+                "v3/servers/progress",
+                "v3/servers/logging",
+                "v3/servers/pagination",
+                "v3/servers/icons"
+              ]
+            },
+            {
+              "collapsed": true,
+              "group": "Extensibility",
+              "icon": "puzzle-piece",
+              "pages": [
+                "v3/servers/middleware",
+                "v3/servers/dependency-injection",
+                "v3/servers/lifespan",
+                "v3/servers/storage-backends",
+                "v3/servers/tasks",
+                "v3/servers/versioning"
+              ]
+            },
+            {
+              "collapsed": true,
+              "group": "Auth",
+              "icon": "shield-check",
+              "pages": [
+                {
+                  "collapsed": true,
+                  "group": "Authentication",
+                  "icon": "key",
+                  "pages": [
+                    "v3/servers/auth/authentication",
+                    "v3/servers/auth/token-verification",
+                    "v3/servers/auth/remote-oauth",
+                    "v3/servers/auth/oauth-proxy",
+                    "v3/servers/auth/oidc-proxy",
+                    "v3/servers/auth/full-oauth-server",
+                    "v3/servers/auth/multi-auth"
+                  ]
+                },
+                "v3/servers/authorization"
+              ]
+            },
+            {
+              "collapsed": true,
+              "group": "Deployment",
+              "icon": "rocket",
+              "pages": [
+                "v3/deployment/running-server",
+                "v3/deployment/http",
+                "v3/deployment/sandboxed-agents",
+                "v3/deployment/prefect-horizon",
+                "v3/deployment/server-configuration",
+                "v3/servers/testing",
+                "v3/servers/telemetry"
+              ]
+            }
+          ]
+        },
+        {
+          "group": "Apps",
+          "pages": [
+            "v3/apps/overview",
+            "v3/apps/quickstart",
+            "v3/apps/fastmcp-app",
+            "v3/apps/prefab",
+            "v3/apps/generative",
+            "v3/apps/low-level",
+            {
+              "collapsed": true,
+              "group": "Reference",
+              "icon": "book",
+              "pages": [
+                {
+                  "collapsed": true,
+                  "group": "Prefab Providers",
+                  "icon": "cube",
+                  "pages": [
+                    "v3/apps/providers/approval",
+                    "v3/apps/providers/choice",
+                    "v3/apps/providers/file-upload",
+                    "v3/apps/providers/form"
+                  ]
+                },
+                "v3/apps/development",
+                "v3/apps/examples",
+                "v3/apps/architecture"
+              ]
+            }
+          ]
+        },
+        {
+          "group": "Clients",
+          "pages": [
+            "v3/clients/client",
+            "v3/clients/client-only-package",
+            "v3/clients/transports",
+            "v3/clients/fastmcp-remote",
+            {
+              "collapsed": true,
+              "group": "Operations",
+              "icon": "toolbox",
+              "pages": [
+                "v3/clients/tools",
+                "v3/clients/resources",
+                "v3/clients/prompts",
+                "v3/clients/sampling",
+                "v3/clients/elicitation",
+                "v3/clients/tasks",
+                "v3/clients/progress",
+                "v3/clients/logging",
+                "v3/clients/roots",
+                "v3/clients/notifications"
+              ],
+              "tag": "UPDATED"
+            },
+            {
+              "collapsed": true,
+              "group": "Authentication",
+              "icon": "key",
+              "pages": [
+                "v3/clients/auth/oauth",
+                "v3/clients/auth/cimd",
+                "v3/clients/auth/bearer"
+              ],
+              "tag": "UPDATED"
+            }
+          ]
+        },
+        {
+          "group": "Integrations",
+          "pages": [
+            {
+              "collapsed": true,
+              "group": "Auth",
+              "icon": "key",
+              "pages": [
+                "v3/integrations/auth0",
+                "v3/integrations/authkit",
+                "v3/integrations/aws-cognito",
+                "v3/integrations/azure",
+                "v3/integrations/descope",
+                "v3/integrations/discord",
+                "v3/integrations/eunomia-authorization",
+                "v3/integrations/github",
+                "v3/integrations/google",
+                "v3/integrations/huggingface",
+                "v3/integrations/keycloak",
+                "v3/integrations/oci",
+                "v3/integrations/permit",
+                "v3/integrations/propelauth",
+                "v3/integrations/scalekit",
+                "v3/integrations/supabase",
+                "v3/integrations/workos"
+              ]
+            },
+            {
+              "collapsed": true,
+              "group": "Web Frameworks",
+              "icon": "code",
+              "pages": [
+                "v3/integrations/fastapi",
+                "v3/integrations/openapi"
+              ]
+            },
+            {
+              "collapsed": true,
+              "group": "AI Assistants",
+              "icon": "robot",
+              "pages": [
+                "v3/integrations/chatgpt",
+                "v3/integrations/claude-code",
+                "v3/integrations/claude-desktop",
+                "v3/integrations/cursor",
+                "v3/integrations/gemini-cli",
+                "v3/integrations/goose"
+              ]
+            },
+            {
+              "collapsed": true,
+              "group": "AI SDKs",
+              "icon": "microchip",
+              "pages": [
+                "v3/integrations/anthropic",
+                "v3/integrations/gemini",
+                "v3/integrations/openai",
+                "v3/integrations/pydantic-ai"
+              ]
+            },
+            "v3/integrations/mcp-json-configuration"
+          ]
+        },
+        {
+          "group": "More",
+          "pages": [
+            "v3/more/settings",
+            {
+              "collapsed": true,
+              "group": "CLI",
+              "icon": "terminal",
+              "pages": [
+                "v3/cli/overview",
+                "v3/cli/running",
+                "v3/cli/install-mcp",
+                "v3/cli/inspecting",
+                "v3/cli/client",
+                "v3/cli/generate-cli",
+                "v3/cli/auth"
+              ]
+            },
+            {
+              "collapsed": true,
+              "group": "Upgrading",
+              "icon": "up",
+              "pages": [
+                "v3/getting-started/upgrading/from-fastmcp-2",
+                "v3/getting-started/upgrading/from-mcp-sdk",
+                "v3/getting-started/upgrading/from-low-level-sdk"
+              ]
+            },
+            {
+              "collapsed": true,
+              "group": "Development",
+              "icon": "code",
+              "pages": [
+                "v3/development/contributing",
+                "v3/development/tests",
+                "v3/development/releases",
+                "v3/patterns/contrib"
+              ]
+            },
+            {
+              "collapsed": true,
+              "group": "What's New",
+              "icon": "sparkles",
+              "pages": [
+                "v3/updates",
+                "v3/changelog"
+              ]
+            },
+            "v3/more/faq"
+          ]
+        }
+      ],
+      "icon": "book"
+    }
+  ],
+  "version": "v3.4.4"
+}

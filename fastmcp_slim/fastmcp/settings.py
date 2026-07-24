@@ -2,7 +2,6 @@ from __future__ import annotations as _annotations
 
 import inspect
 import os
-from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -28,109 +27,6 @@ MCP_LOG_LEVEL = Literal[
 DuplicateBehavior = Literal["warn", "error", "replace", "ignore"]
 
 TEN_MB_IN_BYTES = 1024 * 1024 * 10
-
-
-class DocketSettings(BaseSettings):
-    """Docket worker configuration."""
-
-    model_config = SettingsConfigDict(
-        env_prefix="FASTMCP_DOCKET_",
-        extra="ignore",
-    )
-
-    name: Annotated[
-        str,
-        Field(
-            description=inspect.cleandoc(
-                """
-                Name for the Docket queue. All servers/workers sharing the same name
-                and backend URL will share a task queue.
-                """
-            ),
-        ),
-    ] = "fastmcp"
-
-    url: Annotated[
-        str,
-        Field(
-            description=inspect.cleandoc(
-                """
-                URL for the Docket backend. Supports:
-                - memory:// - In-memory backend (single process only)
-                - redis://host:port/db - Redis/Valkey backend (distributed, multi-process)
-
-                Example: redis://localhost:6379/0
-
-                Default is memory:// for single-process scenarios. Use Redis or Valkey
-                when coordinating tasks across multiple processes (e.g., additional
-                workers via the fastmcp tasks CLI).
-                """
-            ),
-        ),
-    ] = "memory://"
-
-    worker_name: Annotated[
-        str | None,
-        Field(
-            description=inspect.cleandoc(
-                """
-                Name for the Docket worker. If None, Docket will auto-generate
-                a unique worker name.
-                """
-            ),
-        ),
-    ] = None
-
-    concurrency: Annotated[
-        int,
-        Field(
-            description=inspect.cleandoc(
-                """
-                Maximum number of tasks the worker can process concurrently.
-                """
-            ),
-        ),
-    ] = 10
-
-    redelivery_timeout: Annotated[
-        timedelta,
-        Field(
-            description=inspect.cleandoc(
-                """
-                Task redelivery timeout. If a worker doesn't complete
-                a task within this time, the task will be redelivered to another
-                worker.
-                """
-            ),
-        ),
-    ] = timedelta(seconds=300)
-
-    reconnection_delay: Annotated[
-        timedelta,
-        Field(
-            description=inspect.cleandoc(
-                """
-                Delay between reconnection attempts when the worker
-                loses connection to the Docket backend.
-                """
-            ),
-        ),
-    ] = timedelta(seconds=5)
-
-    minimum_check_interval: Annotated[
-        timedelta,
-        Field(
-            description=inspect.cleandoc(
-                """
-                How frequently the worker polls for new tasks. Lower
-                values reduce latency for task pickup at the cost of
-                more CPU usage. The default of 50ms is a good balance;
-                increase for high-volume production deployments where
-                tasks are long-running.
-                """
-            ),
-        ),
-    ] = timedelta(milliseconds=50)
 
 
 class Settings(BaseSettings):
@@ -185,8 +81,6 @@ class Settings(BaseSettings):
             return v.upper()
         return v
 
-    docket: DocketSettings = DocketSettings()
-
     enable_rich_logging: Annotated[
         bool,
         Field(
@@ -210,6 +104,24 @@ class Settings(BaseSettings):
         ),
     ] = True
 
+    enable_telemetry: Annotated[
+        bool,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Whether FastMCP's native OpenTelemetry instrumentation is active.
+                Enabled by default: FastMCP uses only the OpenTelemetry API, so
+                span creation is a no-op with negligible overhead unless an
+                OpenTelemetry SDK and exporter are configured. Set to False to
+                turn instrumentation off entirely, in which case FastMCP's span
+                helpers become a transparent pass-through: no FastMCP spans are
+                created even when an SDK is configured, and the surrounding OTel
+                trace context is left untouched.
+                """
+            )
+        ),
+    ] = True
+
     deprecation_warnings: Annotated[
         bool,
         Field(
@@ -221,6 +133,22 @@ class Settings(BaseSettings):
                 settings class itself.
                 """,
             )
+        ),
+    ] = True
+
+    mcp_camelcase_compat: Annotated[
+        bool,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Whether to install compatibility shims that let legacy
+                camelCase reads on MCP SDK objects (e.g. `tool.inputSchema`,
+                `result.isError`) keep working after the SDK v2 rename to
+                snake_case. Each bridged read emits a
+                `FastMCPDeprecationWarning`. Set to False to disable the shims
+                entirely, in which case only the snake_case names resolve.
+                """
+            ),
         ),
     ] = True
 
@@ -310,6 +238,26 @@ class Settings(BaseSettings):
         ),
     ] = False
 
+    ssrf_trust_proxy: Annotated[
+        bool,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Trust an outbound HTTP proxy for SSRF-protected fetches (OAuth client
+                metadata and JWKS). When False (default), FastMCP resolves the target
+                hostname itself and refuses to connect if it maps to a private,
+                loopback, link-local, or otherwise reserved IP. When True, FastMCP
+                routes auth metadata and JWKS fetches through the configured
+                HTTPS_PROXY/ALL_PROXY and does not honor NO_PROXY; if no proxy is
+                configured the fetch is refused (raising SSRFError) rather than sent
+                direct with the blocklist disabled. Only enable this when a trusted
+                corporate proxy is the mandated egress path: it shifts SSRF trust to
+                that proxy. Scheme (HTTPS-only) and hostname checks still apply.
+                """
+            ),
+        ),
+    ] = False
+
     server_dependencies: list[str] = Field(
         default_factory=list,
         description="List of dependencies to install in the server environment",
@@ -320,9 +268,24 @@ class Settings(BaseSettings):
     stateless_http: bool = (
         False  # If True, uses true stateless mode (new transport per request)
     )
-    http_host_origin_protection: bool = True
+    http_host_origin_protection: bool | Literal["auto"] = False
     http_allowed_hosts: list[str] | None = None
     http_allowed_origins: list[str] | None = None
+    http_session_idle_timeout: Annotated[
+        float | None,
+        Field(
+            description=inspect.cleandoc(
+                """
+                Maximum time in seconds a streamable-HTTP session may remain
+                idle before it is terminated. A session's deadline is pushed
+                forward on every request. When None (default), sessions never
+                expire from inactivity. Not supported in stateless HTTP mode.
+                Must be a positive number of seconds when set.
+                """
+            ),
+            gt=0,
+        ),
+    ] = None
 
     mounted_components_raise_on_load_error: Annotated[
         bool,
@@ -365,20 +328,3 @@ class Settings(BaseSettings):
             ),
         ),
     ] = "stable"
-
-    decorator_mode: Annotated[
-        Literal["function", "object"],
-        Field(
-            description=inspect.cleandoc(
-                """
-                Controls what decorators (@tool, @resource, @prompt) return.
-
-                - "function" (default): Decorators return the original function unchanged.
-                  The function remains callable and is registered with the server normally.
-                - "object" (deprecated): Decorators return component objects (FunctionTool,
-                  FunctionResource, FunctionPrompt). This was the default behavior in v2 and
-                  will be removed in a future version.
-                """
-            ),
-        ),
-    ] = "function"

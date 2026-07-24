@@ -58,7 +58,7 @@ azure = ["fastmcp-slim[azure]=={{ version }}"]
 code-mode = ["fastmcp-slim[code-mode]=={{ version }}"]
 gemini = ["fastmcp-slim[gemini]=={{ version }}"]
 openai = ["fastmcp-slim[openai]=={{ version }}"]
-tasks = ["fastmcp-slim[tasks]=={{ version }}"]
+tasks = ["fastmcp-tasks=={{ version }}"]
 
 [tool.uv-dynamic-versioning]
 vcs = "git"
@@ -67,12 +67,12 @@ bump = true
 fallback-version = "0.0.0"
 
 [tool.uv.workspace]
-members = ["fastmcp_slim", "fastmcp_remote"]
+members = ["fastmcp_slim", "fastmcp_remote", "fastmcp_tasks"]
 
 [tool.uv]
 default-groups = ["dev"]
 exclude-newer = "1 week"
-exclude-newer-package = { prefab-ui = false }
+exclude-newer-package = { fastmcp = false, fastmcp-slim = false, fastmcp-remote = false, prefab-ui = false, mcp = false, mcp-types = false, httpx2 = false, httpcore2 = false, truststore = false }
 
 [dependency-groups]
 dev = [
@@ -92,13 +92,12 @@ dev = [
     "pytest-cov>=6.1.1",
     "pytest-env>=1.1.5",
     "pytest-flakefinder>=1.1.0",
-    "pytest-httpx>=0.35.0",
     "pytest-report>=0.2.1",
     "pytest-retry>=1.7.0",
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.6.1",
     "ruff>=0.12.8",
-    "ty>=0.0.55",
+    "ty>=0.0.59",
     "prek>=0.2.12",
     "loq>=0.1.0a3",
     "opentelemetry-exporter-otlp-proto-grpc>=1.39.0",
@@ -109,6 +108,7 @@ dev = [
 fastmcp = { workspace = true }
 fastmcp-slim = { workspace = true }
 fastmcp-remote = { workspace = true }
+fastmcp-tasks = { workspace = true }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -127,9 +127,10 @@ env = [
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
     "client_process: marks tests that spawn client processes via stdio transport. These can create issues when run in the same CI environment as other subprocess-based tests.",
+    "subprocess_heavy: marks tests that spawn a fresh Python interpreter which imports FastMCP. Each one costs a full interpreter's memory and startup, so they run serially alongside client_process tests rather than competing with parallel xdist workers.",
     "conformance: marks MCP conformance tests (require Node.js/npx)",
 ]
-pythonpath = ["fastmcp_slim", "fastmcp_remote"]
+pythonpath = ["fastmcp_slim", "fastmcp_remote", "fastmcp_tasks"]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
@@ -137,14 +138,32 @@ python_functions = ["test_*"]
 addopts = ["--inline-snapshot=disable"]
 
 [tool.ty.src]
-include = ["fastmcp_slim", "fastmcp_remote", "tests"]
-exclude = ["**/node_modules", "**/__pycache__", ".venv", ".git", "dist"]
+include = ["fastmcp_slim", "fastmcp_remote", "fastmcp_tasks", "tests", "examples"]
+exclude = [
+    "**/node_modules",
+    "**/__pycache__",
+    ".venv",
+    ".git",
+    "dist",
+    # Example subtrees excluded from the ty gate. Each either pins its own
+    # fastmcp (resolved against a different install) or requires a third-party
+    # dependency not installed in this tree.
+    "examples/testing_demo",             # own uv.lock, targets fastmcp v1 on purpose
+    "examples/atproto_mcp",              # needs atproto (+ its own package)
+    "examples/smart_home",              # needs phue
+    "examples/apps/qr_server",          # needs qrcode
+    "examples/providers/sqlite",        # needs aiosqlite
+    "examples/memory.py",               # needs asyncpg, numpy, pydantic_ai, pgvector
+    "examples/get_file.py",             # needs aiohttp
+]
 
 [tool.ty.environment]
 python-version = "3.10"
 
 [tool.ty.analysis]
-replace-imports-with-any = ["prefab_ui.**"]
+# prefab_ui is the apps SDK; pyautogui/PIL are optional runtime deps used only
+# inside example tool bodies (screenshot demos) and are not installed here.
+replace-imports-with-any = ["prefab_ui.**", "pyautogui", "PIL", "PIL.**"]
 
 [tool.ty.rules]
 division-by-zero = "warn"

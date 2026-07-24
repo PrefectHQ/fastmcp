@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from logging import Logger
 from typing import Any, TypedDict
 
-import mcp.types
+import mcp_types
 import pydantic_core
 from key_value.aio.adapters.pydantic import PydanticAdapter
 from key_value.aio.protocols.key_value import AsyncKeyValue
@@ -16,13 +16,13 @@ from key_value.aio.wrappers.statistics.wrapper import (
     KVStoreCollectionStatistics,
 )
 from pydantic import Field
-from typing_extensions import NotRequired, Self, override
+from typing_extensions import NotRequired, Self, TypeVar, override
 
 from fastmcp.prompts.base import Message, Prompt, PromptResult
 from fastmcp.resources.base import Resource, ResourceContent, ResourceResult
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
-from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.tools.base import InputRequiredToolResult, Tool, ToolResult
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import FastMCPBaseModel
 
@@ -36,8 +36,20 @@ ONE_MB_IN_BYTES = 1024 * 1024
 
 ANONYMOUS_AUTH_KEY = "__anonymous__"
 
+BaseModelT = TypeVar("BaseModelT", bound=FastMCPBaseModel)
 
-class CachableResourceContent(FastMCPBaseModel):
+
+def _to_base_model(value: FastMCPBaseModel, model_type: type[BaseModelT]) -> BaseModelT:
+    """Validate a component's public base fields without serializing its subclass."""
+    field_values = {
+        name: getattr(value, name)
+        for name, field in model_type.model_fields.items()
+        if not field.exclude
+    }
+    return model_type.model_validate(field_values)
+
+
+class CacheableResourceContent(FastMCPBaseModel):
     """A wrapper for ResourceContent that can be cached."""
 
     content: str | bytes
@@ -45,10 +57,10 @@ class CachableResourceContent(FastMCPBaseModel):
     meta: dict[str, Any] | None = None
 
 
-class CachableResourceResult(FastMCPBaseModel):
+class CacheableResourceResult(FastMCPBaseModel):
     """A wrapper for ResourceResult that can be cached."""
 
-    contents: list[CachableResourceContent]
+    contents: list[CacheableResourceContent]
     meta: dict[str, Any] | None = None
 
     def get_size(self) -> int:
@@ -58,7 +70,7 @@ class CachableResourceResult(FastMCPBaseModel):
     def wrap(cls, value: ResourceResult) -> Self:
         return cls(
             contents=[
-                CachableResourceContent(
+                CacheableResourceContent(
                     content=item.content, mime_type=item.mime_type, meta=item.meta
                 )
                 for item in value.contents
@@ -78,8 +90,8 @@ class CachableResourceResult(FastMCPBaseModel):
         )
 
 
-class CachableToolResult(FastMCPBaseModel):
-    content: list[mcp.types.ContentBlock]
+class CacheableToolResult(FastMCPBaseModel):
+    content: list[mcp_types.ContentBlock]
     structured_content: dict[str, Any] | None
     meta: dict[str, Any] | None
     is_error: bool = False
@@ -102,22 +114,22 @@ class CachableToolResult(FastMCPBaseModel):
         )
 
 
-class CachableMessage(FastMCPBaseModel):
+class CacheableMessage(FastMCPBaseModel):
     """A wrapper for Message that can be cached."""
 
     role: str
     content: (
-        mcp.types.TextContent
-        | mcp.types.ImageContent
-        | mcp.types.AudioContent
-        | mcp.types.EmbeddedResource
+        mcp_types.TextContent
+        | mcp_types.ImageContent
+        | mcp_types.AudioContent
+        | mcp_types.EmbeddedResource
     )
 
 
-class CachablePromptResult(FastMCPBaseModel):
+class CacheablePromptResult(FastMCPBaseModel):
     """A wrapper for PromptResult that can be cached."""
 
-    messages: list[CachableMessage]
+    messages: list[CacheableMessage]
     description: str | None = None
     meta: dict[str, Any] | None = None
 
@@ -128,7 +140,7 @@ class CachablePromptResult(FastMCPBaseModel):
     def wrap(cls, value: PromptResult) -> Self:
         return cls(
             messages=[
-                CachableMessage(role=m.role, content=m.content) for m in value.messages
+                CacheableMessage(role=m.role, content=m.content) for m in value.messages
             ],
             description=value.description,
             meta=value.meta,
@@ -275,31 +287,33 @@ class ResponseCachingMiddleware(Middleware):
             default_collection="prompts/list",
         )
 
-        self._read_resource_cache: PydanticAdapter[CachableResourceResult] = (
+        self._read_resource_cache: PydanticAdapter[CacheableResourceResult] = (
             PydanticAdapter(
                 key_value=self._stats,
-                pydantic_model=CachableResourceResult,
+                pydantic_model=CacheableResourceResult,
                 default_collection="resources/read",
             )
         )
 
-        self._get_prompt_cache: PydanticAdapter[CachablePromptResult] = PydanticAdapter(
-            key_value=self._stats,
-            pydantic_model=CachablePromptResult,
-            default_collection="prompts/get",
+        self._get_prompt_cache: PydanticAdapter[CacheablePromptResult] = (
+            PydanticAdapter(
+                key_value=self._stats,
+                pydantic_model=CacheablePromptResult,
+                default_collection="prompts/get",
+            )
         )
 
-        self._call_tool_cache: PydanticAdapter[CachableToolResult] = PydanticAdapter(
+        self._call_tool_cache: PydanticAdapter[CacheableToolResult] = PydanticAdapter(
             key_value=self._stats,
-            pydantic_model=CachableToolResult,
+            pydantic_model=CacheableToolResult,
             default_collection="tools/call",
         )
 
     @override
     async def on_list_tools(
         self,
-        context: MiddlewareContext[mcp.types.ListToolsRequest],
-        call_next: CallNext[mcp.types.ListToolsRequest, Sequence[Tool]],
+        context: MiddlewareContext[mcp_types.ListToolsRequest],
+        call_next: CallNext[mcp_types.ListToolsRequest, Sequence[Tool]],
     ) -> Sequence[Tool]:
         """List tools from the cache, if caching is enabled, and the result is in the cache. Otherwise,
         otherwise call the next middleware and store the result in the cache if caching is enabled."""
@@ -314,33 +328,21 @@ class ResponseCachingMiddleware(Middleware):
         tools: Sequence[Tool] = await call_next(context)
 
         # Turn any subclass of Tool into a Tool
-        cachable_tools: list[Tool] = [
-            Tool(
-                name=tool.name,
-                title=tool.title,
-                description=tool.description,
-                parameters=tool.parameters,
-                output_schema=tool.output_schema,
-                annotations=tool.annotations,
-                meta=tool.meta,
-                tags=tool.tags,
-            )
-            for tool in tools
-        ]
+        cacheable_tools = [_to_base_model(tool, Tool) for tool in tools]
 
         await self._list_tools_cache.put(
             key=cache_key,
-            value=cachable_tools,
+            value=cacheable_tools,
             ttl=self._list_tools_settings.get("ttl", FIVE_MINUTES_IN_SECONDS),
         )
 
-        return cachable_tools
+        return cacheable_tools
 
     @override
     async def on_list_resources(
         self,
-        context: MiddlewareContext[mcp.types.ListResourcesRequest],
-        call_next: CallNext[mcp.types.ListResourcesRequest, Sequence[Resource]],
+        context: MiddlewareContext[mcp_types.ListResourcesRequest],
+        call_next: CallNext[mcp_types.ListResourcesRequest, Sequence[Resource]],
     ) -> Sequence[Resource]:
         """List resources from the cache, if caching is enabled, and the result is in the cache. Otherwise,
         otherwise call the next middleware and store the result in the cache if caching is enabled."""
@@ -355,33 +357,23 @@ class ResponseCachingMiddleware(Middleware):
         resources: Sequence[Resource] = await call_next(context)
 
         # Turn any subclass of Resource into a Resource
-        cachable_resources: list[Resource] = [
-            Resource(
-                name=resource.name,
-                title=resource.title,
-                description=resource.description,
-                tags=resource.tags,
-                meta=resource.meta,
-                mime_type=resource.mime_type,
-                annotations=resource.annotations,
-                uri=resource.uri,
-            )
-            for resource in resources
+        cacheable_resources = [
+            _to_base_model(resource, Resource) for resource in resources
         ]
 
         await self._list_resources_cache.put(
             key=cache_key,
-            value=cachable_resources,
+            value=cacheable_resources,
             ttl=self._list_resources_settings.get("ttl", FIVE_MINUTES_IN_SECONDS),
         )
 
-        return cachable_resources
+        return cacheable_resources
 
     @override
     async def on_list_prompts(
         self,
-        context: MiddlewareContext[mcp.types.ListPromptsRequest],
-        call_next: CallNext[mcp.types.ListPromptsRequest, Sequence[Prompt]],
+        context: MiddlewareContext[mcp_types.ListPromptsRequest],
+        call_next: CallNext[mcp_types.ListPromptsRequest, Sequence[Prompt]],
     ) -> Sequence[Prompt]:
         """List prompts from the cache, if caching is enabled, and the result is in the cache. Otherwise,
         otherwise call the next middleware and store the result in the cache if caching is enabled."""
@@ -396,31 +388,21 @@ class ResponseCachingMiddleware(Middleware):
         prompts: Sequence[Prompt] = await call_next(context)
 
         # Turn any subclass of Prompt into a Prompt
-        cachable_prompts: list[Prompt] = [
-            Prompt(
-                name=prompt.name,
-                title=prompt.title,
-                description=prompt.description,
-                tags=prompt.tags,
-                meta=prompt.meta,
-                arguments=prompt.arguments,
-            )
-            for prompt in prompts
-        ]
+        cacheable_prompts = [_to_base_model(prompt, Prompt) for prompt in prompts]
 
         await self._list_prompts_cache.put(
             key=cache_key,
-            value=cachable_prompts,
+            value=cacheable_prompts,
             ttl=self._list_prompts_settings.get("ttl", FIVE_MINUTES_IN_SECONDS),
         )
 
-        return cachable_prompts
+        return cacheable_prompts
 
     @override
     async def on_call_tool(
         self,
-        context: MiddlewareContext[mcp.types.CallToolRequestParams],
-        call_next: CallNext[mcp.types.CallToolRequestParams, ToolResult],
+        context: MiddlewareContext[mcp_types.CallToolRequestParams],
+        call_next: CallNext[mcp_types.CallToolRequestParams, ToolResult],
     ) -> ToolResult:
         """Call a tool from the cache, if caching is enabled, and the result is in the cache. Otherwise,
         otherwise call the next middleware and store the result in the cache if caching is enabled."""
@@ -431,6 +413,21 @@ class ResponseCachingMiddleware(Middleware):
         ) is False or not self._matches_tool_cache_settings(tool_name=tool_name):
             return await call_next(context)
 
+        # A multi-round continuation leg (SEP-2322) must bypass the cache
+        # entirely: the cache key is built from the tool name and arguments
+        # only, so a continuation shares its key with a fresh call. Reading
+        # could serve a prior flow's final answer to this leg; writing would
+        # serve THIS flow's final answer to a later fresh call — which would
+        # then never be asked the tool's questions. Either signal marks a
+        # continuation: a state-only round (request_state with no questions)
+        # retries with input_responses=None but still carries request_state.
+        fastmcp_ctx = context.fastmcp_context
+        if fastmcp_ctx is not None and (
+            fastmcp_ctx.input_responses is not None
+            or fastmcp_ctx.request_state is not None
+        ):
+            return await call_next(context)
+
         cache_key: str = _make_call_tool_cache_key(
             msg=context.message, auth_key=_get_auth_partition_key()
         )
@@ -439,23 +436,41 @@ class ResponseCachingMiddleware(Middleware):
             return cached_value.unwrap()
 
         tool_result: ToolResult = await call_next(context)
-        cachable_tool_result: CachableToolResult = CachableToolResult.wrap(
+
+        # Never cache a multi-round-trip ask (SEP-2322). An
+        # InputRequiredToolResult is a request for client input on this leg, not
+        # a stable answer; caching it would replay a stale question to later
+        # callers and bypass the tool's own per-round logic. Return it straight
+        # through without storing.
+        if isinstance(tool_result, InputRequiredToolResult):
+            return tool_result
+
+        # A task-augmented call returns a CreateTaskResult (the tasks extension)
+        # up through this middleware — an acknowledgement that the work was
+        # enqueued, not a cacheable answer, and without a ToolResult's
+        # content/structured_content. Pass any non-ToolResult straight through
+        # rather than crash wrapping it (the crash would fire after the task is
+        # already enqueued, so a client retry could duplicate side effects).
+        if not isinstance(tool_result, ToolResult):
+            return tool_result
+
+        cacheable_tool_result: CacheableToolResult = CacheableToolResult.wrap(
             value=tool_result
         )
 
         await self._call_tool_cache.put(
             key=cache_key,
-            value=cachable_tool_result,
+            value=cacheable_tool_result,
             ttl=self._call_tool_settings.get("ttl", ONE_HOUR_IN_SECONDS),
         )
 
-        return cachable_tool_result.unwrap()
+        return cacheable_tool_result.unwrap()
 
     @override
     async def on_read_resource(
         self,
-        context: MiddlewareContext[mcp.types.ReadResourceRequestParams],
-        call_next: CallNext[mcp.types.ReadResourceRequestParams, ResourceResult],
+        context: MiddlewareContext[mcp_types.ReadResourceRequestParams],
+        call_next: CallNext[mcp_types.ReadResourceRequestParams, ResourceResult],
     ) -> ResourceResult:
         """Read a resource from the cache, if caching is enabled, and the result is in the cache. Otherwise,
         otherwise call the next middleware and store the result in the cache if caching is enabled."""
@@ -465,13 +480,13 @@ class ResponseCachingMiddleware(Middleware):
         cache_key: str = _make_read_resource_cache_key(
             msg=context.message, auth_key=_get_auth_partition_key()
         )
-        cached_value: CachableResourceResult | None
+        cached_value: CacheableResourceResult | None
 
         if cached_value := await self._read_resource_cache.get(key=cache_key):
             return cached_value.unwrap()
 
         value: ResourceResult = await call_next(context)
-        cached_value = CachableResourceResult.wrap(value)
+        cached_value = CacheableResourceResult.wrap(value)
 
         await self._read_resource_cache.put(
             key=cache_key,
@@ -484,8 +499,8 @@ class ResponseCachingMiddleware(Middleware):
     @override
     async def on_get_prompt(
         self,
-        context: MiddlewareContext[mcp.types.GetPromptRequestParams],
-        call_next: CallNext[mcp.types.GetPromptRequestParams, PromptResult],
+        context: MiddlewareContext[mcp_types.GetPromptRequestParams],
+        call_next: CallNext[mcp_types.GetPromptRequestParams, PromptResult],
     ) -> PromptResult:
         """Get a prompt from the cache, if caching is enabled, and the result is in the cache. Otherwise,
         otherwise call the next middleware and store the result in the cache if caching is enabled."""
@@ -500,7 +515,7 @@ class ResponseCachingMiddleware(Middleware):
             return cached_value.unwrap()
 
         value: PromptResult = await call_next(context)
-        cached_value = CachablePromptResult.wrap(value)
+        cached_value = CacheablePromptResult.wrap(value)
 
         await self._get_prompt_cache.put(
             key=cache_key,
@@ -570,7 +585,7 @@ def _get_auth_partition_key() -> str:
 
 
 def _make_call_tool_cache_key(
-    msg: mcp.types.CallToolRequestParams, auth_key: str = ANONYMOUS_AUTH_KEY
+    msg: mcp_types.CallToolRequestParams, auth_key: str = ANONYMOUS_AUTH_KEY
 ) -> str:
     """Make a cache key for a tool call using a stable hash of name and arguments."""
 
@@ -578,7 +593,7 @@ def _make_call_tool_cache_key(
 
 
 def _make_read_resource_cache_key(
-    msg: mcp.types.ReadResourceRequestParams, auth_key: str = ANONYMOUS_AUTH_KEY
+    msg: mcp_types.ReadResourceRequestParams, auth_key: str = ANONYMOUS_AUTH_KEY
 ) -> str:
     """Make a cache key for a resource read using a stable hash of URI."""
 
@@ -586,7 +601,7 @@ def _make_read_resource_cache_key(
 
 
 def _make_get_prompt_cache_key(
-    msg: mcp.types.GetPromptRequestParams, auth_key: str = ANONYMOUS_AUTH_KEY
+    msg: mcp_types.GetPromptRequestParams, auth_key: str = ANONYMOUS_AUTH_KEY
 ) -> str:
     """Make a cache key for a prompt get using a stable hash of name and arguments."""
 

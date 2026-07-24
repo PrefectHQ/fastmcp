@@ -2,13 +2,23 @@ import asyncio
 import gc
 import inspect
 import os
+import time
 import weakref
+from pathlib import Path
 
 import psutil
 import pytest
+from mcp.shared.exceptions import MCPError
 
-from fastmcp import Client, FastMCP
+from fastmcp import Client
 from fastmcp.client.transports import PythonStdioTransport, StdioTransport
+from fastmcp.exceptions import FastMCPError
+
+# A pure-stdlib MCP server used by the process-lifecycle tests below. It starts
+# in ~0.03s instead of the ~0.7s a real FastMCP server needs, which matters
+# because these tests spawn several subprocesses each. See its docstring for
+# what it does and does not implement.
+MINIMAL_STDIO_SERVER = Path(__file__).parent / "minimal_stdio_server.py"
 
 
 def running_under_debugger():
@@ -24,32 +34,153 @@ def gc_collect_harder():
     gc.collect()
 
 
+async def wait_for_log_content(
+    log_file_path, expected: str, timeout: float = 2.0
+) -> str:
+    """Poll a log file until it contains the expected text.
+
+    The subprocess's stderr is redirected straight to the file at the OS
+    level (no async pump on our side to synchronize on), so poll for the
+    content instead of sleeping a fixed amount and hoping it landed.
+    """
+
+    async def _poll() -> str:
+        while True:
+            content = log_file_path.read_text()
+            if expected in content:
+                return content
+            await asyncio.sleep(0.01)
+
+    return await asyncio.wait_for(_poll(), timeout=timeout)
+
+
+async def wait_for_process_exit(pid: int | None, timeout: float = 5.0) -> None:
+    """Poll until the given pid is gone, failing clearly if it never exits.
+
+    The subprocesses under test self-terminate within a fraction of a second,
+    so a bounded poll costs nothing and turns a hung teardown into a named
+    failure instead of an opaque suite-level timeout.
+    """
+    assert pid is not None
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            psutil.Process(pid)
+        except psutil.NoSuchProcess:
+            return
+        await asyncio.sleep(0.01)
+    pytest.fail(f"Subprocess {pid} was still alive after {timeout}s")
+
+
+# Exceptions a call may raise while a crashed stdio session is being torn down
+# and replaced. The direct-client path surfaces MCPError (session closed) or
+# RuntimeError (reconnect failed); a proxy wraps the backend failure in a
+# FastMCPError (e.g. ToolError).
+CRASH_RECOVERY_EXCEPTIONS = (MCPError, RuntimeError, FastMCPError)
+
+
+async def _recover_new_pid(call, old_pid: int, *, attempts: int = 10) -> int:
+    """Call `call` until it succeeds on a subprocess other than `old_pid`.
+
+    `psutil.Process(pid).kill()` is asynchronous and crash recovery is
+    transparent, so a post-crash call may raise while the stale session is torn
+    down, briefly still reach the dying old process, or land on a fresh
+    subprocess — the outcome depends on scheduling. Retrying until a call
+    succeeds on a *new* pid asserts eventual recovery instead of the exact
+    number of failed calls, which was never an actual contract.
+    """
+    last_exc: BaseException | None = None
+    for _ in range(attempts):
+        try:
+            pid = await call()
+        except CRASH_RECOVERY_EXCEPTIONS as exc:
+            last_exc = exc
+        else:
+            if pid != old_pid:
+                return pid
+        await asyncio.sleep(0.05)
+    raise AssertionError(
+        f"stdio backend never recovered onto a new subprocess after {attempts} attempts"
+    ) from last_exc
+
+
+async def recover_client_pid(client: Client, old_pid: int, **kwargs) -> int:
+    """Reconnect `client` and return the pid of the freshly spawned subprocess."""
+
+    async def call() -> int:
+        async with client:
+            result = await client.call_tool("pid")
+        return int(result.data)
+
+    return await _recover_new_pid(call, old_pid, **kwargs)
+
+
+async def recover_proxy_pid(proxy, old_pid: int, **kwargs) -> int:
+    """Call the proxy and return the pid of the freshly spawned backend subprocess."""
+
+    async def call() -> int:
+        result = await proxy.call_tool("pid")
+        return int(result.content[0].text)
+
+    return await _recover_new_pid(call, old_pid, **kwargs)
+
+
+class TestDisconnect:
+    async def test_cancelled_connection_task_is_cleaned_up(self):
+        transport = StdioTransport(command="python", args=[])
+        connect_task = asyncio.create_task(asyncio.sleep(0))
+        connect_task.cancel()
+        transport._connect_task = connect_task
+
+        await transport.disconnect()
+
+        assert transport._connect_task is None
+        assert not transport._stop_event.is_set()
+
+    async def test_caller_cancellation_is_not_suppressed(self):
+        transport = StdioTransport(command="python", args=[])
+        connection_finished = asyncio.Event()
+        connect_task = asyncio.create_task(connection_finished.wait())
+        transport._connect_task = connect_task
+
+        disconnect_task = asyncio.create_task(transport.disconnect())
+        await asyncio.sleep(0)
+        disconnect_task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await disconnect_task
+        assert not connect_task.cancelled()
+
+        connection_finished.set()
+        await connect_task
+        await transport.disconnect()
+
+    async def test_caller_cancellation_wins_when_connection_is_also_cancelled(self):
+        transport = StdioTransport(command="python", args=[])
+        connect_task = asyncio.create_task(asyncio.Event().wait())
+        transport._connect_task = connect_task
+
+        disconnect_task = asyncio.create_task(transport.disconnect())
+        await asyncio.sleep(0)
+        connect_task.cancel()
+        disconnect_task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await disconnect_task
+
+
 class TestParallelCalls:
     @pytest.fixture
-    def stdio_script(self, tmp_path):
-        script = inspect.cleandoc('''
-            import os
-            from fastmcp import FastMCP
-
-            mcp = FastMCP()
-
-            @mcp.tool
-            def pid() -> int:
-                """Gets PID of server"""
-                return os.getpid()
-
-            if __name__ == "__main__":
-                mcp.run()
-            ''')
-        script_file = tmp_path / "stdio.py"
-        script_file.write_text(script)
-        return script_file
+    def stdio_script(self):
+        return MINIMAL_STDIO_SERVER
 
     async def test_parallel_calls(self, stdio_script):
+        from fastmcp.server import create_proxy
+
         backend_transport = PythonStdioTransport(script_path=stdio_script)
         backend_client = Client(transport=backend_transport)
 
-        proxy = FastMCP.as_proxy(backend=backend_client, name="PROXY")
+        proxy = create_proxy(backend_client, name="PROXY")
 
         count = 10
 
@@ -67,24 +198,8 @@ class TestKeepAlive:
     # https://github.com/PrefectHQ/fastmcp/issues/581
 
     @pytest.fixture
-    def stdio_script(self, tmp_path):
-        script = inspect.cleandoc('''
-            import os
-            from fastmcp import FastMCP
-
-            mcp = FastMCP()
-
-            @mcp.tool
-            def pid() -> int:
-                """Gets PID of server"""
-                return os.getpid()
-
-            if __name__ == "__main__":
-                mcp.run()
-            ''')
-        script_file = tmp_path / "stdio.py"
-        script_file.write_text(script)
-        return script_file
+    def stdio_script(self):
+        return MINIMAL_STDIO_SERVER
 
     async def test_keep_alive_default_true(self):
         client = Client(transport=StdioTransport(command="python", args=[""]))
@@ -158,10 +273,7 @@ class TestKeepAlive:
 
         # This test may fail/hang while debugging because the debugger holds a reference to the underlying transport
 
-        with pytest.raises(psutil.NoSuchProcess):
-            while True:
-                psutil.Process(pid)
-                await asyncio.sleep(0.1)
+        await wait_for_process_exit(pid)
 
     async def test_keep_alive_false_exit_scope_kills_server(self, stdio_script):
         pid: int | None = None
@@ -179,10 +291,7 @@ class TestKeepAlive:
 
         await test_server()
 
-        with pytest.raises(psutil.NoSuchProcess):
-            while True:
-                psutil.Process(pid)
-                await asyncio.sleep(0.1)
+        await wait_for_process_exit(pid)
 
     async def test_keep_alive_false_starts_new_session_across_multiple_calls(
         self, stdio_script
@@ -266,24 +375,8 @@ class TestSubprocessCrashRecovery:
     INIT_TIMEOUT = 3
 
     @pytest.fixture
-    def stdio_script(self, tmp_path):
-        script = inspect.cleandoc('''
-            import os
-            from fastmcp import FastMCP
-
-            mcp = FastMCP()
-
-            @mcp.tool
-            def pid() -> int:
-                """Gets PID of server"""
-                return os.getpid()
-
-            if __name__ == "__main__":
-                mcp.run()
-            ''')
-        script_file = tmp_path / "stdio.py"
-        script_file.write_text(script)
-        return script_file
+    def stdio_script(self):
+        return MINIMAL_STDIO_SERVER
 
     async def test_keep_alive_recovers_after_subprocess_crash(self, stdio_script):
         """When keep_alive=True and the subprocess dies, the next connection should start a fresh subprocess."""
@@ -299,16 +392,10 @@ class TestSubprocessCrashRecovery:
         # Kill the subprocess to simulate a crash
         psutil.Process(pid1).kill()
 
-        # First attempt after crash fails — the stale session is
-        # detected and torn down so subsequent attempts succeed.
-        with pytest.raises(Exception):
-            async with client:
-                await client.call_tool("pid")
-
-        # Next connection starts a fresh subprocess
-        async with client:
-            result2 = await client.call_tool("pid")
-            pid2: int = result2.data
+        # Recovery is transparent: reconnecting eventually lands on a fresh
+        # subprocess with a new pid, regardless of how many attempts the
+        # stale-session teardown costs.
+        pid2 = await recover_client_pid(client, pid1)
 
         assert pid1 != pid2
 
@@ -343,18 +430,18 @@ class TestSubprocessCrashRecovery:
         pids: list[int] = []
 
         for _ in range(3):
-            async with client:
-                result = await client.call_tool("pid")
-                pid: int = result.data
-                pids.append(pid)
-
-            # Kill the subprocess
-            psutil.Process(pid).kill()
-
-            # Fail once to trigger cleanup
-            with pytest.raises(Exception):
+            if pids:
+                # After a crash, recovery is transparent — the next working
+                # call lands on a fresh subprocess with a new pid.
+                pid = await recover_client_pid(client, pids[-1])
+            else:
                 async with client:
-                    await client.call_tool("pid")
+                    result = await client.call_tool("pid")
+                    pid = result.data
+            pids.append(pid)
+
+            # Kill the subprocess to force the next cycle to recover
+            psutil.Process(pid).kill()
 
         # Each cycle should have started a new subprocess
         assert len(set(pids)) == 3
@@ -367,21 +454,23 @@ class TestSubprocessCrashRecovery:
         )
         pid1: int = 0
 
-        with pytest.raises(Exception):
+        try:
             async with client:
                 result = await client.call_tool("pid")
                 pid1 = result.data
                 # Kill while the context is still open
                 psutil.Process(pid1).kill()
-                # This call hits the dead session
+                # This call races the asynchronous kill: it may hit the dead
+                # session and raise, or briefly still be served. Either outcome
+                # is fine — what matters is that recovery works afterward.
                 await client.call_tool("pid")
+        except CRASH_RECOVERY_EXCEPTIONS:
+            pass
 
         assert pid1 != 0, "First call should have succeeded before the crash"
 
         # Recovery: next connection starts a fresh subprocess
-        async with client:
-            result = await client.call_tool("pid")
-            pid2: int = result.data
+        pid2 = await recover_client_pid(client, pid1)
 
         assert pid1 != pid2
 
@@ -402,13 +491,9 @@ class TestSubprocessCrashRecovery:
         # Kill the backend subprocess
         psutil.Process(pid1).kill()
 
-        # First call after crash fails
-        with pytest.raises(Exception):
-            await proxy.call_tool("pid")
-
-        # Second call recovers with a new subprocess
-        result2 = await proxy.call_tool("pid")
-        pid2 = int(result2.content[0].text)  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        # Recovery is transparent: a call after the crash eventually succeeds on
+        # a fresh backend subprocess with a new pid.
+        pid2 = await recover_proxy_pid(proxy, pid1)
 
         assert pid1 != pid2
 
@@ -429,61 +514,77 @@ class TestSubprocessCrashRecovery:
         # Kill the subprocess
         psutil.Process(pid1).kill()
 
-        # Fire several concurrent requests — all should fail, none should hang
+        # Fire several concurrent requests. Depending on how quickly the dead
+        # session is detected and a replacement spawned, each caller either
+        # fails cleanly or lands on the fresh subprocess — with a fast-starting
+        # server, recovery can beat all five requests and the crash is fully
+        # transparent. What must never happen: a hang (gather returning is the
+        # proof), or a "success" served by the killed process.
         tasks = [proxy.call_tool("pid") for _ in range(5)]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        errors = [r for r in results if isinstance(r, Exception)]
-        assert len(errors) > 0
+        for r in results:
+            if not isinstance(r, Exception):
+                served_by = int(r.content[0].text)  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+                assert served_by != pid1, (
+                    "call reported success from the killed subprocess"
+                )
 
-        # Recovery: a subsequent request should succeed
+        # Recovery: a subsequent request must succeed on a fresh subprocess
         result = await proxy.call_tool("pid")
         pid2 = int(result.content[0].text)  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
         assert pid1 != pid2
 
-    async def test_clean_exit_recovers(self, tmp_path):
+    async def test_clean_exit_recovers(self):
         """Recovery works when the subprocess exits cleanly (exit code 0), not just crashes."""
-        script = tmp_path / "exit_script.py"
-        script.write_text(
-            inspect.cleandoc('''
-            import os, sys, threading
-            from fastmcp import FastMCP
-
-            mcp = FastMCP()
-            call_count = 0
-
-            @mcp.tool
-            def pid_then_exit() -> int:
-                """Returns PID, exits cleanly after second call."""
-                global call_count
-                call_count += 1
-                pid = os.getpid()
-                if call_count >= 2:
-                    threading.Timer(0.1, lambda: os._exit(0)).start()
-                return pid
-
-            if __name__ == "__main__":
-                mcp.run()
-        ''')
-        )
-
         client = Client(
-            transport=PythonStdioTransport(script_path=script),
+            transport=PythonStdioTransport(
+                script_path=MINIMAL_STDIO_SERVER,
+                args=["--exit-after-calls", "2"],
+            ),
             init_timeout=self.INIT_TIMEOUT,
         )
 
         async with client:
-            result1 = await client.call_tool("pid_then_exit")
+            result1 = await client.call_tool("pid")
             pid1: int = result1.data
             # Second call triggers delayed clean exit
-            await client.call_tool("pid_then_exit")
-            await asyncio.sleep(0.3)
+            await client.call_tool("pid")
 
-        # Recovery after clean exit
-        async with client:
-            result2 = await client.call_tool("pid_then_exit")
-            pid2: int = result2.data
+            # Wait for the subprocess to actually exit (it self-terminates
+            # via a background timer ~0.1s after the second call) instead
+            # of blindly sleeping past the worst case.
+            await wait_for_process_exit(pid1)
 
+        # Recovery after clean exit.
+        #
+        # The transport only notices a dead session once the SDK dispatcher's
+        # read loop has observed EOF on the subprocess's stdout and set its
+        # `_closed` flag (see `StdioTransport._is_session_dead`). The process
+        # being gone does not imply that detection has happened yet: EOF has to
+        # travel from the OS pipe through anyio's stream plumbing and then be
+        # picked up by a separate read-loop task. On a loaded machine — notably
+        # Windows CI running xdist workers on two cores — that can land after
+        # `connect()` samples the flag, so the first attempt is routed to the
+        # stale session and fails with CONNECTION_CLOSED, which in turn tears
+        # the session down so the next attempt reconnects.
+        #
+        # Like the crash tests above, this asserts eventual recovery rather than
+        # a fixed number of failed attempts: the failure is timing-dependent, so
+        # retry instead. The invariant under test is that a cleanly-exited server
+        # is replaced by a fresh subprocess, not how many attempts EOF detection
+        # costs.
+        pid2: int | None = None
+        for _ in range(2):
+            try:
+                async with client:
+                    result2 = await client.call_tool("pid")
+                    pid2 = result2.data
+                break
+            except (MCPError, RuntimeError):
+                continue
+
+        assert pid2 is not None, "Client did not recover after a clean subprocess exit"
         assert pid1 != pid2
 
     async def test_crash_during_initialization(self, tmp_path):
@@ -506,20 +607,13 @@ class TestSubprocessCrashRecovery:
             async with client:
                 pass
 
-        # Write a working script to the same path
+        # Replace the same path with a working server. It delegates to the
+        # minimal stdio server so the retry doesn't pay for a fastmcp import.
         crash_script.write_text(
-            inspect.cleandoc("""
-            import os
-            from fastmcp import FastMCP
+            inspect.cleandoc(f"""
+            import runpy
 
-            mcp = FastMCP()
-
-            @mcp.tool
-            def pid() -> int:
-                return os.getpid()
-
-            if __name__ == "__main__":
-                mcp.run()
+            runpy.run_path({str(MINIMAL_STDIO_SERVER)!r}, run_name="__main__")
         """)
         )
 
@@ -529,7 +623,16 @@ class TestSubprocessCrashRecovery:
             assert isinstance(result.data, int)
 
 
+@pytest.mark.subprocess_heavy
 class TestLogFile:
+    """Stderr capture, proven against a real FastMCP server.
+
+    Unlike the rest of this module these spawn a full `import fastmcp`
+    interpreter rather than the minimal stdlib server, because the point is
+    that the log file captures a real server's stderr. That costs ~0.7s per
+    spawn, so they run in the serial CI step.
+    """
+
     @pytest.fixture
     def stdio_script_with_stderr(self, tmp_path):
         script = inspect.cleandoc('''
@@ -592,10 +695,7 @@ class TestLogFile:
         async with client:
             await client.call_tool("write_error", {"message": "Test error message"})
 
-        # Need to wait a bit for stderr to flush
-        await asyncio.sleep(0.1)
-
-        content = log_file_path.read_text()
+        content = await wait_for_log_content(log_file_path, "Test error message")
         assert "Test error message" in content
 
     async def test_log_file_captures_stderr_output_with_textio(
@@ -615,10 +715,10 @@ class TestLogFile:
                     "write_error", {"message": "Test error with TextIO"}
                 )
 
-            # Need to wait a bit for stderr to flush
-            await asyncio.sleep(0.1)
+            content = await wait_for_log_content(
+                log_file_path, "Test error with TextIO"
+            )
 
-        content = log_file_path.read_text()
         assert "Test error with TextIO" in content
 
     async def test_log_file_none_uses_default_behavior(

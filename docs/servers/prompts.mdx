@@ -95,10 +95,6 @@ def data_analysis_prompt(
   A set of strings used to categorize the prompt. These can be used by the server and, in some cases, by clients to filter or group available prompts.
 </ParamField>
 
-<ParamField body="enabled" type="bool" default="True">
-  <Warning>Deprecated in v3.0.0. Use `mcp.enable()` / `mcp.disable()` at the server level instead.</Warning>
-  A boolean to enable or disable the prompt. See [Component Visibility](#component-visibility) for the recommended approach.
-</ParamField>
 
 <ParamField body="icons" type="list[Icon] | None">
   <VersionBadge version="2.13.0" />
@@ -314,7 +310,7 @@ return PromptResult("Please help me with this task")  # auto-converts to single 
   Messages to return. Strings are wrapped as a single user Message.
 </ParamField>
 <ParamField body="description" type="str | None">
-  Optional description of the prompt result. If not provided, defaults to the prompt's docstring.
+  Optional description of this rendered prompt result. Plain `str` and `list[Message | str]` returns inherit the prompt definition description automatically, but an explicit `PromptResult` uses the description you pass here and otherwise leaves it unset.
 </ParamField>
 <ParamField body="meta" type="dict[str, Any] | None">
   Result-level metadata, included in the MCP response's `_meta` field. Use this for runtime metadata like categorization, priority, or other client-specific data.
@@ -367,7 +363,7 @@ def internal_prompt() -> str:
     return "Internal system prompt"
 
 # Disable specific prompts by key
-mcp.disable(keys={"prompt:internal_prompt"})
+mcp.disable(names={"internal_prompt"})
 
 # Disable prompts by tag
 mcp.disable(tags={"internal"})
@@ -434,8 +430,8 @@ def example_prompt() -> str:
 
 # These operations trigger notifications:
 mcp.add_prompt(example_prompt)               # Sends prompts/list_changed notification
-mcp.disable(keys={"prompt:example_prompt"})  # Sends prompts/list_changed notification
-mcp.enable(keys={"prompt:example_prompt"})   # Sends prompts/list_changed notification
+mcp.disable(names={"example_prompt"})  # Sends prompts/list_changed notification
+mcp.enable(names={"example_prompt"})   # Sends prompts/list_changed notification
 ```
 
 Notifications are only sent when these operations occur within an active MCP request context (e.g., when called from within a tool or other MCP operation). Operations performed during server initialization do not trigger notifications.

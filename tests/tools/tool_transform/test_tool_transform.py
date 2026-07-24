@@ -4,7 +4,7 @@ import re
 from typing import Annotated, Any
 
 import pytest
-from mcp.types import TextContent
+from mcp_types import TextContent
 from pydantic import BaseModel, Field
 
 from fastmcp import FastMCP
@@ -39,6 +39,23 @@ def test_tool_from_tool_no_change(add_tool):
     assert new_tool.parameters == add_tool.parameters
     assert new_tool.name == add_tool.name
     assert new_tool.description == add_tool.description
+
+
+def test_transformed_tool_required_order_is_deterministic():
+    """`required` must follow property order, not set iteration order.
+
+    Set iteration order varies with PYTHONHASHSEED, which broke snapshot
+    tests of tools/list output across processes.
+    """
+
+    def fn(alpha: int, beta: str, gamma: float, delta: bool, epsilon: int) -> str:
+        return "x"
+
+    base = Tool.from_function(fn)
+    transformed = Tool.from_tool(base, transform_args={"alpha": ArgTransform(name="a")})
+    props = list(transformed.parameters["properties"])
+    assert transformed.parameters["required"] == props
+    assert props == ["a", "beta", "gamma", "delta", "epsilon"]
 
 
 def test_from_tool_accepts_decorated_function():
@@ -719,8 +736,9 @@ class TestProxy:
     @pytest.fixture
     def proxy_server(self, mcp_server: FastMCP) -> FastMCP:
         from fastmcp.client.transports import FastMCPTransport
+        from fastmcp.server import create_proxy
 
-        proxy = FastMCP.as_proxy(FastMCPTransport(mcp_server))
+        proxy = create_proxy(FastMCPTransport(mcp_server))
         return proxy
 
     async def test_transform_proxy(self, proxy_server: FastMCP):

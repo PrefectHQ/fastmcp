@@ -1,0 +1,92 @@
+---
+title: asgi_transport
+sidebarTitle: asgi_transport
+---
+
+# `fastmcp.utilities.asgi_transport`
+
+
+An in-process, full-duplex HTTP transport for driving ASGI applications from httpx.
+
+Ported from the MCP Python SDK's test suite (`tests/interaction/transports/_bridge.py`,
+MIT licensed).
+
+`httpx2.ASGITransport` runs the application to completion and only then hands the buffered
+response to the caller, so a server that streams its response — as the streamable HTTP
+transport's SSE responses do — can never converse with the client mid-request: a
+server-initiated request nested inside a still-open call deadlocks.
+`StreamingASGITransport` removes that limitation by running the application as a background
+task and forwarding every `http.response.body` chunk to the client the moment it is sent.
+Everything happens on the one event loop: no sockets, no threads, no sleeps.
+
+The behavioural contract:
+
+- The request body is buffered before the application is invoked (MCP requests are small
+  JSON documents); the response streams chunk by chunk.
+- Closing the response — or the whole client — delivers `http.disconnect` to the
+  application, exactly as a real server sees when its peer goes away.
+- An exception the application raises before sending `http.response.start` fails the
+  originating request with that same exception. After the response has started, a failure
+  is visible to the client only through the response itself (status code, truncated body) —
+  the same signal a real server over a real socket would give.
+
+The transport owns an anyio task group for the application tasks; it is opened and closed by
+`httpx2.AsyncClient`'s own context manager, so the client must be used as a context manager.
+Closing the transport cancels every running application task by default; set
+`cancel_on_close=False` to wait for the application's own disconnect handling instead, which
+is what the legacy SSE transport relies on for resource cleanup.
+
+
+## Functions
+
+### `run_asgi_lifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/asgi_transport.py#L224" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+run_asgi_lifespan(app: ASGIApp) -> AsyncIterator[None]
+```
+
+
+Run an ASGI application's lifespan, driving the protocol as a real server does.
+
+The application's lifespan runs inside a dedicated task for the whole duration of
+the context. This matters because a lifespan typically owns cancel scopes and task
+groups — anyio requires those to be exited by the task that entered them, which
+rules out entering the lifespan on one task and leaving it on another (as a pytest
+fixture's setup and teardown phases may do).
+
+**Args:**
+- `app`: The ASGI application whose lifespan should run.
+
+**Raises:**
+- `RuntimeError`: If the application reports `lifespan.startup.failed`, or reports
+`lifespan.shutdown.failed` (or crashes during shutdown) while the context
+body itself completed successfully. A failure inside the body takes
+precedence and propagates unchanged.
+
+
+## Classes
+
+### `StreamingASGITransport` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/asgi_transport.py#L71" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Drive an ASGI application in-process, streaming each response as it is produced.
+
+This is an `httpx2` transport, so it plugs into anything that accepts an
+`httpx2.AsyncClient` — including FastMCP's client transports via their
+`httpx_client_factory` argument.
+
+**Args:**
+- `app`: The ASGI application to drive (e.g. `FastMCP.http_app()`).
+- `cancel_on_close`: When True (the default), closing the transport cancels every
+application task still running, so harness teardown can never hang. Set to
+False to wait for the application's own disconnect handling to complete
+instead, which the legacy SSE server transport relies on for cleanup.
+
+
+**Methods:**
+
+#### `handle_async_request` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/asgi_transport.py#L128" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+handle_async_request(self, request: httpx2.Request) -> httpx2.Response
+```

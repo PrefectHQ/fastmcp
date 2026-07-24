@@ -10,15 +10,18 @@ import inspect
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, TypeVar
 
-import mcp.types
-from mcp.types import Annotations, AnyFunction
+import mcp_types
+from mcp_types import Annotations
 
-import fastmcp
 from fastmcp.resources.base import Resource
-from fastmcp.resources.function_resource import resource as standalone_resource
+from fastmcp.resources.security import (
+    INHERIT_SECURITY,
+    InheritSecurity,
+    ResourceSecurity,
+)
 from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth.authorization import AuthCheck
-from fastmcp.server.tasks.config import TaskConfig
+from fastmcp.utilities.types import AnyFunction
 
 if TYPE_CHECKING:
     from fastmcp.server.providers.local_provider import LocalProvider
@@ -50,7 +53,6 @@ class ResourceDecoratorMixin:
 
             meta = get_fastmcp_meta(resource)
             if meta is not None and isinstance(meta, ResourceMeta):
-                resolved_task = meta.task if meta.task is not None else False
                 enabled = meta.enabled
                 has_uri_params = "{" in meta.uri and "}" in meta.uri
                 wrapper_fn = without_injected_parameters(resource)
@@ -69,8 +71,8 @@ class ResourceDecoratorMixin:
                         tags=meta.tags,
                         annotations=meta.annotations,
                         meta=meta.meta,
-                        task=resolved_task,
                         auth=meta.auth,
+                        security=meta.security,
                     )
                 else:
                     resource = Resource.from_function(
@@ -85,7 +87,6 @@ class ResourceDecoratorMixin:
                         tags=meta.tags,
                         annotations=meta.annotations,
                         meta=meta.meta,
-                        task=resolved_task,
                         auth=meta.auth,
                     )
             else:
@@ -112,14 +113,14 @@ class ResourceDecoratorMixin:
         version: str | int | None = None,
         title: str | None = None,
         description: str | None = None,
-        icons: list[mcp.types.Icon] | None = None,
+        icons: list[mcp_types.Icon] | None = None,
         mime_type: str | None = None,
         tags: set[str] | None = None,
         enabled: bool = True,
         annotations: Annotations | dict[str, Any] | None = None,
         meta: dict[str, Any] | None = None,
-        task: bool | TaskConfig | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
+        security: ResourceSecurity | None | InheritSecurity = INHERIT_SECURITY,
     ) -> Callable[[F], F]:
         """Decorator to register a function as a resource.
 
@@ -137,7 +138,6 @@ class ResourceDecoratorMixin:
             enabled: Whether the resource is enabled (default True). If False, adds to blocklist.
             annotations: Optional annotations about the resource's behavior
             meta: Optional meta information about the resource
-            task: Optional task configuration for background execution
             auth: Optional authorization checks for the resource
 
         Returns:
@@ -166,8 +166,6 @@ class ResourceDecoratorMixin:
                 "Use @resource('uri') instead of @resource"
             )
 
-        resolved_task: bool | TaskConfig = task if task is not None else False
-
         def decorator(fn: AnyFunction) -> Any:
             # Check for unbound method
             try:
@@ -189,54 +187,26 @@ class ResourceDecoratorMixin:
                     f"See https://gofastmcp.com/servers/resources#using-with-methods"
                 )
 
-            if fastmcp.settings.decorator_mode == "object":
-                create_resource = standalone_resource(
-                    uri,
-                    name=name,
-                    version=version,
-                    title=title,
-                    description=description,
-                    icons=icons,
-                    mime_type=mime_type,
-                    tags=tags,
-                    annotations=annotations,
-                    meta=meta,
-                    task=resolved_task,
-                    auth=auth,
-                )
-                obj = create_resource(fn)
-                # In legacy mode, standalone_resource always returns a component
-                assert isinstance(obj, (Resource, ResourceTemplate))
-                if isinstance(obj, ResourceTemplate):
-                    self.add_template(obj)
-                    if not enabled:
-                        self.disable(keys={obj.key})
-                else:
-                    self.add_resource(obj)
-                    if not enabled:
-                        self.disable(keys={obj.key})
-                return obj
-            else:
-                from fastmcp.resources.function_resource import ResourceMeta
+            from fastmcp.resources.function_resource import ResourceMeta
 
-                metadata = ResourceMeta(
-                    uri=uri,
-                    name=name,
-                    version=version,
-                    title=title,
-                    description=description,
-                    icons=icons,
-                    tags=tags,
-                    mime_type=mime_type,
-                    annotations=annotations,
-                    meta=meta,
-                    task=task,
-                    auth=auth,
-                    enabled=enabled,
-                )
-                target = fn.__func__ if hasattr(fn, "__func__") else fn
-                target.__fastmcp__ = metadata  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
-                self.add_resource(fn)
-                return fn
+            metadata = ResourceMeta(
+                uri=uri,
+                name=name,
+                version=version,
+                title=title,
+                description=description,
+                icons=icons,
+                tags=tags,
+                mime_type=mime_type,
+                annotations=annotations,
+                meta=meta,
+                auth=auth,
+                enabled=enabled,
+                security=security,
+            )
+            target = fn.__func__ if hasattr(fn, "__func__") else fn
+            target.__fastmcp__ = metadata  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+            self.add_resource(fn)
+            return fn
 
         return decorator

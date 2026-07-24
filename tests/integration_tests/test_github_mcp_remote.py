@@ -2,8 +2,8 @@ import json
 import os
 
 import pytest
-from mcp import McpError
-from mcp.types import Resource, TextContent, Tool
+from mcp import MCPError
+from mcp_types import Resource, TextContent, Tool
 
 from fastmcp import Client
 from fastmcp.client import StreamableHttpTransport
@@ -24,6 +24,13 @@ pytestmark = pytest.mark.xfail(
 
 @pytest.fixture(name="streamable_http_client")
 def fixture_streamable_http_client() -> Client[StreamableHttpTransport]:
+    """A default client, so this suite exercises `mode="auto"` against a real peer.
+
+    GitHub answers `server/discover` but has not adopted result tagging, so its
+    result envelope is not conformant with the modern version it advertises. The
+    client's conformance check catches that at connect time and degrades to the
+    initialize handshake, which is why these tests behave as they always have.
+    """
     assert FASTMCP_GITHUB_TOKEN is not None
 
     return Client(
@@ -31,6 +38,20 @@ def fixture_streamable_http_client() -> Client[StreamableHttpTransport]:
             url=GITHUB_REMOTE_MCP_URL,
             auth=BearerAuth(FASTMCP_GITHUB_TOKEN),
         )
+    )
+
+
+@pytest.fixture(name="legacy_client")
+def fixture_legacy_client() -> Client[StreamableHttpTransport]:
+    """A handshake-pinned client, for capabilities that exist only in that era."""
+    assert FASTMCP_GITHUB_TOKEN is not None
+
+    return Client(
+        StreamableHttpTransport(
+            url=GITHUB_REMOTE_MCP_URL,
+            auth=BearerAuth(FASTMCP_GITHUB_TOKEN),
+        ),
+        mode="legacy",
     )
 
 
@@ -44,11 +65,16 @@ class TestGithubMCPRemote:
             await streamable_http_client._disconnect()  # pylint: disable=W0212 (protected-access)
             assert streamable_http_client.is_connected() is False
 
-    async def test_ping(self, streamable_http_client: Client[StreamableHttpTransport]):
-        """Test pinging the server."""
-        async with streamable_http_client:
-            assert streamable_http_client.is_connected() is True
-            result = await streamable_http_client.ping()
+    async def test_ping(self, legacy_client: Client[StreamableHttpTransport]):
+        """Test pinging the server.
+
+        `ping` is defined only in the handshake era — the modern protocol version
+        does not carry the method at all — so this pins `mode="legacy"` rather
+        than relying on the default negotiation landing there.
+        """
+        async with legacy_client:
+            assert legacy_client.is_connected() is True
+            result = await legacy_client.ping()
             assert result is True
 
     async def test_list_tools(
@@ -64,8 +90,8 @@ class TestGithubMCPRemote:
                 assert isinstance(tool, Tool)
                 assert len(tool.name) > 0
                 assert tool.description is not None and len(tool.description) > 0
-                assert isinstance(tool.inputSchema, dict)
-                assert len(tool.inputSchema) > 0
+                assert isinstance(tool.input_schema, dict)
+                assert len(tool.input_schema) > 0
 
     async def test_list_resources(
         self, streamable_http_client: Client[StreamableHttpTransport]
@@ -96,7 +122,7 @@ class TestGithubMCPRemote:
         """Test calling a non-existing tool"""
         async with streamable_http_client:
             assert streamable_http_client.is_connected()
-            with pytest.raises(McpError, match=r"unknown tool|tool not found"):
+            with pytest.raises(MCPError, match=r"unknown tool|tool not found"):
                 await streamable_http_client.call_tool("foo")
 
     async def test_call_tool_list_commits(
@@ -106,6 +132,10 @@ class TestGithubMCPRemote:
         """Test calling a list_commit tool"""
         async with streamable_http_client:
             assert streamable_http_client.is_connected()
+            # On a modern connection the client derives `Mcp-Param-*` headers from
+            # the tool's schema, which it only holds once the tool has been listed
+            # in this session. Listing first keeps the call correct in either era.
+            await streamable_http_client.list_tools()
             result = await streamable_http_client.call_tool(
                 "list_commits", {"owner": "prefecthq", "repo": "fastmcp"}
             )

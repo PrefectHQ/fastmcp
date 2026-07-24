@@ -1,20 +1,17 @@
 from __future__ import annotations
 
-import warnings
 from collections.abc import Callable
 from typing import (
     TYPE_CHECKING,
     Annotated,
     Any,
     ClassVar,
-    TypeAlias,
-    overload,
 )
 
-import mcp.types
+import mcp_types
 import pydantic_core
 from mcp.shared.tool_name_validation import validate_and_warn_tool_name
-from mcp.types import (
+from mcp_types import (
     CallToolResult,
     ContentBlock,
     Icon,
@@ -22,15 +19,14 @@ from mcp.types import (
     ToolAnnotations,
     ToolExecution,
 )
-from mcp.types import Tool as MCPTool
-from pydantic import BaseModel, Field, model_validator
+from mcp_types import Tool as MCPTool
+from pydantic import BaseModel, Field, PrivateAttr, model_validator
 from pydantic.json_schema import SkipJsonSchema
 
-from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.tasks import TaskConfig, TaskMeta
+from fastmcp.utilities.tasks import TaskConfig
 from fastmcp.utilities.types import (
     Audio,
     File,
@@ -48,18 +44,12 @@ except ImportError:
     _HAS_PREFAB = False
 
 if TYPE_CHECKING:
-    from docket import Docket
-    from docket.execution import Execution
-
     from fastmcp.tools.function_tool import FunctionTool
     from fastmcp.tools.tool_transform import ArgTransform, TransformedTool
 
 # Re-export from function_tool module
 
 logger = get_logger(__name__)
-
-
-ToolResultSerializerType: TypeAlias = Callable[[Any], str]
 
 
 def resolve_serialize_by_alias(value: Any) -> bool:
@@ -93,6 +83,8 @@ def default_serializer(data: Any) -> str:
 
 
 class ToolResult(BaseModel):
+    _raw_mcp_result: CallToolResult | None = PrivateAttr(default=None)
+
     content: list[ContentBlock] = Field(
         description="List of content blocks for the tool result"
     )
@@ -105,7 +97,7 @@ class ToolResult(BaseModel):
     is_error: bool = Field(
         default=False,
         description="Whether this result represents a tool execution error. "
-        "When True, it maps to CallToolResult.isError so the error is returned "
+        "When True, it maps to CallToolResult.is_error so the error is returned "
         "to the client rather than raised.",
     )
 
@@ -158,23 +150,76 @@ class ToolResult(BaseModel):
             is_error=is_error,
         )
 
+    @classmethod
+    def from_mcp_result(cls, result: CallToolResult) -> ToolResult:
+        """Wrap a protocol result while preserving its exact wire representation."""
+        tool_result = cls(
+            content=result.content,
+            structured_content=result.structured_content,
+            meta=result.meta,
+            is_error=result.is_error,
+        )
+        tool_result._raw_mcp_result = result
+        return tool_result
+
     def to_mcp_result(
         self,
     ) -> (
         list[ContentBlock] | tuple[list[ContentBlock], dict[str, Any]] | CallToolResult
     ):
+        if self._raw_mcp_result is not None:
+            return self._raw_mcp_result
+
         # An error result must round-trip through CallToolResult so isError
         # reaches the client; the plain content/tuple returns can't carry it.
         if self.meta is not None or self.is_error:
             return CallToolResult(
-                structuredContent=self.structured_content,
+                structured_content=self.structured_content,
                 content=self.content,
-                isError=self.is_error,
+                is_error=self.is_error,
                 _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
             )
         if self.structured_content is None:
             return self.content
         return self.content, self.structured_content
+
+
+class InputRequiredToolResult(ToolResult):
+    """The full result of a single multi-round-trip leg (SEP-2322).
+
+    The protocol is stateless: each MRTR leg is a complete request→response
+    cycle. When a guard tool returns an `InputRequiredResult` from its body to
+    ask the client for input, that ask is the *legitimate result* of this tool
+    call — not a pause, not an error, not a third control-flow outcome. FastMCP
+    wraps it in this `ToolResult` subclass so it flows through the middleware
+    chain as an ordinary return value: `call_next(...)` returns it, default
+    middleware completes normally on the leg, and middleware authors can
+    identify an ask with a simple `isinstance(result, InputRequiredToolResult)`
+    check.
+
+    Invariant: the wrapped `InputRequiredResult` is never serialized as tool
+    content. `content` is always empty; the wire handler (`_on_call_tool`)
+    reads `.input_required` and returns it to the runner as the
+    `input_required` result. Do not read `.content` / `.structured_content` on
+    this subclass — they carry nothing.
+    """
+
+    input_required: mcp_types.InputRequiredResult = Field(
+        description="The client-input request this leg resolved to (SEP-2322)"
+    )
+
+    def __init__(self, input_required: mcp_types.InputRequiredResult) -> None:
+        # Bypass ToolResult's content-conversion __init__: an input-required
+        # leg carries no tool content (see the invariant above), and
+        # `input_required` is a required field ToolResult.__init__ can't set.
+        BaseModel.__init__(
+            self,
+            content=[],
+            structured_content=None,
+            meta=None,
+            is_error=False,
+            input_required=input_required,
+        )
 
 
 class Tool(FastMCPComponent):
@@ -195,12 +240,6 @@ class Tool(FastMCPComponent):
     execution: Annotated[
         ToolExecution | None,
         Field(description="Task execution configuration (SEP-1686)"),
-    ] = None
-    serializer: Annotated[
-        SkipJsonSchema[ToolResultSerializerType | None],
-        Field(
-            description="Deprecated. Return ToolResult from your tools for full control over serialization."
-        ),
     ] = None
     auth: Annotated[
         SkipJsonSchema[AuthCheck | list[AuthCheck] | None],
@@ -235,8 +274,8 @@ class Tool(FastMCPComponent):
             name=overrides.get("name", self.name),
             title=overrides.get("title", title),
             description=overrides.get("description", self.description),
-            inputSchema=overrides.get("inputSchema", self.parameters),
-            outputSchema=overrides.get("outputSchema", self.output_schema),
+            input_schema=overrides.get("inputSchema", self.parameters),
+            output_schema=overrides.get("outputSchema", self.output_schema),
             icons=overrides.get("icons", self.icons),
             annotations=overrides.get("annotations", self.annotations),
             execution=overrides.get("execution", self.execution),
@@ -250,7 +289,7 @@ class Tool(FastMCPComponent):
             and "execution" not in overrides
             and not self.execution
         ):
-            mcp_tool.execution = ToolExecution(taskSupport=self.task_config.mode)
+            mcp_tool.execution = ToolExecution(task_support=self.task_config.mode)
 
         return mcp_tool
 
@@ -266,9 +305,7 @@ class Tool(FastMCPComponent):
         icons: list[Icon] | None = None,
         tags: set[str] | None = None,
         annotations: ToolAnnotations | None = None,
-        exclude_args: list[str] | None = None,
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
-        serializer: ToolResultSerializerType | None = None,  # Deprecated
         meta: dict[str, Any] | None = None,
         task: bool | TaskConfig | None = None,
         timeout: float | None = None,
@@ -287,9 +324,7 @@ class Tool(FastMCPComponent):
             icons=icons,
             tags=tags,
             annotations=annotations,
-            exclude_args=exclude_args,
             output_schema=output_schema,
-            serializer=serializer,
             meta=meta,
             task=task,
             timeout=timeout,
@@ -306,6 +341,12 @@ class Tool(FastMCPComponent):
 
         `run()` can EITHER return a list of ContentBlocks, or a tuple of
         (list of ContentBlocks, dict of structured output).
+
+        A tool that requests client input (SEP-2322 multi-round-trip) does so by
+        returning an `InputRequiredResult` from its body; the run machinery wraps
+        that in an `InputRequiredToolResult` — a `ToolResult` subclass — so it
+        stays inside the declared `ToolResult` result type and flows through the
+        middleware chain as an ordinary result (see `FunctionTool.run`).
         """
         raise NotImplementedError("Subclasses must implement run()")
 
@@ -313,10 +354,13 @@ class Tool(FastMCPComponent):
         """Convert a raw result to ToolResult.
 
         Handles ToolResult passthrough and converts raw values using the tool's
-        attributes (serializer, output_schema) for proper conversion.
+        attributes (output_schema) for proper conversion.
         """
         if isinstance(raw_value, ToolResult):
             return raw_value
+
+        if isinstance(raw_value, CallToolResult):
+            return ToolResult.from_mcp_result(raw_value)
 
         if _HAS_PREFAB:
             if isinstance(raw_value, _PrefabApp):
@@ -330,7 +374,7 @@ class Tool(FastMCPComponent):
                     fastmcp_app_name=_get_fastmcp_app_name(self),
                 )
 
-        content = _convert_to_content(raw_value, serializer=self.serializer)
+        content = _convert_to_content(raw_value)
 
         # Bytes can't be represented as structured JSON content
         if isinstance(raw_value, bytes):
@@ -368,86 +412,14 @@ class Tool(FastMCPComponent):
             meta={"fastmcp": {"wrap_result": True}} if wrap_result else None,
         )
 
-    @overload
-    async def _run(
-        self,
-        arguments: dict[str, Any],
-        task_meta: None = None,
-    ) -> ToolResult: ...
+    async def _run(self, arguments: dict[str, Any]) -> ToolResult:
+        """Server entry point for tool execution.
 
-    @overload
-    async def _run(
-        self,
-        arguments: dict[str, Any],
-        task_meta: TaskMeta,
-    ) -> mcp.types.CreateTaskResult: ...
-
-    async def _run(
-        self,
-        arguments: dict[str, Any],
-        task_meta: TaskMeta | None = None,
-    ) -> ToolResult | mcp.types.CreateTaskResult:
-        """Server entry point that handles task routing.
-
-        This allows ANY Tool subclass to support background execution by setting
-        task_config.mode to "supported" or "required". The server calls this
-        method instead of run() directly.
-
-        Args:
-            arguments: Tool arguments
-            task_meta: If provided, execute as background task and return
-                CreateTaskResult. If None (default), execute synchronously and
-                return ToolResult.
-
-        Returns:
-            ToolResult when task_meta is None.
-            CreateTaskResult when task_meta is provided.
-
-        Subclasses can override this to customize task routing behavior.
-        For example, FastMCPProviderTool overrides to delegate to child
-        middleware without submitting to Docket.
+        The server calls this method instead of ``run()`` directly so that
+        subclasses can customize dispatch. For example, ``FastMCPProviderTool``
+        overrides this to delegate to child-server middleware.
         """
-        from fastmcp.server.tasks.routing import check_background_task
-
-        task_result = await check_background_task(
-            component=self,
-            task_type="tool",
-            arguments=arguments,
-            task_meta=task_meta,
-        )
-        if task_result:
-            return task_result
-
         return await self.run(arguments)
-
-    def register_with_docket(self, docket: Docket) -> None:
-        """Register this tool with docket for background execution."""
-        if not self.task_config.supports_tasks():
-            return
-        docket.register(self.run, names=[self.key])
-
-    async def add_to_docket(  # type: ignore[override]
-        self,
-        docket: Docket,
-        arguments: dict[str, Any],
-        *,
-        fn_key: str | None = None,
-        task_key: str | None = None,
-        **kwargs: Any,
-    ) -> Execution:
-        """Schedule this tool for background execution via docket.
-
-        Args:
-            docket: The Docket instance
-            arguments: Tool arguments
-            fn_key: Function lookup key in Docket registry (defaults to self.key)
-            task_key: Redis storage key for the result
-            **kwargs: Additional kwargs passed to docket.add()
-        """
-        lookup_key = fn_key or self.key
-        if task_key:
-            kwargs["key"] = task_key
-        return await docket.add(lookup_key, **kwargs)(arguments)
 
     @classmethod
     def from_tool(
@@ -460,7 +432,6 @@ class Tool(FastMCPComponent):
         tags: set[str] | None = None,
         annotations: ToolAnnotations | NotSetT | None = NotSet,
         output_schema: dict[str, Any] | NotSetT | None = NotSet,
-        serializer: ToolResultSerializerType | None = None,  # Deprecated
         meta: dict[str, Any] | NotSetT | None = NotSet,
         transform_args: dict[str, ArgTransform] | None = None,
         transform_fn: Callable[..., Any] | None = None,
@@ -479,7 +450,6 @@ class Tool(FastMCPComponent):
             tags=tags,
             annotations=annotations,
             output_schema=output_schema,
-            serializer=serializer,
             meta=meta,
         )
 
@@ -505,25 +475,8 @@ class Tool(FastMCPComponent):
         }
 
 
-def _serialize_with_fallback(
-    result: Any, serializer: ToolResultSerializerType | None = None
-) -> str:
-    if serializer is not None:
-        try:
-            return serializer(result)
-        except Exception as e:
-            logger.warning(
-                "Error serializing tool result: %s",
-                e,
-                exc_info=True,
-            )
-
-    return default_serializer(result)
-
-
 def _convert_to_single_content_block(
     item: Any,
-    serializer: ToolResultSerializerType | None = None,
 ) -> ContentBlock:
     if isinstance(item, ContentBlock):
         return item
@@ -548,7 +501,7 @@ def _convert_to_single_content_block(
 
             return TextContent(type="text", text=base64.b64encode(item).decode("ascii"))
 
-    return TextContent(type="text", text=_serialize_with_fallback(item, serializer))
+    return TextContent(type="text", text=default_serializer(item))
 
 
 _PREFAB_TEXT_FALLBACK = "[Rendered Prefab UI]"
@@ -599,7 +552,6 @@ def _prefab_to_tool_result(app: Any, fastmcp_app_name: str | None = None) -> Too
 
 def _convert_to_content(
     result: Any,
-    serializer: ToolResultSerializerType | None = None,
 ) -> list[ContentBlock]:
     """Convert a result to a sequence of content objects."""
 
@@ -607,7 +559,7 @@ def _convert_to_content(
         return []
 
     if not isinstance(result, (list | tuple)):
-        return [_convert_to_single_content_block(result, serializer)]
+        return [_convert_to_single_content_block(result)]
 
     # If all items are ContentBlocks, return them as is
     if all(isinstance(item, ContentBlock) for item in result):
@@ -617,38 +569,13 @@ def _convert_to_content(
     # without aggregating them
     if any(isinstance(item, ContentBlock | Image | Audio | File) for item in result):
         return [
-            _convert_to_single_content_block(item, serializer)
+            _convert_to_single_content_block(item)
             if not isinstance(item, ContentBlock)
             else item
             for item in result
         ]
     # If none of the items are ContentBlocks, aggregate all items into a single TextContent
-    return [TextContent(type="text", text=_serialize_with_fallback(result, serializer))]
+    return [TextContent(type="text", text=default_serializer(result))]
 
 
-__all__ = ["Tool", "ToolResult"]
-
-
-def __getattr__(name: str) -> Any:
-    """Deprecated re-exports for backwards compatibility."""
-    deprecated_exports = {
-        "FunctionTool": "FunctionTool",
-        "ParsedFunction": "ParsedFunction",
-        "tool": "tool",
-    }
-
-    if name in deprecated_exports:
-        import fastmcp
-
-        if fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                f"Importing {name} from fastmcp.tools.tool is deprecated. "
-                f"Import from fastmcp.tools.function_tool instead.",
-                FastMCPDeprecationWarning,
-                stacklevel=2,
-            )
-        from fastmcp.tools import function_tool
-
-        return getattr(function_tool, name)
-
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+__all__ = ["InputRequiredToolResult", "Tool", "ToolResult"]
