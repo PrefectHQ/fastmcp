@@ -1554,3 +1554,64 @@ class TestProxyProviderTransportErrors:
         with pytest.raises(MCPError, match="Client failed to connect"):
             async with Client(proxy, mode=mode) as client:
                 await client.list_tools()
+
+
+async def test_proxy_preserves_x_mcp_header_annotation():
+    """A proxy re-advertises a backend tool's `x-mcp-header` annotation (SEP-2243).
+
+    The routing headers are per-hop: the SDK client regenerates them on each
+    HTTP request. For `Mcp-Param-*` to be emitted on the proxy->backend hop (and
+    on the caller->proxy hop), the proxy must carry the backend's `x-mcp-header`
+    schema annotation through to its own advertised tool schema.
+    """
+    from typing import Annotated
+
+    from pydantic import Field
+
+    backend = FastMCP("Backend")
+
+    @backend.tool
+    def route(
+        tenant: Annotated[str, Field(json_schema_extra={"x-mcp-header": "Tenant"})],
+    ) -> str:
+        return tenant
+
+    proxy = create_proxy(backend)
+    async with Client(proxy) as client:
+        tools = await client.list_tools()
+
+    (tool,) = [t for t in tools if t.name == "route"]
+    assert tool.input_schema["properties"]["tenant"]["x-mcp-header"] == "Tenant"
+
+
+async def test_proxy_forwards_mcp_param_header_to_modern_http_backend():
+    """A proxy in front of a modern Streamable-HTTP backend routes an annotated call (SEP-2243).
+
+    A modern backend validates that an `x-mcp-header` argument is mirrored into an
+    `Mcp-Param-*` header and rejects the call with `HEADER_MISMATCH` when it is
+    missing. The SDK client caches the annotation map on `list_tools`, but a
+    proxied `tools/call` goes straight to `call_tool` on a fresh backend session,
+    so the proxy must seed the map itself. This exercises the real validating HTTP
+    hop end to end.
+    """
+    from typing import Annotated
+
+    from pydantic import Field
+
+    backend = FastMCP("Backend")
+
+    @backend.tool
+    def route(
+        tenant: Annotated[str, Field(json_schema_extra={"x-mcp-header": "Tenant"})],
+    ) -> str:
+        return f"routed:{tenant}"
+
+    async with run_server_async(backend, transport="http") as url:
+        # mode="auto" negotiates the modern protocol with the HTTP backend, so
+        # the proxy->backend hop is the validating one. (ProxyClient defaults to
+        # legacy, which neither emits nor validates these headers.)
+        proxy = create_proxy(ProxyClient(StreamableHttpTransport(url), mode="auto"))
+        async with Client(proxy) as client:
+            result = await client.call_tool("route", {"tenant": "acme"})
+
+    assert result.data == "routed:acme"
