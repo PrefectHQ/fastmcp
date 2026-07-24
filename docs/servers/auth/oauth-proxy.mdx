@@ -738,8 +738,7 @@ Replay protection is per-process. Each server process tracks seen `jti` values i
 The OAuth proxy requires cryptographic keys for JWT signing and storage encryption, plus persistent storage to maintain valid tokens across server restarts.
 
 **Default behavior (appropriate for development only):**
-- **Mac/Windows**: FastMCP automatically generates keys and stores them in your system keyring. Storage defaults to disk. Tokens survive server restarts. This is **only** suitable for development and local testing.
-- **Linux**: Keys are ephemeral (random salt at startup). Storage defaults to memory. Tokens become invalid on server restart.
+On every platform, FastMCP deterministically derives `jwt_signing_key` from `upstream_client_secret` using HKDF, and storage defaults to an encrypted disk store in your platform's data directory (derived from `platformdirs`). Tokens survive server restarts as long as `upstream_client_secret` doesn't change. This is **only** suitable for development and local testing.
 
 **For production:**
 Configure the following parameters together: provide a unique `jwt_signing_key` (for signing FastMCP JWTs), and a shared `client_storage` backend (for storing tokens). Both are required for production deployments. Use a network-accessible storage backend like Redis or DynamoDB rather than local disk storage. **Wrap your storage in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest** (see the `client_storage` parameter documentation above for examples). The keys accept any secret string and derive proper cryptographic keys using HKDF. See [OAuth Token Security](/deployment/http#oauth-token-security) and [Storage Backends](/servers/storage-backends) for complete production setup.
