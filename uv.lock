@@ -10,7 +10,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-07-17T00:28:52.816998Z"
+exclude-newer = "2026-07-17T00:42:32.518243Z"
 exclude-newer-span = "P1W"
 
 [options.exclude-newer-package]
@@ -1087,14 +1087,14 @@ provides-extras = ["anthropic", "apps", "azure", "client", "code-mode", "gemini"
 name = "fastmcp-tasks"
 source = { editable = "fastmcp_tasks" }
 dependencies = [
-    { name = "burner-redis" },
+    { name = "burner-redis", marker = "sys_platform == 'win32'" },
     { name = "fastmcp-slim", extra = ["server"] },
     { name = "pydocket" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "burner-redis", specifier = "<0.1.7" },
+    { name = "burner-redis", marker = "sys_platform == 'win32'", specifier = "<0.1.7" },
     { name = "fastmcp-slim", extras = ["server"], editable = "fastmcp_slim" },
     { name = "pydocket", specifier = ">=0.20.0" },
 ]
