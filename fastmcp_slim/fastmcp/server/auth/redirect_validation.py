@@ -358,9 +358,7 @@ def is_redirect_uri_allowed_for_application_type(
     parsed = urlparse(uri_str)
     if parsed.scheme.lower() != "https":
         return False
-    if _is_loopback_host(parsed.hostname):
-        return False
-    return True
+    return not _is_loopback_host(parsed.hostname)
 
 
 def validate_redirect_uri(
