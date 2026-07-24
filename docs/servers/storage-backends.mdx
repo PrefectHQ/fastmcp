@@ -156,9 +156,7 @@ The [OAuth Proxy](/servers/auth/oauth-proxy) and OAuth auth providers use storag
 
 **Development (default behavior):**
 
-By default, FastMCP automatically manages keys and storage based on your platform:
-- **Mac/Windows**: Keys are auto-managed via system keyring, storage defaults to disk. Suitable **only** for development and local testing.
-- **Linux**: Keys are ephemeral, storage defaults to memory.
+By default, FastMCP automatically manages keys and storage the same way on every platform: the signing key is deterministically derived from your client secret, and storage defaults to an encrypted disk store in your platform's data directory (derived from `platformdirs`). Suitable **only** for development and local testing.
 
 No configuration needed:
 
