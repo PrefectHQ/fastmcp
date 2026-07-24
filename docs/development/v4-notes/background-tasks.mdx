@@ -6,7 +6,7 @@ title: Background Tasks (SEP-2663)
 
 ## TL;DR
 
-Background tasks are not dead. The MCP spec moved them out of core and into a **Final, merged** extension — `io.modelcontextprotocol/tasks` (SEP-2663) — that keeps the polling model FastMCP already implements. **No SDK, in any language, ships a runtime for it yet.** FastMCP owns the only production-shaped execution engine (Docket/Redis) built for a near-identical protocol.
+Background tasks live on. The MCP spec moved them out of core and into a **Final, merged** extension — `io.modelcontextprotocol/tasks` (SEP-2663) — that keeps the polling model FastMCP already implements. **No SDK, in any language, ships a runtime for it yet.** FastMCP owns the only production-shaped execution engine (Docket/Redis) built for a near-identical protocol.
 
 The plan: **rebuild task support on SEP-2663 as `fastmcp-tasks`, an in-repo optional package**, gated by `task=True` exactly as MCP Apps is gated by `app=True`. Remove the SEP-1686 *wire layer*; keep and re-home the *execution engine*. Along the way, introduce a **FastMCP-native server extension API** so tasks (and later Apps) plug in through one documented mechanism instead of bespoke surgery on core.
 

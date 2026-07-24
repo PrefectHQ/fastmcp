@@ -433,8 +433,8 @@ The push-style Context features that require the server to call back into the cl
 | Tools, resources, prompts, completions | Supported | Supported |
 | `ctx.elicit` (imperative) | Supported | Not on the back-channel — use [elicitation on the modern protocol](/servers/elicitation#elicitation-on-the-modern-protocol) |
 | `ctx.sample` / `ctx.sample_step` | Supported (deprecated) | Removed — call an LLM server-side |
-| `ctx.list_roots` | Supported | Not yet — MRTR rewrite pending |
-| Tasks (via the FastMCP client) | Supported | Not yet |
+| `ctx.list_roots` | Supported | Via the [guard pattern](/servers/elicitation#elicitation-on-the-modern-protocol) |
+| Background tasks (`task=True`) | Runs synchronously — never tasked | Supported via the tasks extension |
 
 Tools that rely on `ctx.elicit` or `ctx.list_roots` continue to work against clients on the session-based eras. On the modern era, elicitation is reachable through the multi-round "guard" pattern instead (a tool returns an `InputRequiredResult`; see the New entry below). Sampling is the exception: it is deprecated on every era and will not return on modern connections (see the Deprecated entry below).
 

@@ -4,7 +4,7 @@ title: 2026-07-28 Protocol Support
 
 FastMCP v4 serves the sessionless `2026-07-28` protocol era and the session-based handshake eras from a single server, with per-connection auto-detection. This page catalogs what FastMCP provides for the modern era — both the protocol machinery it inherits from the MCP Python SDK and the capabilities FastMCP implements itself on top of that layer. It is the reference for what a v4 deployment can actually do on the modern protocol today.
 
-## Identity assertion (SEP-990): a complete server-side implementation
+## Identity assertion (SEP-990)
 
 SEP-990 defines enterprise "on-behalf-of" access: a corporate identity provider (Okta, Microsoft Entra, etc.) issues a signed *ID-JAG* asserting an employee's identity, the employee's agent presents it at the MCP authorization server's token endpoint via the RFC 7523 `jwt-bearer` grant, and receives a short-lived access token — no browser login, no per-user consent screen, and revocation lives at the IdP.
 

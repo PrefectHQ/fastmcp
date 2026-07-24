@@ -252,7 +252,7 @@ Sampling is the exception that does not come back, and the reason is the protoco
 | `ctx.list_roots` | Supported | Via the guard pattern (`input_requests` carries roots requests) |
 | `Middleware.on_initialize` | Runs on connect | Never runs — there is no `initialize` handshake |
 | Session state (`ctx.set_state` across calls) | Persists for the session | Does not persist — every request is a fresh connection |
-| Tasks (via the FastMCP client) | Supported | Not yet |
+| Background tasks (`task=True`) | Runs synchronously — never tasked | Supported via the tasks extension |
 
 If your tools rely on `ctx.elicit` or `ctx.list_roots`, they continue to work against clients on the earlier eras; on the modern era, reach for the guard pattern instead (see [Elicitation on the modern protocol](/servers/elicitation#elicitation-on-the-modern-protocol)). Sampling is deprecated on every era and will not return on modern connections — migrate those tools to server-side LLM calls.
 

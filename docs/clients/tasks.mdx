@@ -110,6 +110,8 @@ Without an `elicitation_handler`, a task that asks for input raises `ToolError` 
 
 ## Example
 
+Putting it together, here is a complete client that submits a background task with `call_tool_task` and awaits its result:
+
 ```python
 import asyncio
 from fastmcp import Client
