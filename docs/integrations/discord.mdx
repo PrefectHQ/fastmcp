@@ -108,7 +108,8 @@ async def main():
         print("✓ Authenticated with Discord!")
 
         result = await client.call_tool("get_user_info")
-        print(f"Discord user: {result['username']}")
+        user_info = result.data
+        print(f"Discord user: {user_info['username']}")
 
 if __name__ == "__main__":
     asyncio.run(main())

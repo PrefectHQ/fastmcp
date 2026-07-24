@@ -1,18 +1,25 @@
 import time
 from collections.abc import AsyncGenerator
-from typing import Any
-from unittest.mock import patch
+from typing import Any, cast
+from unittest.mock import MagicMock, patch
 
 import pytest
 from joserfc import jwk as jose_jwk
 from joserfc import jwt
 from joserfc.jws import JWSRegistry
 from joserfc.registry import HeaderParameter
-from pytest_httpx import HTTPXMock
+from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
+from starlette.requests import Request
 
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.jwt import JWKData, JWKSData, JWTVerifier, RSAKeyPair
+from fastmcp.server.dependencies import (
+    FastMCPRequestContext,
+    fastmcp_request_ctx,
+    get_access_token,
+)
 from fastmcp.utilities.tests import run_server_async
+from tests.utilities.httpx2_mock import HTTPXMock
 
 # Standard public IP used for DNS mocking in tests
 TEST_PUBLIC_IP = "93.184.216.34"
@@ -72,11 +79,6 @@ class SymmetricKeyHelper:
         token = jwt.encode(header, payload, signing_key, algorithms=[algorithm])
 
         return token
-
-
-@pytest.fixture(scope="module")
-def rsa_key_pair() -> RSAKeyPair:
-    return RSAKeyPair.generate()
 
 
 @pytest.fixture(scope="module")
@@ -337,6 +339,7 @@ class TestSymmetricKeyJWT:
         assert "read" in access_token.scopes
         assert "write" in access_token.scopes
         assert access_token.expires_at is not None
+        assert access_token.subject == "test-user"
 
     async def test_symmetric_token_with_different_algorithms(
         self, symmetric_key_helper: SymmetricKeyHelper
@@ -482,6 +485,106 @@ class TestSymmetricKeyJWT:
         assert access_token is None
 
 
+def _create_token_without_sub(
+    rsa_key_pair: RSAKeyPair,
+    *,
+    issuer: str = "https://test.example.com",
+    audience: str | None = None,
+) -> str:
+    """Sign a JWT with no 'sub' claim, to exercise the missing-subject path."""
+    payload: dict[str, str | int] = {
+        "iss": issuer,
+        "iat": int(time.time()),
+        "exp": int(time.time()) + 3600,
+    }
+    if audience:
+        payload["aud"] = audience
+    signing_key = jose_jwk.import_key(
+        rsa_key_pair.private_key.get_secret_value(), "RSA"
+    )
+    return jwt.encode({"alg": "RS256"}, payload, signing_key, algorithms=["RS256"])
+
+
+class TestJWTAccessTokenSubject:
+    """Regression tests for issue #4266.
+
+    ``get_access_token().subject`` was always ``None``, even when the
+    authorization server supplied a ``sub`` claim, because neither the
+    JWT verifier nor the dependency-layer conversion carried it through.
+    """
+
+    async def test_subject_populated_from_sub_claim(
+        self, bearer_provider: JWTVerifier, rsa_key_pair: RSAKeyPair
+    ):
+        """A JWT bearing a 'sub' claim results in a populated subject."""
+        token = rsa_key_pair.create_token(
+            subject="user-42",
+            issuer="https://test.example.com",
+            audience="https://api.example.com",
+        )
+
+        access_token = await bearer_provider.load_access_token(token)
+
+        assert access_token is not None
+        assert access_token.subject == "user-42"
+
+    async def test_subject_is_none_without_sub_claim(
+        self, bearer_provider: JWTVerifier, rsa_key_pair: RSAKeyPair
+    ):
+        """A JWT with no 'sub' claim yields subject=None instead of crashing."""
+        token = _create_token_without_sub(
+            rsa_key_pair, audience="https://api.example.com"
+        )
+
+        access_token = await bearer_provider.load_access_token(token)
+
+        assert access_token is not None
+        assert access_token.subject is None
+
+    async def test_get_access_token_returns_subject_for_realistic_jwt_request(
+        self, bearer_provider: JWTVerifier, rsa_key_pair: RSAKeyPair
+    ):
+        """End-to-end path a real authenticated request actually takes.
+
+        Mirrors ``mcp.server.auth.middleware.bearer_auth.BearerAuthBackend``,
+        which wraps whatever the ``TokenVerifier`` returns directly into
+        ``AuthenticatedUser`` and stores it on ``request.scope["user"]``.
+        ``get_access_token()`` reads that object first, before ever reaching
+        the dependency-layer conversion block - so this is the path that
+        must carry ``subject`` through for real JWT-authenticated requests.
+        """
+        token = rsa_key_pair.create_token(
+            subject="user-42",
+            issuer="https://test.example.com",
+            audience="https://api.example.com",
+        )
+        access_token = await bearer_provider.load_access_token(token)
+        assert access_token is not None
+
+        user = AuthenticatedUser(access_token)
+        request = Request({"type": "http", "user": user, "auth": MagicMock()})
+
+        ctx_token = fastmcp_request_ctx.set(
+            FastMCPRequestContext(
+                session=MagicMock(),
+                request_id="0",
+                meta=None,
+                request=request,
+                protocol_version="2025-06-18",
+                close_sse_stream=None,
+                lifespan_context=MagicMock(),
+                _srctx=MagicMock(meta=None),
+            )
+        )
+        try:
+            result = get_access_token()
+        finally:
+            fastmcp_request_ctx.reset(ctx_token)
+
+        assert result is not None
+        assert result.subject == "user-42"
+
+
 class TestBearerTokenJWKS:
     """Tests for JWKS URI functionality.
 
@@ -559,7 +662,7 @@ class TestBearerTokenJWKS:
         assert access_token.claims.get("iss") == issuer
         assert access_token.claims.get("aud") == audience
 
-    async def test_jwks_token_validation_with_invalid_key(
+    async def test_jwks_skips_unsupported_key_types(
         self,
         rsa_key_pair: RSAKeyPair,
         jwks_provider: JWTVerifier,
@@ -567,8 +670,88 @@ class TestBearerTokenJWKS:
         httpx_mock: HTTPXMock,
         mock_dns,
     ):
+        """An unsupported key type in the JWKS (e.g. OKP/Ed25519) must be
+        skipped, not poison the whole key set - #4515.
+
+        Some authorization servers (e.g. Rauthy, Ory Hydra) publish an
+        Ed25519 key alongside RSA keys; tokens signed by the RSA keys must
+        still verify.
+        """
+        okp_key = cast(
+            "JWKData",
+            {
+                "kty": "OKP",
+                "crv": "Ed25519",
+                "kid": "ed25519-key",
+                "alg": "EdDSA",
+                "use": "sig",
+                "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+            },
+        )
+        mock_jwks_data["keys"][0]["kid"] = "test-key-1"
+        # Unsupported key FIRST, so an unguarded conversion loop would
+        # abort before reaching the RSA key the token needs
+        mock_jwks_data["keys"].insert(0, okp_key)
         httpx_mock.add_response(json=mock_jwks_data)
-        token = RSAKeyPair.generate().create_token(
+
+        token = rsa_key_pair.create_token(
+            subject="test-user",
+            issuer="https://test.example.com",
+            audience="https://api.example.com",
+            kid="test-key-1",
+        )
+
+        access_token = await jwks_provider.load_access_token(token)
+        assert access_token is not None
+        assert access_token.client_id == "test-user"
+
+    async def test_jwks_with_only_unsupported_keys_rejects_cleanly(
+        self,
+        rsa_key_pair: RSAKeyPair,
+        jwks_provider: JWTVerifier,
+        httpx_mock: HTTPXMock,
+        mock_dns,
+    ):
+        """If every key in the JWKS is unsupported, verification fails
+        cleanly (returns None) rather than crashing - #4515."""
+        okp_only = {
+            "keys": [
+                cast(
+                    "JWKData",
+                    {
+                        "kty": "OKP",
+                        "crv": "Ed25519",
+                        "kid": "ed25519-key",
+                        "alg": "EdDSA",
+                        "use": "sig",
+                        "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+                    },
+                )
+            ]
+        }
+        httpx_mock.add_response(json=okp_only)
+
+        token = rsa_key_pair.create_token(
+            subject="test-user",
+            issuer="https://test.example.com",
+            audience="https://api.example.com",
+            kid="ed25519-key",
+        )
+
+        access_token = await jwks_provider.load_access_token(token)
+        assert access_token is None
+
+    async def test_jwks_token_validation_with_invalid_key(
+        self,
+        rsa_key_pair: RSAKeyPair,
+        rsa_key_pair_2: RSAKeyPair,
+        jwks_provider: JWTVerifier,
+        mock_jwks_data: JWKSData,
+        httpx_mock: HTTPXMock,
+        mock_dns,
+    ):
+        httpx_mock.add_response(json=mock_jwks_data)
+        token = rsa_key_pair_2.create_token(
             subject="test-user",
             issuer="https://test.example.com",
             audience="https://api.example.com",

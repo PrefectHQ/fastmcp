@@ -84,7 +84,7 @@ parent.mount(child, namespace="child")
 
 Requests to `child_tool` flow through the parent's `AuthMiddleware` first, then through the child's `LoggingMiddleware`.
 
-Middleware-stored state does not automatically cross mount boundaries. If `AuthMiddleware` on the parent calls `ctx.set_state("user_id", ...)`, a tool on the child server calling `ctx.get_state("user_id")` will get `None` — each `FastMCP` instance owns its own session state store. To share state across the mount, either pass the same `session_state_store` to both servers or use `serializable=False` for request-scoped values. See [State and Mounted Servers](/servers/context#state-and-mounted-servers) for details.
+Middleware-stored state does not automatically cross mount boundaries. If `AuthMiddleware` on the parent calls `ctx.set_state("user_id", ...)`, a tool on the child server calling `ctx.get_state("user_id")` will get `None` — each `FastMCP` instance owns its own session state store. To share state across the mount, either pass the same `session_state_store` to both servers or use `serializable=False` for request-scoped values. See [Session State](/servers/sessions) for details.
 
 ## Hooks
 
@@ -97,6 +97,22 @@ Rather than processing every message identically, FastMCP provides specialized h
 | Operation | `on_call_tool`, `on_read_resource`, `on_get_prompt`, etc. | Specific MCP operations |
 
 When a client calls a tool, the middleware chain processes `on_message` first, then `on_request`, then `on_call_tool`. This hierarchy lets you target exactly the right scope—use `on_message` for logging everything, `on_request` for authentication, and `on_call_tool` for tool-specific behavior.
+
+### What middleware sees
+
+<VersionBadge version="4.0.0" />
+
+Dispatch begins in the SDK's middleware layer — the single point every inbound message passes through. As a result, `on_message`, `on_request`, and `on_notification` observe **every** message a client sends, including the ones that never reach a tool, resource, or prompt handler:
+
+- **Notifications** such as `notifications/cancelled`, `notifications/initialized`, and `notifications/progress` reach `on_message` and `on_notification`.
+- **Cancellations** are observed as a `notifications/cancelled` message. The connection applies the cancellation itself and then hands the notification to your middleware.
+- **Malformed or unroutable requests**—an unknown method, or a `tools/call` whose params fail validation before the tool runs—reach `on_message` and `on_request` as a raised error propagating through `call_next`, so logging and error-handling middleware record them.
+
+The operation hooks (`on_call_tool`, `on_list_tools`, and the rest) fire exactly once per request, and their `call_next` still returns the typed component result—a `ToolResult`, a `list[Tool]`, and so on—so a tool exception propagates through `on_call_tool`, `on_request`, and `on_message` exactly where error, logging, and timing middleware expect it.
+
+#### Multi-round tool calls
+
+A guard tool asks the client for input by returning an `InputRequiredResult` (see [Elicitation on the modern protocol](/servers/elicitation#elicitation-on-the-modern-protocol)). Each round of a multi-round call is a complete request→response cycle that runs the **full middleware chain**: `on_call_tool` fires once per round, and on an asking round `call_next` returns the ask as that round's ordinary result value—an `InputRequiredToolResult`, a `ToolResult` subclass. Nothing is raised and nothing is held open, so default middleware completes normally on every round (logging logs the ask, timing times it, error handling does not fire—an ask is a legitimate result, not an error). Middleware that needs to treat an ask differently identifies it with an `isinstance(result, InputRequiredToolResult)` check; see [Middleware and multi-round calls](/servers/elicitation#middleware) for a worked example.
 
 ### Hook Signature
 
@@ -262,28 +278,36 @@ async def on_list_prompts(self, context: MiddlewareContext, call_next):
 
 <VersionBadge version="2.13.0" />
 
-Called when a client connects and initializes the session. This hook cannot modify the initialization response.
+Called when a client connects and initializes the session. Middleware can reject the client before `call_next()` raises an error response, or inspect and modify the `InitializeResult` after `call_next()` returns.
+
+The request params carry the identity the client declared for itself on `client_info`, which makes this the natural place to gate access by client. Note that these fields are snake_case: the MCP wire format spells it `clientInfo`, but the Python model exposes `client_info` and treats the camelCase form as a serialization alias only.
 
 ```python
-from mcp import McpError
-from mcp.types import ErrorData
+from fastmcp.exceptions import McpError
 
 async def on_initialize(self, context: MiddlewareContext, call_next):
-    client_info = context.message.params.get("clientInfo", {})
-    client_name = client_info.get("name", "unknown")
+    client_name = context.message.params.client_info.name
 
     # Reject before call_next to send error to client
     if client_name == "blocked-client":
-        raise McpError(ErrorData(code=-32000, message="Client not supported"))
+        raise McpError(code=-32000, message="Client not supported")
 
-    await call_next(context)
+    result = await call_next(context)
     print(f"Client {client_name} initialized")
+    return result
 ```
 
-**Returns:** `None` — The initialization response is handled internally by the MCP protocol.
+**Returns:** `InitializeResult | None` — The value you return is what gets serialized to the client, so modifying the result from `call_next()` changes what the client receives, including fields like `instructions` and `server_info`.
+
+```python
+async def on_initialize(self, context: MiddlewareContext, call_next):
+    result = await call_next(context)
+    result.instructions = "Custom instructions for this client"
+    return result
+```
 
 <Warning>
-Raising `McpError` after `call_next()` will only log the error, not send it to the client. The response has already been sent. Always reject **before** `call_next()`.
+Rejection works only **before** `call_next()`. Raising `McpError` afterward logs the error without sending it — the client still receives a successful initialize response.
 </Warning>
 
 ### Raw Handler
@@ -326,7 +350,7 @@ async def on_request(self, context: MiddlewareContext, call_next):
     return await call_next(context)
 ```
 
-For HTTP-specific data (headers, client IP) when using HTTP transports, see [HTTP Requests](/servers/context#http-requests).
+For HTTP-specific data (headers, client IP) when using HTTP transports, see [HTTP Request](/servers/dependency-injection#http-request).
 
 ## Built-in Middleware
 
@@ -795,7 +819,7 @@ def get_user_data(ctx: Context) -> str:
     return f"Data for user: {user_id}"
 ```
 
-See [Context State Management](/servers/context#state-management) for details.
+See [Request State](/servers/context#request-state) for details.
 
 ### Constructor Parameters
 

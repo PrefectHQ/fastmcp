@@ -240,7 +240,7 @@ if __name__ == "__main__":
     mcp.run(transport="http")  # Health check at http://localhost:8000/health
 ```
 
-Custom routes are served by the same web server as your MCP endpoint. They're available at the root of your domain while the MCP endpoint is at `/mcp/`. For more complex web applications, consider [mounting your MCP server into a FastAPI or Starlette app](/deployment/http#integration-with-web-frameworks).
+Custom routes are served by the same web server as your MCP endpoint. They're available at the root of your domain while the MCP endpoint is at `/mcp`. For more complex web applications, consider [mounting your MCP server into a FastAPI or Starlette app](/deployment/http#integration-with-web-frameworks).
 
 ## Alternative Initialization Patterns
 

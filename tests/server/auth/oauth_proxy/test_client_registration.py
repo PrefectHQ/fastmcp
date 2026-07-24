@@ -1,6 +1,6 @@
 """Tests for OAuth proxy client registration (DCR)."""
 
-import httpx
+import httpx2
 import pytest
 from mcp.server.auth.provider import RegistrationError
 from mcp.shared.auth import OAuthClientInformationFull
@@ -175,9 +175,9 @@ class TestOAuthProxyClientRegistration:
         oauth_proxy.update_default_scopes(["read", "write", "calendar"])
 
         app = Starlette(routes=oauth_proxy.get_routes())
-        transport = httpx.ASGITransport(app=app)
+        transport = httpx2.ASGITransport(app=app)
 
-        async with httpx.AsyncClient(
+        async with httpx2.AsyncClient(
             transport=transport,
             base_url="https://myserver.com",
         ) as client:
@@ -196,6 +196,35 @@ class TestOAuthProxyClientRegistration:
         registered_client = await oauth_proxy.get_client(client_info["client_id"])
         assert registered_client is not None
         assert registered_client.scope == "read write calendar"
+
+    @pytest.mark.parametrize(
+        "requested_auth_method",
+        [None, "client_secret_post", "client_secret_basic"],
+    )
+    async def test_dcr_response_is_public_client(
+        self, oauth_proxy, requested_auth_method
+    ):
+        """The DCR response must describe the public client the proxy actually
+        stores — never a confidential method / secret the proxy does not enforce
+        and does not advertise in server metadata.
+        """
+        registration = {"redirect_uris": ["https://client.example.com/callback"]}
+        if requested_auth_method is not None:
+            registration["token_endpoint_auth_method"] = requested_auth_method
+
+        app = Starlette(routes=oauth_proxy.get_routes())
+        transport = httpx2.ASGITransport(app=app)
+
+        async with httpx2.AsyncClient(
+            transport=transport,
+            base_url="https://myserver.com",
+        ) as client:
+            response = await client.post("/register", json=registration)
+
+        assert response.status_code == 201
+        client_info = response.json()
+        assert client_info["token_endpoint_auth_method"] == "none"
+        assert client_info.get("client_secret") is None
 
 
 class TestUpstreamClientIdFallback:

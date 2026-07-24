@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
-from mcp.types import TextResourceContents
+from mcp_types import TextResourceContents
 from pydantic import AnyUrl
 
 from fastmcp import Client, FastMCP
@@ -15,6 +15,7 @@ from fastmcp.server.providers.skills import (
     SkillsProvider,
 )
 from fastmcp.server.providers.skills._common import parse_frontmatter
+from fastmcp.server.providers.skills.skill_provider import SkillFileResource
 
 
 class TestParseFrontmatter:
@@ -91,6 +92,26 @@ This is my skill content.
         assert provider.skill_info.description == "A test skill"
         assert len(provider.skill_info.files) == 3
 
+    def test_loads_frontmatter_from_utf8_bom_skill(self, tmp_path: Path):
+        skill_dir = tmp_path / "bom-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "\ufeff---\n"
+            "name: bom-skill\n"
+            "description: Skill saved with a UTF-8 BOM\n"
+            "---\n"
+            "# BOM Skill\n",
+            encoding="utf-8",
+        )
+
+        provider = SkillProvider(skill_path=skill_dir)
+
+        assert provider.skill_info.description == "Skill saved with a UTF-8 BOM"
+        assert provider.skill_info.frontmatter == {
+            "name": "bom-skill",
+            "description": "Skill saved with a UTF-8 BOM",
+        }
+
     def test_raises_if_directory_missing(self, tmp_path: Path):
         with pytest.raises(FileNotFoundError, match="Skill directory not found"):
             SkillProvider(skill_path=tmp_path / "nonexistent")
@@ -155,6 +176,26 @@ This is my skill content.
             assert isinstance(result[0], TextResourceContents)
             assert "# My Skill" in result[0].text
 
+    async def test_read_main_file_with_literal_percent_in_name(self, tmp_path: Path):
+        """A custom main_file_name containing a literal '%' must round-trip
+        through the same encode/decode path as supporting files (#4545)."""
+        skill_dir = tmp_path / "percent-main-skill"
+        skill_dir.mkdir()
+        (skill_dir / "MAIN%20FILE.md").write_text("# Demo\n")
+
+        mcp = FastMCP("Test")
+        mcp.add_provider(
+            SkillProvider(skill_path=skill_dir, main_file_name="MAIN%20FILE.md")
+        )
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            main = next(
+                r for r in resources if r.name == "percent-main-skill/MAIN%20FILE.md"
+            )
+            result = await client.read_resource(main.uri)
+            assert "# Demo" in result[0].text
+
     async def test_read_manifest(self, single_skill_dir: Path):
         mcp = FastMCP("Test")
         mcp.add_provider(SkillProvider(skill_path=single_skill_dir))
@@ -208,6 +249,76 @@ This is my skill content.
         async with Client(mcp) as client:
             result = await client.read_resource(AnyUrl("skill://my-skill/reference.md"))
             assert "# Reference" in result[0].text
+
+    async def test_read_supporting_file_with_space_in_name(self, tmp_path: Path):
+        """Percent-encoded resource URIs for supporting files must round-trip (#4545)."""
+        skill_dir = tmp_path / "space-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("# Skill\n")
+        (skill_dir / "setup guide.md").write_text("SPACE OK")
+
+        mcp = FastMCP("Test")
+        mcp.add_provider(
+            SkillProvider(skill_path=skill_dir, supporting_files="resources")
+        )
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            supporting = next(
+                r for r in resources if r.name == "space-skill/setup guide.md"
+            )
+            assert str(supporting.uri) == "skill://space-skill/setup%20guide.md"
+
+            result = await client.read_resource(supporting.uri)
+            assert result[0].text == "SPACE OK"
+
+    async def test_read_supporting_file_with_utf8_name(self, tmp_path: Path):
+        skill_dir = tmp_path / "utf8-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("# Skill\n")
+        (skill_dir / "café.md").write_text("UTF8 OK", encoding="utf-8")
+
+        mcp = FastMCP("Test")
+        mcp.add_provider(
+            SkillProvider(skill_path=skill_dir, supporting_files="resources")
+        )
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            supporting = next(r for r in resources if r.name == "utf8-skill/café.md")
+
+            result = await client.read_resource(supporting.uri)
+            assert result[0].text == "UTF8 OK"
+
+    async def test_percent_encoded_name_does_not_collide_with_space(
+        self, tmp_path: Path
+    ):
+        """A filename that already contains a literal '%20' must not be confused
+        with a space-containing filename once both are percent-encoded into
+        resource URIs (#4545)."""
+        skill_dir = tmp_path / "percent-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("# Skill\n")
+        (skill_dir / "setup guide.md").write_text("SPACE OK")
+        (skill_dir / "setup%20guide.md").write_text("LITERAL PERCENT OK")
+
+        mcp = FastMCP("Test")
+        mcp.add_provider(
+            SkillProvider(skill_path=skill_dir, supporting_files="resources")
+        )
+
+        async with Client(mcp) as client:
+            resources = await client.list_resources()
+            by_name = {r.name: r for r in resources}
+            space_uri = by_name["percent-skill/setup guide.md"].uri
+            literal_uri = by_name["percent-skill/setup%20guide.md"].uri
+
+            assert str(space_uri) != str(literal_uri)
+
+            space_result = await client.read_resource(space_uri)
+            literal_result = await client.read_resource(literal_uri)
+            assert space_result[0].text == "SPACE OK"
+            assert literal_result[0].text == "LITERAL PERCENT OK"
 
     async def test_skill_resource_meta(self, single_skill_dir: Path):
         """SkillResource populates meta with skill name and is_manifest."""
@@ -658,6 +769,112 @@ class TestPathTraversalPrevention:
                 await client.read_resource(
                     AnyUrl("skill://test-skill/../../../secret.txt")
                 )
+
+
+# Attack corpus mirroring the shapes exercised by the SDK's
+# mcp.shared.path_security tests: dot-dot traversal (bare, nested,
+# trailing), absolute-path injection (POSIX and Windows drive forms),
+# and null-byte injection. Each must be rejected before any filesystem
+# access, regardless of which skill surface receives it.
+SKILL_PATH_ESCAPES = [
+    "..",
+    "../secret.txt",
+    "../../../etc/passwd",
+    "sub/../../secret.txt",
+    "nested/../../outside.txt",
+    "/etc/passwd",
+    "/absolute/injection.txt",
+    "C:\\Windows\\system32",
+    "C:relative.txt",
+    "good\x00/../../../etc/passwd",
+    "file\x00.txt",
+]
+
+
+class TestPathSafetyAttackCorpus:
+    """Pin path-safety guards against the SDK's attack-shape corpus.
+
+    Every skill file surface routes user-supplied path parameters through
+    the SDK's ``safe_join``. These tests assert the whole corpus is
+    rejected with a clear error before the filesystem is touched, and
+    that legitimate nested paths continue to resolve.
+    """
+
+    @pytest.fixture
+    def skill_with_secret(self, tmp_path: Path) -> Path:
+        """A skill dir containing a nested file, with a secret one level up."""
+        skill_dir = tmp_path / "corpus-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("# Corpus\n\nContent")
+        (skill_dir / "docs").mkdir()
+        (skill_dir / "docs" / "nested.txt").write_text("NESTED OK")
+        (tmp_path / "secret.txt").write_text("SECRET DATA")
+        return skill_dir
+
+    async def _template(self, skill_dir: Path):
+        provider = SkillProvider(skill_path=skill_dir)
+        templates = await provider.list_resource_templates()
+        return templates[0]
+
+    @pytest.mark.parametrize("attack", SKILL_PATH_ESCAPES)
+    async def test_template_read_rejects_escape(
+        self, skill_with_secret: Path, attack: str
+    ):
+        template = await self._template(skill_with_secret)
+        with pytest.raises(ValueError, match="Invalid path"):
+            await template.read(arguments={"path": attack})
+
+    @pytest.mark.parametrize("attack", SKILL_PATH_ESCAPES)
+    async def test_template_create_resource_rejects_escape(
+        self, skill_with_secret: Path, attack: str
+    ):
+        template = await self._template(skill_with_secret)
+        with pytest.raises(ValueError, match="Invalid path"):
+            await template.create_resource(
+                uri=f"skill://corpus-skill/{attack}", params={"path": attack}
+            )
+
+    @pytest.mark.parametrize("attack", SKILL_PATH_ESCAPES)
+    async def test_file_resource_read_rejects_escape(
+        self, skill_with_secret: Path, attack: str
+    ):
+        provider = SkillProvider(
+            skill_path=skill_with_secret, supporting_files="resources"
+        )
+        resource = SkillFileResource(
+            uri=AnyUrl("skill://corpus-skill/x"),
+            name="corpus-skill/x",
+            mime_type="text/plain",
+            skill_info=provider.skill_info,
+            file_path=attack,
+        )
+        with pytest.raises(ValueError, match="Invalid path"):
+            await resource.read()
+
+    async def test_template_read_allows_nested_path(self, skill_with_secret: Path):
+        template = await self._template(skill_with_secret)
+        result = await template.read(arguments={"path": "docs/nested.txt"})
+        assert result == "NESTED OK"
+
+    async def test_template_read_allows_within_bounds_dotdot(
+        self, skill_with_secret: Path
+    ):
+        template = await self._template(skill_with_secret)
+        result = await template.read(arguments={"path": "docs/../docs/nested.txt"})
+        assert result == "NESTED OK"
+
+    async def test_file_resource_read_allows_nested_path(self, skill_with_secret: Path):
+        provider = SkillProvider(
+            skill_path=skill_with_secret, supporting_files="resources"
+        )
+        resource = SkillFileResource(
+            uri=AnyUrl("skill://corpus-skill/docs/nested.txt"),
+            name="corpus-skill/docs/nested.txt",
+            mime_type="text/plain",
+            skill_info=provider.skill_info,
+            file_path="docs/nested.txt",
+        )
+        assert await resource.read() == "NESTED OK"
 
 
 async def test_skill_provider_loads_and_serves_utf8_skill_md(

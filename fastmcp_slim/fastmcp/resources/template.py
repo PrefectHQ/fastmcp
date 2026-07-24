@@ -6,29 +6,32 @@ import functools
 import inspect
 import re
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, ClassVar, overload
+from typing import Any, ClassVar
 from urllib.parse import parse_qs, quote, unquote
 
-import mcp.types
-from mcp.types import Annotations, Icon
-from pydantic.json_schema import SkipJsonSchema
-
-if TYPE_CHECKING:
-    from docket import Docket
-    from docket.execution import Execution
-from mcp.types import ResourceTemplate as SDKResourceTemplate
+from mcp_types import Annotations, Icon
+from mcp_types import ResourceTemplate as SDKResourceTemplate
 from pydantic import (
     Field,
     field_validator,
     validate_call,
 )
+from pydantic.json_schema import SkipJsonSchema
 
-from fastmcp.resources.base import Resource, ResourceResult
+from fastmcp.resources.base import (
+    Resource,
+    ResourceResult,
+    convert_raw_to_resource_result,
+)
+from fastmcp.resources.security import (
+    INHERIT_SECURITY,
+    InheritSecurity,
+    ResourceSecurity,
+)
 from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.mime import resolve_ui_mime_type
-from fastmcp.utilities.tasks import TaskConfig, TaskMeta
 from fastmcp.utilities.types import get_cached_typeadapter
 
 
@@ -186,6 +189,29 @@ class ResourceTemplate(FastMCPComponent):
         description="Authorization checks for this resource template",
         exclude=True,
     )
+    security: SkipJsonSchema[ResourceSecurity | None | InheritSecurity] = Field(
+        default=INHERIT_SECURITY,
+        description=(
+            "Path-safety policy for extracted parameters. INHERIT_SECURITY "
+            "(default) inherits the server-wide default; None disables "
+            "screening; a ResourceSecurity instance applies that explicit "
+            "policy."
+        ),
+        exclude=True,
+    )
+
+    def resolve_security(
+        self, server_default: ResourceSecurity | None
+    ) -> ResourceSecurity | None:
+        """Resolve the effective security policy for this template.
+
+        A per-component ``security`` overrides the server default.
+        ``INHERIT_SECURITY`` (the field default) inherits ``server_default``;
+        an explicit ``None`` disables screening for this template.
+        """
+        if isinstance(self.security, InheritSecurity):
+            return server_default
+        return self.security
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(uri_template={self.uri_template!r}, name={self.name!r}, description={self.description!r}, tags={self.tags})"
@@ -203,8 +229,8 @@ class ResourceTemplate(FastMCPComponent):
         tags: set[str] | None = None,
         annotations: Annotations | None = None,
         meta: dict[str, Any] | None = None,
-        task: bool | TaskConfig | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
+        security: ResourceSecurity | None | InheritSecurity = INHERIT_SECURITY,
     ) -> FunctionResourceTemplate:
         return FunctionResourceTemplate.from_function(
             fn=fn,
@@ -218,8 +244,8 @@ class ResourceTemplate(FastMCPComponent):
             tags=tags,
             annotations=annotations,
             meta=meta,
-            task=task,
             auth=auth,
+            security=security,
         )
 
     @field_validator("mime_type", mode="before")
@@ -248,58 +274,21 @@ class ResourceTemplate(FastMCPComponent):
         2. In tasks_result_handler() to convert Docket task results to ResourceResult
 
         Handles ResourceResult passthrough and converts raw values using
-        ResourceResult's normalization.
+        ResourceResult's normalization. The template's own ``mime_type`` is
+        forwarded so that reads match the MIME type the template advertises
+        in ``resources/templates/list``.
         """
-        if isinstance(raw_value, ResourceResult):
-            return raw_value
-
-        # ResourceResult.__init__ handles all normalization
-        return ResourceResult(raw_value)
-
-    @overload
-    async def _read(
-        self, uri: str, params: dict[str, Any], task_meta: None = None
-    ) -> ResourceResult: ...
-
-    @overload
-    async def _read(
-        self, uri: str, params: dict[str, Any], task_meta: TaskMeta
-    ) -> mcp.types.CreateTaskResult: ...
-
-    async def _read(
-        self, uri: str, params: dict[str, Any], task_meta: TaskMeta | None = None
-    ) -> ResourceResult | mcp.types.CreateTaskResult:
-        """Server entry point that handles task routing.
-
-        This allows ANY ResourceTemplate subclass to support background execution
-        by setting task_config.mode to "supported" or "required". The server calls
-        this method instead of create_resource()/read() directly.
-
-        Args:
-            uri: The concrete URI being read
-            params: Template parameters extracted from the URI
-            task_meta: If provided, execute as a background task and return
-                CreateTaskResult. If None (default), execute synchronously and
-                return ResourceResult.
-
-        Returns:
-            ResourceResult when task_meta is None.
-            CreateTaskResult when task_meta is provided.
-
-        Subclasses can override this to customize task routing behavior.
-        For example, FastMCPProviderResourceTemplate overrides to delegate to child
-        middleware without submitting to Docket.
-        """
-        from fastmcp.server.tasks.routing import check_background_task
-
-        task_result = await check_background_task(
-            component=self, task_type="template", arguments=params, task_meta=task_meta
+        return convert_raw_to_resource_result(
+            raw_value, mime_type=self.mime_type, meta=self.meta
         )
-        if task_result:
-            return task_result
 
-        # Synchronous execution - create resource and read directly
-        # Call resource.read() not resource._read() to avoid task routing on ephemeral resource
+    async def _read(self, uri: str, params: dict[str, Any]) -> ResourceResult:
+        """Server entry point for template reads.
+
+        The server calls this instead of create_resource()/read() directly so
+        subclasses can customize dispatch (e.g. FastMCPProviderResourceTemplate
+        delegates to child-server middleware).
+        """
         resource = await self.create_resource(uri, params)
         result = await resource.read()
         return self.convert_result(result)
@@ -323,9 +312,9 @@ class ResourceTemplate(FastMCPComponent):
 
         return SDKResourceTemplate(
             name=overrides.get("name", self.name),
-            uriTemplate=overrides.get("uriTemplate", self.uri_template),
+            uri_template=overrides.get("uriTemplate", self.uri_template),
             description=overrides.get("description", self.description),
-            mimeType=overrides.get("mimeType", self.mime_type),
+            mime_type=overrides.get("mimeType", self.mime_type),
             title=overrides.get("title", self.title),
             icons=overrides.get("icons", self.icons),
             annotations=overrides.get("annotations", self.annotations),
@@ -340,10 +329,10 @@ class ResourceTemplate(FastMCPComponent):
         # Note: This creates a simple ResourceTemplate instance. For function-based templates,
         # the original function is lost, which is expected for remote templates.
         return cls(
-            uri_template=mcp_template.uriTemplate,
+            uri_template=mcp_template.uri_template,
             name=mcp_template.name,
             description=mcp_template.description,
-            mime_type=mcp_template.mimeType or "text/plain",
+            mime_type=mcp_template.mime_type or "text/plain",
             parameters={},  # Remote templates don't have local parameters
         )
 
@@ -352,35 +341,6 @@ class ResourceTemplate(FastMCPComponent):
         """The globally unique lookup key for this template."""
         base_key = self.make_key(self.uri_template)
         return f"{base_key}@{self.version or ''}"
-
-    def register_with_docket(self, docket: Docket) -> None:
-        """Register this template with docket for background execution."""
-        if not self.task_config.supports_tasks():
-            return
-        docket.register(self.read, names=[self.key])
-
-    async def add_to_docket(  # type: ignore[override]
-        self,
-        docket: Docket,
-        params: dict[str, Any],
-        *,
-        fn_key: str | None = None,
-        task_key: str | None = None,
-        **kwargs: Any,
-    ) -> Execution:
-        """Schedule this template for background execution via docket.
-
-        Args:
-            docket: The Docket instance
-            params: Template parameters
-            fn_key: Function lookup key in Docket registry (defaults to self.key)
-            task_key: Redis storage key for the result
-            **kwargs: Additional kwargs passed to docket.add()
-        """
-        lookup_key = fn_key or self.key
-        if task_key:
-            kwargs["key"] = task_key
-        return await docket.add(lookup_key, **kwargs)(params)
 
     def get_span_attributes(self) -> dict[str, Any]:
         return super().get_span_attributes() | {
@@ -394,44 +354,13 @@ class FunctionResourceTemplate(ResourceTemplate):
 
     fn: SkipJsonSchema[Callable[..., Any]]
 
-    @overload
-    async def _read(
-        self, uri: str, params: dict[str, Any], task_meta: None = None
-    ) -> ResourceResult: ...
-
-    @overload
-    async def _read(
-        self, uri: str, params: dict[str, Any], task_meta: TaskMeta
-    ) -> mcp.types.CreateTaskResult: ...
-
-    async def _read(
-        self, uri: str, params: dict[str, Any], task_meta: TaskMeta | None = None
-    ) -> ResourceResult | mcp.types.CreateTaskResult:
+    async def _read(self, uri: str, params: dict[str, Any]) -> ResourceResult:
         """Optimized server entry point that skips ephemeral resource creation.
 
         For FunctionResourceTemplate, we can call read() directly instead of
         creating a temporary resource, which is more efficient.
-
-        Args:
-            uri: The concrete URI being read
-            params: Template parameters extracted from the URI
-            task_meta: If provided, execute as a background task and return
-                CreateTaskResult. If None (default), execute synchronously and
-                return ResourceResult.
-
-        Returns:
-            ResourceResult when task_meta is None.
-            CreateTaskResult when task_meta is provided.
         """
-        from fastmcp.server.tasks.routing import check_background_task
-
-        task_result = await check_background_task(
-            component=self, task_type="template", arguments=params, task_meta=task_meta
-        )
-        if task_result:
-            return task_result
-
-        # Synchronous execution - call read() directly, skip resource creation
+        # Call read() directly, skip resource creation
         result = await self.read(arguments=params)
         return self.convert_result(result)
 
@@ -454,7 +383,6 @@ class FunctionResourceTemplate(ResourceTemplate):
             meta=self.meta,
             title=self.title,
             icons=self.icons,
-            task=self.task_config,
             auth=self.auth,
         )
 
@@ -497,37 +425,6 @@ class FunctionResourceTemplate(ResourceTemplate):
 
         return result
 
-    def register_with_docket(self, docket: Docket) -> None:
-        """Register this template with docket for background execution."""
-        if not self.task_config.supports_tasks():
-            return
-        docket.register(self.fn, names=[self.key])
-
-    async def add_to_docket(
-        self,
-        docket: Docket,
-        params: dict[str, Any],
-        *,
-        fn_key: str | None = None,
-        task_key: str | None = None,
-        **kwargs: Any,
-    ) -> Execution:
-        """Schedule this template for background execution via docket.
-
-        FunctionResourceTemplate splats the params dict since .fn expects **kwargs.
-
-        Args:
-            docket: The Docket instance
-            params: Template parameters
-            fn_key: Function lookup key in Docket registry (defaults to self.key)
-            task_key: Redis storage key for the result
-            **kwargs: Additional kwargs passed to docket.add()
-        """
-        lookup_key = fn_key or self.key
-        if task_key:
-            kwargs["key"] = task_key
-        return await docket.add(lookup_key, **kwargs)(**params)
-
     @classmethod
     def from_function(
         cls,
@@ -542,8 +439,8 @@ class FunctionResourceTemplate(ResourceTemplate):
         tags: set[str] | None = None,
         annotations: Annotations | None = None,
         meta: dict[str, Any] | None = None,
-        task: bool | TaskConfig | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
+        security: ResourceSecurity | None | InheritSecurity = INHERIT_SECURITY,
     ) -> FunctionResourceTemplate:
         """Create a template from a function."""
 
@@ -638,15 +535,6 @@ class FunctionResourceTemplate(ResourceTemplate):
 
         description = description if description is not None else inspect.getdoc(fn)
 
-        # Normalize task to TaskConfig and validate
-        if task is None:
-            task_config = TaskConfig(mode="forbidden")
-        elif isinstance(task, bool):
-            task_config = TaskConfig.from_bool(task)
-        else:
-            task_config = task
-        task_config.validate_function(fn, func_name)
-
         # if the fn is a callable class, we need to get the __call__ method from here out
         if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
             fn = fn.__call__
@@ -681,6 +569,6 @@ class FunctionResourceTemplate(ResourceTemplate):
             tags=tags or set(),
             annotations=annotations,
             meta=meta,
-            task_config=task_config,
             auth=auth,
+            security=security,
         )

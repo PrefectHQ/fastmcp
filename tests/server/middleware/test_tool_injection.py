@@ -4,7 +4,7 @@ import math
 
 import pytest
 from inline_snapshot import snapshot
-from mcp.types import Tool as SDKTool
+from mcp_types import Tool as SDKTool
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
@@ -121,7 +121,10 @@ class TestToolInjectionMiddleware:
         )
         base_server.add_middleware(middleware)
 
-        async with Client[FastMCPTransport](base_server) as client:
+        # Pinned to legacy: a middleware-injected tool's raised exception is
+        # surfaced with its message on the handshake era; the modern server
+        # runner reports it as a generic "Internal server error".
+        async with Client[FastMCPTransport](base_server, mode="legacy") as client:
             with pytest.raises(Exception, match="Cannot divide by zero"):
                 _ = await client.call_tool(name="divide", arguments={"a": 10, "b": 0})
 
@@ -216,8 +219,8 @@ class TestToolInjectionMiddleware:
 
         multiply_tool = next(t for t in tools if t.name == "multiply")
         assert multiply_tool.description == "Multiply two numbers."
-        assert "a" in multiply_tool.inputSchema["properties"]
-        assert "b" in multiply_tool.inputSchema["properties"]
+        assert "a" in multiply_tool.input_schema["properties"]
+        assert "b" in multiply_tool.input_schema["properties"]
 
     async def test_injected_tool_does_not_conflict_with_base_tool(
         self, base_server: FastMCP

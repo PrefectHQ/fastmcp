@@ -31,7 +31,7 @@ merge, not a courtesy.
 - Maintainer-authored PRs are exempt. A `trusted-contributor` label exempts a contributor up
   front. Reopening the PR or removing the `missing-issue-link` label applies a sticky
   `bypass-issue-check`.
-- Sibling bots have usually already run on the issue: `martian-triage-issue` (investigates +
+- Sibling bots have usually already run on the issue: `marvin-triage-issue` (investigates +
   recommends), `marvin-dedupe-issues` / `auto-close-duplicates` (dupes), `auto-close-needs-mre`
   (missing MRE). Read their comments before re-deriving anything.
 

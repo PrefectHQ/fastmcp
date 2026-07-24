@@ -23,10 +23,10 @@ import base64
 import io
 
 import qrcode  # type: ignore[import-untyped]
-from mcp import types
+from mcp_types import ImageContent
 
 from fastmcp import FastMCP
-from fastmcp.server.apps import AppConfig, ResourceCSP
+from fastmcp.apps import AppConfig, ResourceCSP
 from fastmcp.tools import ToolResult
 
 VIEW_URI: str = "ui://qr-server/view.html"
@@ -153,7 +153,7 @@ def generate_qr(
     img.save(buffer, format="PNG")
     b64 = base64.b64encode(buffer.getvalue()).decode()
     return ToolResult(
-        content=[types.ImageContent(type="image", data=b64, mimeType="image/png")]
+        content=[ImageContent(type="image", data=b64, mime_type="image/png")]
     )
 
 

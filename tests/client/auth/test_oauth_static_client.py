@@ -2,7 +2,7 @@
 
 from unittest.mock import patch
 
-import httpx
+import httpx2
 import pytest
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
@@ -146,7 +146,7 @@ class TestStaticClientRetryBehavior:
         with patch.object(
             OAuth.__bases__[0], "async_auth_flow", side_effect=failing_auth_flow
         ):
-            flow = oauth.async_auth_flow(httpx.Request("GET", "https://example.com"))
+            flow = oauth.async_auth_flow(httpx2.Request("GET", "https://example.com"))
             with pytest.raises(ClientNotFoundError, match="static client credentials"):
                 await flow.__anext__()
 
@@ -162,12 +162,12 @@ class TestStaticClientRetryBehavior:
             if call_count == 1:
                 raise ClientNotFoundError("client not found")
             # Second attempt succeeds
-            yield httpx.Request("GET", "https://example.com")
+            yield httpx2.Request("GET", "https://example.com")
 
         with patch.object(
             OAuth.__bases__[0], "async_auth_flow", side_effect=auth_flow_with_retry
         ):
-            flow = oauth.async_auth_flow(httpx.Request("GET", "https://example.com"))
+            flow = oauth.async_auth_flow(httpx2.Request("GET", "https://example.com"))
             request = await flow.__anext__()
             assert request is not None
             assert call_count == 2
@@ -221,6 +221,7 @@ class TestStaticClientE2E:
             async with Client(
                 transport=StreamableHttpTransport(url),
                 auth=oauth,
+                mode="legacy",  # `ping` is a handshake-era request
             ) as client:
                 assert await client.ping()
                 tools = await client.list_tools()

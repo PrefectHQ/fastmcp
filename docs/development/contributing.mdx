@@ -134,7 +134,7 @@ Tests are documentation that shows how features work. Good tests give reviewers 
 uv run pytest tests/server/ -v
 
 # Run all tests before submitting PR
-uv run pytest
+uv run pytest -n auto
 ```
 
 Every new feature needs tests. See the [Testing Guide](/development/tests) for patterns and requirements.
@@ -166,7 +166,7 @@ just api-ref-all
 
 #### Before Submitting
 
-1. **Run all checks**: `uv run prek run --all-files && uv run pytest`
+1. **Run all checks**: `uv run prek run --all-files && uv run pytest -n auto`
 2. **Keep scope small**: One feature or fix per PR
 3. **Write clear description**: Your PR description becomes permanent documentation
 4. **Update docs**: Include documentation for API changes

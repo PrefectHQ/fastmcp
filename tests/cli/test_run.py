@@ -296,14 +296,14 @@ class TestV1ServerAsync:
         """Test that v1 server uses async stdio method."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as SDKServer
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 
@@ -320,7 +320,7 @@ async def async_echo(text: str) -> str:
 
         # Mock the async run method
         with patch.object(
-            FastMCP1x, "run_stdio_async", new_callable=AsyncMock
+            SDKServer, "run_stdio_async", new_callable=AsyncMock
         ) as run_mock:
             await run_command(str(test_file), transport="stdio")
             run_mock.assert_called_once()
@@ -329,14 +329,14 @@ async def async_echo(text: str) -> str:
         """Test that v1 server uses async http method."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as SDKServer
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 
@@ -353,7 +353,7 @@ async def async_echo(text: str) -> str:
 
         # Mock the async run method
         with patch.object(
-            FastMCP1x, "run_streamable_http_async", new_callable=AsyncMock
+            SDKServer, "run_streamable_http_async", new_callable=AsyncMock
         ) as run_mock:
             await run_command(str(test_file), transport="http")
             run_mock.assert_called_once()
@@ -362,14 +362,14 @@ async def async_echo(text: str) -> str:
         """Test that v1 server uses async streamable-http method."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as SDKServer
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 
@@ -386,7 +386,7 @@ async def async_echo(text: str) -> str:
 
         # Mock the async run method
         with patch.object(
-            FastMCP1x, "run_streamable_http_async", new_callable=AsyncMock
+            SDKServer, "run_streamable_http_async", new_callable=AsyncMock
         ) as run_mock:
             await run_command(str(test_file), transport="streamable-http")
             run_mock.assert_called_once()
@@ -395,14 +395,14 @@ async def async_echo(text: str) -> str:
         """Test that v1 server uses async sse method."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as SDKServer
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 
@@ -419,7 +419,7 @@ async def async_echo(text: str) -> str:
 
         # Mock the async run method
         with patch.object(
-            FastMCP1x, "run_sse_async", new_callable=AsyncMock
+            SDKServer, "run_sse_async", new_callable=AsyncMock
         ) as run_mock:
             await run_command(str(test_file), transport="sse")
             run_mock.assert_called_once()
@@ -428,14 +428,14 @@ async def async_echo(text: str) -> str:
         """Test that v1 server uses streamable-http by default."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as SDKServer
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 
@@ -452,7 +452,7 @@ async def async_echo(text: str) -> str:
 
         # Mock the async run method
         with patch.object(
-            FastMCP1x, "run_streamable_http_async", new_callable=AsyncMock
+            SDKServer, "run_streamable_http_async", new_callable=AsyncMock
         ) as run_mock:
             await run_command(str(test_file))
             run_mock.assert_called_once()
@@ -461,14 +461,14 @@ async def async_echo(text: str) -> str:
         """Test that v1 server receives host/port settings."""
         from unittest.mock import AsyncMock, patch
 
-        from mcp.server.fastmcp import FastMCP as FastMCP1x
+        from mcp.server.mcpserver import MCPServer as SDKServer
 
         from fastmcp.cli.run import run_command
 
         # Create a v1 FastMCP server file with both sync and async tools
         test_file = tmp_path / "v1_server.py"
         test_file.write_text("""
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("V1Server")
 
@@ -485,7 +485,7 @@ async def async_echo(text: str) -> str:
 
         # Mock the async run method
         with patch.object(
-            FastMCP1x, "run_streamable_http_async", new_callable=AsyncMock
+            SDKServer, "run_streamable_http_async", new_callable=AsyncMock
         ) as run_mock:
             await run_command(
                 str(test_file), transport="http", host="0.0.0.0", port=9000

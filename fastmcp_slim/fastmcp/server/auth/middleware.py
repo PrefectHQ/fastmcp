@@ -11,10 +11,12 @@ authentication (no error attribute) and invalid authentication (with error).
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from mcp.server.auth.middleware.bearer_auth import (
     RequireAuthMiddleware as SDKRequireAuthMiddleware,
 )
+from pydantic import AnyHttpUrl
 from starlette.types import Receive, Scope, Send
 
 from fastmcp.utilities.logging import get_logger
@@ -33,6 +35,18 @@ class RequireAuthMiddleware(SDKRequireAuthMiddleware):
     missing authentication (initial discovery) and invalid authentication
     (token validation failure).
     """
+
+    def __init__(
+        self,
+        app: Any,
+        required_scopes: list[str],
+        resource_metadata_url: AnyHttpUrl | None = None,
+        challenge_scopes: list[str] | None = None,
+    ) -> None:
+        super().__init__(app, required_scopes, resource_metadata_url)
+        self.challenge_scopes = (
+            required_scopes if challenge_scopes is None else challenge_scopes
+        )
 
     async def __call__(
         self,
@@ -86,9 +100,7 @@ class RequireAuthMiddleware(SDKRequireAuthMiddleware):
         Args:
             send: ASGI send callable
         """
-        www_auth_parts = []
-        if self.resource_metadata_url:
-            www_auth_parts.append(f'resource_metadata="{self.resource_metadata_url}"')
+        www_auth_parts = self._challenge_context()
 
         www_authenticate = (
             ("Bearer " + ", ".join(www_auth_parts)) if www_auth_parts else "Bearer"
@@ -109,6 +121,16 @@ class RequireAuthMiddleware(SDKRequireAuthMiddleware):
         logger.debug(
             "Missing auth: sent 401 without error attribute (RFC 6750 §3.1 compliant)"
         )
+
+    def _challenge_context(self) -> list[str]:
+        """Build shared scope and resource metadata challenge parameters."""
+        parts = []
+        if self.challenge_scopes:
+            scope_value = " ".join(self.challenge_scopes)
+            parts.append(f'scope="{scope_value}"')
+        if self.resource_metadata_url:
+            parts.append(f'resource_metadata="{self.resource_metadata_url}"')
+        return parts
 
     async def _send_auth_error(
         self, send: Send, status_code: int, error: str, description: str
@@ -144,8 +166,7 @@ class RequireAuthMiddleware(SDKRequireAuthMiddleware):
             f'error="{error}"',
             f'error_description="{enhanced_description}"',
         ]
-        if self.resource_metadata_url:
-            www_auth_parts.append(f'resource_metadata="{self.resource_metadata_url}"')
+        www_auth_parts.extend(self._challenge_context())
 
         www_authenticate = f"Bearer {', '.join(www_auth_parts)}"
 

@@ -5,20 +5,17 @@ from __future__ import annotations
 import base64
 import json
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Annotated, Any, ClassVar, overload
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar
 
-import mcp.types
+import mcp_types
 
 if TYPE_CHECKING:
-    from docket import Docket
-    from docket.execution import Execution
-
     from fastmcp.resources.function_resource import FunctionResource
 
 import pydantic
 import pydantic_core
-from mcp.types import Annotations, Icon
-from mcp.types import Resource as SDKResource
+from mcp_types import Annotations, Icon
+from mcp_types import Resource as SDKResource
 from pydantic import (
     AnyUrl,
     ConfigDict,
@@ -30,10 +27,8 @@ from pydantic import (
 from pydantic.json_schema import SkipJsonSchema
 from typing_extensions import Self
 
-from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.components import FastMCPComponent
-from fastmcp.utilities.tasks import TaskConfig, TaskMeta
 
 
 class ResourceContent(pydantic.BaseModel):
@@ -93,7 +88,7 @@ class ResourceContent(pydantic.BaseModel):
 
     def to_mcp_resource_contents(
         self, uri: AnyUrl | str
-    ) -> mcp.types.TextResourceContents | mcp.types.BlobResourceContents:
+    ) -> mcp_types.TextResourceContents | mcp_types.BlobResourceContents:
         """Convert to MCP resource contents type.
 
         Args:
@@ -103,17 +98,17 @@ class ResourceContent(pydantic.BaseModel):
             TextResourceContents for str content, BlobResourceContents for bytes
         """
         if isinstance(self.content, str):
-            return mcp.types.TextResourceContents(
-                uri=AnyUrl(uri) if isinstance(uri, str) else uri,
+            return mcp_types.TextResourceContents(
+                uri=str(uri),
                 text=self.content,
-                mimeType=self.mime_type or "text/plain",
+                mime_type=self.mime_type or "text/plain",
                 _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
             )
         else:
-            return mcp.types.BlobResourceContents(
-                uri=AnyUrl(uri) if isinstance(uri, str) else uri,
+            return mcp_types.BlobResourceContents(
+                uri=str(uri),
                 blob=base64.b64encode(self.content).decode(),
-                mimeType=self.mime_type or "application/octet-stream",
+                mime_type=self.mime_type or "application/octet-stream",
                 _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
             )
 
@@ -199,7 +194,7 @@ class ResourceResult(pydantic.BaseModel):
             f"contents must be str, bytes, or list[ResourceContent], got {type(contents).__name__}"
         )
 
-    def to_mcp_result(self, uri: AnyUrl | str) -> mcp.types.ReadResourceResult:
+    def to_mcp_result(self, uri: AnyUrl | str) -> mcp_types.ReadResourceResult:
         """Convert to MCP ReadResourceResult.
 
         Args:
@@ -209,10 +204,96 @@ class ResourceResult(pydantic.BaseModel):
             MCP ReadResourceResult with converted contents
         """
         mcp_contents = [item.to_mcp_resource_contents(uri) for item in self.contents]
-        return mcp.types.ReadResourceResult(
+        return mcp_types.ReadResourceResult(
             contents=mcp_contents,
             _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
         )
+
+
+def _public_content_meta(meta: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Strip FastMCP's internal bookkeeping out of component meta.
+
+    Component `meta` carries private entries under the `fastmcp` namespace
+    (e.g. `_internal.visibility`) that must never reach the wire. Listings
+    already filter these via `FastMCPComponent.get_meta()`; content items
+    served by `resources/read` need the same treatment.
+
+    Returns None when nothing public remains, so resources without user
+    metadata keep an absent `_meta` rather than an empty object.
+    """
+    if not meta:
+        return None
+
+    public = dict(meta)
+    fastmcp_meta = public.get("fastmcp")
+    if isinstance(fastmcp_meta, dict):
+        public_fastmcp = {
+            key: value for key, value in fastmcp_meta.items() if not key.startswith("_")
+        }
+        if public_fastmcp:
+            public["fastmcp"] = public_fastmcp
+        else:
+            public.pop("fastmcp")
+
+    return public or None
+
+
+def convert_raw_to_resource_result(
+    raw_value: Any,
+    *,
+    mime_type: str | None,
+    meta: dict[str, Any] | None,
+) -> ResourceResult:
+    """Wrap a user function's return value in a ResourceResult.
+
+    Shared by `Resource` and `ResourceTemplate` so both honor the MIME type
+    the component declares in listings. A component that advertises
+    `text/csv` must not serve `text/plain` on read.
+
+    Args:
+        raw_value: The value returned by the user's function.
+        mime_type: The component's declared MIME type, forwarded to content items.
+        meta: Component-level meta (e.g. `ui` metadata for MCP Apps CSP/permissions)
+            propagated to each content item.
+    """
+    if isinstance(raw_value, ResourceResult):
+        return raw_value
+
+    meta = _public_content_meta(meta)
+
+    # For plain str/bytes returns, wrap in ResourceContent with the
+    # component's MIME type and meta so the wire response carries the
+    # correct type and metadata (e.g. CSP for MCP Apps).
+    if isinstance(raw_value, (str, bytes)):
+        return ResourceResult(
+            [ResourceContent(raw_value, mime_type=mime_type, meta=meta)]
+        )
+
+    # For JSON-native types (dict, list, tuple, int, float, bool, None),
+    # serialize and wrap in ResourceContent with the component's meta,
+    # matching the str/bytes path above so CSP/permissions propagate.
+    # Exclude list[ResourceContent] which should go through ResourceResult
+    # normalization below.
+    if (
+        isinstance(raw_value, dict | list | tuple | int | float | bool)
+        or raw_value is None
+    ) and not (
+        isinstance(raw_value, list)
+        and raw_value
+        and isinstance(raw_value[0], ResourceContent)
+    ):
+        return ResourceResult(
+            [
+                ResourceContent(
+                    json.dumps(raw_value),
+                    mime_type=mime_type or "application/json",
+                    meta=meta,
+                )
+            ]
+        )
+
+    # All other types fall through to ResourceResult for error handling
+    return ResourceResult(raw_value)
 
 
 class Resource(FastMCPComponent):
@@ -254,7 +335,6 @@ class Resource(FastMCPComponent):
         tags: set[str] | None = None,
         annotations: Annotations | None = None,
         meta: dict[str, Any] | None = None,
-        task: bool | TaskConfig | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
     ) -> FunctionResource:
         from fastmcp.resources.function_resource import (
@@ -273,7 +353,6 @@ class Resource(FastMCPComponent):
             tags=tags,
             annotations=annotations,
             meta=meta,
-            task=task,
             auth=auth,
         )
 
@@ -325,80 +404,18 @@ class Resource(FastMCPComponent):
         MCP Apps CSP/permissions) is propagated to each content item so
         that hosts can read it from the ``resources/read`` response.
         """
-        if isinstance(raw_value, ResourceResult):
-            return raw_value
-
-        # For plain str/bytes returns, wrap in ResourceContent with the
-        # resource's MIME type and component meta so the wire response
-        # carries the correct type and metadata (e.g. CSP for MCP Apps).
-        if isinstance(raw_value, (str, bytes)):
-            return ResourceResult(
-                [ResourceContent(raw_value, mime_type=self.mime_type, meta=self.meta)]
-            )
-
-        # For JSON-native types (dict, list, tuple, int, float, bool, None),
-        # serialize and wrap in ResourceContent with the component's meta,
-        # matching the str/bytes path above so CSP/permissions propagate.
-        # Exclude list[ResourceContent] which should go through ResourceResult
-        # normalization below.
-        if (
-            isinstance(raw_value, dict | list | tuple | int | float | bool)
-            or raw_value is None
-        ) and not (
-            isinstance(raw_value, list)
-            and raw_value
-            and isinstance(raw_value[0], ResourceContent)
-        ):
-            return ResourceResult(
-                [
-                    ResourceContent(
-                        json.dumps(raw_value),
-                        mime_type=self.mime_type or "application/json",
-                        meta=self.meta,
-                    )
-                ]
-            )
-
-        # All other types fall through to ResourceResult for error handling
-        return ResourceResult(raw_value)
-
-    @overload
-    async def _read(self, task_meta: None = None) -> ResourceResult: ...
-
-    @overload
-    async def _read(self, task_meta: TaskMeta) -> mcp.types.CreateTaskResult: ...
-
-    async def _read(
-        self, task_meta: TaskMeta | None = None
-    ) -> ResourceResult | mcp.types.CreateTaskResult:
-        """Server entry point that handles task routing.
-
-        This allows ANY Resource subclass to support background execution by setting
-        task_config.mode to "supported" or "required". The server calls this
-        method instead of read() directly.
-
-        Args:
-            task_meta: If provided, execute as a background task and return
-                CreateTaskResult. If None (default), execute synchronously and
-                return ResourceResult.
-
-        Returns:
-            ResourceResult when task_meta is None.
-            CreateTaskResult when task_meta is provided.
-
-        Subclasses can override this to customize task routing behavior.
-        For example, FastMCPProviderResource overrides to delegate to child
-        middleware without submitting to Docket.
-        """
-        from fastmcp.server.tasks.routing import check_background_task
-
-        task_result = await check_background_task(
-            component=self, task_type="resource", arguments=None, task_meta=task_meta
+        return convert_raw_to_resource_result(
+            raw_value, mime_type=self.mime_type, meta=self.meta
         )
-        if task_result:
-            return task_result
 
-        # Synchronous execution - convert result to ResourceResult
+    async def _read(self) -> ResourceResult:
+        """Server entry point for resource reads.
+
+        The server calls this method instead of ``read()`` directly so that
+        subclasses can customize dispatch. For example,
+        ``FastMCPProviderResource`` overrides this to delegate to child-server
+        middleware.
+        """
         result = await self.read()
         return self.convert_result(result)
 
@@ -410,9 +427,9 @@ class Resource(FastMCPComponent):
 
         return SDKResource(
             name=overrides.get("name", self.name),
-            uri=overrides.get("uri", self.uri),
+            uri=str(overrides.get("uri", self.uri)),
             description=overrides.get("description", self.description),
-            mimeType=overrides.get("mimeType", self.mime_type),
+            mime_type=overrides.get("mimeType", self.mime_type),
             title=overrides.get("title", self.title),
             icons=overrides.get("icons", self.icons),
             annotations=overrides.get("annotations", self.annotations),
@@ -430,33 +447,6 @@ class Resource(FastMCPComponent):
         base_key = self.make_key(str(self.uri))
         return f"{base_key}@{self.version or ''}"
 
-    def register_with_docket(self, docket: Docket) -> None:
-        """Register this resource with docket for background execution."""
-        if not self.task_config.supports_tasks():
-            return
-        docket.register(self.read, names=[self.key])
-
-    async def add_to_docket(  # type: ignore[override]
-        self,
-        docket: Docket,
-        *,
-        fn_key: str | None = None,
-        task_key: str | None = None,
-        **kwargs: Any,
-    ) -> Execution:
-        """Schedule this resource for background execution via docket.
-
-        Args:
-            docket: The Docket instance
-            fn_key: Function lookup key in Docket registry (defaults to self.key)
-            task_key: Redis storage key for the result
-            **kwargs: Additional kwargs passed to docket.add()
-        """
-        lookup_key = fn_key or self.key
-        if task_key:
-            kwargs["key"] = task_key
-        return await docket.add(lookup_key, **kwargs)()
-
     def get_span_attributes(self) -> dict[str, Any]:
         return super().get_span_attributes() | {
             "fastmcp.component.type": "resource",
@@ -469,29 +459,3 @@ __all__ = [
     "ResourceContent",
     "ResourceResult",
 ]
-
-
-def __getattr__(name: str) -> Any:
-    """Deprecated re-exports for backwards compatibility."""
-    deprecated_exports = {
-        "FunctionResource": "FunctionResource",
-        "resource": "resource",
-    }
-
-    if name in deprecated_exports:
-        import warnings
-
-        import fastmcp
-
-        if fastmcp.settings.deprecation_warnings:
-            warnings.warn(
-                f"Importing {name} from fastmcp.resources.resource is deprecated. "
-                f"Import from fastmcp.resources.function_resource instead.",
-                FastMCPDeprecationWarning,
-                stacklevel=2,
-            )
-        from fastmcp.resources import function_resource
-
-        return getattr(function_resource, name)
-
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -1,0 +1,173 @@
+---
+title: Transforms Overview
+sidebarTitle: Overview
+description: Modify components as they flow through your server
+icon: wand-magic-sparkles
+---
+
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="3.0.0" />
+
+Transforms modify components as they flow from providers to clients. When a client asks "what tools do you have?", the request passes through each transform in the chain. Each transform can modify the components before passing them along.
+
+## Mental Model
+
+Think of transforms as filters in a pipeline. Components flow from providers through transforms to reach clients:
+
+```
+Provider → [Transform A] → [Transform B] → Client
+```
+
+When listing components, transforms receive sequences and return transformed sequences—a pure function pattern. When getting a specific component by name, transforms use a middleware pattern with `call_next`, working in reverse: mapping the client's requested name back to the original, then transforming the result.
+
+## Built-in Transforms
+
+FastMCP provides several transforms for common use cases:
+
+- **[Namespace](/servers/transforms/namespace)** - Prefix component names to prevent conflicts when composing servers
+- **[Tool Transformation](/servers/transforms/tool-transformation)** - Rename tools, modify descriptions, reshape arguments
+- **[Enabled](/servers/visibility)** - Control which components are visible at runtime
+- **[Tool Search](/servers/transforms/tool-search)** - Replace large tool catalogs with on-demand search
+- **[Resources as Tools](/servers/transforms/resources-as-tools)** - Expose resources to tool-only clients
+- **[Prompts as Tools](/servers/transforms/prompts-as-tools)** - Expose prompts to tool-only clients
+- **[Code Mode (Experimental)](/servers/transforms/code-mode)** - Replace many tools with programmable `search` + `execute`
+
+## Server vs Provider Transforms
+
+Transforms can be added at two levels, each serving different purposes.
+
+### Provider-Level Transforms
+
+Provider transforms apply to components from a specific provider. They run first, modifying components before they reach the server level.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.providers import FastMCPProvider
+from fastmcp.server.transforms import Namespace, ToolTransform
+from fastmcp.tools.tool_transform import ToolTransformConfig
+
+sub_server = FastMCP("Sub")
+
+@sub_server.tool
+def process(data: str) -> str:
+    return f"Processed: {data}"
+
+# Create provider and add transforms
+provider = FastMCPProvider(sub_server)
+provider.add_transform(Namespace("api"))
+provider.add_transform(ToolTransform({
+    "api_process": ToolTransformConfig(description="Process data through the API"),
+}))
+
+main = FastMCP("Main", providers=[provider])
+# Tool is now: api_process with updated description
+```
+
+When using `mount()`, the returned provider reference lets you add transforms directly.
+
+```python
+main = FastMCP("Main")
+mount = main.mount(sub_server, namespace="api")
+mount.add_transform(ToolTransform({...}))
+```
+
+### Server-Level Transforms
+
+Server transforms apply to all components from all providers. They run after provider transforms, seeing the already-transformed names.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.transforms import Namespace
+
+mcp = FastMCP("Server", transforms=[Namespace("v1")])
+
+@mcp.tool
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+
+# All tools become v1_toolname
+```
+
+Server-level transforms are useful for API versioning or applying consistent naming across your entire server.
+
+### Transform Order
+
+Transforms stack in the order they're added. The first transform added is innermost (closest to the provider), and subsequent transforms wrap it.
+
+```python
+from fastmcp.server.providers import FastMCPProvider
+from fastmcp.server.transforms import Namespace, ToolTransform
+from fastmcp.tools.tool_transform import ToolTransformConfig
+
+provider = FastMCPProvider(server)
+provider.add_transform(Namespace("api"))           # Applied first
+provider.add_transform(ToolTransform({             # Sees namespaced names
+    "api_verbose_name": ToolTransformConfig(name="short"),
+}))
+
+# Flow: "verbose_name" -> "api_verbose_name" -> "short"
+```
+
+When a client requests "short", the transforms reverse the mapping: ToolTransform maps "short" to "api_verbose_name", then Namespace strips the prefix to find "verbose_name" in the provider.
+
+## Custom Transforms
+
+Create custom transforms by subclassing `Transform` and overriding the methods you need.
+
+```python
+from collections.abc import Sequence
+from fastmcp.server.transforms import Transform, GetToolNext
+from fastmcp.tools.tool import Tool
+
+class TagFilter(Transform):
+    """Filter tools to only those with specific tags."""
+
+    def __init__(self, required_tags: set[str]):
+        self.required_tags = required_tags
+
+    async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
+        return [t for t in tools if t.tags & self.required_tags]
+
+    async def get_tool(self, name: str, call_next: GetToolNext) -> Tool | None:
+        tool = await call_next(name)
+        if tool and tool.tags & self.required_tags:
+            return tool
+        return None
+```
+
+The `Transform` base class provides default implementations that pass through unchanged. Override only the methods relevant to your transform.
+
+Each component type has two methods with different patterns:
+
+| Method | Pattern | Purpose |
+|--------|---------|---------|
+| `list_tools(tools)` | Pure function | Transform the sequence of tools |
+| `get_tool(name, call_next)` | Middleware | Transform lookup by name |
+| `list_resources(resources)` | Pure function | Transform the sequence of resources |
+| `get_resource(uri, call_next)` | Middleware | Transform lookup by URI |
+| `list_resource_templates(templates)` | Pure function | Transform the sequence of templates |
+| `get_resource_template(uri, call_next)` | Middleware | Transform template lookup by URI |
+| `list_prompts(prompts)` | Pure function | Transform the sequence of prompts |
+| `get_prompt(name, call_next)` | Middleware | Transform lookup by name |
+
+List methods receive sequences directly and return transformed sequences. Get methods use `call_next` for routing flexibility—when a client requests "new_name", your transform maps it back to "original_name" before calling `call_next()`.
+
+```python
+class PrefixTransform(Transform):
+    def __init__(self, prefix: str):
+        self.prefix = prefix
+
+    async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
+        return [t.model_copy(update={"name": f"{self.prefix}_{t.name}"}) for t in tools]
+
+    async def get_tool(self, name: str, call_next: GetToolNext) -> Tool | None:
+        # Reverse the prefix to find the original
+        if not name.startswith(f"{self.prefix}_"):
+            return None
+        original = name[len(self.prefix) + 1:]
+        tool = await call_next(original)
+        if tool:
+            return tool.model_copy(update={"name": name})
+        return None
+```

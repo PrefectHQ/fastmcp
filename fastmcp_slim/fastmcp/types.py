@@ -31,4 +31,6 @@ Produces `"format": "textarea"` in the JSON Schema, which
 `fastmcp dev apps` picks up automatically.
 """
 
-__all__ = ["Textarea"]
+__all__ = [
+    "Textarea",
+]

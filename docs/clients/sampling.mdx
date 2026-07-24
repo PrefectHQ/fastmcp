@@ -13,6 +13,10 @@ Use this when you need to respond to server requests for LLM completions.
 
 MCP servers can request LLM completions from clients during tool execution. This enables servers to delegate AI reasoning to the client, which controls which LLM is used and how requests are made.
 
+<Note>
+**Sampling requires the older MCP protocol.** A server requests sampling by sending a request down to the client, and protocol version `2026-07-28` removed the server's ability to do that. Clients default to `mode="auto"`, which negotiates the newest version both sides support, so every example on this page passes `mode="legacy"`. See [protocol negotiation](/clients/client#protocol-negotiation).
+</Note>
+
 ## Handler Template
 
 ```python
@@ -42,13 +46,14 @@ async def sampling_handler(
         conversation.append(f"{message.role}: {content}")
 
     # Use the system prompt if provided
-    system_prompt = params.systemPrompt or "You are a helpful assistant."
+    system_prompt = params.system_prompt or "You are a helpful assistant."
 
     # Integrate with your LLM service here
     return "Generated response based on the messages"
 
 client = Client(
     "my_mcp_server.py",
+    mode="legacy",
     sampling_handler=sampling_handler,
 )
 ```
@@ -109,6 +114,7 @@ from fastmcp.client.sampling.handlers.openai import OpenAISamplingHandler
 
 client = Client(
     "my_mcp_server.py",
+    mode="legacy",
     sampling_handler=OpenAISamplingHandler(default_model="gpt-4o"),
 )
 ```
@@ -120,6 +126,7 @@ from openai import AsyncOpenAI
 
 client = Client(
     "my_mcp_server.py",
+    mode="legacy",
     sampling_handler=OpenAISamplingHandler(
         default_model="llama-3.1-70b",
         client=AsyncOpenAI(base_url="http://localhost:8000/v1"),
@@ -128,7 +135,7 @@ client = Client(
 ```
 
 <Note>
-Install the OpenAI handler with `pip install fastmcp[openai]`.
+Install the OpenAI handler with `pip install 'fastmcp[openai]'`.
 </Note>
 
 ### Anthropic Handler
@@ -141,12 +148,13 @@ from fastmcp.client.sampling.handlers.anthropic import AnthropicSamplingHandler
 
 client = Client(
     "my_mcp_server.py",
+    mode="legacy",
     sampling_handler=AnthropicSamplingHandler(default_model="claude-sonnet-4-5"),
 )
 ```
 
 <Note>
-Install the Anthropic handler with `pip install fastmcp[anthropic]`.
+Install the Anthropic handler with `pip install 'fastmcp[anthropic]'`.
 </Note>
 
 ### Google Gemini Handler
@@ -159,12 +167,13 @@ from fastmcp.client.sampling.handlers.google_genai import GoogleGenaiSamplingHan
 
 client = Client(
     "my_mcp_server.py",
+    mode="legacy",
     sampling_handler=GoogleGenaiSamplingHandler(default_model="gemini-2.0-flash"),
 )
 ```
 
 <Note>
-Install the Google Gemini handler with `pip install fastmcp[gemini]`.
+Install the Google Gemini handler with `pip install 'fastmcp[gemini]'`.
 </Note>
 
 ## Sampling Capabilities
@@ -172,10 +181,11 @@ Install the Google Gemini handler with `pip install fastmcp[gemini]`.
 When you provide a `sampling_handler`, FastMCP automatically advertises full sampling capabilities to the server, including tool support. To disable tool support for simpler handlers:
 
 ```python
-from mcp.types import SamplingCapability
+from mcp_types import SamplingCapability
 
 client = Client(
     "my_mcp_server.py",
+    mode="legacy",
     sampling_handler=basic_handler,
     sampling_capabilities=SamplingCapability(),  # No tool support
 )

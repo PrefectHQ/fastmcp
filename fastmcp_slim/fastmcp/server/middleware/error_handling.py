@@ -7,8 +7,7 @@ from collections.abc import Callable
 from typing import Any
 
 import anyio
-from mcp import McpError
-from mcp.types import ErrorData
+from mcp import MCPError
 
 from fastmcp.exceptions import NotFoundError
 
@@ -47,7 +46,7 @@ class ErrorHandlingMiddleware(Middleware):
             logger: Logger instance for error logging. If None, uses 'fastmcp.errors'
             include_traceback: Whether to include full traceback in error logs
             error_callback: Optional callback function called for each error
-            transform_errors: Whether to transform non-MCP errors to McpError
+            transform_errors: Whether to transform non-MCP errors to MCPError
         """
         self.logger = logger or logging.getLogger("fastmcp.errors")
         self.include_traceback = include_traceback
@@ -82,7 +81,7 @@ class ErrorHandlingMiddleware(Middleware):
         self, error: Exception, context: MiddlewareContext
     ) -> Exception:
         """Transform non-MCP errors to proper MCP errors."""
-        if isinstance(error, McpError):
+        if isinstance(error, MCPError):
             return error
 
         if not self.transform_errors:
@@ -92,30 +91,20 @@ class ErrorHandlingMiddleware(Middleware):
         error_type = type(error.__cause__) if error.__cause__ else type(error)
 
         if error_type in (ValueError, TypeError):
-            return McpError(
-                ErrorData(code=-32602, message=f"Invalid params: {error!s}")
-            )
+            return MCPError(code=-32602, message=f"Invalid params: {error!s}")
         elif error_type in (FileNotFoundError, KeyError, NotFoundError):
             # MCP spec defines -32002 specifically for resource not found
             method = context.method or ""
             if method.startswith("resources/"):
-                return McpError(
-                    ErrorData(code=-32002, message=f"Resource not found: {error!s}")
-                )
-            return McpError(ErrorData(code=-32001, message=f"Not found: {error!s}"))
+                return MCPError(code=-32002, message=f"Resource not found: {error!s}")
+            return MCPError(code=-32001, message=f"Not found: {error!s}")
         elif error_type is PermissionError:
-            return McpError(
-                ErrorData(code=-32000, message=f"Permission denied: {error!s}")
-            )
+            return MCPError(code=-32000, message=f"Permission denied: {error!s}")
         # asyncio.TimeoutError is a subclass of TimeoutError in Python 3.10, alias in 3.11+
         elif error_type in (TimeoutError, asyncio.TimeoutError):
-            return McpError(
-                ErrorData(code=-32000, message=f"Request timeout: {error!s}")
-            )
+            return MCPError(code=-32000, message=f"Request timeout: {error!s}")
         else:
-            return McpError(
-                ErrorData(code=-32603, message=f"Internal error: {error!s}")
-            )
+            return MCPError(code=-32603, message=f"Internal error: {error!s}")
 
     async def on_message(self, context: MiddlewareContext, call_next: CallNext) -> Any:
         """Handle errors for all messages."""

@@ -12,25 +12,20 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any, overload
+from typing import TYPE_CHECKING, Any
 
-import mcp.types
-from mcp.types import AnyUrl
+from pydantic import AnyUrl
 
 from fastmcp.prompts.base import Prompt, PromptResult
 from fastmcp.resources.base import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate, expand_uri_template
 from fastmcp.server.providers.base import Provider
-from fastmcp.server.tasks.config import TaskMeta
 from fastmcp.server.telemetry import delegate_span
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.versions import VersionSpec
 
 if TYPE_CHECKING:
-    from docket import Docket
-    from docket.execution import Execution
-
     from fastmcp.server.server import FastMCP
 
 
@@ -80,30 +75,13 @@ class FastMCPProviderTool(Tool):
             icons=tool.icons,
         )
 
-    @overload
-    async def _run(
-        self,
-        arguments: dict[str, Any],
-        task_meta: None = None,
-    ) -> ToolResult: ...
+    async def _run(self, arguments: dict[str, Any]) -> ToolResult:
+        """Delegate to the child server's call_tool().
 
-    @overload
-    async def _run(
-        self,
-        arguments: dict[str, Any],
-        task_meta: TaskMeta,
-    ) -> mcp.types.CreateTaskResult: ...
-
-    async def _run(
-        self,
-        arguments: dict[str, Any],
-        task_meta: TaskMeta | None = None,
-    ) -> ToolResult | mcp.types.CreateTaskResult:
-        """Delegate to child server's call_tool() with task_meta.
-
-        Passes task_meta through to the child server so it can handle
-        backgrounding appropriately. fn_key is already set by the parent
-        server before calling this method.
+        fn_key is already set by the parent server before calling this method. A
+        child tool that requests client input (SEP-2322) returns an
+        `InputRequiredToolResult`, which forwards through this delegation to the
+        parent's wire handler unchanged.
         """
         # Pass exact version so child executes the correct version
         version = VersionSpec(eq=self.version) if self.version else None
@@ -118,27 +96,20 @@ class FastMCPProviderTool(Tool):
                 self._original_name,
                 arguments,
                 version=version,
-                task_meta=task_meta,
             )
 
     async def run(self, arguments: dict[str, Any]) -> ToolResult:
-        """Delegate to child server's call_tool() without task_meta.
+        """Delegate to the child server's call_tool().
 
         This is called when the tool is used within a TransformedTool
-        forwarding function or other contexts where task_meta is not available.
+        forwarding function or other contexts.
         """
         # Pass exact version so child executes the correct version
         version = VersionSpec(eq=self.version) if self.version else None
 
-        result = await self._server.call_tool(
+        return await self._server.call_tool(
             self._original_name, arguments, version=version
         )
-        # Result from call_tool should always be ToolResult when no task_meta
-        if isinstance(result, mcp.types.CreateTaskResult):
-            raise RuntimeError(
-                "Unexpected CreateTaskResult from call_tool without task_meta"
-            )
-        return result
 
     def get_span_attributes(self) -> dict[str, Any]:
         return super().get_span_attributes() | {
@@ -186,20 +157,10 @@ class FastMCPProviderResource(Resource):
             icons=resource.icons,
         )
 
-    @overload
-    async def _read(self, task_meta: None = None) -> ResourceResult: ...
+    async def _read(self) -> ResourceResult:
+        """Delegate to the child server's read_resource().
 
-    @overload
-    async def _read(self, task_meta: TaskMeta) -> mcp.types.CreateTaskResult: ...
-
-    async def _read(
-        self, task_meta: TaskMeta | None = None
-    ) -> ResourceResult | mcp.types.CreateTaskResult:
-        """Delegate to child server's read_resource() with task_meta.
-
-        Passes task_meta through to the child server so it can handle
-        backgrounding appropriately. fn_key is already set by the parent
-        server before calling this method.
+        fn_key is already set by the parent server before calling this method.
         """
         # Pass exact version so child reads the correct version
         version = VersionSpec(eq=self.version) if self.version else None
@@ -210,9 +171,7 @@ class FastMCPProviderResource(Resource):
             self._original_uri or "",
             method="resources/read",
         ):
-            return await self._server.read_resource(
-                self._original_uri, version=version, task_meta=task_meta
-            )
+            return await self._server.read_resource(self._original_uri, version=version)
 
     def get_span_attributes(self) -> dict[str, Any]:
         return super().get_span_attributes() | {
@@ -258,30 +217,10 @@ class FastMCPProviderPrompt(Prompt):
             icons=prompt.icons,
         )
 
-    @overload
-    async def _render(
-        self,
-        arguments: dict[str, Any] | None = None,
-        task_meta: None = None,
-    ) -> PromptResult: ...
+    async def _render(self, arguments: dict[str, Any] | None = None) -> PromptResult:
+        """Delegate to the child server's render_prompt().
 
-    @overload
-    async def _render(
-        self,
-        arguments: dict[str, Any] | None,
-        task_meta: TaskMeta,
-    ) -> mcp.types.CreateTaskResult: ...
-
-    async def _render(
-        self,
-        arguments: dict[str, Any] | None = None,
-        task_meta: TaskMeta | None = None,
-    ) -> PromptResult | mcp.types.CreateTaskResult:
-        """Delegate to child server's render_prompt() with task_meta.
-
-        Passes task_meta through to the child server so it can handle
-        backgrounding appropriately. fn_key is already set by the parent
-        server before calling this method.
+        fn_key is already set by the parent server before calling this method.
         """
         # Pass exact version so child renders the correct version
         version = VersionSpec(eq=self.version) if self.version else None
@@ -293,27 +232,21 @@ class FastMCPProviderPrompt(Prompt):
             method="prompts/get",
         ):
             return await self._server.render_prompt(
-                self._original_name, arguments, version=version, task_meta=task_meta
+                self._original_name, arguments, version=version
             )
 
     async def render(self, arguments: dict[str, Any] | None = None) -> PromptResult:
-        """Delegate to child server's render_prompt() without task_meta.
+        """Delegate to the child server's render_prompt().
 
         This is called when the prompt is used within a transformed context
-        or other contexts where task_meta is not available.
+        or other contexts.
         """
         # Pass exact version so child renders the correct version
         version = VersionSpec(eq=self.version) if self.version else None
 
-        result = await self._server.render_prompt(
+        return await self._server.render_prompt(
             self._original_name, arguments, version=version
         )
-        # Result from render_prompt should always be PromptResult when no task_meta
-        if isinstance(result, mcp.types.CreateTaskResult):
-            raise RuntimeError(
-                "Unexpected CreateTaskResult from render_prompt without task_meta"
-            )
-        return result
 
     def get_span_attributes(self) -> dict[str, Any]:
         return super().get_span_attributes() | {
@@ -363,6 +296,7 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
             meta=template.get_meta(),
             title=template.title,
             icons=template.icons,
+            security=template.security,
         )
 
     async def create_resource(self, uri: str, params: dict[str, Any]) -> Resource:
@@ -388,24 +322,10 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
             icons=self.icons,
         )
 
-    @overload
-    async def _read(
-        self, uri: str, params: dict[str, Any], task_meta: None = None
-    ) -> ResourceResult: ...
+    async def _read(self, uri: str, params: dict[str, Any]) -> ResourceResult:
+        """Delegate to the child server's read_resource().
 
-    @overload
-    async def _read(
-        self, uri: str, params: dict[str, Any], task_meta: TaskMeta
-    ) -> mcp.types.CreateTaskResult: ...
-
-    async def _read(
-        self, uri: str, params: dict[str, Any], task_meta: TaskMeta | None = None
-    ) -> ResourceResult | mcp.types.CreateTaskResult:
-        """Delegate to child server's read_resource() with task_meta.
-
-        Passes task_meta through to the child server so it can handle
-        backgrounding appropriately. fn_key is already set by the parent
-        server before calling this method.
+        fn_key is already set by the parent server before calling this method.
         """
         # Expand the original template with params to get internal URI
         original_uri = expand_uri_template(self._original_uri_template or "", params)
@@ -419,50 +339,7 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
             self._original_uri_template or "",
             method="resources/read",
         ):
-            return await self._server.read_resource(
-                original_uri, version=version, task_meta=task_meta
-            )
-
-    async def read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult:
-        """Read the resource content for background task execution.
-
-        Reads the resource via the wrapped server and returns the ResourceResult.
-        This method is called by Docket during background task execution.
-        """
-        # Expand the original template with arguments to get internal URI
-        original_uri = expand_uri_template(self._original_uri_template or "", arguments)
-
-        # Pass exact version so child reads the correct version
-        version = VersionSpec(eq=self.version) if self.version else None
-
-        # Read from the wrapped server
-        result = await self._server.read_resource(original_uri, version=version)
-        if isinstance(result, mcp.types.CreateTaskResult):
-            raise RuntimeError("Unexpected CreateTaskResult during Docket execution")
-
-        return result
-
-    def register_with_docket(self, docket: Docket) -> None:
-        """No-op: the child's actual template is registered via get_tasks()."""
-
-    async def add_to_docket(
-        self,
-        docket: Docket,
-        params: dict[str, Any],
-        *,
-        fn_key: str | None = None,
-        task_key: str | None = None,
-        **kwargs: Any,
-    ) -> Execution:
-        """Schedule this template for background execution via docket.
-
-        The child's FunctionResourceTemplate.fn is registered (via get_tasks),
-        and it expects splatted **kwargs, so we splat params here.
-        """
-        lookup_key = fn_key or self.key
-        if task_key:
-            kwargs["key"] = task_key
-        return await docket.add(lookup_key, **kwargs)(**params)
+            return await self._server.read_resource(original_uri, version=version)
 
     def get_span_attributes(self) -> dict[str, Any]:
         return super().get_span_attributes() | {

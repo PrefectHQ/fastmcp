@@ -32,11 +32,12 @@ from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
 
-from mcp.types import AnyFunction, Icon, ToolAnnotations
+from mcp_types import Icon, ToolAnnotations
 
 from fastmcp.server.providers.base import Provider
 from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.types import AnyFunction
 
 if TYPE_CHECKING:
     from fastmcp.server.providers.local_provider import LocalProvider

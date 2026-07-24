@@ -444,7 +444,7 @@ async def dashboard(ctx: Context) -> dict:
 
 **Future phases** will add a component DSL for building UIs declaratively, an in-repo renderer, and a `FastMCPApp` class.
 
-Implementation: `fastmcp_slim/fastmcp/server/apps.py` (models and constants), with integration points in `server.py` (decorator parameters), `low_level.py` (extension advertisement), and `context.py` (`client_supports_extension` method).
+Implementation: `fastmcp_slim/fastmcp/apps/config.py` (models and constants), with integration points in `server.py` (decorator parameters), `low_level.py` (extension advertisement), and `context.py` (`client_supports_extension` method).
 
 ---
 
@@ -939,7 +939,7 @@ v3.0 implements MCP SEP-1686 for background task execution via Docket integratio
 **Configuration** (`fastmcp_slim/fastmcp/server/tasks/config.py`):
 
 ```python
-from fastmcp.server.tasks import TaskConfig
+from fastmcp.utilities.tasks import TaskConfig
 
 @mcp.tool(task=TaskConfig(mode="required"))
 async def long_running_task():
@@ -1205,8 +1205,8 @@ When `list_page_size` is set, `tools/list`, `resources/list`, `resources/templat
 ```python
 async with Client(server) as client:
     result = await client.list_tools_mcp()
-    while result.nextCursor:
-        result = await client.list_tools_mcp(cursor=result.nextCursor)
+    while result.next_cursor:
+        result = await client.list_tools_mcp(cursor=result.next_cursor)
 ```
 
 Documentation: [Pagination](/servers/pagination)

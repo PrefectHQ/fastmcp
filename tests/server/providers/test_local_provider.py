@@ -17,8 +17,8 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.prompts.base import Prompt
 from fastmcp.server.providers.local_provider import LocalProvider
-from fastmcp.server.tasks import TaskConfig
 from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.utilities.tasks import TaskConfig
 
 
 class TestLocalProviderStorage:

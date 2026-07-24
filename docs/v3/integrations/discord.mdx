@@ -1,0 +1,183 @@
+---
+title: Discord OAuth 🤝 FastMCP
+sidebarTitle: Discord
+description: Secure your FastMCP server with Discord OAuth
+icon: discord
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="2.13.2" />
+
+This guide shows you how to secure your FastMCP server using **Discord OAuth**. Since Discord doesn't support Dynamic Client Registration, this integration uses the [**OAuth Proxy**](/servers/auth/oauth-proxy) pattern to bridge Discord's traditional OAuth with MCP's authentication requirements.
+
+## Configuration
+
+### Prerequisites
+
+Before you begin, you will need:
+1. A **[Discord Account](https://discord.com/)** with access to create applications
+2. Your FastMCP server's URL (can be localhost for development, e.g., `http://localhost:8000`)
+
+### Step 1: Create a Discord Application
+
+Create an application in the Discord Developer Portal to get the credentials needed for authentication:
+
+<Steps>
+<Step title="Navigate to Discord Developer Portal">
+    Go to the [Discord Developer Portal](https://discord.com/developers/applications).
+
+    Click **"New Application"** and give it a name users will recognize (e.g., "My FastMCP Server").
+</Step>
+
+<Step title="Configure OAuth2 Settings">
+    In the left sidebar, click **"OAuth2"**.
+
+    In the **Redirects** section, click **"Add Redirect"** and enter your callback URL:
+    - For development: `http://localhost:8000/auth/callback`
+    - For production: `https://your-domain.com/auth/callback`
+
+    <Warning>
+    The redirect URL must match exactly. The default path is `/auth/callback`, but you can customize it using the `redirect_path` parameter. Discord allows `http://localhost` URLs for development. For production, use HTTPS.
+    </Warning>
+</Step>
+
+<Step title="Save Your Credentials">
+    On the same OAuth2 page, you'll find:
+
+    - **Client ID**: A numeric string like `12345`
+    - **Client Secret**: Click "Reset Secret" to generate one
+
+    <Tip>
+    Store these credentials securely. Never commit them to version control. Use environment variables or a secrets manager in production.
+    </Tip>
+</Step>
+</Steps>
+
+### Step 2: FastMCP Configuration
+
+Create your FastMCP server using the `DiscordProvider`, which handles Discord's OAuth flow automatically:
+
+```python server.py
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.discord import DiscordProvider
+
+auth_provider = DiscordProvider(
+    client_id="12345",      # Your Discord Application Client ID
+    client_secret="your-client-secret",    # Your Discord OAuth Client Secret
+    base_url="http://localhost:8000",      # Must match your OAuth configuration
+)
+
+mcp = FastMCP(name="Discord Secured App", auth=auth_provider)
+
+@mcp.tool
+async def get_user_info() -> dict:
+    """Returns information about the authenticated Discord user."""
+    from fastmcp.server.dependencies import get_access_token
+
+    token = get_access_token()
+    return {
+        "discord_id": token.claims.get("sub"),
+        "username": token.claims.get("username"),
+        "avatar": token.claims.get("avatar"),
+    }
+```
+
+## Testing
+
+### Running the Server
+
+Start your FastMCP server with HTTP transport to enable OAuth flows:
+
+```bash
+fastmcp run server.py --transport http --port 8000
+```
+
+Your server is now running and protected by Discord OAuth authentication.
+
+### Testing with a Client
+
+Create a test client that authenticates with your Discord-protected server:
+
+```python test_client.py
+from fastmcp import Client
+import asyncio
+
+async def main():
+    async with Client("http://localhost:8000/mcp", auth="oauth") as client:
+        print("✓ Authenticated with Discord!")
+
+        result = await client.call_tool("get_user_info")
+        print(f"Discord user: {result['username']}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+When you run the client for the first time:
+1. Your browser will open to Discord's authorization page
+2. Sign in with your Discord account and authorize the app
+3. After authorization, you'll be redirected back
+4. The client receives the token and can make authenticated requests
+
+<Info>
+The client caches tokens locally, so you won't need to re-authenticate for subsequent runs unless the token expires or you explicitly clear the cache.
+</Info>
+
+## Discord Scopes
+
+Discord OAuth supports several scopes for accessing different types of user data:
+
+| Scope | Description |
+|-------|-------------|
+| `identify` | Access username, avatar, and discriminator (default) |
+| `email` | Access the user's email address |
+| `guilds` | Access the user's list of servers |
+| `guilds.join` | Ability to add the user to a server |
+
+To request additional scopes:
+
+```python
+auth_provider = DiscordProvider(
+    client_id="...",
+    client_secret="...",
+    base_url="http://localhost:8000",
+    required_scopes=["identify", "email"],
+)
+```
+
+## Production Configuration
+
+For production deployments with persistent token management across server restarts, configure `jwt_signing_key` and `client_storage`:
+
+```python server.py
+import os
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.discord import DiscordProvider
+from key_value.aio.stores.redis import RedisStore
+from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+from cryptography.fernet import Fernet
+
+auth_provider = DiscordProvider(
+    client_id="12345",
+    client_secret=os.environ["DISCORD_CLIENT_SECRET"],
+    base_url="https://your-production-domain.com",
+
+    jwt_signing_key=os.environ["JWT_SIGNING_KEY"],
+    client_storage=FernetEncryptionWrapper(
+        key_value=RedisStore(
+            host=os.environ["REDIS_HOST"],
+            port=int(os.environ["REDIS_PORT"])
+        ),
+        fernet=Fernet(os.environ["STORAGE_ENCRYPTION_KEY"])
+    )
+)
+
+mcp = FastMCP(name="Production Discord App", auth=auth_provider)
+```
+
+<Note>
+Parameters (`jwt_signing_key` and `client_storage`) work together to ensure tokens and client registrations survive server restarts. **Wrap your storage in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest** - without it, tokens are stored in plaintext. Store secrets in environment variables and use a persistent storage backend like Redis for distributed deployments.
+
+For complete details on these parameters, see the [OAuth Proxy documentation](/servers/auth/oauth-proxy#configuration-parameters).
+</Note>

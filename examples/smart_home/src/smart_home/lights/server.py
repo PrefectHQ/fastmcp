@@ -7,7 +7,7 @@
 
 from typing import Annotated, Any, Literal, TypedDict
 
-from mcp.types import ToolAnnotations
+from mcp_types import ToolAnnotations
 from phue.exceptions import PhueException
 from pydantic import Field
 from typing_extensions import NotRequired

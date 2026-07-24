@@ -32,7 +32,7 @@ async with Client(
         client_metadata_url="https://myapp.example.com/oauth/client.json",
     ),
 ) as client:
-    await client.ping()
+    await client.list_tools()
 ```
 
 When the server supports CIMD, the client uses your metadata URL as its `client_id` instead of performing Dynamic Client Registration. The server fetches your document, validates it, and proceeds with the standard OAuth authorization flow.

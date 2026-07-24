@@ -8,21 +8,22 @@ import sys
 import tempfile
 import time
 from collections.abc import AsyncGenerator
-from datetime import timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import psutil
 import pytest
-from mcp.types import TextContent
+from mcp_types import TextContent
+from pydantic import ConfigDict
 
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from fastmcp.client.auth.bearer import BearerAuth
 from fastmcp.client.auth.oauth import OAuthClientProvider
 from fastmcp.client.client import Client
 from fastmcp.client.logging import LogMessage
 from fastmcp.client.transports import (
+    FastMCPTransport,
     MCPConfigTransport,
     SSETransport,
     StdioTransport,
@@ -37,18 +38,26 @@ from fastmcp.mcp_config import (
     StdioMCPServer,
     TransformingStdioMCPServer,
 )
+from fastmcp.server.elicitation import AcceptedElicitation
 from fastmcp.tools.base import Tool as FastMCPTool
 
-# These tests spawn subprocess servers via stdio which can be slow under
-# parallel CI load. Give them more headroom than the 5s default, and skip
-# entirely on Windows due to process lifecycle issues.
+# Some tests in this module spawn subprocess servers via stdio, each paying a
+# full interpreter startup plus `import fastmcp` (~0.7s). They take 3-6s idle,
+# but on a loaded CI runner with four xdist workers competing they have blown a
+# 15s ceiling. The timeout is here to catch a genuine hang, not to police speed,
+# so give the module room rather than tuning each test individually.
 pytestmark = [
-    pytest.mark.timeout(15),
-    pytest.mark.skipif(
-        sys.platform.startswith("win32"),
-        reason="Windows has process lifecycle issues with stdio subprocesses",
-    ),
+    pytest.mark.timeout(60),
 ]
+
+# Most tests below run entirely in-memory (via InMemoryStdioMCPServer) or
+# only parse/serialize config objects, so they're safe on Windows. Apply this
+# marker only to tests that spawn a real subprocess (or attempt to, e.g. via
+# a nonexistent command) — those still hit Windows process lifecycle issues.
+requires_subprocess = pytest.mark.skipif(
+    sys.platform.startswith("win32"),
+    reason="Windows has process lifecycle issues with stdio subprocesses",
+)
 
 
 def running_under_debugger():
@@ -62,6 +71,91 @@ def gc_collect_harder():
     gc.collect()
     gc.collect()
     gc.collect()
+
+
+class InMemoryStdioMCPServer(StdioMCPServer):
+    """Test double for a plain (non-transforming) `StdioMCPServer` that skips
+    subprocess spawning in favor of an in-memory transport.
+
+    `MCPConfigTransport`'s composite path calls `server_config.to_transport()`
+    polymorphically for any *non-transforming* server entry (see
+    `_create_proxy` in `fastmcp.client.transports.config`), so overriding
+    `to_transport()` on a subclass is enough to swap in an in-memory backend
+    while still exercising the real MCPConfig/MCPConfigTransport composition
+    code: proxy creation, namespace-prefixed mounting, log/elicitation
+    forwarding, and session handling.
+
+    This does NOT work for `TransformingStdioMCPServer` configs (tool
+    transforms / tag filters): `_create_proxy` calls the *unbound*
+    `StdioMCPServer.to_transport` for those, bypassing any subclass override,
+    so transform/tag-filter tests still need a real subprocess.
+    """
+
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
+
+    mcp: FastMCP
+    command: str = "in-memory"
+
+    def to_transport(self) -> FastMCPTransport:  # ty: ignore[invalid-method-override]
+        return FastMCPTransport(mcp=self.mcp)
+
+
+class TestConfigTransportLegacyOnly:
+    """`MCPConfigTransport.legacy_only` gating (regression for the over-broad flag).
+
+    A single-server config delegates directly to the underlying transport with no
+    proxy, so it must mirror that transport's era capability rather than being
+    forced legacy. Only the multi-server composite (backed by legacy-era
+    ProxyClients) is legacy-only.
+    """
+
+    def test_single_modern_capable_server_is_not_forced_legacy(self):
+        """A single Streamable HTTP backend stays modern-capable under mode='auto'."""
+        config = {
+            "mcpServers": {"only": {"url": "https://example.com/mcp"}},
+        }
+        transport = MCPConfigTransport(config)
+        assert isinstance(transport.transport, StreamableHttpTransport)
+        assert transport.legacy_only is False
+
+    def test_single_sse_server_mirrors_legacy_only(self):
+        """A single SSE backend is legacy-only because SSE cannot serve modern."""
+        config = {
+            "mcpServers": {
+                "only": {"url": "https://example.com/sse", "transport": "sse"}
+            },
+        }
+        transport = MCPConfigTransport(config)
+        assert isinstance(transport.transport, SSETransport)
+        assert transport.legacy_only is True
+
+    def test_multi_server_config_is_legacy_only(self):
+        """A multi-server composite is legacy-only regardless of backend eras."""
+        config = {
+            "mcpServers": {
+                "a": {"url": "https://a.example.com/mcp"},
+                "b": {"url": "https://b.example.com/mcp"},
+            },
+        }
+        transport = MCPConfigTransport(config)
+        assert transport.legacy_only is True
+
+    def test_transforming_single_server_wrapper_is_legacy_only(self):
+        """A single-server config that uses tool transforms or tag filters wraps
+        a legacy-pinned proxy; the wrapper transport must advertise legacy-only
+        so a default `mode="auto"` frontend negotiates the same era as the
+        backend rather than negotiating modern against a legacy upstream."""
+        config = {
+            "mcpServers": {
+                "a": {
+                    "url": "https://a.example.com/mcp",
+                    "include_tags": ["public"],
+                },
+            },
+        }
+        mcp_config = MCPConfig.from_dict(config)
+        transport = mcp_config.mcpServers["a"].to_transport()
+        assert transport.legacy_only is True
 
 
 def test_parse_single_stdio_config():
@@ -311,35 +405,23 @@ def test_parse_multiple_servers():
     assert mcp_config.mcpServers["test_server_2"].env == {"TEST": "test"}
 
 
-async def test_multi_client(tmp_path: Path):
-    server_script = inspect.cleandoc("""
-        from fastmcp import FastMCP
+def _make_add_server() -> FastMCP:
+    app = FastMCP()
 
-        mcp = FastMCP()
+    @app.tool
+    def add(a: int, b: int) -> int:
+        return a + b
 
-        @mcp.tool
-        def add(a: int, b: int) -> int:
-            return a + b
+    return app
 
-        if __name__ == '__main__':
-            mcp.run()
-        """)
 
-    script_path = tmp_path / "test.py"
-    script_path.write_text(server_script)
-
-    config = {
-        "mcpServers": {
-            "test_1": {
-                "command": "python",
-                "args": [str(script_path)],
-            },
-            "test_2": {
-                "command": "python",
-                "args": [str(script_path)],
-            },
+async def test_multi_client():
+    config = MCPConfig(
+        mcpServers={
+            "test_1": InMemoryStdioMCPServer(mcp=_make_add_server()),
+            "test_2": InMemoryStdioMCPServer(mcp=_make_add_server()),
         }
-    }
+    )
 
     client = Client(config)
 
@@ -353,35 +435,13 @@ async def test_multi_client(tmp_path: Path):
         assert result_2.data == 3
 
 
-async def test_multi_client_parallel_calls(tmp_path: Path):
-    server_script = inspect.cleandoc("""
-        from fastmcp import FastMCP
-
-        mcp = FastMCP()
-
-        @mcp.tool
-        def add(a: int, b: int) -> int:
-            return a + b
-
-        if __name__ == '__main__':
-            mcp.run()
-        """)
-
-    script_path = tmp_path / "test.py"
-    script_path.write_text(server_script)
-
-    config = {
-        "mcpServers": {
-            "test_1": {
-                "command": "python",
-                "args": [str(script_path)],
-            },
-            "test_2": {
-                "command": "python",
-                "args": [str(script_path)],
-            },
+async def test_multi_client_parallel_calls():
+    config = MCPConfig(
+        mcpServers={
+            "test_1": InMemoryStdioMCPServer(mcp=_make_add_server()),
+            "test_2": InMemoryStdioMCPServer(mcp=_make_add_server()),
         }
-    }
+    )
 
     client = Client(config)
 
@@ -406,12 +466,13 @@ async def _wait_for_process_exit(pid: int, timeout: float = 3.0) -> None:
             psutil.Process(pid)
         except psutil.NoSuchProcess:
             return
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.005)
     # Final check — if still alive, let the NoSuchProcess propagation fail the test clearly
     psutil.Process(pid)
     pytest.fail(f"Process {pid} still alive after {timeout}s")
 
 
+@requires_subprocess
 @pytest.mark.skipif(
     running_under_debugger(),
     reason="Debugger holds a reference to the transport",
@@ -472,6 +533,7 @@ async def test_multi_client_lifespan(tmp_path: Path):
     await _wait_for_process_exit(pid_2)
 
 
+@requires_subprocess
 @pytest.mark.timeout(15)
 async def test_multi_client_force_close(tmp_path: Path):
     server_script = inspect.cleandoc("""
@@ -575,41 +637,29 @@ async def test_remote_config_with_oauth_literal():
     assert isinstance(client.transport.transport.auth, OAuthClientProvider)
 
 
-async def test_multi_client_with_logging(tmp_path: Path, caplog):
+def _make_log_server() -> FastMCP:
+    app = FastMCP()
+
+    @app.tool
+    async def log_test(message: str, ctx: Context) -> int:
+        await ctx.log(message)
+        return 42
+
+    return app
+
+
+async def test_multi_client_with_logging(caplog):
     """
     Tests that logging is properly forwarded to the ultimate client.
     """
     caplog.set_level(logging.INFO, logger=__name__)
 
-    server_script = inspect.cleandoc("""
-        from fastmcp import FastMCP, Context
-
-        mcp = FastMCP()
-
-        @mcp.tool
-        async def log_test(message: str, ctx: Context) -> int:
-            await ctx.log(message)
-            return 42
-
-        if __name__ == '__main__':
-            mcp.run()
-        """)
-
-    script_path = tmp_path / "test.py"
-    script_path.write_text(server_script)
-
-    config = {
-        "mcpServers": {
-            "test_server": {
-                "command": "python",
-                "args": [str(script_path)],
-            },
-            "test_server_2": {
-                "command": "python",
-                "args": [str(script_path)],
-            },
+    config = MCPConfig(
+        mcpServers={
+            "test_server": InMemoryStdioMCPServer(mcp=_make_log_server()),
+            "test_server_2": InMemoryStdioMCPServer(mcp=_make_log_server()),
         }
-    }
+    )
 
     MESSAGES = []
 
@@ -642,6 +692,7 @@ async def test_multi_client_with_logging(tmp_path: Path, caplog):
         assert test_records[0].msg == "test 42"
 
 
+@requires_subprocess
 async def test_multi_client_with_transforms(tmp_path: Path):
     """
     Tests that transforms are properly applied to the tools.
@@ -698,6 +749,7 @@ async def test_multi_client_with_transforms(tmp_path: Path):
         assert result.data == 3
 
 
+@requires_subprocess
 async def test_canonical_multi_client_with_transforms(tmp_path: Path):
     """Test that transforms are not applied to servers in a canonical MCPConfig."""
     server_script = inspect.cleandoc("""
@@ -716,26 +768,28 @@ async def test_canonical_multi_client_with_transforms(tmp_path: Path):
     script_path = tmp_path / "test.py"
     script_path.write_text(server_script)
 
-    config = CanonicalMCPConfig(
-        mcpServers={
-            "test_1": {
-                "command": "python",
-                "args": [str(script_path)],
-                "tools": {  # <--- Will be ignored as it's not valid for a canonical MCPConfig
-                    "add": {
-                        "name": "transformed_add",
-                        "arguments": {
-                            "a": {"name": "transformed_a"},
-                            "b": {"name": "transformed_b"},
-                        },
-                    }
+    config = CanonicalMCPConfig.model_validate(
+        {
+            "mcpServers": {
+                "test_1": {
+                    "command": "python",
+                    "args": [str(script_path)],
+                    "tools": {  # <--- Will be ignored as it's not valid for a canonical MCPConfig
+                        "add": {
+                            "name": "transformed_add",
+                            "arguments": {
+                                "a": {"name": "transformed_a"},
+                                "b": {"name": "transformed_b"},
+                            },
+                        }
+                    },
                 },
-            },
-            "test_2": {
-                "command": "python",
-                "args": [str(script_path)],
-            },
-        }  # type: ignore[reportUnknownArgumentType]  # ty:ignore[invalid-argument-type]
+                "test_2": {
+                    "command": "python",
+                    "args": [str(script_path)],
+                },
+            }
+        }
     )
 
     client = Client(config)
@@ -747,6 +801,7 @@ async def test_canonical_multi_client_with_transforms(tmp_path: Path):
         assert "test_1_transformed_add" not in tools_by_name
 
 
+@requires_subprocess
 @pytest.mark.flaky(retries=3)
 async def test_multi_client_transform_with_filtering(tmp_path: Path):
     """
@@ -809,6 +864,7 @@ async def test_multi_client_transform_with_filtering(tmp_path: Path):
         assert "test_2_subtract" in tools_by_name
 
 
+@requires_subprocess
 @pytest.mark.flaky(retries=3)
 async def test_single_server_config_include_tags_filtering(tmp_path: Path):
     """include_tags should filter tools even with a single server in the config."""
@@ -851,39 +907,29 @@ async def test_single_server_config_include_tags_filtering(tmp_path: Path):
         assert "subtract" not in tool_names
 
 
-async def test_multi_client_with_elicitation(tmp_path: Path):
+def _make_elicit_server() -> FastMCP:
+    app = FastMCP()
+
+    @app.tool
+    async def elicit_test(ctx: Context) -> int:
+        result = await ctx.elicit("Pick a number", response_type=int)
+        assert isinstance(result, AcceptedElicitation)
+        assert isinstance(result.data, int)
+        return result.data
+
+    return app
+
+
+async def test_multi_client_with_elicitation():
     """
     Tests that elicitation is properly forwarded to the ultimate client.
     """
-    server_script = inspect.cleandoc("""
-        from fastmcp import FastMCP, Context
-
-        mcp = FastMCP()
-
-        @mcp.tool
-        async def elicit_test(ctx: Context) -> int:
-            result = await ctx.elicit('Pick a number', response_type=int)
-            return result.data
-
-        if __name__ == '__main__':
-            mcp.run()
-        """)
-
-    script_path = tmp_path / "test.py"
-    script_path.write_text(server_script)
-
-    config = {
-        "mcpServers": {
-            "test_server": {
-                "command": "python",
-                "args": [str(script_path)],
-            },
-            "test_server_2": {
-                "command": "python",
-                "args": [str(script_path)],
-            },
+    config = MCPConfig(
+        mcpServers={
+            "test_server": InMemoryStdioMCPServer(mcp=_make_elicit_server()),
+            "test_server_2": InMemoryStdioMCPServer(mcp=_make_elicit_server()),
         }
-    }
+    )
 
     async def elicitation_handler(message, response_type, params, ctx):
         return response_type(value=42)
@@ -893,41 +939,29 @@ async def test_multi_client_with_elicitation(tmp_path: Path):
         assert result.data == 42
 
 
-async def test_multi_server_config_transport(tmp_path: Path):
+def _make_greet_server() -> FastMCP:
+    app = FastMCP()
+
+    @app.tool
+    def greet(name: str) -> str:
+        return f"Hello, {name}!"
+
+    return app
+
+
+async def test_multi_server_config_transport():
     """
     Tests that MCPConfigTransport properly handles multi-server configurations.
 
     Related to https://github.com/PrefectHQ/fastmcp/issues/2802 - verifies the
     refactored architecture creates composite servers correctly.
     """
-    server_script = inspect.cleandoc("""
-        from fastmcp import FastMCP
-
-        mcp = FastMCP()
-
-        @mcp.tool
-        def greet(name: str) -> str:
-            return f"Hello, {name}!"
-
-        if __name__ == '__main__':
-            mcp.run()
-        """)
-
-    script_path = tmp_path / "greet_server.py"
-    script_path.write_text(server_script)
-
-    config = {
-        "mcpServers": {
-            "server1": {
-                "command": "python",
-                "args": [str(script_path)],
-            },
-            "server2": {
-                "command": "python",
-                "args": [str(script_path)],
-            },
+    config = MCPConfig(
+        mcpServers={
+            "server1": InMemoryStdioMCPServer(mcp=_make_greet_server()),
+            "server2": InMemoryStdioMCPServer(mcp=_make_greet_server()),
         }
-    }
+    )
 
     # Create client with multiple servers
     client = Client(config)
@@ -961,7 +995,8 @@ async def test_multi_server_timeout_propagation():
     )
 
     transport = MCPConfigTransport(config)
-    timeout = timedelta(seconds=42)
+    # SDK v2: read_timeout_seconds is a plain number of seconds, not a timedelta.
+    timeout = 42.0
 
     # Mock _create_proxy to avoid real stdio connections and verify timeout
     mock_create_proxy = AsyncMock(
@@ -991,41 +1026,29 @@ async def test_multi_server_timeout_propagation():
         )
 
 
-async def test_multi_server_session_persistence(tmp_path: Path):
+def _make_session_server() -> FastMCP:
+    app = FastMCP()
+
+    @app.tool
+    def get_session(ctx: Context) -> str:
+        return ctx.session_id
+
+    return app
+
+
+async def test_multi_server_session_persistence():
     """Test that session IDs persist across tool calls in multi-server mode.
 
     Regression test for https://github.com/PrefectHQ/fastmcp/issues/2790 —
     MCPConfigTransport was not connecting ProxyClients before mounting, so
     each tool call opened a new session with the backend server.
     """
-    server_script = inspect.cleandoc("""
-        from fastmcp import FastMCP, Context
-
-        mcp = FastMCP()
-
-        @mcp.tool
-        def get_session(ctx: Context) -> str:
-            return ctx.session_id
-
-        if __name__ == '__main__':
-            mcp.run()
-        """)
-
-    script_path = tmp_path / "session_server.py"
-    script_path.write_text(server_script)
-
-    config = {
-        "mcpServers": {
-            "server1": {
-                "command": "python",
-                "args": [str(script_path)],
-            },
-            "server2": {
-                "command": "python",
-                "args": [str(script_path)],
-            },
+    config = MCPConfig(
+        mcpServers={
+            "server1": InMemoryStdioMCPServer(mcp=_make_session_server()),
+            "server2": InMemoryStdioMCPServer(mcp=_make_session_server()),
         }
-    }
+    )
 
     client = Client(config)
     async with client:
@@ -1060,6 +1083,7 @@ async def test_single_server_config_transport():
     assert len(transport._transports) == 1
 
 
+@requires_subprocess
 @pytest.mark.parametrize(
     "server_order",
     [
@@ -1068,38 +1092,19 @@ async def test_single_server_config_transport():
     ],
     ids=["good_first", "bad_first"],
 )
-async def test_multi_server_partial_failure(tmp_path: Path, server_order: dict):
+async def test_multi_server_partial_failure(server_order: dict):
     """When one server fails to connect, the others should still work."""
-    server_script = inspect.cleandoc("""
-        from fastmcp import FastMCP
-
-        mcp = FastMCP()
-
-        @mcp.tool
-        def add(a: int, b: int) -> int:
-            return a + b
-
-        if __name__ == '__main__':
-            mcp.run()
-        """)
-
-    script_path = tmp_path / "test.py"
-    script_path.write_text(server_script)
-
-    servers = {}
+    servers: dict[str, MCPServerTypes] = {}
     for name, is_good in server_order.items():
         if is_good:
-            servers[name] = {
-                "command": "python",
-                "args": [str(script_path)],
-            }
+            servers[name] = InMemoryStdioMCPServer(mcp=_make_add_server())
         else:
-            servers[name] = {
-                "command": "this-command-does-not-exist-anywhere",
-                "args": [],
-            }
+            servers[name] = StdioMCPServer(
+                command="this-command-does-not-exist-anywhere",
+                args=[],
+            )
 
-    client = Client({"mcpServers": servers})
+    client = Client(MCPConfig(mcpServers=servers))
     async with client:
         tools = await client.list_tools()
         tool_names = [t.name for t in tools]
@@ -1107,36 +1112,18 @@ async def test_multi_server_partial_failure(tmp_path: Path, server_order: dict):
         assert len(tools) == 1
 
 
-async def test_multi_server_partial_failure_logs_warning(tmp_path: Path, caplog):
+@requires_subprocess
+async def test_multi_server_partial_failure_logs_warning(caplog):
     """A warning should be logged when a server fails to connect."""
-    server_script = inspect.cleandoc("""
-        from fastmcp import FastMCP
-
-        mcp = FastMCP()
-
-        @mcp.tool
-        def add(a: int, b: int) -> int:
-            return a + b
-
-        if __name__ == '__main__':
-            mcp.run()
-        """)
-
-    script_path = tmp_path / "test.py"
-    script_path.write_text(server_script)
-
-    config = {
-        "mcpServers": {
-            "good_server": {
-                "command": "python",
-                "args": [str(script_path)],
-            },
-            "bad_server": {
-                "command": "this-command-does-not-exist-anywhere",
-                "args": [],
-            },
+    config = MCPConfig(
+        mcpServers={
+            "good_server": InMemoryStdioMCPServer(mcp=_make_add_server()),
+            "bad_server": StdioMCPServer(
+                command="this-command-does-not-exist-anywhere",
+                args=[],
+            ),
         }
-    }
+    )
 
     with caplog.at_level(logging.WARNING):
         async with Client(config):
@@ -1150,6 +1137,7 @@ async def test_multi_server_partial_failure_logs_warning(tmp_path: Path, caplog)
     assert len(warning_records) == 1
 
 
+@requires_subprocess
 async def test_multi_server_all_fail():
     """When all servers fail to connect, a ConnectionError should be raised."""
     config = MCPConfig(
@@ -1171,36 +1159,28 @@ async def test_multi_server_all_fail():
             pass
 
 
-async def test_multi_server_partial_failure_cleanup(tmp_path: Path):
+def _make_ping_server() -> FastMCP:
+    app = FastMCP()
+
+    @app.tool
+    def ping() -> str:
+        return "pong"
+
+    return app
+
+
+@requires_subprocess
+async def test_multi_server_partial_failure_cleanup():
     """Transports for failed servers should not leak into _transports."""
-    server_script = inspect.cleandoc("""
-        from fastmcp import FastMCP
-
-        mcp = FastMCP()
-
-        @mcp.tool
-        def ping() -> str:
-            return "pong"
-
-        if __name__ == '__main__':
-            mcp.run()
-        """)
-
-    script_path = tmp_path / "test.py"
-    script_path.write_text(server_script)
-
-    config = {
-        "mcpServers": {
-            "working": {
-                "command": "python",
-                "args": [str(script_path)],
-            },
-            "broken": {
-                "command": "this-command-does-not-exist-anywhere",
-                "args": [],
-            },
+    config = MCPConfig(
+        mcpServers={
+            "working": InMemoryStdioMCPServer(mcp=_make_ping_server()),
+            "broken": StdioMCPServer(
+                command="this-command-does-not-exist-anywhere",
+                args=[],
+            ),
         }
-    }
+    )
 
     transport = MCPConfigTransport(config)
     async with transport.connect_session():

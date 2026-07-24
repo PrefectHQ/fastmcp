@@ -54,7 +54,7 @@ async def test_elicitation_implicit_acceptance(fastmcp_server):
         return response_type(name="Bob")
 
     async with Client(
-        fastmcp_server, elicitation_handler=elicitation_handler
+        fastmcp_server, mode="legacy", elicitation_handler=elicitation_handler
     ) as client:
         result = await client.call_tool("ask_for_name")
         assert result.data == "Hello, Bob!"
@@ -69,7 +69,7 @@ async def test_elicitation_implicit_acceptance_must_be_dict(fastmcp_server):
         return "Bob"
 
     async with Client(
-        fastmcp_server, elicitation_handler=elicitation_handler
+        fastmcp_server, mode="legacy", elicitation_handler=elicitation_handler
     ) as client:
         with pytest.raises(
             ToolError,
@@ -170,7 +170,7 @@ async def test_dict_based_titled_single_select():
 
     async def elicitation_handler(message, response_type, params, ctx):
         # Verify schema follows SEP-1330 pattern with type: "string"
-        schema = params.requestedSchema
+        schema = params.requested_schema
         assert schema["type"] == "object"
         assert "value" in schema["properties"]
         value_schema = schema["properties"]["value"]
@@ -182,7 +182,9 @@ async def test_dict_based_titled_single_select():
 
         return ElicitResult(action="accept", content={"value": "low"})
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         result = await client.call_tool("my_tool", {})
         assert result.data == "low"
 
@@ -205,7 +207,7 @@ async def test_list_list_multi_select_untitled():
 
     async def elicitation_handler(message, response_type, params, ctx):
         # Verify schema has array with enum pattern
-        schema = params.requestedSchema
+        schema = params.requested_schema
         assert schema["type"] == "object"
         assert "value" in schema["properties"]
         value_schema = schema["properties"]["value"]
@@ -215,7 +217,9 @@ async def test_list_list_multi_select_untitled():
 
         return ElicitResult(action="accept", content={"value": ["bug", "feature"]})
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         result = await client.call_tool("my_tool", {})
         assert result.data == "bug,feature"
 
@@ -243,7 +247,7 @@ async def test_list_dict_multi_select_titled():
 
     async def elicitation_handler(message, response_type, params, ctx):
         # Verify schema has array with SEP-1330 compliant items (anyOf pattern)
-        schema = params.requestedSchema
+        schema = params.requested_schema
         assert schema["type"] == "object"
         assert "value" in schema["properties"]
         value_schema = schema["properties"]["value"]
@@ -256,7 +260,9 @@ async def test_list_dict_multi_select_titled():
 
         return ElicitResult(action="accept", content={"value": ["low", "high"]})
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         result = await client.call_tool("my_tool", {})
         assert result.data == "low,high"
 
@@ -310,7 +316,7 @@ async def test_list_enum_multi_select_direct():
 
     async def elicitation_handler(message, response_type, params, ctx):
         # Verify schema has array with enum pattern
-        schema = params.requestedSchema
+        schema = params.requested_schema
         assert schema["type"] == "object"
         assert "value" in schema["properties"]
         value_schema = schema["properties"]["value"]
@@ -320,7 +326,9 @@ async def test_list_enum_multi_select_direct():
 
         return ElicitResult(action="accept", content={"value": ["low", "high"]})
 
-    async with Client(mcp, elicitation_handler=elicitation_handler) as client:
+    async with Client(
+        mcp, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
         result = await client.call_tool("my_tool", {})
         assert result.data == "low,high"
 
@@ -514,3 +522,13 @@ class TestElicitationDefaults:
 
         assert "default" in props["string_field"]
         assert "default" in props["integer_field"]
+
+
+def test_scalar_elicitation_schema_omits_wrapper_title() -> None:
+    """Scalar/list wrappers must not leak the internal class name on the wire."""
+    from fastmcp.server.elicitation import parse_elicit_response_type
+
+    schema = parse_elicit_response_type(["yes", "no"]).schema
+
+    assert "title" not in schema
+    assert schema["properties"]["value"]["enum"] == ["yes", "no"]

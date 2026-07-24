@@ -7,13 +7,12 @@ from typing import Any, cast
 
 import anyio
 import pytest
-from mcp import ClientSession, McpError
-from mcp.types import TextContent
+from mcp import ClientSession, MCPError
+from mcp_types import TextContent
 from pydantic import AnyUrl
 
 import fastmcp
 from fastmcp.client import Client
-from fastmcp.client.tasks import TaskNotificationHandler
 from fastmcp.client.transports import (
     ClientTransport,
     FastMCPTransport,
@@ -70,7 +69,7 @@ async def test_call_tool_mcp(fastmcp_server):
         # Check that we got the raw MCP CallToolResult object
         assert hasattr(result, "content")
         assert hasattr(result, "isError")
-        assert result.isError is False
+        assert result.is_error is False
         # The content is a list, so we'll check the first element
         # by properly accessing it
         content = result.content
@@ -94,12 +93,13 @@ async def test_call_tool_with_meta():
         assert context.request_context is not None
         meta = context.request_context.meta
 
-        # Return the metadata as a dict
+        # Return the metadata as a dict. Under SDK v2 the lifted request meta
+        # is a plain dict, so custom fields are read by key.
         if meta is not None:
             return {
                 "has_meta": True,
-                "user_id": getattr(meta, "user_id", None),
-                "trace_id": getattr(meta, "trace_id", None),
+                "user_id": meta.get("user_id"),
+                "trace_id": meta.get("trace_id"),
             }
         return {"has_meta": False}
 
@@ -272,7 +272,14 @@ async def test_client_serialization_error():
 
 
 async def test_server_deserialization_error():
-    """Test server error when JSON string cannot be converted to expected type."""
+    """Test server error when JSON string cannot be converted to expected type.
+
+    `_on_get_prompt` in fastmcp_slim/fastmcp/server/mixins/mcp_operations.py
+    catches `FastMCPError` broadly and translates it into an `MCPError` via
+    `to_mcp_error`, the same way `_on_call_tool` surfaces tool errors. The
+    `PromptError` raised during argument conversion reaches the client with
+    its message intact on both protocol eras.
+    """
 
     server = FastMCP("TestServer")
 
@@ -284,7 +291,7 @@ async def test_server_deserialization_error():
     client = Client(transport=FastMCPTransport(server))
 
     async with client:
-        with pytest.raises(McpError, match="Could not convert argument"):
+        with pytest.raises(MCPError, match="Could not convert argument"):
             await client.get_prompt(
                 "strict_typed_prompt",
                 {
@@ -340,7 +347,7 @@ async def test_read_resource_mcp(fastmcp_server):
 
 async def test_client_connection(fastmcp_server):
     """Test that connect is idempotent."""
-    client = Client(transport=FastMCPTransport(fastmcp_server))
+    client = Client(transport=FastMCPTransport(fastmcp_server), mode="legacy")
 
     # Connect idempotently
     async with client:
@@ -352,16 +359,16 @@ async def test_client_connection(fastmcp_server):
 
 async def test_initialize_called_once(fastmcp_server):
     """Test that initialization is called once and sets initialize_result."""
-    client = Client(transport=FastMCPTransport(fastmcp_server))
+    client = Client(transport=FastMCPTransport(fastmcp_server), mode="legacy")
     async with client:
         # Verify that initialization succeeded by checking initialize_result
         assert client.initialize_result is not None
-        assert client.initialize_result.serverInfo is not None
+        assert client.initialize_result.server_info is not None
 
 
 async def test_initialize_result_connected(fastmcp_server):
     """Test that initialize_result returns the correct result when connected."""
-    client = Client(transport=FastMCPTransport(fastmcp_server))
+    client = Client(transport=FastMCPTransport(fastmcp_server), mode="legacy")
 
     # Initialize result should be None before connection
     assert client.initialize_result is None
@@ -372,8 +379,8 @@ async def test_initialize_result_connected(fastmcp_server):
 
         # Verify the initialize result has expected properties
         assert hasattr(result, "serverInfo")
-        assert result.serverInfo.name == "TestServer"
-        assert result.serverInfo.version is not None
+        assert result.server_info.name == "TestServer"
+        assert result.server_info.version is not None
 
 
 async def test_initialize_result_disconnected(fastmcp_server):
@@ -396,24 +403,24 @@ async def test_server_info_custom_version():
     """Test that custom version is properly set in serverInfo."""
     # Test with custom version
     server_with_version = FastMCP("CustomVersionServer", version="1.2.3")
-    client = Client(transport=FastMCPTransport(server_with_version))
+    client = Client(transport=FastMCPTransport(server_with_version), mode="legacy")
 
     async with client:
         result = client.initialize_result
         assert result is not None
-        assert result.serverInfo.name == "CustomVersionServer"
-        assert result.serverInfo.version == "1.2.3"
+        assert result.server_info.name == "CustomVersionServer"
+        assert result.server_info.version == "1.2.3"
 
     # Test without version (backward compatibility)
     server_without_version = FastMCP("DefaultVersionServer")
-    client = Client(transport=FastMCPTransport(server_without_version))
+    client = Client(transport=FastMCPTransport(server_without_version), mode="legacy")
 
     async with client:
         result = client.initialize_result
         assert result is not None
-        assert result.serverInfo.name == "DefaultVersionServer"
+        assert result.server_info.name == "DefaultVersionServer"
         # Should fall back to FastMCP version
-        assert result.serverInfo.version == fastmcp.__version__
+        assert result.server_info.version == fastmcp.__version__
 
 
 class _DelayedConnectTransport(ClientTransport):
@@ -717,7 +724,7 @@ async def test_resource_template(fastmcp_server):
 
         # Check that our template is available
         assert len(result) == 1
-        assert "data://user/{user_id}" in result[0].uriTemplate
+        assert "data://user/{user_id}" in result[0].uri_template
 
         # Now use the template with a specific user_id
         uri = cast(AnyUrl, "data://user/123")
@@ -739,8 +746,8 @@ async def test_list_resource_templates_mcp(fastmcp_server):
 
         # Check that we got the raw MCP ListResourceTemplatesResult object
         assert hasattr(result, "resourceTemplates")
-        assert len(result.resourceTemplates) == 1
-        assert "data://user/{user_id}" in result.resourceTemplates[0].uriTemplate
+        assert len(result.resource_templates) == 1
+        assert "data://user/{user_id}" in result.resource_templates[0].uri_template
 
 
 async def test_mcp_resource_generation(fastmcp_server):
@@ -772,7 +779,7 @@ async def test_mcp_template_generation(fastmcp_server):
         assert hasattr(template, "uriTemplate")
         assert hasattr(template, "name")
         assert hasattr(template, "description")
-        assert "data://user/{user_id}" in template.uriTemplate
+        assert "data://user/{user_id}" in template.uri_template
 
 
 async def test_template_access_via_client(fastmcp_server):
@@ -811,7 +818,7 @@ async def test_tagged_template_metadata(tagged_resources_server):
         template = templates[0]
 
         # Verify template metadata is preserved
-        assert "template://{id}" in template.uriTemplate
+        assert "template://{id}" in template.uri_template
         assert template.description == "A tagged template"
 
 
@@ -878,32 +885,19 @@ async def test_client_list_dict_return_type():
         assert result.data == [{"city": "NYC", "temp": 72}, {"city": "LA", "temp": 85}]
 
 
-def test_client_new_resets_mutable_task_state(fastmcp_server):
-    """Client.new() should not share mutable task tracking structures."""
-    client = Client(transport=FastMCPTransport(fastmcp_server))
+def test_client_new_preserves_internal_task_extension(fastmcp_server):
+    """Client.new() rebuilds the clone with the auto-registered tasks claim.
 
-    client._task_registry["task-1"] = lambda: None  # type: ignore[assignment]  # ty:ignore[invalid-assignment]
-    client._submitted_task_ids.add("task-1")
+    The tasks client extension (from fastmcp-tasks, imported above) is folded into
+    every Client automatically; a clone must carry it too so tasked calls still
+    resolve transparently on the clone.
+    """
+    from fastmcp_tasks.client_models import ClientCreateTaskResult
+
+    client = Client(transport=FastMCPTransport(fastmcp_server))
+    assert ClientCreateTaskResult in client._claim_by_model
 
     clone = client.new()
-
     assert clone is not client
-    assert clone._task_registry == {}
-    assert clone._submitted_task_ids == set()
-    assert clone._task_registry is not client._task_registry
-    assert clone._submitted_task_ids is not client._submitted_task_ids
-
-
-def test_client_new_rebinds_default_task_notification_handler(fastmcp_server):
-    """Client.new() should bind the default task handler to the cloned client."""
-    client = Client(transport=FastMCPTransport(fastmcp_server))
-
-    handler = client._session_kwargs.get("message_handler")
-    assert isinstance(handler, TaskNotificationHandler)
-
-    clone = client.new()
-
-    clone_handler = clone._session_kwargs.get("message_handler")
-    assert isinstance(clone_handler, TaskNotificationHandler)
-    assert clone_handler is not handler
-    assert clone_handler._client_ref() is clone
+    assert ClientCreateTaskResult in clone._claim_by_model
+    assert clone._claim_by_model is not client._claim_by_model

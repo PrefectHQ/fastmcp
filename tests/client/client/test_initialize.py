@@ -9,25 +9,25 @@ class TestInitialize:
 
     async def test_auto_initialize_default(self, fastmcp_server):
         """Test that auto_initialize=True is the default and works automatically."""
-        client = Client(fastmcp_server)
+        client = Client(fastmcp_server, mode="legacy")
 
         async with client:
             # Should be automatically initialized
             assert client.initialize_result is not None
-            assert client.initialize_result.serverInfo.name == "TestServer"
+            assert client.initialize_result.server_info.name == "TestServer"
             assert client.initialize_result.instructions is None
 
     async def test_auto_initialize_explicit_true(self, fastmcp_server):
         """Test explicit auto_initialize=True."""
-        client = Client(fastmcp_server, auto_initialize=True)
+        client = Client(fastmcp_server, mode="legacy", auto_initialize=True)
 
         async with client:
             assert client.initialize_result is not None
-            assert client.initialize_result.serverInfo.name == "TestServer"
+            assert client.initialize_result.server_info.name == "TestServer"
 
     async def test_auto_initialize_false(self, fastmcp_server):
         """Test that auto_initialize=False prevents automatic initialization."""
-        client = Client(fastmcp_server, auto_initialize=False)
+        client = Client(fastmcp_server, mode="legacy", auto_initialize=False)
 
         async with client:
             # Should not be automatically initialized
@@ -35,19 +35,19 @@ class TestInitialize:
 
     async def test_manual_initialize(self, fastmcp_server):
         """Test manual initialization when auto_initialize=False."""
-        client = Client(fastmcp_server, auto_initialize=False)
+        client = Client(fastmcp_server, mode="legacy", auto_initialize=False)
 
         async with client:
             # Manually initialize
             result = await client.initialize()
 
             assert result is not None
-            assert result.serverInfo.name == "TestServer"
+            assert result.server_info.name == "TestServer"
             assert client.initialize_result is result
 
     async def test_initialize_idempotent(self, fastmcp_server):
         """Test that calling initialize() multiple times returns cached result."""
-        client = Client(fastmcp_server, auto_initialize=False)
+        client = Client(fastmcp_server, mode="legacy", auto_initialize=False)
 
         async with client:
             result1 = await client.initialize()
@@ -66,7 +66,7 @@ class TestInitialize:
         def greet(name: str) -> str:
             return f"Hello, {name}!"
 
-        client = Client(server)
+        client = Client(server, mode="legacy")
 
         async with client:
             result = client.initialize_result
@@ -75,7 +75,7 @@ class TestInitialize:
 
     async def test_initialize_timeout_custom(self, fastmcp_server):
         """Test custom timeout for initialize()."""
-        client = Client(fastmcp_server, auto_initialize=False)
+        client = Client(fastmcp_server, mode="legacy", auto_initialize=False)
 
         async with client:
             # Should succeed with reasonable timeout
@@ -84,13 +84,13 @@ class TestInitialize:
 
     async def test_initialize_property_after_auto_init(self, fastmcp_server):
         """Test accessing initialize_result property after auto-initialization."""
-        client = Client(fastmcp_server, auto_initialize=True)
+        client = Client(fastmcp_server, mode="legacy", auto_initialize=True)
 
         async with client:
             # Access via property
             result = client.initialize_result
             assert result is not None
-            assert result.serverInfo.name == "TestServer"
+            assert result.server_info.name == "TestServer"
 
             # Call method - should return cached
             result2 = await client.initialize()
@@ -98,14 +98,14 @@ class TestInitialize:
 
     async def test_initialize_property_before_connect(self, fastmcp_server):
         """Test that initialize_result property is None before connection."""
-        client = Client(fastmcp_server)
+        client = Client(fastmcp_server, mode="legacy")
 
         # Not yet connected
         assert client.initialize_result is None
 
     async def test_manual_initialize_can_call_tools(self, fastmcp_server):
         """Test that manually initialized client can call tools."""
-        client = Client(fastmcp_server, auto_initialize=False)
+        client = Client(fastmcp_server, mode="legacy", auto_initialize=False)
 
         async with client:
             await client.initialize()

@@ -1,7 +1,7 @@
 import sys
 
 from .function_tool import FunctionTool, tool
-from .base import Tool, ToolResult
+from .base import InputRequiredToolResult, Tool, ToolResult
 from .tool_transform import forward, forward_raw
 
 # Backward compat: tool.py was renamed to base.py to stop Pyright from resolving
@@ -12,6 +12,7 @@ sys.modules[f"{__name__}.tool"] = sys.modules[f"{__name__}.base"]
 
 __all__ = [
     "FunctionTool",
+    "InputRequiredToolResult",
     "Tool",
     "ToolResult",
     "forward",

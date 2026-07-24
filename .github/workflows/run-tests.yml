@@ -48,7 +48,7 @@ jobs:
       - name: Run unit tests
         uses: ./.github/actions/run-pytest
 
-      - name: Run client process tests
+      - name: Run serial subprocess tests
         uses: ./.github/actions/run-pytest
         with:
           test-type: client_process
@@ -69,7 +69,7 @@ jobs:
       - name: Run unit tests
         uses: ./.github/actions/run-pytest
 
-      - name: Run client process tests
+      - name: Run serial subprocess tests
         uses: ./.github/actions/run-pytest
         with:
           test-type: client_process
@@ -88,7 +88,7 @@ jobs:
           resolution: locked
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
 
@@ -222,7 +222,7 @@ jobs:
         run: |
           uv venv /tmp/fastmcp-full-smoke
           FULL_WHEEL=$(ls /tmp/fastmcp-dist/fastmcp-*.whl)
-          uv pip install --python /tmp/fastmcp-full-smoke/bin/python --find-links /tmp/fastmcp-dist "$FULL_WHEEL"
+          uv pip install --python /tmp/fastmcp-full-smoke/bin/python --prerelease=allow --find-links /tmp/fastmcp-dist "$FULL_WHEEL"
           /tmp/fastmcp-full-smoke/bin/python - <<'PY'
           from importlib.metadata import entry_points
           from importlib.metadata import requires
@@ -250,7 +250,7 @@ jobs:
         run: |
           uv venv /tmp/fastmcp-remote-smoke
           REMOTE_WHEEL=$(ls /tmp/fastmcp-dist/fastmcp_remote-*.whl)
-          uv pip install --python /tmp/fastmcp-remote-smoke/bin/python --find-links /tmp/fastmcp-dist "$REMOTE_WHEEL"
+          uv pip install --python /tmp/fastmcp-remote-smoke/bin/python --prerelease=allow --find-links /tmp/fastmcp-dist "$REMOTE_WHEEL"
           /tmp/fastmcp-remote-smoke/bin/python - <<'PY'
           from importlib.metadata import entry_points
           from importlib.metadata import requires

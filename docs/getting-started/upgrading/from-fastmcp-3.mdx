@@ -1,0 +1,275 @@
+---
+title: Upgrading from FastMCP 3
+sidebarTitle: "From FastMCP 3.x"
+description: What changes when you upgrade to FastMCP 4, which builds on the MCP Python SDK v2
+icon: up
+---
+
+FastMCP 4 builds on the MCP Python SDK v2, and that is the source of every change in this guide. The SDK v2 makes two sweeping changes to the protocol layer: it splits the protocol types out of `mcp.types` into a standalone `mcp_types` package, and it renames every protocol field from camelCase to snake_case (`inputSchema` → `input_schema`, `mimeType` → `mime_type`, `isError` → `is_error`, and so on).
+
+FastMCP 4 absorbs almost all of this for you. Field access is bridged so your existing reads keep working, and the imports you were taught have a stable home in FastMCP itself. The sections below describe what FastMCP handles for you, the small number of changes you must make in your own code, and the deprecation timeline for the compatibility shims.
+
+## Install the v4 prerelease
+
+While FastMCP 4 is in prerelease, pin the alpha and its prerelease protocol dependencies explicitly. For a uv project, add the following to `pyproject.toml`:
+
+```toml
+[project]
+dependencies = ["fastmcp==4.0.0a1"]
+
+[tool.uv]
+constraint-dependencies = [
+    "fastmcp-slim==4.0.0a1",
+    "mcp==2.0.0b2",
+    "mcp-types==2.0.0b2",
+]
+```
+
+Then run `uv lock` or `uv sync` normally. The constraints opt only these transitive packages into their prerelease versions; you do not need `--prerelease allow`, which permits prereleases throughout the dependency graph.
+
+## Environment requirements
+
+The SDK v2 raises FastMCP's dependency floors, which matters before any of your code runs.
+
+**pydantic >= 2.12 is now the floor.** If your project pins an older pydantic (for example `pydantic==2.11.*`), installing this FastMCP release fails with an unsatisfiable-resolution error from your installer — bump your pin to `>=2.12` first. If you don't pin pydantic at all, installers upgrade it silently as part of the FastMCP upgrade.
+
+**The server extra floors Starlette >= 1.0.1.** Modern FastAPI (0.11x and later) already runs on Starlette 1.x, so mounting a FastMCP server inside a FastAPI app coexists cleanly — verified with FastAPI 0.138.2. Only very old FastAPI versions pinned below Starlette 1.0.1 conflict; upgrade FastAPI if your resolver complains about Starlette.
+
+## What FastMCP absorbs
+
+### Legacy camelCase field access keeps working
+
+Objects that FastMCP hands back to you — the results of `client.list_tools()`, `client.call_tool_mcp()`, `client.read_resource()`, and the parameter objects passed to your sampling and elicitation handlers — are SDK v2 objects with snake_case fields. FastMCP installs a compatibility bridge at import time that routes the old camelCase names to their new snake_case fields, so code written against FastMCP 2.x still reads correctly:
+
+```python
+from fastmcp import Client
+
+async with Client("my_mcp_server.py") as client:
+    tools = await client.list_tools()
+    schema = tools[0].inputSchema  # still works, warns once
+```
+
+Each bridged read emits a `FastMCPDeprecationWarning` pointing you at the snake_case name (`tools[0].input_schema` here). The bridge covers the fields users actually read: `inputSchema`/`outputSchema` on tools; `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint` on tool annotations; `mimeType` on resources and content; `isError`/`structuredContent` on tool results; `nextCursor` on paginated results; `serverInfo`/`protocolVersion` on the initialize result; the sampling parameter fields (`systemPrompt`, `maxTokens`, `stopSequences`, `modelPreferences`, `toolChoice`); and `requestedSchema` on elicitation parameters.
+
+The bridge is controlled by the `mcp_camelcase_compat` setting, which defaults to on. Set it to `False` (or the environment variable `FASTMCP_MCP_CAMELCASE_COMPAT=false`) to turn the shims off, in which case only the snake_case names resolve:
+
+```python
+import fastmcp
+
+fastmcp.settings.mcp_camelcase_compat = False
+```
+
+See [Settings](/more/settings) for the full reference.
+
+### Protocol types moved to `mcp_types`
+
+The `mcp.types` module no longer exists. Every protocol type — `TextContent`, `ImageContent`, `Tool`, `ErrorData`, `Icon`, `PromptMessage`, `SamplingMessage`, `ToolAnnotations`, notification and request wrapper types like `ToolListChangedNotification`, and everything else — now lives in the standalone `mcp_types` package. Update your imports to point there:
+
+```python
+from mcp_types import TextContent, Tool, ToolAnnotations
+```
+
+`fastmcp.types` still exists, but holds only types FastMCP defines itself (currently just `Textarea`, used to render a multiline textarea in form-based UIs) — it does not re-export protocol types.
+
+### `McpError` has an alias
+
+`fastmcp.exceptions.McpError` is an alias of the SDK's `MCPError`. Catching errors is unchanged — `except McpError` still catches SDK-raised errors, and reading `err.error.code` still works:
+
+```python
+from fastmcp.exceptions import McpError
+
+try:
+    ...
+except McpError as err:
+    print(err.error.code)
+```
+
+### Behavior preserved across the SDK boundary
+
+A few client behaviors that touch the SDK are preserved so you don't have to change anything:
+
+- `Client(timeout=...)` accepts both a `timedelta` and a plain float number of seconds, as before.
+- `client.ping()` returns a `bool`.
+- `client.transport.get_session_id()` returns `None` on protocol eras that have no session, rather than raising. (The SDK v2 removed session-id access from its streamable HTTP transport; FastMCP reconstructs it on the transport object.)
+
+## What you must change
+
+Everything above, FastMCP handled for you. What remains lives in your own code, where FastMCP can't reach it — your imports, how you construct errors, the custom HTTP clients you hand to a transport, and any place you reach past FastMCP's surfaces into the raw SDK objects. Each surfaces as a clear failure at import or call time, and each is a mechanical fix.
+
+**Your own `mcp.types` imports.** FastMCP can re-export types, but it can't rewrite imports in your code. Any `from mcp.types import X` or `import mcp.types` in your server or client fails at import time with:
+
+```
+ModuleNotFoundError: No module named 'mcp.types'
+```
+
+The raw message gives no hint toward the fix, so if you see it after upgrading, this is why. Switch to `from mcp_types import X`.
+
+**`McpError` construction.** The v1 pattern of wrapping an `ErrorData` and passing it positionally fails under SDK v2 with:
+
+```
+TypeError: MCPError.__init__() missing 1 required positional argument: 'message'
+```
+
+Note the message prints the class as `MCPError` (uppercase) even though your code wrote `McpError` — the old name is an alias for the SDK's renamed class. Construct the error with keyword arguments instead:
+
+```python
+from fastmcp.exceptions import McpError
+
+# Before (raises TypeError under SDK v2):
+#   raise McpError(ErrorData(code=-32000, message="Client not supported"))
+
+# After:
+raise McpError(code=-32000, message="Client not supported")
+```
+
+Catching and `err.error.code` are unchanged — only construction moved.
+
+**Raw session access sees v2 objects.** If you reach past FastMCP's client and server surfaces into `client.session`, `ctx.session`, or the internals of `ctx.request_context`, you're now holding raw SDK v2 objects with snake_case fields and the v2 method signatures. FastMCP does not wrap these; code that depends on their v1 shape needs updating.
+
+**FastMCP now uses httpx2 exclusively.** FastMCP has replaced `httpx` with [httpx2](https://pypi.org/project/httpx2/), a next-generation httpx fork, across its entire HTTP stack — client transports and every server-side path (auth providers, the OpenAPI integration, the version check). `httpx` is no longer a FastMCP dependency. If you pass a custom client or factory into a FastMCP client transport — `StreamableHttpTransport(httpx_client_factory=...)`, `SSETransport(httpx_client_factory=...)`, `OAuth(httpx_client_factory=...)`, or a custom `httpx.Auth` as `Client(auth=...)` — those objects must now be httpx2. httpx2 is a drop-in fork with the same public API, so the change is an import swap:
+
+```python
+# Before
+import httpx
+
+transport = StreamableHttpTransport(
+    "https://example.com/mcp",
+    httpx_client_factory=lambda **kwargs: httpx.AsyncClient(verify=False, **kwargs),
+)
+
+# After
+import httpx2
+
+transport = StreamableHttpTransport(
+    "https://example.com/mcp",
+    httpx_client_factory=lambda **kwargs: httpx2.AsyncClient(verify=False, **kwargs),
+)
+```
+
+The `client` you pass to `FastMCP.from_openapi(client=...)` (and `OpenAPIProvider(client=...)`) is now type-hinted `httpx2.AsyncClient`. FastMCP does not gate on the type, so an existing `httpx.AsyncClient` keeps working at runtime via duck-typing this release — but switching it to `httpx2.AsyncClient` clears the type hint and is the supported path going forward. HTTP made inside your own tools is entirely yours and is unaffected either way.
+
+**The subtlest break is exception handlers, and no type checker will catch it.** `httpx` very likely remains installed in your environment (the Anthropic, OpenAI, and Google SDKs all depend on it), so code that catches old-httpx exceptions around FastMCP calls still imports and still type-checks — it just never matches, because FastMCP now raises `httpx2` exceptions. The handler silently becomes dead code:
+
+```python
+import httpx  # still installed transitively — this import works
+
+try:
+    result = await client.call_tool("fetch", {"url": url})
+except httpx.ConnectError:  # dead code: FastMCP now raises httpx2.ConnectError
+    return fallback()
+```
+
+Grep your codebase for `except httpx.` and move those handlers to `httpx2`. The exception hierarchies match name-for-name, so the fix is an import swap — the hard part is remembering to look. One place you are covered automatically: exceptions raised *inside your tools and resources* (for example, a tool whose own old-httpx call gets a 429) are still mapped to `ToolError`/`ResourceError` by FastMCP's error boundary, which recognizes both libraries' exceptions during the transition.
+
+Two runtime behaviors shift with httpx2, and because the switch is now wholesale they apply to **all** FastMCP HTTP — including server-auth upstream calls, not just the client path. TLS verification uses the operating system's trust store (via `truststore`, honoring `SSL_CERT_FILE`/`SSL_CERT_DIR`) instead of the bundled certifi CA set, so corporate-CA or certifi-pinned setups may verify differently. And the FastMCP HTTP loggers are renamed from `httpx`/`httpcore.*` to `httpx2`/`httpcore2.*` — update any logging filters that select the HTTP stack by logger name.
+
+## Removed in FastMCP 4
+
+Deprecations that warned throughout the 3.x line are removed in 4.0. Unlike the bridged changes above, these fail immediately at the call site — a `ModuleNotFoundError`, `ImportError`, `AttributeError`, or `TypeError` — so nothing degrades silently. Every one has a direct replacement, and the fix is mechanical.
+
+### Moved imports
+
+The proxy, OpenAPI, and app integrations moved to their permanent homes, and the internal component classes are no longer re-exported from their old aliases:
+
+| Removed import | Replacement |
+| --- | --- |
+| `fastmcp.server.proxy` | `fastmcp.server.providers.proxy` |
+| `fastmcp.server.openapi` (and `FastMCPOpenAPI`) | `FastMCP` with an `OpenAPIProvider` from `fastmcp.server.providers.openapi` |
+| `fastmcp.experimental.server.openapi` | `fastmcp.server.providers.openapi` |
+| `fastmcp.experimental.utilities.openapi` | `fastmcp.utilities.openapi` |
+| `fastmcp.server.apps`, `fastmcp.server.app` | `fastmcp.apps` (e.g. `AppConfig`) or `fastmcp` (`FastMCPApp`) |
+| `FunctionTool` / `ParsedFunction` / `tool` from `fastmcp.tools.tool` | `fastmcp.tools.function_tool` |
+| `FunctionResource` / `resource` from `fastmcp.resources.resource` | `fastmcp.resources.function_resource` |
+| `FunctionPrompt` / `prompt` from `fastmcp.prompts.prompt` | `fastmcp.prompts.function_prompt` |
+
+Two renames in the same family are worth calling out because they have no compatibility alias. The response-caching wrapper models lost a spelling typo — `CachableToolResult`, `CachablePromptResult`, and their siblings became `CacheableToolResult`, `CacheablePromptResult`, etc. — so an import of the old spelling from `fastmcp.server.middleware.caching` raises `ImportError`. And `PromptToolMiddleware` / `ResourceToolMiddleware` are gone in favor of the `PromptsAsTools` / `ResourcesAsTools` transforms from `fastmcp.server.transforms` (the `ToolInjectionMiddleware` base class is retained).
+
+### Removed server methods and `mount()` keywords
+
+These `FastMCP` methods and keywords have warned since 3.0 and are now removed:
+
+| Removed | Replacement |
+| --- | --- |
+| `FastMCP.as_proxy(sub)` | `create_proxy(sub)` (from `fastmcp.server`) |
+| `mcp.import_server(sub)` | `mcp.mount(sub)` |
+| `mcp.mount(sub, prefix="x")` | `mcp.mount(sub, namespace="x")` |
+| `mcp.mount(sub, as_proxy=True)` | wrap with `create_proxy(sub)`, then `mount` the proxy |
+| `mcp.add_tool_transformation(name, cfg)` | `mcp.add_transform(ToolTransform({name: cfg}))` |
+| `mcp.remove_tool_transformation(name)` | removed (was a no-op); hide tools with `mcp.disable(keys=[...])` |
+| `mcp.remove_tool(name)` | `mcp.local_provider.remove_tool(name)` |
+
+Two of these replacements are not exact behavioral swaps. `create_proxy` takes its target as the first positional argument (`target`), so a keyword call like `as_proxy(backend=server)` becomes `create_proxy(server)` rather than reusing the old keyword. And `local_provider.remove_tool` raises a plain `KeyError` when the tool is missing, where `FastMCP.remove_tool` raised a `NotFoundError` — update any `except NotFoundError` cleanup around a removal.
+
+`mount(as_proxy=True)` used to route the child through a proxy (an MCP-client execution boundary) rather than composing it directly. To keep that boundary, wrap the child in `create_proxy()` and mount the proxy; a plain `mount(child)` composes the child in-process. Either way, the child's lifespan and middleware now run — a direct mount no longer skips them.
+
+`import_server` → `mount` is the one row here that is not a mechanical swap, because the two never had the same semantics. `import_server` took a **one-time static snapshot** — it copied the child's tools, resources, and prompts at call time, with no live link, and did not run the child's lifespan or middleware. `mount` is a **live composition** — it holds a live link to the child and runs the child's lifespan and middleware. After switching, later changes to the child become visible through the parent, the child's lifespan runs with the parent's (entered when the server starts, held until it stops — not per request), and the child's middleware runs on the operations delegated to it. If you depended on the frozen-copy behavior (a stable snapshot, no child lifecycle), there is no drop-in replacement: register the child's components on the parent directly instead of composing the two servers.
+
+### Removed tool and decorator parameters
+
+Two `@tool` parameters and two settings are gone:
+
+- **Tool `serializer=`** is removed from `@tool` / `mcp.tool()`, `Tool.from_function`, `Tool.from_tool`, and the OpenAPI tool. Return a `ToolResult` from your tool for full control over serialization instead.
+- **Tool `exclude_args=`** is removed. Hide a parameter from the tool schema by injecting it instead: give it a `Depends(factory)` default (from `fastmcp.dependencies`), where `factory` is a callable returning the value the argument used to carry. An injected parameter never appears in the tool's schema, which is what `exclude_args` was for.
+- **The `decorator_mode` setting** (`FASTMCP_DECORATOR_MODE`) and its `"object"` mode are removed. Decorators always return your original function with metadata attached; reach the component object through the server (`await mcp.get_tool("name")`) rather than off the decorated function.
+- **`StreamableHttpTransport(sse_read_timeout=...)`** is removed — it was a no-op under the SDK v2 client. Set the read timeout through the public `Client(transport, timeout=...)` (a `timedelta` or float seconds), or reach for a custom `httpx_client_factory` when you need finer control. (`SSETransport` still accepts `sse_read_timeout`.)
+
+## Behavior changes to verify
+
+Two server-side behaviors changed in ways that compile fine but can surface at runtime.
+
+**Templated resources are path-screened by default.** Every templated resource now has its extracted parameter values checked for path-traversal (`..` segments), absolute paths, and null bytes *before your handler runs*, at the server's read chokepoint. A rejected read returns a non-leaky "resource not found" error. Only a standalone `..` segment counts as traversal, so values that merely contain dots (`file.tar.gz`, `HEAD~3..HEAD`) and dotfiles (`.env`) still pass. If a template legitimately accepts `..`-bearing or absolute values, exempt the parameter with `ResourceSecurity(exempt_params={...})`, disable the check per-component with `security=None`, or set a server-wide default with `FastMCP(resource_security=...)`. See [Resources → Path Security](/servers/resources#path-security).
+
+**Resource-not-found now returns `-32602`.** The wire error code for a missing resource from the core `resources/read` handler changed from `-32002` to `-32602` (`INVALID_PARAMS`, per SEP-2164). The human-readable message ("Resource not found: ...") is unchanged, so this only affects clients that matched on the numeric code — update those to expect `-32602`. (The opt-in `ErrorHandlingMiddleware` keeps its own per-method-prefix code mapping; if you run it with `transform_errors=True` it can still map not-found to a different code, so it is unaffected by this change.)
+
+## Deprecation timeline
+
+The camelCase bridge is a migration aid, not a permanent fixture. It works today and warns on every bridged read so you can find and update the affected call sites. Plan to migrate your reads to snake_case: the shims will be removed in a future release, after which only the snake_case names resolve — the same state you get today by setting `mcp_camelcase_compat = False`. Turning the setting off is a good way to surface every remaining camelCase read in your code as a hard `AttributeError` before the shims go away.
+
+## SDK deprecation warnings you may see
+
+Ordinary use of `ctx.info` (client logging) and `ctx.sample` now emits an SDK-level `MCPDeprecationWarning`:
+
+```
+The logging/sampling capability is deprecated as of 2026-07-28 (SEP-2577)
+```
+
+These warnings come from the MCP SDK, not from FastMCP. For logging they are benign: `ctx.info` keeps working on session-based connections exactly as the protocol table below describes, and the SDK is only signaling the protocol's direction. For sampling, FastMCP additionally emits its own `FastMCPDeprecationWarning`: `ctx.sample` and `ctx.sample_step` are deprecated and slated for removal, so treat that warning as a prompt to migrate to server-side LLM calls rather than as informational.
+
+## Protocol version support
+
+FastMCP servers built on the SDK v2 serve multiple protocol eras from the same server. The SDK negotiates the era each client speaks: the sessionless `2026-07-28` era (which discovers capabilities through `server/discover`) and earlier session-based handshake versions are all handled simultaneously. This formally supersedes FastMCP's earlier "latest protocol only" stance — a single server now works with clients across the protocol transition.
+
+Not every Context feature is available on every era yet. The imperative push APIs that call back into the client mid-execution — `ctx.elicit`, `ctx.sample`, and `ctx.list_roots` — depend on the session-based back-channel of the earlier eras, so on a `2026-07-28` connection they raise a clear, era-aware error rather than reaching the client. Elicitation itself still reaches the user on the modern era, through the guard pattern: a tool *returns* an `InputRequiredResult` describing what it needs, and the client answers with a fresh call (see [Elicitation on the modern protocol](/servers/elicitation#elicitation-on-the-modern-protocol)). Logging notifications and the request/response features flow on every era.
+
+Sampling is the exception that does not come back, and the reason is the protocol rather than an unfinished FastMCP feature. SEP-2577 deprecated server-initiated sampling, so `ctx.sample` and `ctx.sample_step` are **deprecated** and will be removed in a future FastMCP release. Elicitation moved to the guard pattern because the modern protocol still carries elicitation requests; sampling has no equivalent path because the protocol deprecated the pattern itself. The migration is to call an LLM directly from your server rather than borrowing the client's model. See [Sampling](/servers/sampling) for details.
+
+| Context feature | Earlier eras (session-based) | `2026-07-28` (sessionless) |
+| --- | --- | --- |
+| `ctx.info` / logging notifications | Supported | Supported |
+| Tools, resources, prompts, completions | Supported | Supported |
+| `ctx.elicit` | Supported | Use the guard pattern (return `InputRequiredResult`) |
+| `ctx.sample` / `ctx.sample_step` | Supported (deprecated) | Removed — call an LLM server-side |
+| `ctx.list_roots` | Supported | Via the guard pattern (`input_requests` carries roots requests) |
+| `Middleware.on_initialize` | Runs on connect | Never runs — there is no `initialize` handshake |
+| Session state (`ctx.set_state` across calls) | Persists for the session | Does not persist — every request is a fresh connection |
+| Background tasks (`task=True`) | Runs synchronously — never tasked | Supported via the tasks extension |
+
+If your tools rely on `ctx.elicit` or `ctx.list_roots`, they continue to work against clients on the earlier eras; on the modern era, reach for the guard pattern instead (see [Elicitation on the modern protocol](/servers/elicitation#elicitation-on-the-modern-protocol)). Sampling is deprecated on every era and will not return on modern connections — migrate those tools to server-side LLM calls.
+
+Two of these bite by default now, because **`fastmcp.Client` defaults to `mode="auto"`** in v4 — an ordinary `Client(server)` negotiates the newest protocol both sides share, which against a FastMCP server is the sessionless `2026-07-28` era. On that era there is no `initialize` handshake, so a `Middleware.on_initialize` hook never runs; and each request is a fresh connection, so state written with `ctx.set_state` in one call is not visible in the next. A server that gates access in `on_initialize` or relies on per-session state must keep its clients on the session-based era. The narrow escape is per-client: `Client(server, mode="legacy")`. The durable, server-side answer is to declare the versions the server actually serves so a modern client is refused at connect time rather than silently losing those features — see the server's protocol-version restriction (added alongside this change).
+
+## Upgrade checklist
+
+Most servers upgrade untouched. Work down this list to find the ones that don't:
+
+1. **Bump your environment.** Raise any pin below `pydantic>=2.12`; upgrade FastAPI if your resolver complains about Starlette `<1.0.1`.
+2. **Fix imports that moved out.** Replace `from mcp.types import X` with `from mcp_types import X`, and update any import from the [removed modules](#moved-imports) (`fastmcp.server.proxy`, `fastmcp.server.openapi`, `fastmcp.server.apps`, the `fastmcp.tools.tool` / `resources.resource` / `prompts.prompt` component shims).
+3. **Update removed server APIs.** Swap `as_proxy` → `create_proxy`, `import_server` → `mount`, `mount(prefix=)` → `mount(namespace=)`, and the [other removed methods and keywords](#removed-server-methods-and-mount-keywords).
+4. **Update removed tool parameters.** Replace tool `serializer=` (return a `ToolResult`), `exclude_args=` (use `Depends()`), and `StreamableHttpTransport(sse_read_timeout=)`.
+5. **Fix `McpError` construction.** Positional `McpError(ErrorData(...))` becomes keyword `McpError(code=..., message=...)`. Catching is unchanged.
+6. **Move httpx to httpx2.** Grep for `except httpx.` and for custom `httpx_client_factory` / `httpx.Auth` objects handed to FastMCP, and swap the import to `httpx2`.
+7. **Decide the client era.** `Client` now defaults to `mode="auto"`. If a server relies on `on_initialize` or per-session state, keep its clients on `mode="legacy"` or restrict the server's served protocol versions.
+8. **Verify behavior changes.** Confirm templated resources that legitimately accept `..` or absolute paths are exempted, and update any client that matched the old `-32002` resource-not-found code.
+9. **Run with the camelCase bridge off.** Set `mcp_camelcase_compat = False` (or `FASTMCP_MCP_CAMELCASE_COMPAT=false`) in CI to surface every remaining camelCase read as a hard `AttributeError` before the shims are removed.
+
+The executable version of this checklist lives in [`tests/test_upgrade_from_v3.py`](https://github.com/PrefectHQ/fastmcp/blob/main/tests/test_upgrade_from_v3.py): it builds representative 3.x-style servers and asserts they run unchanged, and pins every removed surface to the exact error it now raises.

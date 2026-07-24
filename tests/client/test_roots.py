@@ -36,7 +36,8 @@ class TestClientRoots:
 
     @pytest.mark.parametrize("roots", [["file://x/y/z", "file://x/y/z"]])
     async def test_valid_roots(self, fastmcp_server: FastMCP, roots: list[str]):
-        async with Client(fastmcp_server, roots=roots) as client:
+        # ctx.list_roots is a legacy-era server-initiated feature.
+        async with Client(fastmcp_server, mode="legacy", roots=roots) as client:
             result = await client.call_tool("list_roots", {})
             assert result.data == [
                 "file://x/y/z",

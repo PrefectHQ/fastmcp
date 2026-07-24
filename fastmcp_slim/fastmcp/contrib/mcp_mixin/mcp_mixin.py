@@ -1,12 +1,9 @@
 """Provides a base mixin class and decorators for easy registration of class methods with FastMCP."""
 
 import inspect
-import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-import fastmcp
-from fastmcp.exceptions import FastMCPDeprecationWarning
 from fastmcp.prompts.base import Prompt
 from fastmcp.resources.base import Resource
 from fastmcp.tools.base import Tool
@@ -71,15 +68,6 @@ def mcp_tool(
         raise TypeError(
             f"mcp_tool() got unexpected keyword argument(s): {sorted(unknown)!r}. "
             f"Valid keyword arguments are: {sorted(_TOOL_VALID_KWARGS)}"
-        )
-
-    if "serializer" in kwargs and fastmcp.settings.deprecation_warnings:
-        warnings.warn(
-            "The `serializer` parameter is deprecated. "
-            "Return ToolResult from your tools for full control over serialization. "
-            "See https://gofastmcp.com/servers/tools#custom-serialization for migration examples.",
-            FastMCPDeprecationWarning,
-            stacklevel=2,
         )
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:

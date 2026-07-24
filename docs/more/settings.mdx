@@ -4,7 +4,7 @@ description: Configure FastMCP behavior through environment variables or a .env 
 icon: gear
 ---
 
-FastMCP uses [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) for configuration. Every setting is available as an environment variable with a `FASTMCP_` prefix. Settings are loaded from environment variables and from a `.env` file (see the [Tasks (Docket)](#tasks-docket) section for a caveat about nested settings in `.env` files).
+FastMCP uses [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) for configuration. Every setting is available as an environment variable with a `FASTMCP_` prefix. Settings are loaded from environment variables and from a `.env` file.
 
 ```bash
 # Set via environment
@@ -27,6 +27,7 @@ You can change which `.env` file is loaded by setting the `FASTMCP_ENV_FILE` env
 | `FASTMCP_ENABLE_RICH_LOGGING` | `bool` | `true` | Use rich formatting for log output. Set to `false` for plain Python logging. |
 | `FASTMCP_ENABLE_RICH_TRACEBACKS` | `bool` | `true` | Use rich tracebacks for errors. |
 | `FASTMCP_DEPRECATION_WARNINGS` | `bool` | `true` | Show deprecation warnings. |
+| `FASTMCP_MCP_CAMELCASE_COMPAT` | `bool` | `true` | Bridge legacy camelCase reads on MCP SDK objects (e.g. `tool.inputSchema`, `result.isError`) to their snake_case fields after the SDK v2 rename. Each bridged read emits a `FastMCPDeprecationWarning`. Set to `false` to disable the shims, in which case only the snake_case names resolve. |
 
 ## Transport & HTTP
 
@@ -42,9 +43,10 @@ These control how the server listens when running with an HTTP transport.
 | `FASTMCP_STREAMABLE_HTTP_PATH` | `str` | `/mcp` | Path for Streamable HTTP endpoint. |
 | `FASTMCP_STATELESS_HTTP` | `bool` | `false` | Enable stateless HTTP mode (new transport per request). Useful for multi-worker deployments. |
 | `FASTMCP_JSON_RESPONSE` | `bool` | `false` | Use JSON responses instead of SSE for Streamable HTTP. |
-| `FASTMCP_HTTP_HOST_ORIGIN_PROTECTION` | `bool` | `true` | Validate `Host` and browser `Origin` headers for Streamable HTTP requests. |
-| `FASTMCP_HTTP_ALLOWED_HOSTS` | `list[str] \| null` | `null` | Additional trusted hostnames for Streamable HTTP requests. Use a JSON array, such as `["mcp.example.com"]`. |
-| `FASTMCP_HTTP_ALLOWED_ORIGINS` | `list[str] \| null` | `null` | Browser origins trusted by the Streamable HTTP request guard. Configure CORS separately for cross-origin browser reads. Use a JSON array, such as `["https://app.example.com"]`. |
+| `FASTMCP_HTTP_HOST_ORIGIN_PROTECTION` | `bool \| "auto"` | `false` | Validate `Host` and browser `Origin` headers for Streamable HTTP requests. `auto` protects localhost-bound servers and explicit host/origin allowlists. |
+| `FASTMCP_HTTP_ALLOWED_HOSTS` | `list[str] \| null` | `null` | Additional trusted hostnames when Host and Origin protection is enabled. Use a JSON array, such as `["mcp.example.com"]`. |
+| `FASTMCP_HTTP_ALLOWED_ORIGINS` | `list[str] \| null` | `null` | Browser origins trusted when Host and Origin protection is enabled. Configure CORS separately for cross-origin browser reads. Use a JSON array, such as `["https://app.example.com"]`. |
+| `FASTMCP_HTTP_SESSION_IDLE_TIMEOUT` | `float \| null` | `null` | Seconds a Streamable HTTP session may remain idle before it is terminated. The deadline resets on every request. When `null`, sessions never expire from inactivity. Not supported in stateless mode. |
 | `FASTMCP_DEBUG` | `bool` | `false` | Enable debug mode. |
 
 ## Error Handling
@@ -61,6 +63,7 @@ These control how the server listens when running with an HTTP transport.
 |---|---|---|---|
 | `FASTMCP_CLIENT_INIT_TIMEOUT` | `float \| None` | None | Timeout in seconds for the client initialization handshake. Set to `0` or leave unset to disable. |
 | `FASTMCP_CLIENT_DISCONNECT_TIMEOUT` | `float` | `5` | Maximum time in seconds to wait for a clean disconnect before giving up. |
+| `FASTMCP_TASKS_CLIENT_POLL_INTERVAL` | `float` | `0.5` | Ceiling in seconds for the fallback poll backoff while waiting on a [background task](/servers/tasks). Requires the `fastmcp-tasks` package. Applies **only** when the server does not advertise its own `pollInterval`: in that case `Task.wait()` starts polling fast (~20ms) and doubles up to this ceiling rather than polling at a fixed cadence. When the server advertises a `pollInterval`, that interval is honored exactly and this setting is ignored. |
 | `FASTMCP_CLIENT_RAISE_FIRST_EXCEPTIONGROUP_ERROR` | `bool` | `true` | When an `ExceptionGroup` is raised, re-raise the first error directly instead of the group. Simplifies debugging but may mask secondary errors. |
 
 ## CLI & Display
@@ -70,23 +73,35 @@ These control how the server listens when running with an HTTP transport.
 | `FASTMCP_SHOW_SERVER_BANNER` | `bool` | `true` | Show the server banner on startup. Also controllable via `--no-banner` or `server.run(show_banner=False)`. |
 | `FASTMCP_CHECK_FOR_UPDATES` | `Literal["stable", "prerelease", "off"]` | `stable` | Update checking on CLI startup. `stable` checks stable releases only, `prerelease` includes pre-releases, `off` disables checking. |
 
-## Tasks (Docket)
-
-These configure the [Docket](https://github.com/prefecthq/docket) task queue used by [server tasks](/servers/tasks). All use the `FASTMCP_DOCKET_` prefix.
-
-<Warning>
-When setting Docket values in a `.env` file, use a **double** underscore: `FASTMCP_DOCKET__URL` (not `FASTMCP_DOCKET_URL`). This is because `.env` values are resolved through the parent `Settings` class, which uses `__` as its nested delimiter. As regular environment variables (e.g., `export`), the single-underscore form `FASTMCP_DOCKET_URL` works fine.
-</Warning>
+## Telemetry
 
 | Environment Variable | Type | Default | Description |
 |---|---|---|---|
-| `FASTMCP_DOCKET_NAME` | `str` | `fastmcp` | Queue name. Servers and workers sharing the same name and backend URL share a task queue. |
-| `FASTMCP_DOCKET_URL` | `str` | `memory://` | Backend URL. Use `memory://` for single-process or `redis://host:port/db` for distributed workers. |
-| `FASTMCP_DOCKET_WORKER_NAME` | `str \| None` | None | Worker name. Auto-generated if unset. |
-| `FASTMCP_DOCKET_CONCURRENCY` | `int` | `10` | Maximum concurrent tasks per worker. |
-| `FASTMCP_DOCKET_REDELIVERY_TIMEOUT` | `timedelta` | `300s` | If a worker doesn't complete a task within this time, it's redelivered to another worker. |
-| `FASTMCP_DOCKET_RECONNECTION_DELAY` | `timedelta` | `5s` | Delay between reconnection attempts when the worker loses its backend connection. |
-| `FASTMCP_DOCKET_MINIMUM_CHECK_INTERVAL` | `timedelta` | `50ms` | How frequently the worker polls for new tasks. Lower values reduce latency at the cost of more CPU usage. |
+| `FASTMCP_ENABLE_TELEMETRY` | `bool` | `true` | Whether FastMCP's native [OpenTelemetry instrumentation](/servers/telemetry) is active. Enabled by default; FastMCP uses only the OpenTelemetry API, so span creation is a no-op with negligible overhead unless an OpenTelemetry SDK and exporter are configured. Set to `false` to turn instrumentation off entirely, in which case no FastMCP spans are created even when an SDK is configured. |
+
+## Tasks (Docket)
+
+Task settings (the `FASTMCP_DOCKET_` variables) moved to the optional `fastmcp-tasks` package. See [server tasks](/servers/tasks) for configuration.
+
+## Security
+
+These control FastMCP's SSRF protection for the outbound fetches it makes during authentication (OAuth client metadata and JWKS).
+
+| Environment Variable | Type | Default | Description |
+|---|---|---|---|
+| `FASTMCP_SSRF_TRUST_PROXY` | `bool` | `false` | Trust an outbound HTTP proxy for SSRF-protected fetches. When `false`, FastMCP resolves the target hostname itself and refuses to connect if it maps to a private, loopback, link-local, or reserved IP. When `true`, FastMCP routes auth metadata and JWKS fetches through the configured `HTTPS_PROXY`/`ALL_PROXY` and does not honor `NO_PROXY`; if no proxy is configured the fetch is refused. |
+
+By default, FastMCP protects its OAuth and JWKS fetches against [SSRF](https://owasp.org/www-community/attacks/Server_Side_Request_Forgery) by resolving the target hostname, rejecting any address that maps to a private, loopback, link-local, or reserved IP, and then pinning the connection to that validated IP.
+
+This breaks when a corporate `CONNECT` proxy is the only egress path: the container often cannot resolve external DNS at all (only the proxy can), and even when it can, pinning to the IP makes TLS verification fail because public certificates list hostnames, not IP addresses.
+
+Set `FASTMCP_SSRF_TRUST_PROXY=true` when a trusted proxy is your mandated egress. FastMCP then skips DNS resolution and the IP blocklist entirely and makes a single request to the hostname URL, explicitly routed through the proxy named by the standard `HTTPS_PROXY` / `ALL_PROXY` environment variables (checked in that order). The HTTPS-only and hostname checks still apply.
+
+<Warning>
+This is a deliberate trust shift: the IP blocklist cannot be enforced through a proxy (the proxy does its own DNS, so an address FastMCP resolved is not the one the proxy dials). Only enable it when the proxy itself is trusted to mediate egress.
+
+FastMCP reads the proxy URL from the environment and passes it to the HTTP client explicitly, with the client's own environment-based proxy routing turned off — so the request either goes through that exact proxy or fails outright, with no routing decision left for the client to make on its own. One consequence: `NO_PROXY` is **not honored** in this mode. A host that `NO_PROXY` would otherwise exclude is still routed through the configured proxy rather than fetched direct with the IP blocklist disabled — the safer of the two options, since the blocklist cannot apply to a direct fetch here anyway. If you set `FASTMCP_SSRF_TRUST_PROXY=true` but neither `HTTPS_PROXY` nor `ALL_PROXY` is present in the server process's environment (an `HTTP_PROXY` alone never routes these HTTPS-only fetches), the request would otherwise go out **direct with the IP blocklist disabled** — no SSRF protection at all. Rather than send it, FastMCP refuses the fetch and raises `SSRFError` with an actionable message. The contract is crisp: proxy-trust mode delegates SSRF protection to the proxy, and with no proxy configured the fetch cannot proceed. Enable this setting only together with an active proxy that routes your auth endpoints.
+</Warning>
 
 ## Advanced
 
@@ -95,5 +110,4 @@ When setting Docket values in a `.env` file, use a **double** underscore: `FASTM
 | `FASTMCP_HOME` | `Path` | Platform default | Data directory for FastMCP. Defaults to the platform-specific user data directory. |
 | `FASTMCP_ENV_FILE` | `str` | `.env` | Path to the `.env` file to load settings from. Must be set as an environment variable (see above). |
 | `FASTMCP_SERVER_DEPENDENCIES` | `list[str]` | `[]` | Additional dependencies to install in the server environment. |
-| `FASTMCP_DECORATOR_MODE` | `Literal["function", "object"]` | `function` | Controls what `@tool`, `@resource`, and `@prompt` decorators return. `function` returns the original function (default); `object` returns component objects (deprecated, will be removed). |
 | `FASTMCP_TEST_MODE` | `bool` | `false` | Enable test mode. |

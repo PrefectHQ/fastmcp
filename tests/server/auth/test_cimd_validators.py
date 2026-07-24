@@ -27,11 +27,9 @@ class TestCIMDAssertionValidator:
         return CIMDAssertionValidator()
 
     @pytest.fixture
-    def key_pair(self):
+    def key_pair(self, rsa_key_pair):
         """Generate RSA key pair for testing."""
-        from fastmcp.server.auth.providers.jwt import RSAKeyPair
-
-        return RSAKeyPair.generate()
+        return rsa_key_pair
 
     @pytest.fixture
     def jwks(self, key_pair):

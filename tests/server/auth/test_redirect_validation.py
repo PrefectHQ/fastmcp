@@ -1,13 +1,244 @@
 """Tests for redirect URI validation in OAuth flows."""
 
+import re
+from pathlib import Path
+from urllib.parse import parse_qs, parse_qsl, urlparse
+
 import pytest
 from pydantic import AnyUrl
 
+import fastmcp.server.auth
 from fastmcp.server.auth.redirect_validation import (
     DEFAULT_LOCALHOST_PATTERNS,
+    add_query_params,
+    build_client_redirect,
     matches_allowed_pattern,
+    replace_query_param,
     validate_redirect_uri,
 )
+
+
+class TestAddQueryParams:
+    """Test that add_query_params preserves the registered callback's exact query bytes.
+
+    A registered redirect URI may carry an opaque or signed query string.
+    Decoding it with parse_qsl and re-serializing with urlencode mutates it
+    (a valueless `?flag` becomes `?flag=`, and non-UTF-8 percent-encoded
+    bytes get replaced) which breaks clients that route on, or
+    cryptographically validate, the raw callback query.
+    """
+
+    def test_preserves_valueless_param_and_non_utf8_bytes(self):
+        original_query = "flag&sig=%FF%FE"
+        url = f"https://client.example.com/callback?{original_query}"
+
+        result = add_query_params(
+            url,
+            {
+                "code": "abc123",
+                "state": "xyz state",
+                "iss": "https://issuer.example.com/",
+            },
+        )
+
+        result_query = urlparse(result).query
+
+        # The original query substring must survive byte-for-byte: the
+        # valueless `flag` must not become `flag=`, and the non-UTF-8
+        # percent-encoded `sig` value must not be decoded/replaced.
+        assert result_query.startswith(f"{original_query}&")
+
+        # New params are appended after a single `&`, correctly encoded.
+        appended = result_query[len(original_query) + 1 :]
+        assert dict(parse_qsl(appended)) == {
+            "code": "abc123",
+            "state": "xyz state",
+            "iss": "https://issuer.example.com/",
+        }
+
+    def test_empty_query_has_no_stray_ampersand(self):
+        url = "https://client.example.com/callback"
+
+        result = add_query_params(url, {"code": "abc123"})
+
+        assert result == "https://client.example.com/callback?code=abc123"
+
+    def test_appends_to_existing_ordinary_query(self):
+        url = "https://client.example.com/callback?foo=bar"
+
+        result = add_query_params(url, {"code": "abc123"})
+
+        assert result == "https://client.example.com/callback?foo=bar&code=abc123"
+
+
+class TestReplaceQueryParam:
+    """Direct tests for the idempotent replace-or-append primitive that
+    `build_client_redirect` relies on to guarantee exactly one `iss`.
+    """
+
+    def test_replaces_existing_value_in_place_preserving_other_bytes(self):
+        url = "https://client.example.com/callback?iss=tenant&sig=%FF%FE"
+
+        result = replace_query_param(url, "iss", "https://issuer.example.com/")
+
+        assert urlparse(result).query == (
+            "iss=https%3A%2F%2Fissuer.example.com%2F&sig=%FF%FE"
+        )
+
+    def test_appends_when_key_absent(self):
+        url = "https://client.example.com/callback?sig=%FF%FE"
+
+        result = replace_query_param(url, "iss", "https://issuer.example.com/")
+
+        assert urlparse(result).query == (
+            "sig=%FF%FE&iss=https%3A%2F%2Fissuer.example.com%2F"
+        )
+
+    def test_only_first_occurrence_is_replaced(self):
+        """A key appearing twice in the input is left with one replaced
+        occurrence and one untouched -- callers must not feed this function
+        an already-duplicated key and expect deduplication."""
+        url = "https://client.example.com/callback?iss=first&iss=second"
+
+        result = replace_query_param(url, "iss", "https://issuer.example.com/")
+
+        assert urlparse(result).query == (
+            "iss=https%3A%2F%2Fissuer.example.com%2F&iss=second"
+        )
+
+
+class TestBuildClientRedirect:
+    """Tests for the single helper that owns the client-facing-redirect
+    `iss` invariant: exactly one `iss`, set to the canonical value, with
+    every other query byte preserved verbatim.
+
+    This is the consolidation point for RFC 9207 support -- every redirect
+    the OAuth proxy sends back to a client (success or error, across all
+    five call sites that build one) must go through this function rather
+    than hand-building a params dict with its own `"iss"` key.
+    """
+
+    def test_appends_params_and_iss_when_absent(self):
+        url = "https://client.example.com/callback"
+
+        result = build_client_redirect(
+            url,
+            {"code": "abc", "state": "xyz"},
+            iss="https://issuer.example.com/",
+        )
+
+        assert dict(parse_qsl(urlparse(result).query)) == {
+            "code": "abc",
+            "state": "xyz",
+            "iss": "https://issuer.example.com/",
+        }
+
+    def test_replaces_iss_already_present_in_registered_redirect_uri(self):
+        """A registered redirect_uri may legitimately carry its own `iss`
+        query parameter (e.g. a multi-tenant client encoding its tenant in
+        the callback URL). Blindly appending the server's issuer on top of
+        that would yield two `iss` values -- RFC 6749 §3.1 forbids a
+        response parameter appearing more than once, so strict clients
+        reject the response or read the wrong value. This is the P2 defect
+        this helper exists to close off at every call site, not just one.
+        """
+        url = "https://client.example.com/callback?iss=tenant&sig=%FF%FE"
+
+        result = build_client_redirect(
+            url,
+            {"code": "abc", "state": "xyz"},
+            iss="https://issuer.example.com/",
+        )
+
+        result_query = urlparse(result).query
+        iss_values = parse_qs(result_query)["iss"]
+        assert len(iss_values) == 1
+        assert iss_values == ["https://issuer.example.com/"]
+
+    def test_preserves_valueless_param_and_non_utf8_bytes_alongside_existing_iss(
+        self,
+    ):
+        """Exact end-to-end reproduction of the worked example from the P2
+        review comment: registered redirect_uri already has `iss`, a
+        valueless `flag`, and a non-UTF-8 percent-encoded `sig` -- all three
+        must survive the round trip through `add_query_params` +
+        `replace_query_param` untouched, with only `iss` rewritten in
+        place.
+        """
+        url = "https://client.example.com/callback?iss=tenant&flag&sig=%FF%FE"
+
+        result = build_client_redirect(
+            url,
+            {"code": "abc", "state": "xyz state"},
+            iss="https://issuer.example.com/",
+        )
+
+        assert urlparse(result).query == (
+            "iss=https%3A%2F%2Fissuer.example.com%2F"
+            "&flag&sig=%FF%FE&code=abc&state=xyz+state"
+        )
+
+    def test_rejects_iss_hand_specified_in_params(self):
+        """`iss` must come from the keyword-only `iss` argument, never from
+        the `params` dict -- this keeps exactly one place a caller can set
+        it, rather than two that could disagree."""
+        with pytest.raises(ValueError, match="iss"):
+            build_client_redirect(
+                "https://client.example.com/callback",
+                {"code": "abc", "iss": "sneaky"},
+                iss="https://issuer.example.com/",
+            )
+
+    def test_empty_params_does_not_add_stray_ampersand(self):
+        """The authorize-handler call site passes no extra params (it only
+        needs to fix up `iss` on a URL the SDK already built) -- an empty
+        `params` dict must not introduce a trailing/stray `&`."""
+        url = "https://client.example.com/callback?code=abc&state=xyz"
+
+        result = build_client_redirect(url, {}, iss="https://issuer.example.com/")
+
+        assert urlparse(result).query == (
+            "code=abc&state=xyz&iss=https%3A%2F%2Fissuer.example.com%2F"
+        )
+        assert "&&" not in result
+        assert not result.endswith("&")
+
+
+class TestNoHandSpecifiedIssOutsideHelper:
+    """Guard against a future call site reintroducing the duplicate-`iss`
+    bug this PR consolidates away.
+
+    This is the sixth review round on the RFC 9207 `iss` work, and the last
+    two rounds were the same defect surfacing at different call sites: a
+    caller hand-building a params dict with its own `"iss"` key instead of
+    routing through `build_client_redirect`. Rather than trust that every
+    future redirect site remembers to do this, scan the directories that
+    build client-facing authorization redirects (`oauth_proxy/`,
+    `handlers/`) for a dict-literal `"iss"` key. `jwt_issuer.py` and the
+    JWT/Clerk providers legitimately use `"iss"` as a JWT claim name, but
+    those live outside these two directories, so this scan does not need to
+    special-case them.
+    """
+
+    def test_no_dict_literal_iss_key_in_redirect_building_modules(self):
+        auth_root = Path(fastmcp.server.auth.__file__).parent
+        scan_dirs = [auth_root / "oauth_proxy", auth_root / "handlers"]
+        iss_dict_key = re.compile(r"""["']iss["']\s*:""")
+
+        offenders = [
+            str(path)
+            for scan_dir in scan_dirs
+            for path in scan_dir.rglob("*.py")
+            if iss_dict_key.search(path.read_text())
+        ]
+
+        assert not offenders, (
+            "Found a hand-specified 'iss' dict key outside "
+            "build_client_redirect() in: "
+            f"{offenders}. Route this redirect through "
+            "fastmcp.server.auth.redirect_validation.build_client_redirect "
+            "instead so the duplicate-iss invariant stays centralized."
+        )
 
 
 class TestMatchesAllowedPattern:

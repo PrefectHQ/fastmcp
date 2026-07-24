@@ -30,7 +30,8 @@ Before you begin, you will need:
 2. **OAuth Server enabled** in your Supabase Dashboard (Authentication → OAuth Server)
 3. **Dynamic Client Registration enabled** in the same settings
 4. A **consent UI** hosted at your configured authorization path (see above)
-5. Your FastMCP server's URL (can be localhost for development, e.g., `http://localhost:8000`)
+5. Your Supabase Auth JWT signing algorithm. `SupabaseProvider` defaults to `ES256`; set `algorithm="RS256"` if your project is configured for RSA signing.
+6. Your FastMCP server's URL (can be localhost for development, e.g., `http://localhost:8000`)
 
 ### Step 1: Enable Supabase OAuth Server
 
@@ -58,6 +59,7 @@ from fastmcp.server.auth.providers.supabase import SupabaseProvider
 auth = SupabaseProvider(
     project_url="https://abc123.supabase.co",
     base_url="http://localhost:8000",
+    algorithm="ES256",  # Match your Supabase Auth JWT signing algorithm
 )
 
 mcp = FastMCP("Supabase Protected Server", auth=auth)
@@ -117,6 +119,7 @@ from fastmcp.server.auth.providers.supabase import SupabaseProvider
 auth = SupabaseProvider(
     project_url=os.environ["SUPABASE_PROJECT_URL"],
     base_url=os.environ.get("BASE_URL", "https://your-server.com"),
+    algorithm=os.environ.get("SUPABASE_JWT_ALGORITHM", "ES256"),
 )
 
 mcp = FastMCP(name="Supabase Secured App", auth=auth)

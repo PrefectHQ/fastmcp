@@ -32,8 +32,19 @@ LOGGING_LEVEL_MAP = logging.getLevelNamesMapping()
 
 async def log_handler(message: LogMessage):
     """Forward MCP server logs to Python's logging system."""
-    msg = message.data.get('msg')
-    extra = message.data.get('extra')
+    data = message.data
+    if isinstance(data, dict):
+        msg = data.get('msg', data)
+        extra = data.get('extra')
+    else:
+        msg = data
+        extra = None
+
+    # Python's logging requires `extra` to be a mapping, but a server can send
+    # any JSON value, so fold anything else into the message instead.
+    if extra is not None and not isinstance(extra, dict):
+        msg = f"{msg} ({extra})"
+        extra = None
 
     level = LOGGING_LEVEL_MAP.get(message.level.upper(), logging.INFO)
     logger.log(level, msg, extra=extra)
@@ -55,19 +66,20 @@ The handler receives a `LogMessage` object:
   The logger name (may be None)
 </ResponseField>
 
-<ResponseField name="data" type="dict">
-  The log payload, containing `msg` and `extra` keys
+<ResponseField name="data" type="Any">
+  The JSON-serializable log payload sent by the server. FastMCP's structured logger uses a dictionary with `msg` and `extra` keys, but other MCP servers may send any JSON value.
 </ResponseField>
 </Card>
 
 ## Structured Logs
 
-The `message.data` attribute is a dictionary containing the log payload. This enables structured logging with rich contextual information.
+The `message.data` attribute contains the server's JSON-serializable log payload. FastMCP servers commonly send a dictionary with `msg` and `extra` keys, which enables structured logging with rich contextual information.
 
 ```python
 async def detailed_log_handler(message: LogMessage):
-    msg = message.data.get('msg')
-    extra = message.data.get('extra')
+    data = message.data
+    msg = data.get('msg', data) if isinstance(data, dict) else data
+    extra = data.get('extra') if isinstance(data, dict) else None
 
     if message.level == "error":
         print(f"ERROR: {msg} | Details: {extra}")

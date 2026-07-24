@@ -12,12 +12,13 @@ This implementation is based on:
 from collections.abc import Sequence
 from typing import Any, Literal
 
-import httpx
+import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl, BaseModel, model_validator
 from typing_extensions import Self
 
 from fastmcp.server.auth import TokenVerifier
+from fastmcp.server.auth.identity_assertion import IdentityAssertion
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.oauth_proxy.models import UpstreamTokenSet
 from fastmcp.server.auth.providers.jwt import JWTVerifier
@@ -162,7 +163,7 @@ class OIDCConfiguration(BaseModel):
             get_kwargs["timeout"] = timeout_seconds
 
         try:
-            response = httpx.get(str(config_url), **get_kwargs)
+            response = httpx2.get(str(config_url), **get_kwargs)
             response.raise_for_status()
 
             config_data = response.json()
@@ -246,6 +247,8 @@ class OIDCProxy(OAuthProxy):
         token_expiry_threshold_seconds: int = 0,
         # CIMD configuration
         enable_cimd: bool = True,
+        # Identity assertion (SEP-990 ID-JAG) support
+        identity_assertion: IdentityAssertion | None = None,
     ) -> None:
         """Initialize the OIDC proxy provider.
 
@@ -289,7 +292,7 @@ class OIDCProxy(OAuthProxy):
                 provided, the upstream client secret will be used to derive a 32-byte key using PBKDF2.
             token_endpoint_auth_method: Token endpoint authentication method for upstream server.
                 Common values: "client_secret_basic", "client_secret_post", "none".
-                If None, authlib will use its default (typically "client_secret_basic").
+                Defaults to "client_secret_basic".
             require_authorization_consent: Whether to require user consent before authorizing clients (default True).
                 When True, users see a consent screen before being redirected to the upstream IdP.
                 When False, authorization proceeds directly without user confirmation.
@@ -328,6 +331,9 @@ class OIDCProxy(OAuthProxy):
             enable_cimd: Whether to enable CIMD (Client ID Metadata Document) client support.
                 When True, clients can use their metadata document URL as client_id instead of
                 Dynamic Client Registration. Default is True.
+            identity_assertion: Optional SEP-990 identity assertion (ID-JAG) configuration.
+                When provided, the token endpoint accepts the RFC 7523 jwt-bearer grant
+                carrying an ID-JAG issued by one of the configured trusted issuers.
         """
         if not config_url:
             raise ValueError("Missing required config URL")
@@ -419,6 +425,7 @@ class OIDCProxy(OAuthProxy):
             "fastmcp_access_token_expiry_seconds": fastmcp_access_token_expiry_seconds,
             "token_expiry_threshold_seconds": token_expiry_threshold_seconds,
             "enable_cimd": enable_cimd,
+            "identity_assertion": identity_assertion,
         }
 
         if redirect_path:

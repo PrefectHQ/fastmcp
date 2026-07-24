@@ -1,4 +1,4 @@
-from mcp.types import ToolAnnotations
+from mcp_types import ToolAnnotations
 from phue import Bridge
 
 from fastmcp import FastMCP

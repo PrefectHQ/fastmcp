@@ -9,7 +9,7 @@ strict_input_validation=False, the default).
 import json
 
 import pytest
-from mcp.types import TextContent
+from mcp_types import TextContent
 from pydantic import BaseModel
 
 from fastmcp import Client, FastMCP

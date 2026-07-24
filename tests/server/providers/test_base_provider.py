@@ -6,9 +6,9 @@ import pytest
 
 from fastmcp.server.providers.aggregate import AggregateProvider
 from fastmcp.server.providers.base import Provider
-from fastmcp.server.tasks.config import TaskConfig
 from fastmcp.server.transforms import Namespace
 from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.utilities.tasks import TaskConfig
 
 
 class CustomTool(Tool):

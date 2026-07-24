@@ -7,10 +7,11 @@ Final filtering happens at the Provider level.
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
-import mcp.types
+import mcp_types
 
 from fastmcp.resources.base import Resource
 from fastmcp.resources.template import ResourceTemplate
@@ -81,6 +82,19 @@ class Visibility(Transform):
             components: Component types to match (e.g., {"tool", "prompt"}).
             match_all: If True, matches all components regardless of other criteria.
         """
+        if keys:
+            malformed = sorted(key for key in keys if "@" not in key)
+            if malformed:
+                warnings.warn(
+                    f"Component keys are missing the '@' version delimiter and will "
+                    f"match nothing: {malformed}. A key always ends in '@' for an "
+                    f"unversioned component (e.g. 'tool:my_tool@') or '@<version>' "
+                    f"for a versioned one. Read the value from `component.key`, or "
+                    f"filter by `names` instead.",
+                    UserWarning,
+                    stacklevel=3,
+                )
+
         self._enabled = enabled
         self.names = names
         self.keys = keys
@@ -322,11 +336,11 @@ async def save_visibility_rules(
     # Send notifications based on components hint
     # Note: MCP has no separate template notification - templates use ResourceListChangedNotification
     if components is None or "tool" in components:
-        await context.send_notification(mcp.types.ToolListChangedNotification())
+        await context.send_notification(mcp_types.ToolListChangedNotification())
     if components is None or "resource" in components or "template" in components:
-        await context.send_notification(mcp.types.ResourceListChangedNotification())
+        await context.send_notification(mcp_types.ResourceListChangedNotification())
     if components is None or "prompt" in components:
-        await context.send_notification(mcp.types.PromptListChangedNotification())
+        await context.send_notification(mcp_types.PromptListChangedNotification())
 
 
 def create_visibility_transforms(rules: list[dict[str, Any]]) -> list[Visibility]:

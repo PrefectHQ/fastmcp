@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Annotated, Any
 
 import pytest
-from mcp.types import CallToolResult, TextContent
+from mcp_types import CallToolResult, TextContent
 from pydantic import BaseModel, ConfigDict, Field
 
 from fastmcp import Client, FastMCP
@@ -83,10 +83,10 @@ class TestToolResultIsError:
         )
         mcp_result = result.to_mcp_result()
         assert isinstance(mcp_result, CallToolResult)
-        assert mcp_result.isError is True
+        assert mcp_result.is_error is True
         assert isinstance(mcp_result.content[0], TextContent)
         assert mcp_result.content[0].text == "boom"
-        assert mcp_result.structuredContent == {"code": 42}
+        assert mcp_result.structured_content == {"code": 42}
 
     def test_default_is_not_error(self):
         result = ToolResult(content="ok")
@@ -122,6 +122,38 @@ class TestToolResultIsError:
 
         assert result.is_error is True
         assert result.content[0].text == "upstream boom"
+
+    def test_raw_call_tool_result_is_preserved(self):
+        tool = Tool.from_function(lambda: None, name="test_tool")
+        raw_result = CallToolResult(
+            content=[TextContent(type="text", text="upstream boom")],
+            structured_content={"code": 42},
+            is_error=True,
+            _meta={"source": "upstream"},
+        )
+
+        result = tool.convert_result(raw_result)
+
+        assert result.to_mcp_result() is raw_result
+
+    async def test_raw_call_tool_result_preserves_protocol_fields(self):
+        mcp = FastMCP()
+
+        raw_result = CallToolResult(
+            content=[TextContent(type="text", text="upstream boom")],
+            structured_content={"code": 42},
+            is_error=True,
+            _meta={"source": "upstream"},
+        )
+
+        @mcp.tool
+        def failing() -> CallToolResult:
+            return raw_result
+
+        async with Client(mcp) as client:
+            result = await client.call_tool_mcp("failing", {})
+
+        assert result.model_dump(by_alias=True) == raw_result.model_dump(by_alias=True)
 
 
 class TestUnionReturnTypes:
@@ -269,7 +301,7 @@ class TestSerializeByAlias:
             "id": "123",
             "filepath": "/p",
         }
-        assert set(tools["get_biofile"].outputSchema["properties"]) == {  # type: ignore[index]
+        assert set(tools["get_biofile"].output_schema["properties"]) == {  # type: ignore[index]
             "id",
             "filepath",
         }
@@ -292,7 +324,7 @@ class TestSerializeByAlias:
             result = await client.call_tool("get_biofile", {})
 
         assert result.structured_content == {"_id": "123", "filepath": "/p"}
-        assert set(tools["get_biofile"].outputSchema["properties"]) == {  # type: ignore[index]
+        assert set(tools["get_biofile"].output_schema["properties"]) == {  # type: ignore[index]
             "_id",
             "filepath",
         }
@@ -315,7 +347,7 @@ class TestSerializeByAlias:
             result = await client.call_tool("get_biofile", {})
 
         assert result.structured_content == {"_id": "123"}
-        assert set(tools["get_biofile"].outputSchema["properties"]) == {"_id"}  # type: ignore[index]
+        assert set(tools["get_biofile"].output_schema["properties"]) == {"_id"}  # type: ignore[index]
 
     async def test_nested_models_respect_config(self):
         """serialize_by_alias=False propagates through nested models."""
@@ -364,7 +396,7 @@ class TestSerializeByAlias:
             # raises if they disagree
             result = await client.call_tool("get_biofile", {})
 
-        schema_props = set(tools["get_biofile"].outputSchema["properties"])  # type: ignore[index]
+        schema_props = set(tools["get_biofile"].output_schema["properties"])  # type: ignore[index]
         assert schema_props == set(result.structured_content)  # type: ignore[arg-type]
         assert result.structured_content == {"result": {"id": "1"}}
 
@@ -391,5 +423,5 @@ class TestSerializeByAlias:
             tools = {t.name: t for t in await client.list_tools()}
             result = await client.call_tool("get_model", {})
 
-        schema_props = set(tools["get_model"].outputSchema["properties"])  # type: ignore[index]
+        schema_props = set(tools["get_model"].output_schema["properties"])  # type: ignore[index]
         assert schema_props == set(result.structured_content)  # type: ignore[arg-type]

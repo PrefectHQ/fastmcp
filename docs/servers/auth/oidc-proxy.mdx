@@ -149,11 +149,10 @@ Set this if your provider requires a specific authentication method and the defa
   Secret used to sign FastMCP JWT tokens issued to clients. Accepts any string or bytes - will be derived into a proper 32-byte cryptographic key using HKDF.
 
   **Default behavior (`None`):**
-  - **Mac/Windows**: Auto-managed via system keyring. Keys are generated once and persisted, surviving server restarts with zero configuration. Keys are automatically derived from server attributes, so this approach, while convenient, is **only** suitable for development and local testing. For production, you must provide an explicit secret.
-  - **Linux**: Ephemeral (random salt at startup). Tokens become invalid on server restart, triggering client re-authentication.
+  The key is deterministically derived from `client_secret` using HKDF, on every platform. Because the derivation is deterministic, the same key is produced across restarts as long as `client_secret` doesn't change, so tokens remain valid without any extra configuration. This convenience makes it **only** suitable for development and local testing.
 
   **For production:**
-  Provide an explicit secret (e.g., from environment variable) to use a fixed key instead of the auto-generated one.
+  Provide an explicit `jwt_signing_key` (e.g., from an environment variable) rather than relying on the auto-derived key.
 </ParamField>
 
 <ParamField body="client_storage" type="AsyncKeyValue | None">
@@ -162,10 +161,9 @@ Set this if your provider requires a specific authentication method and the defa
   Storage backend for persisting OAuth client registrations and upstream tokens.
 
   **Default behavior:**
-  - **Mac/Windows**: Encrypted DiskStore in your platform's data directory (derived from `platformdirs`)
-  - **Linux**: MemoryStore (ephemeral - clients lost on restart)
+  Encrypted disk store in your platform's data directory (derived from `platformdirs`), on every platform including Linux. The encryption key is itself derived from `jwt_signing_key`.
 
-  By default on Mac/Windows, clients are automatically persisted to encrypted disk storage, allowing them to survive server restarts as long as the filesystem remains accessible. This means MCP clients only need to register once and can reconnect seamlessly. On Linux where keyring isn't available, ephemeral storage is used to match the ephemeral key strategy.
+  By default, clients are automatically persisted to encrypted disk storage, allowing them to survive server restarts as long as the filesystem remains accessible. This means MCP clients only need to register once and can reconnect seamlessly.
 
 For production deployments with multiple servers or cloud deployments, use a network-accessible storage backend rather than local disk storage. **Wrap your storage in `FernetEncryptionWrapper` to encrypt sensitive OAuth tokens at rest.** See [Storage Backends](/servers/storage-backends) for available options.
 
