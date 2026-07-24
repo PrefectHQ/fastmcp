@@ -7,7 +7,7 @@ sidebarTitle: components
 
 ## Functions
 
-### `get_fastmcp_metadata` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/components.py#L26" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_fastmcp_metadata` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/components.py#L22" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_fastmcp_metadata(meta: dict[str, Any] | None) -> FastMCPMeta
@@ -22,9 +22,9 @@ namespace for compatibility with older FastMCP servers.
 
 ## Classes
 
-### `FastMCPMeta` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/components.py#L20" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `FastMCPMeta` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/components.py#L16" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
-### `FastMCPComponent` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/components.py#L74" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `FastMCPComponent` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/components.py#L70" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Base class for FastMCP tools, prompts, resources, and resource templates.
@@ -114,58 +114,7 @@ copy(self) -> Self
 Create a copy of the component.
 
 
-#### `register_with_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/components.py#L227" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-register_with_docket(self, docket: Docket) -> None
-```
-
-Register this component with docket for background execution.
-
-No-ops if task_config.mode is "forbidden". Subclasses override to
-register their callable (self.run, self.read, self.render, or self.fn).
-
-
-#### `coerce_task_arguments` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/components.py#L235" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-coerce_task_arguments(self, arguments: dict[str, Any]) -> dict[str, Any]
-```
-
-Validate and coerce task arguments before any task state is created.
-
-Called by ``submit_to_docket`` up front, so invalid inputs raise before
-the task's Redis metadata and initial status notification exist —
-otherwise a coercion failure during queueing would orphan a task the
-client has already observed. The base implementation is a no-op;
-components that splat arguments into a typed Python callable (e.g.
-``FunctionTool``) override this to mirror the synchronous validation
-path.
-
-When ``strict`` is set (server-level ``strict_input_validation``),
-overrides validate in strict mode so the task path rejects lax
-coercions (e.g. the string ``"1"`` into an ``int``) exactly as the
-synchronous call path does.
-
-
-#### `add_to_docket` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/components.py#L255" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-add_to_docket(self, docket: Docket, *args: Any, **kwargs: Any) -> Execution
-```
-
-Schedule this component for background execution via docket.
-
-Subclasses override this to handle their specific calling conventions:
-- Tool: add_to_docket(docket, arguments: dict, **kwargs)
-- Resource: add_to_docket(docket, **kwargs)
-- ResourceTemplate: add_to_docket(docket, params: dict, **kwargs)
-- Prompt: add_to_docket(docket, arguments: dict | None, **kwargs)
-
-The **kwargs are passed through to docket.add() (e.g., key=task_key).
-
-
-#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/components.py#L277" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/components.py#L227" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_span_attributes(self) -> dict[str, Any]
