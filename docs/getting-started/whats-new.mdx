@@ -23,6 +23,8 @@ The rebuild also pulls the protocol's recent evolution forward in a single step.
 
 A FastMCP 4 server answers clients across the protocol transition from one deployment. The MCP SDK negotiates the era per connection — the sessionless `2026-07-28` protocol for clients that have moved forward, the session-based handshake for everyone else — and any replica behind a plain load balancer can serve a modern request. This supersedes FastMCP's earlier "latest protocol only" stance: you adopt the new protocol without forking your deployment or gating clients by version.
 
+The same negotiation runs from the client, and its default flipped. A plain `Client(url)` now probes for the modern protocol and adopts it when the server offers it, falling back to the handshake otherwise — where every earlier FastMCP version pinned the handshake outright. That flip is what brings the modern capabilities within reach of ordinary client code: a task-enabled tool hands back a handle to poll, and multi-round-trip elicitation resolves across successive requests, neither requiring the caller to opt in. Set `mode="legacy"` to pin the handshake when you need the session-based back-channel or the classic `initialize` result. See [Protocol negotiation](/clients/client#protocol-negotiation).
+
 The modern protocol is sessionless, so it drops the server's ability to call back into the client mid-request (SEP-2577). Imperative `ctx.elicit` and `ctx.list_roots` move to a request-shaped pattern on modern connections, and server-initiated sampling — which has no such replacement — is [deprecated](/servers/sampling). Everything else about writing a server is unchanged.
 
 ## State without a session
