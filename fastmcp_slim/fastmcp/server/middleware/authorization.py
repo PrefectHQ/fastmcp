@@ -29,7 +29,7 @@ from typing import Any
 
 import mcp_types as mt
 
-from fastmcp.exceptions import AuthorizationError
+from fastmcp.exceptions import AuthorizationError, InsufficientScopeError
 from fastmcp.prompts.base import Prompt, PromptResult
 from fastmcp.resources.base import Resource, ResourceResult
 from fastmcp.resources.template import ResourceTemplate
@@ -37,6 +37,7 @@ from fastmcp.server.auth.authorization import (
     AuthCheck,
     AuthContext,
     run_auth_checks,
+    unmet_scopes,
 )
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware.middleware import (
@@ -181,6 +182,15 @@ class AuthMiddleware(Middleware):
         token = get_access_token()
         ctx = AuthContext(token=token, component=tool)
         if not await run_auth_checks(self.auth, ctx):
+            missing = unmet_scopes(self.auth, ctx)
+            if missing:
+                raise InsufficientScopeError(
+                    missing,
+                    message=(
+                        f"Authorization failed for tool '{tool_name}': "
+                        f"insufficient scope (required: {', '.join(missing)})"
+                    ),
+                )
             raise AuthorizationError(
                 f"Authorization failed for tool '{tool_name}': insufficient permissions"
             )
@@ -259,6 +269,15 @@ class AuthMiddleware(Middleware):
         token = get_access_token()
         ctx = AuthContext(token=token, component=component)
         if not await run_auth_checks(self.auth, ctx):
+            missing = unmet_scopes(self.auth, ctx)
+            if missing:
+                raise InsufficientScopeError(
+                    missing,
+                    message=(
+                        f"Authorization failed for resource '{uri}': "
+                        f"insufficient scope (required: {', '.join(missing)})"
+                    ),
+                )
             raise AuthorizationError(
                 f"Authorization failed for resource '{uri}': insufficient permissions"
             )
@@ -361,6 +380,15 @@ class AuthMiddleware(Middleware):
         token = get_access_token()
         ctx = AuthContext(token=token, component=prompt)
         if not await run_auth_checks(self.auth, ctx):
+            missing = unmet_scopes(self.auth, ctx)
+            if missing:
+                raise InsufficientScopeError(
+                    missing,
+                    message=(
+                        f"Authorization failed for prompt '{prompt_name}': "
+                        f"insufficient scope (required: {', '.join(missing)})"
+                    ),
+                )
             raise AuthorizationError(
                 f"Authorization failed for prompt '{prompt_name}': insufficient permissions"
             )
