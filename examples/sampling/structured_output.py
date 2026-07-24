@@ -21,6 +21,7 @@ from rich.table import Table
 from fastmcp import Client, Context, FastMCP
 from fastmcp.client.sampling import SamplingMessage, SamplingParams
 from fastmcp.client.sampling.handlers.anthropic import AnthropicSamplingHandler
+from mcp_types import SamplingCapability, SamplingToolsCapability
 
 console = Console()
 
@@ -70,7 +71,11 @@ async def main():
 
     handler = LoggingAnthropicHandler(default_model="claude-sonnet-4-5")
 
-    async with Client(mcp, sampling_handler=handler) as client:
+    async with Client(
+        mcp,
+        sampling_handler=handler,
+        sampling_capabilities=SamplingCapability(tools=SamplingToolsCapability()),
+    ) as client:
         texts = [
             "I absolutely love this product! It exceeded all my expectations.",
             "The service was okay, nothing special but got the job done.",
