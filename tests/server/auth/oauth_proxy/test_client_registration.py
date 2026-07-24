@@ -227,6 +227,83 @@ class TestOAuthProxyClientRegistration:
         assert client_info.get("client_secret") is None
 
 
+class TestApplicationTypeRegistration:
+    """SEP-837: DCR registration honors the client's application_type."""
+
+    async def test_default_application_type_is_native(self, oauth_proxy):
+        """Omitting application_type defaults to native (the SDK default), so a
+        loopback redirect URI registers successfully."""
+        client_info = OAuthClientInformationFull(
+            client_id="default-client",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+
+        await oauth_proxy.register_client(client_info)
+
+        stored = await oauth_proxy.get_client("default-client")
+        assert stored is not None
+        assert stored.application_type == "native"
+
+    async def test_native_client_accepts_loopback(self, oauth_proxy):
+        client_info = OAuthClientInformationFull(
+            client_id="native-client",
+            redirect_uris=[AnyUrl("http://127.0.0.1:55555/callback")],
+            application_type="native",
+        )
+
+        await oauth_proxy.register_client(client_info)
+
+        stored = await oauth_proxy.get_client("native-client")
+        assert stored is not None
+        assert stored.application_type == "native"
+
+    async def test_web_client_accepts_https(self, oauth_proxy):
+        client_info = OAuthClientInformationFull(
+            client_id="web-client",
+            redirect_uris=[AnyUrl("https://client.example.com/callback")],
+            application_type="web",
+        )
+
+        await oauth_proxy.register_client(client_info)
+
+        stored = await oauth_proxy.get_client("web-client")
+        assert stored is not None
+        assert stored.application_type == "web"
+
+    async def test_web_client_rejects_loopback(self, oauth_proxy):
+        client_info = OAuthClientInformationFull(
+            client_id="web-loopback-client",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+            application_type="web",
+        )
+
+        with pytest.raises(RegistrationError, match="application_type 'web'"):
+            await oauth_proxy.register_client(client_info)
+
+    async def test_web_client_rejects_custom_scheme(self, oauth_proxy):
+        client_info = OAuthClientInformationFull(
+            client_id="web-custom-client",
+            redirect_uris=[AnyUrl("com.example.app:/oauth/callback")],
+            application_type="web",
+        )
+
+        with pytest.raises(RegistrationError, match="application_type 'web'"):
+            await oauth_proxy.register_client(client_info)
+
+    @pytest.mark.parametrize("application_type", ["web", "native"])
+    async def test_unsafe_scheme_rejected_regardless_of_type(
+        self, oauth_proxy, application_type
+    ):
+        client_info = OAuthClientInformationFull(
+            client_id="unsafe-client",
+            redirect_uris=[AnyUrl("javascript:alert(document.cookie)//")],
+            application_type=application_type,
+        )
+
+        with pytest.raises(RegistrationError, match="invalid_redirect_uri"):
+            await oauth_proxy.register_client(client_info)
+
+
 class TestUpstreamClientIdFallback:
     """Tests for clients that skip DCR and use the upstream client_id directly."""
 

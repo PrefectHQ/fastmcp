@@ -322,6 +322,47 @@ def matches_allowed_pattern(uri: str, pattern: str) -> bool:
     return _match_path(uri_parsed.path, pattern_parsed.path)
 
 
+def is_redirect_uri_allowed_for_application_type(
+    redirect_uri: str | AnyUrl,
+    application_type: str,
+) -> bool:
+    """Check a redirect URI against RFC 7591 / SEP-837 `application_type` rules.
+
+    `application_type` governs which redirect URIs a Dynamically Registered
+    Client may use (RFC 7591 §2, OpenID Connect Dynamic Client Registration §2):
+
+    - `"web"` clients must use `https` redirect URIs and must not use loopback
+      hosts. Custom/private-use schemes and `http` loopback URIs are rejected.
+    - `"native"` clients may use loopback URLs (`http://127.0.0.1`,
+      `http://localhost`, `http://[::1]`) and custom/private-use URI schemes.
+
+    Unsafe browser schemes (`javascript:`, `data:`, `file:`, `vbscript:`) are
+    always rejected regardless of `application_type`, layering on top of
+    FastMCP's existing scheme hardening.
+
+    The MCP SDK defaults `application_type` to `"native"` because MCP clients
+    typically register loopback redirect URIs, so omitting the field preserves
+    the permissive behavior clients relied on before this check existed.
+    """
+    uri_str = str(redirect_uri)
+
+    if _is_unsafe_redirect_uri(uri_str):
+        return False
+
+    if application_type != "web":
+        # "native" (and the SDK default): loopback http and custom/private-use
+        # schemes are permitted; unsafe schemes were already rejected above.
+        return True
+
+    # "web": require an https redirect URI on a non-loopback host.
+    parsed = urlparse(uri_str)
+    if parsed.scheme.lower() != "https":
+        return False
+    if _is_loopback_host(parsed.hostname):
+        return False
+    return True
+
+
 def validate_redirect_uri(
     redirect_uri: str | AnyUrl | None,
     allowed_patterns: list[str] | None,

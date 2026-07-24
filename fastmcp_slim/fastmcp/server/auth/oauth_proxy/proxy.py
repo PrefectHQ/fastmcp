@@ -105,6 +105,7 @@ from fastmcp.server.auth.oauth_proxy.ui import create_error_html
 from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client
 from fastmcp.server.auth.redirect_validation import (
     build_client_redirect,
+    is_redirect_uri_allowed_for_application_type,
     validate_redirect_uri,
 )
 from fastmcp.utilities.auth import parse_scopes
@@ -917,6 +918,18 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                         "invalid_redirect_uri",
                         f"Redirect URI '{redirect_uri}' is not allowed.",
                     )
+                # SEP-837: honor the client's declared application_type. "web"
+                # clients are restricted to https redirect URIs; "native" clients
+                # (the SDK default) may use loopback and private-use schemes.
+                if not is_redirect_uri_allowed_for_application_type(
+                    redirect_uri,
+                    client_info.application_type,
+                ):
+                    raise RegistrationError(
+                        "invalid_redirect_uri",
+                        f"Redirect URI '{redirect_uri}' is not allowed for "
+                        f"application_type '{client_info.application_type}'.",
+                    )
 
         redirect_uris = client_info.redirect_uris or [AnyUrl("http://localhost")]
 
@@ -945,6 +958,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             grant_types=registered_grant_types,
             scope=client_info.scope or self._default_scope_str,
             token_endpoint_auth_method="none",
+            application_type=client_info.application_type,
             allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
             client_name=getattr(client_info, "client_name", None),
         )
