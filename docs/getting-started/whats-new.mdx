@@ -41,6 +41,32 @@ Long-running work runs as a background task: the server accepts the call, return
 
 Background tasks are the first capability built on a more general one: FastMCP 4 makes MCP extensions — capability-negotiated protocol features named by a reverse-DNS string (SEP-2133) — a first-class surface. `FastMCP.add_extension()` lets an extension advertise a capability, add request methods, intercept `tools/call`, and run a lifespan hook, all with full access to the component registry, `Context`, and auth. The same extensions flow through the client with `Client(extensions=...)`. A cross-cutting protocol feature stops being surgery on core and becomes a supported plugin.
 
+## Argument completion
+
+When a client offers autocomplete for a prompt argument or a resource-template parameter, it asks the server which values fit — narrowing the list as the user types. FastMCP 4 lets a server answer. A single `@mcp.completion` handler receives the reference being completed, the argument and its partial value, and the arguments the user has already supplied, and returns the candidates the client surfaces as suggestions. Because the handler sees the earlier arguments, completions can depend on them — a `repo` parameter suggesting only repositories under the `owner` already chosen.
+
+```python
+from fastmcp import FastMCP
+from mcp_types import PromptReference
+
+mcp = FastMCP("Docs")
+
+
+@mcp.prompt
+def write_poem(theme: str) -> str:
+    return f"Write a poem about {theme}"
+
+
+@mcp.completion
+def complete(ref, argument, context):
+    if isinstance(ref, PromptReference) and argument.name == "theme":
+        options = ["nature", "love", "adventure"]
+        return [o for o in options if o.startswith(argument.value)]
+    return None
+```
+
+Registering a handler advertises the completions capability during negotiation, so a client only sends requests to a server that answers them — the same on both protocol eras. See [Argument Completion](/servers/completions).
+
 ## Enterprise identity
 
 FastMCP 4 ships a complete server-side implementation of identity assertion (SEP-990): enterprise "on-behalf-of" access, where a corporate identity provider issues a signed assertion, the user's agent presents it, and the server mints a short-lived token — no browser login and no per-user consent screen. Behind one parameter on the existing auth providers, FastMCP performs the full signature verification, binding checks, replay rejection, and scoped token issuance.
