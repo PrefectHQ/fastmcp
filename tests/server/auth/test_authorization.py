@@ -1091,6 +1091,34 @@ class TestInsufficientScopeSignal:
 
         assert not isinstance(exc_info.value, InsufficientScopeError)
 
+    async def test_non_scope_denial_stays_opaque_and_names_no_scope(self):
+        # A non-scope check (e.g. a custom tenant policy) fails first and
+        # short-circuits before the scope check runs. The denial must stay a
+        # plain AuthorizationError and must NOT disclose or request the "admin"
+        # scope for a component the caller could not otherwise reach.
+        def deny_tenant(ctx: AuthContext) -> bool:
+            return False
+
+        mcp = FastMCP(
+            middleware=[
+                AuthMiddleware(auth=[deny_tenant, require_scopes("admin")]),
+            ]
+        )
+
+        @mcp.tool
+        def api_tool() -> str:
+            return "ok"
+
+        tok = set_token(make_token(scopes=["read"]))
+        try:
+            with pytest.raises(AuthorizationError) as exc_info:
+                await mcp.call_tool("api_tool", {})
+        finally:
+            auth_context_var.reset(tok)
+
+        assert not isinstance(exc_info.value, InsufficientScopeError)
+        assert "admin" not in str(exc_info.value)
+
     async def test_restrict_tag_shortfall_names_scope(self):
         mcp = make_restricted_tag_server()
 

@@ -37,7 +37,7 @@ from fastmcp.server.auth.authorization import (
     AuthCheck,
     AuthContext,
     run_auth_checks,
-    unmet_scopes,
+    run_auth_checks_with_shortfall,
 )
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware.middleware import (
@@ -181,8 +181,8 @@ class AuthMiddleware(Middleware):
         # Global auth check
         token = get_access_token()
         ctx = AuthContext(token=token, component=tool)
-        if not await run_auth_checks(self.auth, ctx):
-            missing = unmet_scopes(self.auth, ctx)
+        authorized, missing = await run_auth_checks_with_shortfall(self.auth, ctx)
+        if not authorized:
             if missing:
                 raise InsufficientScopeError(
                     missing,
@@ -268,8 +268,8 @@ class AuthMiddleware(Middleware):
         # Global auth check
         token = get_access_token()
         ctx = AuthContext(token=token, component=component)
-        if not await run_auth_checks(self.auth, ctx):
-            missing = unmet_scopes(self.auth, ctx)
+        authorized, missing = await run_auth_checks_with_shortfall(self.auth, ctx)
+        if not authorized:
             if missing:
                 raise InsufficientScopeError(
                     missing,
@@ -379,8 +379,8 @@ class AuthMiddleware(Middleware):
         # Global auth check
         token = get_access_token()
         ctx = AuthContext(token=token, component=prompt)
-        if not await run_auth_checks(self.auth, ctx):
-            missing = unmet_scopes(self.auth, ctx)
+        authorized, missing = await run_auth_checks_with_shortfall(self.auth, ctx)
+        if not authorized:
             if missing:
                 raise InsufficientScopeError(
                     missing,

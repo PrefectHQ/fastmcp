@@ -114,28 +114,23 @@ def restrict_tag(tag: str, *, scopes: list[str]) -> AuthCheck:
     return _RestrictTag(tag, scopes)
 
 
-def unmet_scopes(checks: AuthCheck | list[AuthCheck], ctx: AuthContext) -> list[str]:
-    """Collect the scopes required by scope-based checks that the token lacks.
-
-    Only scope-aware checks (`require_scopes`, `restrict_tag`) expose their
-    requirements; other checks are opaque and contribute nothing. The result is
-    sorted and de-duplicated so a shortfall can be named in an
-    ``insufficient_scope`` step-up signal. An empty list means either the checks
-    are satisfied or the denial was not scope-based (e.g. a missing token).
-    """
-    check_list = checks if isinstance(checks, list) else [checks]
-    missing: set[str] = set()
-    for check in check_list:
-        if isinstance(check, _ScopeAwareCheck):
-            missing |= check.missing_scopes(ctx)
-    return sorted(missing)
-
-
-async def run_auth_checks(
+async def run_auth_checks_with_shortfall(
     checks: AuthCheck | list[AuthCheck],
     ctx: AuthContext,
-) -> bool:
-    """Run auth checks with AND logic."""
+) -> tuple[bool, list[str]]:
+    """Run auth checks with AND logic, classifying the denial cause.
+
+    Returns ``(authorized, missing_scopes)``. ``missing_scopes`` is non-empty
+    only when the *first failing* check is a scope-aware check whose shortfall
+    caused the denial. A denial from an earlier non-scope check (e.g. a custom
+    tenant policy) short-circuits first and yields an empty list, so it is never
+    misreported as an ``insufficient_scope`` shortfall and never names the
+    scopes of a component the caller could not otherwise reach.
+
+    This mirrors the short-circuit of the AND logic exactly: scopes are reported
+    for the same check that determined the denial, not for every scope check in
+    the list. An ``AuthorizationError`` raised by a check propagates unchanged.
+    """
     check_list = [checks] if not isinstance(checks, list) else checks
     check_list = cast(list[AuthCheck], check_list)
 
@@ -144,8 +139,6 @@ async def run_auth_checks(
             result = check(ctx)
             if inspect.isawaitable(result):
                 result = await result
-            if not result:
-                return False
         except AuthorizationError:
             raise
         except Exception:
@@ -154,6 +147,22 @@ async def run_auth_checks(
                 "raised an unexpected exception",
                 exc_info=True,
             )
-            return False
+            return False, []
 
-    return True
+        if not result:
+            # The first failing check determines the denial. Name scopes only if
+            # that check is the scope requirement itself; otherwise stay opaque.
+            if isinstance(check, _ScopeAwareCheck):
+                return False, sorted(check.missing_scopes(ctx))
+            return False, []
+
+    return True, []
+
+
+async def run_auth_checks(
+    checks: AuthCheck | list[AuthCheck],
+    ctx: AuthContext,
+) -> bool:
+    """Run auth checks with AND logic."""
+    authorized, _ = await run_auth_checks_with_shortfall(checks, ctx)
+    return authorized

@@ -6,7 +6,7 @@ from fastmcp.utilities.authorization import (
     require_scopes,
     restrict_tag,
     run_auth_checks,
-    unmet_scopes,
+    run_auth_checks_with_shortfall,
 )
 
 __all__ = [
@@ -15,5 +15,5 @@ __all__ = [
     "require_scopes",
     "restrict_tag",
     "run_auth_checks",
-    "unmet_scopes",
+    "run_auth_checks_with_shortfall",
 ]
