@@ -869,6 +869,55 @@ class TestMalformedURITemplates:
         assert result is not None
         assert result == {"id": "42", "format": "", "verbose": "true"}
 
+    def test_exploded_query_param_collects_repeated_values(self):
+        """Regression for #4378: `{?tags*}` collects every repetition."""
+        result = match_uri_template(
+            "items://books?tags=alpha&tags=beta", "items://{category}{?tags*}"
+        )
+        assert result == {"category": "books", "tags": ["alpha", "beta"]}
+
+    def test_exploded_query_param_with_single_value_is_a_list(self):
+        """A single value still arrives as a list, so the type is stable."""
+        result = match_uri_template(
+            "items://books?tags=alpha", "items://{category}{?tags*}"
+        )
+        assert result == {"category": "books", "tags": ["alpha"]}
+
+    def test_non_exploded_query_param_stays_scalar(self):
+        """Without the explode modifier the param is a scalar — first value wins."""
+        result = match_uri_template(
+            "items://books?tag=alpha&tag=beta", "items://{category}{?tag}"
+        )
+        assert result == {"category": "books", "tag": "alpha"}
+
+    async def test_exploded_query_param_reaches_the_function(self):
+        """End-to-end: repeated values arrive as a list[str] argument."""
+
+        def search(category: str, tags: list[str] | None = None) -> dict:
+            return {"category": category, "tags": tags}
+
+        template = ResourceTemplate.from_function(
+            fn=search, uri_template="items://{category}{?tags*}"
+        )
+
+        assert await template.read({"category": "books", "tags": ["a", "b"]}) == {
+            "category": "books",
+            "tags": ["a", "b"],
+        }
+
+    def test_from_function_rejects_collection_query_param_without_explode(self):
+        """Regression for #4378: `{?tags}` on a list param silently dropped every
+        value but the first, then failed validation at read time. Reject it up
+        front and point at the explode form."""
+
+        def search(category: str, tags: list[str] | None = None) -> dict:
+            return {"category": category, "tags": tags}
+
+        with pytest.raises(ValueError, match="explode modifier"):
+            ResourceTemplate.from_function(
+                fn=search, uri_template="items://{category}{?tags}"
+            )
+
     def test_from_function_rejects_hyphen_underscore_collision(self):
         """Two raw param names that normalize to the same key are rejected."""
 
@@ -989,6 +1038,8 @@ class TestMatchExpandRoundTrip:
             ("test://{path*}", "test://single"),
             ("test://pre/{rest*}", "test://pre/x/y/z"),
             ("test://{x}/{path*}", "test://foo/a/b/c"),
+            ("test://{x}{?tags*}", "test://foo?tags=a"),
+            ("test://{x}{?tags*}", "test://foo?tags=a&tags=b"),
         ],
     )
     def test_expand_then_match_is_identity(self, template: str, uri: str):
