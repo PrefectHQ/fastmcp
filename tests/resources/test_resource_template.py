@@ -1,8 +1,9 @@
 import functools
+from typing import Annotated
 from urllib.parse import quote
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from fastmcp import Client, Context, FastMCP
 from fastmcp.resources import ResourceTemplate
@@ -917,6 +918,76 @@ class TestMalformedURITemplates:
             ResourceTemplate.from_function(
                 fn=search, uri_template="items://{category}{?tags}"
             )
+
+    @pytest.fixture
+    def postponed_search(self):
+        """A function whose annotations are strings, as under PEP 563.
+
+        Defined by exec so the future import applies to it and not to this
+        whole test module.
+        """
+        namespace: dict[str, object] = {}
+        exec(
+            "from __future__ import annotations\n"
+            "def search(category: str, tags: list[str] | None = None) -> dict:\n"
+            "    return {'category': category, 'tags': tags}\n",
+            namespace,
+        )
+        return namespace["search"]
+
+    def test_postponed_annotations_still_require_explode(self, postponed_search):
+        """Regression: a string annotation must not slip past the explode check.
+
+        Under `from __future__ import annotations` the raw signature gives the
+        string `"list[str] | None"`, so the check has to resolve hints or the
+        template registers and fails later at read time instead.
+        """
+        with pytest.raises(ValueError, match="explode modifier"):
+            ResourceTemplate.from_function(
+                fn=postponed_search, uri_template="items://{category}{?tags}"
+            )
+
+    async def test_postponed_annotations_accept_explode(self, postponed_search):
+        """The explode form registers and collects one or many values."""
+        template = ResourceTemplate.from_function(
+            fn=postponed_search, uri_template="items://{category}{?tags*}"
+        )
+
+        one = match_uri_template("items://books?tags=a", "items://{category}{?tags*}")
+        assert one is not None
+        assert one == {"category": "books", "tags": ["a"]}
+        assert await template.read(one) == {"category": "books", "tags": ["a"]}
+
+        many = match_uri_template(
+            "items://books?tags=a&tags=b", "items://{category}{?tags*}"
+        )
+        assert many is not None
+        assert many == {"category": "books", "tags": ["a", "b"]}
+        assert await template.read(many) == {"category": "books", "tags": ["a", "b"]}
+
+    def test_annotated_list_query_param_requires_explode(self):
+        """`Annotated[...]` must be unwrapped before the collection check."""
+
+        def search(
+            category: str,
+            tags: Annotated[list[str] | None, Field(description="tags")] = None,
+        ) -> dict:
+            return {"category": category, "tags": tags}
+
+        with pytest.raises(ValueError, match="explode modifier"):
+            ResourceTemplate.from_function(
+                fn=search, uri_template="items://{category}{?tags}"
+            )
+
+    def test_non_list_collection_query_params_are_unrestricted(self):
+        """Only `list` round-trips through expansion, so only `list` is checked."""
+
+        def search(category: str, tags: set[str] | None = None) -> dict:
+            return {"category": category, "tags": tags}
+
+        ResourceTemplate.from_function(
+            fn=search, uri_template="items://{category}{?tags}"
+        )
 
     def test_from_function_rejects_hyphen_underscore_collision(self):
         """Two raw param names that normalize to the same key are rejected."""

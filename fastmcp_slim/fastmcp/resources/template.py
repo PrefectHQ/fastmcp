@@ -7,7 +7,7 @@ import inspect
 import re
 from collections.abc import Callable
 from types import UnionType
-from typing import Any, ClassVar, Union, get_args, get_origin
+from typing import Annotated, Any, ClassVar, Union, get_args, get_origin
 from urllib.parse import parse_qs, quote, unquote
 
 from mcp_types import Annotations, Icon
@@ -48,15 +48,21 @@ def extract_query_params(uri_template: str) -> set[str]:
     return set()
 
 
-def _is_collection_annotation(annotation: Any) -> bool:
-    """Whether an annotation accepts a sequence — including `list[str] | None`."""
-    if annotation in (list, set, tuple, frozenset):
+def _is_list_annotation(annotation: Any) -> bool:
+    """Whether an annotation accepts a list — including `Annotated[list[str] | None, ...]`.
+
+    Only `list` counts: it is the only collection `expand_uri_template` emits as
+    repeated keys, so it is the only one that round-trips.
+    """
+    if annotation is list:
         return True
     origin = get_origin(annotation)
-    if origin in (list, set, tuple, frozenset):
+    if origin is list:
         return True
+    if origin is Annotated:
+        return _is_list_annotation(get_args(annotation)[0])
     if origin in (Union, UnionType):
-        return any(_is_collection_annotation(arg) for arg in get_args(annotation))
+        return any(_is_list_annotation(arg) for arg in get_args(annotation))
     return False
 
 
@@ -600,12 +606,27 @@ class FunctionResourceTemplate(ResourceTemplate):
             # A list-typed query parameter needs the RFC 6570 explode modifier;
             # without it the parameter is a scalar and every value but the first
             # is silently dropped, which then fails validation at read time.
+            #
+            # Resolve the hints rather than reading the raw signature: under
+            # `from __future__ import annotations` every annotation is a string,
+            # and `Annotated[...]` wrappers hide the underlying type.
+            from fastmcp.tools.function_tool import _resolve_param_hints
+
+            try:
+                hints = _resolve_param_hints(fn)
+            except NameError:
+                # An annotation naming something we can't import here is not
+                # worth failing registration over; fall back to the raw form.
+                hints = {}
+
             exploded = {
                 p.replace("-", "_") for p in extract_exploded_query_params(uri_template)
             }
             for param_name in sorted(query_params - exploded):
-                annotation = user_sig.parameters[param_name].annotation
-                if _is_collection_annotation(annotation):
+                annotation = hints.get(
+                    param_name, user_sig.parameters[param_name].annotation
+                )
+                if _is_list_annotation(annotation):
                     raise ValueError(
                         f"Query parameter '{param_name}' is a collection type, so it "
                         f"must be declared with the RFC 6570 explode modifier: "
