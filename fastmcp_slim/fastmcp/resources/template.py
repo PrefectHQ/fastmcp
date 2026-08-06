@@ -615,8 +615,9 @@ class FunctionResourceTemplate(ResourceTemplate):
             try:
                 hints = _resolve_param_hints(fn)
             except NameError:
-                # An annotation naming something we can't import here is not
-                # worth failing registration over; fall back to the raw form.
+                # Pydantic resolves annotations against namespaces this doesn't
+                # see, so a name we can't resolve may still be valid. Fall back
+                # to the raw form rather than failing a working registration.
                 hints = {}
 
             exploded = {
