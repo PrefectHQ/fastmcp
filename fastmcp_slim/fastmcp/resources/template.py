@@ -232,8 +232,12 @@ def expand_uri_template(uri_template: str, params: dict[str, Any]) -> str:
         names = [n.strip() for n in match.group(1).split(",")]
         parts = []
         for name in names:
-            # `{?tags*}` is the explode form; the value is a list, emitted as a
-            # repeated key so it round-trips back through match_uri_template.
+            # The template decides the serialization, not the runtime value:
+            # `{?tags*}` emits a repeated key, `{?tags}` stays a single value.
+            # Keying off the value type instead would expand a list under a
+            # plain `{?tags}`, which match_uri_template then reads back as just
+            # its first element.
+            exploded = name.endswith("*")
             name = name.removesuffix("*")
             underscored = name.replace("-", "_")
             if name in params:
@@ -242,8 +246,10 @@ def expand_uri_template(uri_template: str, params: dict[str, Any]) -> str:
                 value = params[underscored]
             else:
                 continue
-            values = value if isinstance(value, (list, tuple)) else [value]
-            parts.extend(f"{quote(name)}={quote(str(v))}" for v in values)
+            if exploded and isinstance(value, (list, tuple)):
+                parts.extend(f"{quote(name)}={quote(str(v))}" for v in value)
+            else:
+                parts.append(f"{quote(name)}={quote(str(value))}")
         if parts:
             return "?" + "&".join(parts)
         return ""

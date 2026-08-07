@@ -1119,6 +1119,20 @@ class TestMatchExpandRoundTrip:
         assert params is not None
         assert expand_uri_template(template, params) == uri
 
+    def test_plain_query_param_does_not_repeat_a_sequence_value(self):
+        """The template decides repeatability, not the runtime value's type.
+
+        A list handed to a plain `{?tags}` must stay one value: expanding it as
+        a repeated key produced a URI that matched back to only its first
+        element, contradicting the scalar contract `{?tags}` documents.
+        """
+        uri = expand_uri_template("test://x{?tags}", {"tags": ["a", "b"]})
+        assert uri.count("tags=") == 1
+
+        params = match_uri_template(uri, "test://x{?tags}")
+        assert params is not None
+        assert expand_uri_template("test://x{?tags}", params) == uri
+
     @pytest.mark.parametrize(
         "template, params",
         [
