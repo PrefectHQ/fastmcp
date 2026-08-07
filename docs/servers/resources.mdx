@@ -673,6 +673,22 @@ def read_file(path: str, encoding: str = "utf-8", lines: int = 100) -> str:
 
 FastMCP automatically coerces query parameter string values to the correct types based on your function's type hints (`int`, `float`, `bool`, `str`).
 
+**Repeatable query parameters:**
+
+A plain `{?param}` is a single value — if a client repeats the key, only the first value is used. To accept a list, add the RFC 6570 explode modifier `*`:
+
+```python
+@mcp.resource("items://{category}{?tags*}")
+def search(category: str, tags: list[str] | None = None) -> dict:
+    return {"category": category, "tags": tags or []}
+```
+
+- `items://books` → `tags=[]`
+- `items://books?tags=alpha` → `tags=["alpha"]`
+- `items://books?tags=alpha&tags=beta` → `tags=["alpha", "beta"]`
+
+A single value still arrives as a one-element list, so the parameter's type is stable. Declaring a list-typed parameter without the `*` raises an error when the template is created.
+
 **Query parameters vs. hidden defaults:**
 
 Query parameters expose optional configuration to clients. To hide optional parameters from clients entirely (always use defaults), simply omit them from the URI template:
@@ -698,6 +714,7 @@ FastMCP enforces these validation rules when creating resource templates:
 1. **Required function parameters** (no default values) must appear in the URI path template
 2. **Query parameters** (specified with `{?param}` syntax) must be optional function parameters with default values
 3. **All URI template parameters** (path and query) must exist as function parameters
+4. **List-typed query parameters** must use the explode modifier (`{?param*}`)
 
 Optional function parameters (those with default values) can be:
 - Included as query parameters (`{?param}`) - clients can override via query string
