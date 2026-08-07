@@ -250,13 +250,20 @@ def _connection_failure(exception: BaseException) -> BaseException:
 
 @dataclass
 class CallToolResult:
-    """Parsed result from a tool call."""
+    """Parsed result from a tool call.
+
+    A call that asked for input rather than completing carries the ask on
+    `input_required` and nothing else — `content` is empty and `data` is None.
+    That only happens when the caller passed `allow_input_required=True`; by
+    default the client resolves the exchange before returning.
+    """
 
     content: list[mcp_types.ContentBlock]
     structured_content: dict[str, Any] | None
     meta: dict[str, Any] | None
     data: Any = None
     is_error: bool = False
+    input_required: mcp_types.InputRequiredResult | None = None
 
 
 class Client(

@@ -295,12 +295,13 @@ class ParsedFunction:
             parameters=inner_docstring.parameters,
         )
 
-        # Transform Context type annotations to Depends() for unified DI
+        from fastmcp.server._elicit_resolution import find_elicit_parameters
         from fastmcp.server.dependencies import (
             transform_context_annotations,
             without_injected_parameters,
         )
 
+        # Transform Context type annotations to Depends() for unified DI
         fn = transform_context_annotations(fn)
 
         # Handle injected parameters (Context, Docket dependencies)
@@ -361,6 +362,19 @@ class ParsedFunction:
 
         # Save original for return_type before any schema-related replacement
         original_output_type = output_type
+
+        # A call carries one input-required channel, so the two ways of asking
+        # cannot share it: `Elicit(...)` parameters and a hand-returned
+        # `InputRequiredResult` would each overwrite the other's `request_state`
+        # and the call would never converge. Reject the combination outright
+        # rather than let it fail confusingly at run time.
+        if _contains_input_required(output_type) and find_elicit_parameters(fn):
+            raise TypeError(
+                f"Tool {fn_name!r} both declares Elicit(...) parameters and returns "
+                "an InputRequiredResult. A call has one channel for gathering "
+                "input, so ask for everything declaratively or drive the rounds "
+                "from the body — not both."
+            )
 
         # An `InputRequiredResult` return arm (SEP-2322 guard tools) is a
         # control-flow signal, not data: strip it so the residual arms drive

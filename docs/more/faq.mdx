@@ -80,9 +80,11 @@ Receiving-side filtering only narrows what already arrives. A server that sets `
 
 ## What replaces elicitation on the modern protocol?
 
-The guard pattern. Rather than pausing mid-execution to ask, a tool *returns* an `InputRequiredResult` describing what it needs. That round completes normally, the client collects the answer, and it calls the tool again with the answer attached. Any state you carry between rounds is sealed by the framework before it reaches the wire, so the client holds an opaque token it cannot read or forge.
+Declaring the value as a parameter. `Annotated[str, Elicit("Where would you like to fly?")]` is filled by asking the user before the body runs, and it is the only shape that works unchanged on both eras — the framework picks how the question travels, so your tool never branches on the protocol.
 
-`ctx.elicit()` still works on handshake-era connections and raises on modern ones, so a server that must serve both eras needs both paths. `fastmcp.Client` drives whichever the connection negotiated with no extra wiring on your side. See [Elicitation on the modern protocol](/servers/elicitation#elicitation-on-the-modern-protocol).
+Underneath, the modern era uses the guard pattern: rather than pausing mid-execution to ask, a tool *returns* an `InputRequiredResult` describing what it needs. That round completes normally, the client collects the answer, and calls again with the answer attached. Any state carried between rounds is sealed by the framework before it reaches the wire, so the client holds an opaque token it cannot read or forge. Write that by hand when a question depends on expensive work whose result has to stay fixed while the user answers.
+
+`ctx.elicit()` still works on handshake-era connections and raises on modern ones, so a server using it that must serve both eras needs both paths — which is the thing declared parameters exist to avoid. `fastmcp.Client` drives whichever the connection negotiated with no extra wiring on your side. See [Elicitation](/servers/elicitation#which-approach-to-use).
 
 ## Why doesn't my middleware's `on_initialize` hook run?
 

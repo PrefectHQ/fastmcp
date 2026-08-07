@@ -81,10 +81,10 @@ These four exist on both but with DIFFERENT signatures, so a bare import swap co
 
 Genuinely unchanged: `report_progress`, `request_id`, `client_id`, `input_responses`, `request_state`, `session`, and `request_context`.
 
-RESOLVERS — the one part that is not a rename, so check for it first
+RESOLVERS — elicitation resolvers rename; sampling and roots resolvers do not
 - any `Annotated[T, Resolve(fn)]` parameter, and the resolvers behind it
 - resolvers returning `Elicit[...]`, `Sample`, or `ListRoots`
-FastMCP has no resolver injection, but the underlying requests survive in a different shape: on a modern connection `Elicit`, `Sample`, and `ListRoots` all ride the guard pattern, where the tool returns an `InputRequiredResult` and the client answers on the next call. Do not tell the user these capabilities are simply unavailable. Flag every resolver with the guide's per-capability reasoning (server-side LLM call is usually better than guard-routed sampling; roots are often simplest as ordinary tool arguments) rather than picking a rewrite yourself. Also note that a resolved parameter is hidden from the tool's input schema, so replacing it with an ordinary argument changes the schema clients see.
+Resolvers that elicit port almost directly: FastMCP spells it `Annotated[T, Elicit(...)]`, the resolver still returns `T | Elicit[T]`, and the parameter is still hidden from the input schema. Report those as a rename, noting that the type moves to the annotation and that declining is handled by the parameter's default. Resolvers returning `Sample` or `ListRoots` have no injected equivalent — the underlying requests survive on the guard pattern, where the tool returns an `InputRequiredResult` and the client answers on the next call. Do not tell the user those capabilities are unavailable; flag each with the guide's per-capability reasoning (a server-side LLM call is usually better than guard-routed sampling; roots are often simplest as ordinary tool arguments) rather than picking a rewrite yourself.
 
 For each item found, show the original code, name what changed, and give the FastMCP equivalent from the guide. Call out anything you could not find a documented replacement for instead of inventing one.
 </Prompt>
@@ -264,7 +264,7 @@ For most servers this is an improvement that costs nothing — a caller sending 
 
 ## Asking for Input
 
-This is the one part of the migration that is not a rename, so read it before you start if your tools use resolvers.
+Elicitation resolvers are close to a rename; sampling and roots resolvers are not. Read this before you start if your tools use resolvers.
 
 `MCPServer` asks the client for things through dependency-injection resolvers. A tool parameter annotated `Annotated[T, Resolve(fn)]` is filled by running `fn` before the tool body, and the resolver can return a request marker — `Elicit[T]` to ask the user, `Sample` to borrow the client's model, `ListRoots` to fetch its roots — which the framework turns into the right wire interaction for whichever protocol era the connection negotiated:
 
@@ -290,30 +290,45 @@ def book_flight(dest: Annotated[Destination, Resolve(ask_destination)]) -> str:
     return f"Booked to {dest.destination}"
 ```
 
-FastMCP has no equivalent annotation, and it makes the protocol era explicit instead of hiding it. Which replacement you want depends on which era your clients speak.
-
-On **handshake-era connections** (≤ 2025-11-25), a running tool asks the user directly with `ctx.elicit()`, and the call blocks until the answer arrives. Where the resolver returned a value or aborted the call, `ctx.elicit()` hands you the outcome to branch on, so declining and cancelling become cases your tool answers for itself:
+Resolvers that ask the user port almost directly. FastMCP spells the annotation `Annotated[T, Elicit(...)]`, and the same rule applies — the parameter is filled before the body runs, it is hidden from the tool's input schema, and the framework picks the wire interaction for whichever era the connection negotiated:
 
 ```python
-from fastmcp import FastMCP, Context
+from typing import Annotated
+
+from pydantic import BaseModel
+
+from fastmcp import FastMCP
+from fastmcp.elicitation import Elicit
 
 mcp = FastMCP("booking")
 
 
+class Destination(BaseModel):
+    destination: str
+
+
 @mcp.tool
-async def book_flight(ctx: Context) -> str:
+def book_flight(dest: Annotated[Destination, Elicit("Where would you like to fly?")]) -> str:
     """Book a flight"""
-    result = await ctx.elicit("Where would you like to fly?", response_type=str)
-    if result.action == "accept":
-        return f"Booked to {result.data}"
-    return "Booking cancelled"
+    return f"Booked to {dest.destination}"
 ```
 
-On the **modern protocol** (2026-07-28), server-initiated requests are gone from the wire, so a tool asks by *returning* a description of what it needs. The client answers and calls the tool again with the answer attached, and the tool re-runs from the top. This is the [guard pattern](/servers/elicitation#elicitation-on-the-modern-protocol), and it reads the answers off `ctx.input_responses`.
+Two differences are worth knowing. The type comes from the annotation rather than from a second argument to `Elicit(...)`, so it is stated once — `Elicit("...", response_type=...)` exists for the case where you build one inside a resolver and the annotation is out of view. And a fixed question needs no resolver function at all; pass the string directly.
 
-The two are era-gated in both directions: `ctx.elicit()` raises on a modern connection, and a guard result raises on a handshake one. A server that must serve both branches on `ctx.request_context.protocol_version`. See [Elicitation](/servers/elicitation#which-approach-to-use) for both shapes side by side.
+Where the SDK's resolver did real work, pass a function instead. It returns `T | Elicit[T]`, which is the same contract as the SDK's — return an `Elicit` to ask, return a value to skip asking:
 
-Resolvers that return `Sample` or `ListRoots` have no *injected* equivalent — FastMCP has no `ctx.sample()` or `ctx.list_roots()` — but the underlying request survives, so this is a change of shape rather than a loss of capability. On a modern connection both ride the same guard pattern as elicitation: the tool returns an `InputRequiredResult` describing the sampling or roots request, and the client answers on the next call.
+```python
+def which_airport(destination: str) -> str | Elicit[str]:
+    if destination == "London":
+        return "LHR"
+    return Elicit(f"Which airport in {destination}?", response_type=str)
+```
+
+Declining is handled by the parameter's default rather than by annotating `ElicitationResult[T]`: give the parameter a default and a decline leaves it in place, omit one and a decline fails the call.
+
+If a question depends on expensive or non-deterministic work whose result has to stay fixed while the user answers, use the [guard pattern](/servers/elicitation#elicitation-on-the-modern-protocol) instead — the tool returns an `InputRequiredResult` and carries what it computed in `request_state`. Declared parameters re-resolve on every round, so a live search runs again and can return something different. That pattern is modern-only; `ctx.elicit()` is handshake-only; declared parameters serve both. See [Elicitation](/servers/elicitation#which-approach-to-use).
+
+Resolvers that return `Sample` or `ListRoots` are the ones with no injected equivalent — FastMCP's `Elicit` covers elicitation only, and there is no `ctx.sample()` or `ctx.list_roots()` — but the underlying request survives, so this is a change of shape rather than a loss of capability. On a modern connection both ride the same guard pattern as elicitation: the tool returns an `InputRequiredResult` describing the sampling or roots request, and the client answers on the next call.
 
 Which shape you want differs by capability. For **roots**, the guard route is the natural replacement, since one round buys the whole answer — and taking the paths as ordinary tool arguments is simpler still whenever the caller can supply them. For **generation**, prefer [calling an LLM from your server](/servers/sampling) with your own API key: your tool then behaves identically for every client, including the many that never implemented sampling, and you avoid paying a full request-response cycle per generation step. Reach for the guard route when using the *caller's* model is specifically the point.
 

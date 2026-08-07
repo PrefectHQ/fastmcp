@@ -374,6 +374,10 @@ class FunctionTool(Tool):
         serialized as content; the ask flows through the middleware chain as an
         ordinary result and the wire handler returns it to the client unmodified.
         """
+        # Imported here, not at module scope: `fastmcp.server` pulls the provider
+        # stack back around to this module, so a top-level import breaks in a
+        # fresh interpreter.
+        from fastmcp.server._elicit_resolution import NeedsInput
         from fastmcp.server.dependencies import without_injected_parameters
 
         wrapper_fn = without_injected_parameters(
@@ -386,9 +390,21 @@ class FunctionTool(Tool):
         exec_is_async = is_coroutine_function(wrapper_fn)
         strict = _strict_input_validation()
 
-        result = await self._run_body(
-            type_adapter, exec_is_async, arguments, strict=strict
-        )
+        try:
+            result = await self._run_body(
+                type_adapter, exec_is_async, arguments, strict=strict
+            )
+        except NeedsInput as needs_input:
+            # An `Annotated[T, Elicit(...)]` parameter has no answer yet, so this
+            # leg resolves to the question instead of to tool output — the same
+            # result a guard tool returns by hand, just assembled by the
+            # framework. The body has not run.
+            return InputRequiredToolResult(
+                mcp_types.InputRequiredResult(
+                    input_requests=needs_input.input_requests,
+                    request_state=needs_input.request_state,
+                )
+            )
 
         # An `InputRequiredResult` is the full result of this multi-round-trip
         # leg (SEP-2322), not tool-output data: wrap it in an

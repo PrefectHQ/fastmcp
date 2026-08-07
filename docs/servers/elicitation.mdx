@@ -1,7 +1,7 @@
 ---
 title: User Elicitation
 sidebarTitle: Elicitation
-description: Ask users for input while a tool is running, on both the handshake and modern protocols.
+description: Ask users for input from a tool — by declaring what you need, or by driving the exchange yourself.
 icon: message-question
 ---
 
@@ -9,9 +9,9 @@ import { VersionBadge } from '/snippets/version-badge.mdx'
 
 <VersionBadge version="2.10.0" />
 
-User elicitation allows MCP servers to request input from users during tool execution. Instead of requiring all inputs upfront, tools can interactively ask for missing parameters, clarification, or additional context as needed.
+User elicitation lets an MCP server ask a person for input in the course of a tool call, rather than requiring everything up front. Some of what a tool needs is not the model's to supply — which directory, which date range, whether to go ahead — and elicitation is how the tool gets it from the user instead.
 
-Elicitation enables tools to request specific information from users mid-task:
+Elicitation covers a familiar set of needs:
 
 - **Missing parameters**: Ask for required information not provided initially
 - **Clarification requests**: Get user confirmation or choices for ambiguous scenarios
@@ -22,12 +22,232 @@ For example, a file management tool might ask "Which directory should I create?"
 
 ## Which approach to use
 
-Elicitation reaches the user two different ways, depending on the protocol era the connection negotiated:
+How an ask reaches the user depends on the protocol era the connection negotiated. Handshake-era connections (≤ 2025-11-25) have a session back-channel, so a running tool can send a request and block on the answer. The modern protocol (2026-07-28) removed server-initiated requests from the wire (SEP-2577), so there is no mid-execution channel at all — an ask has to *be* the result of the call, which the client answers before calling again.
 
-- **On handshake-era connections (≤ 2025-11-25)**, a running tool calls [`ctx.elicit()`](#requesting-input-on-handshake-connections). The tool pauses mid-execution, the server sends a request over the session back-channel, and the tool resumes with the answer. This is the original elicitation API and the rest of this page's first half covers it in full.
-- **On the modern protocol (2026-07-28)**, that back-channel is gone — server-initiated requests were removed from the wire (SEP-2577), so a tool cannot issue a request mid-execution and block on the answer. Instead a tool asks for input by *returning* a description of what it needs; each round completes normally and the client issues a new call with the answer attached. This is the [guard pattern](#elicitation-on-the-modern-protocol), covered in the second half.
+That difference is the thing to reason about, and you can either let FastMCP handle it or handle it yourself.
 
-The era gate is strict: `ctx.elicit()` only works on handshake connections, and the guard pattern only works on modern ones. A tool that returns a guard result on a handshake connection — or calls `ctx.elicit()` on a modern one — raises a clear era error rather than failing obscurely. A server that serves both eras may need both paths; branch on `ctx.request_context.protocol_version` to pick the right one. `fastmcp.Client` drives whichever the connection negotiated automatically.
+**[Declare what you need](#declared-parameters)** and FastMCP asks for it. A parameter annotated `Annotated[T, Elicit(...)]` is filled by asking the user rather than by the model, and the framework selects the transport for whichever era the connection negotiated. This is the recommended approach and the only one that works unchanged on both.
+
+**[Ask imperatively with `ctx.elicit()`](#requesting-input-on-handshake-connections)** to reach the user from inside a running tool. This is the original elicitation API, and it works only on handshake-era connections, where the back-channel exists.
+
+**[Drive the rounds from the tool body](#elicitation-on-the-modern-protocol)** by returning an `InputRequiredResult`. This works only on the modern protocol, and it earns its extra complexity when the question depends on expensive or non-deterministic work whose result has to stay stable across a round trip.
+
+The era gate on the two manual approaches is strict, and deliberately so: calling `ctx.elicit()` on a modern connection, or returning an `InputRequiredResult` on a handshake one, raises a clear era error rather than failing obscurely. Declared parameters are never subject to that gate, because the framework is the one choosing. `fastmcp.Client` drives whichever mechanism the connection negotiated automatically.
+
+## Declared parameters
+
+<VersionBadge version="4.0.0" />
+
+A tool's parameters describe what it needs to run. Most of them are filled by the model calling the tool, but some are things only a person can answer — which airport, which file, whether to proceed. Annotating a parameter with `Elicit` says that this one comes from the user, and FastMCP fills it before the body runs.
+
+```python
+from typing import Annotated
+
+from fastmcp import FastMCP
+from fastmcp.elicitation import Elicit
+
+mcp = FastMCP("Booking Server")
+
+
+@mcp.tool
+async def book_flight(
+    destination: Annotated[str, Elicit("Where would you like to fly?")],
+) -> str:
+    return f"Booked a flight to {destination}"
+```
+
+The body reads like an ordinary function because it is one. By the time it runs, `destination` holds a real string; there is no `Context`, no result union, and no branching on which round this is. FastMCP asks the question, collects the answer, and calls the function — over a mid-execution request on handshake connections, or across a round trip on modern ones, without the function changing.
+
+An elicited parameter is also hidden from the tool's input schema. The model calling `book_flight` sees a tool that takes no arguments, which is accurate: it is not the one supplying the destination. Everything you already know about [schemas and response types](#schema-and-response-types) applies to the annotated type, so scalars, `Literal`s, enums, dataclasses, and Pydantic models all behave exactly as they do with `ctx.elicit()`.
+
+Ask for more by annotating more parameters. What happens then is worth knowing: FastMCP looks at what each question needs and sends out everything it can answer at once, so a tool that wants a destination and a date asks for both in a single round rather than making two trips to the client and back. Nothing in your code requests that. It follows from the two questions not referring to each other, which is something the framework can see in the annotations and a person writing the exchange by hand has to remember — which is why hand-written versions almost always ask one at a time, in whatever order they were written.
+
+### Dependent questions
+
+A fixed string is the right question only when it is always the right question. Usually it stops being one as soon as you know something: once the traveller has said Paris, the useful thing to ask is not "which airport?" but "CDG or ORY?".
+
+Pass a function instead of a string and you get a **resolver** — something that runs when the parameter needs filling and decides what to do about it. A resolver returns `T | Elicit[T]`: an `Elicit` is a question to put to the user, and a plain value is the answer already known, in which case nobody is asked at all.
+
+Its parameters are filled by name — from the tool's own arguments, from other elicited parameters, or both. That name-matching does double duty. It supplies the values, and it establishes the order: a question that quotes an answer nobody has given yet cannot be written, so it waits for the round that produces it, while every question independent of it still goes out immediately.
+
+```python
+from typing import Annotated
+
+from fastmcp import FastMCP
+from fastmcp.elicitation import Elicit
+
+mcp = FastMCP("Booking Server")
+
+
+def which_airport(destination: str) -> Elicit[str]:
+    return Elicit(f"Which airport in {destination} — CDG or ORY?", response_type=str)
+
+
+@mcp.tool
+async def book_flight(
+    destination: Annotated[str, Elicit("Where would you like to fly?")],
+    airport: Annotated[str, Elicit(which_airport)],
+) -> str:
+    return f"Booked into {airport}"
+```
+
+So this tool takes two rounds, and neither the round count nor the ordering appears anywhere in the code. Get the wiring wrong — name a value the tool does not have, write two questions that each wait on the other, or declare a resolver that elicits a type its parameter cannot hold — and FastMCP rejects the tool when it is registered, at import time, rather than on the first call in production.
+
+### Questions worth skipping
+
+Returning a value rather than an `Elicit` is how a resolver declines to ask. Most of the time you are asking because you genuinely do not know, but plenty of questions have an answer sitting somewhere already — on the user's profile, in an argument the model supplied, in a table with one row:
+
+```python
+from typing import Annotated
+
+from pydantic import BaseModel
+
+from fastmcp import FastMCP
+from fastmcp.dependencies import Depends
+from fastmcp.elicitation import Elicit
+
+mcp = FastMCP("Booking Server")
+
+
+class Profile(BaseModel):
+    home_airport: str | None = None
+
+
+def current_profile() -> Profile:
+    return Profile(home_airport="LHR")
+
+
+def which_airport(destination: str, profile: Profile = Depends(current_profile)) -> str | Elicit[str]:
+    if profile.home_airport:
+        return profile.home_airport
+    return Elicit(f"Which airport in {destination}?", response_type=str)
+
+
+@mcp.tool
+async def book_flight(
+    destination: str,
+    airport: Annotated[str, Elicit(which_airport)],
+) -> str:
+    return f"Booked {destination} from {airport}"
+```
+
+A returning traveller is never asked and never pays a round trip; a new one gets the question. The tool body is identical either way, and so is the annotation — only the resolver knows the difference.
+
+An `Elicit` takes the same `message` and `response_type` as [`ctx.elicit()`](#requesting-input-on-handshake-connections), because it describes the same thing. The only difference is where it goes — you `await` the imperative one and `return` this one:
+
+```python
+result = await ctx.elicit(message="Which airport?", response_type=Airport)   # imperative
+return Elicit(message="Which airport?", response_type=Airport)               # declarative
+```
+
+State `response_type` when you build an `Elicit` inside a resolver. The parameter's annotation is two functions away at that point, and repeating it locally is worth more than the brevity of leaving it out; omit it and the parameter's annotation is used. When a resolver also declares the type in its return — `-> str | Elicit[str]` — FastMCP checks the two agree at registration.
+
+A question that has already been answered is not asked again. Resolvers re-run on every round, so a three-round call re-forms all its earlier questions, but each one is satisfied by the answer recorded against it rather than put to the user a second time. That holds for every `Elicit`, whether it came from a literal or a resolver — as long as the question still renders the same way, which is what the [digest](#repeated-questions) checks.
+
+Because a question can quote a tool argument, it can also quote something the model supplied — which is exactly what you want for `f"Which airport in {destination}?"`, and a good reason to treat the wording as untrusted display text rather than as an instruction to the user.
+
+There is no separate knob for ordering, and you rarely want one. A question that has to wait for another almost always has something to say about it, so saying it is both the better question and the thing that orders the asks. Confirmations show this most clearly. `Elicit("Book it?")` refers to nothing, so it goes out in the very first round, asking someone to approve a booking that nobody has described yet. Written as a function it quotes the details, which fixes the wording and the timing at once:
+
+```python
+from typing import Annotated
+
+from fastmcp import FastMCP
+from fastmcp.elicitation import Elicit
+
+mcp = FastMCP("Booking Server")
+
+
+def confirm(destination: str, date: str) -> Elicit[bool]:
+    return Elicit(f"Book a flight to {destination} on {date}?", response_type=bool)
+
+
+@mcp.tool
+async def book_flight(
+    destination: Annotated[str, Elicit("Where would you like to fly?")],
+    date: Annotated[str, Elicit("When would you like to fly?")],
+    proceed: Annotated[bool, Elicit(confirm)],
+) -> str:
+    return f"Booked {destination}" if proceed else "Cancelled"
+```
+
+Where and when both fall out of the same annotations. The destination and date are independent, so they go out together in the first round; the confirmation quotes both, so it waits for the second. Questions that stay independent are asked in the order they appear in the signature, so moving a parameter down moves its question down in what the user sees — though it is the client that ultimately decides how to present a round.
+
+If you ever find yourself adding a parameter to a question function purely to hold it back, treat that as a sign the question is underspecified rather than a technique. It works, and it costs a round trip to ask something you could have asked earlier.
+
+A question may also declare its own [dependencies](/servers/dependency-injection) with `Depends(...)`, for the configuration and connections it needs to render itself. Those resolve the ordinary way and are not matched against the call's arguments.
+
+### Optional questions
+
+Users say no. Sometimes that has to stop everything, because there is no booking without a destination. Sometimes it should barely register — a seat preference is worth asking about, and the flight leaves either way.
+
+FastMCP tells those apart by reading the signature, using the distinction Python already has. Ask for a parameter with no default and you are saying the call cannot go on without it, so declining fails the call with an error naming the parameter. Give it a default and you are saying the opposite: a decline leaves the default in place and the body runs. Cancelling behaves the same way as declining, since both mean the same thing to you — no answer is coming.
+
+```python
+from typing import Annotated
+
+from fastmcp import FastMCP
+from fastmcp.elicitation import Elicit
+
+mcp = FastMCP("Booking Server")
+
+
+@mcp.tool
+async def book_flight(
+    destination: Annotated[str, Elicit("Where would you like to fly?")],
+    seat: Annotated[str | None, Elicit("Window or aisle?")] = None,
+) -> str:
+    preference = seat or "no preference"
+    return f"Booked to {destination} ({preference})"
+```
+
+There is nothing to learn here beyond what you already know about Python, which is the point: anyone reading this signature can see which question the booking depends on and which one it can shrug off, without knowing anything about elicitation.
+
+### Repeated questions
+
+Answers do not float free of the questions that produced them. Each one is recorded against the exact text the user was shown, so it can only ever satisfy the question it actually answered.
+
+That guard earns its keep on the modern protocol, where a call spans rounds and earlier answers travel back and forth with the request. Deploy reworded copy in the middle of someone's booking, or retry a call with a different argument feeding one of the questions, and the wording shifts underneath them — so FastMCP drops the stale answer and asks again rather than crediting someone with an answer to a question they were never shown. There is nothing to configure. It is worth knowing about because it explains the one behaviour that surprises people: a question you expected to be remembered coming back around.
+
+### Expensive questions
+
+A question function is ordinary Python, so it can do real work to build itself — query a database, call an API, format what comes back into the text the user reads. That is genuinely useful, and it is where this approach has its one sharp edge.
+
+The edge is timing. Declared parameters resolve before the body runs, and on the modern protocol a call spans several rounds with parameters resolving on every one of them. A question that runs a search to build itself runs that search again on the round that answers it — and the second search can return something different from the first.
+
+Watch for it in this tool, which offers the traveller a list of flights:
+
+```python
+from typing import Annotated
+
+from fastmcp import FastMCP
+from fastmcp.elicitation import Elicit
+
+mcp = FastMCP("Booking Server")
+
+
+def search_flights(destination: str, date: str) -> list[str]:
+    return [f"AF{number} to {destination} on {date}" for number in (100, 200)]
+
+
+def which_flight(destination: str, date: str) -> Elicit[str]:
+    options = search_flights(destination, date)
+    return Elicit(f"Which flight? {', '.join(options)}", response_type=str)
+
+
+@mcp.tool
+async def book_flight(
+    destination: str,
+    date: str,
+    choice: Annotated[str, Elicit(which_flight)],
+) -> str:
+    return f"Booked {choice}"
+```
+
+With `search_flights` as written the repeat is harmless, because it returns the same two flights every time. Point it at a real airline and the story changes: you offer three flights, the traveller picks the first, and by the round that delivers their answer the search no longer lists it. They have chosen something that is gone, and the tool has no way to notice.
+
+So the line to draw is about the *work*, not the question. Declare the parameter when the question is built from the tool's inputs and cheap, repeatable derivations of them — the overwhelming majority of cases. When the question depends on work that is expensive to repeat or whose result has to stay fixed while the user thinks about it, [drive the rounds from the body](#elicitation-on-the-modern-protocol) instead. There you run the search once, put its result in `request_state`, and read it back on the next round, which is exactly the machinery that keeps the offer and the answer talking about the same thing.
+
+Within a single tool the two approaches are mutually exclusive: a call has one channel for gathering input, so declaring `Elicit` parameters *and* returning an `InputRequiredResult` would have them overwrite each other's state. FastMCP rejects that combination when the tool is registered rather than letting it fail to converge at run time.
 
 ## Requesting input on handshake connections
 
@@ -393,10 +613,12 @@ Default values are supported for strings, integers, numbers, booleans, and enums
 
 The modern protocol (2026-07-28) removes the server-initiated back-channel that `ctx.elicit()` depends on (SEP-2577), so a running tool has no way to reach the user mid-execution. Elicitation reaches the user a different way: a tool asks for input by *returning* a description of what it needs. That return value completes the call normally — the result just happens to be an `InputRequiredResult` describing a request rather than a final answer. The client fulfils the request and issues a **new** tool call with the answer attached, and the tool runs again from the top, sees the answer, and either asks for the next thing or returns its final result.
 
+This is the mechanism [declared parameters](#declared-parameters) use on modern connections, and reaching for it directly means taking the wheel. Do that when the question depends on expensive or non-deterministic work — a live search, a quote, a reserved identifier — whose result has to stay stable while the user answers. Driving the rounds yourself is what lets you compute once and carry the result forward, rather than recomputing it on every leg. For questions built from the tool's inputs and cheap derivations of them, declaring the parameter is shorter and works on both eras.
+
 Every round is a complete, independent request→response cycle: the tool holds no state between rounds, and nothing on the server stays alive waiting between them. That makes elicitation work on stateless, serverless, and load-balanced deployments where no two rounds are guaranteed to land on the same worker. A booking tool can ask for a destination, then a date, then confirm, across as many rounds as the work requires, without keeping a connection or a server-side session alive in between.
 
 <Note>
-This pattern requires an MCP **2026-07-28** connection. The `InputRequiredResult` result type does not exist on earlier protocol versions; a tool that returns one on a handshake-era connection raises a clear error (see [Protocol requirements](#protocol-requirements)). On those connections, use [`ctx.elicit()`](#requesting-input-on-handshake-connections) instead.
+This pattern requires an MCP **2026-07-28** connection. The `InputRequiredResult` result type does not exist on earlier protocol versions; a tool that returns one on a handshake-era connection raises a clear error (see [Protocol requirements](#protocol-requirements)). On those connections, use [`ctx.elicit()`](#requesting-input-on-handshake-connections) — or [declare the parameter](#declared-parameters), which serves both eras from one definition.
 </Note>
 
 ### How it works
@@ -539,7 +761,7 @@ connection negotiated '2025-11-25'. Use ctx.elicit() for server-initiated input
 on handshake-era connections.
 ```
 
-If you need to support both eras, branch on `ctx.request_context.protocol_version`: return an `InputRequiredResult` on modern connections and fall back to [`ctx.elicit()`](#requesting-input-on-handshake-connections) on handshake-era ones.
+To support both eras from one tool, [declare the parameter](#declared-parameters) and let FastMCP pick the mechanism. Driving the exchange by hand means writing both paths and branching on `ctx.request_context.protocol_version`: return an `InputRequiredResult` on modern connections and fall back to [`ctx.elicit()`](#requesting-input-on-handshake-connections) on handshake-era ones.
 
 ### Prompts and resources
 

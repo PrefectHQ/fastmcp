@@ -164,3 +164,42 @@ client = Client(
     input_required_max_rounds=5,
 )
 ```
+
+### Answering the rounds yourself
+
+A handler answers a question the moment it is asked, which only works when the answer is available right then. Often it is not — a web app shows a form and the reply arrives on a different request, minutes later, possibly in another process. That is what the sessionless protocol is built for, and a callback cannot span it.
+
+So a client with **no** `elicitation_handler` is handed the request instead of being asked to answer it. `CallToolResult.input_required` carries what the server asked, and you answer by calling again with `input_responses` and the `request_state` it came with:
+
+```python
+from fastmcp import Client
+from mcp_types import ElicitResult
+
+async with Client("https://example.com/mcp") as client:
+    result = await client.call_tool("book_flight")
+
+    while result.input_required:
+        answers = {
+            key: ElicitResult(action="accept", content={"value": show_form(request)})
+            for key, request in result.input_required.input_requests.items()
+        }
+        result = await client.call_tool(
+            "book_flight",
+            input_responses=answers,
+            request_state=result.input_required.request_state,
+        )
+
+    print(result.data)
+```
+
+Every question the server grouped into one round arrives together, so a form can render them as one screen — which is what a server that batched its questions intended. A handler receives them one at a time and loses that grouping.
+
+`request_state` is opaque and sealed by the server; pass it back exactly as received. Nothing is stored between rounds, so the next call can be served by a different worker entirely.
+
+<Warning>
+Answering by hand uses `mcp_types.ElicitResult`, whose `content` is a plain dict matching the requested schema. That is a different class from the `fastmcp.client.elicitation.ElicitResult` an `elicitation_handler` returns, where `content` is an instance of the `response_type` FastMCP built for you. The names are the same and the `content` types are not, so import the one that matches the path you are on.
+</Warning>
+
+<Note>
+This applies to `2026-07-28` connections, where the request is a result you can inspect. On handshake-era connections the server is blocked mid-call waiting on the back-channel, so there is nothing to hand back — a client without an `elicitation_handler` gets an "Elicitation not supported" error, which is accurate there.
+</Note>

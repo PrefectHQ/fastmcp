@@ -72,7 +72,7 @@ REMOVED CONTEXT METHODS
 - The client side is NOT affected — `Client(sampling_handler=...)` and `Client(roots=...)` still mean what they meant.
 
 RUNTIME BREAKS THAT STILL COMPILE — the ones most likely to reach production
-- `ctx.elicit(...)` anywhere. It is era-gated in 4.0 and raises on modern connections, which is what `Client` now negotiates by default. This is the single most likely runtime failure.
+- `ctx.elicit(...)` anywhere. It is era-gated in 4.0 and raises on modern connections, which is what `Client` now negotiates by default. This is the single most likely runtime failure. The fix that serves both eras is to declare the value as a parameter with `Elicit`.
 - `ctx.elicit(...)` called without `response_type`
 - `except httpx.` around any FastMCP call. FastMCP raises httpx2 exceptions now, but httpx is usually still installed transitively, so the handler imports, type-checks, and silently never matches.
 - a custom `httpx.AsyncClient`, `httpx_client_factory=`, or `httpx.Auth` handed to a FastMCP transport, `OAuth`, or `from_openapi`
@@ -138,7 +138,7 @@ Every protocol type — `TextContent`, `ImageContent`, `Tool`, `ErrorData`, `Ico
 from mcp.types import TextContent, Tool, ToolAnnotations
 ```
 
-Both names resolve to the same objects, so `from mcp_types import X` is equally valid — useful if you depend on the types without the rest of the SDK. What did change is the fields on those types: they are snake_case now (`input_schema`, not `inputSchema`), which the [compatibility bridge](#legacy-camelcase-field-access-keeps-working) covers for the objects FastMCP hands you.
+Both names resolve to the same objects, so `from mcp_types import X` is equally valid — useful if you depend on the types without the rest of the SDK. What did change is the fields on those types: they are snake_case now (`input_schema`, not `inputSchema`), which the [compatibility bridge](#camelcase-field-access) covers for the objects FastMCP hands you.
 
 `fastmcp.types` still exists, but holds only types FastMCP defines itself (currently just `Textarea`, used to render a multiline textarea in form-based UIs) — it does not re-export protocol types.
 
@@ -381,7 +381,37 @@ These changes compile fine and can surface at runtime. The first is the one most
 ToolError: elicitation via server-initiated requests is unavailable on 2026-07-28 connections.
 ```
 
-The gate is strict in both directions, which is what makes it debuggable: a guard tool that returns an input request on a handshake connection raises the mirror-image error rather than misbehaving quietly. You have three ways forward. Rewrite the tool as a guard tool that *returns* a description of the input it needs, which is the form that works on modern connections. Branch on `ctx.request_context.protocol_version` and keep both paths if you serve both eras. Or keep this server's clients on the handshake era with `Client(server, mode="legacy")`, which leaves `ctx.elicit()` working as written. See [Elicitation](/servers/elicitation#which-approach-to-use) for the two shapes side by side.
+The gate is strict in both directions, which is what makes it debuggable: a guard tool that returns an input request on a handshake connection raises the mirror-image error rather than misbehaving quietly.
+
+The shortest way forward, and the only one that leaves you with a single code path, is to stop calling `ctx.elicit()` and **declare the value as a parameter** instead. FastMCP then picks the mechanism for whichever era the connection negotiated, so the same tool serves both:
+
+```python
+from typing import Annotated
+
+from fastmcp import FastMCP
+from fastmcp.elicitation import Elicit
+
+mcp = FastMCP("Booking Server")
+
+
+# before — works on handshake, raises on modern
+@mcp.tool
+async def book_flight_v3(ctx) -> str:
+    result = await ctx.elicit("Where would you like to fly?", response_type=str)
+    return f"Booked {result.data}" if result.action == "accept" else "Cancelled"
+
+
+# after — works on both
+@mcp.tool
+async def book_flight(
+    destination: Annotated[str, Elicit("Where would you like to fly?")],
+) -> str:
+    return f"Booked {destination}"
+```
+
+Declining is handled by the parameter's default rather than by branching on `result.action`: give it one and a decline leaves the default in place, omit it and a decline fails the call.
+
+Failing that, there are three more options. Rewrite the tool as a guard tool that *returns* a description of the input it needs, which is worth doing when the question depends on expensive work whose result has to stay stable across the round trip. Branch on `ctx.request_context.protocol_version` and keep both paths. Or keep this server's clients on the handshake era with `Client(server, mode="legacy")`, which leaves `ctx.elicit()` working as written. See [Elicitation](/servers/elicitation#which-approach-to-use) for all of them side by side.
 
 **Middleware sees traffic it never saw before.** Dispatch now begins in the SDK's middleware layer, the single point every inbound message passes through, so `on_message`, `on_request`, and `on_notification` observe *every* message a client sends — including `notifications/cancelled`, `notifications/initialized`, and `notifications/progress`, and including requests that fail before reaching a handler, such as an unknown method or a `tools/call` whose params fail validation. In 3.x those never reached your hooks. Middleware that assumed every message it saw was a routable request, or that counted messages to measure tool traffic, needs a guard on the message type. The operation hooks (`on_call_tool`, `on_list_tools`, and the rest) are unaffected: they still fire exactly once per request and still receive typed component results. See [What middleware sees](/servers/middleware#what-middleware-sees).
 
@@ -423,7 +453,7 @@ Migrating differs by capability. For **roots**, the guard pattern is the direct 
 | --- | --- | --- |
 | `ctx.info` / logging notifications | Supported | Supported |
 | Tools, resources, prompts, completions | Supported | Supported |
-| `ctx.elicit` | Supported | Raises — use the guard pattern (return `InputRequiredResult`) |
+| `ctx.elicit` | Supported | Raises — declare the value with `Elicit`, or use the guard pattern |
 | `ctx.sample` / `ctx.sample_step` | Method removed — call an LLM server-side | Method removed — call an LLM server-side, or ask via the guard pattern |
 | `ctx.list_roots` | Method removed — take paths as tool arguments | Method removed — ask via the guard pattern, or take paths as tool arguments |
 | `client.set_logging_level()` | Supported | Raises — `logging/setLevel` needs session state the era lacks |
@@ -431,7 +461,7 @@ Migrating differs by capability. For **roots**, the guard pattern is the direct 
 | Session state (`ctx.set_state` across calls) | Persists for the session | Does not persist — every request is a fresh connection |
 | Background tasks (`task=True`) | Runs synchronously — never tasked | Supported via the tasks extension |
 
-Several of these bite by default now, because **`fastmcp.Client` defaults to `mode="auto"`** in v4 — an ordinary `Client(server)` negotiates the newest protocol both sides share, which against a FastMCP server is the sessionless `2026-07-28` era. On that era there is no `initialize` handshake, so a `Middleware.on_initialize` hook never runs; each request is a fresh connection, so state written with `ctx.set_state` in one call is not visible in the next; and a tool that calls [`ctx.elicit()`](#behavior-changes) raises. A server that gates access in `on_initialize`, relies on per-session state, or elicits mid-tool must keep its clients on the session-based era. The control is per-client: `Client(server, mode="legacy")`. There is no server-side setting that restricts which protocol versions a server offers, so a server whose behavior depends on the handshake era depends on its callers opting into it — which is only practical when you control them. If you don't, port the behavior instead: a guard tool for elicitation, [session state](/servers/sessions) for what `ctx.set_state` held, and per-request auth checks for what `on_initialize` gated.
+Several of these bite by default now, because **`fastmcp.Client` defaults to `mode="auto"`** in v4 — an ordinary `Client(server)` negotiates the newest protocol both sides share, which against a FastMCP server is the sessionless `2026-07-28` era. On that era there is no `initialize` handshake, so a `Middleware.on_initialize` hook never runs; each request is a fresh connection, so state written with `ctx.set_state` in one call is not visible in the next; and a tool that calls [`ctx.elicit()`](#behavior-changes) raises. A server that gates access in `on_initialize`, relies on per-session state, or elicits mid-tool must keep its clients on the session-based era. The control is per-client: `Client(server, mode="legacy")`. There is no server-side setting that restricts which protocol versions a server offers, so a server whose behavior depends on the handshake era depends on its callers opting into it — which is only practical when you control them. If you don't, port the behavior instead: [declared parameters](/servers/elicitation#declared-parameters) or a guard tool for elicitation, [session state](/servers/sessions) for what `ctx.set_state` held, and per-request auth checks for what `on_initialize` gated.
 
 The client side is unaffected. `sampling_handler=` and `roots=` mean what they always did — see [client sampling](/clients/sampling) and [client roots](/clients/roots) — and one registration serves both routes, since a handshake-era server's pushed request and a modern server's returned one dispatch to the same handler.
 
@@ -443,7 +473,7 @@ Most servers upgrade untouched. Work down this list to find the ones that don't:
 2. **Fix imports that moved out.** `from mcp.types import X` still works, but update any import from the [removed modules](#moved-imports) (`fastmcp.server.proxy`, `fastmcp.server.openapi`, `fastmcp.server.apps`, the `fastmcp.tools.tool` / `resources.resource` / `prompts.prompt` component shims).
 3. **Update removed server APIs.** Swap `as_proxy` → `create_proxy`, `import_server` → `mount`, `mount(prefix=)` → `mount(namespace=)`, and the [other removed methods and keywords](#removed-server-methods).
 4. **Replace `ctx.sample` and `ctx.list_roots`.** Both are gone from `Context`, as are `FastMCP(sampling_handler=...)` and `sampling_handler_behavior=`. Call an LLM directly from your server for generation; ask for roots through the guard pattern, or take file paths as tool arguments. A server whose purpose is to use the caller's model should stay on FastMCP 3.x rather than migrate.
-5. **Find every `ctx.elicit()` call.** It raises on modern connections, which is what a default client now negotiates. Rewrite the tool as a guard tool, branch on `ctx.request_context.protocol_version`, or keep its clients on `mode="legacy"` — see [the era gate](#behavior-changes).
+5. **Find every `ctx.elicit()` call.** It raises on modern connections, which is what a default client now negotiates. Declaring the value as a parameter is the shortest fix and the only one that serves both eras from one code path; a guard tool, branching on `ctx.request_context.protocol_version`, or pinning clients to `mode="legacy"` also work — see [the era gate](#behavior-changes).
 6. **Register the tasks extension.** A `task=True` tool needs `mcp.add_extension(TasksExtension())` or the server won't start. Drop `task=` from resource and prompt decorators, move `TaskConfig` to `fastmcp.utilities.tasks`, and replace client-side `call_tool(..., task=True)` with plain `call_tool` or `call_tool_task`.
 7. **Update removed tool parameters.** Replace tool `serializer=` (return a `ToolResult`), `exclude_args=` (use `Depends()`), and `StreamableHttpTransport(sse_read_timeout=)`.
 8. **Fix `McpError` construction.** Positional `McpError(ErrorData(...))` becomes keyword `McpError(code=..., message=...)`. Catching is unchanged.
