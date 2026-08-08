@@ -5,6 +5,7 @@ import os
 import subprocess
 import traceback
 from pathlib import Path
+from typing import cast
 
 import httpx2
 import pytest
@@ -162,9 +163,12 @@ def test_windows_acl_replaces_the_existing_access_list(
     path = tmp_path / "auth.json"
     path.write_text("{}")
     calls: list[list[str]] = []
+    state_paths: list[str] = []
 
     def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append(command)
+        environment = cast(dict[str, str], kwargs["env"])
+        state_paths.append(environment["FASTMCP_STATE_PATH"])
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr("fastmcp.cli.deploy.state.subprocess.run", run)
@@ -178,11 +182,13 @@ def test_windows_acl_replaces_the_existing_access_list(
             "-NonInteractive",
             "-Command",
             calls[0][5],
-            str(path),
         ]
     ]
-    assert "FileSecurity]::new()" in calls[0][5]
+    assert state_paths == [str(path)]
+    assert "$path = $env:FASTMCP_STATE_PATH" in calls[0][5]
+    assert "Get-Acl -LiteralPath $path" in calls[0][5]
     assert "SetAccessRuleProtection($true, $false)" in calls[0][5]
+    assert "RemoveAccessRuleSpecific($existingRule)" in calls[0][5]
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows ACL inspection")
@@ -191,7 +197,7 @@ def test_windows_credential_state_allows_only_the_current_user(tmp_path: Path) -
     store = CredentialStore(state_directory)
     store.save("fmcp_secret")
     inspect_acl = r"""
-$acl = Get-Acl -LiteralPath $args[0]
+$acl = Get-Acl -LiteralPath $env:FASTMCP_STATE_PATH
 $current = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 $access = @($acl.Access | ForEach-Object {
     $_.IdentityReference.Translate(
@@ -215,11 +221,11 @@ $access = @($acl.Access | ForEach-Object {
                 "-NonInteractive",
                 "-Command",
                 inspect_acl,
-                str(path),
             ],
             check=True,
             capture_output=True,
             text=True,
+            env={**os.environ, "FASTMCP_STATE_PATH": str(path)},
         )
         acl = json.loads(result.stdout)
         assert set(acl["access"]) == {acl["current"]}

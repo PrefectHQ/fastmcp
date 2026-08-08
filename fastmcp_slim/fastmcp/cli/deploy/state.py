@@ -21,11 +21,15 @@ class StateFileError(RuntimeError):
 
 _WINDOWS_ACL_SCRIPT = r"""
 $ErrorActionPreference = "Stop"
-$path = $args[0]
+$path = $env:FASTMCP_STATE_PATH
 $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$acl = Get-Acl -LiteralPath $path
+$acl.SetAccessRuleProtection($true, $false)
+foreach ($existingRule in @($acl.Access)) {
+    $acl.RemoveAccessRuleSpecific($existingRule)
+}
 
 if ([System.IO.Directory]::Exists($path)) {
-    $acl = [System.Security.AccessControl.DirectorySecurity]::new()
     $inheritance = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit `
         -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
     $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
@@ -36,7 +40,6 @@ if ([System.IO.Directory]::Exists($path)) {
         [System.Security.AccessControl.AccessControlType]::Allow
     )
 } else {
-    $acl = [System.Security.AccessControl.FileSecurity]::new()
     $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
         $sid,
         [System.Security.AccessControl.FileSystemRights]::FullControl,
@@ -44,8 +47,6 @@ if ([System.IO.Directory]::Exists($path)) {
     )
 }
 
-$acl.SetOwner($sid)
-$acl.SetAccessRuleProtection($true, $false)
 $acl.AddAccessRule($rule)
 Set-Acl -LiteralPath $path -AclObject $acl
 """
@@ -61,11 +62,11 @@ def _restrict_windows_access(path: Path) -> None:
                 "-NonInteractive",
                 "-Command",
                 _WINDOWS_ACL_SCRIPT,
-                str(path),
             ],
             check=True,
             capture_output=True,
             text=True,
+            env={**os.environ, "FASTMCP_STATE_PATH": str(path)},
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise StateFileError("Could not restrict access to CLI state") from exc
