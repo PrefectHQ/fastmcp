@@ -13,6 +13,39 @@ Horizon includes a **free personal tier for FastMCP users**, making it the faste
 Horizon is free for personal projects. Enterprise governance features are available for teams deploying to thousands of users.
 </Info>
 
+## FastMCP CLI Account
+
+Sign in to Horizon from the FastMCP CLI with the device authorization flow.
+
+```bash
+fastmcp login
+```
+
+The command uses an environment key or a valid stored key when one is available.
+When login needs a new key, it shows a verification URL and code before it opens the browser.
+If the browser cannot open, visit the shown URL and enter the code.
+To switch accounts, run `fastmcp logout` before you run `fastmcp login` again.
+New users can register and create their first Horizon organization in the browser.
+Use `fastmcp login --host <url>` to save a different Horizon host.
+A host change clears the stored credential before login.
+
+Check the active account after login.
+
+```bash
+fastmcp whoami
+```
+
+Remove the local credential and revoke the active personal API key when possible.
+
+```bash
+fastmcp logout
+```
+
+Login does not select or store a deployment organization.
+
+For an agent or a CI process, set `HORIZON_API_KEY` instead of storing a key.
+The CLI never writes the environment value to its credential file.
+
 ## The Platform
 
 Horizon is organized into four integrated pillars:
