@@ -12,7 +12,7 @@ from fastmcp.cli.deploy.horizon_client import (
     DEFAULT_HORIZON_API_ORIGIN,
     normalize_api_origin,
 )
-from fastmcp.cli.deploy.state import read_state, write_state
+from fastmcp.cli.deploy.state import read_state, state_lock, write_state
 
 
 class HorizonConfiguration(BaseModel):
@@ -59,9 +59,10 @@ class ConfigurationStore:
         credentials: CredentialStore,
     ) -> HorizonConfiguration:
         """Set the origin and clear credentials before an origin change."""
-        current = self.load()
-        updated = HorizonConfiguration(schemaVersion=1, apiOrigin=api_origin)
-        if updated.api_origin != current.api_origin:
-            credentials.clear()
-        self.save(updated)
-        return updated
+        with state_lock(self.path.parent):
+            current = self.load()
+            updated = HorizonConfiguration(schemaVersion=1, apiOrigin=api_origin)
+            if updated.api_origin != current.api_origin:
+                credentials.clear()
+            self.save(updated)
+            return updated

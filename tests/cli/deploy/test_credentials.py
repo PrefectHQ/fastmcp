@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import errno
 import json
 import os
+import stat
 import subprocess
 import traceback
 from pathlib import Path
@@ -11,6 +13,10 @@ import httpx2
 import pytest
 from pydantic import SecretStr
 
+from fastmcp.cli.deploy.configuration import (
+    ConfigurationStore,
+    HorizonConfiguration,
+)
 from fastmcp.cli.deploy.credentials import (
     AuthenticationRequiredError,
     CredentialStore,
@@ -61,6 +67,26 @@ def test_credential_store_restricts_an_existing_secret_file(tmp_path: Path) -> N
     assert load_secret(store).get_secret_value() == "fmcp_secret"
     if os.name != "nt":
         assert store.path.stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory fsync")
+def test_atomic_write_ignores_unsupported_directory_fsync(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = CredentialStore(tmp_path)
+    original_fsync = os.fsync
+
+    def fsync(descriptor: int) -> None:
+        if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise OSError(errno.EINVAL, "directory sync is not supported")
+        original_fsync(descriptor)
+
+    monkeypatch.setattr("fastmcp.cli.deploy.state.os.fsync", fsync)
+
+    store.save("fmcp_secret")
+
+    assert load_secret(store).get_secret_value() == "fmcp_secret"
 
 
 def test_atomic_write_preserves_previous_state_on_replace_failure(
@@ -130,6 +156,31 @@ async def test_interactive_credential_is_persisted(tmp_path: Path) -> None:
 
     assert result.source == "interactive"
     assert load_secret(store).get_secret_value() == "fmcp_interactive"
+
+
+async def test_interactive_credential_rejects_an_origin_change(
+    tmp_path: Path,
+) -> None:
+    store = CredentialStore(tmp_path)
+    ConfigurationStore(tmp_path).save(
+        HorizonConfiguration(
+            schemaVersion=1,
+            apiOrigin="https://dev.horizon.prefect.io",
+        )
+    )
+
+    async def authorize() -> SecretStr:
+        return SecretStr("fmcp_old_origin")
+
+    with pytest.raises(StateFileError, match="host changed"):
+        await resolve_credential(
+            store,
+            environ={},
+            authorize=authorize,
+            expected_api_origin="https://horizon.prefect.io",
+        )
+
+    assert store.load() is None
 
 
 async def test_missing_noninteractive_credential_is_explicit(tmp_path: Path) -> None:

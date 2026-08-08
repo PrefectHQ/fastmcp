@@ -17,11 +17,12 @@ from pydantic import (
     field_validator,
 )
 
-from fastmcp.cli.deploy.horizon_client import HorizonClient
+from fastmcp.cli.deploy.horizon_client import HorizonClient, normalize_api_origin
 from fastmcp.cli.deploy.state import (
     StateFileError,
     read_state,
     remove_state,
+    state_lock,
     write_state,
 )
 
@@ -79,6 +80,22 @@ class CredentialStore:
             },
         )
 
+    def save_for_origin(
+        self,
+        api_key: SecretStr | str,
+        *,
+        expected_api_origin: str,
+    ) -> None:
+        """Save a key only while its issuing Horizon origin is active."""
+        from fastmcp.cli.deploy.configuration import ConfigurationStore
+
+        expected_api_origin = normalize_api_origin(expected_api_origin)
+        with state_lock(self.path.parent):
+            active_api_origin = ConfigurationStore(self.path.parent).load().api_origin
+            if active_api_origin != expected_api_origin:
+                raise StateFileError("The Horizon host changed during login")
+            self.save(api_key)
+
     def clear(self) -> None:
         remove_state(self.path)
 
@@ -88,6 +105,7 @@ async def resolve_credential(
     *,
     environ: Mapping[str, str] | None = None,
     authorize: Callable[[], Awaitable[SecretStr]] | None = None,
+    expected_api_origin: str | None = None,
 ) -> ResolvedCredential:
     """Resolve environment, stored, then interactive credentials."""
     environ = os.environ if environ is None else environ
@@ -106,7 +124,10 @@ async def resolve_credential(
         raise AuthenticationRequiredError("Horizon authentication is required")
 
     api_key = await authorize()
-    store.save(api_key)
+    if expected_api_origin is None:
+        store.save(api_key)
+    else:
+        store.save_for_origin(api_key, expected_api_origin=expected_api_origin)
     return ResolvedCredential(api_key=api_key, source="interactive")
 
 

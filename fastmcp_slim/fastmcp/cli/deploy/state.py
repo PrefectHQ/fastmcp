@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import subprocess
 import tempfile
-from contextlib import suppress
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -90,6 +92,56 @@ def _prepare_directory(path: Path) -> None:
     _restrict_access(path, directory=True)
 
 
+@contextmanager
+def state_lock(directory: Path) -> Iterator[None]:
+    """Lock related CLI state changes across processes."""
+    _prepare_directory(directory)
+    lock_path = directory / ".state.lock"
+    if lock_path.is_symlink():
+        raise StateFileError("The CLI state lock must not be a symbolic link")
+
+    lock_file = None
+    try:
+        lock_file = lock_path.open("a+b")
+        _restrict_access(lock_path)
+        if os.name == "nt":
+            import msvcrt
+
+            if lock_path.stat().st_size == 0:
+                lock_file.write(b"\0")
+                lock_file.flush()
+            lock_file.seek(0)
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+    except (OSError, StateFileError) as exc:
+        if lock_file is not None:
+            with suppress(OSError):
+                lock_file.close()
+        if isinstance(exc, StateFileError):
+            raise
+        raise StateFileError("Could not lock CLI state") from exc
+
+    try:
+        yield
+    finally:
+        if os.name == "nt":
+            import msvcrt
+
+            with suppress(OSError):
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            with suppress(OSError):
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        with suppress(OSError):
+            lock_file.close()
+
+
 def read_state(
     path: Path,
     model: type[ModelT],
@@ -145,7 +197,12 @@ def write_state(path: Path, data: dict[str, Any]) -> None:
         if os.name != "nt":
             directory_descriptor = os.open(path.parent, os.O_RDONLY)
             try:
-                os.fsync(directory_descriptor)
+                try:
+                    os.fsync(directory_descriptor)
+                except OSError as exc:
+                    unsupported = {errno.EINVAL, errno.ENOTSUP}
+                    if exc.errno not in unsupported:
+                        raise
             finally:
                 os.close(directory_descriptor)
     except StateFileError:

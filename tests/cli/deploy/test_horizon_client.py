@@ -249,6 +249,8 @@ async def test_invalid_responses_do_not_include_response_bodies() -> None:
         "https://user@example.com",
         "https://horizon.prefect.io/path",
         "https://horizon.prefect.io?query=value",
+        "https://horizon.prefect.io:abc",
+        "https://horizon.prefect.io:99999",
     ],
 )
 def test_api_origin_rejects_values_that_are_not_origins(value: str) -> None:

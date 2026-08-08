@@ -129,6 +129,10 @@ class DeviceTokenPoll:
 def normalize_api_origin(value: str) -> str:
     """Validate and normalize a Horizon API origin."""
     parts = urlsplit(value)
+    try:
+        _ = parts.port
+    except ValueError:
+        raise ValueError("The Horizon API origin must be an HTTP origin") from None
     if (
         parts.scheme not in {"http", "https"}
         or not parts.hostname
