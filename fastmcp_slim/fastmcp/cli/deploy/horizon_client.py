@@ -210,7 +210,7 @@ class HorizonClient:
         except httpx2.RequestError as exc:
             raise HorizonUnavailableError("The Horizon API is unavailable") from exc
 
-        if response.status_code == 401:
+        if authenticated and response.status_code == 401:
             raise HorizonUnauthorizedError("The Horizon credential is not valid")
         return response
 

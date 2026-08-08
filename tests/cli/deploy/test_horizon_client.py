@@ -213,6 +213,23 @@ async def test_protected_routes_require_a_credential() -> None:
             await client.get_current_user()
 
 
+async def test_protected_routes_report_a_rejected_credential() -> None:
+    async with HorizonClient(
+        api_key="fmcp_invalid",
+        transport=mock_transport(lambda request: httpx2.Response(401)),
+    ) as client:
+        with pytest.raises(HorizonUnauthorizedError):
+            await client.get_current_user()
+
+
+async def test_public_routes_do_not_report_a_missing_credential() -> None:
+    async with HorizonClient(
+        transport=mock_transport(lambda request: httpx2.Response(401))
+    ) as client:
+        with pytest.raises(HorizonResponseError):
+            await client.create_device_authorization()
+
+
 async def test_invalid_responses_do_not_include_response_bodies() -> None:
     secret_body = "fmcp_response_secret"
     async with HorizonClient(
