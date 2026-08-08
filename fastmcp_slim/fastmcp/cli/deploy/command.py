@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import platform
 import sys
 import webbrowser
 from typing import Annotated, NoReturn
@@ -9,6 +10,7 @@ from typing import Annotated, NoReturn
 from cyclopts import Parameter
 from rich.status import Status
 
+import fastmcp
 from fastmcp.cli.deploy.authentication import (
     DeviceAuthorizationDeniedError,
     DeviceAuthorizationError,
@@ -25,6 +27,7 @@ from fastmcp.cli.deploy.credentials import (
 )
 from fastmcp.cli.deploy.horizon_client import (
     DeviceAuthorization,
+    DeviceMetadata,
     HorizonClient,
     HorizonResponseError,
     HorizonUnauthorizedError,
@@ -62,6 +65,15 @@ HostOption = Annotated[
 
 def _can_open_browser() -> bool:
     return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _device_metadata() -> DeviceMetadata:
+    return DeviceMetadata(
+        device_name=platform.node() or None,
+        platform=platform.system().lower() or None,
+        architecture=platform.machine().lower() or None,
+        client_version=fastmcp.__version__,
+    )
 
 
 def _fail(
@@ -193,6 +205,7 @@ async def login(
                 async with HorizonClient(configuration.api_origin) as client:
                     return await authorize_device(
                         client,
+                        metadata=_device_metadata(),
                         on_challenge=show_challenge,
                         open_browser=not json_output and _can_open_browser(),
                         browser_opener=webbrowser.open,

@@ -1,6 +1,7 @@
 import json
 from collections.abc import Callable
 from unittest.mock import Mock
+from urllib.parse import parse_qs
 
 import httpx2
 import pytest
@@ -111,6 +112,10 @@ async def test_json_login_writes_one_result_and_challenge_to_stderr(
     use_horizon_api(api)
     browser_open = Mock()
     monkeypatch.setattr(command_module.webbrowser, "open", browser_open)
+    monkeypatch.setattr(command_module.platform, "node", lambda: "Avery's laptop")
+    monkeypatch.setattr(command_module.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(command_module.platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(command_module.fastmcp, "__version__", "4.0.0")
 
     await login(json_output=True)
 
@@ -135,6 +140,18 @@ async def test_json_login_writes_one_result_and_challenge_to_stderr(
         "userCode": "ABCD-EFGH",
     }
     browser_open.assert_not_called()
+    authorization_request = next(
+        request
+        for request in api.requests
+        if request.url.path == "/api/v0/oauth/device/authorization"
+    )
+    assert parse_qs(authorization_request.content.decode()) == {
+        "client_id": ["fastmcp-cli"],
+        "device_name": ["Avery's laptop"],
+        "platform": ["darwin"],
+        "architecture": ["arm64"],
+        "client_version": ["4.0.0"],
+    }
 
     state = json.loads(CredentialStore().path.read_text())
     assert state == {"schemaVersion": 1, "apiKey": "fmcp_device_key"}
