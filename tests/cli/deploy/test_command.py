@@ -20,13 +20,11 @@ class HorizonAuthAPI:
         *,
         token_error: str | None = None,
         revoke_status: int = 204,
-        organizations: list[dict[str, str]] | None = None,
         invalid_api_key: str | None = None,
     ) -> None:
         self.token_error = token_error
         self.revoke_status = revoke_status
         self.invalid_api_key = invalid_api_key
-        self.organizations = organizations or []
         self.requests: list[httpx2.Request] = []
 
     def __call__(self, request: httpx2.Request) -> httpx2.Response:
@@ -66,14 +64,6 @@ class HorizonAuthAPI:
                         "email": "ada@example.com",
                         "name": "Ada",
                     }
-                },
-            )
-        if path == "/api/v0/me/organizations":
-            return httpx2.Response(
-                200,
-                json={
-                    "items": self.organizations,
-                    "meta": {"nextCursor": None, "limit": 100},
                 },
             )
         if path == "/api/v0/me/api-key":
@@ -117,9 +107,7 @@ async def test_json_login_writes_one_result_and_challenge_to_stderr(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    api = HorizonAuthAPI(
-        organizations=[{"id": "org-1", "name": "Acme", "slug": "acme"}]
-    )
+    api = HorizonAuthAPI()
     use_horizon_api(api)
     browser_open = Mock()
     monkeypatch.setattr(command_module.webbrowser, "open", browser_open)
@@ -137,7 +125,6 @@ async def test_json_login_writes_one_result_and_challenge_to_stderr(
             "email": "ada@example.com",
             "name": "Ada",
         },
-        "organizations": [{"id": "org-1", "name": "Acme", "slug": "acme"}],
     }
     assert json.loads(captured.err) == {
         "event": "device_authorization",
@@ -198,8 +185,10 @@ async def test_tty_login_survives_browser_open_failure(
     output = capsys.readouterr().out
     assert "https://horizon.prefect.io/oauth/device" in output
     assert "ABCD-EFGH" in output
-    assert "Signed in as Ada <ada@example.com>." in output
-    assert "Organization memberships: none" in output
+    assert "✓ Authorization complete" in output
+    assert "Ada" in output
+    assert "ada@example.com" in output
+    assert "Organization" not in output
     browser_open.assert_called_once()
 
 

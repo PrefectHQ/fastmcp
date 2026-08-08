@@ -7,6 +7,7 @@ import webbrowser
 from typing import Annotated, NoReturn
 
 from cyclopts import Parameter
+from rich.status import Status
 
 from fastmcp.cli.deploy.authentication import (
     DeviceAuthorizationDeniedError,
@@ -23,8 +24,8 @@ from fastmcp.cli.deploy.credentials import (
     revoke_and_clear_credential,
 )
 from fastmcp.cli.deploy.horizon_client import (
+    DeviceAuthorization,
     HorizonClient,
-    HorizonOrganization,
     HorizonResponseError,
     HorizonUnauthorizedError,
     HorizonUnavailableError,
@@ -37,6 +38,8 @@ from fastmcp.cli.deploy.output import (
     emit_error,
     emit_identity,
     emit_logout,
+    start_device_approval_status,
+    stop_device_approval_status,
 )
 from fastmcp.cli.deploy.state import StateFileError
 
@@ -144,14 +147,12 @@ def _fail_for_expected_error(
     raise error
 
 
-async def _get_identity(
+async def _get_user(
     api_origin: str,
     credential: ResolvedCredential,
-) -> tuple[HorizonUser, tuple[HorizonOrganization, ...]]:
+) -> HorizonUser:
     async with HorizonClient(api_origin, api_key=credential.api_key) as client:
-        user = await client.get_current_user()
-        organizations = await client.list_organizations()
-    return user, organizations
+        return await client.get_current_user()
 
 
 async def login(
@@ -181,16 +182,23 @@ async def login(
                 )
 
         async def device_authorization():
-            async with HorizonClient(configuration.api_origin) as client:
-                return await authorize_device(
-                    client,
-                    on_challenge=lambda challenge: emit_device_challenge(
-                        challenge,
-                        json_output=json_output,
-                    ),
-                    open_browser=not json_output and _can_open_browser(),
-                    browser_opener=webbrowser.open,
-                )
+            approval_status: Status | None = None
+
+            def show_challenge(challenge: DeviceAuthorization) -> None:
+                nonlocal approval_status
+                emit_device_challenge(challenge, json_output=json_output)
+                approval_status = start_device_approval_status(json_output=json_output)
+
+            try:
+                async with HorizonClient(configuration.api_origin) as client:
+                    return await authorize_device(
+                        client,
+                        on_challenge=show_challenge,
+                        open_browser=not json_output and _can_open_browser(),
+                        browser_opener=webbrowser.open,
+                    )
+            finally:
+                stop_device_approval_status(approval_status)
 
         credential = await resolve_credential(
             credentials,
@@ -198,7 +206,7 @@ async def login(
         )
 
         try:
-            user, organizations = await _get_identity(
+            user = await _get_user(
                 configuration.api_origin,
                 credential,
             )
@@ -215,7 +223,7 @@ async def login(
                 authorize=device_authorization,
             )
             try:
-                user, organizations = await _get_identity(
+                user = await _get_user(
                     configuration.api_origin,
                     credential,
                 )
@@ -235,7 +243,6 @@ async def login(
     emit_identity(
         "login",
         user,
-        organizations,
         json_output=json_output,
     )
 
@@ -244,14 +251,14 @@ async def whoami(
     *,
     json_output: JsonOption = False,
 ) -> None:
-    """Show the current Prefect Horizon user and organization memberships."""
+    """Show the current Prefect Horizon user."""
     credentials = CredentialStore()
     credential: ResolvedCredential | None = None
 
     try:
         configuration = ConfigurationStore().load()
         credential = await resolve_credential(credentials)
-        user, organizations = await _get_identity(
+        user = await _get_user(
             configuration.api_origin,
             credential,
         )
@@ -270,7 +277,6 @@ async def whoami(
     emit_identity(
         "whoami",
         user,
-        organizations,
         json_output=json_output,
     )
 

@@ -6,13 +6,16 @@ import json
 import sys
 from typing import Literal
 
-from rich.console import Console
+from rich import box
+from rich.align import Align
+from rich.console import Console, Group
+from rich.padding import Padding
+from rich.panel import Panel
+from rich.status import Status
+from rich.table import Table
+from rich.text import Text
 
-from fastmcp.cli.deploy.horizon_client import (
-    DeviceAuthorization,
-    HorizonOrganization,
-    HorizonUser,
-)
+from fastmcp.cli.deploy.horizon_client import DeviceAuthorization, HorizonUser
 
 CommandName = Literal["login", "logout", "whoami"]
 ErrorCategory = Literal[
@@ -37,6 +40,47 @@ def _write_json(payload: object, *, stderr: bool = False) -> None:
     print(json.dumps(payload, separators=(",", ":")), file=stream, flush=True)
 
 
+def _banner(title: str, *, style: str) -> Panel:
+    return Panel(
+        Align.center(Text(title, style=f"bold {style}")),
+        box=box.ROUNDED,
+        border_style=style,
+        padding=(0, 1),
+        width=52,
+    )
+
+
+def _account_panel(
+    user: HorizonUser,
+    *,
+    title: str,
+    message: str,
+) -> Panel:
+    name = Text(user.name or user.email, style="bold")
+    details: list[Text] = [name]
+    if user.name:
+        details.append(Text(user.email, style="cyan"))
+    details.extend([Text(), Text(message, style="green")])
+    return Panel(
+        Group(*details),
+        title=Text(title, style="bold green"),
+        title_align="left",
+        box=box.ROUNDED,
+        border_style="green",
+        padding=(1, 2),
+        width=52,
+    )
+
+
+def _format_duration(seconds: int) -> str:
+    if seconds % 60 == 0:
+        minutes = seconds // 60
+        unit = "minute" if minutes == 1 else "minutes"
+        return f"{minutes} {unit}"
+    unit = "second" if seconds == 1 else "seconds"
+    return f"{seconds} {unit}"
+
+
 def emit_device_challenge(
     authorization: DeviceAuthorization,
     *,
@@ -55,44 +99,84 @@ def emit_device_challenge(
         )
         return
 
-    console.print("Open this URL to sign in to Prefect Horizon:")
-    console.print(authorization.verification_uri)
-    console.print(f"Enter code: {authorization.user_code}")
-    console.print("Waiting for approval...")
+    console.print()
+    console.print(_banner("FastMCP CLI Sign In", style="cyan"))
+    console.print()
+    console.print(Text("✓ Device authorization started", style="bold green"))
+    console.print()
+    console.print("  Open this URL in your browser:")
+    console.print()
+    console.print(
+        Padding(
+            Text(authorization.verification_uri_complete, style="cyan underline"),
+            (0, 2),
+        )
+    )
+    console.print()
+    console.print("  Confirm this code:")
+    console.print()
+    code = Table.grid()
+    code.add_column(justify="center", width=52)
+    code.add_row(Text(authorization.user_code, style="bold"))
+    console.print(code)
+    console.print()
+    expires_in = _format_duration(authorization.expires_in)
+    console.print(Text(f"The request expires in {expires_in}.", style="dim"))
+    console.print(Text("Press Ctrl-C to cancel.", style="dim"))
+    console.print()
+
+
+def start_device_approval_status(*, json_output: bool) -> Status | None:
+    """Start the terminal spinner while the browser approval is pending."""
+    if json_output:
+        return None
+    status = console.status(
+        "[cyan]Waiting for approval in your browser[/cyan]",
+        spinner="dots",
+        spinner_style="cyan",
+    )
+    status.start()
+    return status
+
+
+def stop_device_approval_status(status: Status | None) -> None:
+    """Stop a device approval spinner when one is active."""
+    if status is not None:
+        status.stop()
 
 
 def emit_identity(
     command: Literal["login", "whoami"],
     user: HorizonUser,
-    organizations: tuple[HorizonOrganization, ...],
     *,
     json_output: bool,
 ) -> None:
-    """Show the authenticated user and current organization memberships."""
+    """Show the authenticated user."""
     if json_output:
         _write_json(
             {
                 "ok": True,
                 "command": command,
                 "user": user.model_dump(mode="json"),
-                "organizations": [
-                    organization.model_dump(mode="json")
-                    for organization in organizations
-                ],
             }
         )
         return
 
-    prefix = "Signed in" if command == "login" else "Authenticated"
-    display_name = f"{user.name} <{user.email}>" if user.name else user.email
-    console.print(f"{prefix} as {display_name}.", markup=False)
-    if not organizations:
-        console.print("Organization memberships: none")
-        return
-
-    console.print("Organization memberships:")
-    for organization in organizations:
-        console.print(f"- {organization.name} ({organization.slug})", markup=False)
+    console.print()
+    if command == "login":
+        panel = _account_panel(
+            user,
+            title="✓ Authorization complete",
+            message="You are signed in to FastMCP.",
+        )
+    else:
+        panel = _account_panel(
+            user,
+            title="FastMCP Account",
+            message="● Signed in",
+        )
+    console.print(panel)
+    console.print()
 
 
 def emit_logout(
@@ -113,9 +197,27 @@ def emit_logout(
         return
 
     if remote_revoked:
-        console.print("Signed out of Prefect Horizon.")
+        title = "✓ Signed out of FastMCP"
+        message = "The Horizon credential was revoked and removed from this device."
+        style = "green"
     else:
-        console.print("No active Horizon credential remains on this device.")
+        title = "FastMCP Account"
+        message = "No active Horizon credential remains on this device."
+        style = "cyan"
+
+    console.print()
+    console.print(
+        Panel(
+            Text(message),
+            title=Text(title, style=f"bold {style}"),
+            title_align="left",
+            box=box.ROUNDED,
+            border_style=style,
+            padding=(1, 2),
+            width=60,
+        )
+    )
+    console.print()
 
 
 def emit_error(
@@ -141,4 +243,21 @@ def emit_error(
         _write_json(payload)
         return
 
-    error_console.print(f"Error: {message}", markup=False)
+    titles = {
+        "login": "✗ Sign in failed",
+        "logout": "✗ Sign out failed",
+        "whoami": "✗ Account lookup failed",
+    }
+    error_console.print()
+    error_console.print(
+        Panel(
+            Text(message),
+            title=Text(titles[command], style="bold red"),
+            title_align="left",
+            box=box.ROUNDED,
+            border_style="red",
+            padding=(1, 2),
+            width=60,
+        )
+    )
+    error_console.print()

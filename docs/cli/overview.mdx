@@ -29,7 +29,7 @@ fastmcp --help
 | [`project prepare`](/cli/running#pre-building-environments) | Pre-install dependencies into a reusable uv project |
 | [`auth cimd`](/cli/auth) | Create and validate CIMD documents for OAuth |
 | `login` | Sign in to Prefect Horizon with a browser device flow |
-| `whoami` | Show the current Horizon user and organization memberships |
+| `whoami` | Show the current Horizon account |
 | `logout` | Revoke the current Horizon key and remove the local credential |
 | `version` | Print version info (`--copy` to copy to clipboard) |
 
@@ -107,7 +107,7 @@ fastmcp login --host https://horizon.example.com
 
 Login stores only the personal Horizon API key.
 It does not select or store a deployment organization.
-`fastmcp whoami` gets the current user and organization memberships from Horizon.
+`fastmcp whoami` gets the current user from Horizon.
 `fastmcp logout` attempts to revoke the active key and always removes the local credential.
 
 Set `HORIZON_API_KEY` to use an environment credential instead.

@@ -2,11 +2,7 @@ import json
 
 import pytest
 
-from fastmcp.cli.deploy.horizon_client import (
-    DeviceAuthorization,
-    HorizonOrganization,
-    HorizonUser,
-)
+from fastmcp.cli.deploy.horizon_client import DeviceAuthorization, HorizonUser
 from fastmcp.cli.deploy.output import (
     emit_device_challenge,
     emit_error,
@@ -32,13 +28,6 @@ def user() -> HorizonUser:
     return HorizonUser(id="user-1", email="ada@example.com", name="Ada")
 
 
-def organizations() -> tuple[HorizonOrganization, ...]:
-    return (
-        HorizonOrganization(id="org-1", name="Acme", slug="acme"),
-        HorizonOrganization(id="org-2", name="Research", slug="research"),
-    )
-
-
 def test_json_device_challenge_uses_only_stderr(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -56,10 +45,24 @@ def test_json_device_challenge_uses_only_stderr(
     }
 
 
+def test_tty_device_challenge_uses_the_sign_in_layout(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    emit_device_challenge(authorization(), json_output=False)
+
+    output = capsys.readouterr().out
+    assert "╭" in output
+    assert "FastMCP CLI Sign In" in output
+    assert "✓ Device authorization started" in output
+    assert "https://horizon.prefect.io/oauth/device?user_code=ABCD-EFGH" in output
+    assert "ABCD-EFGH" in output
+    assert "The request expires in 10 minutes." in output
+
+
 def test_json_identity_has_stable_fields(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    emit_identity("login", user(), organizations(), json_output=True)
+    emit_identity("login", user(), json_output=True)
 
     result = json.loads(capsys.readouterr().out)
     assert result == {
@@ -70,21 +73,21 @@ def test_json_identity_has_stable_fields(
             "email": "ada@example.com",
             "name": "Ada",
         },
-        "organizations": [
-            {"id": "org-1", "name": "Acme", "slug": "acme"},
-            {"id": "org-2", "name": "Research", "slug": "research"},
-        ],
     }
 
 
-def test_tty_identity_handles_no_organizations(
+def test_tty_identity_uses_an_account_panel(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    emit_identity("whoami", user(), (), json_output=False)
+    emit_identity("whoami", user(), json_output=False)
 
     output = capsys.readouterr().out
-    assert "Authenticated as Ada <ada@example.com>." in output
-    assert "Organization memberships: none" in output
+    assert "╭" in output
+    assert "FastMCP Account" in output
+    assert "Ada" in output
+    assert "ada@example.com" in output
+    assert "● Signed in" in output
+    assert "Organization" not in output
 
 
 def test_json_error_has_stable_fields(
