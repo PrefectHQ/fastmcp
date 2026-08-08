@@ -94,9 +94,11 @@ fastmcp whoami
 fastmcp logout
 ```
 
-`fastmcp login` always shows a verification URL and code.
+`fastmcp login` first uses `HORIZON_API_KEY` or a valid stored key when one is available.
+When login needs a new key, it shows a verification URL and code.
 It opens a browser when the terminal supports it.
 If the browser does not open, use the shown URL and code on another device.
+To switch accounts, run `fastmcp logout` before you run `fastmcp login` again.
 
 Use `--host` to connect to another Horizon environment.
 The CLI saves the host and clears the stored key before a host change.

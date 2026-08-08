@@ -51,7 +51,7 @@ def test_tty_device_challenge_uses_the_sign_in_layout(
     emit_device_challenge(authorization(), json_output=False)
 
     output = capsys.readouterr().out
-    assert "╭" in output
+    assert "│" in output
     assert "Deploy FastMCP on Horizon" in output
     assert "✓ Device authorization started" in output
     assert "https://horizon.prefect.io/oauth/device?user_code=ABCD-EFGH" in output
@@ -82,7 +82,7 @@ def test_tty_identity_uses_an_account_panel(
     emit_identity("whoami", user(), json_output=False)
 
     output = capsys.readouterr().out
-    assert "╭" in output
+    assert "│" in output
     assert "Horizon Account" in output
     assert "Ada" in output
     assert "ada@example.com" in output
@@ -124,7 +124,7 @@ def test_tty_logout_uses_the_horizon_header(
 
     output = capsys.readouterr().out
     assert "Logged out of Horizon" in output
-    assert "╭" in output
+    assert "│" in output
 
 
 def test_json_logout_has_stable_fields(

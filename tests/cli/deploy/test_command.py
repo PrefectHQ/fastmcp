@@ -13,6 +13,7 @@ import fastmcp.cli.deploy.command as command_module
 from fastmcp.cli.deploy.command import login, logout, whoami
 from fastmcp.cli.deploy.credentials import CredentialStore
 from fastmcp.cli.deploy.horizon_client import HorizonClient
+from fastmcp.cli.deploy.state import StateFileError
 
 
 class HorizonAuthAPI:
@@ -257,6 +258,26 @@ async def test_login_never_persists_an_environment_key(
     assert not any(
         request.url.path.startswith("/api/v0/oauth/device") for request in api.requests
     )
+
+
+async def test_json_whoami_reports_a_failed_rejected_key_cleanup(
+    use_horizon_api: Callable[[HorizonAuthAPI], None],
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    use_horizon_api(HorizonAuthAPI(invalid_api_key="fmcp_stale_key"))
+    CredentialStore().save("fmcp_stale_key")
+
+    def fail_clear(store: CredentialStore) -> None:
+        raise StateFileError("cleanup failed")
+
+    monkeypatch.setattr(CredentialStore, "clear", fail_clear)
+
+    with pytest.raises(SystemExit, match="1"):
+        await whoami(json_output=True)
+
+    result = json.loads(capsys.readouterr().out)
+    assert result["error"]["category"] == "state_error"
 
 
 async def test_json_whoami_does_not_start_device_authorization(

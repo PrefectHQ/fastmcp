@@ -216,6 +216,7 @@ async def login(
         credential = await resolve_credential(
             credentials,
             authorize=device_authorization,
+            expected_api_origin=configuration.api_origin,
         )
 
         try:
@@ -234,6 +235,7 @@ async def login(
             credential = await resolve_credential(
                 credentials,
                 authorize=device_authorization,
+                expected_api_origin=configuration.api_origin,
             )
             try:
                 user = await _get_user(
@@ -277,7 +279,14 @@ async def whoami(
         )
     except HorizonUnauthorizedError as error:
         if credential is not None and credential.source == "stored":
-            credentials.clear()
+            try:
+                credentials.clear()
+            except StateFileError as cleanup_error:
+                _fail_for_expected_error(
+                    "whoami",
+                    cleanup_error,
+                    json_output=json_output,
+                )
         _fail_for_expected_error("whoami", error, json_output=json_output)
     except (
         AuthenticationRequiredError,
