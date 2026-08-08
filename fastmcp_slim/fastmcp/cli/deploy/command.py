@@ -1,0 +1,307 @@
+"""Public Prefect Horizon authentication commands."""
+
+from __future__ import annotations
+
+import sys
+import webbrowser
+from typing import Annotated, NoReturn
+
+from cyclopts import Parameter
+
+from fastmcp.cli.deploy.authentication import (
+    DeviceAuthorizationDeniedError,
+    DeviceAuthorizationError,
+    DeviceAuthorizationExpiredError,
+    authorize_device,
+)
+from fastmcp.cli.deploy.configuration import ConfigurationStore
+from fastmcp.cli.deploy.credentials import (
+    AuthenticationRequiredError,
+    CredentialStore,
+    ResolvedCredential,
+    resolve_credential,
+    revoke_and_clear_credential,
+)
+from fastmcp.cli.deploy.horizon_client import (
+    HorizonClient,
+    HorizonOrganization,
+    HorizonResponseError,
+    HorizonUnauthorizedError,
+    HorizonUnavailableError,
+    HorizonUser,
+)
+from fastmcp.cli.deploy.output import (
+    CommandName,
+    ErrorCategory,
+    emit_device_challenge,
+    emit_error,
+    emit_identity,
+    emit_logout,
+)
+from fastmcp.cli.deploy.state import StateFileError
+
+JsonOption = Annotated[
+    bool,
+    Parameter(
+        name="--json",
+        help="Write one final JSON result to stdout",
+        negative=(),
+    ),
+]
+
+
+def _can_open_browser() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _fail(
+    command: CommandName,
+    category: ErrorCategory,
+    message: str,
+    *,
+    json_output: bool,
+    details: dict[str, object] | None = None,
+) -> NoReturn:
+    emit_error(
+        command,
+        category,
+        message,
+        json_output=json_output,
+        details=details,
+    )
+    raise SystemExit(1)
+
+
+def _fail_for_expected_error(
+    command: CommandName,
+    error: Exception,
+    *,
+    json_output: bool,
+) -> NoReturn:
+    if isinstance(error, AuthenticationRequiredError):
+        _fail(
+            command,
+            "authentication_required",
+            "Run `fastmcp login` to sign in to Prefect Horizon.",
+            json_output=json_output,
+        )
+    if isinstance(error, HorizonUnauthorizedError):
+        _fail(
+            command,
+            "authentication_invalid",
+            "The Horizon credential is not valid. Run `fastmcp login` again.",
+            json_output=json_output,
+        )
+    if isinstance(error, DeviceAuthorizationDeniedError):
+        _fail(
+            command,
+            "authorization_denied",
+            "The device authorization request was denied.",
+            json_output=json_output,
+        )
+    if isinstance(error, DeviceAuthorizationExpiredError):
+        _fail(
+            command,
+            "authorization_expired",
+            "The device authorization request expired. Run the command again.",
+            json_output=json_output,
+        )
+    if isinstance(error, DeviceAuthorizationError):
+        _fail(
+            command,
+            "authorization_failed",
+            "The device authorization request failed. Run the command again.",
+            json_output=json_output,
+        )
+    if isinstance(error, HorizonUnavailableError):
+        _fail(
+            command,
+            "horizon_unavailable",
+            "The Horizon API is unavailable. Try again later.",
+            json_output=json_output,
+        )
+    if isinstance(error, HorizonResponseError):
+        _fail(
+            command,
+            "horizon_error",
+            "Horizon returned an unexpected response. Try again later.",
+            json_output=json_output,
+        )
+    if isinstance(error, StateFileError):
+        _fail(
+            command,
+            "state_error",
+            "The local Horizon state is invalid.",
+            json_output=json_output,
+        )
+    raise error
+
+
+async def _get_identity(
+    api_origin: str,
+    credential: ResolvedCredential,
+) -> tuple[HorizonUser, tuple[HorizonOrganization, ...]]:
+    async with HorizonClient(api_origin, api_key=credential.api_key) as client:
+        user = await client.get_current_user()
+        organizations = await client.list_organizations()
+    return user, organizations
+
+
+async def login(
+    *,
+    json_output: JsonOption = False,
+) -> None:
+    """Sign in to Prefect Horizon."""
+    credentials = CredentialStore()
+
+    try:
+        configuration = ConfigurationStore().load()
+
+        async def device_authorization():
+            async with HorizonClient(configuration.api_origin) as client:
+                return await authorize_device(
+                    client,
+                    on_challenge=lambda challenge: emit_device_challenge(
+                        challenge,
+                        json_output=json_output,
+                    ),
+                    open_browser=not json_output and _can_open_browser(),
+                    browser_opener=webbrowser.open,
+                )
+
+        credential = await resolve_credential(
+            credentials,
+            authorize=device_authorization,
+        )
+
+        try:
+            user, organizations = await _get_identity(
+                configuration.api_origin,
+                credential,
+            )
+        except HorizonUnauthorizedError:
+            if credential.source == "interactive":
+                credentials.clear()
+                raise
+            if credential.source == "environment":
+                raise
+
+            credentials.clear()
+            credential = await resolve_credential(
+                credentials,
+                authorize=device_authorization,
+            )
+            try:
+                user, organizations = await _get_identity(
+                    configuration.api_origin,
+                    credential,
+                )
+            except HorizonUnauthorizedError:
+                credentials.clear()
+                raise
+    except (
+        AuthenticationRequiredError,
+        DeviceAuthorizationError,
+        HorizonResponseError,
+        HorizonUnauthorizedError,
+        HorizonUnavailableError,
+        StateFileError,
+    ) as error:
+        _fail_for_expected_error("login", error, json_output=json_output)
+
+    emit_identity(
+        "login",
+        user,
+        organizations,
+        json_output=json_output,
+    )
+
+
+async def whoami(
+    *,
+    json_output: JsonOption = False,
+) -> None:
+    """Show the current Prefect Horizon user and organization memberships."""
+    credentials = CredentialStore()
+    credential: ResolvedCredential | None = None
+
+    try:
+        configuration = ConfigurationStore().load()
+        credential = await resolve_credential(credentials)
+        user, organizations = await _get_identity(
+            configuration.api_origin,
+            credential,
+        )
+    except HorizonUnauthorizedError as error:
+        if credential is not None and credential.source == "stored":
+            credentials.clear()
+        _fail_for_expected_error("whoami", error, json_output=json_output)
+    except (
+        AuthenticationRequiredError,
+        HorizonResponseError,
+        HorizonUnavailableError,
+        StateFileError,
+    ) as error:
+        _fail_for_expected_error("whoami", error, json_output=json_output)
+
+    emit_identity(
+        "whoami",
+        user,
+        organizations,
+        json_output=json_output,
+    )
+
+
+async def logout(
+    *,
+    json_output: JsonOption = False,
+) -> None:
+    """Revoke the current Horizon key and remove the local credential."""
+    credentials = CredentialStore()
+
+    try:
+        configuration = ConfigurationStore().load()
+        credential = await resolve_credential(credentials)
+    except AuthenticationRequiredError:
+        emit_logout(remote_revoked=False, json_output=json_output)
+        return
+    except StateFileError:
+        try:
+            credentials.clear()
+        except StateFileError as error:
+            _fail_for_expected_error("logout", error, json_output=json_output)
+        _fail(
+            "logout",
+            "remote_revocation_failed",
+            "The local credential was removed, but the remote key can remain active.",
+            json_output=json_output,
+            details={
+                "localCredentialRemoved": True,
+                "remoteCredentialMayRemain": True,
+            },
+        )
+
+    try:
+        async with HorizonClient(
+            configuration.api_origin,
+            api_key=credential.api_key,
+        ) as client:
+            await revoke_and_clear_credential(client, credentials)
+    except HorizonUnauthorizedError:
+        emit_logout(remote_revoked=False, json_output=json_output)
+        return
+    except (HorizonResponseError, HorizonUnavailableError):
+        _fail(
+            "logout",
+            "remote_revocation_failed",
+            "The local credential was removed, but the remote key can remain active.",
+            json_output=json_output,
+            details={
+                "localCredentialRemoved": True,
+                "remoteCredentialMayRemain": True,
+            },
+        )
+    except StateFileError as error:
+        _fail_for_expected_error("logout", error, json_output=json_output)
+
+    emit_logout(remote_revoked=True, json_output=json_output)

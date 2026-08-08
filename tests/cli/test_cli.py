@@ -35,6 +35,13 @@ class TestMainCLI:
         assert isinstance(exc_info.value, SystemExit)
         assert exc_info.value.code == 1
 
+    @pytest.mark.parametrize("name", ["login", "logout", "whoami"])
+    def test_horizon_account_commands_are_top_level(self, name: str):
+        command, bound, _ = app.parse_args([name, "--json"])
+
+        assert command.__name__ == name  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
+        assert bound.arguments == {"json_output": True}
+
 
 class TestVersionCommand:
     """Test the version command."""

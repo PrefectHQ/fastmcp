@@ -28,6 +28,9 @@ fastmcp --help
 | [`generate-cli`](/cli/generate-cli) | Scaffold a standalone typed CLI from a server's tool schemas |
 | [`project prepare`](/cli/running#pre-building-environments) | Pre-install dependencies into a reusable uv project |
 | [`auth cimd`](/cli/auth) | Create and validate CIMD documents for OAuth |
+| `login` | Sign in to Prefect Horizon with a browser device flow |
+| `whoami` | Show the current Horizon user and organization memberships |
+| `logout` | Revoke the current Horizon key and remove the local credential |
 | `version` | Print version info (`--copy` to copy to clipboard) |
 
 ## Server Targets
@@ -80,6 +83,34 @@ fastmcp call cursor:weather get_forecast city=London
 Run [`fastmcp discover`](/cli/client#discovering-configured-servers) to see what's available on your machine.
 
 ## Authentication
+
+### Prefect Horizon Account
+
+Use the top-level account commands to manage the credential for Prefect Horizon.
+
+```bash
+fastmcp login
+fastmcp whoami
+fastmcp logout
+```
+
+`fastmcp login` always shows a verification URL and code.
+It opens a browser when the terminal supports it.
+If the browser does not open, use the shown URL and code on another device.
+
+Login stores only the personal Horizon API key.
+It does not select or store a deployment organization.
+`fastmcp whoami` gets the current user and organization memberships from Horizon.
+`fastmcp logout` attempts to revoke the active key and always removes the local credential.
+
+Set `HORIZON_API_KEY` to use an environment credential instead.
+The CLI gives that value first precedence and never stores it.
+
+Use `--json` for stable command results.
+During JSON login, the verification challenge goes to stderr and the final result goes to stdout.
+JSON mode does not open a browser or ask a question.
+
+### MCP Server Authentication
 
 When targeting an HTTP URL, the CLI enables OAuth authentication by default. If the server requires it, you'll be guided through the flow (typically opening a browser). If it doesn't, the setup is a silent no-op.
 
