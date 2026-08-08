@@ -98,6 +98,13 @@ fastmcp logout
 It opens a browser when the terminal supports it.
 If the browser does not open, use the shown URL and code on another device.
 
+Use `--host` to connect to another Horizon environment.
+The CLI saves the host and clears the stored key before a host change.
+
+```bash
+fastmcp login --host https://horizon.example.com
+```
+
 Login stores only the personal Horizon API key.
 It does not select or store a deployment organization.
 `fastmcp whoami` gets the current user and organization memberships from Horizon.

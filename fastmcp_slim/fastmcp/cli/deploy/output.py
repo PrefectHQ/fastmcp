@@ -23,6 +23,7 @@ ErrorCategory = Literal[
     "authorization_failed",
     "horizon_error",
     "horizon_unavailable",
+    "invalid_host",
     "remote_revocation_failed",
     "state_error",
 ]

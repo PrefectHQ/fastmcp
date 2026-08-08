@@ -48,6 +48,13 @@ JsonOption = Annotated[
         negative=(),
     ),
 ]
+HostOption = Annotated[
+    str | None,
+    Parameter(
+        name="--host",
+        help="Use and save a different Horizon host URL",
+    ),
+]
 
 
 def _can_open_browser() -> bool:
@@ -149,13 +156,29 @@ async def _get_identity(
 
 async def login(
     *,
+    host: HostOption = None,
     json_output: JsonOption = False,
 ) -> None:
     """Sign in to Prefect Horizon."""
     credentials = CredentialStore()
 
     try:
-        configuration = ConfigurationStore().load()
+        configuration_store = ConfigurationStore()
+        if host is None:
+            configuration = configuration_store.load()
+        else:
+            try:
+                configuration = configuration_store.set_api_origin(
+                    host,
+                    credentials=credentials,
+                )
+            except ValueError:
+                _fail(
+                    "login",
+                    "invalid_host",
+                    "The Horizon host must be an HTTP origin.",
+                    json_output=json_output,
+                )
 
         async def device_authorization():
             async with HorizonClient(configuration.api_origin) as client:

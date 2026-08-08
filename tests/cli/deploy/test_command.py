@@ -154,6 +154,35 @@ async def test_json_login_writes_one_result_and_challenge_to_stderr(
     assert not (fastmcp.settings.home / "cli" / "config.json").exists()
 
 
+async def test_login_host_is_saved_before_device_authorization(
+    use_horizon_api: Callable[[HorizonAuthAPI], None],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    api = HorizonAuthAPI()
+    use_horizon_api(api)
+
+    await login(host="https://dev.horizon.prefect.io/", json_output=True)
+
+    assert json.loads(capsys.readouterr().out)["ok"] is True
+    configuration_path = fastmcp.settings.home / "cli" / "config.json"
+    assert json.loads(configuration_path.read_text()) == {
+        "schemaVersion": 1,
+        "apiOrigin": "https://dev.horizon.prefect.io",
+    }
+    assert {request.url.host for request in api.requests} == {"dev.horizon.prefect.io"}
+
+
+async def test_login_rejects_an_invalid_host(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit, match="1"):
+        await login(host="https://horizon.prefect.io/path", json_output=True)
+
+    result = json.loads(capsys.readouterr().out)
+    assert result["error"]["category"] == "invalid_host"
+    assert CredentialStore().path.exists() is False
+
+
 async def test_tty_login_survives_browser_open_failure(
     use_horizon_api: Callable[[HorizonAuthAPI], None],
     capsys: pytest.CaptureFixture[str],
