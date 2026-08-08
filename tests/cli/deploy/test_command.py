@@ -185,7 +185,7 @@ async def test_tty_login_survives_browser_open_failure(
     output = capsys.readouterr().out
     assert "https://horizon.prefect.io/oauth/device" in output
     assert "ABCD-EFGH" in output
-    assert "✓ Authorization complete" in output
+    assert "Logged into Horizon" in output
     assert "Ada" in output
     assert "ada@example.com" in output
     assert "Organization" not in output

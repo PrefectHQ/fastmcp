@@ -100,7 +100,7 @@ def emit_device_challenge(
         return
 
     console.print()
-    console.print(_banner("FastMCP CLI Sign In", style="cyan"))
+    console.print(_banner("Deploy FastMCP on Horizon", style="magenta"))
     console.print()
     console.print(Text("✓ Device authorization started", style="bold green"))
     console.print()
@@ -166,13 +166,13 @@ def emit_identity(
     if command == "login":
         panel = _account_panel(
             user,
-            title="✓ Authorization complete",
+            title="Logged into Horizon",
             message="You are signed in to FastMCP.",
         )
     else:
         panel = _account_panel(
             user,
-            title="FastMCP Account",
+            title="Horizon Account",
             message="● Signed in",
         )
     console.print(panel)
@@ -197,11 +197,11 @@ def emit_logout(
         return
 
     if remote_revoked:
-        title = "✓ Signed out of FastMCP"
+        title = "Logged out of Horizon"
         message = "The Horizon credential was revoked and removed from this device."
         style = "green"
     else:
-        title = "FastMCP Account"
+        title = "Horizon Account"
         message = "No active Horizon credential remains on this device."
         style = "cyan"
 
