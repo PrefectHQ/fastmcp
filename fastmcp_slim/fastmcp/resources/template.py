@@ -74,9 +74,8 @@ def extract_exploded_query_params(uri_template: str) -> set[str]:
     """
     match = re.search(r"\{\?([^}]+)\}", uri_template)
     if match:
-        return {
-            p.strip()[:-1] for p in match.group(1).split(",") if p.strip().endswith("*")
-        }
+        names = [p.strip() for p in match.group(1).split(",")]
+        return {n.removesuffix("*") for n in names if n.endswith("*")}
     return set()
 
 
@@ -635,7 +634,7 @@ class FunctionResourceTemplate(ResourceTemplate):
                 )
                 if _is_list_annotation(annotation):
                     raise ValueError(
-                        f"Query parameter '{param_name}' is a collection type, so it "
+                        f"Query parameter '{param_name}' is a list type, so it "
                         f"must be declared with the RFC 6570 explode modifier: "
                         f"use '{{?{param_name}*}}' instead of '{{?{param_name}}}' "
                         f"so repeated values (?{param_name}=a&{param_name}=b) are collected."
