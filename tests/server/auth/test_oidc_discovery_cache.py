@@ -113,6 +113,32 @@ def test_cached_configuration_is_isolated_between_callers(discovery_document):
     mock_get.assert_called_once()
 
 
+def test_cache_isolated_by_configuration_class(discovery_document):
+    class ProviderOIDCConfiguration(OIDCConfiguration):
+        provider_specific: str
+
+    provider_document = {
+        **discovery_document,
+        "provider_specific": "provider-value",
+    }
+    response = _response(provider_document)
+
+    with patch("httpx2.get", return_value=response) as mock_get:
+        OIDCConfiguration.get_oidc_configuration(
+            config_url=CONFIG_URL,
+            strict=True,
+            timeout_seconds=10,
+        )
+        provider = ProviderOIDCConfiguration.get_oidc_configuration(
+            config_url=CONFIG_URL,
+            strict=True,
+            timeout_seconds=10,
+        )
+
+    assert provider.provider_specific == "provider-value"
+    assert mock_get.call_count == 2
+
+
 def test_failed_discovery_is_not_cached(discovery_document):
     invalid_document = {"issuer": "https://cache.example.com"}
     response = MagicMock(spec=Response)

@@ -42,7 +42,7 @@ _OIDC_DISCOVERY_CACHE_TTL_SECONDS = 300
 #: Maximum number of distinct discovery configurations cached per process.
 _OIDC_DISCOVERY_CACHE_MAX_SIZE = 128
 
-_OIDCDiscoveryCacheKey = tuple[str, bool | None, int | None]
+_OIDCDiscoveryCacheKey = tuple[type[BaseModel], str, bool | None, int | None]
 _OIDCDiscoveryCacheValue = tuple[float, dict[str, Any]]
 _oidc_configuration_cache: OrderedDict[
     _OIDCDiscoveryCacheKey, _OIDCDiscoveryCacheValue
@@ -185,6 +185,7 @@ class OIDCConfiguration(BaseModel):
             timeout_seconds: HTTP request timeout in seconds
         """
         cache_key: _OIDCDiscoveryCacheKey = (
+            cls,
             str(config_url),
             strict,
             timeout_seconds,
