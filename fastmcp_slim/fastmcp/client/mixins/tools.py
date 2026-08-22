@@ -143,11 +143,41 @@ class ClientToolsMixin:
         progress_handler: ProgressHandler | None = None,
         timeout: datetime.timedelta | float | int | None = None,
         meta: dict[str, Any] | None = None,
+        *,
+        input_responses: mcp_types.InputResponses | None = None,
+        request_state: str | None = None,
+        _return_ask: bool = False,
     ) -> mcp_types.CallToolResult:
         """Send a tools/call request and return the complete MCP protocol result.
 
         This method returns the raw CallToolResult object, which includes an isError flag
         and other metadata. It does not raise an exception if the tool call results in an error.
+
+        A tool that asks for client input answers with an `InputRequiredResult`
+        (SEP-2322) rather than a final result. By default that is resolved for
+        you, the same way `call_tool` does it — each embedded request is
+        dispatched to this client's handlers and the call is retried until it
+        A tool that needs input from the user answers with an
+        `InputRequiredResult` (SEP-2322) rather than a final result. What happens
+        next depends on whether this client was given an `elicitation_handler`:
+        with one, each question is put to it and the call is retried until it
+        completes; without one, the request is returned to you, and you answer it
+        by calling again with `input_responses` and the `request_state` it
+        carried.
+
+        ```python
+        async with Client(mcp) as client:
+            ask = await client.call_tool("book")
+            answers = {
+                key: mcp_types.ElicitResult(action="accept", content={"value": "Paris"})
+                for key in ask.input_required.input_requests
+            }
+            final = await client.call_tool(
+                "book",
+                input_responses=answers,
+                request_state=ask.input_required.request_state,
+            )
+        ```
 
         Args:
             name (str): The name of the tool to call.
@@ -160,8 +190,10 @@ class ClientToolsMixin:
                 can access this via `context.request_context.meta`. Defaults to None.
 
         Returns:
-            mcp_types.CallToolResult: The complete response object from the protocol,
-                containing the tool result and any additional metadata.
+            The complete response object from the protocol. An
+            `InputRequiredResult` when the tool asked for input and
+            mcp_types.CallToolResult: The complete response object from the
+                protocol, containing the tool result and any additional metadata.
 
         Raises:
             RuntimeError: If called while the client is not connected.
@@ -214,7 +246,14 @@ class ClientToolsMixin:
                     allow_claimed=has_claims,
                 )
 
-            first = await self._await_with_session_monitoring(_retry(None, None))
+            first = await self._await_with_session_monitoring(
+                _retry(input_responses, request_state)
+            )
+            if _return_ask and isinstance(first, mcp_types.InputRequiredResult):
+                # Internal contract with `call_tool`, which sets `_return_ask`
+                # when this client has no handler and narrows the result back
+                # out. Public callers never see anything but a CallToolResult.
+                return cast("mcp_types.CallToolResult", first)
             driven = await self._await_with_session_monitoring(
                 self._drive_input_required(first, _retry)
             )
@@ -281,6 +320,8 @@ class ClientToolsMixin:
         progress_handler: ProgressHandler | None = None,
         raise_on_error: bool = True,
         meta: dict[str, Any] | None = None,
+        input_responses: mcp_types.InputResponses | None = None,
+        request_state: str | None = None,
     ) -> CallToolResult:
         """Call a tool on the server.
 
@@ -325,7 +366,23 @@ class ClientToolsMixin:
             timeout=timeout,
             progress_handler=progress_handler,
             meta=request_meta or None,
+            input_responses=input_responses,
+            request_state=request_state,
+            # With no handler there is nothing here that can answer, so ask for
+            # the question itself instead of failing.
+            _return_ask=self._elicitation_callback is None,
         )
+        if isinstance(result, mcp_types.InputRequiredResult):
+            # The caller is driving; hand the ask back rather than parsing it as
+            # tool output, which it is not.
+            from fastmcp.client.client import CallToolResult
+
+            return CallToolResult(
+                content=[],
+                structured_content=None,
+                meta=None,
+                input_required=result,
+            )
         return await self._parse_call_tool_result(
             name, result, raise_on_error=raise_on_error
         )

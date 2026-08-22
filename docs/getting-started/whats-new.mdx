@@ -35,6 +35,8 @@ legacy = Client("https://example.com/mcp", mode="legacy")
 
 Once connected, `client.protocol_version`, `client.server_info`, `client.server_capabilities`, and `client.instructions` expose the same interface whichever era was negotiated. Application code that inspects a server does not need a protocol-version branch. See [Protocol negotiation](/clients/client#protocol-negotiation).
 
+The modern protocol is sessionless, so it drops the server's ability to call back into the client mid-request (SEP-2577), and FastMCP 4's server API reflects that. `ctx.elicit` moves to a request-shaped pattern that works on modern connections: the tool returns a description of the input it needs, and the client answers with a fresh call. Better still, a tool can stop managing that exchange at all and simply declare which of its parameters come from the user — `Annotated[str, Elicit("Where would you like to fly?")]` is filled before the body runs, hidden from the tool's schema, and works unchanged on both protocol eras, because the framework rather than your code decides how the question travels. See [Elicitation](/servers/elicitation#declared-parameters). `ctx.sample`, `ctx.sample_step`, and `ctx.list_roots` are gone from the API, because each of them pushed a request down a live connection and a method that only works against old clients is a trap.
+
 On modern connections, FastMCP also attaches the method, target name, and opted-in argument values as HTTP headers. Gateways and load balancers can route requests without parsing JSON-RPC bodies. See [Gateway routing headers](/deployment/http#gateway-routing-headers).
 
 ## Stateful applications

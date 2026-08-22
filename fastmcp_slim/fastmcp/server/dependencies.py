@@ -39,6 +39,10 @@ from uncalled_for import (
 from uncalled_for.resolution import _Depends
 
 from fastmcp.exceptions import FastMCPError
+from fastmcp.server._elicit_resolution import (
+    find_elicit_parameters,
+    resolve_elicitations,
+)
 from fastmcp.server.auth import AccessToken
 from fastmcp.server.http import _current_http_request
 from fastmcp.utilities.async_utils import (
@@ -675,6 +679,7 @@ def without_injected_parameters(
     Handles:
     - Legacy Context injection (always works)
     - Depends() injection (always works - uses docket or vendored DI engine)
+    - ``Annotated[T, Elicit(...)]`` injection (filled by asking the client)
 
     Args:
         fn: Original function with Context and/or dependencies
@@ -691,12 +696,15 @@ def without_injected_parameters(
     # Identify parameters to exclude
     context_kwarg = find_kwarg_by_type(fn, Context)
     dependency_params = get_dependency_parameters(fn)
+    elicit_params = find_elicit_parameters(fn)
 
     exclude = set()
     if context_kwarg:
         exclude.add(context_kwarg)
     if dependency_params:
         exclude.update(dependency_params.keys())
+    if elicit_params:
+        exclude.update(elicit_params)
 
     if not exclude:
         return fn
@@ -712,6 +720,15 @@ def without_injected_parameters(
     fn_is_async = is_coroutine_function(fn)
 
     async def wrapper(**user_kwargs: Any) -> Any:
+        if elicit_params:
+            # Questions are built from the call's already-validated arguments, so
+            # a question quoting one sees exactly what the body will. Raises
+            # NeedsInput when answers are still outstanding, which the calling
+            # component turns into this leg's result.
+            user_kwargs = {
+                **user_kwargs,
+                **await resolve_elicitations(elicit_params, user_kwargs, get_context()),
+            }
         async with resolve_dependencies(fn, user_kwargs) as resolved_kwargs:
             if fn_is_async:
                 return await fn(**resolved_kwargs)

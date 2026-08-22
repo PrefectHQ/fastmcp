@@ -149,6 +149,19 @@ if result.action == "accept":
     name = result.data
 ```
 
+`ctx.elicit()` only works on handshake-era connections, because it pushes a request down a live connection. To ask for something on any era, [declare it as a parameter](/servers/elicitation#declared-parameters) instead and let FastMCP choose how the question travels:
+
+```python
+from typing import Annotated
+
+from fastmcp.elicitation import Elicit
+
+
+@mcp.tool
+async def greet(name: Annotated[str, Elicit("Enter your name:")]) -> str:
+    return f"Hello, {name}"
+```
+
 See [User Elicitation](/servers/elicitation) for detailed examples and supported response types.
 
 ### Sampling and Roots
