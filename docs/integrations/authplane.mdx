@@ -1,0 +1,218 @@
+---
+title: Authplane OAuth 🤝 FastMCP
+sidebarTitle: Authplane
+description: Secure your FastMCP server with Authplane, a self-hosted OAuth 2.1 authorization server for MCP.
+icon: shield-check
+tag: NEW
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="4.0.0" />
+
+[Authplane](https://github.com/AuthPlane/authserver) is a self-hosted OAuth 2.1
+authorization server for the Model Context Protocol, shipped as a single Go
+binary. It implements the MCP Authorization specification (2025-11-25),
+including Dynamic Client Registration (RFC 7591), Client ID Metadata Documents,
+Resource Indicators (RFC 8707) and JWT access tokens (RFC 9068).
+
+Because Authplane supports DCR, MCP clients register themselves at runtime — you
+do not have to pre-provision a `client_id` for every client that wants to reach
+your server.
+
+## Configuration
+
+<Note>
+`AuthplaneAuthProvider` makes your FastMCP server a **resource server**. It
+verifies incoming JWTs against Authplane's JWKS and serves Protected Resource
+Metadata (RFC 9728) so clients can discover the authorization server. Authplane
+itself runs separately and handles the authorization flow.
+</Note>
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.authplane import AuthplaneAuthProvider
+
+auth = AuthplaneAuthProvider(
+    issuer="https://auth.example.com",
+    base_url="https://my-mcp-server.example.com",
+    required_scopes=["tools/read"],
+)
+
+mcp = FastMCP("My App", auth=auth)
+
+
+@mcp.tool
+def read_record(record_id: str) -> str:
+    return f"record {record_id}"
+
+
+if __name__ == "__main__":
+    mcp.run(transport="http", port=8000)
+```
+
+### Parameters
+
+<ParamField body="issuer" type="str" required>
+  Base URL of your Authplane authorization server. This is the `iss` claim value
+  and the root of the RFC 8414 discovery document.
+</ParamField>
+
+<ParamField body="base_url" type="str" required>
+  Public URL of this FastMCP server.
+</ParamField>
+
+<ParamField body="required_scopes" type="list[str] | str">
+  Scopes that must be present on every incoming token. Defaults to none, leaving
+  enforcement to individual tools.
+</ParamField>
+
+<ParamField body="scopes_supported" type="list[str] | str">
+  Scopes advertised in Protected Resource Metadata so clients know what to
+  request. Defaults to `required_scopes`.
+</ParamField>
+
+<ParamField body="audience" type="str | list[str]">
+  Expected `aud` claim. Defaults to this server's resource URL — see
+  [Audience binding](#audience-binding).
+</ParamField>
+
+<ParamField body="algorithm" type='"ES256" | "RS256"' default="ES256">
+  JWT signing algorithm to accept. Authplane signs access tokens with ES256 (its
+  default) or RS256; only these two are accepted. HS256 and `none` are rejected.
+</ParamField>
+
+<ParamField body="resource_base_url" type="str">
+  Public base URL of the protected resource when it differs from `base_url`,
+  for example behind a reverse proxy.
+</ParamField>
+
+<ParamField body="token_verifier" type="TokenVerifier">
+  Custom token verifier. Defaults to a `JWTVerifier` pointed at
+  `{issuer}/.well-known/jwks.json`.
+</ParamField>
+
+## Audience binding
+
+Authplane audience-binds every access token to the resource URI the client asked
+for (RFC 8707), so a token minted for one MCP server cannot be replayed against
+another. The provider enforces that binding for you: once FastMCP reports the
+path your MCP endpoint is mounted at, the verifier's expected `aud` is set to the
+resulting resource URL — the same URL advertised in Protected Resource Metadata.
+
+With the configuration above and the default `/mcp` path, tokens must carry
+`aud: "https://my-mcp-server.example.com/mcp"`.
+
+Pass `audience` explicitly only if your deployment overrides resource indicators.
+
+## Running Authplane locally
+
+```bash
+export AUTHPLANE_ADMIN_API_KEY="$(openssl rand -hex 32)"
+export AUTHPLANE_SESSION_SECRET="$(openssl rand -hex 32)"
+
+docker run -p 9000:9000 -p 9001:9001 \
+  -e AUTHPLANE_ADMIN_API_KEY \
+  -e AUTHPLANE_SESSION_SECRET \
+  -v authserver-data:/data \
+  authplane/authserver:latest serve
+```
+
+The public OAuth endpoints are on port `9000`; point `issuer` at
+`http://localhost:9000` and the Admin UI at `http://localhost:9001/admin/ui/`.
+
+## Register your server as a resource
+
+Register your MCP server's URL as a resource in Authplane before clients connect.
+The registered `uri` must match the URL this provider advertises — `base_url`
+plus the MCP path — **exactly**:
+
+```bash
+curl -X POST http://localhost:9001/admin/resources \
+  -H "Authorization: Bearer $AUTHPLANE_ADMIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "slug": "my-mcp-server",
+    "uri": "https://my-mcp-server.example.com/mcp",
+    "backend_kind": "mint",
+    "display_name": "My App",
+    "scopes": [
+      {"name": "tools/read", "description": "Read records"}
+    ]
+  }'
+```
+
+Authplane audience-binds tokens to this `uri` (RFC 8707) and the provider
+requires that audience, so the two must match. Every scope you list in
+`required_scopes` must also be declared here.
+
+## Verifying the wiring
+
+```bash
+# The authorization server's metadata (served by Authplane)
+curl -s http://localhost:9000/.well-known/oauth-authorization-server | jq
+
+# Your server's protected resource metadata (served by this provider)
+curl -s http://localhost:8000/.well-known/oauth-protected-resource/mcp | jq
+```
+
+The `authorization_servers` array in the second document must contain the issuer
+from the first. If it does not, `issuer` and the running Authplane instance
+disagree.
+
+## Going further with `authplane-fastmcp`
+
+`AuthplaneAuthProvider` validates JWTs against Authplane's JWKS, enforces scopes,
+binds token audience to your resource (RFC 8707), and serves Protected Resource
+Metadata — with no dependency beyond FastMCP. That covers most MCP servers.
+
+When your server needs to do more than validate tokens, Authplane's first-party
+adapter [`authplane-fastmcp`](https://github.com/AuthPlane/python-sdk/tree/main/authplane-fastmcp)
+is a drop-in `FastMCP(**...)` backed by the full Authplane Python SDK. It keeps
+everything above and adds:
+
+- **Inbound DPoP** proof-of-possession (RFC 9449) — full proof verification with
+  server nonces and `jti` replay protection (pluggable store), so a stolen token
+  can't be replayed from another machine.
+- **Introspection** (RFC 7662) and **revocation checking** (RFC 7009), so a
+  revoked token stops working immediately instead of at expiry.
+- **Token exchange** (RFC 8693) for calling a downstream API on the user's
+  behalf, including decoding upstream-provider consent (the Broker flow) into
+  MCP `-32042` errors.
+- **Metadata discovery** (RFC 8414): the JWKS URI is read from the authorization
+  server's metadata, and both JWKS and metadata refresh in the background — with
+  stale-cache fallback if the server is briefly unreachable.
+- **SSRF-hardened fetching**, a **circuit breaker**, and a **token cache** for
+  resilient production deployments.
+
+```bash
+pip install authplane-fastmcp
+```
+
+```python
+import asyncio
+
+from authplane_fastmcp import authplane_auth
+from fastmcp import FastMCP
+
+
+async def main():
+    result = await authplane_auth(
+        issuer="https://auth.example.com",
+        base_url="https://my-mcp-server.example.com",
+        scopes=["tools/read"],
+    )
+    mcp = FastMCP("My App", **result)
+    try:
+        await mcp.run_async(transport="http", port=8000)
+    finally:
+        await result.aclose()
+
+
+asyncio.run(main())
+```
+
+`authplane_auth()` holds background JWKS and metadata refresh tasks, so call
+`aclose()` on shutdown.
+
+See the [authplane-fastmcp user guide](https://github.com/AuthPlane/python-sdk/blob/main/authplane-fastmcp/docs/user-guide.md).
