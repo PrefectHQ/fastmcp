@@ -108,7 +108,7 @@ if TYPE_CHECKING:
     from fastmcp.server.providers.openapi import ComponentFn as OpenAPIComponentFn
     from fastmcp.server.providers.openapi import RouteMap
     from fastmcp.server.providers.openapi import RouteMapFn as OpenAPIRouteMapFn
-    from fastmcp.server.providers.proxy import FastMCPProxy
+    from fastmcp.server.providers.proxy import FastMCPProxy, ProxySessionScope
 
 logger = get_logger(__name__)
 
@@ -897,8 +897,9 @@ class FastMCP(
         Returns:
             The tool if found and authorized, None if not found or unauthorized.
         """
-        # Get tool from AggregateProvider (handles aggregation and namespacing)
-        tool = await super()._get_tool(name, version)
+        tool = await self._local_provider.get_tool(name, version)
+        if tool is None:
+            tool = await super()._get_tool(name, version)
         if tool is None:
             return None
 
@@ -1036,8 +1037,9 @@ class FastMCP(
         Returns:
             The resource if found and authorized, None if not found or unauthorized.
         """
-        # Get resource from AggregateProvider (handles aggregation and namespacing)
-        resource = await super()._get_resource(uri, version)
+        resource = await self._local_provider.get_resource(uri, version)
+        if resource is None:
+            resource = await super()._get_resource(uri, version)
         if resource is None:
             return None
 
@@ -1168,8 +1170,9 @@ class FastMCP(
         Returns:
             The template if found and authorized, None if not found or unauthorized.
         """
-        # Get template from AggregateProvider (handles aggregation and namespacing)
-        template = await super()._get_resource_template(uri, version)
+        template = await self._local_provider.get_resource_template(uri, version)
+        if template is None:
+            template = await super()._get_resource_template(uri, version)
         if template is None:
             return None
 
@@ -1294,8 +1297,9 @@ class FastMCP(
         Returns:
             The prompt if found and authorized, None if not found or unauthorized.
         """
-        # Get prompt from AggregateProvider (handles aggregation and namespacing)
-        prompt = await super()._get_prompt(name, version)
+        prompt = await self._local_provider.get_prompt(name, version)
+        if prompt is None:
+            prompt = await super()._get_prompt(name, version)
         if prompt is None:
             return None
 
@@ -2512,6 +2516,7 @@ def create_proxy(
     ),
     *,
     mode: str | None = None,
+    session_scope: ProxySessionScope = "request",
     **settings: Any,
 ) -> FastMCPProxy:
     """Create a FastMCP proxy server for the given target.
@@ -2538,6 +2543,9 @@ def create_proxy(
             backend era regardless of the front; this overrides mirroring and is
             appropriate when the backend only speaks one era. Ignored when
             `target` is already a `Client` (which carries its own mode).
+        session_scope: Backend session lifetime. ``"request"`` reuses one
+            isolated backend session within each frontend request. Use
+            ``"operation"`` to preserve the legacy per-operation lifecycle.
         **settings: Additional settings passed to FastMCPProxy (name, etc.)
 
     Returns:
@@ -2562,5 +2570,6 @@ def create_proxy(
     client_factory = _create_client_factory(target, mode=mode)
     return FastMCPProxy(
         client_factory=client_factory,
+        session_scope=session_scope,
         **settings,
     )
