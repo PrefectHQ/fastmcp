@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import time
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
+from key_value.aio.stores.memory import MemoryStore
 from pydantic import AnyHttpUrl, ValidationError
 
 from fastmcp.server.auth.cimd import (
@@ -14,6 +16,7 @@ from fastmcp.server.auth.cimd import (
     CIMDFetchError,
     CIMDValidationError,
 )
+from fastmcp.server.auth.ssrf import SSRFFetchResponse
 
 # Standard public IP used for DNS mocking in tests
 TEST_PUBLIC_IP = "93.184.216.34"
@@ -256,6 +259,122 @@ class TestCIMDFetcherHTTP:
 
         assert first.client_id == second.client_id
         assert len(httpx_mock.get_requests()) == 1
+
+    async def test_fetch_cache_evicts_oldest_document(self, fetcher: CIMDFetcher):
+        """Distinct client URLs cannot grow the document cache without bound."""
+        fetcher.MAX_CACHE_SIZE = 2
+
+        async def fake_fetch(url: str, **kwargs) -> SSRFFetchResponse:
+            document = {
+                "client_id": url,
+                "redirect_uris": ["http://localhost:3000/callback"],
+            }
+            return SSRFFetchResponse(
+                content=json.dumps(document).encode(),
+                status_code=200,
+                headers={"cache-control": "max-age=3600"},
+            )
+
+        urls = [f"https://example.com/client-{index}.json" for index in range(3)]
+        with patch(
+            "fastmcp.server.auth.cimd.ssrf_safe_fetch_response",
+            new=AsyncMock(side_effect=fake_fetch),
+        ):
+            for url in urls:
+                await fetcher.fetch(url)
+
+        assert list(fetcher._cache) == urls[1:]
+
+    async def test_fetch_cache_is_shared_across_instances(self):
+        """A fresh fetcher can reuse a document from shared storage."""
+        storage = MemoryStore()
+        first_fetcher = CIMDFetcher(cache_storage=storage)
+        second_fetcher = CIMDFetcher(cache_storage=storage)
+        url = "https://example.com/client.json"
+
+        response = SSRFFetchResponse(
+            content=json.dumps(
+                {
+                    "client_id": url,
+                    "redirect_uris": ["http://localhost:3000/callback"],
+                }
+            ).encode(),
+            status_code=200,
+            headers={"cache-control": "max-age=3600"},
+        )
+        fetch = AsyncMock(return_value=response)
+
+        with patch(
+            "fastmcp.server.auth.cimd.ssrf_safe_fetch_response",
+            new=fetch,
+        ):
+            first = await first_fetcher.fetch(url)
+            second = await second_fetcher.fetch(url)
+
+        assert first == second
+        fetch.assert_awaited_once()
+
+    async def test_shared_fetch_cache_evicts_oldest_document(self):
+        """The shared snapshot retains at most the configured number of URLs."""
+        storage = MemoryStore()
+        first_fetcher = CIMDFetcher(cache_storage=storage)
+        first_fetcher.MAX_CACHE_SIZE = 2
+
+        async def fake_fetch(url: str, **kwargs) -> SSRFFetchResponse:
+            return SSRFFetchResponse(
+                content=json.dumps(
+                    {
+                        "client_id": url,
+                        "redirect_uris": ["http://localhost:3000/callback"],
+                    }
+                ).encode(),
+                status_code=200,
+                headers={"cache-control": "max-age=3600"},
+            )
+
+        fetch = AsyncMock(side_effect=fake_fetch)
+        urls = [f"https://example.com/client-{index}.json" for index in range(3)]
+        with patch(
+            "fastmcp.server.auth.cimd.ssrf_safe_fetch_response",
+            new=fetch,
+        ):
+            for url in urls:
+                await first_fetcher.fetch(url)
+
+            second_fetcher = CIMDFetcher(cache_storage=storage)
+            second_fetcher.MAX_CACHE_SIZE = 2
+            await second_fetcher.fetch(urls[1])
+            await second_fetcher.fetch(urls[2])
+            await second_fetcher.fetch(urls[0])
+
+        assert fetch.await_count == 4
+
+    async def test_no_store_document_is_not_shared_across_instances(self):
+        """Cache-Control no-store prevents persistence in shared storage."""
+        storage = MemoryStore()
+        first_fetcher = CIMDFetcher(cache_storage=storage)
+        second_fetcher = CIMDFetcher(cache_storage=storage)
+        url = "https://example.com/no-store-client.json"
+        response = SSRFFetchResponse(
+            content=json.dumps(
+                {
+                    "client_id": url,
+                    "redirect_uris": ["http://localhost:3000/callback"],
+                }
+            ).encode(),
+            status_code=200,
+            headers={"cache-control": "no-store"},
+        )
+        fetch = AsyncMock(return_value=response)
+
+        with patch(
+            "fastmcp.server.auth.cimd.ssrf_safe_fetch_response",
+            new=fetch,
+        ):
+            await first_fetcher.fetch(url)
+            await second_fetcher.fetch(url)
+
+        assert fetch.await_count == 2
 
     async def test_fetch_cache_control_max_age(
         self, fetcher: CIMDFetcher, httpx_mock, mock_dns

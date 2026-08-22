@@ -1,5 +1,8 @@
 """Tests for OAuth proxy client registration (DCR)."""
 
+import json
+from unittest.mock import AsyncMock, patch
+
 import httpx2
 import pytest
 from mcp.server.auth.provider import RegistrationError
@@ -7,7 +10,13 @@ from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 from starlette.applications import Starlette
 
-from fastmcp.server.auth.oauth_proxy.models import InvalidRedirectUriError
+from fastmcp.server.auth.cimd import CIMDDocument
+from fastmcp.server.auth.oauth_proxy import OAuthProxy
+from fastmcp.server.auth.oauth_proxy.models import (
+    InvalidRedirectUriError,
+    ProxyDCRClient,
+)
+from fastmcp.server.auth.ssrf import SSRFFetchResponse
 
 
 class TestOAuthProxyClientRegistration:
@@ -100,6 +109,112 @@ class TestOAuthProxyClientRegistration:
         """Test that unregistered clients return None."""
         client = await oauth_proxy.get_client("unknown-client")
         assert client is None
+
+    async def test_cimd_client_is_not_persisted(self, oauth_proxy):
+        """URL-derived clients should not grow the persistent DCR registry."""
+        client_id = "https://example.com/client.json"
+        document = CIMDDocument(
+            client_id=client_id,
+            redirect_uris=["http://localhost:3000/callback"],
+        )
+        cimd_client = ProxyDCRClient(
+            client_id=client_id,
+            redirect_uris=[AnyUrl("http://localhost:3000/callback")],
+            token_endpoint_auth_method="none",
+            cimd_document=document,
+        )
+        assert oauth_proxy._cimd_manager is not None
+        oauth_proxy._cimd_manager.get_client = AsyncMock(return_value=cimd_client)
+
+        resolved = await oauth_proxy.get_client(client_id)
+
+        assert resolved == cimd_client
+        assert await oauth_proxy._client_store.get(key=client_id) is None
+
+    async def test_cimd_cache_uses_shared_client_storage(self, oauth_proxy):
+        """Proxy instances reuse CIMD metadata from their shared storage."""
+        second_proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
+            upstream_token_endpoint="https://github.com/login/oauth/access_token",
+            upstream_client_id="test-client-id",
+            upstream_client_secret="test-client-secret",
+            token_verifier=oauth_proxy._token_validator,
+            base_url="https://myserver.com",
+            redirect_path="/auth/callback",
+            jwt_signing_key="test-secret",
+            client_storage=oauth_proxy._client_storage,
+        )
+        client_id = "https://example.com/shared-client.json"
+        response = SSRFFetchResponse(
+            content=json.dumps(
+                {
+                    "client_id": client_id,
+                    "redirect_uris": ["http://localhost:3000/callback"],
+                }
+            ).encode(),
+            status_code=200,
+            headers={"cache-control": "max-age=3600"},
+        )
+        fetch = AsyncMock(return_value=response)
+
+        with patch(
+            "fastmcp.server.auth.cimd.ssrf_safe_fetch_response",
+            new=fetch,
+        ):
+            first = await oauth_proxy.get_client(client_id)
+            second = await second_proxy.get_client(client_id)
+
+        assert isinstance(first, ProxyDCRClient)
+        assert isinstance(second, ProxyDCRClient)
+        assert first.cimd_document == second.cimd_document
+        fetch.assert_awaited_once()
+        assert await oauth_proxy._client_store.get(key=client_id) is None
+
+    async def test_legacy_persisted_cimd_client_is_removed(self, oauth_proxy):
+        """Previously persisted CIMD clients are migrated out of the DCR registry."""
+        client_id = "https://example.com/legacy-client.json"
+        document = CIMDDocument(
+            client_id=client_id,
+            redirect_uris=["http://localhost:3000/callback"],
+        )
+        cimd_client = ProxyDCRClient(
+            client_id=client_id,
+            redirect_uris=[AnyUrl("http://localhost:3000/callback")],
+            token_endpoint_auth_method="none",
+            cimd_document=document,
+        )
+        await oauth_proxy._client_store.put(key=client_id, value=cimd_client)
+        assert oauth_proxy._cimd_manager is not None
+        oauth_proxy._cimd_manager.get_client = AsyncMock(return_value=cimd_client)
+
+        resolved = await oauth_proxy.get_client(client_id)
+
+        assert resolved == cimd_client
+        assert await oauth_proxy._client_store.get(key=client_id) is None
+
+    async def test_legacy_persisted_cimd_client_survives_failed_refresh(
+        self, oauth_proxy
+    ):
+        """Legacy clients remain usable until migration can succeed."""
+        client_id = "https://example.com/legacy-client.json"
+        document = CIMDDocument(
+            client_id=client_id,
+            redirect_uris=["http://localhost:3000/callback"],
+        )
+        cimd_client = ProxyDCRClient(
+            client_id=client_id,
+            redirect_uris=[AnyUrl("http://localhost:3000/callback")],
+            token_endpoint_auth_method="none",
+            cimd_document=document,
+        )
+        await oauth_proxy._client_store.put(key=client_id, value=cimd_client)
+        assert oauth_proxy._cimd_manager is not None
+        oauth_proxy._cimd_manager.get_client = AsyncMock(return_value=None)
+
+        resolved = await oauth_proxy.get_client(client_id)
+
+        assert resolved == cimd_client
+        assert await oauth_proxy._client_store.get(key=client_id) == cimd_client
 
     async def test_dcr_client_rejects_unregistered_redirect_uri(self, oauth_proxy):
         """DCR clients honor their registered redirect_uris by default."""
