@@ -228,9 +228,10 @@ def _inline_result(tool: Tool, raw_value: Any) -> dict[str, Any]:
     # (end-and-reenter G2); use it directly so isError round-trips. A normal
     # return is converted through the tool's own result coercion.
     if isinstance(raw_value, ToolResult):
-        mcp_result = raw_value.to_mcp_result()
+        tool_result = raw_value
     else:
-        mcp_result = tool.convert_result(raw_value).to_mcp_result()
+        tool_result = tool.convert_result(raw_value)
+    mcp_result = tool._apply_result_transforms(tool_result).to_mcp_result()
     if isinstance(mcp_result, mcp_types.CallToolResult):
         call_tool_result = mcp_result
     elif isinstance(mcp_result, tuple):

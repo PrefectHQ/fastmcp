@@ -122,6 +122,26 @@ class TestMountedToolTasks:
             assert not hasattr(result, "task_id")
             assert "child sync: hi" in result.content[0].text
 
+    async def test_namespaced_task_rewrites_resource_link_results(self):
+        child = FastMCP("child")
+
+        @child.tool(task=True)
+        async def linked_resource() -> mt.ResourceLink:
+            return mt.ResourceLink(name="data", uri="resource://data")
+
+        parent = FastMCP("parent")
+        parent.add_extension(TasksExtension())
+        parent.mount(child, namespace="child")
+
+        async with running_task_server(parent):
+            final = await wait_for_task(
+                parent,
+                (await submit_task(parent, "child_linked_resource", {})).task_id,
+            )
+
+        assert final.result is not None
+        assert final.result["content"][0]["uri"] == "resource://child/data"
+
 
 class TestRemoteWorkerServerResolution:
     """A separate worker process re-resolves the owning child from the root.

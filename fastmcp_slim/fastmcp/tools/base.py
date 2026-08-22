@@ -232,6 +232,9 @@ class Tool(FastMCPComponent):
     """Internal tool registration info."""
 
     KEY_PREFIX: ClassVar[str] = "tool"
+    _result_transforms: tuple[Callable[[ToolResult], ToolResult], ...] = PrivateAttr(
+        default=()
+    )
 
     return_type: Annotated[SkipJsonSchema[Any], Field(exclude=True)] = None
     parameters: Annotated[
@@ -438,6 +441,20 @@ class Tool(FastMCPComponent):
         overrides this to delegate to child-server middleware.
         """
         return await self.run(arguments)
+
+    def _with_result_transform(
+        self, transform: Callable[[ToolResult], ToolResult]
+    ) -> Tool:
+        """Copy this tool and append a result transform."""
+        tool = self.model_copy()
+        tool._result_transforms = (*self._result_transforms, transform)
+        return tool
+
+    def _apply_result_transforms(self, result: ToolResult) -> ToolResult:
+        """Apply result transforms in the same order as component transforms."""
+        for transform in self._result_transforms:
+            result = transform(result)
+        return result
 
     @classmethod
     def from_tool(
