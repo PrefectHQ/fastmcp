@@ -30,7 +30,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install UV
-        uses: astral-sh/setup-uv@v9.0.0
+        uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"

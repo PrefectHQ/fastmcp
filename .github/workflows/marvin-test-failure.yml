@@ -41,7 +41,7 @@ jobs:
 
       # Install UV package manager
       - name: Install UV
-        uses: astral-sh/setup-uv@v9.0.0
+        uses: astral-sh/setup-uv@v10.0.1
 
       # Install dependencies
       - name: Install dependencies
