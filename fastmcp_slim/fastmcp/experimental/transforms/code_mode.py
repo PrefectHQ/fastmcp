@@ -11,7 +11,7 @@ import anyio
 from mcp_types import TextContent
 from pydantic import Field
 
-from fastmcp.exceptions import NotFoundError, ToolError
+from fastmcp.exceptions import NotFoundError, ToolError, ValidationError
 from fastmcp.server.context import Context
 from fastmcp.server.transforms import GetToolNext
 from fastmcp.server.transforms.catalog import CatalogTransform
@@ -50,6 +50,35 @@ def _ensure_async(fn: Callable[..., Any]) -> Callable[..., Any]:
         return fn(*args, **kwargs)
 
     return wrapper
+
+
+_VALIDATION_ERROR_MARKERS = (
+    "validation error for",
+    "unexpected keyword argument",
+    "missing required argument",
+)
+
+
+def _legible_call_error(tool_name: str, tool: Tool, error: dict[str, Any] | str) -> str:
+    """Rewrite a failed call's error for the model that wrote the code.
+
+    A failed `call_tool` raises so the failure interrupts the chain instead of
+    flowing onward as a return value. Validation failures get the tool's
+    parameter list appended — the error names what was wrong, the schema names
+    what would be right — and always speak in the name the caller used, not
+    the backend's internal identity.
+    """
+    text = error if isinstance(error, str) else json.dumps(error)
+    message = f"call_tool({tool_name!r}) failed: {text}"
+    if any(marker in text.lower() for marker in _VALIDATION_ERROR_MARKERS):
+        properties = (tool.parameters or {}).get("properties")
+        if isinstance(properties, dict) and properties:
+            required = set((tool.parameters or {}).get("required") or [])
+            params = ", ".join(
+                name + ("*" if name in required else "") for name in properties
+            )
+            message += f"\nValid parameters for {tool_name} (* = required): {params}"
+    return message
 
 
 def _unwrap_tool_result(result: ToolResult) -> dict[str, Any] | str:
@@ -651,7 +680,18 @@ class CodeMode(CatalogTransform):
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {tool_name}")
 
-                result = await ctx.fastmcp.call_tool(tool.name, params)
+                try:
+                    result = await ctx.fastmcp.call_tool(tool.name, params)
+                except (ToolError, ValidationError) as exc:
+                    raise ToolError(
+                        _legible_call_error(tool_name, tool, str(exc))
+                    ) from exc
+                if result.is_error:
+                    raise ToolError(
+                        _legible_call_error(
+                            tool_name, tool, _unwrap_tool_result(result)
+                        )
+                    )
                 return _unwrap_tool_result(result)
 
             return await transform.sandbox_provider.run(
