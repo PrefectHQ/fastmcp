@@ -15,7 +15,7 @@ on:
       - "uv.lock"
       - ".github/workflows/**"
 
-  # run on all pull requests because these checks are required and will block merges otherwise
+  # Keep required checks present; skip expensive jobs for skills-only PRs.
   pull_request:
 
   workflow_dispatch:
@@ -24,7 +24,12 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    uses: ./.github/workflows/skills-only.yml
+
   static_analysis:
+    needs: changes
+    if: always() && needs.changes.outputs.skills-only != 'true'
     timeout-minutes: 2
     runs-on: ubuntu-latest
 

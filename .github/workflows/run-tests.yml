@@ -14,7 +14,7 @@ on:
       - "uv.lock"
       - ".github/workflows/**"
 
-  # run on all pull requests because these checks are required and will block merges otherwise
+  # Keep required checks present; skip expensive jobs for skills-only PRs.
   pull_request:
 
   workflow_dispatch:
@@ -23,9 +23,15 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    uses: ./.github/workflows/skills-only.yml
+
   run_tests:
+    needs: changes
+    # Expand the matrix even for skills-only PRs so every required check reports.
+    if: always()
     name: "Tests: Python ${{ matrix.python-version }} on ${{ matrix.os }}"
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ needs.changes.outputs.skills-only == 'true' && 'ubuntu-latest' || matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
@@ -38,22 +44,28 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        if: needs.changes.outputs.skills-only != 'true'
 
       - name: Setup uv
+        if: needs.changes.outputs.skills-only != 'true'
         uses: ./.github/actions/setup-uv
         with:
           python-version: ${{ matrix.python-version }}
           resolution: locked
 
       - name: Run unit tests
+        if: needs.changes.outputs.skills-only != 'true'
         uses: ./.github/actions/run-pytest
 
       - name: Run serial subprocess tests
+        if: needs.changes.outputs.skills-only != 'true'
         uses: ./.github/actions/run-pytest
         with:
           test-type: client_process
 
   run_tests_lowest_direct:
+    needs: changes
+    if: always() && needs.changes.outputs.skills-only != 'true'
     name: "Tests with lowest-direct dependencies"
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -75,6 +87,8 @@ jobs:
           test-type: client_process
 
   run_conformance_tests:
+    needs: changes
+    if: always() && needs.changes.outputs.skills-only != 'true'
     name: "MCP conformance tests"
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -98,6 +112,8 @@ jobs:
           test-type: conformance
 
   run_integration_tests:
+    needs: changes
+    if: always() && needs.changes.outputs.skills-only != 'true'
     name: "Integration tests"
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -120,6 +136,8 @@ jobs:
           FASTMCP_TEST_AUTH_GITHUB_CLIENT_SECRET: ${{ secrets.FASTMCP_TEST_AUTH_GITHUB_CLIENT_SECRET }}
 
   package_install_smoke:
+    needs: changes
+    if: always() && needs.changes.outputs.skills-only != 'true'
     name: "Package install smoke"
     runs-on: ubuntu-latest
     timeout-minutes: 10

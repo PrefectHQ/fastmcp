@@ -1,0 +1,39 @@
+name: Detect skills-only changes
+
+on:
+  workflow_call:
+    outputs:
+      skills-only:
+        value: ${{ jobs.changes.outputs.skills-only }}
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      skills-only: ${{ steps.diff.outputs.skills-only }}
+    steps:
+      - uses: actions/checkout@v7
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 2
+      - id: diff
+        if: github.event_name == 'pull_request'
+        shell: python
+        run: |
+          import os
+          import subprocess
+
+          # Compare the tested merge commit to its base; disable rename detection
+          # so moving code into a skill still requires the normal checks.
+          paths = subprocess.check_output([
+              "git", "diff", "--name-only", "--no-renames", "-z", "HEAD^1", "HEAD"
+          ]).split(b"\0")[:-1]
+          skills_only = bool(paths) and all(
+              path.startswith((b".agents/skills/", b".claude/skills/"))
+              for path in paths
+          )
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"skills-only={str(skills_only).lower()}\n")

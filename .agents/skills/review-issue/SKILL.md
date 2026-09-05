@@ -61,6 +61,8 @@ gh pr view <pr> --repo PrefectHQ/fastmcp --comments
 - Is there a real, reproducible problem? For bugs, demand an MRE that shows FastMCP misbehaving
   — not user config error, not a question, not an upstream-SDK issue.
 - Is it a duplicate or already fixed on `main`? Check the dedupe bot's comment and recent commits.
+- Search earlier issues, PRs (including closed ones), and relevant git history before deciding.
+  Read maintainer decisions and why prior approaches were accepted or rejected.
 - If the issue itself is weak, **stop here and decline** — don't evaluate the PR. A good PR
   attached to a bad issue is still declined.
 
