@@ -476,6 +476,15 @@ class AuthProvider(TokenVerifierProtocol):
         return resource_base_url
 
 
+class TokenVerificationError(RuntimeError):
+    """Token validity could not be determined because verification was unavailable.
+
+    Verifiers should raise this for operational failures such as an upstream
+    service outage or transport error. Returning ``None`` remains reserved for
+    credentials that were actually determined to be invalid or unacceptable.
+    """
+
+
 class TokenVerifier(AuthProvider):
     """Base class for token verifiers (Resource Servers).
 

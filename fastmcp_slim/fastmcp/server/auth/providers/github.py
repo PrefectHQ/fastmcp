@@ -28,7 +28,7 @@ import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl
 
-from fastmcp.server.auth import TokenVerifier
+from fastmcp.server.auth import TokenVerificationError, TokenVerifier
 from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.utilities.auth import parse_scopes
@@ -111,13 +111,23 @@ class GitHubTokenVerifier(TokenVerifier):
                     },
                 )
 
-                if response.status_code != 200:
+                if response.status_code == 401:
                     logger.debug(
                         "GitHub token verification failed: %d - %s",
                         response.status_code,
                         response.text[:200],
                     )
                     return None
+
+                if response.status_code != 200:
+                    logger.warning(
+                        "GitHub token verification unavailable: %d - %s",
+                        response.status_code,
+                        response.text[:200],
+                    )
+                    raise TokenVerificationError(
+                        f"GitHub token verification unavailable: HTTP {response.status_code}"
+                    )
 
                 user_data = response.json()
 
@@ -177,9 +187,13 @@ class GitHubTokenVerifier(TokenVerifier):
                     self._cache.set(token, result)
                 return result
 
+        except TokenVerificationError:
+            raise
         except httpx2.RequestError as e:
-            logger.debug("Failed to verify GitHub token: %s", e)
-            return None
+            logger.warning("GitHub token verification unavailable: %s", e)
+            raise TokenVerificationError(
+                "GitHub token verification unavailable due to a transport error"
+            ) from e
         except Exception as e:
             logger.debug("GitHub token verification error: %s", e)
             return None
