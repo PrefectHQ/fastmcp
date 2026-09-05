@@ -141,6 +141,7 @@ class OCIProvider(OIDCProxy):
         fallback_refresh_token_expiry_seconds: int | None = None,
         fastmcp_access_token_expiry_seconds: int | None = None,
         token_expiry_threshold_seconds: int = 0,
+        refresh_token_grace_period_seconds: int = 0,
         enable_cimd: bool = True,
     ) -> None:
         """Initialize OCI OIDC provider.
@@ -175,6 +176,9 @@ class OCIProvider(OIDCProxy):
                 refresh gracefully (e.g. `mcp-remote`). See `OAuthProxy` for details.
             token_expiry_threshold_seconds: Number of seconds before actual expiry to
                 treat a token as expired, refreshing early to avoid races. Defaults to 0.
+            refresh_token_grace_period_seconds: Seconds in which an identical
+                retry of a rotated client refresh token returns the original response.
+                Defaults to 0 (disabled); values must be between 0 and 60.
             enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
                 client IDs (default True). Set to False to disable.
         """
@@ -203,6 +207,7 @@ class OCIProvider(OIDCProxy):
             fallback_refresh_token_expiry_seconds=fallback_refresh_token_expiry_seconds,
             fastmcp_access_token_expiry_seconds=fastmcp_access_token_expiry_seconds,
             token_expiry_threshold_seconds=token_expiry_threshold_seconds,
+            refresh_token_grace_period_seconds=refresh_token_grace_period_seconds,
             enable_cimd=enable_cimd,
         )
 

@@ -105,6 +105,7 @@ from fastmcp.server.auth.oauth_proxy.models import (
     OAuthTransaction,
     ProxyDCRClient,
     RefreshTokenMetadata,
+    RefreshTokenRotationResponse,
     UpstreamTokenSet,
     _hash_token,
 )
@@ -341,6 +342,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         fastmcp_access_token_expiry_seconds: int | None = None,
         # Token refresh threshold
         token_expiry_threshold_seconds: int = 0,
+        # Client refresh-token retry grace period
+        refresh_token_grace_period_seconds: int = 0,
         # CIMD (Client ID Metadata Document) support
         enable_cimd: bool = True,
         # Identity assertion (SEP-990 ID-JAG) support
@@ -440,6 +443,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 a token as expired (default 0). This prevents race conditions where a token
                 passes the expiry check but expires before the next operation completes.
                 For example, set to 30 to refresh tokens that will expire within 30 seconds.
+            refresh_token_grace_period_seconds: Number of seconds after client-facing
+                refresh-token rotation in which an identical retry returns the original
+                successful response. Defaults to 0 (disabled) because accepting a consumed
+                bearer token weakens replay detection. Values from 1 to 60 can absorb lost
+                responses and concurrent refreshes without creating another token descendant.
             enable_cimd: Enable CIMD (Client ID Metadata Document) support for URL-based
                 client IDs. When True, clients can authenticate using HTTPS URLs as client
                 IDs, with metadata fetched from the URL. Supports private_key_jwt auth.
@@ -553,6 +561,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             fastmcp_access_token_expiry_seconds
         )
         self._token_expiry_threshold_seconds: int = token_expiry_threshold_seconds
+        if not 0 <= refresh_token_grace_period_seconds <= 60:
+            raise ValueError(
+                "refresh_token_grace_period_seconds must be between 0 and 60"
+            )
+        self._refresh_token_grace_period_seconds = refresh_token_grace_period_seconds
 
         if jwt_signing_key is None:
             if upstream_client_secret is None:
@@ -690,6 +703,14 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 default_collection="mcp-refresh-tokens",
                 raise_on_validation_error=True,
             )
+        )
+        self._refresh_token_rotation_store: PydanticAdapter[
+            RefreshTokenRotationResponse
+        ] = PydanticAdapter[RefreshTokenRotationResponse](
+            key_value=self._client_storage,
+            pydantic_model=RefreshTokenRotationResponse,
+            default_collection="mcp-refresh-token-rotations",
+            raise_on_validation_error=True,
         )
 
         # Use the provided token validator
@@ -1719,6 +1740,51 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         _ = idp_tokens
         return None
 
+    async def _load_refresh_token_rotation(
+        self,
+        token_hash: str,
+        client_id: str | None,
+        request_scopes: list[str] | None = None,
+    ) -> RefreshTokenRotationResponse | None:
+        if not self._refresh_token_grace_period_seconds or client_id is None:
+            return None
+
+        rotation = await self._refresh_token_rotation_store.get(key=token_hash)
+        if rotation is None or rotation.client_id != client_id:
+            return None
+        if request_scopes is not None and sorted(rotation.request_scopes) != sorted(
+            request_scopes
+        ):
+            return None
+
+        successor_token = rotation.token_response.refresh_token
+        successor = await self._refresh_token_store.get(
+            key=rotation.successor_token_hash
+        )
+        if (
+            successor_token is None
+            or successor is None
+            or successor.client_id != client_id
+        ):
+            await self._refresh_token_rotation_store.delete(key=token_hash)
+            return None
+        try:
+            successor_payload = self.jwt_issuer.verify_token(
+                successor_token, expected_token_use="refresh"
+            )
+            successor_jti = successor_payload["jti"]
+        except (JoseError, KeyError):
+            successor_jti = None
+        successor_mapping = (
+            await self._jti_mapping_store.get(key=successor_jti)
+            if successor_jti is not None
+            else None
+        )
+        if successor_mapping is None:
+            await self._refresh_token_rotation_store.delete(key=token_hash)
+            return None
+        return rotation
+
     async def load_refresh_token(
         self,
         client: OAuthClientInformationFull,
@@ -1732,6 +1798,16 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         token_hash = _hash_token(refresh_token)
         metadata = await self._refresh_token_store.get(key=token_hash)
         if not metadata:
+            rotation = await self._load_refresh_token_rotation(
+                token_hash, client.client_id
+            )
+            if rotation is not None:
+                return RefreshToken(
+                    token=refresh_token,
+                    client_id=rotation.client_id,
+                    scopes=rotation.refresh_token_scopes,
+                    expires_at=rotation.refresh_token_expires_at,
+                )
             logger.warning(
                 "Refresh token not found for client=%s (token_hash=%s); it was "
                 "already rotated, expired, or revoked. Rejecting with invalid_grant, "
@@ -1761,16 +1837,37 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         refresh_token: RefreshToken,
         scopes: list[str],
     ) -> OAuthToken:
-        """Exchange FastMCP refresh token for new FastMCP access token.
+        """Exchange a FastMCP refresh token, replaying an eligible retry."""
+        if not self._refresh_token_grace_period_seconds:
+            return await self._exchange_refresh_token_once(
+                client, refresh_token, scopes
+            )
 
-        Implements two-tier refresh:
-        1. Verify FastMCP refresh token
-        2. Look up upstream token via JTI mapping
-        3. Refresh upstream token with upstream provider
-        4. Update stored upstream token
-        5. Issue new FastMCP access token
-        6. Keep same FastMCP refresh token (unless upstream rotates)
-        """
+        token_hash = _hash_token(refresh_token.token)
+        lock = self._get_refresh_lock(f"client-refresh:{token_hash}")
+        async with lock:
+            rotation = await self._load_refresh_token_rotation(
+                token_hash, client.client_id, scopes
+            )
+            if rotation is not None:
+                logger.info(
+                    "Replayed refresh-token rotation response for client=%s "
+                    "(token_hash=%s)",
+                    client.client_id,
+                    token_hash[:8],
+                )
+                return rotation.token_response
+            return await self._exchange_refresh_token_once(
+                client, refresh_token, scopes
+            )
+
+    async def _exchange_refresh_token_once(
+        self,
+        client: OAuthClientInformationFull,
+        refresh_token: RefreshToken,
+        scopes: list[str],
+    ) -> OAuthToken:
+        """Perform one upstream refresh and rotate the client-facing token."""
         # Verify FastMCP refresh token
         try:
             refresh_payload = self.jwt_issuer.verify_token(
@@ -1970,15 +2067,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             ttl=refresh_ttl,  # Align with upstream refresh token expiry
         )
 
-        # Invalidate old refresh token (refresh token rotation - enforces one-time use)
-        await self._jti_mapping_store.delete(key=refresh_jti)
-        logger.debug(
-            "Rotated refresh token (old JTI invalidated - one-time use enforced)"
-        )
-
-        # Store new refresh token metadata (keyed by hash)
+        new_refresh_token_hash = _hash_token(new_fastmcp_refresh)
         await self._refresh_token_store.put(
-            key=_hash_token(new_fastmcp_refresh),
+            key=new_refresh_token_hash,
             value=RefreshTokenMetadata(
                 client_id=client.client_id,
                 scopes=refreshed_scopes,
@@ -1988,8 +2079,40 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             ttl=refresh_ttl,
         )
 
-        # Delete old refresh token (by hash)
-        await self._refresh_token_store.delete(key=_hash_token(refresh_token.token))
+        client_token_response = OAuthToken(
+            access_token=new_fastmcp_access,
+            token_type="Bearer",
+            expires_in=fastmcp_access_expires_in,
+            refresh_token=new_fastmcp_refresh,
+            scope=" ".join(refreshed_scopes),
+        )
+        old_refresh_token_hash = _hash_token(refresh_token.token)
+        rotation_ttl = self._refresh_token_grace_period_seconds
+        if refresh_token.expires_at is not None:
+            rotation_ttl = min(
+                rotation_ttl,
+                max(refresh_token.expires_at - time.time(), 0),
+            )
+        if rotation_ttl:
+            await self._refresh_token_rotation_store.put(
+                key=old_refresh_token_hash,
+                value=RefreshTokenRotationResponse(
+                    client_id=client.client_id,
+                    refresh_token_scopes=refresh_token.scopes,
+                    refresh_token_expires_at=refresh_token.expires_at,
+                    request_scopes=scopes,
+                    token_response=client_token_response,
+                    successor_token_hash=new_refresh_token_hash,
+                    created_at=time.time(),
+                ),
+                ttl=rotation_ttl,
+            )
+
+        await self._jti_mapping_store.delete(key=refresh_jti)
+        await self._refresh_token_store.delete(key=old_refresh_token_hash)
+        logger.debug(
+            "Rotated refresh token (old JTI invalidated - one-time use enforced)"
+        )
 
         logger.info(
             "Issued new FastMCP tokens (rotated refresh) for client=%s (access_jti=%s, refresh_jti=%s)",
@@ -1997,15 +2120,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             new_access_jti[:8],
             new_refresh_jti[:8],
         )
-
-        # Return new FastMCP tokens (both access AND refresh are new)
-        return OAuthToken(
-            access_token=new_fastmcp_access,
-            token_type="Bearer",
-            expires_in=fastmcp_access_expires_in,
-            refresh_token=new_fastmcp_refresh,  # NEW refresh token (rotated)
-            scope=" ".join(refreshed_scopes),
-        )
+        return client_token_response
 
     # -------------------------------------------------------------------------
     # Token Validation
@@ -2324,7 +2439,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         """
         # For refresh tokens, delete from local storage by hash
         if isinstance(token, RefreshToken):
-            await self._refresh_token_store.delete(key=_hash_token(token.token))
+            token_hash = _hash_token(token.token)
+            await self._refresh_token_store.delete(key=token_hash)
+            await self._refresh_token_rotation_store.delete(key=token_hash)
 
         # ID-JAG access tokens are self-contained and never known upstream, so
         # upstream revocation cannot invalidate them. Track the jti locally so
