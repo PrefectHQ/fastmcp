@@ -354,20 +354,33 @@ class TransportMixin:
             config_kwargs["log_level"] = default_log_level_to_use
 
         with temporary_log_level(log_level):
-            async with self._lifespan_manager():
-                config = uvicorn.Config(app, host=host, port=port, **config_kwargs)
-                server = uvicorn.Server(config)
-                path = getattr(app.state, "path", "").lstrip("/")
-                mode = " (stateless)" if stateless_http else ""
-                display_host = _format_host_for_url(host)
-                logger.info(
-                    f"Starting MCP server {self.name!r} with transport {transport!r}{mode} on http://{display_host}:{port}/{path}"
-                )
+            config = uvicorn.Config(app, host=host, port=port, **config_kwargs)
+            server = uvicorn.Server(config)
+            path = getattr(app.state, "path", "").lstrip("/")
+            mode = " (stateless)" if stateless_http else ""
+            display_host = _format_host_for_url(host)
+            logger.info(
+                f"Starting MCP server {self.name!r} with transport {transport!r}{mode} on http://{display_host}:{port}/{path}"
+            )
 
-                if sockets is not None:
-                    await server.serve(sockets=sockets)
-                else:
-                    await server.serve()
+            # Uvicorn's public `serve()` wraps `_serve()` in this same signal
+            # context. Enter FastMCP's outer lifespan inside that context so
+            # Uvicorn replays a captured signal only after resource teardown.
+            # `_serve()` has had this split throughout our supported Uvicorn
+            # range (>=0.35).
+            with server.capture_signals():
+                async with self._lifespan_manager():
+                    try:
+                        await server._serve(sockets=sockets)
+                    except anyio.get_cancelled_exc_class():
+                        # Uvicorn does not run shutdown when `_serve()` itself
+                        # is cancelled. Complete ASGI shutdown under a shield
+                        # before propagating cancellation to the caller.
+                        server.should_exit = True
+                        if server.started:
+                            with anyio.CancelScope(shield=True):
+                                await server.shutdown(sockets=sockets)
+                        raise
 
     def http_app(
         self: FastMCP,
