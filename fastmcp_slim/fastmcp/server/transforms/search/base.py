@@ -148,12 +148,18 @@ def _render_param(name: str, field: Any, *, required: bool) -> str:
     """
     qualifiers = [_schema_type(field)]
     if isinstance(field, dict):
-        enum = field.get("enum")
+        enum = [field["const"]] if "const" in field else field.get("enum")
         if not isinstance(enum, list):
             for variant in field.get("anyOf", []):
-                if isinstance(variant, dict) and isinstance(variant.get("enum"), list):
-                    enum = variant["enum"]
-                    break
+                if isinstance(variant, dict):
+                    candidate = (
+                        [variant["const"]]
+                        if "const" in variant
+                        else variant.get("enum")
+                    )
+                    if isinstance(candidate, list):
+                        enum = candidate
+                        break
         if isinstance(enum, list) and 0 < len(enum) <= 8:
             qualifiers.append("one of " + "/".join(json.dumps(v) for v in enum))
         if field.get("default") is not None:

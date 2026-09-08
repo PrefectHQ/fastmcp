@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 import anyio
 from mcp_types import TextContent
 from pydantic import Field
+from pydantic import ValidationError as PydanticValidationError
 
 from fastmcp.exceptions import NotFoundError, ToolError, ValidationError
 from fastmcp.server.context import Context
@@ -59,7 +60,9 @@ _VALIDATION_ERROR_MARKERS = (
 )
 
 
-def _legible_call_error(tool_name: str, tool: Tool, error: dict[str, Any] | str) -> str:
+def _legible_call_error(
+    tool_name: str, tool: Tool, error: dict[str, Any] | str | Exception
+) -> str:
     """Rewrite a failed call's error for the model that wrote the code.
 
     A failed `call_tool` raises so the failure interrupts the chain instead of
@@ -68,9 +71,18 @@ def _legible_call_error(tool_name: str, tool: Tool, error: dict[str, Any] | str)
     what would be right — and always speak in the name the caller used, not
     the backend's internal identity.
     """
-    text = error if isinstance(error, str) else json.dumps(error)
+    validation = isinstance(error, ValidationError)
+    if validation and isinstance(error.__cause__, PydanticValidationError):
+        text = "; ".join(
+            f"{'.'.join(str(part) for part in item['loc']) or 'arguments'}: {item['msg']}"
+            for item in error.__cause__.errors(include_url=False)
+        )
+    else:
+        text = json.dumps(error) if isinstance(error, dict) else str(error)
     message = f"call_tool({tool_name!r}) failed: {text}"
-    if any(marker in text.lower() for marker in _VALIDATION_ERROR_MARKERS):
+    if validation or any(
+        marker in text.lower() for marker in _VALIDATION_ERROR_MARKERS
+    ):
         properties = (tool.parameters or {}).get("properties")
         if isinstance(properties, dict) and properties:
             required = set((tool.parameters or {}).get("required") or [])
@@ -286,7 +298,7 @@ ToolDetailLevel = Literal["brief", "detailed", "full"]
 """Detail level for discovery tool output.
 
 - ``"brief"``: tool names and one-line descriptions
-- ``"detailed"``: compact markdown with parameter names, types, and required markers
+- ``"detailed"``: compact markdown with parameter names, types, literal values, defaults, and required markers
 - ``"full"``: complete JSON schema
 """
 
@@ -702,13 +714,18 @@ class CodeMode(CatalogTransform):
                 try:
                     result = await ctx.fastmcp.call_tool(tool.name, params)
                 except (ToolError, ValidationError) as exc:
-                    raise ToolError(
-                        _legible_call_error(tool_name, tool, str(exc))
-                    ) from exc
+                    raise ToolError(_legible_call_error(tool_name, tool, exc)) from exc
                 if result.is_error:
                     raise ToolError(
                         _legible_call_error(
-                            tool_name, tool, _unwrap_tool_result(result)
+                            tool_name,
+                            tool,
+                            "\n".join(
+                                item.text
+                                for item in result.content
+                                if isinstance(item, TextContent) and item.text
+                            )
+                            or _unwrap_tool_result(result),
                         )
                     )
                 return _unwrap_tool_result(result)

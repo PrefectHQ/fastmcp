@@ -1116,3 +1116,66 @@ async def test_code_mode_get_schema_renders_enums_and_defaults() -> None:
     # the `full` level already emits the raw schema that carries them.
     assert "Rank things" in text  # the tool's own description still renders
     assert "\u2014" not in text  # but no per-parameter description dashes
+
+
+@pytest.mark.parametrize("text", ["backend exploded", ""])
+async def test_error_result_preserves_text_with_structured_content(text: str) -> None:
+    mcp = FastMCP("Structured errors")
+
+    @mcp.tool
+    def fail() -> ToolResult:
+        return ToolResult(content=text, structured_content={"code": 42}, is_error=True)
+
+    mcp.add_transform(CodeMode())
+    result = await _run_tool(
+        mcp,
+        "execute",
+        {
+            "code": 'try:\n    await call_tool("fail", {})\nexcept Exception as exc:\n    return str(exc)'
+        },
+    )
+    message = str(_unwrap_result(result))
+    assert (text or "42") in message
+    assert "call_tool('fail') failed" in message
+
+
+async def test_mounted_validation_error_uses_public_identity() -> None:
+    child = FastMCP("Orders")
+
+    @child.tool
+    def search(query: str) -> str:
+        return query
+
+    mcp = FastMCP("Mounted")
+    mcp.mount(child, namespace="orders")
+    mcp.add_transform(CodeMode())
+    result = await _run_tool(
+        mcp,
+        "execute",
+        {
+            "code": 'try:\n    await call_tool("orders_search", {"wrong": "value"})\nexcept Exception as exc:\n    return str(exc)'
+        },
+    )
+    message = str(_unwrap_result(result))
+    assert "call_tool('orders_search') failed" in message
+    assert "query: Missing required argument" in message
+    assert "wrong: Unexpected keyword argument" in message
+    assert "Valid parameters for orders_search" in message
+    assert "call[search]" not in message
+    assert "https://" not in message
+
+
+async def test_detailed_schema_includes_single_value_literals() -> None:
+    from typing import Literal
+
+    mcp = FastMCP("Literals")
+
+    @mcp.tool
+    def send(kind: Literal["email"], optional: Literal["sms"] | None = None) -> str:
+        return kind
+
+    mcp.add_transform(CodeMode())
+    result = await _run_tool(mcp, "get_schema", {"tools": ["send"]})
+    text = str(_unwrap_result(result))
+    assert 'one of "email"' in text
+    assert 'one of "sms"' in text

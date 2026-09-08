@@ -122,7 +122,7 @@ CodeMode ships with four built-in discovery tools: `Search`, `GetSchemas`, `GetT
 | Level | Output | Token cost |
 |---|---|---|
 | `"brief"` | Tool names and one-line descriptions | Cheapest — good for scanning |
-| `"detailed"` | Compact markdown with parameter names, types, and required markers | Medium — often enough to write code |
+| `"detailed"` | Compact markdown with parameter names, types, literal values, defaults, and required markers | Medium — often enough to write code |
 | `"full"` | Complete JSON schema | Most expensive — everything |
 
 `Search` defaults to `"brief"` and `GetSchemas` defaults to `"detailed"`.
@@ -143,7 +143,7 @@ If your tools use [tags](/servers/visibility#tags), Search also accepts a `tags`
 
 ### GetSchemas
 
-`GetSchemas` returns parameter details for specific tools by name. At its default `"detailed"` level, it renders compact markdown with parameter names, types, and required markers. At `"full"`, it returns the complete JSON schema — useful when tools have deeply nested parameters that the compact format doesn't capture.
+`GetSchemas` returns parameter details for specific tools by name. At its default `"detailed"` level, it renders compact markdown with parameter names, types, literal values, defaults, and required markers. At `"full"`, it returns the complete JSON schema — useful when tools have deeply nested parameters that the compact format doesn't capture.
 
 ### GetTags
 
@@ -156,6 +156,14 @@ If your tools use [tags](/servers/visibility#tags), Search also accepts a `tags`
 ```
 
 `GetTags` isn't included in the defaults — add it when browsing by category would help the LLM orient itself in a large catalog. The LLM can browse tags first, then pass specific tags into Search to narrow results.
+
+For example, a parameter declared as `sort: Literal["top", "recent"] = "recent"` appears as:
+
+```text
+- `sort` (string, one of "top"/"recent", default "recent")
+```
+
+Single-value literals also show their allowed value. Literal value lists are included up to eight values; parameter descriptions and complete constraints remain available at `"full"` detail.
 
 ### ListTools
 
