@@ -140,7 +140,10 @@ async def test_scope_transport_failure_raises_typed_error():
 
 async def test_scope_401_is_still_an_invalid_token():
     client = AsyncMock()
-    client.get.side_effect = [_github_user_response(), _response(401, "Bad credentials")]
+    client.get.side_effect = [
+        _github_user_response(),
+        _response(401, "Bad credentials"),
+    ]
     verifier = GitHubTokenVerifier(required_scopes=["user"], http_client=client)
 
     assert await verifier.verify_token("revoked-token") is None
@@ -217,7 +220,10 @@ async def test_github_provider_scope_outage_propagates_operational_error():
 
 async def test_github_provider_scope_401_stays_invalid():
     client = AsyncMock()
-    client.get.side_effect = [_github_user_response(), _response(401, "Bad credentials")]
+    client.get.side_effect = [
+        _github_user_response(),
+        _response(401, "Bad credentials"),
+    ]
     provider = GitHubProvider(
         client_id="github-client",
         client_secret="github-secret",
