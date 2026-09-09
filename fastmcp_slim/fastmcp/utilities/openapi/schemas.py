@@ -370,6 +370,69 @@ def _flatten_discriminator_subtypes(
     return properties
 
 
+def _flatten_nested_discriminator_subtypes(
+    schema: dict[str, Any],
+    schema_defs: dict[str, Any],
+    _seen: set[str] | None = None,
+) -> None:
+    """Flatten discriminator mappings on schemas nested below the request body.
+
+    The body schema itself is flattened by the caller, but a discriminated
+    union can equally sit inside an envelope property, array items, or a
+    free-form map value. Left as a bare ``$ref``, such a schema advertises
+    nothing but the discriminator property once composition keywords are
+    cleaned for display. The ref is replaced with the flattened schema
+    inline, so the mapped subtypes are pruned from ``$defs`` exactly as they
+    are at the top level.
+    """
+    if _seen is None:
+        _seen = set()
+
+    nested: list[tuple[dict[str, Any], Any]] = []
+    props = schema.get("properties")
+    if isinstance(props, dict):
+        nested.extend(
+            (props, key) for key, value in props.items() if isinstance(value, dict)
+        )
+    nested.extend(
+        (schema, key)
+        for key in ("items", "additionalProperties")
+        if isinstance(schema.get(key), dict)
+    )
+
+    for container, key in nested:
+        child = container[key]
+        target = child
+        ref = child.get("$ref")
+        if isinstance(ref, str):
+            name = ref.rsplit("/", 1)[-1]
+            if name in _seen:
+                continue
+            resolved = schema_defs.get(name)
+            if not isinstance(resolved, dict):
+                continue
+            target = resolved
+            _seen.add(name)
+
+        flattened = _flatten_discriminator_subtypes(target, schema_defs)
+        if flattened is not None:
+            if target is child:
+                # An inline schema is rewritten in place, as at the top level.
+                child["properties"] = flattened
+                child.pop("discriminator", None)
+            else:
+                replacement: dict[str, Any] = {
+                    "type": "object",
+                    "properties": flattened,
+                }
+                if isinstance(target.get("required"), list):
+                    replacement["required"] = target["required"]
+                if isinstance(target.get("description"), str):
+                    replacement["description"] = target["description"]
+                container[key] = replacement
+        _flatten_nested_discriminator_subtypes(container[key], schema_defs, _seen)
+
+
 def _combine_schemas_and_map_params(
     route: HTTPRoute,
     convert_refs: bool = True,
@@ -451,6 +514,11 @@ def _combine_schemas_and_map_params(
         if flattened_props is not None:
             body_schema["properties"] = flattened_props
             body_schema.pop("discriminator", None)
+
+        # The same flattening applies below the top level, where the
+        # discriminated schema is reached through a $ref (or inline) rather
+        # than being the body schema itself.
+        _flatten_nested_discriminator_subtypes(body_schema, route.request_schemas)
 
         body_props = body_schema.get("properties", {})
 
