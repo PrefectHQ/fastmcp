@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from key_value.aio.stores.memory import MemoryStore
 
+from fastmcp.server.auth import TokenVerificationError
 from fastmcp.server.auth.providers.github import (
     GitHubProvider,
     GitHubTokenVerifier,
@@ -135,6 +136,7 @@ class TestGitHubTokenVerifier:
 
         # Mock successful scopes API response
         scopes_response = MagicMock()
+        scopes_response.status_code = 200
         scopes_response.headers = {"x-oauth-scopes": "user,repo"}
 
         # Set up the mock client to return our responses
@@ -278,8 +280,8 @@ class TestGitHubTokenVerifierCaching:
             assert result2 is not None
             assert result2.claims["login"] == "testuser"
 
-    async def test_scope_failure_skips_cache(self):
-        """Token verified with fallback scopes (scope API failed) should not be cached."""
+    async def test_scope_failure_raises_and_skips_cache(self):
+        """Operational scope failures should propagate and must not be cached."""
         verifier = GitHubTokenVerifier(cache_ttl_seconds=300)
 
         mock_client = AsyncMock()
@@ -296,6 +298,7 @@ class TestGitHubTokenVerifierCaching:
 
         scopes_response = MagicMock()
         scopes_response.status_code = 500
+        scopes_response.text = "simulated outage"
         scopes_response.headers = {}
 
         with patch(
@@ -304,9 +307,8 @@ class TestGitHubTokenVerifierCaching:
             mock_cls.return_value.__aenter__.return_value = mock_client
 
             mock_client.get.side_effect = [user_response, scopes_response]
-            result = await verifier.verify_token("tok-1")
-            assert result is not None
-            # Should NOT be cached because scope response was not 200
+            with pytest.raises(TokenVerificationError, match="500"):
+                await verifier.verify_token("tok-1")
             assert not verifier._cache.enabled or len(verifier._cache._entries) == 0
 
     def test_provider_passes_cache_params(self, memory_storage: MemoryStore):
