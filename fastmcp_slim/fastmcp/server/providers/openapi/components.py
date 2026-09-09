@@ -148,7 +148,7 @@ def _slugify(text: str) -> str:
         return ""
 
     # Replace spaces and common separators with underscores
-    slug = re.sub(r"[\s\-\.]+", "_", text)
+    slug = re.sub(r"[\s\-\./]+", "_", text)
 
     # Remove non-alphanumeric characters except underscores
     slug = re.sub(r"[^a-zA-Z0-9_]", "", slug)
