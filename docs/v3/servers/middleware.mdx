@@ -326,7 +326,7 @@ async def on_request(self, context: MiddlewareContext, call_next):
     return await call_next(context)
 ```
 
-For HTTP-specific data (headers, client IP) when using HTTP transports, see [HTTP Requests](/servers/context#http-requests).
+For HTTP-specific data (headers, client IP) when using HTTP transports, see [HTTP Requests](/servers/dependency-injection).
 
 ## Built-in Middleware
 
@@ -795,7 +795,7 @@ def get_user_data(ctx: Context) -> str:
     return f"Data for user: {user_id}"
 ```
 
-See [Context State Management](/servers/context#state-management) for details.
+See [Context State Management](/servers/context#session-state) for details.
 
 ### Constructor Parameters
 
