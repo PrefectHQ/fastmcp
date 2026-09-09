@@ -423,6 +423,23 @@ jobs:
                 await mutate(`close PR #${prNumber}`, () => github.rest.pulls.update({
                   owner, repo, pull_number: prNumber, state: 'closed',
                 }));
+              } else if (
+                kind === 'not-assigned' && pr.state === 'closed' &&
+                pr.labels.some(label => label.name === LABEL)
+              ) {
+                // Adding the missing link moves a gate-closed PR back into
+                // the open triage queue. A later human closure takes priority
+                // even if the enforcement label was left on the PR.
+                const events = await github.paginate(
+                  github.rest.issues.listEvents,
+                  { owner, repo, issue_number: prNumber, per_page: 100 },
+                );
+                const lastClosure = events.filter(event => event.event === 'closed').pop();
+                if (lastClosure?.actor?.login === 'github-actions[bot]') {
+                  await mutate(`reopen linked PR #${prNumber} for triage`, () => github.rest.pulls.update({
+                    owner, repo, pull_number: prNumber, state: 'open',
+                  }));
+                }
               }
 
               if (enforce) {
