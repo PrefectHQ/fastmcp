@@ -14,6 +14,7 @@ on:
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/**"
+      - ".github/scripts/test-issue-link.mjs"
 
   # run on all pull requests because these checks are required and will block merges otherwise
   pull_request:
@@ -35,6 +36,9 @@ jobs:
         uses: ./.github/actions/setup-uv
         with:
           resolution: locked
+
+      - name: Test issue-link workflow
+        run: node --test .github/scripts/test-issue-link.mjs
 
       - name: Run prek
         uses: j178/prek-action@v3.0.0

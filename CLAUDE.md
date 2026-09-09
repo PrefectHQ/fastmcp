@@ -58,6 +58,8 @@ When modifying MCP functionality, changes typically need to be applied across al
 
 **Review closed contributor PRs.** When reviewing an issue, inspect every associated non-maintainer PR, including closed PRs. External PRs may be closed as part of the issue-link and assignment workflow, so closure alone is not a negative signal. Read `CONTRIBUTING.md` and the PR timeline and comments to understand its status before evaluating it.
 
+**Check unfamiliar contributors before assignment.** Follow `.claude/skills/review-issue/SKILL.md` for a brief public-history check. Avoid obvious spam or unattended bot accounts, but lean toward goodwill: account age, sparse profiles, and AI assistance alone are not reasons to reject a sound contribution.
+
 ### Git & CI
 
 - Prek hooks are required (run automatically on commits)
