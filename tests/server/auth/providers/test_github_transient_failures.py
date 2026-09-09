@@ -10,14 +10,78 @@ from key_value.aio.stores.memory import MemoryStore
 from fastmcp.server.auth import TokenVerificationError, TokenVerifier
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.oauth_proxy.models import JTIMapping, UpstreamTokenSet
-from fastmcp.server.auth.providers.github import GitHubTokenVerifier
+from fastmcp.server.auth.providers.github import GitHubProvider, GitHubTokenVerifier
 
 
-def _response(status_code: int, text: str = "simulated") -> MagicMock:
+def _response(
+    status_code: int,
+    text: str = "simulated",
+    *,
+    headers: dict[str, str] | None = None,
+    json_data: dict | None = None,
+) -> MagicMock:
     response = MagicMock()
     response.status_code = status_code
     response.text = text
+    response.headers = headers or {}
+    response.json.return_value = json_data or {}
     return response
+
+
+def _github_user_response() -> MagicMock:
+    return _response(
+        200,
+        headers={},
+        json_data={
+            "id": 12345,
+            "login": "testuser",
+            "name": "Test User",
+            "email": "test@example.com",
+            "avatar_url": "https://github.com/testuser.png",
+        },
+    )
+
+
+async def _store_proxy_access_token(
+    proxy: OAuthProxy,
+    *,
+    upstream_scope: str,
+) -> str:
+    proxy.set_mcp_path("/mcp")
+    now = time.time()
+    upstream_token_id = "upstream-token-id"
+    jti = "access-jti"
+    await proxy._upstream_token_store.put(
+        key=upstream_token_id,
+        value=UpstreamTokenSet(
+            upstream_token_id=upstream_token_id,
+            access_token="upstream-access-token",
+            refresh_token=None,
+            refresh_token_expires_at=None,
+            expires_at=now + 3600,
+            token_type="Bearer",
+            scope=upstream_scope,
+            client_id="mcp-client",
+            created_at=now,
+            raw_token_data={"access_token": "upstream-access-token"},
+        ),
+        ttl=3600,
+    )
+    await proxy._jti_mapping_store.put(
+        key=jti,
+        value=JTIMapping(
+            jti=jti,
+            upstream_token_id=upstream_token_id,
+            created_at=now,
+        ),
+        ttl=3600,
+    )
+    return proxy.jwt_issuer.issue_access_token(
+        client_id="mcp-client",
+        scopes=upstream_scope.split(),
+        jti=jti,
+        expires_in=3600,
+    )
 
 
 async def test_github_401_is_still_an_invalid_token():
@@ -50,6 +114,65 @@ async def test_github_transport_failure_raises_typed_error():
         await verifier.verify_token("still-valid-token")
 
 
+async def test_scope_outage_for_basic_user_scope_is_accepted_and_cached():
+    client = AsyncMock()
+    client.get.side_effect = [_github_user_response(), _response(503)]
+    verifier = GitHubTokenVerifier(
+        required_scopes=["user"],
+        cache_ttl_seconds=300,
+        http_client=client,
+    )
+
+    first = await verifier.verify_token("still-valid-token")
+    second = await verifier.verify_token("still-valid-token")
+
+    assert first is not None
+    assert first.scopes == ["user"]
+    assert second is not None
+    assert second.client_id == first.client_id
+    assert client.get.call_count == 2
+
+
+async def test_scope_transport_failure_for_basic_user_scope_is_cached():
+    client = AsyncMock()
+    client.get.side_effect = [
+        _github_user_response(),
+        httpx2.ConnectError(
+            "simulated scope transport failure",
+            request=httpx2.Request("GET", "https://api.github.com/user/repos"),
+        ),
+    ]
+    verifier = GitHubTokenVerifier(
+        required_scopes=["user"],
+        cache_ttl_seconds=300,
+        http_client=client,
+    )
+
+    first = await verifier.verify_token("still-valid-token")
+    second = await verifier.verify_token("still-valid-token")
+
+    assert first is not None
+    assert second is not None
+    assert client.get.call_count == 2
+
+
+async def test_scope_401_is_still_an_invalid_token():
+    client = AsyncMock()
+    client.get.side_effect = [_github_user_response(), _response(401, "Bad credentials")]
+    verifier = GitHubTokenVerifier(required_scopes=["user"], http_client=client)
+
+    assert await verifier.verify_token("revoked-token") is None
+
+
+async def test_scope_outage_with_stronger_required_scope_is_operational():
+    client = AsyncMock()
+    client.get.side_effect = [_github_user_response(), _response(503)]
+    verifier = GitHubTokenVerifier(required_scopes=["repo"], http_client=client)
+
+    with pytest.raises(TokenVerificationError, match="503"):
+        await verifier.verify_token("still-valid-token")
+
+
 class UnavailableVerifier(TokenVerifier):
     async def verify_token(self, token: str):
         raise TokenVerificationError("upstream verifier unavailable")
@@ -66,42 +189,48 @@ async def test_oauth_proxy_propagates_operational_verification_error():
         jwt_signing_key="test-signing-key",
         client_storage=MemoryStore(),
     )
-    proxy.set_mcp_path("/mcp")
-
-    now = time.time()
-    upstream_token_id = "upstream-token-id"
-    jti = "access-jti"
-    await proxy._upstream_token_store.put(
-        key=upstream_token_id,
-        value=UpstreamTokenSet(
-            upstream_token_id=upstream_token_id,
-            access_token="upstream-access-token",
-            refresh_token=None,
-            refresh_token_expires_at=None,
-            expires_at=now + 3600,
-            token_type="Bearer",
-            scope="user",
-            client_id="mcp-client",
-            created_at=now,
-            raw_token_data={"access_token": "upstream-access-token"},
-        ),
-        ttl=3600,
-    )
-    await proxy._jti_mapping_store.put(
-        key=jti,
-        value=JTIMapping(
-            jti=jti,
-            upstream_token_id=upstream_token_id,
-            created_at=now,
-        ),
-        ttl=3600,
-    )
-    fastmcp_token = proxy.jwt_issuer.issue_access_token(
-        client_id="mcp-client",
-        scopes=["user"],
-        jti=jti,
-        expires_in=3600,
-    )
+    fastmcp_token = await _store_proxy_access_token(proxy, upstream_scope="user")
 
     with pytest.raises(TokenVerificationError, match="upstream verifier unavailable"):
         await proxy.load_access_token(fastmcp_token)
+
+
+async def test_github_provider_scope_outage_does_not_become_invalid_token():
+    client = AsyncMock()
+    client.get.side_effect = [_github_user_response(), _response(503)]
+    provider = GitHubProvider(
+        client_id="github-client",
+        client_secret="github-secret",
+        base_url="https://proxy.example.com",
+        required_scopes=["repo"],
+        http_client=client,
+        jwt_signing_key="test-signing-key",
+        client_storage=MemoryStore(),
+    )
+    fastmcp_token = await _store_proxy_access_token(provider, upstream_scope="repo")
+
+    with pytest.raises(TokenVerificationError, match="503"):
+        await provider.load_access_token(fastmcp_token)
+
+
+async def test_github_provider_degraded_success_uses_cache():
+    client = AsyncMock()
+    client.get.side_effect = [_github_user_response(), _response(503)]
+    provider = GitHubProvider(
+        client_id="github-client",
+        client_secret="github-secret",
+        base_url="https://proxy.example.com",
+        required_scopes=["user"],
+        cache_ttl_seconds=300,
+        http_client=client,
+        jwt_signing_key="test-signing-key",
+        client_storage=MemoryStore(),
+    )
+    fastmcp_token = await _store_proxy_access_token(provider, upstream_scope="user")
+
+    first = await provider.load_access_token(fastmcp_token)
+    second = await provider.load_access_token(fastmcp_token)
+
+    assert first is not None
+    assert second is not None
+    assert client.get.call_count == 2
