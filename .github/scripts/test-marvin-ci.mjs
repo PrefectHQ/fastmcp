@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import {
-  diagnose,
+  collect,
+  acceptResult,
   prepare,
   publish,
   stopRequested,
@@ -156,14 +157,7 @@ for (const scenario of [
     if (scenario === "success") f.runs[0].conclusion = "success";
     if (scenario === "no-jobs") f.jobs.length = 0;
     if (scenario === "main") f.context.payload.workflow_run.event = "push";
-    let calls = 0;
-    await diagnose(f.github, f.context, f.core, {
-      fetcher: async () => {
-        calls++;
-        throw new Error("unexpected inference");
-      },
-    });
-    assert.equal(calls, 0);
+    await collect(f.github, f.context, f.core);
     assert.equal(f.outputs.length, 0);
     assert.equal(f.summaries.length, 1);
   });
@@ -205,36 +199,44 @@ test("human stop requests suppress diagnosis", async () => {
   f.comments.push({ user: { type: "User" }, body: "Marvin, stop" });
   assert.match((await prepare(f.github, f.context)).skip, /stop/);
 });
-test("one bounded model request yields text only, never GitHub writes", async () => {
+test("agent gets complete logs and context, with publication separate", async () => {
   await withOutput(async (output) => {
     const f = fixture();
-    let calls = 0;
-    await diagnose(f.github, f.context, f.core, {
-      output,
-      key: "test-key",
-      fetcher: async (url, request) => {
-        calls++;
-        assert.equal(url, "https://api.anthropic.com/v1/messages");
-        const body = JSON.parse(request.body);
-        assert.equal(body.model, "claude-sonnet-5");
-        assert.equal(body.max_tokens, 1200);
-        assert.equal(body.tools, undefined);
-        assert.match(body.messages[0].content, /FAILED test_client/);
-        return {
-          ok: true,
-          json: async () => ({
-            stop_reason: "end_turn",
-            content: [{ type: "text", text: "Fix the assertion @someone." }],
-            usage: { input_tokens: 100, output_tokens: 10 },
-          }),
-        };
-      },
+    const directory = dirname(output);
+    const log = "earlier failure\n" + "context\n".repeat(2000);
+    f.github.rest.actions.downloadJobLogsForWorkflowRun = async () => ({
+      data: log,
     });
-    assert.equal(calls, 1);
+    await collect(f.github, f.context, f.core, directory);
+    assert.equal(readFileSync(join(directory, "job-100.log"), "utf8"), log);
+    const evidence = JSON.parse(
+      readFileSync(join(directory, "evidence.json"), "utf8"),
+    );
+    assert.equal(evidence.pr.head, "head");
+    assert.deepEqual(evidence.files, [
+      { filename: "client.py", patch: "-old\n+new" },
+    ]);
+    assert.deepEqual(f.outputs, [
+      ["ready", "true"],
+      ["repository", "contributor/fastmcp"],
+      ["sha", "head"],
+    ]);
+    writeFileSync(
+      join(directory, "result.json"),
+      JSON.stringify({
+        subtype: "success",
+        is_error: false,
+        result: "Fix the assertion @someone.",
+        num_turns: 4,
+        total_cost_usd: 0.15,
+      }),
+    );
+    await acceptResult(f.core, directory);
     assert.equal(f.writes.length, 0);
-    assert.deepEqual(f.outputs, [["publish", "true"]]);
-    await publish(f.github, f.context, f.core, { input: output });
-    assert.equal(f.writes.length, 1);
+    assert.deepEqual(f.outputs.at(-1), ["publish", "true"]);
+    await publish(f.github, f.context, f.core, {
+      input: join(directory, "analysis.json"),
+    });
     assert.equal(f.writes[0].issue_number, 42);
     assert.match(f.writes[0].body, /@\u200bsomeone/);
     assert.match(f.writes[0].body, /actions\/runs\/10\/job\/100/);
@@ -286,37 +288,41 @@ test("publisher updates only Marvin's marked comment", async () => {
     assert.equal(f.writes[0].comment_id, 2);
   });
 });
-test("truncated inference and API errors cannot publish", async () => {
-  for (const response of [
-    { ok: false, status: 429 },
+test("failed, denied, empty and over-budget investigations cannot publish", async () => {
+  for (const result of [
+    { subtype: "error_max_turns", result: "Incomplete" },
+    { subtype: "error_max_budget_usd", result: "Incomplete" },
+    { subtype: "success", is_error: true, result: "Error" },
+    { subtype: "success", result: "" },
+    { subtype: "success", result: "x".repeat(8001) },
     {
-      ok: true,
-      json: async () => ({
-        stop_reason: "max_tokens",
-        content: [{ type: "text", text: "Incomplete" }],
-      }),
+      subtype: "success",
+      result: "Diagnosis",
+      permission_denials: [{ tool_name: "Read" }],
     },
   ]) {
-    const f = fixture();
-    await assert.rejects(
-      diagnose(f.github, f.context, f.core, { fetcher: async () => response }),
-    );
-    assert.equal(f.outputs.length, 0);
-    assert.equal(f.writes.length, 0);
+    await withOutput(async (output) => {
+      const f = fixture();
+      writeFileSync(
+        join(dirname(output), "result.json"),
+        JSON.stringify(result),
+      );
+      await assert.rejects(acceptResult(f.core, dirname(output)));
+      assert.equal(f.outputs.length, 0);
+      assert.equal(f.writes.length, 0);
+    });
   }
 });
 
 test("NO_ACTION produces no publication output", async () => {
-  const f = fixture();
-  await diagnose(f.github, f.context, f.core, {
-    fetcher: async () => ({
-      ok: true,
-      json: async () => ({
-        stop_reason: "end_turn",
-        content: [{ type: "text", text: "NO_ACTION" }],
-      }),
-    }),
+  await withOutput(async (output) => {
+    const f = fixture();
+    writeFileSync(
+      join(dirname(output), "result.json"),
+      JSON.stringify({ subtype: "success", result: "NO_ACTION" }),
+    );
+    await acceptResult(f.core, dirname(output));
+    assert.equal(f.outputs.length, 0);
+    assert.equal(f.writes.length, 0);
   });
-  assert.equal(f.outputs.length, 0);
-  assert.equal(f.writes.length, 0);
 });
