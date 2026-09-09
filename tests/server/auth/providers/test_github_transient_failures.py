@@ -174,7 +174,10 @@ async def test_successful_scope_verification_is_cached():
 
     assert first is not None
     assert first.scopes == ["user"]
-    assert second is first
+    assert second is not None
+    assert second.scopes == ["user"]
+    assert second.client_id == first.client_id
+    assert second is not first
     assert client.get.call_count == 2
 
 
