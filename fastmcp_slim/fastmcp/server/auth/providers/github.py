@@ -22,6 +22,7 @@ Example:
 from __future__ import annotations
 
 import contextlib
+from contextvars import ContextVar
 from typing import Literal
 
 import httpx2
@@ -31,11 +32,22 @@ from pydantic import AnyHttpUrl
 from fastmcp.server.auth import TokenVerificationError, TokenVerifier
 from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
+from fastmcp.server.auth.oauth_proxy.models import UpstreamTokenSet
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.token_cache import TokenCache
 
 logger = get_logger(__name__)
+
+# Scope discovery is a second GitHub request and can fail independently after
+# /user has established identity. Standalone verifiers must never invent scopes
+# in that case. GitHubProvider publishes the IdP-granted scopes from the current
+# OAuthProxy token swap as a one-shot, task-local value immediately before the
+# verifier runs. The verifier consumes it once, so it cannot leak into a later
+# standalone verification in the same task.
+_github_trusted_scope_context: ContextVar[tuple[str, tuple[str, ...]] | None] = (
+    ContextVar("github_trusted_scope_context", default=None)
+)
 
 
 class GitHubTokenVerifier(TokenVerifier):
@@ -90,6 +102,14 @@ class GitHubTokenVerifier(TokenVerifier):
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify GitHub OAuth token by calling GitHub API."""
+        trusted_context = _github_trusted_scope_context.get()
+        _github_trusted_scope_context.set(None)
+        trusted_scopes = (
+            trusted_context[1]
+            if trusted_context is not None and trusted_context[0] == token
+            else None
+        )
+
         is_cached, cached_result = self._cache.get(token)
         if is_cached:
             logger.debug("GitHub token cache hit")
@@ -131,13 +151,11 @@ class GitHubTokenVerifier(TokenVerifier):
 
                 user_data = response.json()
 
-                # /user/repos is supplementary scope discovery. Once /user has
-                # established identity, a transient failure here must not turn a
-                # token requiring only the basic user scope into invalid_token.
-                # Stronger scopes still need positive evidence, so an outage while
-                # they are required is operational rather than an auth rejection.
-                required_scopes_set = set(self.required_scopes)
-                basic_scope_only = required_scopes_set.issubset({"user"})
+                # /user/repos is supplementary scope discovery. A transient
+                # failure must not discard an otherwise valid provider session,
+                # but standalone verification cannot invent scopes. The provider
+                # path can safely fall back to the IdP grant already persisted by
+                # OAuthProxy for this exact upstream token.
                 try:
                     scopes_response = await client.get(
                         "https://api.github.com/user/repos",
@@ -148,10 +166,6 @@ class GitHubTokenVerifier(TokenVerifier):
                         },
                     )
                 except httpx2.RequestError as e:
-                    if not basic_scope_only:
-                        raise TokenVerificationError(
-                            "GitHub scope verification unavailable due to a transport error"
-                        ) from e
                     logger.warning("GitHub scope verification unavailable: %s", e)
                     oauth_scopes_header = ""
                 else:
@@ -163,11 +177,6 @@ class GitHubTokenVerifier(TokenVerifier):
                         )
                         return None
                     if scopes_response.status_code != 200:
-                        if not basic_scope_only:
-                            raise TokenVerificationError(
-                                "GitHub scope verification unavailable: "
-                                f"HTTP {scopes_response.status_code}"
-                            )
                         logger.warning(
                             "GitHub scope verification unavailable: %d - %s",
                             scopes_response.status_code,
@@ -185,15 +194,16 @@ class GitHubTokenVerifier(TokenVerifier):
                     if scope.strip()
                 ]
 
-                # If scope discovery is unavailable after /user verifies identity,
-                # the basic user scope is enough only when no stronger scope is
-                # required. Never synthesize stronger grants such as repo.
-                if not token_scopes:
-                    token_scopes = ["user"]
+                if not token_scopes and trusted_scopes is not None:
+                    token_scopes = list(trusted_scopes)
 
-                # Check required scopes
+                # Check required scopes. If scope discovery is unavailable in a
+                # standalone verifier, token_scopes stays empty and required
+                # scopes cannot be satisfied. Provider fallback never grants more
+                # than the IdP scopes already stored by OAuthProxy.
                 if self.required_scopes:
                     token_scopes_set = set(token_scopes)
+                    required_scopes_set = set(self.required_scopes)
                     if not required_scopes_set.issubset(token_scopes_set):
                         logger.debug(
                             "GitHub token missing required scopes. Has %d, needs %d",
@@ -218,8 +228,8 @@ class GitHubTokenVerifier(TokenVerifier):
                         "github_user_data": user_data,
                     },
                 )
-                # Cache every accepted verification result, including the safe
-                # basic-scope fallback used during supplementary scope outages.
+                # Cache every accepted result, including a provider result that
+                # used the trusted IdP grant during supplementary scope failure.
                 self._cache.set(token, result)
                 return result
 
@@ -379,3 +389,14 @@ class GitHubProvider(OAuthProxy):
             client_id,
             required_scopes_final,
         )
+
+    def _get_verification_token(
+        self, upstream_token_set: UpstreamTokenSet
+    ) -> str | None:
+        """Publish trusted IdP scopes for the immediately following verification."""
+        verification_token = super()._get_verification_token(upstream_token_set)
+        if verification_token is not None:
+            _github_trusted_scope_context.set(
+                (verification_token, tuple(upstream_token_set.scope.split()))
+            )
+        return verification_token
