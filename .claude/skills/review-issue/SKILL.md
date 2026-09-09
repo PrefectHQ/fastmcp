@@ -5,25 +5,27 @@ description: Review an incoming external issue (and any gated-closed PR behind i
 
 # Triaging contributions under the issue-link gate
 
-FastMCP auto-closes external PRs unless the author is **assigned to a referenced issue**
-(see [require-issue-link.yml](../../../.github/workflows/require-issue-link.yml)). The practical
-effect: contributors open an issue, open a PR, get auto-closed, and ask to be assigned. The
-maintainer almost never sees the PR directly — **the issue is the decision point**, and
-**assigning the author is the single action that reopens their PR** and sends it into review.
+FastMCP gates external PRs on a valid issue link and **assignment to a referenced issue**
+(see [require-issue-link.yml](../../../.github/workflows/require-issue-link.yml)). Linked PRs
+stay open with a failing check while maintainers decide on assignment. PRs without a valid
+issue link are closed. **The issue is the decision point**: assignment re-runs the check
+and reopens previously gate-closed PRs. Inspect both open and closed contributions.
 
 This skill turns "look at this issue" into one of two outcomes:
 - **Assign** — the issue is valid, we want it fixed, an external PR is appropriate, and a sound
-  PR already exists → assign the author (auto-reopens the PR) and queue it for code review.
-- **Decline** — leave the issue/PR closed and explain why on the issue.
+  PR already exists → assign the author, clear the gate, and queue it for code review.
+- **Decline** — recommend closing an open contribution or leaving a closed one closed,
+  and explain why on the issue once authorized.
 
-Be opinionated about declining. The gate moved spam from junk PRs to junk issues; this skill is
-worthless if it just rubber-stamps assignment. Assignment is a commitment to review and likely
-merge, not a courtesy.
+Assignment is a commitment to review, not a promise to merge. Evaluate the contribution and
+the contributor with goodwill. An automatic gate closure is administrative, not a rejection
+on the merits; it must not raise the bar for an otherwise sound contribution.
 
 ## How the gate works (the part that matters here)
 
-- External PR is closed unless its body has `Fixes/Closes/Resolves #N` **and** the author is
-  assigned to issue `#N`.
+- External PRs need `Fixes/Closes/Resolves #N` and assignment to that issue. Missing links
+  cause closure; missing assignment alone leaves the PR open with a failing check. Issues
+  marked `prs welcome` waive assignment, but still require the link.
 - **Assigning the author to the issue auto-reopens their closed PR** and re-runs the check —
   this is the lever you pull. `gh issue edit N --add-assignee <login>`. The assignment fires a
   `require-issue-link` run; expect it to pass. If it fails, the gate itself misbehaved (not the
@@ -55,6 +57,26 @@ they do you still owe the PR your own read:
 gh pr view <pr> --repo PrefectHQ/fastmcp --json number,title,body,labels,files,additions,deletions
 gh pr view <pr> --repo PrefectHQ/fastmcp --comments
 ```
+
+### Check the contributor before assignment
+
+Make a brief public-account check before assigning an unfamiliar contributor. Look at account
+age, a sample of contributions elsewhere, and how they respond to review. Merged fixes and
+substantive exchanges with maintainers are useful evidence of follow-through. GitHub's `User`
+account type does not establish that a human operates the account.
+
+```bash
+gh api users/<login>
+gh search prs --author <login> --limit 20 --sort created --order desc \
+  --json repository,title,state,createdAt,url
+```
+
+Avoid assigning obvious spam or unattended bot accounts: look for concrete patterns such as
+mass unrelated boilerplate, repeated nonresponsive replies, or explicit unattended automation.
+A new account, sparse profile, low follower count, or disclosed AI assistance alone is not a
+reason to decline. Do not demand identity proof or infer legitimacy from profile claims alone.
+When evidence is limited, say so and lean toward goodwill for a sound, scoped contribution;
+bring a material concern to the maintainer before assigning.
 
 ## Step 2 — Classify the issue (is it valid AND a real bug?)
 
@@ -132,8 +154,9 @@ says we close those — a closed PR that reads that way is staying closed.
 ## Step 5 — Recommend, then act
 
 Present a short verdict to the maintainer before mutating anything: **assign** or **decline**,
-one or two sentences of reasoning, and the exact command you'll run. Wait for confirmation on
-borderline calls; for clear-cut ones you may proceed and report.
+one or two sentences of reasoning, and the exact command you'll run. Act within the maintainer's
+existing authorization; do not ask again for an action already approved. Bring borderline
+calls back to the maintainer, and obtain approval for public actions not yet authorized.
 
 **Assign** (valid issue + appropriate external contribution + sound PR exists):
 
@@ -141,15 +164,20 @@ borderline calls; for clear-cut ones you may proceed and report.
 gh issue edit N --repo PrefectHQ/fastmcp --add-assignee <login>
 ```
 
-That reopens the PR automatically. Then hand off to code review — invoke the `code-review` /
+Verify that the assignment workflow clears the check and reopens the PR if it was closed.
+If it does not, inspect the run and the PR timeline. When reopening is authorized and the gate caused the closure, reopen the
+existing PR; do not override a substantive maintainer closure. A manual reopen applies the
+workflow's sticky bypass, so prefer the normal assignment path and do not manipulate labels.
+
+Then hand off to code review — invoke the `code-review` /
 `review-pr` skills on the reopened PR. Assignment is not approval; the code still gets the normal
 pass.
 
 If a PR's head branch was deleted, assignment can't reopen it — the workflow comments asking the
 author to open a fresh PR. Don't try to force it.
 
-**Decline** (invalid issue, wrong contribution type, or low-quality PR): leave it closed and
-comment on the **issue** explaining the decision, pointing to the relevant CONTRIBUTING.md
+**Decline** (invalid issue, wrong contribution type, or low-quality PR): with authorization,
+close the open contribution or leave it closed and comment on the **issue** explaining the decision, pointing to the relevant CONTRIBUTING.md
 section. Per repo rules, use `--body-file`, never inline `--body`, for any comment that could
 contain `$`, backticks, or code:
 
@@ -162,7 +190,7 @@ skill is available for maintainer voice/tone, use it — but it isn't required.)
 
 ## What this skill does NOT do
 
-- It doesn't bypass the gate via `trusted-contributor` / `bypass-issue-check` — that's a
-  deliberate maintainer escalation, not a triage outcome.
+- It doesn't grant blanket trust via `trusted-contributor` or manually apply bypass labels.
+  An explicitly authorized reopen of a gate-closed PR is scoped to that PR.
 - It doesn't merge. Assignment → reopen → review → (maybe) merge are distinct steps.
 - It doesn't re-run the first-pass triage the bots already did; read their output instead.
