@@ -131,34 +131,69 @@ class GitHubTokenVerifier(TokenVerifier):
 
                 user_data = response.json()
 
-                # Get token scopes from GitHub API
-                # GitHub includes scopes in the X-OAuth-Scopes header
-                scopes_response = await client.get(
-                    "https://api.github.com/user/repos",  # Any authenticated endpoint
-                    headers={
-                        "Authorization": f"Bearer {token}",
-                        "Accept": "application/vnd.github.v3+json",
-                        "User-Agent": "FastMCP-GitHub-OAuth",
-                    },
-                )
+                # /user/repos is supplementary scope discovery. Once /user has
+                # established identity, a transient failure here must not turn a
+                # token requiring only the basic user scope into invalid_token.
+                # Stronger scopes still need positive evidence, so an outage while
+                # they are required is operational rather than an auth rejection.
+                required_scopes_set = set(self.required_scopes)
+                basic_scope_only = required_scopes_set.issubset({"user"})
+                try:
+                    scopes_response = await client.get(
+                        "https://api.github.com/user/repos",
+                        headers={
+                            "Authorization": f"Bearer {token}",
+                            "Accept": "application/vnd.github.v3+json",
+                            "User-Agent": "FastMCP-GitHub-OAuth",
+                        },
+                    )
+                except httpx2.RequestError as e:
+                    if not basic_scope_only:
+                        raise TokenVerificationError(
+                            "GitHub scope verification unavailable due to a transport error"
+                        ) from e
+                    logger.warning("GitHub scope verification unavailable: %s", e)
+                    oauth_scopes_header = ""
+                else:
+                    if scopes_response.status_code == 401:
+                        logger.debug(
+                            "GitHub scope verification rejected credentials: %d - %s",
+                            scopes_response.status_code,
+                            scopes_response.text[:200],
+                        )
+                        return None
+                    if scopes_response.status_code != 200:
+                        if not basic_scope_only:
+                            raise TokenVerificationError(
+                                "GitHub scope verification unavailable: "
+                                f"HTTP {scopes_response.status_code}"
+                            )
+                        logger.warning(
+                            "GitHub scope verification unavailable: %d - %s",
+                            scopes_response.status_code,
+                            scopes_response.text[:200],
+                        )
+                        oauth_scopes_header = ""
+                    else:
+                        oauth_scopes_header = scopes_response.headers.get(
+                            "x-oauth-scopes", ""
+                        )
 
-                # Extract scopes from X-OAuth-Scopes header if available
-                scopes_verified = scopes_response.status_code == 200
-                oauth_scopes_header = scopes_response.headers.get("x-oauth-scopes", "")
                 token_scopes = [
                     scope.strip()
                     for scope in oauth_scopes_header.split(",")
                     if scope.strip()
                 ]
 
-                # If no scopes in header, assume basic scopes based on successful user API call
+                # If scope discovery is unavailable after /user verifies identity,
+                # the basic user scope is enough only when no stronger scope is
+                # required. Never synthesize stronger grants such as repo.
                 if not token_scopes:
-                    token_scopes = ["user"]  # Basic scope if we can access user info
+                    token_scopes = ["user"]
 
                 # Check required scopes
                 if self.required_scopes:
                     token_scopes_set = set(token_scopes)
-                    required_scopes_set = set(self.required_scopes)
                     if not required_scopes_set.issubset(token_scopes_set):
                         logger.debug(
                             "GitHub token missing required scopes. Has %d, needs %d",
@@ -183,8 +218,9 @@ class GitHubTokenVerifier(TokenVerifier):
                         "github_user_data": user_data,
                     },
                 )
-                if scopes_verified:
-                    self._cache.set(token, result)
+                # Cache every accepted verification result, including the safe
+                # basic-scope fallback used during supplementary scope outages.
+                self._cache.set(token, result)
                 return result
 
         except TokenVerificationError:
