@@ -6,20 +6,17 @@ env:
 on:
   push:
     branches: ["main"]
-    paths:
-      - "fastmcp_slim/**"
-      - "fastmcp_remote/**"
-      - "tests/**"
-      - "examples/**"
-      - "pyproject.toml"
-      - "uv.lock"
-      - ".github/workflows/**"
-      - ".github/scripts/test-issue-link.mjs"
 
   # run on all pull requests because these checks are required and will block merges otherwise
   pull_request:
 
   workflow_dispatch:
+
+# Only newer revisions of the same PR supersede a run. Main and manual runs
+# use unique groups so they always complete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -37,8 +34,8 @@ jobs:
         with:
           resolution: locked
 
-      - name: Test issue-link workflow
-        run: node --test .github/scripts/test-issue-link.mjs
+      - name: Test workflows
+        run: node --test .github/scripts/test-*.mjs
 
       - name: Run prek
         uses: j178/prek-action@v3.0.0
