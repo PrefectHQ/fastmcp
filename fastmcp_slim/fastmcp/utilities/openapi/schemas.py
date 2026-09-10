@@ -370,6 +370,46 @@ def _flatten_discriminator_subtypes(
     return properties
 
 
+def _flatten_nested_discriminator(
+    prop_schema: Any,
+    schema_defs: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Inline one nested property's discriminated schema like the top-level body.
+
+    ``_combine_schemas_and_map_params`` flattens the discriminator carried by
+    the request body itself, but a discriminated schema nested one level down
+    (e.g. an envelope object holding a ``pet``) keeps a bare ``$ref`` while
+    its sibling subtypes are pruned from ``$defs``. The subtype fields then
+    disappear from the tool schema even though the parent still validates
+    them upstream.
+
+    Returns a replacement object schema for the property, or None when the
+    property does not reference a usable discriminated schema (left untouched).
+    Only one level is expanded; deeper nesting keeps the previous behavior.
+    """
+    if not isinstance(prop_schema, dict):
+        return None
+    target = prop_schema
+    ref = prop_schema.get("$ref")
+    if isinstance(ref, str):
+        name = _discriminator_target_name(ref)
+        target = schema_defs.get(name) if name else None
+        if not isinstance(target, dict):
+            return None
+    flattened = _flatten_discriminator_subtypes(target, schema_defs)
+    if flattened is None:
+        return None
+    nested = {
+        key: value
+        for key, value in target.items()
+        if key not in ("$ref", "discriminator", "properties")
+    }
+    nested["properties"] = flattened
+    if "type" not in nested:
+        nested["type"] = "object"
+    return nested
+
+
 def _combine_schemas_and_map_params(
     route: HTTPRoute,
     convert_refs: bool = True,
@@ -451,6 +491,17 @@ def _combine_schemas_and_map_params(
         if flattened_props is not None:
             body_schema["properties"] = flattened_props
             body_schema.pop("discriminator", None)
+
+        # Merge discriminated subtype fields one level down as well, so a
+        # nested discriminated schema is advertised the same way the
+        # top-level body is instead of keeping a bare $ref.
+        if isinstance(body_schema.get("properties"), dict):
+            for prop_name, prop_schema in list(body_schema["properties"].items()):
+                nested = _flatten_nested_discriminator(
+                    prop_schema, route.request_schemas
+                )
+                if nested is not None:
+                    body_schema["properties"][prop_name] = nested
 
         body_props = body_schema.get("properties", {})
 
