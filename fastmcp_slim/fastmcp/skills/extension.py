@@ -15,13 +15,14 @@ from fastmcp.server.extensions import MethodBinding, ServerExtension
 from fastmcp.server.mixins.mcp_operations import _apply_pagination
 from fastmcp.server.providers.base import Provider
 from fastmcp.skills._constants import SKILLS_EXTENSION_ID
-from fastmcp.skills._source import SkillSource
+from fastmcp.skills._source import _SkillSource
 from fastmcp.skills.models import (
     GetSkillParams,
     GetSkillResult,
     ListSkillsParams,
     ListSkillsResult,
 )
+from fastmcp.utilities.async_utils import gather
 from fastmcp.utilities.logging import get_logger
 
 if TYPE_CHECKING:
@@ -64,14 +65,14 @@ class SkillsExtension(ServerExtension):
                 raise ValueError(
                     "SkillsExtension does not yet support transformed providers"
                 )
-            if not isinstance(provider, SkillSource):
+            if not isinstance(provider, _SkillSource):
                 raise TypeError(
                     f"{type(provider).__name__} is not a SkillsExtension source"
                 )
 
     @property
-    def _sources(self) -> tuple[SkillSource, ...]:
-        return cast("tuple[SkillSource, ...]", self._providers)
+    def _sources(self) -> tuple[_SkillSource, ...]:
+        return cast("tuple[_SkillSource, ...]", self._providers)
 
     def methods(self) -> Sequence[MethodBinding]:
         return (
@@ -99,11 +100,10 @@ class SkillsExtension(ServerExtension):
     ) -> ListSkillsResult:
         self._validate_live_configuration()
 
-        entries = [
-            entry
-            for source in self._sources
-            for entry in await source._list_skill_entries(context)
-        ]
+        source_entries = await gather(
+            source._list_skill_entries(context) for source in self._sources
+        )
+        entries = [entry for group in source_entries for entry in group]
         counts = Counter(entry.uri for entry in entries)
         collisions = sorted(uri for uri, count in counts.items() if count > 1)
         if collisions:
@@ -127,11 +127,10 @@ class SkillsExtension(ServerExtension):
     ) -> GetSkillResult:
         self._validate_live_configuration()
 
-        matches = [
-            entry
-            for source in self._sources
-            if (entry := await source._get_skill_entry(params.uri, context)) is not None
-        ]
+        results = await gather(
+            source._get_skill_entry(params.uri, context) for source in self._sources
+        )
+        matches = [entry for entry in results if entry is not None]
         if len(matches) != 1 or matches[0].uri != params.uri:
             raise MCPError(
                 code=INVALID_PARAMS,

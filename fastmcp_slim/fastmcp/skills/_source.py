@@ -11,7 +11,7 @@ from fastmcp.skills.models import Skill
 
 
 @runtime_checkable
-class SkillSource(Protocol):
+class _SkillSource(Protocol):
     """A provider capable of producing caller-scoped Skills entries."""
 
     async def _list_skill_entries(
