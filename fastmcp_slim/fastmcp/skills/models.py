@@ -4,43 +4,100 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Literal
+from typing import Literal, cast
 from urllib.parse import unquote, urlsplit
 
 import mcp_types
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, RootModel, model_validator
 
 _SKILL_NAME_PATTERN = re.compile(r"^(?!-)(?!.*--)[a-z0-9-]+(?<!-)$")
 _SHA256_PATTERN = r"^sha256:[0-9a-f]{64}$"
 
 
-class SkillFrontmatter(BaseModel):
+def _parse_resource_uri(uri: str) -> tuple[str, str, tuple[str, ...]]:
+    parsed = urlsplit(uri)
+    if not parsed.scheme:
+        raise ValueError("resource URI must include a scheme")
+
+    segments: list[str] = []
+    for raw_segment in parsed.path.split("/"):
+        if not raw_segment:
+            continue
+        segment = unquote(raw_segment)
+        if segment in {".", ".."} or "/" in segment or "\\" in segment:
+            raise ValueError("resource URI path contains an invalid segment")
+        segments.append(segment)
+    return parsed.scheme.lower(), parsed.netloc, tuple(segments)
+
+
+class SkillFrontmatter(RootModel[dict[str, JsonValue]]):
     """Agent Skills frontmatter carried verbatim as JSON-compatible values."""
-
-    model_config = ConfigDict(extra="allow")
-
-    __pydantic_extra__: dict[str, JsonValue] = Field(init=False)
-
-    name: str
-    description: str
-    license: str | None = None
-    compatibility: str | None = None
-    metadata: dict[str, str] | None = None
-    allowed_tools: str | None = Field(default=None, alias="allowed-tools")
 
     @model_validator(mode="after")
     def validate_agent_skills_fields(self) -> SkillFrontmatter:
-        if len(self.name) > 64 or not _SKILL_NAME_PATTERN.fullmatch(self.name):
+        name = self.root.get("name")
+        if (
+            not isinstance(name, str)
+            or len(name) > 64
+            or not _SKILL_NAME_PATTERN.fullmatch(name)
+        ):
             raise ValueError(
                 "name must be 1-64 lowercase letters, digits, or hyphens; "
                 "it cannot start or end with a hyphen or contain consecutive hyphens"
             )
-        if not self.description.strip() or len(self.description) > 1024:
+
+        description = self.root.get("description")
+        if (
+            not isinstance(description, str)
+            or not description.strip()
+            or len(description) > 1024
+        ):
             raise ValueError("description must contain 1-1024 characters")
-        if self.compatibility is not None and len(self.compatibility) > 500:
+
+        for field_name in ("license", "allowed-tools"):
+            value = self.root.get(field_name)
+            if field_name in self.root and not isinstance(value, str):
+                raise ValueError(f"{field_name} must be a string")
+
+        compatibility = self.root.get("compatibility")
+        if "compatibility" in self.root and not isinstance(compatibility, str):
+            raise ValueError("compatibility must be a string")
+        if isinstance(compatibility, str) and len(compatibility) > 500:
             raise ValueError("compatibility must contain at most 500 characters")
-        _reject_non_finite(self.__pydantic_extra__)
+
+        metadata = self.root.get("metadata")
+        if "metadata" in self.root and (
+            not isinstance(metadata, dict)
+            or any(not isinstance(value, str) for value in metadata.values())
+        ):
+            raise ValueError("metadata must map string keys to string values")
+
+        _reject_non_finite(self.root)
         return self
+
+    @property
+    def name(self) -> str:
+        return cast("str", self.root["name"])
+
+    @property
+    def description(self) -> str:
+        return cast("str", self.root["description"])
+
+    @property
+    def license(self) -> str | None:
+        return cast("str | None", self.root.get("license"))
+
+    @property
+    def compatibility(self) -> str | None:
+        return cast("str | None", self.root.get("compatibility"))
+
+    @property
+    def metadata(self) -> dict[str, str] | None:
+        return cast("dict[str, str] | None", self.root.get("metadata"))
+
+    @property
+    def allowed_tools(self) -> str | None:
+        return cast("str | None", self.root.get("allowed-tools"))
 
 
 def _reject_non_finite(value: JsonValue) -> None:
@@ -75,13 +132,12 @@ class Skill(BaseModel):
 
     @model_validator(mode="after")
     def validate_entry(self) -> Skill:
-        parsed = urlsplit(self.uri)
-        path_segments = [unquote(part) for part in parsed.path.split("/") if part]
-        if not parsed.scheme or not path_segments or path_segments[-1] != "SKILL.md":
+        scheme, authority, path_segments = _parse_resource_uri(self.uri)
+        if not path_segments or path_segments[-1] != "SKILL.md":
             raise ValueError("uri must identify a SKILL.md resource")
 
         skill_path = path_segments[:-1]
-        uri_name = skill_path[-1] if skill_path else unquote(parsed.netloc)
+        uri_name = skill_path[-1] if skill_path else unquote(authority)
         if not uri_name or uri_name != self.frontmatter.name:
             raise ValueError(
                 "the final skill-path segment in uri must equal frontmatter.name"
@@ -93,6 +149,19 @@ class Skill(BaseModel):
                 raise ValueError("resources must contain each URI exactly once")
             if self.uri not in resource_uris:
                 raise ValueError("resources must include the skill's SKILL.md URI")
+            for resource_uri in resource_uris:
+                resource_scheme, resource_authority, resource_path = (
+                    _parse_resource_uri(resource_uri)
+                )
+                if (
+                    resource_scheme != scheme
+                    or resource_authority != authority
+                    or len(resource_path) <= len(skill_path)
+                    or resource_path[: len(skill_path)] != skill_path
+                ):
+                    raise ValueError(
+                        "every resource URI must identify a file within the skill directory"
+                    )
         return self
 
 

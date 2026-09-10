@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any, cast
 from mcp.server.context import ServerRequestContext
 from mcp.shared.exceptions import MCPError
 from mcp_types import INVALID_PARAMS
-from mcp_types.jsonrpc import MISSING_REQUIRED_CLIENT_CAPABILITY
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
 from fastmcp.server.extensions import MethodBinding, ServerExtension
@@ -90,21 +89,6 @@ class SkillsExtension(ServerExtension):
             ),
         )
 
-    def _require_client_capability(
-        self, context: ServerRequestContext[Any, Any]
-    ) -> None:
-        if self.client_settings(context) is None:
-            raise MCPError(
-                code=MISSING_REQUIRED_CLIENT_CAPABILITY,
-                message=(
-                    "This request targets the Skills extension; the client did "
-                    "not declare io.modelcontextprotocol/skills."
-                ),
-                data={
-                    "requiredCapabilities": {"extensions": {SKILLS_EXTENSION_ID: {}}}
-                },
-            )
-
     def _validate_live_configuration(self) -> None:
         self._validate_configuration(self.server)
 
@@ -113,7 +97,6 @@ class SkillsExtension(ServerExtension):
         context: ServerRequestContext[Any, Any],
         params: ListSkillsParams,
     ) -> ListSkillsResult:
-        self._require_client_capability(context)
         self._validate_live_configuration()
 
         entries = [
@@ -142,7 +125,6 @@ class SkillsExtension(ServerExtension):
         context: ServerRequestContext[Any, Any],
         params: GetSkillParams,
     ) -> GetSkillResult:
-        self._require_client_capability(context)
         self._validate_live_configuration()
 
         matches = [

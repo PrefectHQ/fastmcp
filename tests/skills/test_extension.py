@@ -1,23 +1,33 @@
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Sequence
 from typing import Any
 
 import pytest
 from mcp.server.context import ServerRequestContext
 from mcp.shared.exceptions import MCPError
-from mcp_types import INTERNAL_ERROR, INVALID_PARAMS, METHOD_NOT_FOUND
-from mcp_types.jsonrpc import MISSING_REQUIRED_CLIENT_CAPABILITY
+from mcp_types import (
+    INTERNAL_ERROR,
+    INVALID_PARAMS,
+    METHOD_NOT_FOUND,
+    TextResourceContents,
+)
+from pydantic import AnyUrl
 
 from fastmcp import Client, FastMCP
+from fastmcp.resources.base import Resource
+from fastmcp.resources.function_resource import FunctionResource
 from fastmcp.server.providers import Provider
 from fastmcp.server.transforms import Namespace
 from fastmcp.skills import Skill, SkillsClientExtension
 from fastmcp.skills._constants import SKILLS_EXTENSION_ID
 from fastmcp.skills.extension import SkillsExtension
 from fastmcp.skills.models import GetSkillParams, GetSkillRequest, GetSkillResult
+from fastmcp.utilities.versions import VersionSpec
 
-DIGEST = f"sha256:{'a' * 64}"
+SKILL_CONTENT = "# Review\n"
+DIGEST = f"sha256:{hashlib.sha256(SKILL_CONTENT.encode()).hexdigest()}"
 
 
 def make_skill(name: str) -> Skill:
@@ -26,7 +36,9 @@ def make_skill(name: str) -> Skill:
         {
             "uri": uri,
             "frontmatter": {"name": name, "description": f"Use {name}"},
-            "resources": [{"uri": uri, "digest": DIGEST, "size": 1}],
+            "resources": [
+                {"uri": uri, "digest": DIGEST, "size": len(SKILL_CONTENT.encode())}
+            ],
         }
     )
 
@@ -57,6 +69,19 @@ class MemorySkillProvider(Provider):
     ) -> Skill | None:
         self.contexts.append(context)
         return self.addressable.get(uri)
+
+    async def _get_resource(
+        self, uri: str, version: VersionSpec | None = None
+    ) -> Resource | None:
+        skill = self.addressable.get(uri)
+        if skill is None:
+            return None
+        return FunctionResource(
+            uri=AnyUrl(uri),
+            name=skill.frontmatter.name,
+            mime_type="text/markdown",
+            fn=lambda: SKILL_CONTENT,
+        )
 
 
 def make_server(
@@ -104,6 +129,15 @@ async def test_list_skills_auto_paginates_in_uri_order() -> None:
     ]
 
 
+async def test_list_skills_enforces_page_limit() -> None:
+    provider = MemorySkillProvider(listed=[make_skill("alpha"), make_skill("beta")])
+    server = make_server(provider, page_size=1)
+
+    async with skills_client(server) as client:
+        with pytest.raises(RuntimeError, match="Reached auto-pagination limit"):
+            await client.list_skills(max_pages=1)
+
+
 async def test_get_skill_is_authoritative_for_unlisted_skill() -> None:
     hidden_from_list = make_skill("direct-only")
     provider = MemorySkillProvider(listed=[], addressable=[hidden_from_list])
@@ -112,9 +146,22 @@ async def test_get_skill_is_authoritative_for_unlisted_skill() -> None:
     async with skills_client(server) as client:
         assert await client.list_skills() == []
         skill = await client.get_skill(hidden_from_list.uri)
+        contents = await client.read_resource(hidden_from_list.uri)
 
     assert skill == hidden_from_list
-    assert provider.contexts
+    assert len(contents) == 1
+    assert isinstance(contents[0], TextResourceContents)
+    assert contents[0].text == SKILL_CONTENT
+    assert isinstance(skill.resources, list)
+    payload = contents[0].text.encode()
+    assert skill.resources[0].size == len(payload)
+    assert skill.resources[0].digest == (
+        f"sha256:{hashlib.sha256(payload).hexdigest()}"
+    )
+    assert [context.method for context in provider.contexts] == [
+        "skills/list",
+        "skills/get",
+    ]
 
 
 async def test_get_unknown_skill_returns_invalid_params() -> None:
@@ -139,16 +186,18 @@ async def test_list_rejects_invalid_cursor() -> None:
     assert exc_info.value.error.code == INVALID_PARAMS
 
 
-async def test_server_rejects_request_without_client_capability() -> None:
+async def test_server_accepts_raw_request_after_capability_discovery() -> None:
     skill = make_skill("review")
     server = make_server(MemorySkillProvider(listed=[skill]))
 
     async with Client(server, mode="auto") as client:
+        assert client.server_capabilities is not None
+        assert client.server_capabilities.extensions is not None
+        assert SKILLS_EXTENSION_ID in client.server_capabilities.extensions
         request = GetSkillRequest(params=GetSkillParams(uri=skill.uri))
-        with pytest.raises(MCPError) as exc_info:
-            await client.session.send_request(request, GetSkillResult)
+        result = await client.session.send_request(request, GetSkillResult)
 
-    assert exc_info.value.error.code == MISSING_REQUIRED_CLIENT_CAPABILITY
+    assert result.skill == skill
 
 
 async def test_server_rejects_skills_method_on_legacy_protocol() -> None:
@@ -171,6 +220,13 @@ async def test_client_requires_explicit_opt_in() -> None:
             await client.list_skills()
 
 
+async def test_client_requires_connection() -> None:
+    client = skills_client(make_server(MemorySkillProvider(listed=[])))
+
+    with pytest.raises(RuntimeError, match="Client is not connected"):
+        await client.list_skills()
+
+
 async def test_client_rejects_server_without_extension() -> None:
     server = FastMCP("no-skills")
 
@@ -187,6 +243,18 @@ def test_extension_requires_provider_registered_directly() -> None:
         server.add_extension(SkillsExtension(providers=[provider]))
 
 
+def test_extension_requires_at_least_one_provider() -> None:
+    with pytest.raises(ValueError, match="at least one provider"):
+        SkillsExtension(providers=[])
+
+
+def test_extension_rejects_duplicate_provider_reference() -> None:
+    provider = MemorySkillProvider(listed=[])
+
+    with pytest.raises(ValueError, match="providers must be unique"):
+        SkillsExtension(providers=[provider, provider])
+
+
 def test_extension_rejects_provider_without_source_contract() -> None:
     provider = Provider()
     server = FastMCP("skills", providers=[provider])
@@ -201,6 +269,14 @@ def test_extension_rejects_transformed_provider() -> None:
     server = FastMCP("skills", providers=[provider])
 
     with pytest.raises(ValueError, match="transformed providers"):
+        server.add_extension(SkillsExtension(providers=[provider]))
+
+
+def test_extension_rejects_server_level_transform() -> None:
+    provider = MemorySkillProvider(listed=[])
+    server = FastMCP("skills", providers=[provider], transforms=[Namespace("docs")])
+
+    with pytest.raises(ValueError, match="server-level transforms"):
         server.add_extension(SkillsExtension(providers=[provider]))
 
 
