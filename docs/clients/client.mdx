@@ -303,6 +303,34 @@ client = Client(
 )
 ```
 
+### Skills extension
+
+<VersionBadge version="4.0.4" />
+
+To discover skills from a server that implements the MCP Skills extension
+(SEP-2640), opt in with `SkillsClientExtension`. The client then exposes
+`list_skills_mcp()` for one protocol page, `list_skills()` for automatic
+pagination, and `get_skill()` for authoritative lookup by the URI of a skill's
+`SKILL.md`.
+
+```python
+from fastmcp import Client
+from fastmcp.skills import SkillsClientExtension
+
+client = Client(
+    "https://example.com/mcp",
+    extensions=[SkillsClientExtension()],
+)
+
+async with client:
+    skills = await client.list_skills()
+    skill = await client.get_skill("skill://code-review/SKILL.md")
+```
+
+The Skills extension is available only on modern MCP connections. These methods
+raise before sending a request when the client did not opt in or the negotiated
+server did not advertise `io.modelcontextprotocol/skills`.
+
 ## Operations
 
 FastMCP clients interact with three types of server components.

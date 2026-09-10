@@ -66,6 +66,7 @@ from fastmcp.client.messages import MessageHandler, MessageHandlerT
 from fastmcp.client.mixins import (
     ClientPromptsMixin,
     ClientResourcesMixin,
+    ClientSkillsMixin,
     ClientToolsMixin,
 )
 from fastmcp.client.progress import ProgressHandler, default_progress_handler
@@ -261,6 +262,7 @@ class CallToolResult:
 
 class Client(
     Generic[ClientTransportT],
+    ClientSkillsMixin,
     ClientResourcesMixin,
     ClientPromptsMixin,
     ClientToolsMixin,
