@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from fastmcp.skills.models import (
+    GetSkillResult,
     ListSkillsResult,
     Skill,
     SkillFrontmatter,
@@ -100,6 +101,17 @@ def test_frontmatter_rejects_invalid_known_optional_fields(
     with pytest.raises(ValidationError, match=message):
         SkillFrontmatter.model_validate(
             {"name": "review", "description": "Review a change", field: value}
+        )
+
+
+def test_frontmatter_rejects_empty_compatibility() -> None:
+    with pytest.raises(ValidationError, match="compatibility must contain"):
+        SkillFrontmatter.model_validate(
+            {
+                "name": "review",
+                "description": "Review a change",
+                "compatibility": "",
+            }
         )
 
 
@@ -203,8 +215,34 @@ def test_resource_rejects_negative_size() -> None:
         SkillResource(uri="skill://review/SKILL.md", digest=DIGEST, size=-1)
 
 
+@pytest.mark.parametrize("size", [True, "1", 1.5, math.inf])
+def test_resource_rejects_non_integer_size_types(size: object) -> None:
+    with pytest.raises(ValidationError, match="size must be a non-negative integer"):
+        SkillResource.model_validate(
+            {"uri": "skill://review/SKILL.md", "digest": DIGEST, "size": size}
+        )
+
+
+def test_resource_accepts_integral_json_number() -> None:
+    resource = SkillResource.model_validate(
+        {"uri": "skill://review/SKILL.md", "digest": DIGEST, "size": 1.0}
+    )
+
+    assert resource.size == 1
+
+
 def test_list_result_uses_protocol_wire_names() -> None:
     wire = ListSkillsResult(skills=[make_skill()]).model_dump(
+        by_alias=True, mode="json", exclude_none=True
+    )
+
+    assert wire["resultType"] == "complete"
+    assert wire["ttlMs"] == 0
+    assert wire["cacheScope"] == "private"
+
+
+def test_get_result_uses_protocol_cache_fields() -> None:
+    wire = GetSkillResult(skill=make_skill()).model_dump(
         by_alias=True, mode="json", exclude_none=True
     )
 

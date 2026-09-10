@@ -8,7 +8,15 @@ from typing import Literal, cast
 from urllib.parse import unquote, urlsplit
 
 import mcp_types
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, RootModel, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    RootModel,
+    field_validator,
+    model_validator,
+)
 
 _SKILL_NAME_PATTERN = re.compile(r"^(?!-)(?!.*--)[a-z0-9-]+(?<!-)$")
 _SHA256_PATTERN = r"^sha256:[0-9a-f]{64}$"
@@ -62,8 +70,8 @@ class SkillFrontmatter(RootModel[dict[str, JsonValue]]):
         compatibility = self.root.get("compatibility")
         if "compatibility" in self.root and not isinstance(compatibility, str):
             raise ValueError("compatibility must be a string")
-        if isinstance(compatibility, str) and len(compatibility) > 500:
-            raise ValueError("compatibility must contain at most 500 characters")
+        if isinstance(compatibility, str) and not 1 <= len(compatibility) <= 500:
+            raise ValueError("compatibility must contain 1-500 characters")
 
         metadata = self.root.get("metadata")
         if "metadata" in self.root and (
@@ -119,6 +127,17 @@ class SkillResource(BaseModel):
     uri: str
     digest: str = Field(pattern=_SHA256_PATTERN)
     size: int = Field(ge=0)
+
+    @field_validator("size", mode="before")
+    @classmethod
+    def validate_size_type(cls, value: object) -> object:
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            raise ValueError("size must be a non-negative integer")
+        if isinstance(value, float) and (
+            not math.isfinite(value) or not value.is_integer()
+        ):
+            raise ValueError("size must be a non-negative integer")
+        return value
 
 
 class Skill(BaseModel):
@@ -182,7 +201,7 @@ class ListSkillsResult(mcp_types.PaginatedResult, mcp_types.CacheableResult):
     result_type: Literal["complete"] = "complete"
 
 
-class GetSkillResult(mcp_types.Result):
+class GetSkillResult(mcp_types.CacheableResult):
     """Result from `skills/get`."""
 
     skill: Skill

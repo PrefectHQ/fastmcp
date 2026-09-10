@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 
 import mcp_types
+from mcp.client.caching import CacheMode
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
 from fastmcp.client.telemetry import client_span
@@ -27,6 +28,10 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 AUTO_PAGINATION_MAX_PAGES = 250
+
+
+def _trace_meta() -> mcp_types.RequestParamsMeta | None:
+    return cast("mcp_types.RequestParamsMeta | None", inject_trace_context(None))
 
 
 class ClientSkillsMixin:
@@ -54,9 +59,24 @@ class ClientSkillsMixin:
             raise RuntimeError("The server does not advertise the Skills extension")
 
     async def list_skills_mcp(
-        self: Client, *, cursor: str | None = None
+        self: Client,
+        *,
+        cursor: str | None = None,
+        cache_mode: CacheMode = "use",
     ) -> ListSkillsResult:
-        """Send one `skills/list` request and return its protocol result."""
+        """Send one `skills/list` request and return its protocol result.
+
+        Args:
+            cursor: Optional pagination cursor from a previous result.
+            cache_mode: Response-cache behavior for this call.
+
+        Returns:
+            The complete protocol result, including cache and pagination fields.
+
+        Raises:
+            RuntimeError: If the client is disconnected or Skills was not negotiated.
+            MCPError: If the server rejects the request.
+        """
         self._require_skills_extension()
         with client_span(
             "skills/list",
@@ -64,26 +84,47 @@ class ClientSkillsMixin:
             "",
             session_id=self.transport.get_session_id(),
         ):
-            meta = cast(
-                "mcp_types.RequestParamsMeta | None", inject_trace_context(None)
-            )
-            request = ListSkillsRequest(
-                params=ListSkillsParams(cursor=cursor, meta=meta)
-            )
-            return await self._await_with_session_monitoring(
-                self.session.send_request(request, ListSkillsResult)
+
+            async def _send() -> ListSkillsResult:
+                request = ListSkillsRequest(
+                    params=ListSkillsParams(cursor=cursor, meta=_trace_meta())
+                )
+                return await self._await_with_session_monitoring(
+                    self.session.send_request(request, ListSkillsResult)
+                )
+
+            return await self._cached_fetch(
+                "skills/list",
+                cursor=cursor,
+                cache_mode=cache_mode,
+                send=_send,
             )
 
     async def list_skills(
-        self: Client, max_pages: int = AUTO_PAGINATION_MAX_PAGES
+        self: Client,
+        max_pages: int = AUTO_PAGINATION_MAX_PAGES,
+        *,
+        cache_mode: CacheMode = "use",
     ) -> list[Skill]:
-        """Retrieve every page returned by `skills/list`."""
+        """Retrieve every page returned by `skills/list`.
+
+        Args:
+            max_pages: Maximum number of pages to fetch before raising.
+            cache_mode: Response-cache behavior for the first page.
+
+        Returns:
+            Every skill entry returned across the server's pages.
+
+        Raises:
+            RuntimeError: If Skills was not negotiated or the page limit is reached.
+            MCPError: If the server rejects a request.
+        """
         skills: list[Skill] = []
         cursor: str | None = None
         seen_cursors: set[str] = set()
 
         for _ in range(max_pages):
-            result = await self.list_skills_mcp(cursor=cursor)
+            result = await self.list_skills_mcp(cursor=cursor, cache_mode=cache_mode)
             skills.extend(result.skills)
             if not result.next_cursor:
                 break
@@ -106,8 +147,25 @@ class ClientSkillsMixin:
 
         return skills
 
-    async def get_skill(self: Client, uri: str) -> Skill:
-        """Retrieve one skill entry by its `SKILL.md` resource URI."""
+    async def get_skill_mcp(
+        self: Client,
+        uri: str,
+        *,
+        cache_mode: CacheMode = "use",
+    ) -> GetSkillResult:
+        """Send a `skills/get` request and return its protocol result.
+
+        Args:
+            uri: URI of the skill's `SKILL.md` resource.
+            cache_mode: Response-cache behavior for this call.
+
+        Returns:
+            The complete protocol result, including cache fields.
+
+        Raises:
+            RuntimeError: If the client is disconnected or Skills was not negotiated.
+            MCPError: If the server rejects the request.
+        """
         self._require_skills_extension()
         with client_span(
             "skills/get",
@@ -116,11 +174,41 @@ class ClientSkillsMixin:
             session_id=self.transport.get_session_id(),
             resource_uri=uri,
         ):
-            meta = cast(
-                "mcp_types.RequestParamsMeta | None", inject_trace_context(None)
+
+            async def _send() -> GetSkillResult:
+                request = GetSkillRequest(
+                    params=GetSkillParams(uri=uri, meta=_trace_meta())
+                )
+                return await self._await_with_session_monitoring(
+                    self.session.send_request(request, GetSkillResult)
+                )
+
+            return await self._cached_fetch(
+                "skills/get",
+                cursor=None,
+                params_key=uri,
+                cache_mode=cache_mode,
+                send=_send,
             )
-            request = GetSkillRequest(params=GetSkillParams(uri=uri, meta=meta))
-            result = await self._await_with_session_monitoring(
-                self.session.send_request(request, GetSkillResult)
-            )
-            return result.skill
+
+    async def get_skill(
+        self: Client,
+        uri: str,
+        *,
+        cache_mode: CacheMode = "use",
+    ) -> Skill:
+        """Retrieve one skill entry by its `SKILL.md` resource URI.
+
+        Args:
+            uri: URI of the skill's `SKILL.md` resource.
+            cache_mode: Response-cache behavior for this call.
+
+        Returns:
+            The skill entry returned by the server.
+
+        Raises:
+            RuntimeError: If the client is disconnected or Skills was not negotiated.
+            MCPError: If the server rejects the request.
+        """
+        result = await self.get_skill_mcp(uri, cache_mode=cache_mode)
+        return result.skill

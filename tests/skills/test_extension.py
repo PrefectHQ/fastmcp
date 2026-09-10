@@ -23,7 +23,13 @@ from fastmcp.server.transforms import Namespace
 from fastmcp.skills import Skill, SkillsClientExtension
 from fastmcp.skills._constants import SKILLS_EXTENSION_ID
 from fastmcp.skills.extension import SkillsExtension
-from fastmcp.skills.models import GetSkillParams, GetSkillRequest, GetSkillResult
+from fastmcp.skills.models import (
+    GetSkillParams,
+    GetSkillRequest,
+    GetSkillResult,
+    ListSkillsParams,
+    ListSkillsResult,
+)
 from fastmcp.utilities.versions import VersionSpec
 
 SKILL_CONTENT = "# Review\n"
@@ -84,11 +90,33 @@ class MemorySkillProvider(Provider):
         )
 
 
+class CachedSkillsExtension(SkillsExtension):
+    async def _handle_list(
+        self,
+        context: ServerRequestContext[Any, Any],
+        params: ListSkillsParams,
+    ) -> ListSkillsResult:
+        result = await super()._handle_list(context, params)
+        return result.model_copy(update={"ttl_ms": 60_000, "cache_scope": "public"})
+
+    async def _handle_get(
+        self,
+        context: ServerRequestContext[Any, Any],
+        params: GetSkillParams,
+    ) -> GetSkillResult:
+        result = await super()._handle_get(context, params)
+        return result.model_copy(update={"ttl_ms": 60_000, "cache_scope": "public"})
+
+
 def make_server(
-    provider: MemorySkillProvider, *, page_size: int | None = None
+    provider: MemorySkillProvider,
+    *,
+    page_size: int | None = None,
+    cached: bool = False,
 ) -> FastMCP:
     server = FastMCP("skills", providers=[provider], list_page_size=page_size)
-    server.add_extension(SkillsExtension(providers=[provider]))
+    extension_type = CachedSkillsExtension if cached else SkillsExtension
+    server.add_extension(extension_type(providers=[provider]))
     return server
 
 
@@ -160,6 +188,69 @@ async def test_get_skill_is_authoritative_for_unlisted_skill() -> None:
     )
     assert [context.method for context in provider.contexts] == [
         "skills/list",
+        "skills/get",
+    ]
+
+
+async def test_skill_protocol_methods_preserve_cache_hints() -> None:
+    skill = make_skill("review")
+    server = make_server(MemorySkillProvider(listed=[skill]), cached=True)
+
+    async with skills_client(server) as client:
+        listed = await client.list_skills_mcp()
+        fetched = await client.get_skill_mcp(skill.uri)
+
+    assert listed.ttl_ms == fetched.ttl_ms == 60_000
+    assert listed.cache_scope == fetched.cache_scope == "public"
+
+
+async def test_skill_client_cache_serves_list_and_keys_get_by_uri() -> None:
+    alpha = make_skill("alpha")
+    beta = make_skill("beta")
+    provider = MemorySkillProvider(listed=[alpha, beta])
+    server = make_server(provider, cached=True)
+    client = Client(
+        server,
+        mode="auto",
+        extensions=[SkillsClientExtension()],
+        cache=True,
+    )
+
+    async with client:
+        first_listing = await client.list_skills()
+        cached_listing = await client.list_skills()
+        first_alpha = await client.get_skill(alpha.uri)
+        cached_alpha = await client.get_skill(alpha.uri)
+        fetched_beta = await client.get_skill(beta.uri)
+
+    assert first_listing == cached_listing == [alpha, beta]
+    assert first_alpha == cached_alpha == alpha
+    assert fetched_beta == beta
+
+    assert [context.method for context in provider.contexts] == [
+        "skills/list",
+        "skills/get",
+        "skills/get",
+    ]
+
+
+async def test_skill_client_cache_mode_bypass_reaches_server() -> None:
+    skill = make_skill("review")
+    provider = MemorySkillProvider(listed=[skill])
+    server = make_server(provider, cached=True)
+    client = Client(
+        server,
+        mode="auto",
+        extensions=[SkillsClientExtension()],
+        cache=True,
+    )
+
+    async with client:
+        await client.get_skill(skill.uri)
+        await client.get_skill(skill.uri, cache_mode="bypass")
+
+    assert [context.method for context in provider.contexts] == [
+        "skills/get",
         "skills/get",
     ]
 
