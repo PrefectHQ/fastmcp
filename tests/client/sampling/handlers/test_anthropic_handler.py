@@ -1,11 +1,12 @@
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from anthropic import AsyncAnthropic
 from anthropic.types import Message, TextBlock, ToolUseBlock, Usage
 from mcp_types import (
     AudioContent,
+    CreateMessageRequestParams,
     CreateMessageResult,
     CreateMessageResultWithTools,
     EmbeddedResource,
@@ -399,3 +400,35 @@ def test_convert_messages_raises_on_unsupported_content_type():
 
     with pytest.raises(ValueError, match="Unsupported content type for Anthropic"):
         AnthropicSamplingHandler._convert_to_anthropic_messages([msg])
+
+
+async def test_handler_sends_temperature_through_extra_body():
+    """Verify temperature goes via extra_body (anthropic 1.x dropped the parameter)."""
+    mock_client = MagicMock(spec=AsyncAnthropic)
+    mock_client.messages = MagicMock()
+    mock_client.messages.create = AsyncMock(
+        return_value=Message(
+            id="msg_123",
+            type="message",
+            role="assistant",
+            content=[TextBlock(type="text", text="hi")],
+            model="claude-sonnet-4-5",
+            stop_reason="end_turn",
+            stop_sequence=None,
+            usage=Usage(input_tokens=1, output_tokens=1),
+        )
+    )
+    handler = AnthropicSamplingHandler(
+        default_model="claude-sonnet-4-5", client=mock_client
+    )
+    messages = [
+        SamplingMessage(role="user", content=TextContent(type="text", text="hello"))
+    ]
+    params = CreateMessageRequestParams(
+        messages=messages, max_tokens=100, temperature=0.5
+    )
+    await handler(messages, params, context=None)
+
+    call_kwargs = mock_client.messages.create.call_args
+    assert call_kwargs.kwargs["extra_body"] == {"temperature": 0.5}
+    assert "temperature" not in call_kwargs.kwargs
