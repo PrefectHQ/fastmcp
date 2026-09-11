@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 from .auth import (
     OAuthProvider,
     TokenVerifier,
+    TokenVerificationError,
     RemoteAuthProvider,
     MultiAuth,
     AccessToken,
@@ -75,6 +76,7 @@ __all__ = [
     "OIDCProxy",
     "RemoteAuthProvider",
     "StaticTokenVerifier",
+    "TokenVerificationError",
     "TokenVerifier",
     "require_roles",
     "require_scopes",

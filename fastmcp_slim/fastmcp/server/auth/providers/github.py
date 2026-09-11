@@ -28,7 +28,7 @@ import httpx2
 from key_value.aio.protocols import AsyncKeyValue
 from pydantic import AnyHttpUrl
 
-from fastmcp.server.auth import TokenVerifier
+from fastmcp.server.auth import TokenVerificationError, TokenVerifier
 from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.utilities.auth import parse_scopes
@@ -101,7 +101,6 @@ class GitHubTokenVerifier(TokenVerifier):
                 if self._http_client is not None
                 else httpx2.AsyncClient(timeout=self.timeout_seconds)
             ) as client:
-                # Get token info from GitHub API
                 response = await client.get(
                     "https://api.github.com/user",
                     headers={
@@ -111,7 +110,7 @@ class GitHubTokenVerifier(TokenVerifier):
                     },
                 )
 
-                if response.status_code != 200:
+                if response.status_code == 401:
                     logger.debug(
                         "GitHub token verification failed: %d - %s",
                         response.status_code,
@@ -119,21 +118,56 @@ class GitHubTokenVerifier(TokenVerifier):
                     )
                     return None
 
+                if response.status_code != 200:
+                    logger.warning(
+                        "GitHub token verification unavailable: %d - %s",
+                        response.status_code,
+                        response.text[:200],
+                    )
+                    raise TokenVerificationError(
+                        f"GitHub token verification unavailable: HTTP {response.status_code}"
+                    )
+
                 user_data = response.json()
 
-                # Get token scopes from GitHub API
-                # GitHub includes scopes in the X-OAuth-Scopes header
-                scopes_response = await client.get(
-                    "https://api.github.com/user/repos",  # Any authenticated endpoint
-                    headers={
-                        "Authorization": f"Bearer {token}",
-                        "Accept": "application/vnd.github.v3+json",
-                        "User-Agent": "FastMCP-GitHub-OAuth",
-                    },
-                )
+                # Scope discovery is part of verification. A definitive 401 means
+                # the credential is invalid; transient HTTP/transport failures are
+                # operational failures and must propagate through OAuthProxy rather
+                # than being collapsed into invalid_token.
+                try:
+                    scopes_response = await client.get(
+                        "https://api.github.com/user/repos",
+                        headers={
+                            "Authorization": f"Bearer {token}",
+                            "Accept": "application/vnd.github.v3+json",
+                            "User-Agent": "FastMCP-GitHub-OAuth",
+                        },
+                    )
+                except httpx2.RequestError as e:
+                    logger.warning("GitHub scope verification unavailable: %s", e)
+                    raise TokenVerificationError(
+                        "GitHub scope verification unavailable due to a transport error"
+                    ) from e
 
-                # Extract scopes from X-OAuth-Scopes header if available
-                scopes_verified = scopes_response.status_code == 200
+                if scopes_response.status_code == 401:
+                    logger.debug(
+                        "GitHub scope verification rejected credentials: %d - %s",
+                        scopes_response.status_code,
+                        scopes_response.text[:200],
+                    )
+                    return None
+
+                if scopes_response.status_code != 200:
+                    logger.warning(
+                        "GitHub scope verification unavailable: %d - %s",
+                        scopes_response.status_code,
+                        scopes_response.text[:200],
+                    )
+                    raise TokenVerificationError(
+                        "GitHub scope verification unavailable: "
+                        f"HTTP {scopes_response.status_code}"
+                    )
+
                 oauth_scopes_header = scopes_response.headers.get("x-oauth-scopes", "")
                 token_scopes = [
                     scope.strip()
@@ -141,11 +175,9 @@ class GitHubTokenVerifier(TokenVerifier):
                     if scope.strip()
                 ]
 
-                # If no scopes in header, assume basic scopes based on successful user API call
-                if not token_scopes:
-                    token_scopes = ["user"]  # Basic scope if we can access user info
-
-                # Check required scopes
+                # Never synthesize a scope that GitHub did not report. A successful
+                # identity lookup proves the credential identifies a user, not that
+                # a particular OAuth grant (such as `user`) was issued.
                 if self.required_scopes:
                     token_scopes_set = set(token_scopes)
                     required_scopes_set = set(self.required_scopes)
@@ -157,12 +189,11 @@ class GitHubTokenVerifier(TokenVerifier):
                         )
                         return None
 
-                # Create AccessToken with GitHub user info
                 result = AccessToken(
                     token=token,
-                    client_id=str(user_data.get("id", "unknown")),  # Use GitHub user ID
+                    client_id=str(user_data.get("id", "unknown")),
                     scopes=token_scopes,
-                    expires_at=None,  # GitHub tokens don't typically expire
+                    expires_at=None,
                     subject=str(user_data["id"]),
                     claims={
                         "sub": str(user_data["id"]),
@@ -173,13 +204,16 @@ class GitHubTokenVerifier(TokenVerifier):
                         "github_user_data": user_data,
                     },
                 )
-                if scopes_verified:
-                    self._cache.set(token, result)
+                self._cache.set(token, result)
                 return result
 
+        except TokenVerificationError:
+            raise
         except httpx2.RequestError as e:
-            logger.debug("Failed to verify GitHub token: %s", e)
-            return None
+            logger.warning("GitHub token verification unavailable: %s", e)
+            raise TokenVerificationError(
+                "GitHub token verification unavailable due to a transport error"
+            ) from e
         except Exception as e:
             logger.debug("GitHub token verification error: %s", e)
             return None
@@ -287,12 +321,10 @@ class GitHubProvider(OAuthProxy):
             token_expiry_threshold_seconds: Number of seconds before actual expiry to
                 treat a token as expired, refreshing early to avoid races. Defaults to 0.
         """
-        # Parse scopes if provided as string
         required_scopes_final = (
             parse_scopes(required_scopes) if required_scopes is not None else ["user"]
         )
 
-        # Create GitHub token verifier
         token_verifier = GitHubTokenVerifier(
             required_scopes=required_scopes_final,
             timeout_seconds=timeout_seconds,
@@ -301,7 +333,6 @@ class GitHubProvider(OAuthProxy):
             http_client=http_client,
         )
 
-        # Initialize OAuth proxy with GitHub endpoints
         super().__init__(
             upstream_authorization_endpoint="https://github.com/login/oauth/authorize",
             upstream_token_endpoint="https://github.com/login/oauth/access_token",
@@ -311,7 +342,7 @@ class GitHubProvider(OAuthProxy):
             base_url=base_url,
             resource_base_url=resource_base_url,
             redirect_path=redirect_path,
-            issuer_url=issuer_url or base_url,  # Default to base_url if not specified
+            issuer_url=issuer_url or base_url,
             allowed_client_redirect_uris=allowed_client_redirect_uris,
             client_storage=client_storage,
             jwt_signing_key=jwt_signing_key,
