@@ -770,6 +770,58 @@ class TestQueryParameterSerialization:
         assert "ids=1+2+3" in url or "ids=1%202%203" in url
         assert url.count("ids=") == 1
 
+    def test_pipe_delimited_explode_omitted(self, director):
+        """Omitted explode with pipeDelimited defaults to false, not form-style repeats."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="ids",
+                    location="query",
+                    required=True,
+                    schema={"type": "array", "items": {"type": "string"}},
+                    explode=None,
+                    style="pipeDelimited",
+                )
+            ],
+            parameter_map={
+                "ids": {"location": "query", "openapi_name": "ids"},
+            },
+        )
+
+        request = director.build(route, {"ids": ["a", "b"]}, "https://example.com")
+        url = str(request.url)
+        assert "ids=a%7Cb" in url or "ids=a|b" in url
+        assert url.count("ids=") == 1
+
+    def test_space_delimited_explode_omitted(self, director):
+        """Omitted explode with spaceDelimited defaults to false, not form-style repeats."""
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="ids",
+                    location="query",
+                    required=True,
+                    schema={"type": "array", "items": {"type": "string"}},
+                    explode=None,
+                    style="spaceDelimited",
+                )
+            ],
+            parameter_map={
+                "ids": {"location": "query", "openapi_name": "ids"},
+            },
+        )
+
+        request = director.build(route, {"ids": ["a", "b"]}, "https://example.com")
+        url = str(request.url)
+        assert "ids=a+b" in url or "ids=a%20b" in url
+        assert url.count("ids=") == 1
+
     def test_explode_false_booleans_lowercased(self, director):
         """Booleans serialize as true/false, not True/False."""
         route = HTTPRoute(
