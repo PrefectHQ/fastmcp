@@ -12,6 +12,8 @@ from fastmcp import Client, FastMCP
     "media_type",
     [
         "application/json",
+        "application/json; charset=utf-8",
+        'application/json; profile="https://example.com/schema"',
         "application/vnd.example+json",
         "application/merge-patch+json; charset=utf-8",
     ],
