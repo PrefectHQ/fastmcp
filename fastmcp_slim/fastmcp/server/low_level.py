@@ -536,6 +536,9 @@ class LowLevelServer(_Server[LifespanResultT]):
     ) -> mcp_types.ServerCapabilities:
         """Override to advertise registered extensions and the MCP Apps UI extension.
 
+        The UI extension is advertised only while the server can serve an app
+        (see ``FastMCP.may_serve_apps``).
+
         ``ServerCapabilities.extensions`` is a real declared field in v2, so we
         update it directly. The
         `FastMCP(experimental_capabilities=...)` merge also lives here rather
@@ -559,19 +562,22 @@ class LowLevelServer(_Server[LifespanResultT]):
         # Advertise every registered extension's settings under
         # capabilities.extensions[identifier]. The hand-rolled UI splice stays
         # for now (MCP Apps migrates onto the extension API in a later phase);
-        # the two coexist. Advertisement is unconditional — the SDK's pre-2026
-        # version sieve strips capabilities.extensions on legacy eras, a known
+        # the two coexist. It is advertised only when the server has an app to
+        # serve: a host reads the declaration as a promise it can route UI to,
+        # and every server used to make that promise. The SDK's pre-2026 version
+        # sieve strips capabilities.extensions on legacy eras, a known
         # limitation (sdk-feedback #2).
         existing_extensions = capabilities.extensions or {}
         registered_extensions = {
             extension.identifier: extension.settings()
             for extension in self.fastmcp._extensions.values()
         }
+        app_extensions = {UI_EXTENSION_ID: {}} if self.fastmcp.may_serve_apps else {}
         return capabilities.model_copy(
             update={
                 "extensions": {
                     **existing_extensions,
-                    UI_EXTENSION_ID: {},
+                    **app_extensions,
                     **registered_extensions,
                 },
             }

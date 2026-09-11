@@ -183,6 +183,11 @@ class AggregateProvider(Provider):
     def __repr__(self) -> str:
         return f"AggregateProvider(providers={self.providers!r})"
 
+    @property
+    def may_serve_apps(self) -> bool:
+        """Whether any child provider may serve MCP App UI."""
+        return any(provider.may_serve_apps for provider in self.providers)
+
     # -------------------------------------------------------------------------
     # Tools
     # -------------------------------------------------------------------------

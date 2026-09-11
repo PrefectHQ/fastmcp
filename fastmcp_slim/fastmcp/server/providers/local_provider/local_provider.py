@@ -341,6 +341,23 @@ class LocalProvider(
             self._remove_component(key)
 
     # =========================================================================
+    # Capability queries
+    # =========================================================================
+
+    @property
+    def may_serve_apps(self) -> bool:
+        """Whether any registered component carries MCP App UI.
+
+        Local registrations are the one part of the provider graph the server
+        can enumerate without I/O, so this is the surface that answers the
+        question precisely and lets a plain server stop advertising the MCP Apps
+        extension (see ``Provider.may_serve_apps`` for the fail-open default).
+        """
+        from fastmcp.apps.config import component_serves_app
+
+        return any(component_serves_app(c) for c in self._components.values())
+
+    # =========================================================================
     # Provider interface implementation
     # =========================================================================
 

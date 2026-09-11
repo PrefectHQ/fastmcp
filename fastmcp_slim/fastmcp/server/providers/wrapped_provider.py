@@ -49,6 +49,11 @@ class _WrappedProvider(Provider):
     def __repr__(self) -> str:
         return f"_WrappedProvider({self._inner!r}, transforms={self._transforms!r})"
 
+    @property
+    def may_serve_apps(self) -> bool:
+        """Whether the wrapped provider may serve MCP App UI."""
+        return self._inner.may_serve_apps
+
     # -------------------------------------------------------------------------
     # Delegate to inner provider's public methods (which apply inner's transforms)
     # -------------------------------------------------------------------------
