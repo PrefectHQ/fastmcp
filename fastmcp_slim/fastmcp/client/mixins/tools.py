@@ -121,7 +121,7 @@ class ClientToolsMixin:
         for _ in range(max_pages):
             result = await self.list_tools_mcp(cursor=cursor, cache_mode=cache_mode)
             all_tools.extend(result.tools)
-            if not result.next_cursor:
+            if result.next_cursor is None:
                 break
             if result.next_cursor in seen_cursors:
                 logger.warning(
