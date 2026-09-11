@@ -6,6 +6,8 @@ import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+import mcp_types
+
 from fastmcp.server.transforms import (
     GetPromptNext,
     GetResourceNext,
@@ -13,6 +15,7 @@ from fastmcp.server.transforms import (
     GetToolNext,
     Transform,
 )
+from fastmcp.tools.base import InputRequiredToolResult, ToolResult
 from fastmcp.utilities.versions import VersionSpec
 
 if TYPE_CHECKING:
@@ -20,6 +23,7 @@ if TYPE_CHECKING:
     from fastmcp.resources.base import Resource
     from fastmcp.resources.template import ResourceTemplate
     from fastmcp.tools.base import Tool
+
 
 # Pattern for matching URIs: protocol://path
 _URI_PATTERN = re.compile(r"^([^:]+://)(.*?)$")
@@ -90,6 +94,32 @@ class Namespace(Transform):
             return None
         return None
 
+    def _transform_tool_result(self, result: ToolResult) -> ToolResult:
+        """Project resource links returned by a tool into this namespace."""
+        if isinstance(result, InputRequiredToolResult):
+            return result
+
+        content = [
+            mcp_types.ResourceLink.model_validate(
+                {
+                    **block.model_dump(mode="python", by_alias=True),
+                    "uri": self._transform_uri(str(block.uri)),
+                }
+            )
+            if isinstance(block, mcp_types.ResourceLink)
+            else block
+            for block in result.content
+        ]
+        if content == result.content:
+            return result
+
+        return ToolResult(
+            content=content,
+            structured_content=result.structured_content,
+            meta=result.meta,
+            is_error=result.is_error,
+        )
+
     # -------------------------------------------------------------------------
     # Tools
     # -------------------------------------------------------------------------
@@ -97,7 +127,10 @@ class Namespace(Transform):
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         """Prefix tool names with namespace."""
         return [
-            t.model_copy(update={"name": self._transform_name(t.name)}) for t in tools
+            t.model_copy(
+                update={"name": self._transform_name(t.name)}
+            )._with_result_transform(self._transform_tool_result)
+            for t in tools
         ]
 
     async def get_tool(
@@ -109,7 +142,9 @@ class Namespace(Transform):
             return None
         tool = await call_next(original, version=version)
         if tool:
-            return tool.model_copy(update={"name": name})
+            return tool.model_copy(update={"name": name})._with_result_transform(
+                self._transform_tool_result
+            )
         return None
 
     # -------------------------------------------------------------------------

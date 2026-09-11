@@ -1,11 +1,14 @@
 """Tests for Namespace and ToolTransform."""
 
+import mcp_types
 import pytest
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.server import create_proxy
 from fastmcp.server.providers import FastMCPProvider
 from fastmcp.server.transforms import Namespace, ToolTransform
+from fastmcp.tools.base import ToolResult
 from fastmcp.tools.tool_transform import ToolTransformConfig
 
 
@@ -80,6 +83,50 @@ class TestNamespaceTransform:
 
         assert len(transformed_templates) == 1
         assert transformed_templates[0].uri_template == "resource://ns/{name}/data"
+
+    async def test_namespace_rewrites_resource_links_in_tool_results(self):
+        """Resource links returned by namespaced tools use the public URI."""
+        upstream = FastMCP("Upstream")
+
+        @upstream.resource("resource://data")
+        def data() -> str:
+            return "resource"
+
+        @upstream.tool
+        def get_link() -> ToolResult:
+            return ToolResult(
+                content=[
+                    mcp_types.TextContent(type="text", text="resource"),
+                    mcp_types.ResourceLink(
+                        name="data",
+                        uri="resource://data",
+                        mime_type="text/plain",
+                    ),
+                ],
+                structured_content={"source": "upstream"},
+                meta={"request_id": "123"},
+                is_error=True,
+            )
+
+        proxy = create_proxy(upstream)
+        proxy.add_transform(Namespace("ns"))
+
+        result = await proxy.call_tool("ns_get_link")
+        resources = await proxy.list_resources()
+
+        assert str(resources[0].uri) == "resource://ns/data"
+        assert result.content[0] == mcp_types.TextContent(type="text", text="resource")
+        resource_link = result.content[1]
+        assert resource_link == mcp_types.ResourceLink(
+            name="data",
+            uri="resource://ns/data",
+            mime_type="text/plain",
+        )
+        assert isinstance(resource_link, mcp_types.ResourceLink)
+        assert isinstance(resource_link.uri, str)
+        assert result.structured_content == {"source": "upstream"}
+        assert result.meta == {"request_id": "123"}
+        assert result.is_error
 
 
 class TestToolTransformRenames:
@@ -242,8 +289,8 @@ class TestTransformStacking:
         sub = FastMCP("Sub")
 
         @sub.tool
-        def my_tool() -> str:
-            return "success"
+        def my_tool() -> mcp_types.ResourceLink:
+            return mcp_types.ResourceLink(name="data", uri="resource://data")
 
         main = FastMCP("Main")
         provider = FastMCPProvider(sub)
@@ -256,7 +303,9 @@ class TestTransformStacking:
 
         async with Client(main) as client:
             result = await client.call_tool("short", {})
-            assert result.data == "success"
+            assert result.content[0] == mcp_types.ResourceLink(
+                name="data", uri="resource://ns/data"
+            )
 
 
 class TestNoTransformation:
