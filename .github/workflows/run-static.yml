@@ -6,30 +6,23 @@ env:
 on:
   push:
     branches: ["main"]
-    paths:
-      - "fastmcp_slim/**"
-      - "fastmcp_remote/**"
-      - "tests/**"
-      - "examples/**"
-      - "pyproject.toml"
-      - "uv.lock"
-      - ".github/workflows/**"
 
-  # Keep required checks present; skip expensive jobs for skills-only PRs.
+  # run on all pull requests because these checks are required and will block merges otherwise
   pull_request:
 
   workflow_dispatch:
+
+# Only newer revisions of the same PR supersede a run. Main and manual runs
+# use unique groups so they always complete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
-  changes:
-    uses: ./.github/workflows/skills-only.yml
-
   static_analysis:
-    needs: changes
-    if: always() && needs.changes.outputs.skills-only != 'true'
     timeout-minutes: 2
     runs-on: ubuntu-latest
 
@@ -40,6 +33,9 @@ jobs:
         uses: ./.github/actions/setup-uv
         with:
           resolution: locked
+
+      - name: Test workflows
+        run: node --test .github/scripts/test-*.mjs
 
       - name: Run prek
         uses: j178/prek-action@v3.0.0

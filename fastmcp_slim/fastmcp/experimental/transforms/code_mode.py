@@ -108,8 +108,8 @@ _DEFAULT_LIMITS: "ResourceLimits" = {
     "max_memory": 100_000_000,  # 100 MB
 }
 """Baseline limits applied when ``MontySandboxProvider`` is constructed
-without an explicit ``limits`` argument. Pass ``limits=None`` to opt out
-entirely, or a dict to override."""
+without an explicit ``limits`` argument. Pass ``limits=None`` to disable
+configurable time, memory, and GC limits, or a dict to override."""
 
 
 class MontySandboxProvider:
@@ -117,16 +117,19 @@ class MontySandboxProvider:
 
     Args:
         limits: Resource limits for sandbox execution. Supported keys:
-            ``max_duration_secs`` (float), ``max_allocations`` (int),
-            ``max_memory`` (int), ``max_recursion_depth`` (int),
-            ``gc_interval`` (int).  All are optional; omit a key to
-            leave that limit uncapped.
+            `max_duration_secs` (float), `max_memory` (int),
+            `max_recursion_depth` (int), and `gc_interval` (int).
+            Time, memory, and GC limits are optional; omit a key to disable
+            it. Recursion depth defaults to Monty's standard maximum of 1,000.
+            Unsupported keys raise `ValueError` rather than being silently
+            ignored.
 
             When the argument is omitted entirely, a conservative baseline
             is applied (``max_duration_secs=30``, ``max_memory=100 MB``) so
             the out-of-box configuration is not unbounded. Pass
-            ``limits=None`` to explicitly run without any limits, or a dict
-            to set your own.
+            ``limits=None`` to disable configurable time, memory, and GC
+            limits, or a dict to set your own. Monty's standard recursion
+            limit still applies.
     """
 
     def __init__(
@@ -156,6 +159,17 @@ class MontySandboxProvider:
                 "Install it with `fastmcp[code-mode]` or pass a custom SandboxProvider."
             ) from exc
 
+        if self.limits is not None:
+            supported_limits = pydantic_monty.ResourceLimits.__annotations__.keys()
+            unsupported_limits = self.limits.keys() - supported_limits
+            if unsupported_limits:
+                unsupported = ", ".join(repr(key) for key in sorted(unsupported_limits))
+                supported = ", ".join(sorted(supported_limits))
+                raise ValueError(
+                    f"Unsupported Monty resource limits: {unsupported}. "
+                    f"Supported limits: {supported}."
+                )
+
         # Monty currently leaves Python callbacks running when a sandbox exits:
         # https://github.com/pydantic/monty/issues/821
         # Keep their tasks alive and join them before leaving this execution.
@@ -184,10 +198,10 @@ class MontySandboxProvider:
             key: track(value) for key, value in (external_functions or {}).items()
         }
 
-        monty = pydantic_monty.Monty(code, inputs=list(inputs))
         future = asyncio.ensure_future(
             self._run_monty(
-                monty,
+                pydantic_monty,
+                code=code,
                 inputs=inputs or None,
                 external_functions=async_functions or None,
             )
@@ -195,10 +209,10 @@ class MontySandboxProvider:
         try:
             return await future
         except asyncio.CancelledError:
-            # Awaiting alone does not stop the native sandbox thread when the
+            # Awaiting alone does not stop the sandbox worker when the
             # surrounding task is cancelled (e.g. an HTTP client disconnects
             # mid-execution). Explicitly cancel so the Monty runtime tears the
-            # thread down instead of leaving it running to completion.
+            # worker down instead of leaving it running to completion.
             future.cancel()
             raise
         finally:
@@ -210,23 +224,28 @@ class MontySandboxProvider:
             with anyio.CancelScope(shield=True):
                 await asyncio.gather(*tasks, return_exceptions=True)
 
-    def _run_monty(
+    async def _run_monty(
         self,
-        monty: Any,
+        pydantic_monty: Any,
         *,
+        code: str,
         inputs: dict[str, Any] | None,
         external_functions: dict[str, Callable[..., Any]] | None,
     ) -> Any:
-        """Launch the sandbox and return its awaitable.
+        """Run code in an isolated sandbox session.
 
         Isolated so the cancellation handling in `run()` can be exercised
         without a live `pydantic-monty` runtime.
         """
-        return monty.run_async(
-            inputs=inputs,
-            external_functions=external_functions,
-            limits=self.limits,
-        )
+        async with (
+            pydantic_monty.AsyncMonty() as pool,
+            pool.checkout(limits=self.limits) as session,
+        ):
+            return await session.feed_run(
+                code,
+                inputs=inputs,
+                external_lookup=external_functions,
+            )
 
 
 # ---------------------------------------------------------------------------

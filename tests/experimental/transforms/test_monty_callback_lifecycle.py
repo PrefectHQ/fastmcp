@@ -101,11 +101,15 @@ async def test_monty_provider_rejects_callbacks_queued_after_exit() -> None:
         called = True
 
     class QueuedCallbackProvider(MontySandboxProvider):
-        def _run_monty(self, monty: Any, *, inputs: Any, external_functions: Any):
+        async def _run_monty(
+            self,
+            pydantic_monty: Any,
+            *,
+            code: str,
+            inputs: Any,
+            external_functions: Any,
+        ) -> None:
             callbacks.update(external_functions)
-            future = asyncio.get_running_loop().create_future()
-            future.set_result(None)
-            return future
 
     await QueuedCallbackProvider().run(
         "callback()", external_functions={"callback": callback}

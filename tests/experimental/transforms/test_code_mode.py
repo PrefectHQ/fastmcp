@@ -2,7 +2,7 @@ import asyncio
 import importlib
 import importlib.util
 import json
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from mcp_types import ImageContent, TextContent
@@ -882,6 +882,24 @@ async def test_monty_provider_forwards_limits() -> None:
         await provider.run("x = 0\nfor _ in range(10**9):\n    x += 1")
 
 
+async def test_monty_provider_rejects_unsupported_limits() -> None:
+    provider = MontySandboxProvider(limits=cast(Any, {"max_allocations": 1}))
+
+    with pytest.raises(
+        ValueError,
+        match=r"Unsupported Monty resource limits: 'max_allocations'.*max_memory",
+    ):
+        await provider.run("return list(range(10_000))")
+
+
+async def test_monty_provider_forwards_inputs() -> None:
+    provider = MontySandboxProvider()
+
+    result = await provider.run("return value + 1", inputs={"value": 2})
+
+    assert result == 3
+
+
 async def test_monty_provider_applies_default_limits() -> None:
     provider = MontySandboxProvider()
     assert provider.limits == _DEFAULT_LIMITS
@@ -976,26 +994,31 @@ async def test_code_mode_max_tool_calls_none_is_unlimited() -> None:
 async def test_monty_provider_cancels_future_when_task_cancelled() -> None:
     """Cancelling the awaiting task must cancel the underlying sandbox future.
 
-    Otherwise the native Monty thread keeps running to completion after a
+    Otherwise the Monty worker keeps running to completion after a
     client disconnects or the request times out. A subclass overrides the
     launch seam so the cancellation handling in `run()` is exercised against
-    a controllable future rather than a live sandbox thread.
+    a controllable future rather than a live sandbox worker.
     """
     loop = asyncio.get_running_loop()
     sandbox_future: asyncio.Future[Any] = loop.create_future()
+    sandbox_started = asyncio.Event()
 
     class _NeverFinishingProvider(MontySandboxProvider):
-        def _run_monty(self, monty: Any, *, inputs: Any, external_functions: Any):
-            return sandbox_future
+        async def _run_monty(
+            self,
+            pydantic_monty: Any,
+            *,
+            code: str,
+            inputs: Any,
+            external_functions: Any,
+        ) -> Any:
+            sandbox_started.set()
+            return await sandbox_future
 
     provider = _NeverFinishingProvider()
     task = asyncio.create_task(provider.run("return 1"))
 
-    # Advance the task to `await future` (no suspension point before it).
-    for _ in range(3):
-        await asyncio.sleep(0)
-        if not task.done():
-            break
+    await sandbox_started.wait()
 
     task.cancel()
     with pytest.raises(asyncio.CancelledError):

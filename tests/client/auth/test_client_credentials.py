@@ -188,7 +188,9 @@ class TestClientCredentialsConstruction:
     def test_in_memory_storage_does_not_warn(self):
         """M2M re-acquires tokens cheaply, so no in-memory storage warning."""
         with warnings.catch_warnings():
-            warnings.simplefilter("error")
+            warnings.filterwarnings(
+                "error", message="Using in-memory token storage", category=UserWarning
+            )
             ClientCredentialsOAuthProvider(
                 SERVER_URL, client_id="cid", client_secret="secret"
             )

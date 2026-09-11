@@ -1,108 +1,33 @@
 ---
 name: review-pr
-description: Monitor and respond to automated PR reviews (Codex bot). Use when pushing a PR, checking review status, or responding to bot feedback. Handles the full cycle of push -> wait for review -> evaluate comments -> fix -> re-push.
+description: Follow an existing FastMCP PR through CI and automated review, evaluate feedback, and verify the current head before reporting readiness.
 ---
 
-# PR Review Workflow
+# Follow a PR
 
-This repo has `chatgpt-codex-connector[bot]` configured as an automated reviewer. After every push to a PR branch, Codex reviews the diff and either:
-- Reacts with a thumbs-up on its review body (no suggestions — PR is clean)
-- Posts inline comments with suggestions (each tagged with a priority badge)
+Read AGENTS.md for publication, review-thread, and merge rules. Track the PR's current head SHA. A push invalidates evidence tied only to an earlier head.
 
-## Checking review status
+## CI and review are separate
 
-After pushing, check whether Codex has reviewed the latest commit:
+After opening or updating a PR, establish a monitor using the host's scheduling capability. Keep it quiet while pending without a meaningful change. Report failures, requested decisions, and completion; pause it after the terminal report. If persistent monitoring is unavailable, watch during the active task and state that limitation rather than promising a future notification.
 
-```bash
-# Get the latest commit SHA on the branch
-LATEST=$(git rev-parse HEAD)
-
-# Check if Codex has reviewed that specific commit
-gh api repos/PrefectHQ/fastmcp/pulls/{PR_NUMBER}/reviews \
-  | jq "[.[] | select(.user.login == \"chatgpt-codex-connector[bot]\" and .commit_id == \"$LATEST\")] | length"
-```
-
-If the count is 0, Codex hasn't reviewed the latest push yet. Wait and check again.
-
-If the count is > 0, check for inline comments on the latest review:
+Fetch checks and reviews together:
 
 ```bash
-# Get the review body to check for thumbs-up
-gh api repos/PrefectHQ/fastmcp/pulls/{PR_NUMBER}/reviews \
-  | jq '[.[] | select(.user.login == "chatgpt-codex-connector[bot]") | {state, body: .body[:300], commit_id: .commit_id}] | last'
+gh pr view <number> --repo PrefectHQ/fastmcp \
+  --json headRefOid,statusCheckRollup,reviews,comments,isDraft,labels
+
+gh api --paginate repos/PrefectHQ/fastmcp/pulls/<number>/comments
 ```
 
-A clean review from Codex looks like a review body that contains a thumbs-up reaction or says "no suggestions." If the body contains "Here are some automated review suggestions," there are inline comments to evaluate.
+Read relevant CodeRabbit, Copilot, Codex, and maintainer feedback, including inline threads and replies. Codex may update a summary issue comment instead of creating a formal review. Match its reported commit and completion status; zero formal reviews does not prove it has not run. Drafts may not trigger reviews. Do not mark ready or request reviews solely to satisfy a polling loop without authorization.
 
-## Evaluating Codex comments
+Green CI means checks passed, not that review finished. A generic request for human review is not a concrete defect; explain any actual unresolved compatibility decision. Distinguish substantive findings from status messages and stylistic notes.
 
-Fetch all inline comments from Codex:
+## Act on evidence
 
-```bash
-gh api repos/PrefectHQ/fastmcp/pulls/{PR_NUMBER}/comments \
-  | jq '[.[] | select(.user.login == "chatgpt-codex-connector[bot]") | {body, path, line, created_at}]'
-```
+Use [code-review](../code-review/SKILL.md) to assess findings. Fix real defects together, verify adjacent paths, run required checks, and push. Resolve a thread when its fix is verified. When declining a finding, reply with the reason if posting is authorized. Do not loop indefinitely on speculative follow-ups.
 
-Codex comments include priority badges:
-- `P0` (red) — Critical issue, likely a real bug
-- `P1` (orange) — Important, worth fixing
-- `P2` (yellow) — Moderate, evaluate on merit
+For CI failures, inspect the failed job's logs. Distinguish assertions, worker crashes, dependency resolution, and infrastructure failures. A test name or unrelated diff alone does not establish the cause. Retry when evidence supports a transient failure; recurring failures need diagnosis.
 
-**How to evaluate Codex comments:**
-
-1. **Treat Codex as a competent but sometimes overzealous reviewer.** It catches real bugs (cache eviction ordering, silent data loss, missing validation) but also suggests scope expansions and hypothetical improvements.
-
-2. **Fix real bugs** — issues in code you actually changed where behavior is incorrect or data is silently lost.
-
-3. **Dismiss scope expansion** — if a comment points out a pre-existing limitation unrelated to your diff, note it as a potential follow-up but don't block the PR.
-
-4. **Dismiss speculative concerns** — if a comment describes a scenario that requires very specific conditions and the existing behavior is acceptable, dismiss it.
-
-5. **When fixing, be proactive** — if Codex found one instance of a pattern bug (e.g., missing role validation in one handler), check all similar code paths before pushing. Codex will find the next instance on the next review cycle, so get ahead of it.
-
-## Responding to every comment
-
-**Every Codex comment must get a visible response** — either a fix or a reply explaining why it was dismissed. The maintainer can't see your reasoning otherwise.
-
-- **If fixing**: The fix itself is the response. No reply needed unless the fix is non-obvious.
-- **If dismissing**: Reply to the comment thread with a brief explanation of why. Keep it to 1-2 sentences. Examples:
-  - "This is pre-existing behavior unrelated to this diff — the scope lookup fallback existed before caching was added. Worth a follow-up issue but not blocking this PR."
-  - "The AsyncExitStack handles cleanup when the session exits, so the subprocess isn't leaked — just kept alive slightly longer than necessary in this edge case."
-  - "Gemini supports a much wider range of media types than OpenAI/Anthropic, so a restrictive allowlist would be inaccurate here."
-
-Use `gh api` to reply (note: use `in_reply_to`, not a `/replies` sub-path):
-
-```bash
-# Reply to a specific review comment
-gh api repos/PrefectHQ/fastmcp/pulls/{PR_NUMBER}/comments \
-  -f body="Your reply here" \
-  -F in_reply_to={COMMENT_ID}
-```
-
-## The fix-push-review cycle
-
-After evaluating comments:
-
-1. Fix all real issues in one batch
-2. Reply to all dismissed comments with reasoning
-3. Think about what patterns Codex might flag next — check similar code paths proactively
-4. Commit and push
-5. Check that Codex reviews the new commit
-6. Repeat until Codex gives a clean review (thumbs-up) or only has dismissible comments
-
-## Responding to stale comments
-
-Codex sometimes re-posts old comments that reference code you've already fixed (they appear on the old commit's diff). These are stale — verify the fix is in the latest commit and reply noting the fix is already in place.
-
-## Labels — never apply or invent them
-
-**Do not apply labels to PRs or issues programmatically, and never create new ones.** Issues and PRs in this repo are auto-labeled by a bot based on title, body, and code changes — there's no fixed canonical list to match against, and GitHub's "add labels" API auto-creates any label name that doesn't already exist, so a typo or guessed name silently pollutes the repo's label list with a stray, uncolored duplicate. There is no MCP tool to delete a label, so a mistaken creation can only be cleaned up by hand in repo settings.
-
-Don't call out a "suggested" or "appropriate" label in the PR body either — the bot doesn't read it, and it just adds noise.
-
-## When a PR is ready
-
-A PR is ready for human review when:
-- All Codex comments are either fixed or replied to with dismissal reasoning
-- CI checks pass
-- The diff is clean and focused on the stated purpose
+The final report names the head checked, CI outcome, outstanding review findings or decisions, and any pending work. Preserve draft status unless the user authorizes changing it. Merging is separate: recheck title, body, labels, head, and checks immediately before an authorized merge; obey all DNM markers and branch protections.

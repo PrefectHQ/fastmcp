@@ -6,32 +6,70 @@ env:
 on:
   push:
     branches: ["main"]
-    paths:
-      - "fastmcp_slim/**"
-      - "fastmcp_remote/**"
-      - "tests/**"
-      - "pyproject.toml"
-      - "uv.lock"
-      - ".github/workflows/**"
 
-  # Keep required checks present; skip expensive jobs for skills-only PRs.
+  # run on all pull requests because these checks are required and will block merges otherwise
   pull_request:
 
   workflow_dispatch:
 
+# Only newer revisions of the same PR supersede a run. Main and manual runs
+# use unique groups so they always complete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   changes:
-    uses: ./.github/workflows/skills-only.yml
+    name: Classify test changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      run-tests: ${{ steps.classify.outputs.result }}
+    steps:
+      - uses: actions/github-script@v8
+        id: classify
+        with:
+          script: |
+            // Main and manual runs always exercise the full matrix.
+            if (context.eventName !== 'pull_request') return true;
+            const pr = context.payload.pull_request;
+            try {
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                ...context.repo,
+                pull_number: pr.number,
+                per_page: 100,
+              });
+              const { data: current } = await github.rest.pulls.get({
+                ...context.repo,
+                pull_number: pr.number,
+              });
+              if (current.head.sha !== pr.head.sha || current.base.sha !== pr.base.sha) return true;
+              // The API caps results at 3,000 files. Never skip an incomplete
+              // or empty diff, including when the PR changed during pagination.
+              if (!files.length || files.length !== pr.changed_files || files.length >= 3000) return true;
+              const editorial = (path) =>
+                /^(README|CONTRIBUTING|CODE_OF_CONDUCT)\.md$/.test(path) ||
+                /^docs\/.*\.(md|mdx)$/.test(path);
+              return files.some((file) =>
+                !editorial(file.filename) ||
+                (file.previous_filename && !editorial(file.previous_filename))
+              );
+            } catch (error) {
+              core.warning(`Could not classify changes; running all tests: ${error.message}`);
+              return true;
+            }
 
   run_tests:
     needs: changes
-    # Expand the matrix even for skills-only PRs so every required check reports.
-    if: always()
+    # Expand the matrix even for editorial PRs so every required check keeps
+    # its exact name. Skip the expensive steps, not the matrix job.
+    if: ${{ !cancelled() }}
     name: "Tests: Python ${{ matrix.python-version }} on ${{ matrix.os }}"
-    runs-on: ${{ needs.changes.outputs.skills-only == 'true' && 'ubuntu-latest' || matrix.os }}
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
@@ -43,29 +81,34 @@ jobs:
     timeout-minutes: 10
 
     steps:
+      # Keep local composite action definitions available to the runner.
       - uses: actions/checkout@v7
-        if: needs.changes.outputs.skills-only != 'true'
 
       - name: Setup uv
-        if: needs.changes.outputs.skills-only != 'true'
+        if: needs.changes.outputs.run-tests != 'false' || (matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10')
         uses: ./.github/actions/setup-uv
         with:
           python-version: ${{ matrix.python-version }}
           resolution: locked
 
       - name: Run unit tests
-        if: needs.changes.outputs.skills-only != 'true'
+        if: needs.changes.outputs.run-tests != 'false'
         uses: ./.github/actions/run-pytest
 
       - name: Run serial subprocess tests
-        if: needs.changes.outputs.skills-only != 'true'
+        if: needs.changes.outputs.run-tests != 'false'
         uses: ./.github/actions/run-pytest
         with:
           test-type: client_process
 
+      - name: Run documentation tests
+        if: needs.changes.outputs.run-tests == 'false' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
+        run: uv run pytest tests/docs -n 0
+
   run_tests_lowest_direct:
     needs: changes
-    if: always() && needs.changes.outputs.skills-only != 'true'
+    # Run even if classification fails, preserving coverage and check names.
+    if: ${{ !cancelled() && needs.changes.outputs.run-tests != 'false' }}
     name: "Tests with lowest-direct dependencies"
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -88,7 +131,8 @@ jobs:
 
   run_conformance_tests:
     needs: changes
-    if: always() && needs.changes.outputs.skills-only != 'true'
+    # Run even if classification fails, preserving coverage and check names.
+    if: ${{ !cancelled() && needs.changes.outputs.run-tests != 'false' }}
     name: "MCP conformance tests"
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -113,7 +157,8 @@ jobs:
 
   run_integration_tests:
     needs: changes
-    if: always() && needs.changes.outputs.skills-only != 'true'
+    # Run even if classification fails, preserving coverage and check names.
+    if: ${{ !cancelled() && needs.changes.outputs.run-tests != 'false' }}
     name: "Integration tests"
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -137,7 +182,8 @@ jobs:
 
   package_install_smoke:
     needs: changes
-    if: always() && needs.changes.outputs.skills-only != 'true'
+    # Run even if classification fails, preserving coverage and check names.
+    if: ${{ !cancelled() && needs.changes.outputs.run-tests != 'false' }}
     name: "Package install smoke"
     runs-on: ubuntu-latest
     timeout-minutes: 10
