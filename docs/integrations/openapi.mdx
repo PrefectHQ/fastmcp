@@ -436,14 +436,14 @@ await client.call_tool("get_user", {"user_id": None})
 
 FastMCP handles array parameters according to OpenAPI specifications:
 
-- **Query arrays**: Serialized based on the `explode` parameter (default: `True`)
+- **Query arrays**: Serialized based on `style` and `explode`. When omitted, `explode` defaults to `True` for `form` (the default query style) and `False` for other styles. With `explode=False`, `form` uses commas, `pipeDelimited` uses pipes, and `spaceDelimited` uses spaces.
 - **Path arrays**: Serialized as comma-separated values (OpenAPI 'simple' style)
 
 ```python
-# Query array with explode=true (default)
+# Query array with style=form, explode=true (defaults)
 # ?tags=red&tags=blue&tags=green
 
-# Query array with explode=false  
+# Query array with style=form, explode=false
 # ?tags=red,blue,green
 
 # Path array (always comma-separated)
