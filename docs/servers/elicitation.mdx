@@ -69,6 +69,17 @@ The elicitation result contains an `action` field indicating how the user respon
 | `decline` | User chose not to provide the requested information |
 | `cancel` | User cancelled the entire operation |
 
+A declined or cancelled result is falsy, so the obvious guard around a destructive action refuses when the user does:
+
+```python
+result = await ctx.elicit("Delete the project?", response_type=bool)
+if not result or not result.data:
+    return "Cancelled"
+delete_project()
+```
+
+An accepted result is always truthy, including when the user accepted the form and answered `False`, so a confirmation still checks `result.data`.
+
 FastMCP also provides typed result classes for pattern matching:
 
 ```python
