@@ -370,29 +370,32 @@ provider = ProxyProvider(lambda: ProxyClient("http://backend/mcp"), cache_ttl=60
 provider = ProxyProvider(lambda: ProxyClient("http://backend/mcp"), cache_ttl=0)
 ```
 
-### Session Reuse for Stateless Backends
+### Request-Scoped Sessions
 
-By default, each tool call opens a fresh MCP session to the backend. This is the safe default because it prevents state from leaking between requests. However, for stateless HTTP backends where there's no session state to protect, this overhead is unnecessary.
+By default, `ProxyProvider` opens one backend session lazily for each frontend request. Component resolution and execution share that session, so a `tools/call` that must first fetch `tools/list` performs only one backend handshake. The session disconnects when the request ends.
 
-You can reuse a single backend session by providing a client factory that returns the same client instance:
+Request scope also provides the isolation a proxy needs for authentication and interaction forwarding: concurrent frontend requests never share a live backend session, even when the client factory returns the same disconnected client object. Requests handled entirely by local components do not connect to the proxy backend.
 
 ```python
-from fastmcp.server.providers.proxy import FastMCPProxy, ProxyClient
+from fastmcp.server.providers.proxy import ProxyProvider, ProxyClient
 
 base_client = ProxyClient("http://backend:8000/mcp")
-shared_client = base_client.new()
-
-proxy = FastMCPProxy(
-    client_factory=lambda: shared_client,
-    name="ReusedSessionProxy",
-)
+provider = ProxyProvider(lambda: base_client)
 ```
 
-This eliminates the MCP initialization handshake on every call, which can dramatically reduce latency under load. The `Client` uses reference counting for its session lifecycle, so concurrent callers sharing the same instance is safe.
+The factory still only creates or returns clients; connection happens on the first backend operation. Component-list caches remain shared across requests, but connected clients and proxy request context do not.
 
-<Warning>
-Only reuse sessions when you know the backend is stateless (e.g. stateless HTTP). For stateful backends (stdio processes, servers that track session state), use the default fresh-session behavior to avoid context mixing.
-</Warning>
+For compatibility with custom lifecycle strategies, set `session_scope="operation"`. This restores the legacy behavior where each list, read, render, or execution operation owns only its own client context. `StatefulProxyClient.new_stateful` requires this policy because it deliberately retains a backend session for an entire frontend connection.
+
+```python
+from fastmcp.server.providers.proxy import FastMCPProxy, StatefulProxyClient
+
+backend_client = StatefulProxyClient("backend_server.py")
+proxy = FastMCPProxy(
+    client_factory=backend_client.new_stateful,
+    session_scope="operation",
+)
+```
 
 ## Advanced Usage
 
