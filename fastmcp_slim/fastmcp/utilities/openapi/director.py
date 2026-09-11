@@ -73,7 +73,7 @@ class RequestDirector:
         method: str = route.method.upper()
         params = query_params if query_params else None
         headers = header_params if header_params else None
-        json_body: dict[str, Any] | list[Any] | None = None
+        json_body: dict[str, Any] | list[Any] | str | int | float | bool | None = None
         content: str | bytes | None = None
 
         # Step 5: Determine the declared content type from the OpenAPI spec.
@@ -122,16 +122,22 @@ class RequestDirector:
                 and isinstance(body, dict)
             ):
                 data = body
-            elif isinstance(body, dict | list):
+            elif (
+                isinstance(body, dict | list)
+                or declared_content_type == "application/json"
+                or (
+                    declared_content_type is not None
+                    and declared_content_type.endswith("+json")
+                )
+            ):
                 if (
                     declared_content_type is not None
-                    and declared_content_type != "application/json"
+                    and raw_content_type != "application/json"
                     and "json" in declared_content_type
                 ):
-                    # JSON-compatible types like application/json-patch+json
-                    # or application/merge-patch+json need an explicit
-                    # Content-Type header since httpx's json= always
-                    # sets application/json.
+                    # JSON media types with parameters or custom subtypes need
+                    # an explicit Content-Type header since httpx's json=
+                    # always sets bare application/json.
                     content = _json.dumps(body, allow_nan=False).encode("utf-8")
                     headers = dict(headers) if headers else {}
                     headers["Content-Type"] = raw_content_type
