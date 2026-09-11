@@ -58,7 +58,7 @@ When modifying MCP functionality, changes typically need to be applied across al
 
 **Review closed contributor PRs.** When reviewing an issue, inspect every associated non-maintainer PR, including closed PRs. External PRs may be closed as part of the issue-link and assignment workflow, so closure alone is not a negative signal. Read `CONTRIBUTING.md` and the PR timeline and comments to understand its status before evaluating it.
 
-**Check unfamiliar contributors before assignment.** Follow `.claude/skills/review-issue/SKILL.md` for a brief public-history check. Avoid obvious spam or unattended bot accounts, but lean toward goodwill: account age, sparse profiles, and AI assistance alone are not reasons to reject a sound contribution.
+**Check unfamiliar contributors before assignment.** Follow `.agents/skills/review-issue/SKILL.md` for a brief public-history check. Avoid obvious spam or unattended bot accounts, but lean toward goodwill: account age, sparse profiles, and AI assistance alone are not reasons to reject a sound contribution.
 
 ### Git & CI
 
@@ -87,7 +87,7 @@ When modifying MCP functionality, changes typically need to be applied across al
 
 ### Releases
 
-The executable procedure lives in `.claude/skills/release/SKILL.md`; load that skill to cut one. The policy below is the contract it implements.
+The executable procedure lives in `.agents/skills/release/SKILL.md`; load that skill to cut one. The policy below is the contract it implements.
 
 Only cut releases when the maintainer explicitly asks. Tags follow `v<version>` (e.g., `v3.2.0`). Always pass `--generate-notes` so the auto-generated changelog appears at the bottom.
 

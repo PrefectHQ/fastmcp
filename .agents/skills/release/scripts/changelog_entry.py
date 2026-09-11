@@ -1,8 +1,8 @@
 """Insert the release entry into docs/changelog.mdx and docs/updates.mdx.
 
 Usage:
-    uv run .claude/skills/release/scripts/changelog_entry.py v4.0.1 v4.0.0 "Come Back Any Time" notes.md
-    uv run .claude/skills/release/scripts/changelog_entry.py ... --print   # render only
+    uv run .agents/skills/release/scripts/changelog_entry.py v4.0.1 v4.0.0 "Come Back Any Time" notes.md
+    uv run .agents/skills/release/scripts/changelog_entry.py ... --print   # render only
 
 Reads the maintainer-approved notes file for the intro paragraph and pulls the
 PR list from GitHub's generate-notes API, so the docs entry matches what
