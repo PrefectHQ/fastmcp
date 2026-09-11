@@ -4,8 +4,11 @@ from typing import Any
 
 import httpx2
 import pytest
+from jsonschema_path import SchemaPath
 
 from fastmcp import Client, FastMCP
+from fastmcp.utilities.openapi.director import RequestDirector
+from fastmcp.utilities.openapi.models import HTTPRoute, ParameterInfo
 
 
 @pytest.mark.parametrize(
@@ -66,3 +69,35 @@ async def test_query_array_serialization(
 
     assert len(requests) == 1
     assert requests[0].url.params.multi_items() == expected
+
+
+@pytest.mark.parametrize(
+    "style,expected",
+    [
+        ("form", [("name", "alice")]),
+        ("deepObject", [("filter[name]", "alice")]),
+        ("pipeDelimited", [("name", "alice")]),
+        ("spaceDelimited", [("name", "alice")]),
+    ],
+)
+def test_object_query_defaults_preserve_existing_behavior(
+    style: str, expected: list[tuple[str, str]]
+) -> None:
+    route = HTTPRoute(
+        path="/items",
+        method="GET",
+        parameters=[
+            ParameterInfo(
+                name="filter",
+                location="query",
+                required=True,
+                schema={"type": "object", "properties": {"name": {"type": "string"}}},
+                style=style,
+            )
+        ],
+        parameter_map={"filter": {"location": "query", "openapi_name": "filter"}},
+    )
+    request = RequestDirector(SchemaPath.from_dict({})).build(
+        route, {"filter": {"name": "alice"}}, "https://example.test"
+    )
+    assert request.url.params.multi_items() == expected

@@ -290,8 +290,9 @@ class RequestDirector:
         Serialize query parameter values according to their OpenAPI style/explode settings.
 
         By default (style=form, explode=true), list values are passed through as-is
-        so httpx repeats the key (e.g. values=a&values=b). Omitted explode defaults
-        to false for other styles. When explode=false,
+        so httpx repeats the key (e.g. values=a&values=b). For pipeDelimited and
+        spaceDelimited arrays, omitted explode defaults to false. Object values
+        retain the existing default of true. When explode=false,
         list values are joined with the style-appropriate delimiter:
           - form (default): comma  (values=a,b)
           - pipeDelimited:  pipe   (values=a|b)
@@ -310,11 +311,13 @@ class RequestDirector:
             param_info = param_lookup.get(key)
             if param_info is not None:
                 style = param_info.style or "form"
-                explode = (
-                    param_info.explode
-                    if param_info.explode is not None
-                    else style == "form"
-                )
+                explode = param_info.explode if param_info.explode is not None else True
+                if (
+                    param_info.explode is None
+                    and isinstance(value, list)
+                    and style in {"pipeDelimited", "spaceDelimited"}
+                ):
+                    explode = False
                 if isinstance(value, dict):
                     if not value:
                         continue
