@@ -66,6 +66,7 @@ from fastmcp.client.messages import MessageHandler, MessageHandlerT
 from fastmcp.client.mixins import (
     ClientPromptsMixin,
     ClientResourcesMixin,
+    ClientSkillsMixin,
     ClientToolsMixin,
 )
 from fastmcp.client.progress import ProgressHandler, default_progress_handler
@@ -261,6 +262,7 @@ class CallToolResult:
 
 class Client(
     Generic[ClientTransportT],
+    ClientSkillsMixin,
     ClientResourcesMixin,
     ClientPromptsMixin,
     ClientToolsMixin,
@@ -1200,17 +1202,18 @@ class Client(
         method: str,
         *,
         cursor: str | None,
+        params_key: str = "",
         cache_mode: CacheMode,
         send: Callable[[], Coroutine[Any, Any, CacheableT]],
         absorb: Callable[[CacheableT], CacheableT] | None = None,
     ) -> CacheableT:
-        """Serve one of the cacheable list verbs through the response cache.
+        """Serve a cacheable request through the response cache.
 
-        Mirrors the SDK Client's `_cached_fetch`: cursorless `use` calls are served
-        from (and stored to) the cache; a cursor page skips the cache (and evicts on
-        an expired-cursor `INVALID_PARAMS`, which signals the listing changed). The
-        cache is inert on legacy connections because the SDK cache reads no TTL/scope
-        hints below the modern era, so nothing is ever stored to serve.
+        Mirrors the SDK Client's list caching while also supporting cacheable
+        extension methods whose request parameters form part of the cache key.
+        Cursor pages skip the cache and evict a listing on an expired-cursor
+        `INVALID_PARAMS`. The cache is inert on legacy connections because the SDK
+        cache reads no TTL/scope hints below the modern era.
 
         `absorb` (tools/list only) re-applies the session's derived per-tool state to a
         served cache hit, since a hit skips `session.list_tools`.
@@ -1229,12 +1232,15 @@ class Client(
                 if e.code == mcp_types.INVALID_PARAMS:
                     await cache.evict_method(method)
                 raise
-        if cache_mode == "use" and (hit := await cache.read(method, "")) is not None:
+        if (
+            cache_mode == "use"
+            and (hit := await cache.read(method, params_key)) is not None
+        ):
             served = cast(CacheableT, hit)
             return served if absorb is None else absorb(served)
-        gen = cache.capture(method, "")
+        gen = cache.capture(method, params_key)
         result = await send()
-        await cache.write(method, "", result, gen, cache_mode)
+        await cache.write(method, params_key, result, gen, cache_mode)
         return result
 
     async def _drive_input_required(
