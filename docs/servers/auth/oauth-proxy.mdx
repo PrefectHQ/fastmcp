@@ -758,8 +758,37 @@ identity_assertion=IdentityAssertion(
 
 The subject asserted in the ID-JAG flows into the normal FastMCP auth context. Tools read it through `get_access_token()` exactly as they would for any other token, because the proxy issues the access token through its own token factory.
 
+By default, replay protection uses a bounded `MemoryStore`, so each server
+process tracks its own consumed assertions. A horizontally-scaled deployment
+should pass a shared `AsyncKeyValue` implementation as
+`IdentityAssertion(jti_store=...)`.
+
+For example, with `py-key-value-aio[redis]` installed, use its Redis store:
+
+```python
+from key_value.aio.stores.redis import RedisStore
+
+from fastmcp.server.auth import IdentityAssertion
+
+identity_assertion = IdentityAssertion(
+    trusted_issuers=["https://login.acme-corp.com"],
+    jti_store=RedisStore(url="redis://localhost:6379"),
+)
+```
+
 <Warning>
-Replay protection is per-process. Each server process tracks seen `jti` values in memory, so a horizontally-scaled deployment running multiple workers or replicas could accept the same assertion once per process. The same applies to revocation of ID-JAG access tokens: they are self-contained, so revocation is tracked in-process until the token's (short, 5-minute default) natural expiry. For deployments that require strict single-use enforcement across replicas, configure sticky routing so a given client's requests reach the same process, or place a shared store in front of the token endpoint. This mirrors the posture of CIMD `private_key_jwt` replay protection, which is also per-process.
+`AsyncKeyValue` currently exposes `get` and `put`, but no conditional insert.
+FastMCP serializes exchanges within one server process, while replicas sharing a
+store perform a non-atomic `get` followed by `put`. Simultaneous exchanges of
+the same assertion on different replicas can therefore race and both succeed.
+Keep assertions short-lived; the shared store still rejects ordinary sequential
+replay and closes the much larger process-local replay window.
+</Warning>
+
+<Warning>
+The same distributed-store option does not apply to revocation of already-issued
+ID-JAG access tokens. Those tokens are self-contained, so revocation remains
+process-local until the token's short (5-minute default) lifetime expires.
 </Warning>
 
 ## Security

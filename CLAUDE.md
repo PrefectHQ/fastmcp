@@ -161,6 +161,7 @@ Because the docs land *before* the tag exists, derive the entry from the maintai
 
 - Python ≥ 3.10 with full type annotations
 - Follow existing patterns and maintain consistency
+- **Use `py-key-value` for stateful framework features.** New caches, replay tracking, token or session persistence, and other pluggable state should accept the existing `AsyncKeyValue` abstraction instead of introducing a feature-specific storage protocol. Add a specialized interface only when the required semantics cannot be represented by `AsyncKeyValue`, and document that constraint explicitly.
 - **Prioritize readable, understandable code** - clarity over cleverness
 - Avoid obfuscated or confusing patterns even if they're shorter
 - Each feature needs corresponding tests

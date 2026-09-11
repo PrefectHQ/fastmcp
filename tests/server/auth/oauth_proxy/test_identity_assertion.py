@@ -5,9 +5,11 @@ fake IdP JWT (a keypair is generated per test). The proxy's JWKS lookup is
 served via httpx_mock, so no real network calls are made.
 """
 
+import asyncio
 import subprocess
 import sys
 import time
+from typing import Any
 
 import httpx2
 import pytest
@@ -16,6 +18,7 @@ from key_value.aio.stores.memory import MemoryStore
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 
+import fastmcp.server.auth.identity_assertion as identity_assertion_module
 from fastmcp import FastMCP
 from fastmcp.server.auth import IdentityAssertion
 from fastmcp.server.auth.identity_assertion import (
@@ -33,6 +36,13 @@ BASE_URL = "https://myserver.com"
 ISSUER = "https://login.acme-corp.com"
 JWKS_URI = "https://login.acme-corp.com/jwks"
 RESOURCE = f"{BASE_URL}/mcp"
+
+
+class FailingJTIStore(MemoryStore):
+    async def get(
+        self, key: str, *, collection: str | None = None
+    ) -> dict[str, Any] | None:
+        raise ConnectionError("store unavailable")
 
 
 def _b64url_json(value: object) -> str:
@@ -180,6 +190,22 @@ class TestIdentityAssertionConfig:
     def test_rejects_blank_issuer(self):
         with pytest.raises(ValueError):
             IdentityAssertion(trusted_issuers=["  "])
+
+    def test_accepts_async_key_value_jti_store(self):
+        store = MemoryStore()
+        config = IdentityAssertion(
+            trusted_issuers=[ISSUER],
+            jti_store=store,
+        )
+
+        assert config.jti_store is store
+
+    def test_rejects_invalid_jti_store(self):
+        with pytest.raises(ValueError, match="must implement AsyncKeyValue"):
+            IdentityAssertion(
+                trusted_issuers=[ISSUER],
+                jti_store=object(),
+            )
 
     @pytest.mark.parametrize("algorithm", ["ES256", "PS256", "RS384"])
     def test_accepts_asymmetric_algorithm(self, algorithm: str):
@@ -504,6 +530,53 @@ class TestValidationMatrix:
         assert second.status_code == 401
         assert second.json()["error"] == "invalid_grant"
 
+    async def test_concurrent_replay_rejected_within_one_proxy(
+        self, idp_key: RSAKeyPair, config: IdentityAssertion
+    ):
+        proxy = _make_proxy(config)
+        assertion = _mint_id_jag(idp_key, jti="concurrent-replay")
+        await _register_client(proxy)
+
+        responses = await asyncio.gather(
+            *(_post_token(proxy, assertion, register=False) for _ in range(10))
+        )
+
+        assert [response.status_code for response in responses].count(200) == 1
+        assert [response.status_code for response in responses].count(401) == 9
+
+    async def test_replayed_jti_rejected_across_proxy_instances(
+        self, idp_key: RSAKeyPair, httpx_mock: HTTPXMock
+    ):
+        shared_store = MemoryStore()
+        config = IdentityAssertion(
+            trusted_issuers=[ISSUER],
+            jwks_uris={ISSUER: JWKS_URI},
+            jti_store=shared_store,
+        )
+        first_proxy = _make_proxy(config)
+        second_proxy = _make_proxy(config)
+        assertion = _mint_id_jag(idp_key, jti="cross-instance-replay")
+        httpx_mock.add_response(url=JWKS_URI, json=_idp_jwks(idp_key), is_optional=True)
+
+        first = await _post_token(first_proxy, assertion)
+        second = await _post_token(second_proxy, assertion)
+
+        assert first.status_code == 200
+        assert second.status_code == 401
+        assert second.json()["error"] == "invalid_grant"
+
+    async def test_replay_store_error_fails_closed(self, idp_key: RSAKeyPair):
+        config = IdentityAssertion(
+            trusted_issuers=[ISSUER],
+            jwks_uris={ISSUER: JWKS_URI},
+            jti_store=FailingJTIStore(),
+        )
+
+        response = await _post_token(_make_proxy(config), _mint_id_jag(idp_key))
+
+        assert response.status_code == 401
+        assert response.json()["error"] == "invalid_grant"
+
     async def test_wrong_signature_rejected(
         self, config: IdentityAssertion, rsa_key_pair_2: RSAKeyPair
     ):
@@ -760,25 +833,32 @@ class TestValidationMatrix:
         assert resp.status_code == 200
 
     async def test_jti_cache_does_not_grow_past_capacity(
-        self, idp_key: RSAKeyPair, config: IdentityAssertion
+        self, idp_key: RSAKeyPair, monkeypatch: pytest.MonkeyPatch
     ):
-        # Once the JTI cache is full of still-valid entries, further fresh
-        # assertions are rejected as overloaded WITHOUT being inserted, so the
-        # cache never grows beyond its cap.
-        proxy = _make_proxy(config)
-        validator = proxy._identity_assertion_validator
-        assert validator is not None
-        validator._jti_cache_max_size = 2
-        future = time.time() + 120
-        validator._jti_cache = {"filler-a": future, "filler-b": future}
+        # Once the default store is full of still-valid entries, further fresh
+        # assertions fail closed without growing the store.
+        monkeypatch.setattr(
+            identity_assertion_module,
+            "DEFAULT_JTI_STORE_MAX_SIZE",
+            2,
+        )
+        proxy = _make_proxy(
+            IdentityAssertion(
+                trusted_issuers=[ISSUER],
+                jwks_uris={ISSUER: JWKS_URI},
+            )
+        )
+
+        for i in range(2):
+            assertion = _mint_id_jag(idp_key, jti=f"accepted-{i}")
+            resp = await _post_token(proxy, assertion)
+            assert resp.status_code == 200
 
         for i in range(3):
             assertion = _mint_id_jag(idp_key, jti=f"fresh-{i}")
             resp = await _post_token(proxy, assertion)
             assert resp.status_code == 401
             assert resp.json()["error"] == "invalid_grant"
-
-        assert len(validator._jti_cache) == 2
 
 
 class TestAlgorithmConfig:
