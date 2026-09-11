@@ -60,6 +60,150 @@ Content
         assert frontmatter["description"] == "A skill with quotes"
         assert frontmatter["version"] == "2.0.0"
 
+    def test_frontmatter_multiline_literal_block(self):
+        content = """---
+description: |
+  This is a multiline
+  description for the skill
+---
+
+# Skill Content
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["description"] == (
+            "This is a multiline\ndescription for the skill"
+        )
+        assert body.strip().startswith("# Skill Content")
+
+    def test_frontmatter_multiline_folded_block(self):
+        content = """---
+description: >
+  This is a folded
+  multiline description
+---
+
+# Skill Content
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["description"] == "This is a folded multiline description"
+        assert body.strip().startswith("# Skill Content")
+
+    def test_frontmatter_malformed_falls_back_to_line_parser(self):
+        # Invalid YAML list — safe_load fails; line parser keeps plain keys.
+        content = """---
+description: [unclosed
+name: still-parsed
+---
+
+Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["name"] == "still-parsed"
+        assert frontmatter["description"] == "[unclosed"
+        assert body == "Body\n"
+
+    def test_frontmatter_colon_in_value_falls_back_preserves_keys(self):
+        # Real skill files sometimes contain unquoted values with ": " that
+        # PyYAML rejects; must not drop description (FastMCP #4416 review).
+        content = """---
+name: oss-daily
+description: Use when Vishnu wants: daily OSS drafting
+---
+
+# Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["name"] == "oss-daily"
+        assert "daily OSS drafting" in frontmatter["description"]
+        assert body.strip().startswith("# Body")
+
+    def test_frontmatter_non_dict_returns_empty(self):
+        content = """---
+- item1
+- item2
+---
+
+Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter == {}
+        assert body == "Body\n"
+
+    def test_frontmatter_scalars_are_preserved_as_strings(self):
+        """`SkillInfo.frontmatter` is public; it must not silently retype values.
+
+        `yaml.BaseLoader` parses block scalars (unlike the old line parser)
+        but applies no implicit scalar resolution, so every value comes back
+        exactly as written instead of being coerced to float/bool/date the
+        way a full loader (e.g. `safe_load`) would.
+
+        The `description: null` case looks surprising but is intentional:
+        under `BaseLoader`, YAML's null token resolves to the *string*
+        `"null"`, not Python `None`. This matches the pre-existing line-based
+        parser (which did `value.strip()` on the raw text and also produced
+        `"null"`), so this restores original behavior rather than inventing
+        a new one. Do not "fix" this back to `None`.
+        """
+        content = """---
+version: 1.10
+enabled: yes
+released: 2024-01-01
+description: null
+---
+
+Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["version"] == "1.10"
+        assert frontmatter["enabled"] == "yes"
+        assert frontmatter["released"] == "2024-01-01"
+        assert frontmatter["description"] == "null"
+        for value in frontmatter.values():
+            assert isinstance(value, str)
+
+    def test_frontmatter_description_bool_recovers_original_text(self):
+        content = """---
+description: true
+---
+
+Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["description"] == "true"
+        assert isinstance(frontmatter["description"], str)
+
+    def test_frontmatter_description_yes_not_coerced_to_true(self):
+        # FastMCP #4416 regression: `yes` bare word previously coerced to True.
+        content = """---
+description: yes
+---
+
+Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["description"] == "yes"
+
+    def test_frontmatter_description_no_not_coerced_to_false(self):
+        content = """---
+description: no
+---
+
+Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["description"] == "no"
+
+    def test_frontmatter_description_numeric_scalar_preserves_original_text(self):
+        # YAML resolves `1.10` to float 1.1, dropping the trailing zero the author wrote.
+        content = """---
+description: 1.10
+---
+
+Body
+"""
+        frontmatter, body = parse_frontmatter(content)
+        assert frontmatter["description"] == "1.10"
+
 
 class TestSkillProvider:
     """Tests for SkillProvider - single skill folder."""
