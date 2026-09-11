@@ -454,6 +454,12 @@ FastMCP handles array parameters according to OpenAPI specifications:
 
 Header parameters are automatically converted to strings and included in the HTTP request.
 
+### JSON Request Bodies
+
+For request bodies declared as `application/json` or a `+json` media type, pass strings, numbers, and booleans as their actual values. FastMCP JSON-encodes them and preserves the declared Content-Type, including media-type parameters. Do not JSON-encode a string yourself: passing `"true"` sends the JSON string `"true"`, while passing `True` sends the JSON boolean `true`.
+
+Earlier versions sent string bodies as raw text even when the schema declared JSON. If you worked around that behavior by pre-encoding a string, remove the extra encoding. Bodies declared as `text/plain` continue to be sent as raw text.
+
 ### Composed Request Bodies
 
 A request body becomes a flat set of tool arguments, which is the shape LLM tool-calling APIs fill in most reliably. Schemas composed with `allOf` are resolved first, following `$ref` members, so fields inherited from a parent schema appear alongside the ones a schema declares itself.
