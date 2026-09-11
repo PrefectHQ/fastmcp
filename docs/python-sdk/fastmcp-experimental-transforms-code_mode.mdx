@@ -33,27 +33,30 @@ Sandbox provider backed by `pydantic-monty`.
 
 **Args:**
 - `limits`: Resource limits for sandbox execution. Supported keys\:
-``max_duration_secs`` (float), ``max_allocations`` (int),
-``max_memory`` (int), ``max_recursion_depth`` (int),
-``gc_interval`` (int).  All are optional; omit a key to
-leave that limit uncapped.
+`max_duration_secs` (float), `max_memory` (int),
+`max_recursion_depth` (int), and `gc_interval` (int).
+Time, memory, and GC limits are optional; omit a key to disable
+it. Recursion depth defaults to Monty's standard maximum of 1,000.
+Unsupported keys raise `ValueError` rather than being silently
+ignored.
 
 When the argument is omitted entirely, a conservative baseline
 is applied (``max_duration_secs=30``, ``max_memory=100 MB``) so
 the out-of-box configuration is not unbounded. Pass
-``limits=None`` to explicitly run without any limits, or a dict
-to set your own.
+``limits=None`` to disable configurable time, memory, and GC
+limits, or a dict to set your own. Monty's standard recursion
+limit still applies.
 
 
 **Methods:**
 
-#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L144" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `run` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L147" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 run(self, code: str) -> Any
 ```
 
-### `Search` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L269" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `Search` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L288" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Discovery tool factory that searches the catalog by query.
@@ -70,7 +73,7 @@ Defaults to BM25 ranking.
 The LLM can override this per call.  ``None`` means no limit.
 
 
-### `GetSchemas` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L351" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `GetSchemas` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L370" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Discovery tool factory that returns schemas for tools by name.
@@ -84,7 +87,7 @@ types, and required markers.
 ``"full"`` returns the complete JSON schema.
 
 
-### `GetTags` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L412" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `GetTags` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L431" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Discovery tool factory that lists tool tags from the catalog.
@@ -99,7 +102,7 @@ without tags appear under ``"untagged"``.
 ``"full"`` lists all tools under each tag.
 
 
-### `ListTools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L479" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ListTools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L498" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Discovery tool factory that lists all tools in the catalog.
@@ -112,7 +115,7 @@ Discovery tool factory that lists all tools in the catalog.
 ``"full"`` returns the complete JSON schema.
 
 
-### `CodeMode` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L528" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CodeMode` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L547" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Transform that collapses all tools into discovery + execute meta-tools.
@@ -129,13 +132,13 @@ environment with ``call_tool(name, params)`` in scope.
 
 **Methods:**
 
-#### `transform_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L580" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `transform_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L599" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 transform_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]
 ```
 
-#### `get_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L583" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/experimental/transforms/code_mode.py#L602" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_tool(self, name: str, call_next: GetToolNext) -> Tool | None
