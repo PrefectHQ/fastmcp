@@ -173,6 +173,128 @@ async def tool_schema(spec: dict[str, Any]) -> dict[str, Any]:
             return next(t for t in tools if t.name == "create_pet").input_schema
 
 
+def nested_envelope_spec() -> dict[str, Any]:
+    """A discriminated schema nested one level down (issue #5029 shape).
+
+    ``PetEnvelope`` holds a ``pet`` property referencing the discriminated
+    ``Pet`` parent; ``Cat``/``Dog`` add their own fields through ``allOf``.
+    """
+    return {
+        "openapi": "3.1.0",
+        "info": {"title": "Pet API", "version": "1.0.0"},
+        "servers": [{"url": "https://api.example.com"}],
+        "paths": {
+            "/pets": {
+                "post": {
+                    "operationId": "createPet",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/PetEnvelope"}
+                            }
+                        },
+                    },
+                    "responses": {"200": {"description": "Created"}},
+                }
+            }
+        },
+        "components": {
+            "schemas": {
+                "PetEnvelope": {
+                    "type": "object",
+                    "required": ["pet"],
+                    "properties": {"pet": {"$ref": "#/components/schemas/Pet"}},
+                },
+                "Pet": {
+                    "type": "object",
+                    "required": ["petType"],
+                    "properties": {"petType": {"type": "string"}},
+                    "discriminator": {
+                        "propertyName": "petType",
+                        "mapping": {
+                            "cat": "#/components/schemas/Cat",
+                            "dog": "#/components/schemas/Dog",
+                        },
+                    },
+                },
+                "Cat": {
+                    "allOf": [
+                        {"$ref": "#/components/schemas/Pet"},
+                        {
+                            "type": "object",
+                            "required": ["meowVolume"],
+                            "properties": {"meowVolume": {"type": "integer"}},
+                        },
+                    ]
+                },
+                "Dog": {
+                    "allOf": [
+                        {"$ref": "#/components/schemas/Pet"},
+                        {
+                            "type": "object",
+                            "required": ["barkVolume"],
+                            "properties": {"barkVolume": {"type": "number"}},
+                        },
+                    ]
+                },
+            }
+        },
+    }
+
+
+async def nested_pet_schema() -> dict[str, Any]:
+    """Return the generated ``pet`` property schema for the envelope spec."""
+    schema = await tool_schema(nested_envelope_spec())
+    assert set(schema["properties"]) == {"pet"}
+    return schema["properties"]["pet"]
+
+
+class TestNestedDiscriminator:
+    """A discriminated schema one level down is advertised like the top level."""
+
+    async def test_nested_subtype_fields_are_advertised(self):
+        """Variant-only fields must not disappear behind a bare $ref (#5029)."""
+        pet = await nested_pet_schema()
+
+        assert "$ref" not in pet
+        assert pet["properties"].keys() >= {"petType", "meowVolume", "barkVolume"}
+
+    async def test_nested_subtype_fields_are_optional(self):
+        """Only the parent's own required fields stay required."""
+        pet = await nested_pet_schema()
+
+        assert pet["required"] == ["petType"]
+
+    async def test_nested_discriminator_keyword_is_dropped(self):
+        """The mapping points at pruned $defs, so it cannot survive."""
+        pet = await nested_pet_schema()
+
+        assert "discriminator" not in pet
+        assert "discriminator" not in pet["properties"]["petType"]
+
+    async def test_nested_variant_field_reaches_the_request_body(self):
+        """The reported failure: meowVolume must reach the upstream API."""
+        received: dict[str, object] = {}
+
+        def handler(request):
+            received["body"] = json.loads(request.content)
+            return httpx2.Response(200, json={"ok": True})
+
+        async with httpx2.AsyncClient(
+            transport=httpx2.MockTransport(handler),
+            base_url="https://api.example.com",
+        ) as client:
+            server = create_openapi_server(nested_envelope_spec(), client)
+            async with Client(server) as mcp_client:
+                result = await mcp_client.call_tool(
+                    "createPet", {"pet": {"petType": "cat", "meowVolume": 11}}
+                )
+
+        assert result.structured_content == {"ok": True}
+        assert received["body"] == {"pet": {"petType": "cat", "meowVolume": 11}}
+
+
 class TestDiscriminatorRequestBodies:
     """Subtypes named by a discriminator mapping are flattened in as optional."""
 
