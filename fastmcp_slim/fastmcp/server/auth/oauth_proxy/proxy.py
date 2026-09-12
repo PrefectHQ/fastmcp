@@ -1635,8 +1635,12 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
     def _prepare_scopes_for_token_exchange(self, scopes: list[str]) -> list[str]:
         """Prepare scopes for initial token exchange (auth code -> tokens).
 
-        Override this method to provide scopes during the authorization
-        code exchange. Some providers (like Azure) require scopes to be sent.
+        RFC 6749 §4.1.3 does not define ``scope`` as an authorization-code token
+        request parameter: scopes are requested at the authorization endpoint,
+        and the token response reports what was granted. Many providers tolerate
+        the extra parameter, but spec-following ones reject the request, so the
+        default is to omit it. Override to send scopes to providers that need
+        them (AzureProvider does, prefixed with the API identifier URI).
 
         Args:
             scopes: Scopes from the authorization request
@@ -1644,7 +1648,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         Returns:
             List of scopes to send, or empty list to omit scope parameter
         """
-        return scopes
+        return []
 
     def _translate_scopes_from_idp(self, scopes: list[str]) -> list[str]:
         """Translate IdP-returned scopes into the client-facing form.
