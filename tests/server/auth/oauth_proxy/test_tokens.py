@@ -9,7 +9,7 @@ import pytest
 from key_value.aio.stores.memory import MemoryStore
 from mcp.server.auth.handlers.token import TokenErrorResponse
 from mcp.server.auth.handlers.token import TokenHandler as SDKTokenHandler
-from mcp.server.auth.provider import AuthorizationCode
+from mcp.server.auth.provider import AuthorizationCode, TokenError
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 
@@ -31,6 +31,7 @@ from fastmcp.server.auth.oauth_proxy.models import (
     UpstreamTokenSet,
     _hash_token,
 )
+from fastmcp.server.auth.oauth_proxy.upstream import OAuthError
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 
 
@@ -793,6 +794,165 @@ class TestFallbackRefreshTokenExpiry:
         ttl_remaining = new_refresh_payload["exp"] - new_refresh_payload["iat"]
         # Should be close to 180 days, well above the old 30-day cliff
         assert ttl_remaining > 60 * 60 * 24 * 90  # at least 90 days
+
+
+class TestUpstreamRefreshErrorMapping:
+    """Regression tests for issue #5002.
+
+    A failed upstream refresh must surface as 400 ``invalid_grant`` only when
+    the upstream provider definitively rejected the refresh credential.
+    Transient upstream errors, transport failures, and unexpected local
+    exceptions must surface as generic server errors without echoing upstream
+    or internal details to the client.
+    """
+
+    async def _seed_proxy_with_refresh_state(self, jwt_verifier):
+        """Build an OAuthProxy holding a valid refresh session end to end."""
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://idp.example.com/authorize",
+            upstream_token_endpoint="https://idp.example.com/token",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+        )
+        proxy.set_mcp_path("/mcp")
+
+        client = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+        await proxy.register_client(client)
+
+        now = time.time()
+        expires_at = int(now + 3600)
+        upstream_token_id = "upstream-id-refresh-errors"
+        await proxy._upstream_token_store.put(
+            key=upstream_token_id,
+            value=UpstreamTokenSet(
+                upstream_token_id=upstream_token_id,
+                access_token="upstream-access-old",
+                refresh_token="upstream-refresh-tok",
+                refresh_token_expires_at=expires_at,
+                expires_at=now + 60,
+                token_type="Bearer",
+                scope="read",
+                client_id="test-client",
+                created_at=now,
+                raw_token_data={},
+            ),
+            ttl=3600,
+        )
+        refresh_jti = "refresh-jti-error-mapping"
+        refresh_jwt = proxy.jwt_issuer.issue_refresh_token(
+            client_id="test-client",
+            scopes=["read"],
+            jti=refresh_jti,
+            expires_in=3600,
+        )
+        await proxy._jti_mapping_store.put(
+            key=refresh_jti,
+            value=JTIMapping(
+                jti=refresh_jti,
+                upstream_token_id=upstream_token_id,
+                created_at=now,
+            ),
+            ttl=3600,
+        )
+        await proxy._refresh_token_store.put(
+            key=_hash_token(refresh_jwt),
+            value=RefreshTokenMetadata(
+                client_id="test-client",
+                scopes=["read"],
+                expires_at=expires_at,
+                created_at=now,
+            ),
+            ttl=3600,
+        )
+        refresh_token = RefreshToken(
+            token=refresh_jwt,
+            client_id="test-client",
+            scopes=["read"],
+            expires_at=expires_at,
+        )
+        return proxy, client, refresh_token
+
+    async def _exchange_with_failing_upstream(
+        self, proxy, client, refresh_token, error
+    ):
+        oauth_client_mock = Mock()
+        oauth_client_mock.refresh_token = AsyncMock(side_effect=error)
+        oauth_client_mock.aclose = AsyncMock()
+        with patch.object(
+            proxy,
+            "_create_upstream_oauth_client",
+            return_value=oauth_client_mock,
+        ):
+            await proxy.exchange_refresh_token(
+                client=client,
+                refresh_token=refresh_token,
+                scopes=["read"],
+            )
+
+    async def test_upstream_invalid_grant_stays_invalid_grant_without_details(
+        self, jwt_verifier
+    ):
+        """A definitive upstream rejection maps to invalid_grant, but the
+        client-facing description must not echo the upstream detail."""
+        proxy, client, refresh_token = await self._seed_proxy_with_refresh_state(
+            jwt_verifier
+        )
+        upstream_error = OAuthError(
+            error="invalid_grant", description="private-upstream-detail"
+        )
+
+        with pytest.raises(TokenError) as exc_info:
+            await self._exchange_with_failing_upstream(
+                proxy, client, refresh_token, upstream_error
+            )
+
+        assert exc_info.value.error == "invalid_grant"
+        assert "private-upstream-detail" not in (exc_info.value.error_description or "")
+
+    async def test_upstream_temporarily_unavailable_is_not_invalid_grant(
+        self, jwt_verifier
+    ):
+        """temporarily_unavailable is transient: it must not surface as
+        invalid_grant (which tells clients to discard the refresh token), and
+        must not leak the upstream detail."""
+        proxy, client, refresh_token = await self._seed_proxy_with_refresh_state(
+            jwt_verifier
+        )
+        upstream_error = OAuthError(
+            error="temporarily_unavailable", description="private-upstream-detail"
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            await self._exchange_with_failing_upstream(
+                proxy, client, refresh_token, upstream_error
+            )
+
+        assert not isinstance(exc_info.value, TokenError)
+        assert "private-upstream-detail" not in str(exc_info.value)
+
+    async def test_unexpected_local_exception_is_a_server_error(self, jwt_verifier):
+        """Unexpected local exceptions are internal failures, not credential
+        rejections, and their text must stay out of the client response."""
+        proxy, client, refresh_token = await self._seed_proxy_with_refresh_state(
+            jwt_verifier
+        )
+        local_error = RuntimeError("internal-storage-detail")
+
+        with pytest.raises(Exception) as exc_info:
+            await self._exchange_with_failing_upstream(
+                proxy, client, refresh_token, local_error
+            )
+
+        assert not isinstance(exc_info.value, TokenError)
+        assert "internal-storage-detail" not in str(exc_info.value)
 
 
 class TestFastMCPAccessTokenExpiry:

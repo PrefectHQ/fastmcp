@@ -109,7 +109,7 @@ from fastmcp.server.auth.oauth_proxy.models import (
     _hash_token,
 )
 from fastmcp.server.auth.oauth_proxy.ui import create_error_html
-from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client
+from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client, OAuthError
 from fastmcp.server.auth.redirect_validation import (
     build_client_redirect,
     is_redirect_uri_allowed_for_application_type,
@@ -1816,9 +1816,25 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     **self._extra_token_params,
                 )
             logger.debug("Successfully refreshed upstream token")
-        except Exception as e:
+        except OAuthError as e:
+            if e.error == "invalid_grant":
+                # The upstream provider definitively rejected the stored
+                # refresh credential; only here should the client discard it.
+                logger.error("Upstream refresh token rejected: %s", e)
+                raise TokenError(
+                    "invalid_grant", "Upstream refresh token was rejected"
+                ) from e
+            # Any other upstream OAuth error (e.g. temporarily_unavailable) is
+            # not a credential failure; surface it as a server error so the
+            # client retries instead of discarding a valid refresh token.
             logger.error("Upstream token refresh failed: %s", e)
-            raise TokenError("invalid_grant", f"Upstream refresh failed: {e}") from e
+            raise RuntimeError("Upstream token refresh failed") from e
+        except Exception as e:
+            # Transport failures and unexpected local errors are server
+            # failures, not credential rejections. Details stay in the logs;
+            # the client-facing response must not echo them.
+            logger.error("Upstream token refresh failed: %s", e)
+            raise RuntimeError("Upstream token refresh failed") from e
 
         # Update stored upstream token
         # In refresh flow, we know there's a refresh token, so default to 1 hour
