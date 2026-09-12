@@ -1313,6 +1313,15 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Get stored upstream tokens
         idp_tokens = code_model.idp_tokens
 
+        # A non-positive lifetime means the upstream access token is already
+        # unusable. Reject it as an OAuth error before consuming our one-time
+        # authorization code instead of passing an invalid TTL to storage.
+        if "expires_in" in idp_tokens and int(idp_tokens["expires_in"]) <= 0:
+            raise TokenError(
+                "invalid_grant",
+                "Upstream access token has a non-positive expires_in",
+            )
+
         # Use IdP-granted scopes when available (RFC 6749 §5.1: the IdP MUST
         # include a scope parameter when the granted scope differs from the
         # requested scope).  Fall back to requested scopes only when the IdP
@@ -1819,6 +1828,14 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         except Exception as e:
             logger.error("Upstream token refresh failed: %s", e)
             raise TokenError("invalid_grant", f"Upstream refresh failed: {e}") from e
+
+        # A refresh response with a non-positive lifetime is equally unusable.
+        # Reject it before mutating stored upstream state or rotating JTI mappings.
+        if "expires_in" in token_response and int(token_response["expires_in"]) <= 0:
+            raise TokenError(
+                "invalid_grant",
+                "Upstream access token has a non-positive expires_in",
+            )
 
         # Update stored upstream token
         # In refresh flow, we know there's a refresh token, so default to 1 hour
