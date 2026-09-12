@@ -45,13 +45,18 @@ def parse_docstring(fn: Callable[..., Any]) -> ParsedDocstring:
     # keeps its parser and model graph out of ordinary server startup.
     from griffe import Docstring, DocstringSectionKind
 
-    # Try each parser and use the first one that finds parameters.
+    # Try each parser and use the first one that recognizes some structure
+    # (parameters, returns, raises, etc.) — not just a parameter section.
+    # A parameterless function can still have a Returns/Raises section that
+    # should be split out of the description, same as Args is for functions
+    # that take arguments.
     for parser in _PARSERS:
         docstring = Docstring(doc, lineno=1, parser=parser)
         sections = docstring.parse()
 
         description: str | None = None
         parameters: dict[str, str] = {}
+        found_structured_section = False
 
         for section in sections:
             if section.kind == DocstringSectionKind.text and description is None:
@@ -59,9 +64,12 @@ def parse_docstring(fn: Callable[..., Any]) -> ParsedDocstring:
             elif section.kind == DocstringSectionKind.parameters:
                 for param in section.value:
                     parameters[param.name] = param.description
+                found_structured_section = True
+            elif section.kind != DocstringSectionKind.text:
+                found_structured_section = True
 
-        if parameters:
+        if parameters or found_structured_section:
             return ParsedDocstring(description=description, parameters=parameters)
 
-    # No parser found parameters — return the full docstring unchanged.
+    # No parser recognized any structure — return the full docstring unchanged.
     return ParsedDocstring(description=doc)
