@@ -96,7 +96,7 @@ class RequestDirector:
         # Step 6: Handle request body — dispatch on declared content type.
         # httpx body kwargs (json, content, data, files) are mutually exclusive
         # but all accept None, so we set exactly one and pass all to Request().
-        files: dict[str, Any] | None = None
+        files: list[tuple[str, Any]] | None = None
         data: dict[str, Any] | None = None
         if body is not None:
             if declared_content_type == "multipart/form-data" and isinstance(
@@ -106,17 +106,29 @@ class RequestDirector:
                 # treats them as form fields. Scalars must be stringified
                 # because httpx rejects non-string/bytes values in files=.
                 # Use _query_scalar_to_str for booleans (true/false, not True/False).
-                files = {}
+                files = []
+                encoding = (
+                    route.request_body.encoding.get(raw_content_type, {})
+                    if route.request_body and raw_content_type is not None
+                    else {}
+                )
                 for k, v in body.items():
-                    if isinstance(v, tuple):
-                        files[k] = v
+                    if (
+                        isinstance(v, list)
+                        and v
+                        and all(isinstance(item, str) for item in v)
+                        and not encoding.get(k)
+                    ):
+                        files.extend((k, (None, item)) for item in v)
+                    elif isinstance(v, tuple):
+                        files.append((k, v))
                     elif isinstance(v, bytes | io.IOBase):
                         # bytes and file-like objects are passed directly so
                         # httpx can transmit them as binary parts without
                         # stringifying to their Python repr.
-                        files[k] = (None, v)
+                        files.append((k, (None, v)))
                     else:
-                        files[k] = (None, _query_scalar_to_str(v))
+                        files.append((k, (None, _query_scalar_to_str(v))))
             elif (
                 declared_content_type == "application/x-www-form-urlencoded"
                 and isinstance(body, dict)
