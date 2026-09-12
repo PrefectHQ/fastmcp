@@ -172,6 +172,21 @@ class TestVersionFilter:
         tools = await mcp.list_tools()
         assert [tool.name for tool in tools] == ["included_versioned_tool"]
 
+    async def test_include_unversioned_false_excludes_unversioned_tools_via_get_tool(
+        self,
+    ):
+        """get_tool() direct lookup respects include_unversioned=False too."""
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def unversioned_tool() -> str:
+            return "unversioned"
+
+        mcp.add_transform(VersionFilter(version_lt="3.0", include_unversioned=False))
+
+        assert await mcp.get_tool("unversioned_tool") is None
+
     async def test_date_versions(self):
         """Works with date-based versions like '2025-01-15'."""
         from fastmcp.server.transforms import VersionFilter
@@ -266,6 +281,21 @@ class TestVersionFilter:
             "file:///included_versioned"
         ]
 
+    async def test_include_unversioned_false_excludes_unversioned_resources_via_get_resource(
+        self,
+    ):
+        """get_resource() direct lookup respects include_unversioned=False too."""
+
+        mcp = FastMCP()
+
+        @mcp.resource("file:///unversioned")
+        def unversioned_resource() -> str:
+            return "unversioned"
+
+        mcp.add_transform(VersionFilter(version_lt="2.0", include_unversioned=False))
+
+        assert await mcp.get_resource("file:///unversioned") is None
+
     async def test_include_unversioned_false_excludes_unversioned_resource_templates(
         self,
     ):
@@ -290,6 +320,20 @@ class TestVersionFilter:
         assert [template.uri_template for template in templates] == [
             "resource://included_versioned/{name}"
         ]
+
+    async def test_include_unversioned_false_excludes_unversioned_resource_templates_via_get_resource_template(
+        self,
+    ):
+        """get_resource_template() direct lookup respects include_unversioned=False too."""
+        mcp = FastMCP()
+
+        @mcp.resource("resource://unversioned/{name}")
+        def unversioned_template(name: str) -> str:
+            return f"unversioned:{name}"
+
+        mcp.add_transform(VersionFilter(version_lt="2.0", include_unversioned=False))
+
+        assert await mcp.get_resource_template("resource://unversioned/{name}") is None
 
     async def test_prompts_filtered(self):
         """Prompts are filtered by version."""
@@ -331,6 +375,20 @@ class TestVersionFilter:
 
         prompts = await mcp.list_prompts()
         assert [prompt.name for prompt in prompts] == ["included_versioned_prompt"]
+
+    async def test_include_unversioned_false_excludes_unversioned_prompts_via_get_prompt(
+        self,
+    ):
+        """get_prompt() direct lookup respects include_unversioned=False too."""
+        mcp = FastMCP()
+
+        @mcp.prompt
+        def unversioned_prompt(name: str) -> str:
+            return f"Unversioned: {name}"
+
+        mcp.add_transform(VersionFilter(version_lt="2.0", include_unversioned=False))
+
+        assert await mcp.get_prompt("unversioned_prompt") is None
 
     async def test_repr(self):
         """Test VersionFilter string representation."""
