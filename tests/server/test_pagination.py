@@ -7,6 +7,7 @@ from unittest.mock import patch
 import mcp_types
 import pytest
 from mcp.shared.exceptions import MCPError
+from mcp.types import INVALID_PARAMS
 
 from fastmcp import Client, FastMCP
 from fastmcp.utilities.pagination import CursorState, paginate_sequence
@@ -39,6 +40,21 @@ class TestCursorEncoding:
         import base64
 
         invalid = base64.urlsafe_b64encode(b"not json").decode()
+        with pytest.raises(ValueError, match="Invalid cursor"):
+            CursorState.decode(invalid)
+
+    @pytest.mark.parametrize("offset", ["1", 1.5, -1, True, None, [0]])
+    def test_decode_rejects_a_malformed_offset(self, offset: object) -> None:
+        """An offset that is not a whole non-negative count is an invalid cursor.
+
+        A string or a float reached the slice and raised TypeError, which the
+        server reports as an internal error rather than invalid parameters, and a
+        negative one sliced from the end and returned a valid-looking page.
+        """
+        import base64
+        import json
+
+        invalid = base64.urlsafe_b64encode(json.dumps({"o": offset}).encode()).decode()
         with pytest.raises(ValueError, match="Invalid cursor"):
             CursorState.decode(invalid)
 
@@ -103,6 +119,40 @@ class TestPaginateSequence:
         """Invalid cursor should raise ValueError."""
         with pytest.raises(ValueError, match="Invalid cursor"):
             paginate_sequence([1, 2, 3], "invalid!", 10)
+
+
+class TestMalformedCursorParams:
+    """A tampered cursor is invalid parameters, not an internal error."""
+
+    @staticmethod
+    def _cursor(offset: object) -> str:
+        import base64
+        import json
+
+        return base64.urlsafe_b64encode(json.dumps({"o": offset}).encode()).decode()
+
+    @pytest.mark.parametrize("offset", ["1", 1.5, -1])
+    def test_paginate_sequence_rejects_a_malformed_offset(self, offset: object) -> None:
+        with pytest.raises(ValueError, match="Invalid cursor"):
+            paginate_sequence([0, 1, 2], self._cursor(offset), page_size=2)
+
+    async def test_list_tools_reports_invalid_params(self) -> None:
+        """The caller maps the ValueError to INVALID_PARAMS, so the client sees that."""
+        server = FastMCP(list_page_size=1)
+
+        @server.tool(name="one")
+        def one() -> int:
+            return 1
+
+        @server.tool(name="two")
+        def two() -> int:
+            return 2
+
+        async with Client(server) as client:
+            with pytest.raises(MCPError) as excinfo:
+                await client.list_tools_mcp(cursor=self._cursor(-1))
+
+        assert excinfo.value.error.code == INVALID_PARAMS
 
 
 class TestServerPagination:
