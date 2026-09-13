@@ -5,8 +5,8 @@ from enum import Enum
 from typing import Any, Generic, Literal, cast, get_origin
 
 from mcp.server.elicitation import (
-    CancelledElicitation,
-    DeclinedElicitation,
+    CancelledElicitation as _CancelledElicitation,
+    DeclinedElicitation as _DeclinedElicitation,
 )
 from pydantic import BaseModel
 from pydantic.json_schema import GenerateJsonSchema, JsonSchemaValue
@@ -16,6 +16,34 @@ from typing_extensions import TypeVar
 from fastmcp.utilities.json_schema import compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import get_cached_typeadapter
+
+
+class DeclinedElicitation(_DeclinedElicitation):
+    """Result when user declines the elicitation.
+
+    This subclass is falsy so the natural guard pattern works::
+
+        result = await ctx.elicit("Confirm?", response_type=bool)
+        if result:  # False for DeclinedElicitation
+            do_action()
+    """
+
+    def __bool__(self) -> bool:
+        return False
+
+
+class CancelledElicitation(_CancelledElicitation):
+    """Result when user cancels the elicitation.
+
+    This subclass is falsy so the natural guard pattern works::
+
+        result = await ctx.elicit("Confirm?", response_type=bool)
+        if result:  # False for CancelledElicitation
+            do_action()
+    """
+
+    def __bool__(self) -> bool:
+        return False
 
 __all__ = [
     "AcceptedElicitation",
