@@ -263,17 +263,14 @@ class RequestDirector:
                 content_type = next(iter(route.request_body.content_schema))
                 body_schema = route.request_body.content_schema[content_type]
 
-                if (
-                    isinstance(body_schema, dict)
-                    and body_schema.get("type") == "object"
-                ):
+                # Only named properties are flattened into individual arguments.
+                if isinstance(body_schema, dict) and body_schema.get("properties"):
                     body = body_props
                 elif len(body_props) == 1:
-                    # If body schema is not an object and we have exactly one property,
-                    # use the property value directly
+                    # Free-form objects, arrays, and primitives use a single
+                    # argument containing the entire body.
                     body = next(iter(body_props.values()))
                 else:
-                    # Multiple properties but schema is not object - wrap in object
                     body = body_props
             else:
                 body = body_props
