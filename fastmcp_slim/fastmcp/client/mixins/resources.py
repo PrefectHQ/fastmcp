@@ -96,7 +96,7 @@ class ClientResourcesMixin:
         for _ in range(max_pages):
             result = await self.list_resources_mcp(cursor=cursor)
             all_resources.extend(result.resources)
-            if not result.next_cursor:
+            if result.next_cursor is None:
                 break
             if result.next_cursor in seen_cursors:
                 logger.warning(
@@ -191,7 +191,7 @@ class ClientResourcesMixin:
         for _ in range(max_pages):
             result = await self.list_resource_templates_mcp(cursor=cursor)
             all_templates.extend(result.resource_templates)
-            if not result.next_cursor:
+            if result.next_cursor is None:
                 break
             if result.next_cursor in seen_cursors:
                 logger.warning(
