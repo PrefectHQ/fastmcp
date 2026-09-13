@@ -361,3 +361,38 @@ class TestOpenAPIProviderBasicFunctionality:
                     "title": "User",
                 }
                 assert tool.output_schema == expected_output_schema
+
+
+class TestSlugify:
+    """Tests for the _slugify function used in OpenAPI tool name generation."""
+
+    def test_slash_replaced_with_underscore(self):
+        """Forward slashes in operationId should become underscores."""
+        from fastmcp.server.providers.openapi.components import _slugify
+
+        assert _slugify("actions/add-custom-labels") == "actions_add_custom_labels"
+
+    def test_tag_slash_operation_format(self):
+        """GitHub-style tag/operation IDs should produce correct tool names."""
+        from fastmcp.server.providers.openapi.components import _slugify
+
+        result = _slugify("actions/add-custom-labels-to-self-hosted-runner-for-org")
+        assert result == "actions_add_custom_labels_to_self_hosted_runner_for_org"
+
+    def test_multiple_slashes(self):
+        """Multiple slashes should all become underscores."""
+        from fastmcp.server.providers.openapi.components import _slugify
+
+        assert _slugify("a/b/c") == "a_b_c"
+
+    def test_slash_at_start(self):
+        """Leading slash should not produce leading underscore."""
+        from fastmcp.server.providers.openapi.components import _slugify
+
+        assert _slugify("/actions/list") == "actions_list"
+
+    def test_slash_at_end(self):
+        """Trailing slash should not produce trailing underscore."""
+        from fastmcp.server.providers.openapi.components import _slugify
+
+        assert _slugify("actions/list/") == "actions_list"
