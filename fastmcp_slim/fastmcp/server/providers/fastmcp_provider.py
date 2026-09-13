@@ -400,6 +400,11 @@ class FastMCPProvider(Provider):
         super().__init__()
         self.server = server
 
+    @property
+    def may_serve_apps(self) -> bool:
+        """Whether the wrapped server may serve MCP App UI."""
+        return self.server.may_serve_apps
+
     # -------------------------------------------------------------------------
     # Tool methods
     # -------------------------------------------------------------------------

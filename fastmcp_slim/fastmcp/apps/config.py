@@ -185,6 +185,22 @@ def app_config_to_meta_dict(app: AppConfig | dict[str, Any]) -> dict[str, Any]:
     return app
 
 
+def component_serves_app(component: FastMCPComponent) -> bool:
+    """Whether a component participates in the MCP Apps extension.
+
+    A component does so by declaring ``meta["ui"]`` (``app=AppConfig(...)`` on a
+    tool or resource) or by being the UI document itself: a ``ui://`` resource,
+    or any resource the host would render as ``UI_MIME_TYPE``.
+    """
+    if component.meta and "ui" in component.meta:
+        return True
+    # `Resource.uri` is an AnyUrl, so compare on the string form.
+    uri = getattr(component, "uri", None) or getattr(component, "uri_template", None)
+    if uri is not None and str(uri).lower().startswith("ui://"):
+        return True
+    return getattr(component, "mime_type", None) == UI_MIME_TYPE
+
+
 def is_model_visible(component: FastMCPComponent) -> bool:
     """Whether a component may be shown to, or invoked by, the model.
 
