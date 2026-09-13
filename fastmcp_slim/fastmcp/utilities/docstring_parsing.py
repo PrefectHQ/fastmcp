@@ -46,6 +46,7 @@ def parse_docstring(fn: Callable[..., Any]) -> ParsedDocstring:
     from griffe import Docstring, DocstringSectionKind
 
     # Try each parser and use the first one that finds parameters.
+    fallback_description: str | None = None
     for parser in _PARSERS:
         docstring = Docstring(doc, lineno=1, parser=parser)
         sections = docstring.parse()
@@ -63,5 +64,12 @@ def parse_docstring(fn: Callable[..., Any]) -> ParsedDocstring:
         if parameters:
             return ParsedDocstring(description=description, parameters=parameters)
 
-    # No parser found parameters — return the full docstring unchanged.
-    return ParsedDocstring(description=doc)
+        # Track the best description across parsers for the fallback path.
+        # Prefer the shortest text section, as that indicates the parser
+        # correctly separated the summary from Returns/Args/Yields sections.
+        if description and (fallback_description is None or len(description) < len(fallback_description)):
+            fallback_description = description
+
+    # No parser found parameters — return the extracted description (without
+    # Returns/Args/Yields sections) rather than the full raw docstring.
+    return ParsedDocstring(description=fallback_description or doc)
