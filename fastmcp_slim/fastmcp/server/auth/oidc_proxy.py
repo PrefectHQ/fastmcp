@@ -544,3 +544,12 @@ class OIDCProxy(OAuthProxy):
             audience=audience,
             required_scopes=required_scopes,
         )
+
+    def _prepare_scopes_for_token_exchange(self, scopes: list[str]) -> list[str]:
+        """Omit scope from the token exchange request.
+
+        Per the OIDC specification, scope is requested at the authorization
+        endpoint and is not a standard parameter of the token request.
+        Including it can cause some authorization servers to reject the request.
+        """
+        return []
