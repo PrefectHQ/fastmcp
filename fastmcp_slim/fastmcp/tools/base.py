@@ -410,7 +410,15 @@ class Tool(FastMCPComponent):
 
         try:
             structured = _serialize_to_jsonable(raw_value, self.return_type)
-        except (pydantic_core.PydanticSerializationError, UnicodeDecodeError):
+        except (
+            pydantic_core.PydanticSerializationError,
+            UnicodeDecodeError,
+        ) as e:
+            if self.output_schema is not None:
+                raise ValueError(
+                    f"Tool returned a value that cannot be serialized to JSON "
+                    f"but has an output_schema defined: {e}"
+                ) from e
             return ToolResult(content=content)
 
         if not is_content_result:
