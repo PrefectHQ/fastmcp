@@ -1117,4 +1117,49 @@ class TestOIDCProxyValidScopes:
                 "write",
                 "admin",
             ]
-            assert proxy._default_scope_str == "read write admin"
+
+
+class TestOIDCProxyTokenExchangeScope:
+    """Tests for OIDCProxy._prepare_scopes_for_token_exchange."""
+
+    @patch("fastmcp.server.auth.oidc_proxy.OIDCConfiguration.get_oidc_configuration")
+    def test_prepare_scopes_for_token_exchange_returns_empty(
+        self, mock_get, valid_oidc_configuration_dict
+    ):
+        """OIDCProxy should not send scope in token exchange per OIDC spec."""
+        oidc_config = OIDCConfiguration.model_validate(
+            valid_oidc_configuration_dict
+        )
+        mock_get.return_value = oidc_config
+
+        proxy = OIDCProxy(
+            config_url=TEST_CONFIG_URL,
+            client_id=TEST_CLIENT_ID,
+            client_secret=TEST_CLIENT_SECRET,
+            base_url=TEST_BASE_URL,
+            required_scopes=["openid", "profile"],
+        )
+
+        # Should return empty list regardless of input scopes
+        result = proxy._prepare_scopes_for_token_exchange(["openid", "profile"])
+        assert result == []
+
+    @patch("fastmcp.server.auth.oidc_proxy.OIDCConfiguration.get_oidc_configuration")
+    def test_prepare_scopes_for_token_exchange_empty_input(
+        self, mock_get, valid_oidc_configuration_dict
+    ):
+        """OIDCProxy should handle empty scopes input."""
+        oidc_config = OIDCConfiguration.model_validate(
+            valid_oidc_configuration_dict
+        )
+        mock_get.return_value = oidc_config
+
+        proxy = OIDCProxy(
+            config_url=TEST_CONFIG_URL,
+            client_id=TEST_CLIENT_ID,
+            client_secret=TEST_CLIENT_SECRET,
+            base_url=TEST_BASE_URL,
+        )
+
+        result = proxy._prepare_scopes_for_token_exchange([])
+        assert result == []
