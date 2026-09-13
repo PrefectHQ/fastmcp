@@ -185,6 +185,51 @@ class TestSphinxStyle:
 class TestEdgeCases:
     """Unusual, malformed, or partially-correct docstrings."""
 
+    def test_returns_section_excluded_no_params(self):
+        """Returns section should be excluded even when there are no parameters."""
+
+        def fn() -> dict:
+            """Return current status.
+
+            Returns:
+                A dict containing the current status.
+            """
+            return {"ok": True}
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Return current status."
+        assert parsed.parameters == {}
+
+    def test_yields_section_excluded_no_params(self):
+        """Yields section should be excluded even when there are no parameters."""
+
+        def fn():
+            """Generate items.
+
+            Yields:
+                Individual items.
+            """
+            yield 1
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Generate items."
+        assert parsed.parameters == {}
+
+    def test_args_and_returns_excluded_no_params(self):
+        """Both Args and Returns sections should be excluded with no params."""
+
+        def fn() -> str:
+            """Process the thing.
+
+            Returns:
+                The processed result.
+            """
+            return "done"
+
+        parsed = parse_docstring(fn)
+        assert parsed.description == "Process the thing."
+        assert parsed.parameters == {}
+
     def test_no_docstring(self):
         def fn(a: int) -> int:
             return a
