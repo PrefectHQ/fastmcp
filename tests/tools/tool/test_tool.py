@@ -636,3 +636,40 @@ class TestToolExecutionField:
         mcp_tool = tool.to_mcp_tool()
         assert mcp_tool.execution is not None
         assert mcp_tool.execution.task_support == "forbidden"
+
+
+class TestToolOutputSchemaSerialization:
+    """Tests for tools with output_schema and unserializable return values."""
+
+    async def test_unserializable_return_with_output_schema_raises(self):
+        """Tool with output_schema should raise when return value is not JSON-serializable."""
+        import threading
+
+        @Tool.from_function
+        def get_connection_info() -> dict:
+            return {"host": "db1", "lock": threading.Lock()}
+
+        # Manually set output_schema to simulate a tool with output schema
+        get_connection_info.output_schema = {
+            "type": "object",
+            "properties": {"host": {"type": "string"}},
+        }
+
+        with pytest.raises(ValueError, match="cannot be serialized"):
+            await get_connection_info.run({})
+
+    async def test_unserializable_return_without_output_schema_succeeds(self):
+        """Tool without output_schema should gracefully handle unserializable values."""
+        import threading
+
+        @Tool.from_function
+        def get_connection_info():
+            return {"host": "db1", "lock": threading.Lock()}
+
+        # Explicitly disable output_schema
+        get_connection_info.output_schema = None
+
+        # No output_schema - should fallback to text content
+        result = await get_connection_info.run({})
+        assert result.content is not None
+        assert result.structured_content is None
