@@ -32,11 +32,22 @@ class CursorState:
         """Decode cursor from an opaque string.
 
         Raises:
-            ValueError: If the cursor is invalid or malformed.
+            ValueError: If the cursor is invalid, malformed, or contains
+                a non-integer or negative offset.
         """
         try:
             data = json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
-            return cls(offset=data["o"])
+            raw_offset = data["o"]
+            if not isinstance(raw_offset, int) or isinstance(raw_offset, bool):
+                raise ValueError(
+                    f"Cursor offset must be a non-negative integer, "
+                    f"got {type(raw_offset).__name__}"
+                )
+            if raw_offset < 0:
+                raise ValueError(
+                    f"Cursor offset must be non-negative, got {raw_offset}"
+                )
+            return cls(offset=raw_offset)
         except (
             json.JSONDecodeError,
             KeyError,
@@ -44,6 +55,10 @@ class CursorState:
             TypeError,
             binascii.Error,
         ) as e:
+            if isinstance(e, ValueError) and (
+                "Cursor offset" in str(e) or "non-negative" in str(e)
+            ):
+                raise
             raise ValueError(f"Invalid cursor: {cursor}") from e
 
 
