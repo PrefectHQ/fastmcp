@@ -586,6 +586,44 @@ class TestContentTypeHandling:
         # multipart/form-data should be sent as multipart, not JSON
         assert "multipart/form-data" in request.headers["content-type"]
 
+    def test_multipart_array_fields_sent_separately(self, director):
+        """Array values in multipart should be sent as multiple fields, not a list string."""
+        route = HTTPRoute(
+            path="/submit",
+            method="POST",
+            operation_id="submit",
+            request_body=RequestBodyInfo(
+                required=True,
+                content_schema={
+                    "multipart/form-data": {
+                        "type": "object",
+                        "properties": {
+                            "tags": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            }
+                        },
+                        "required": ["tags"],
+                    }
+                },
+            ),
+            parameter_map={
+                "tags": {"location": "body", "openapi_name": "tags"},
+            },
+        )
+
+        request = director.build(route, {"tags": ["a", "b"]}, "https://example.com")
+        # Should be multipart
+        assert "multipart/form-data" in request.headers["content-type"]
+        # The stream should be a MultipartStream with array values as separate parts.
+        from httpx2._multipart import MultipartStream
+
+        assert isinstance(request.stream, MultipartStream)
+        # Collect all field names from the multipart parts
+        field_names = [field.name for field in request.stream.fields]
+        # tags should appear twice (once for "a", once for "b")
+        assert field_names.count("tags") == 2
+
 
 class TestQueryParameterSerialization:
     """Test that query parameters respect OpenAPI explode/style settings."""
