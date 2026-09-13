@@ -2,6 +2,7 @@
 
 import io
 import json as _json
+from email.message import Message
 from typing import Any, ClassVar
 from urllib.parse import quote, urljoin
 
@@ -145,6 +146,15 @@ class RequestDirector:
                     json_body = body
             else:
                 content = body
+                if raw_content_type is not None:
+                    headers = dict(headers) if headers else {}
+                    headers["Content-Type"] = raw_content_type
+                    if isinstance(body, str):
+                        media_type = Message()
+                        media_type["Content-Type"] = raw_content_type
+                        content = body.encode(
+                            media_type.get_content_charset() or "utf-8"
+                        )
 
         # Step 7: Create httpx2.Request
         return httpx2.Request(
