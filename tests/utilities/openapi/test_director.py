@@ -325,7 +325,16 @@ class TestRequestDirector:
         request3 = director.build(basic_route, flat_args, "https://api.example.com/v1")
         assert request3.url == "https://api.example.com/v1/users/123"
 
-    def test_body_construction_single_value(self, director):
+    @pytest.mark.parametrize(
+        "media_type",
+        [
+            "text/plain",
+            "text/plain; charset=utf-8",
+            "application/xml",
+            "application/octet-stream",
+        ],
+    )
+    def test_body_construction_single_value(self, director, media_type):
         """Test body construction when body schema is not an object."""
         route = HTTPRoute(
             path="/upload",
@@ -333,7 +342,7 @@ class TestRequestDirector:
             operation_id="upload_file",
             request_body=RequestBodyInfo(
                 required=True,
-                content_schema={"text/plain": {"type": "string"}},
+                content_schema={media_type: {"type": "string"}},
             ),
             parameter_map={
                 "content": {"location": "body", "openapi_name": "content"},
@@ -347,6 +356,7 @@ class TestRequestDirector:
         assert request.method == "POST"
         # For non-JSON content, httpx uses 'content' parameter which becomes bytes
         assert request.content == b"Hello, World!"
+        assert request.headers["content-type"] == media_type
 
     def test_body_construction_multiple_properties_non_object_schema(self, director):
         """Test body construction with multiple properties but non-object schema."""

@@ -145,6 +145,9 @@ class RequestDirector:
                     json_body = body
             else:
                 content = body
+                if raw_content_type is not None:
+                    headers = dict(headers) if headers else {}
+                    headers["Content-Type"] = raw_content_type
 
         # Step 7: Create httpx2.Request
         return httpx2.Request(
