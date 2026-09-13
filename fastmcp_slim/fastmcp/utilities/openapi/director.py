@@ -106,17 +106,24 @@ class RequestDirector:
                 # treats them as form fields. Scalars must be stringified
                 # because httpx rejects non-string/bytes values in files=.
                 # Use _query_scalar_to_str for booleans (true/false, not True/False).
-                files = {}
+                # For arrays, we build a list of (name, (filename, value)) tuples
+                # so httpx sends each element as a separate form field.
+                files: list[tuple[str, tuple[str | None, str]]] = []
                 for k, v in body.items():
                     if isinstance(v, tuple):
-                        files[k] = v
+                        files.append((k, v))
                     elif isinstance(v, bytes | io.IOBase):
                         # bytes and file-like objects are passed directly so
                         # httpx can transmit them as binary parts without
                         # stringifying to their Python repr.
-                        files[k] = (None, v)
+                        files.append((k, (None, v)))
+                    elif isinstance(v, list):
+                        # Arrays should be sent as multiple form fields with
+                        # the same name per the OpenAPI multipart spec.
+                        for item in v:
+                            files.append((k, (None, _query_scalar_to_str(item))))
                     else:
-                        files[k] = (None, _query_scalar_to_str(v))
+                        files.append((k, (None, _query_scalar_to_str(v))))
             elif (
                 declared_content_type == "application/x-www-form-urlencoded"
                 and isinstance(body, dict)
