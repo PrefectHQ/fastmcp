@@ -51,6 +51,61 @@ class TestCursorEncoding:
         with pytest.raises(ValueError, match="Invalid cursor"):
             CursorState.decode(invalid)
 
+    def test_decode_string_offset_raises(self) -> None:
+        """String offset should raise ValueError."""
+        import base64
+        import json
+
+        cursor = base64.urlsafe_b64encode(
+            json.dumps({"o": "1"}).encode()
+        ).decode()
+        with pytest.raises(ValueError, match="non-negative integer"):
+            CursorState.decode(cursor)
+
+    def test_decode_float_offset_raises(self) -> None:
+        """Float offset should raise ValueError."""
+        import base64
+        import json
+
+        cursor = base64.urlsafe_b64encode(
+            json.dumps({"o": 1.5}).encode()
+        ).decode()
+        with pytest.raises(ValueError, match="non-negative integer"):
+            CursorState.decode(cursor)
+
+    def test_decode_negative_offset_raises(self) -> None:
+        """Negative offset should raise ValueError."""
+        import base64
+        import json
+
+        cursor = base64.urlsafe_b64encode(
+            json.dumps({"o": -1}).encode()
+        ).decode()
+        with pytest.raises(ValueError, match="non-negative"):
+            CursorState.decode(cursor)
+
+    def test_decode_boolean_offset_raises(self) -> None:
+        """Boolean offset should raise ValueError."""
+        import base64
+        import json
+
+        cursor = base64.urlsafe_b64encode(
+            json.dumps({"o": True}).encode()
+        ).decode()
+        with pytest.raises(ValueError, match="non-negative integer"):
+            CursorState.decode(cursor)
+
+    def test_decode_null_offset_raises(self) -> None:
+        """Null offset should raise ValueError."""
+        import base64
+        import json
+
+        cursor = base64.urlsafe_b64encode(
+            json.dumps({"o": None}).encode()
+        ).decode()
+        with pytest.raises(ValueError, match="non-negative integer"):
+            CursorState.decode(cursor)
+
 
 class TestPaginateSequence:
     """Tests for the paginate_sequence helper."""
