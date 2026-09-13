@@ -778,3 +778,59 @@ class TestPatternMatching:
         ) as client:
             result = await client.call_tool("pattern_match_tool", {})
             assert result.data == "Cancelled"
+
+
+class TestElicitationTruthiness:
+    """Test that DeclinedElicitation and CancelledElicitation are falsy.
+
+    This ensures the natural guard pattern works::
+
+        result = await ctx.elicit("Confirm?", response_type=bool)
+        if result:  # Should be False for Declined/Cancelled
+            do_action()
+    """
+
+    def test_accepted_elicitation_is_truthy(self):
+        """AcceptedElicitation should be truthy."""
+        accepted = AcceptedElicitation(data="yes")
+        assert bool(accepted) is True
+        assert accepted  # truthy in boolean context
+
+    def test_declined_elicitation_is_falsy(self):
+        """DeclinedElicitation should be falsy."""
+        declined = DeclinedElicitation()
+        assert bool(declined) is False
+        assert not declined  # falsy in boolean context
+
+    def test_cancelled_elicitation_is_falsy(self):
+        """CancelledElicitation should be falsy."""
+        cancelled = CancelledElicitation()
+        assert bool(cancelled) is False
+        assert not cancelled  # falsy in boolean context
+
+    def test_declined_elicitation_guard_pattern(self):
+        """DeclinedElicitation should fail the natural guard pattern."""
+        result = DeclinedElicitation()
+        # This is the pattern from the issue - should NOT execute the action
+        action_executed = False
+        if result:
+            action_executed = True
+        assert not action_executed
+
+    def test_cancelled_elicitation_guard_pattern(self):
+        """CancelledElicitation should fail the natural guard pattern."""
+        result = CancelledElicitation()
+        # This is the pattern from the issue - should NOT execute the action
+        action_executed = False
+        if result:
+            action_executed = True
+        assert not action_executed
+
+    def test_accepted_elicitation_guard_pattern(self):
+        """AcceptedElicitation should pass the natural guard pattern."""
+        result = AcceptedElicitation(data={"value": "yes"})
+        # This should execute the action
+        action_executed = False
+        if result:
+            action_executed = True
+        assert action_executed
