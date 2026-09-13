@@ -67,12 +67,29 @@ class RequestDirector:
         query_params = self._serialize_query_params(route, query_params)
 
         # Step 3: Build base URL with path parameters
-        url = self._build_url(route.path, path_params, base_url)
+        url = self._build_url(route, path_params, base_url)
 
         # Step 4: Prepare request data
         method: str = route.method.upper()
         params = query_params if query_params else None
-        headers = header_params if header_params else None
+        # Header parameters always use the OpenAPI "simple" style; values must
+        # be strings or httpx rejects the request outright.
+        header_lookup: dict[str, ParameterInfo] = {
+            p.name: p for p in route.parameters if p.location == "header"
+        }
+        headers = (
+            {
+                k: self._simple_param_to_str(
+                    v,
+                    explode=bool(header_lookup[k].explode)
+                    if k in header_lookup
+                    else False,
+                )
+                for k, v in header_params.items()
+            }
+            if header_params
+            else None
+        )
         json_body: dict[str, Any] | list[Any] | str | int | float | bool | None = None
         content: str | bytes | None = None
 
@@ -131,7 +148,8 @@ class RequestDirector:
                 )
             ):
                 if (
-                    declared_content_type is not None
+                    raw_content_type is not None
+                    and declared_content_type is not None
                     and raw_content_type != "application/json"
                     and "json" in declared_content_type
                 ):
@@ -357,27 +375,56 @@ class RequestDirector:
             serialized[key] = value
         return serialized
 
+    @staticmethod
+    def _simple_param_to_str(value: Any, explode: bool = False) -> str:
+        """Serialize a value per the OpenAPI "simple" style (path and header parameters).
+
+        Arrays join with commas either way; explode only changes object
+        serialization from "k,v" pairs to "k=v" pairs.
+        """
+        if isinstance(value, dict):
+            parts: list[str] = []
+            for k, v in value.items():
+                if explode:
+                    parts.append(f"{_query_scalar_to_str(k)}={_query_scalar_to_str(v)}")
+                else:
+                    parts.append(_query_scalar_to_str(k))
+                    parts.append(_query_scalar_to_str(v))
+            return ",".join(parts)
+        if isinstance(value, list | tuple):
+            return ",".join(_query_scalar_to_str(v) for v in value)
+        return _query_scalar_to_str(value)
+
     def _build_url(
-        self, path_template: str, path_params: dict[str, Any], base_url: str
+        self, route: HTTPRoute, path_params: dict[str, Any], base_url: str
     ) -> str:
         """
         Build URL by substituting path parameters in the template.
 
         Args:
-            path_template: OpenAPI path template (e.g., "/users/{id}")
+            route: HTTPRoute containing the path template and parameter definitions
             path_params: Path parameter values
             base_url: Base URL to prepend
 
         Returns:
             Complete URL with path parameters substituted
         """
-        # Substitute path parameters with URL-encoding to prevent
-        # path traversal and SSRF via crafted parameter values
-        url_path = path_template
+        # Path parameters default to the OpenAPI "simple" style, so values are
+        # serialized before substitution (e.g. true/false for booleans, "a,b"
+        # for arrays) instead of leaking Python reprs into the URL.
+        path_lookup: dict[str, ParameterInfo] = {
+            p.name: p for p in route.parameters if p.location == "path"
+        }
+        url_path = route.path
         for param_name, param_value in path_params.items():
             placeholder = f"{{{param_name}}}"
             if placeholder in url_path:
-                safe_value = quote(str(param_value), safe="").replace(".", "%2E")
+                param_info = path_lookup.get(param_name)
+                explode = bool(param_info.explode) if param_info else False
+                serialized = self._simple_param_to_str(param_value, explode=explode)
+                # Substitute path parameters with URL-encoding to prevent
+                # path traversal and SSRF via crafted parameter values
+                safe_value = quote(serialized, safe="").replace(".", "%2E")
                 url_path = url_path.replace(placeholder, safe_value)
 
         # Combine with base URL
