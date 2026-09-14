@@ -1118,6 +1118,40 @@ async def test_code_mode_get_schema_renders_enums_and_defaults() -> None:
     assert "\u2014" not in text  # but no per-parameter description dashes
 
 
+async def test_code_mode_get_schema_names_return_fields_one_level_down() -> None:
+    """A typed return no longer renders as an opaque object[]."""
+    from pydantic import BaseModel
+
+    class Note(BaseModel):
+        text: str
+
+    class Card(BaseModel):
+        id: str
+        url: str
+        note: Note | None = None
+
+    class Page(BaseModel):
+        items: list[Card]
+        has_more: bool
+
+    mcp = FastMCP("CodeMode NestedReturns")
+
+    @mcp.tool
+    def list_cards() -> Page:
+        """List cards."""
+        return Page(items=[], has_more=False)
+
+    mcp.add_transform(CodeMode())
+
+    result = await _run_tool(mcp, "get_schema", {"tools": ["list_cards"]})
+    unwrapped = _unwrap_result(result)
+    text = unwrapped["result"] if isinstance(unwrapped, dict) else unwrapped
+    assert "- `items` (object[], required): `id`, `url`, `note`" in text
+    assert "- `has_more` (boolean, required)" in text
+    # One level only: Note's fields are not expanded under Card.
+    assert "`text`" not in text
+
+
 @pytest.mark.parametrize("text", ["backend exploded", ""])
 async def test_error_result_preserves_text_with_structured_content(text: str) -> None:
     mcp = FastMCP("Structured errors")

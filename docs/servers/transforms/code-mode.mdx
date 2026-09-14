@@ -122,7 +122,7 @@ CodeMode ships with four built-in discovery tools: `Search`, `GetSchemas`, `GetT
 | Level | Output | Token cost |
 |---|---|---|
 | `"brief"` | Tool names and one-line descriptions | Cheapest — good for scanning |
-| `"detailed"` | Compact markdown with parameter names, types, literal values, defaults, and required markers | Medium — often enough to write code |
+| `"detailed"` | Compact markdown with parameter names, types, literal values, defaults, required markers, and the field names one level inside any object-valued parameter or return | Medium — often enough to write code |
 | `"full"` | Complete JSON schema | Most expensive — everything |
 
 `Search` defaults to `"brief"` and `GetSchemas` defaults to `"detailed"`.
@@ -143,7 +143,7 @@ If your tools use [tags](/servers/visibility#tags), Search also accepts a `tags`
 
 ### GetSchemas
 
-`GetSchemas` returns parameter details for specific tools by name. At its default `"detailed"` level, it renders compact markdown with parameter names, types, literal values, defaults, and required markers. At `"full"`, it returns the complete JSON schema — useful when tools have deeply nested parameters that the compact format doesn't capture.
+`GetSchemas` returns parameter details for specific tools by name. At its default `"detailed"` level, it renders compact markdown with parameter names, types, literal values, defaults, and required markers. Object-valued parameters and return values also list their own field names one level down, following `$ref`s into `$defs`, so a tool returning `list[Card]` renders as ``- `items` (object[]): `id`, `url`, `title`, …`` rather than an opaque `object[]`. At `"full"`, it returns the complete JSON schema — useful when tools have deeply nested parameters that the compact format doesn't capture.
 
 ### GetTags
 

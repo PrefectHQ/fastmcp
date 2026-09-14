@@ -92,6 +92,87 @@ def test_schema_section_lists_fields_with_required_marker() -> None:
     assert "- `age` (integer)" in lines
 
 
+def test_schema_section_lists_nested_field_names_through_defs() -> None:
+    """Object-valued fields show their own field names one level down."""
+    schema = {
+        "type": "object",
+        "$defs": {
+            "Card": {
+                "type": "object",
+                "properties": {"id": {}, "url": {}, "note": {"$ref": "#/$defs/Note"}},
+            },
+            "Note": {"type": "object", "properties": {"text": {}}},
+            "Page": {
+                "type": "object",
+                "properties": {"current_page": {}, "has_more": {}},
+            },
+        },
+        "properties": {
+            "items": {"type": "array", "items": {"$ref": "#/$defs/Card"}},
+            "pagination": {
+                "anyOf": [{"$ref": "#/$defs/Page"}, {"type": "null"}],
+                "default": None,
+            },
+            "count": {"type": "integer"},
+            "inline": {"type": "object", "properties": {"a": {}, "b": {}}},
+        },
+    }
+    lines = _schema_section(schema, "Returns")
+    assert "- `items` (object[]): `id`, `url`, `note`" in lines
+    assert "- `pagination` (object?): `current_page`, `has_more`" in lines
+    assert "- `count` (integer)" in lines
+    assert "- `inline` (object): `a`, `b`" in lines
+
+
+def test_schema_section_unions_fields_across_object_branches() -> None:
+    """A | B lists the fields of both models; allOf merges inherited and inline fields."""
+    schema = {
+        "type": "object",
+        "$defs": {
+            "A": {"type": "object", "properties": {"nested": {}, "shared": {}}},
+            "B": {"type": "object", "properties": {"value": {}, "shared": {}}},
+            "Base": {"type": "object", "properties": {"id": {}}},
+        },
+        "properties": {
+            "data": {"anyOf": [{"$ref": "#/$defs/A"}, {"$ref": "#/$defs/B"}]},
+            "composed": {
+                "allOf": [
+                    {"$ref": "#/$defs/Base"},
+                    {"type": "object", "properties": {"extra": {}}},
+                ]
+            },
+        },
+    }
+    lines = _schema_section(schema, "Returns")
+    assert "- `data` (object): `nested`, `shared`, `value`" in lines
+    assert "- `composed` (object): `id`, `extra`" in lines
+
+
+def test_schema_section_truncates_long_nested_objects() -> None:
+    fields = {f"f{i}": {} for i in range(20)}
+    schema = {
+        "type": "object",
+        "properties": {"row": {"type": "object", "properties": fields}},
+    }
+    [_, line] = _schema_section(schema, "Returns")
+    assert line.endswith("`f15`, +4 more")
+
+
+def test_schema_section_ignores_unresolvable_refs() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "x": {"$ref": "#/$defs/Missing"},
+            "y": {"$ref": "https://example.com/schema.json"},
+        },
+    }
+    assert _schema_section(schema, "Parameters") == [
+        "**Parameters**",
+        "- `x` (object)",
+        "- `y` (object)",
+    ]
+
+
 # ---------------------------------------------------------------------------
 # serialize_tools_for_output_markdown unit tests
 # ---------------------------------------------------------------------------
