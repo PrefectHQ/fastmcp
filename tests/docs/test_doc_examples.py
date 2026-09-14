@@ -18,6 +18,7 @@ import ast
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
 from pytest_examples import CodeExample
 from pytest_examples.find_examples import _extract_code_chunks
 
@@ -101,6 +102,8 @@ def _check_fastmcp_imports(example: CodeExample) -> list[str]:
     return errors
 
 
+# This scans the entire docs corpus and imports optional integrations on cold CI.
+@pytest.mark.timeout(30)
 def test_doc_examples_quality():
     """Doc examples should not regress in syntax or import correctness.
 
