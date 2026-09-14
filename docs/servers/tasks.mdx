@@ -293,8 +293,10 @@ The `Progress` dependency lets you report progress back to clients. Inject it as
 ```python
 from fastmcp import FastMCP
 from fastmcp.dependencies import Progress
+from fastmcp_tasks import TasksExtension
 
 mcp = FastMCP("MyServer")
+mcp.add_extension(TasksExtension())
 
 @mcp.tool(task=True)
 async def process_files(files: list[str], progress: Progress = Progress()) -> str:
@@ -323,9 +325,11 @@ FastMCP exposes Docket's full dependency injection system within your task-enabl
 from docket import Docket, Worker
 from fastmcp import FastMCP
 from fastmcp.dependencies import Progress
+from fastmcp_tasks import TasksExtension
 from fastmcp_tasks.dependencies import CurrentDocket, CurrentWorker
 
 mcp = FastMCP("MyServer")
+mcp.add_extension(TasksExtension())
 
 @mcp.tool(task=True)
 async def my_task(

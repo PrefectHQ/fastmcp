@@ -87,10 +87,11 @@ For [SSE](/clients/transports#sse-transport), use a `/sse` URL instead.
 To launch a FastMCP server as a subprocess, pass a script path and the toolset will use the [STDIO transport](/clients/transports#stdio-transport).
 
 ```python
+from pathlib import Path
 from pydantic_ai import Agent
 from pydantic_ai.toolsets.fastmcp import FastMCPToolset
 
-toolset = FastMCPToolset("server.py")
+toolset = FastMCPToolset(Path("server.py"))
 agent = Agent("openai:gpt-4.1", toolsets=[toolset])
 ```
 

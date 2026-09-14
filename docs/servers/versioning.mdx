@@ -3,7 +3,6 @@ title: Versioning
 sidebarTitle: Versioning
 description: Serve multiple API versions from a single codebase
 icon: code-branch
-tag: NEW
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
@@ -289,13 +288,14 @@ def add(x: int, y: int) -> int:
 def add(x: int, y: int) -> int:
     return x + y + 100  # Different behavior
 
-# Get highest version (default)
-tool = await mcp.get_tool("add")
-print(tool.version)  # "2.0"
+async def main():
+    # Get highest version (default)
+    tool = await mcp.get_tool("add")
+    print(tool.version)  # "2.0"
 
-# Get specific version
-tool_v1 = await mcp.get_tool("add", version="1.0")
-print(tool_v1.version)  # "1.0"
+    # Get specific version
+    tool_v1 = await mcp.get_tool("add", version="1.0")
+    print(tool_v1.version)  # "1.0"
 ```
 
 If the requested version doesn't exist, a `NotFoundError` is raised.

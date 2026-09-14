@@ -169,8 +169,13 @@ class MCPConfigTransport(ClientTransport):
         stack = contextlib.AsyncExitStack()
         await stack.__aenter__()
         try:
+            prepared_transports = self._prepare_transports()
             composite, backend_versions = await self._build_composite(
-                FastMCP, timeout, stack, requested_mode
+                FastMCP,
+                timeout,
+                stack,
+                requested_mode,
+                prepared_transports=prepared_transports,
             )
 
             # `auto` is an aggregate negotiation: the composite can only expose
@@ -212,6 +217,7 @@ class MCPConfigTransport(ClientTransport):
         timeout: float | None,
         stack: contextlib.AsyncExitStack,
         backend_mode: str,
+        prepared_transports: dict[str, ClientTransport] | None = None,
     ) -> tuple["FastMCP[Any]", list[str]]:
         """Connect configured backends and mount their proxies on one router."""
         composite = fastmcp_type(
@@ -219,11 +225,37 @@ class MCPConfigTransport(ClientTransport):
         )
         self._transports = []
         backend_versions: list[str] = []
+        proxies: dict[str, FastMCP[Any]] = {}
 
-        for name, server_config in self.config.mcpServers.items():
+        if prepared_transports is None:
+            prepared_transports = self._prepare_transports()
+
+        backends = [
+            (name, config, prepared_transports.get(name))
+            for name, config in self.config.mcpServers.items()
+        ]
+        if backend_mode == "auto":
+            # Probe transports with a known legacy-only constraint first. Once
+            # one connects, every remaining backend can start directly in the
+            # aggregate's required legacy era instead of being restarted after
+            # an avoidable modern probe.
+            backends.sort(
+                key=lambda backend: (
+                    not (backend[2] is not None and backend[2].legacy_only)
+                )
+            )
+
+        current_mode = backend_mode
+
+        for name, server_config, transport in backends:
             try:
-                transport, client, proxy = await self._create_proxy(
-                    name, server_config, timeout, stack, backend_mode
+                connected_transport, client, proxy = await self._create_proxy(
+                    name,
+                    server_config,
+                    timeout,
+                    stack,
+                    current_mode,
+                    transport=transport,
                 )
             except Exception:  # Broad catch is intentional: failure modes
                 # are diverse (OSError, TimeoutError, RuntimeError, etc.) and
@@ -234,15 +266,49 @@ class MCPConfigTransport(ClientTransport):
                     exc_info=True,
                 )
                 continue
-            self._transports.append(transport)
+            self._transports.append(connected_transport)
             assert client.protocol_version is not None
             backend_versions.append(client.protocol_version)
-            composite.mount(proxy, namespace=name if self.name_as_prefix else None)
+            proxies[name] = proxy
+            if (
+                backend_mode == "auto"
+                and client.protocol_version not in MODERN_PROTOCOL_VERSIONS
+            ):
+                current_mode = "legacy"
 
         if not self._transports:
             raise ConnectionError("All MCP servers failed to connect")
 
+        # Connection order may prioritize known legacy-only transports, but
+        # mounted component order remains the order declared by the user.
+        for name in self.config.mcpServers:
+            if proxy := proxies.get(name):
+                composite.mount(proxy, namespace=name if self.name_as_prefix else None)
+
         return composite, backend_versions
+
+    def _prepare_transports(self) -> dict[str, ClientTransport]:
+        """Create backend transports before connecting so capabilities are inspectable."""
+        transports: dict[str, ClientTransport] = {}
+        for name, config in self.config.mcpServers.items():
+            try:
+                transports[name] = self._create_transport(config)
+            except Exception:
+                logger.debug(
+                    "Failed to construct transport for MCP server %r",
+                    name,
+                    exc_info=True,
+                )
+        return transports
+
+    @staticmethod
+    def _create_transport(config: MCPServerTypes) -> ClientTransport:
+        """Create the transport used by a multi-server proxy backend."""
+        if isinstance(config, TransformingStdioMCPServer):
+            return StdioMCPServer.to_transport(config)
+        if isinstance(config, TransformingRemoteMCPServer):
+            return RemoteMCPServer.to_transport(config)
+        return config.to_transport()
 
     async def _create_proxy(
         self,
@@ -251,6 +317,7 @@ class MCPConfigTransport(ClientTransport):
         timeout: float | None,
         stack: contextlib.AsyncExitStack,
         backend_mode: str | None = None,
+        transport: ClientTransport | None = None,
     ) -> tuple[ClientTransport, Any, "FastMCP[Any]"]:
         """Create underlying transport, proxy client, and proxy server for a single backend.
 
@@ -271,19 +338,16 @@ class MCPConfigTransport(ClientTransport):
         include_tags = None
         exclude_tags = None
 
-        # Handle transforming servers - call base class to_transport() for underlying transport
-        if isinstance(config, TransformingStdioMCPServer):
-            transport = StdioMCPServer.to_transport(config)
+        if transport is None:
+            transport = self._create_transport(config)
+
+        # Handle transforming servers.
+        if isinstance(
+            config, (TransformingStdioMCPServer, TransformingRemoteMCPServer)
+        ):
             tool_transforms = config.tools
             include_tags = config.include_tags
             exclude_tags = config.exclude_tags
-        elif isinstance(config, TransformingRemoteMCPServer):
-            transport = RemoteMCPServer.to_transport(config)
-            tool_transforms = config.tools
-            include_tags = config.include_tags
-            exclude_tags = config.exclude_tags
-        else:
-            transport = config.to_transport()
 
         client_kwargs: dict[str, Any] = {}
         if backend_mode is not None:

@@ -95,6 +95,21 @@ def test_create_task_result_emits_result_type_discriminator():
     assert _dump(result)["resultType"] == "task"
 
 
+def test_server_task_timing_fields_serialize_as_integers():
+    result = CreateTaskResult(
+        task_id="t1",
+        status="working",
+        created_at=_ISO,
+        last_updated_at=_ISO,
+        ttl_ms=900000,
+        poll_interval_ms=5000,
+    )
+
+    dumped = _dump(result)
+    assert type(dumped["ttlMs"]) is int
+    assert type(dumped["pollIntervalMs"]) is int
+
+
 @pytest.mark.parametrize(
     ("status", "payload"),
     [

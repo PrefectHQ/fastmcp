@@ -51,9 +51,9 @@ class _ClientTaskFields(Result):
     status: TaskStatus
     created_at: str = Field(alias="createdAt")
     last_updated_at: str = Field(alias="lastUpdatedAt")
-    ttl_ms: float | None = Field(default=None, alias="ttlMs")
+    ttl_ms: int | None = Field(default=None, alias="ttlMs")
     status_message: str | None = Field(default=None, alias="statusMessage")
-    poll_interval_ms: float | None = Field(default=None, alias="pollIntervalMs")
+    poll_interval_ms: int | None = Field(default=None, alias="pollIntervalMs")
 
 
 class ClientCreateTaskResult(_ClientTaskFields):

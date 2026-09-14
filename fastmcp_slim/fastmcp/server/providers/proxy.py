@@ -1535,7 +1535,7 @@ async def default_proxy_roots_handler(
     backend's client, so it relays the request onto its own front session. This
     reaches the wire through the SDK session rather than a `Context` method:
     `ctx.list_roots()` is not part of FastMCP's server-authoring API, because
-    SEP-2577 removed server-initiated requests from the modern protocol. The
+    SEP-2322 removed server-initiated requests from the modern protocol. The
     relay exists only for handshake-era interop on both legs.
     """
     ctx = get_context()

@@ -2,6 +2,7 @@
 title: Client Groups
 sidebarTitle: Client Groups
 icon: layer-group
+tag: NEW
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
@@ -17,12 +18,12 @@ This differs from passing a multi-server configuration directly to `Client`. `Cl
 Construct the clients explicitly when each server needs its own handlers, authentication, or connection settings:
 
 ```python
+from pathlib import Path
 import asyncio
 
-from fastmcp import Client
-from fastmcp.client.group import ClientGroup
+from fastmcp import Client, ClientGroup
 
-legacy_client = Client("legacy_server.py", mode="legacy")
+legacy_client = Client(Path("legacy_server.py"), mode="legacy")
 modern_client = Client("https://modern.example.com/mcp", mode="auto")
 
 group = ClientGroup(
@@ -74,7 +75,7 @@ The group aggregates names and detects collisions; it never stands between the a
 `ClientGroup.from_config` creates one client per server rather than passing the entire configuration through a proxy. A FastMCP-specific `mode` field can select the protocol behavior for each server:
 
 ```python
-from fastmcp.client.group import ClientGroup
+from fastmcp import ClientGroup
 
 config = {
     "mcpServers": {
@@ -105,6 +106,15 @@ async with legacy_client, modern_client:
 ```
 
 It is also safe to enter the group inside a client context. FastMCP client contexts are reference counted, so leaving the group does not close a connection still owned by an outer context.
+
+The group's own context is reentrant in the same way (FastMCP 4.0.1 and later). Entering a group that is already connected, whether from a nested block or a concurrent task, reuses the existing connections. The first entry connects every client and the last exit disconnects them, so code that already relies on `Client` being safe to enter more than once can hold a `ClientGroup` the same way:
+
+```python
+async with group:
+    async with group:  # reuses the connections opened above
+        await group.call_tool("modern_get_weather", {"city": "Chicago"})
+    assert modern_client.is_connected()
+```
 
 The group adds no session handling of its own. Each client owns its transport and session exactly as it does standalone, so a legacy stateful session (for example over SSE or stdio) is held open by its client for as long as that client's context is active, whether the group or the caller entered it.
 

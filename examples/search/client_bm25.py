@@ -9,6 +9,7 @@ Run with:
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Any
 
 from rich.console import Console
@@ -65,7 +66,7 @@ def _tool_table(
 
 
 async def main():
-    async with Client("examples/search/server_bm25.py") as client:
+    async with Client(Path("examples/search/server_bm25.py")) as client:
         console.print()
         console.rule("[bold]BM25 Search Transform[/bold]")
         console.print()

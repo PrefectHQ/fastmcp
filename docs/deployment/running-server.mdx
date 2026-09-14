@@ -180,7 +180,7 @@ fastmcp run server.py --reload --transport http --port 8080
 ```
 
 <Note>
-Auto-reload uses stateless mode to enable seamless restarts. For stdio transport, this is fully featured. For HTTP transport, some bidirectional features like elicitation are not available during reload mode.
+Auto-reload uses stateless mode to enable seamless restarts. For stdio transport, this is fully featured. For HTTP transport, handshake-era `ctx.elicit()` is not available during reload mode; the modern guard pattern (returning `InputRequiredResult`) needs no session back-channel and is unaffected.
 </Note>
 
 SSE transport does not support auto-reload due to session limitations. Use HTTP transport instead if you need both network access and auto-reload.

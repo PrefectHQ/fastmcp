@@ -15,7 +15,7 @@ for seamless MCP client authentication.
 
 ## Classes
 
-### `DescopeProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/descope.py#L79" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `DescopeProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/descope.py#L124" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Descope metadata provider for Dynamic Client Registration (DCR).
@@ -23,7 +23,12 @@ Descope metadata provider for Dynamic Client Registration (DCR).
 The provider accepts either a resource-specific Descope MCP Server URL such
 as `/v1/apps/agentic/P.../M.../.well-known/openid-configuration` or a
 project-level inbound app URL such as
-`/v1/apps/P.../.well-known/openid-configuration`.
+`/v1/apps/P.../.well-known/openid-configuration`. The project-level URL is
+the recommended configuration.
+
+Tokens are accepted from any issuer the project mints: the project-level
+issuer, the resource-scoped issuer of an MCP server, and the tenant-scoped
+issuer used by cross-app access (XAA).
 
 When neither `scopes_supported` nor `required_scopes` is provided, advertised
 scopes are discovered lazily from the OpenID configuration. Use
@@ -36,7 +41,7 @@ for DCR setup instructions.
 
 **Methods:**
 
-#### `get_routes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/descope.py#L267" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_routes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/descope.py#L324" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_routes(self, mcp_path: str | None = None) -> list[Route]

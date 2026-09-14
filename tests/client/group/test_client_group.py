@@ -7,8 +7,7 @@ from unittest.mock import patch
 import pytest
 from pydantic import ConfigDict
 
-from fastmcp import Client, Context, FastMCP
-from fastmcp.client.group import ClientGroup
+from fastmcp import Client, ClientGroup, Context, FastMCP
 from fastmcp.client.transports import FastMCPTransport
 from fastmcp.mcp_config import MCPConfig, StdioMCPServer
 
@@ -278,13 +277,14 @@ async def test_concurrent_group_entry_does_not_double_connect():
     client = Client(FastMCPTransport(make_server("solo")))
     group = ClientGroup({"solo": client})
 
-    results = await asyncio.gather(
-        group.__aenter__(), group.__aenter__(), return_exceptions=True
-    )
-    errors = [r for r in results if isinstance(r, BaseException)]
-    assert len(errors) == 1
-    assert isinstance(errors[0], RuntimeError)
+    with patch.object(Client, "_connect", wraps=client._connect) as connect:
+        await asyncio.gather(group.__aenter__(), group.__aenter__())
 
+    assert connect.call_count == 1
+    assert client.is_connected()
+
+    await group.__aexit__(None, None, None)
+    assert client.is_connected()
     await group.__aexit__(None, None, None)
     assert not client.is_connected()
 
@@ -347,3 +347,74 @@ async def test_explicit_list_tools_refreshes_past_client_response_cache():
 
         result = await group.call_tool("hinted_added")
         assert result.data == "added"
+
+
+async def test_group_context_is_reentrant():
+    client = Client(make_server("server"))
+    group = ClientGroup({"server": client})
+
+    async with group:
+        async with group:
+            result = await group.call_tool("server_echo", {"value": "inner"})
+            assert result.data == "server: inner"
+
+        assert client.is_connected()
+        result = await group.call_tool("server_echo", {"value": "outer"})
+        assert result.data == "server: outer"
+
+    assert not client.is_connected()
+
+
+async def test_concurrent_group_entries_share_one_connection():
+    client = Client(make_server("server"))
+    group = ClientGroup({"server": client})
+    started = asyncio.Event()
+
+    async def hold_open() -> None:
+        async with group:
+            started.set()
+            await asyncio.sleep(0.05)
+
+    async def use_while_held() -> str:
+        await started.wait()
+        async with group:
+            result = await group.call_tool("server_echo", {"value": "shared"})
+            return result.data
+
+    with patch.object(Client, "_connect", wraps=client._connect) as connect:
+        _, data = await asyncio.gather(hold_open(), use_while_held())
+
+    assert data == "server: shared"
+    assert connect.call_count == 1
+    assert not client.is_connected()
+
+
+async def test_group_reconnects_after_last_exit():
+    client = Client(make_server("server"))
+    group = ClientGroup({"server": client})
+
+    async with group:
+        assert client.is_connected()
+    assert not client.is_connected()
+
+    async with group:
+        result = await group.call_tool("server_echo", {"value": "again"})
+        assert result.data == "server: again"
+    assert not client.is_connected()
+
+
+async def test_failed_entry_leaves_group_reenterable():
+    good = Client(make_server("good"))
+    bad = Client(FastMCPTransport(make_server("bad")))
+    group = ClientGroup({"good": good, "bad": bad})
+
+    with patch.object(bad, "_connect", side_effect=ConnectionError("down")):
+        with pytest.raises(ConnectionError):
+            async with group:
+                raise AssertionError("group entry should have failed")
+
+    assert not good.is_connected()
+
+    async with group:
+        result = await group.call_tool("good_echo", {"value": "recovered"})
+        assert result.data == "good: recovered"

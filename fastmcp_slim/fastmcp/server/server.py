@@ -174,8 +174,8 @@ _REMOVED_KWARGS: dict[str, str] = {
     "include_tags": "Use `server.enable(tags=..., only=True)` after creating the server.",
     "exclude_tags": "Use `server.disable(tags=...)` after creating the server.",
     "tool_transformations": "Use `server.add_transform(ToolTransform(...))` after creating the server.",
-    "sampling_handler": "Server-initiated sampling was removed from MCP by SEP-2577. Call an LLM directly from your tool.",
-    "sampling_handler_behavior": "Server-initiated sampling was removed from MCP by SEP-2577. Call an LLM directly from your tool.",
+    "sampling_handler": "Server-initiated sampling is deprecated in MCP (SEP-2577) and the 2026-07-28 protocol has no back-channel for it (SEP-2322). Call an LLM directly from your tool.",
+    "sampling_handler_behavior": "Server-initiated sampling is deprecated in MCP (SEP-2577) and the 2026-07-28 protocol has no back-channel for it (SEP-2322). Call an LLM directly from your tool.",
 }
 
 

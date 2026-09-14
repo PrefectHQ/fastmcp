@@ -2,7 +2,7 @@
 name = "fastmcp"
 dynamic = ["version", "dependencies", "optional-dependencies"]
 description = "The fast, Pythonic way to build MCP servers and clients."
-authors = [{ name = "Jeremiah Lowin" }]
+authors = [{ name = "Jeremiah Lowin" }, { name = "Nate Nowack" }]
 requires-python = ">=3.10"
 readme = "README.md"
 license = "Apache-2.0"

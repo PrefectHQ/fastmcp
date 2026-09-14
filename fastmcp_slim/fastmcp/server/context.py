@@ -944,7 +944,7 @@ class Context:
         """True when the negotiated MCP protocol era removed the back-channel.
 
         Reads the negotiated protocol version from the active request context.
-        The 2026-07-28 era (SEP-2577) has no back-channel for server-initiated
+        The 2026-07-28 era (SEP-2322, SEP-2575) has no back-channel for server-initiated
         requests such as sampling/elicitation. Returns False when no request
         context is available (e.g. background task or pre-session), leaving the
         existing wire path to surface its own error.
@@ -1082,7 +1082,7 @@ class Context:
             # round-trip. Fail fast with the guidance to use InputRequiredResult.
             raise ToolError(_TASK_ELICIT_ERROR)
         # Foreground push path: server-initiated elicitation needs a back-channel,
-        # which the 2026-07-28 era removed (SEP-2577). Raise a clear era-aware
+        # which the 2026-07-28 era removed (SEP-2322, SEP-2575). Raise a clear era-aware
         # error before hitting the wire instead of the SDK's opaque "Method not
         # found". Handshake-era behavior is unchanged.
         if self._is_modern_protocol():

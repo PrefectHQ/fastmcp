@@ -51,13 +51,13 @@ If you have already moved to SDK v2 and write against `MCPServer` today, see [Up
 
 ## Install
 
-FastMCP 4 is in prerelease, so pin the exact version rather than installing unqualified — a bare `pip install fastmcp` resolves to the latest *stable* release, which today is FastMCP 3:
+FastMCP 4 is a stable release:
 
 ```bash
-pip install "fastmcp==4.0.0b4"
+pip install "fastmcp>=4"
 ```
 
-An exact pip pin installs even though it's a prerelease; it does not need `--pre`. uv also needs an explicit constraint for the transitive `fastmcp-slim` prerelease, so follow [Install the v4 Prerelease](/getting-started/upgrading/from-fastmcp-3#install-the-v4-prerelease) for a reproducible uv setup.
+The `fastmcp` package depends on `fastmcp-slim` at the same version; both resolve together with no extra constraints.
 
 FastMCP depends on the `mcp` package, so the SDK stays installed and importable. What changes is which parts of it you reach for. FastMCP 4 builds on SDK v2, where `mcp.server.fastmcp` is gone — anything you imported from it needs a new home, and the sections below cover that. `mcp.types` still resolves (it aliases the standalone `mcp_types` package), though its fields are snake_case now. Update your import, run your server, and if your tools work, you're done.
 

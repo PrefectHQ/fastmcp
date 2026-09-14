@@ -1,318 +1,181 @@
-# /// script
-# dependencies = [
-#     "smart_home@git+https://github.com/PrefectHQ/fastmcp.git#subdirectory=examples/smart_home",
-#     "fastmcp",
-# ]
-# ///
+"""Hue V2 discovery, saved scenes, and native effects."""
 
-from typing import Annotated, Any, Literal, TypedDict
+from typing import Any, Literal
 
 from mcp_types import ToolAnnotations
-from phue.exceptions import PhueException
-from pydantic import Field
-from typing_extensions import NotRequired
+from phue import Bridge, LightState
 
 from fastmcp import FastMCP
-from smart_home.lights.hue_utils import _get_bridge, handle_phue_error
+from fastmcp.dependencies import Depends
+from fastmcp.exceptions import ToolError
+from smart_home.lights.hue_utils import get_bridge, hue_lifespan
+from smart_home.lights.models import LightInfo, RoomState, WriteReceipt, describe_light
+
+lights_mcp = FastMCP(
+    "Hue lights",
+    lifespan=hue_lifespan,
+    instructions="Discover rooms, lights and scenes before changing them. Prefer IDs; names must be exact and unique. Check each bulb's supported_effects before applying a native effect. Effects run on the bulb without a polling loop. Use no_effect to stop. Changes can partially succeed before an error; read back current state to verify.",
+)
+READ = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
+WRITE = ToolAnnotations(
+    readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True
+)
 
 
-class HueAttributes(TypedDict, total=False):
-    """TypedDict for optional light attributes."""
-
-    on: NotRequired[Annotated[bool, Field(description="on/off state")]]
-    bri: NotRequired[Annotated[int, Field(ge=0, le=254, description="brightness")]]
-    hue: NotRequired[
-        Annotated[
-            int,
-            Field(
-                ge=0,
-                le=65535,
-                description="hue (color wheel position)",
-            ),
-        ]
-    ]
-    sat: NotRequired[
-        Annotated[
-            int,
-            Field(
-                ge=0,
-                le=254,
-                description="saturation",
-            ),
-        ]
-    ]
-    xy: NotRequired[Annotated[list[float], Field(description="xy color coordinates")]]
-    ct: NotRequired[
-        Annotated[
-            int,
-            Field(ge=153, le=500, description="color temperature"),
-        ]
-    ]
-    alert: NotRequired[Literal["none", "select", "lselect"]]
-    effect: NotRequired[Literal["none", "colorloop"]]
-    transitiontime: NotRequired[Annotated[int, Field(description="deciseconds")]]
+def resolve(items: dict[str, Any], target: str) -> str:
+    if target in items:
+        return target
+    matches = [key for key, item in items.items() if item["metadata"]["name"] == target]
+    if len(matches) != 1:
+        raise ToolError(
+            f"Target {target!r} is {'ambiguous; use an ID' if matches else 'unknown; list available targets first'}"
+        )
+    return matches[0]
 
 
-# Dependencies are configured in lights.fastmcp.json
-lights_mcp = FastMCP("Hue Lights Service (phue2)")
+async def resolve_room(bridge: Bridge, target: str) -> tuple[str, dict[str, Any]]:
+    rooms = {room.id: room.model_dump() for room in await bridge.rooms()}
+    room_id = resolve(rooms, target)
+    return room_id, rooms[room_id]
 
 
-@lights_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
-def read_all_lights() -> list[str]:
-    """Lists the names of all available Hue lights using phue2."""
-    if not (bridge := _get_bridge()):
-        return ["Error: Bridge not connected"]
-    try:
-        light_dict = bridge.get_light_objects("list")
-        return [light.name for light in light_dict]
-    except (PhueException, Exception) as e:
-        # Simplified error handling for list return type
-        return [f"Error listing lights: {e}"]
+async def room_members(bridge: Bridge, target: str) -> set[str]:
+    _, room = await resolve_room(bridge, target)
+    return {child["rid"] for child in room["children"] if child["rtype"] == "device"}
 
 
-# --- Tools ---
+@lights_mcp.tool(annotations=READ)
+async def read_lights(
+    room: str | None = None, details: bool = False, bridge: Bridge = Depends(get_bridge)
+) -> dict[str, LightInfo]:
+    """Read lights keyed by V2 UUID, with current state and supported native effects.
 
-
-@lights_mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, openWorldHint=True))
-def toggle_light(light_name: str, state: bool) -> dict[str, Any]:
-    """Turns a specific light on (true) or off (false) using phue2."""
-    if not (bridge := _get_bridge()):
-        return {"error": "Bridge not connected", "success": False}
-    try:
-        result = bridge.set_light(light_name, "on", state)
-        return {
-            "light": light_name,
-            "set_on_state": state,
-            "success": True,
-            "phue2_result": result,
-        }
-    except (KeyError, PhueException, Exception) as e:
-        return handle_phue_error(light_name, "toggle_light", e)
-
-
-@lights_mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, openWorldHint=True))
-def set_brightness(light_name: str, brightness: int) -> dict[str, Any]:
-    """Sets the brightness of a specific light (0-254) using phue2."""
-    if not (bridge := _get_bridge()):
-        return {"error": "Bridge not connected", "success": False}
-    if not 0 <= brightness <= 254:
-        # Keep specific input validation error here
-        return {
-            "light": light_name,
-            "error": "Brightness must be between 0 and 254",
-            "success": False,
-        }
-    try:
-        result = bridge.set_light(light_name, "bri", brightness)
-        return {
-            "light": light_name,
-            "set_brightness": brightness,
-            "success": True,
-            "phue2_result": result,
-        }
-    except (KeyError, PhueException, Exception) as e:
-        return handle_phue_error(light_name, "set_brightness", e)
-
-
-@lights_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
-def list_groups() -> list[str]:
-    """Lists the names of all available Hue light groups."""
-    if not (bridge := _get_bridge()):
-        return ["Error: Bridge not connected"]
-    try:
-        # phue2 get_group() returns a dict {id: {details}} including name
-        groups = bridge.get_group()
-        return [group_details["name"] for group_details in groups.values()]
-    except (PhueException, Exception) as e:
-        return [f"Error listing groups: {e}"]
-
-
-@lights_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
-def list_scenes() -> dict[str, list[str]] | list[str]:
-    """Lists Hue scenes, grouped by the light group they belong to.
-
-    Returns:
-        dict[str, list[str]]: A dictionary mapping group names to a list of scene names within that group.
-        list[str]: An error message list if the bridge connection fails or an error occurs.
+    Filter by room UUID or unique exact room name. State uses brightness percent
+    and kelvin; effect speed is 0–1, not amplitude. Missing values mean unknown.
+    Set details=true only when the full Hue resource is needed.
     """
-    if not (bridge := _get_bridge()):
-        return ["Error: Bridge not connected"]
-    try:
-        scenes_data = bridge.get_scene()  # Returns dict {scene_id: {details...}}
-        groups_data = bridge.get_group()  # Returns dict {group_id: {details...}}
-
-        # Create a lookup for group name by group ID
-        group_id_to_name = {gid: ginfo["name"] for gid, ginfo in groups_data.items()}
-
-        scenes_by_group: dict[str, list[str]] = {}
-        for scene_id, scene_details in scenes_data.items():
-            scene_name = scene_details.get("name")
-            # Scenes might be associated with a group via 'group' key or lights
-            # Using 'group' key if available is more direct for group scenes
-            group_id = scene_details.get("group")
-            if scene_name and group_id and group_id in group_id_to_name:
-                group_name = group_id_to_name[group_id]
-                if group_name not in scenes_by_group:
-                    scenes_by_group[group_name] = []
-                # Avoid duplicate scene names within a group listing (though unlikely)
-                if scene_name not in scenes_by_group[group_name]:
-                    scenes_by_group[group_name].append(scene_name)
-
-        # Sort scenes within each group for consistent output
-        for group_name in scenes_by_group:
-            scenes_by_group[group_name].sort()
-
-        return scenes_by_group
-    except (PhueException, Exception) as e:
-        # Return error as list to match other list-returning tools on error
-        return [f"Error listing scenes by group: {e}"]
+    members = await room_members(bridge, room) if room is not None else None
+    connectivity = {
+        item.model_dump().get("owner", {}).get("rid"): item.model_dump().get("status")
+        for item in await bridge.resources()
+        if item.type == "zigbee_connectivity"
+    }
+    return {
+        light.id: describe_light(
+            light, connectivity.get(light.owner.rid if light.owner else None), details
+        )
+        for light in await bridge.lights()
+        if members is None or light.owner and light.owner.rid in members
+    }
 
 
-@lights_mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, openWorldHint=True))
-def activate_scene(group_name: str, scene_name: str) -> dict[str, Any]:
-    """Activates a specific scene within a specified light group, verifying the scene belongs to the group."""
-    if not (bridge := _get_bridge()):
-        return {"error": "Bridge not connected", "success": False}
-    try:
-        # 1. Find the target group ID
-        groups_data = bridge.get_group()
-        target_group_id = None
-        for gid, ginfo in groups_data.items():
-            if ginfo.get("name") == group_name:
-                target_group_id = gid
-                break
-        if not target_group_id:
-            return {"error": f"Group '{group_name}' not found", "success": False}
+@lights_mcp.tool(annotations=READ)
+async def read_rooms(bridge: Bridge = Depends(get_bridge)) -> dict[str, Any]:
+    """Read rooms keyed by V2 UUID, including member light UUIDs and services.
 
-        # 2. Find the target scene and check its group association
-        scenes_data = bridge.get_scene()
-        scene_found = False
-        scene_in_correct_group = False
-        for sinfo in scenes_data.values():
-            if sinfo.get("name") == scene_name:
-                scene_found = True
-                # Check if this scene is associated with the target group ID
-                if sinfo.get("group") == target_group_id:
-                    scene_in_correct_group = True
-                    break  # Found the scene in the correct group
-
-        if not scene_found:
-            return {"error": f"Scene '{scene_name}' not found", "success": False}
-
-        if not scene_in_correct_group:
-            return {
-                "error": f"Scene '{scene_name}' does not belong to group '{group_name}'",
-                "success": False,
-            }
-
-        # 3. Activate the scene (now that we've verified it)
-        result = bridge.run_scene(group_name=group_name, scene_name=scene_name)
-
-        if result:
-            return {
-                "group": group_name,
-                "activated_scene": scene_name,
-                "success": True,
-                "phue2_result": result,
-            }
-        else:
-            # This case might indicate the scene/group exists but activation failed internally
-            return {
-                "group": group_name,
-                "scene": scene_name,
-                "error": "Scene activation failed (phue2 returned False)",
-                "success": False,
-            }
-
-    except (KeyError, PhueException, Exception) as e:
-        # Handle potential errors during bridge communication or data parsing
-        return handle_phue_error(f"{group_name}/{scene_name}", "activate_scene", e)
-
-
-@lights_mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, openWorldHint=True))
-def set_light_attributes(light_name: str, attributes: HueAttributes) -> dict[str, Any]:
-    """Sets multiple attributes (e.g., hue, sat, bri, ct, xy, transitiontime) for a specific light."""
-    if not (bridge := _get_bridge()):
-        return {"error": "Bridge not connected", "success": False}
-
-    # Basic validation (more specific validation could be added)
-    if not isinstance(attributes, dict) or not attributes:
-        return {
-            "error": "Attributes must be a non-empty dictionary",
-            "success": False,
-            "light": light_name,
-        }
-
-    try:
-        result = bridge.set_light(light_name, dict(attributes))
-        return {
-            "light": light_name,
-            "set_attributes": attributes,
-            "success": True,
-            "phue2_result": result,
-        }
-    except (KeyError, PhueException, ValueError, Exception) as e:
-        # ValueError might occur for invalid attribute values
-        return handle_phue_error(light_name, "set_light_attributes", e)
-
-
-@lights_mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, openWorldHint=True))
-def set_group_attributes(group_name: str, attributes: HueAttributes) -> dict[str, Any]:
-    """Sets multiple attributes for all lights within a specific group."""
-    if not (bridge := _get_bridge()):
-        return {"error": "Bridge not connected", "success": False}
-
-    if not isinstance(attributes, dict) or not attributes:
-        return {
-            "error": "Attributes must be a non-empty dictionary",
-            "success": False,
-            "group": group_name,
-        }
-
-    try:
-        result = bridge.set_group(group_name, dict(attributes))
-        return {
-            "group": group_name,
-            "set_attributes": attributes,
-            "success": True,
-            "phue2_result": result,
-        }
-    except (KeyError, PhueException, ValueError, Exception) as e:
-        return handle_phue_error(group_name, "set_group_attributes", e)
-
-
-@lights_mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True))
-def list_lights_by_group() -> dict[str, list[str]] | list[str]:
-    """Lists Hue lights, grouped by the room/group they belong to.
-
-    Returns:
-        dict[str, list[str]]: A dictionary mapping group names to a list of light names within that group.
-        list[str]: An error message list if the bridge connection fails or an error occurs.
+    Native effects must target each member light individually. Other room-wide
+    settings use set_room. Room UUIDs and member light UUIDs are distinct.
     """
-    if not (bridge := _get_bridge()):
-        return ["Error: Bridge not connected"]
-    try:
-        groups_data = bridge.get_group()  # dict {group_id: {details}}
-        lights_data = bridge.get_light_objects("id")  # dict {light_id: {details}}
+    lights = await bridge.lights()
+    return {
+        room.id: {
+            "name": room.metadata.name,
+            "lights": [
+                light.id
+                for light in lights
+                if light.owner
+                and light.owner.rid in {child.rid for child in room.children}
+            ],
+        }
+        for room in await bridge.rooms()
+    }
 
-        lights_by_group: dict[str, list[str]] = {}
-        for group_details in groups_data.values():
-            group_name = group_details.get("name")
-            light_ids = group_details.get("lights", [])
-            if group_name and light_ids:
-                light_names = []
-                for light_id in light_ids:
-                    # phue uses string IDs for lights in group, but int IDs in get_light_objects
-                    light_id_int = int(light_id)
-                    if light_id_int in lights_data:
-                        light_name = lights_data[light_id_int].name
-                        if light_name:
-                            light_names.append(light_name)
-                if light_names:
-                    light_names.sort()
-                    lights_by_group[group_name] = light_names
 
-        return lights_by_group
+@lights_mcp.tool(annotations=READ)
+async def read_scenes(
+    room: str | None = None, bridge: Bridge = Depends(get_bridge)
+) -> dict[str, Any]:
+    """Inspect saved scenes, including room references, palettes and per-light effects.
 
-    except (PhueException, Exception) as e:
-        return [f"Error listing lights by group: {e}"]
+    Inspect actions to distinguish a static warm scene from native candle flicker.
+    Filter by room UUID or unique exact name to avoid unrelated scenes. Scene
+    actions retain Hue units: brightness percent, xy colors and mirek temperature.
+    """
+    room_id = (await resolve_room(bridge, room))[0] if room is not None else None
+    return {
+        scene.id: {
+            "name": scene.metadata.name,
+            "room_id": scene.group.rid,
+            "actions": scene.actions,
+            "palette": scene.palette,
+            "status": scene.status,
+            "speed": scene.speed,
+            "auto_dynamic": scene.auto_dynamic,
+        }
+        for scene in await bridge.scenes()
+        if room_id is None or scene.group.rid == room_id
+    }
+
+
+@lights_mcp.tool(annotations=WRITE)
+async def set_light(
+    target: str, state: LightState, bridge: Bridge = Depends(get_bridge)
+) -> WriteReceipt:
+    """Change one light by UUID or unique exact name, including native candle/fire effects.
+
+    Set effect to a name advertised by the bulb; no_effect stops it. effect_speed
+    is 0–1. brightness is percent, temperature_kelvin is kelvin, and
+    transition_seconds controls ordinary transitions, not effect speed. xy is a
+    two-number array [x, y]. Color supplied with an active effect sets its color
+    parameter. Speed is not flicker amplitude; no amplitude control is exposed.
+    Brightness/effects do not implicitly turn on the light; include on=true if
+    desired. Acceptance is not state verification: read_lights afterward.
+    """
+    lights = {light.id: light.model_dump() for light in await bridge.lights()}
+    light_id = resolve(lights, target)
+    accepted = await bridge.set_light(light_id, state)
+    return WriteReceipt(target_id=light_id, accepted=accepted)
+
+
+@lights_mcp.tool(annotations=WRITE)
+async def set_room(
+    target: str, state: RoomState, bridge: Bridge = Depends(get_bridge)
+) -> WriteReceipt:
+    """Change a room by UUID or unique exact name using its grouped_light service.
+
+    For native effects, set each member light individually after checking support.
+    Mixed groups may only partially accept color settings. Use read_lights(room=...) to verify.
+    """
+    rooms = {room.id: room.model_dump() for room in await bridge.rooms()}
+    room_id = resolve(rooms, target)
+    services = [
+        s["rid"] for s in rooms[room_id]["services"] if s["rtype"] == "grouped_light"
+    ]
+    if len(services) != 1:
+        raise ToolError("Room does not expose exactly one grouped_light service")
+    accepted = await bridge.set_group(services[0], state.to_light_state())
+    return WriteReceipt(target_id=room_id, accepted=accepted)
+
+
+@lights_mcp.tool(annotations=WRITE)
+async def activate_scene(
+    room: str,
+    scene: str,
+    action: Literal["active", "dynamic_palette", "static"] = "active",
+    bridge: Bridge = Depends(get_bridge),
+) -> WriteReceipt:
+    """Recall a saved scene within a room, including its native per-light effects.
+
+    active recalls the saved look; dynamic_palette requests palette cycling where
+    supported. Use read_scenes to inspect what will change before recalling.
+    """
+    rooms = {room.id: room.model_dump() for room in await bridge.rooms()}
+    room_id = resolve(rooms, room)
+    scenes = {
+        item.id: item.model_dump()
+        for item in await bridge.scenes()
+        if item.group and item.group.rid == room_id
+    }
+    scene_id = resolve(scenes, scene)
+    accepted = await bridge.recall_scene(scene_id, action=action)
+    return WriteReceipt(target_id=scene_id, accepted=accepted)

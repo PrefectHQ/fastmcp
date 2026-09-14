@@ -72,8 +72,9 @@ def test_bare_slim_import_needs_only_mcp_types() -> None:
     while the full `mcp` package lives in the `[mcp]` extra pulled by
     `[client]`/`[server]`. With `mcp` absent but `mcp-types` present, `import
     fastmcp`, `import fastmcp.settings`, and `import fastmcp.types` must all
-    succeed, while `fastmcp.FastMCP` and `fastmcp.Client` raise the friendly
-    install-hint ImportError (they need `mcp.*` from the server/client extras).
+    succeed, while `fastmcp.FastMCP`, `fastmcp.Client`, and
+    `fastmcp.ClientGroup` raise the friendly install-hint ImportError (they need
+    `mcp.*` from the server/client extras).
     """
     script = textwrap.dedent(
         """
@@ -97,7 +98,7 @@ def test_bare_slim_import_needs_only_mcp_types() -> None:
         assert "mcp_types" in sys.modules, "mcp_types should load on a bare install"
         assert "mcp" not in sys.modules, "full mcp must not load on a bare install"
 
-        for attr in ("FastMCP", "Client"):
+        for attr in ("FastMCP", "Client", "ClientGroup"):
             try:
                 getattr(fastmcp, attr)
             except ImportError:

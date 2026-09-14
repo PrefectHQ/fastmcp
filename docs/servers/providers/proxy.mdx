@@ -82,10 +82,11 @@ if __name__ == "__main__":
 Or expose a local server via HTTP:
 
 ```python
+from pathlib import Path
 from fastmcp.server import create_proxy
 
 # Bridge local server to HTTP
-local_proxy = create_proxy("local_server.py", name="stdio-to-HTTP")
+local_proxy = create_proxy(Path("local_server.py"), name="stdio-to-HTTP")
 
 if __name__ == "__main__":
     local_proxy.run(transport="http", host="0.0.0.0", port=8080)
@@ -98,10 +99,11 @@ if __name__ == "__main__":
 `create_proxy()` provides session isolation - each request gets its own isolated backend session:
 
 ```python
+from pathlib import Path
 from fastmcp.server import create_proxy
 
 # Each request creates a fresh backend session (recommended)
-proxy = create_proxy("backend_server.py")
+proxy = create_proxy(Path("backend_server.py"))
 
 # Multiple clients can use this proxy simultaneously:
 # - Client A calls a tool → gets isolated session
@@ -114,10 +116,11 @@ proxy = create_proxy("backend_server.py")
 If you pass an already-connected client, the proxy reuses that session:
 
 ```python
+from pathlib import Path
 from fastmcp import Client
 from fastmcp.server import create_proxy
 
-async with Client("backend_server.py") as connected_client:
+async with Client(Path("backend_server.py")) as connected_client:
     # This proxy reuses the connected session
     proxy = create_proxy(connected_client)
 
@@ -143,10 +146,11 @@ Proxies automatically forward MCP protocol features:
 | Progress | Progress notifications |
 
 ```python
+from pathlib import Path
 from fastmcp.server import create_proxy
 
 # All features forwarded automatically
-proxy = create_proxy("advanced_backend.py")
+proxy = create_proxy(Path("advanced_backend.py"))
 
 # When the backend:
 # - Requests LLM sampling → forwarded to your client
@@ -159,10 +163,12 @@ proxy = create_proxy("advanced_backend.py")
 Selectively disable forwarding:
 
 ```python
+from pathlib import Path
+
 from fastmcp.server.providers.proxy import ProxyClient
 
 backend = ProxyClient(
-    "backend_server.py",
+    Path("backend_server.py"),
     sampling_handler=None,  # Disable LLM sampling
     log_handler=None        # Disable log forwarding
 )
@@ -177,10 +183,11 @@ A proxy passes a backend's tool results through untouched, including results tha
 This matters when a backend's declared schema is subtly wrong — an enum missing a variant it actually returns, say. A proxy that enforced the schema would replace the backend's working response with an error of its own, and the client would never see what the backend actually said.
 
 ```python
+from pathlib import Path
 from fastmcp import Client
 from fastmcp.server import create_proxy
 
-proxy = create_proxy("backend_server.py")
+proxy = create_proxy(Path("backend_server.py"))
 
 async with Client(proxy) as client:
     # The backend's response arrives as the backend sent it. If it violates
@@ -199,11 +206,12 @@ A proxy is a server on its front and a client on its back, and the two MCP proto
 By default the proxy relays the era: whatever era your client negotiates on the front, the proxy negotiates the same era on its backend connection, per request. A handshake client reaches a handshake backend, so server-initiated forwarding works; a modern client reaches a modern backend, so a guard tool's input request round-trips. Different clients hitting the same proxy each get a backend session in their own era — the eras never cross.
 
 ```python
+from pathlib import Path
 from fastmcp import Client
 from fastmcp.server import create_proxy
 
 # No mode: the backend mirrors each client's negotiated era.
-proxy = create_proxy("backend_server.py")
+proxy = create_proxy(Path("backend_server.py"))
 
 # A handshake client gets a handshake backend (push-forwarding works).
 async with Client(proxy, mode="legacy") as client:
@@ -217,8 +225,9 @@ async with Client(proxy, mode="auto") as client:
 Passing an explicit `mode` pins the backend to one era regardless of the client:
 
 ```python
+from pathlib import Path
 # Always negotiate the modern era upstream, whatever the client speaks.
-proxy = create_proxy("backend_server.py", mode="auto")
+proxy = create_proxy(Path("backend_server.py"), mode="auto")
 ```
 
 Pinning breaks the end-to-end era agreement, so reserve it for a backend that only speaks one era. When the client's era and the pinned backend era disagree on a feature — a modern client asking for a guard round-trip against a handshake-pinned backend, say — the mismatch surfaces through the normal era gates rather than silently degrading. Mirroring applies to proxies created from a target the proxy connects itself (a URL, path, config, or `FastMCP` instance); when you hand `create_proxy` an already-configured `Client`, that client carries its own mode and mirroring does not override it.
@@ -309,10 +318,11 @@ Components from a proxy server are "mirrored" - they reflect the remote server's
 To modify a proxied component (like disabling it), create a local copy:
 
 ```python
+from pathlib import Path
 from fastmcp import FastMCP
 from fastmcp.server import create_proxy
 
-proxy = create_proxy("backend_server.py")
+proxy = create_proxy(Path("backend_server.py"))
 
 # Get mirrored tool
 mirrored_tool = await proxy.get_tool("useful_tool")
@@ -413,11 +423,12 @@ By default the gateway keeps its own `serverInfo`; pass `identity="upstream"` to
 For explicit session control, use `FastMCPProxy` directly:
 
 ```python
+from pathlib import Path
 from fastmcp.server.providers.proxy import FastMCPProxy, ProxyClient
 
 # Custom session factory
 def create_client():
-    return ProxyClient("backend_server.py")
+    return ProxyClient(Path("backend_server.py"))
 
 proxy = FastMCPProxy(client_factory=create_client)
 ```

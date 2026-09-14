@@ -792,7 +792,7 @@ This automatic approach is convenient for development but not suitable for produ
 Production requires explicit key management to ensure tokens survive restarts and can be shared across multiple server instances. This requires the following two things working together:
 
 1. **Explicit JWT signing key** for signing tokens issued to clients
-3. **Persistent network-accessible storage** for upstream tokens (wrapped in `FernetEncryptionWrapper` to encrypt sensitive data at rest)
+2. **Persistent network-accessible storage** for upstream tokens (wrapped in `FernetEncryptionWrapper` to encrypt sensitive data at rest)
 
 **Configuration:**
 

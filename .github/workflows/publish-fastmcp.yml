@@ -219,7 +219,7 @@ jobs:
           RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           git fetch origin published-docs
-          git switch --force-create published-docs-sync origin/published-docs
+          git switch --force-create published-docs origin/published-docs
           git read-tree --reset -u "$RELEASE_SHA"
           test "$(git write-tree)" = "$(git rev-parse "${RELEASE_SHA}^{tree}")"
 

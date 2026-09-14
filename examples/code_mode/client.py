@@ -11,6 +11,7 @@ Run with:
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Any
 
 from rich.console import Console
@@ -68,7 +69,7 @@ def _tool_table(
 
 
 async def main():
-    async with Client("examples/code_mode/server.py") as client:
+    async with Client(Path("examples/code_mode/server.py")) as client:
         console.print()
         console.rule("[bold]CodeMode[/bold]")
         console.print()

@@ -476,7 +476,15 @@ class TestContentTypeHandling:
         assert request.headers["content-type"] == "application/merge-patch+json"
         assert json.loads(request.content) == {"name": "test"}
 
-    def test_content_type_preserves_media_type_parameters(self, director):
+    @pytest.mark.parametrize(
+        "media_type",
+        [
+            "application/json-patch+json; charset=utf-8",
+            "application/json; charset=utf-8",
+            'application/json; profile="https://example.com/schema"',
+        ],
+    )
+    def test_content_type_preserves_media_type_parameters(self, director, media_type):
         """Media-type parameters like charset are preserved on the wire."""
         route = HTTPRoute(
             path="/items",
@@ -485,7 +493,7 @@ class TestContentTypeHandling:
             request_body=RequestBodyInfo(
                 required=True,
                 content_schema={
-                    "application/json-patch+json; charset=utf-8": {
+                    media_type: {
                         "type": "object",
                         "properties": {"name": {"type": "string"}},
                     }
@@ -497,10 +505,7 @@ class TestContentTypeHandling:
         )
 
         request = director.build(route, {"name": "test"}, "https://example.com")
-        assert (
-            request.headers["content-type"]
-            == "application/json-patch+json; charset=utf-8"
-        )
+        assert request.headers["content-type"] == media_type
         assert json.loads(request.content) == {"name": "test"}
 
     def test_custom_content_type_preserves_other_headers(self, director):

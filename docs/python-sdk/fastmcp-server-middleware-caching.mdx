@@ -10,13 +10,13 @@ A middleware for response caching.
 
 ## Classes
 
-### `CacheableResourceContent` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L85" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CacheableResourceContent` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L86" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A wrapper for ResourceContent that can be cached.
 
 
-### `CacheableResourceResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CacheableResourceResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L94" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A wrapper for ResourceResult that can be cached.
@@ -24,47 +24,47 @@ A wrapper for ResourceResult that can be cached.
 
 **Methods:**
 
-#### `get_size` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L99" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_size` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L100" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_size(self) -> int
 ```
 
-#### `wrap` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L103" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `wrap` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L104" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 wrap(cls, value: ResourceResult) -> Self
 ```
 
-#### `unwrap` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L114" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `unwrap` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L115" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 unwrap(self) -> ResourceResult
 ```
 
-### `CacheableToolResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L126" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CacheableToolResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L127" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 **Methods:**
 
-#### `wrap` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L133" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `wrap` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L134" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 wrap(cls, value: ToolResult) -> Self
 ```
 
-#### `unwrap` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L141" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `unwrap` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L142" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 unwrap(self) -> ToolResult
 ```
 
-### `CacheableMessage` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L150" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CacheableMessage` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L151" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A wrapper for Message that can be cached.
 
 
-### `CacheablePromptResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L162" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CacheablePromptResult` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L163" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A wrapper for PromptResult that can be cached.
@@ -72,69 +72,69 @@ A wrapper for PromptResult that can be cached.
 
 **Methods:**
 
-#### `get_size` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L169" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_size` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L170" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_size(self) -> int
 ```
 
-#### `wrap` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L173" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `wrap` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L174" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 wrap(cls, value: PromptResult) -> Self
 ```
 
-#### `unwrap` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L182" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `unwrap` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L183" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 unwrap(self) -> PromptResult
 ```
 
-### `SharedMethodSettings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L193" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `SharedMethodSettings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L194" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Shared config for a cache method.
 
 
-### `ListToolsSettings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L200" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ListToolsSettings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L201" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Configuration options for Tool-related caching.
 
 
-### `ListResourcesSettings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L204" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ListResourcesSettings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L205" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Configuration options for Resource-related caching.
 
 
-### `ListPromptsSettings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L208" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ListPromptsSettings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L209" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Configuration options for Prompt-related caching.
 
 
-### `CallToolSettings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L212" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `CallToolSettings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L213" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Configuration options for Tool-related caching.
 
 
-### `ReadResourceSettings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L219" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ReadResourceSettings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L220" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Configuration options for Resource-related caching.
 
 
-### `GetPromptSettings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L223" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `GetPromptSettings` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L224" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Configuration options for Prompt-related caching.
 
 
-### `ResponseCachingStatistics` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L227" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ResponseCachingStatistics` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L228" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
-### `ResponseCachingMiddleware` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L236" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ResponseCachingMiddleware` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L237" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 The response caching middleware offers a simple way to cache responses to mcp methods. The Middleware
@@ -146,16 +146,17 @@ this means that response caching may not be compatible with other middleware tha
 
 Notes:
 - Caches `tools/call`, `resources/read`, `prompts/get`, `tools/list`, `resources/list`, and `prompts/list` requests.
-- Cache keys are derived from the method name, arguments, and the caller's
-  access token. Entries are partitioned per-token so that responses filtered
-  by per-component authorization (e.g. `auth=require_scopes(...)`) cannot
-  leak across users with different permissions. Unauthenticated callers
-  (including STDIO) share a single anonymous partition.
+- Cache keys are derived from the method name, requested component version,
+  arguments, and the caller's access token. Entries are partitioned per-token
+  so that responses filtered by per-component authorization (e.g.
+  `auth=require_scopes(...)`) cannot leak across users with different
+  permissions. Unauthenticated callers (including STDIO) share a single
+  anonymous partition.
 
 
 **Methods:**
 
-#### `on_list_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L346" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_list_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L348" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_list_tools(self, context: MiddlewareContext[mcp_types.ListToolsRequest], call_next: CallNext[mcp_types.ListToolsRequest, Sequence[Tool]]) -> Sequence[Tool]
@@ -165,7 +166,7 @@ List tools from the cache, if caching is enabled, and the result is in the cache
 otherwise call the next middleware and store the result in the cache if caching is enabled.
 
 
-#### `on_list_resources` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L379" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_list_resources` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L381" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_list_resources(self, context: MiddlewareContext[mcp_types.ListResourcesRequest], call_next: CallNext[mcp_types.ListResourcesRequest, Sequence[Resource]]) -> Sequence[Resource]
@@ -175,7 +176,7 @@ List resources from the cache, if caching is enabled, and the result is in the c
 otherwise call the next middleware and store the result in the cache if caching is enabled.
 
 
-#### `on_list_prompts` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L412" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_list_prompts` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L414" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_list_prompts(self, context: MiddlewareContext[mcp_types.ListPromptsRequest], call_next: CallNext[mcp_types.ListPromptsRequest, Sequence[Prompt]]) -> Sequence[Prompt]
@@ -185,7 +186,7 @@ List prompts from the cache, if caching is enabled, and the result is in the cac
 otherwise call the next middleware and store the result in the cache if caching is enabled.
 
 
-#### `on_call_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L443" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_call_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L445" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_call_tool(self, context: MiddlewareContext[mcp_types.CallToolRequestParams], call_next: CallNext[mcp_types.CallToolRequestParams, ToolResult]) -> ToolResult
@@ -195,7 +196,7 @@ Call a tool from the cache, if caching is enabled, and the result is in the cach
 otherwise call the next middleware and store the result in the cache if caching is enabled.
 
 
-#### `on_read_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L507" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_read_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L509" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_read_resource(self, context: MiddlewareContext[mcp_types.ReadResourceRequestParams], call_next: CallNext[mcp_types.ReadResourceRequestParams, ResourceResult]) -> ResourceResult
@@ -205,7 +206,7 @@ Read a resource from the cache, if caching is enabled, and the result is in the 
 otherwise call the next middleware and store the result in the cache if caching is enabled.
 
 
-#### `on_get_prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L548" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `on_get_prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L550" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 on_get_prompt(self, context: MiddlewareContext[mcp_types.GetPromptRequestParams], call_next: CallNext[mcp_types.GetPromptRequestParams, PromptResult]) -> PromptResult
@@ -215,7 +216,7 @@ Get a prompt from the cache, if caching is enabled, and the result is in the cac
 otherwise call the next middleware and store the result in the cache if caching is enabled.
 
 
-#### `statistics` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L600" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `statistics` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/middleware/caching.py#L602" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 statistics(self) -> ResponseCachingStatistics

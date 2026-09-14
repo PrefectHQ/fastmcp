@@ -12,7 +12,7 @@ The protocol changed completely underneath those APIs. Your application usually 
 That is the theme of version 4: stateless transport without stateless application code. The release also makes protocol extensions a first-class surface, adds enterprise identity for agents acting on behalf of users, and strengthens production defaults across caching, routing, and security.
 
 <Note>
-FastMCP 4 is in **beta**. Pin an exact version and expect sharp edges. See [Install the v4 prerelease](/getting-started/upgrading/from-fastmcp-3#install-the-v4-prerelease).
+Install with `pip install fastmcp -U`. Upgrading from FastMCP 3? Start with [the upgrade guide](/getting-started/upgrading/from-fastmcp-3). The release announcement, [FastMCP 4 is GA](https://blog.gofastmcp.com/3mufbh2vcv22o), is on the [FastMCP blog](https://blog.gofastmcp.com), and every release since is in the [changelog](/changelog).
 </Note>
 
 ## Protocol compatibility
@@ -36,6 +36,8 @@ legacy = Client("https://example.com/mcp", mode="legacy")
 Once connected, `client.protocol_version`, `client.server_info`, `client.server_capabilities`, and `client.instructions` expose the same interface whichever era was negotiated. Application code that inspects a server does not need a protocol-version branch. See [Protocol negotiation](/clients/client#protocol-negotiation).
 
 On modern connections, FastMCP also attaches the method, target name, and opted-in argument values as HTTP headers. Gateways and load balancers can route requests without parsing JSON-RPC bodies. See [Gateway routing headers](/deployment/http#gateway-routing-headers).
+
+For applications that talk to several servers at once, `ClientGroup` manages one client per server behind a single tool catalog — collision-checked `{server}_{tool}` namespacing, call routing, and no proxy in the middle. Each member negotiates its own protocol version, so one group can span a modern server, a handshake-era server, and a local subprocess. See [Client groups](/clients/client-groups).
 
 ## Stateful applications
 
@@ -195,7 +197,7 @@ from fastmcp import FastMCP
 from fastmcp.server.auth import IdentityAssertion, OAuthProxy
 
 auth = OAuthProxy(
-    # Existing upstream configuration
+    # ... your existing upstream configuration (required kwargs elided) ...
     identity_assertion=IdentityAssertion(
         trusted_issuers=["https://login.acme-corp.com"]
     ),
@@ -203,9 +205,9 @@ auth = OAuthProxy(
 mcp = FastMCP("Internal API", auth=auth)
 ```
 
-The asserted subject enters the normal authentication context, so tools read it through `get_access_token()` like any other identity. See [Identity assertion](/servers/auth/oauth-proxy#identity-assertion-sep-990).
+The asserted subject enters the normal authentication context, so tools read it through `get_access_token()` like any other identity. Identity assertion is in beta; the API may change in a minor release. See [Identity assertion](/servers/auth/oauth-proxy#identity-assertion-sep-990).
 
-Authorization gained a provider-neutral role check as well. `require_roles` accepts an extraction function for providers that store roles and groups under different claims, while [scope step-up challenges](/servers/authorization#signaling-scope-shortfalls) tell a client exactly which scopes to request.
+Authorization gained a provider-neutral role check as well. `require_roles` takes a required `extract` function so provider-specific claim shapes (`realm_access.roles`, `cognito:groups`) stay at the call site; a role denial is a plain authorization error. Separately, [scope step-up challenges](/servers/authorization#signaling-scope-shortfalls) tell a client exactly which scopes to request.
 
 For clients with no user behind them, such as backend services and scheduled jobs, `ClientCredentialsOAuthProvider` implements the OAuth 2.0 client-credentials grant with no browser or redirect. See [Machine-to-machine authentication](/clients/auth/client-credentials).
 
@@ -219,7 +221,7 @@ from fastmcp import FastMCP
 mcp = FastMCP("Weather", cache_ttl=300, cache_scope="public")
 ```
 
-`KeyValueResponseCacheStore` can place the client cache in Redis or another key-value store so a fleet of clients or proxies shares fills. See [Response caching](/clients/client#response-caching).
+`KeyValueResponseCacheStore` can place the client cache in Redis or another key-value store so a fleet of clients or proxies shares fills. Cache entries are partitioned by the requested component version, so an explicit `version=` request never returns another version's cached result, and middleware response limits now align with declared output schemas. See [Response caching](/clients/client#response-caching).
 
 Resource templates now reject path traversal, absolute paths, and null bytes in their parameters before the handler runs. The protection is enabled by default and applies to mounted and proxied templates. See [Path security](/servers/resources#path-security).
 
@@ -232,5 +234,7 @@ The sessionless protocol has no live connection for a server to call back into d
 For generation, call an LLM directly from the server when your application owns the model. When borrowing the caller's model is the point, return an `InputRequiredResult` carrying a sampling request and read the answer on the next round. Roots use the same return-and-resume pattern. See [Sampling](/servers/sampling) and [the guard pattern](/servers/elicitation#sampling-and-roots).
 
 `ctx.elicit()` remains available on handshake-era connections; modern connections use the multi-round pattern described above. Code that constructs MCP protocol models directly must also use snake_case Python field names with SDK v2.
+
+One deprecation to note: `Client("server.py")` — inferring a stdio transport from a bare string — now warns. Pass a `Path` to run local code and keep strings for URLs; the string form will be removed in FastMCP 5.
 
 [Upgrading from FastMCP 3](/getting-started/upgrading/from-fastmcp-3) covers these changes and every other compatibility break.

@@ -484,7 +484,7 @@ mcp.add_middleware(ResponseCachingMiddleware(
 See [Storage Backends](/servers/storage-backends) for complete options.
 
 <Note>
-Cache keys are based on the operation name and arguments only — they do not include user or session identity. If your tools return user-specific data derived from auth context (e.g., headers or session state) rather than from the request arguments, you should either disable caching for those tools or ensure user identity is part of the tool arguments.
+Cache keys include the method name, arguments, the requested component version, and the caller's access token — entries are partitioned per token, so responses cannot leak across users with different permissions. Unauthenticated callers (including STDIO) share a single anonymous partition. Data derived from request context *other than* the auth token — custom HTTP headers, session state — is not part of the key, so disable caching for tools whose results depend on it.
 </Note>
 
 ### Rate Limiting

@@ -7,7 +7,7 @@ sidebarTitle: inference
 
 ## Functions
 
-### `infer_transport` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/transports/inference.py#L65" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `infer_transport` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/transports/inference.py#L88" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 infer_transport(transport: ClientTransport | FastMCP | SDKServer | AnyUrl | Path | MCPConfig | dict[str, Any] | str) -> ClientTransport
@@ -23,8 +23,10 @@ ClientTransport subclass.
 The function supports these input types:
 - ClientTransport: Used directly without modification
 - FastMCP or SDKServer: Creates an in-memory FastMCPTransport
-- Path or str (file path): Creates PythonStdioTransport (.py) or NodeStdioTransport (.js)
-- AnyUrl or str (URL): Creates StreamableHttpTransport (default) or SSETransport (for /sse endpoints)
+- Path: Creates PythonStdioTransport (.py) or NodeStdioTransport (.js)
+- AnyUrl or str (URL): Creates StreamableHttpTransport (default) or SSETransport (for /sse endpoints).
+  A str naming an existing .py or .js file still infers a stdio transport but
+  emits a FastMCPDeprecationWarning; pass a Path instead.
 - MCPConfig or dict: Creates MCPConfigTransport, potentially connecting to multiple servers
 
 For HTTP URLs, they are assumed to be Streamable HTTP URLs unless they end in `/sse`.
@@ -39,7 +41,7 @@ If the MCPConfig contains only one server, a direct connection is established wi
 
 ```python
 # Connect to a local Python script
-transport = infer_transport("my_script.py")
+transport = infer_transport(Path("my_script.py"))
 
 # Connect to a remote server via HTTP
 transport = infer_transport("http://example.com/mcp")

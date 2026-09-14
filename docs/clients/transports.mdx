@@ -34,12 +34,13 @@ transport = StdioTransport(
 client = Client(transport)
 ```
 
-For convenience, the client can infer STDIO transport from file paths, though this limits configuration options:
+For convenience, the client can infer STDIO transport from file paths, though this limits configuration options. Pass a `Path`: inferring a subprocess from a bare *string* like `Client("my_server.py")` is deprecated as of 4.0 — it warns, and in FastMCP 5 a string will only ever mean a URL:
 
 ```python
+from pathlib import Path
 from fastmcp import Client
 
-client = Client("my_server.py")  # Limited - no configuration options
+client = Client(Path("my_server.py"))  # Limited - no configuration options
 ```
 
 <Warning>

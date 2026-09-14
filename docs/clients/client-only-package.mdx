@@ -29,13 +29,14 @@ Use `fastmcp-slim[client]` when your code connects to MCP servers but does not d
 Client-only installs support remote and subprocess transports:
 
 ```python
+from pathlib import Path
 from fastmcp import Client
 
 # Remote MCP server
 http_client = Client("https://example.com/mcp")
 
 # Local MCP server over stdio
-stdio_client = Client("my_server.py")
+stdio_client = Client(Path("my_server.py"))
 ```
 
 Single-server MCP configuration works as well:

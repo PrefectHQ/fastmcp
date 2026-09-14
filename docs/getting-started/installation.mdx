@@ -17,10 +17,6 @@ Or with pip:
 pip install fastmcp
 ```
 
-<Note>
-**FastMCP 4 is in prerelease.** The commands above install the latest stable release, which is still 3.x. To get v4, pin the beta explicitly with `pip install "fastmcp==4.0.0b4"`, or see [Install the v4 Prerelease](/getting-started/upgrading/from-fastmcp-3#install-the-v4-prerelease) for the uv constraint you'll need.
-</Note>
-
 ### Optional Dependencies
 
 FastMCP provides optional extras for specific features. For example, to install the background tasks extra:
@@ -44,7 +40,7 @@ You should see output like the following:
 ```bash
 $ fastmcp version
 
-FastMCP version:                         4.0.0b4
+FastMCP version:                           4.0.0
 MCP version:                                2.0.0
 Python version:                            3.12.2
 Platform:            macOS-15.3.1-arm64-arm-64bit
@@ -115,7 +111,7 @@ FastMCP follows semantic versioning with pragmatic adaptations for the rapidly e
 
 For production use, always pin to exact versions:
 ```
-fastmcp==4.0.0b4  # Good - an exact version
+fastmcp==4.0.0    # Good - an exact version
 fastmcp>=4.0.0    # Bad - may install breaking changes
 ```
 

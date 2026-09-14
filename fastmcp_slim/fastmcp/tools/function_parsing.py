@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools
 import inspect
 import types
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Annotated, Any, Generic, Union, get_args, get_origin, get_type_hints
 
@@ -41,6 +41,9 @@ def _contains_bytes_type(tp: Any) -> bool:
     return False
 
 
+_UNCONSTRAINED_SEQUENCE_ORIGINS = (list, tuple, Sequence)
+
+
 def _contains_prefab_type(tp: Any) -> bool:
     """Check if *tp* is or contains a prefab type, recursing through unions and Annotated."""
     if is_prefab_type(tp):
@@ -49,6 +52,31 @@ def _contains_prefab_type(tp: Any) -> bool:
     if origin is Union or origin is types.UnionType or origin is Annotated:
         return any(_contains_prefab_type(a) for a in get_args(tp))
     return False
+
+
+def _is_unconstrained_sequence(tp: Any) -> bool:
+    """A sequence annotation that says nothing about its items.
+
+    Bare `list`, `tuple`, `Sequence` (and their `typing` spellings), plus
+    `list[Any]`, `Sequence[Any]` and the variadic `tuple[Any, ...]`. The schema
+    these produce -- ``{"result": {"items": {}, "type": "array"}}`` -- constrains
+    nothing, which is why `Any` itself is already excluded from inference. A
+    fixed-length `tuple[Any, Any]` still pins its length, so it keeps its schema.
+    """
+    tp = _unwrap_type_alias(tp)
+    if get_origin(tp) is Annotated:
+        tp = get_args(tp)[0]
+    if tp in _UNCONSTRAINED_SEQUENCE_ORIGINS:
+        return True
+    origin = get_origin(tp)
+    if origin not in _UNCONSTRAINED_SEQUENCE_ORIGINS:
+        return False
+    args = get_args(tp)
+    if not args:
+        return True
+    if origin is tuple:
+        return len(args) == 2 and args[0] is Any and args[1] is Ellipsis
+    return all(a is Any for a in args)
 
 
 def _unwrap_type_alias(tp: Any) -> Any:
@@ -401,6 +429,19 @@ class ParsedFunction:
             # `run()`'s subclass-aware control handling and covering every alias
             # shape that exact-match replace_type below would miss.
             if _contains_input_required(output_type):
+                output_type = _UnserializableType
+
+            # A bare `list`/`tuple` carries no item type, so `replace_type`
+            # below has nothing to match and the content types it exists to
+            # suppress slip through. The schema that results constrains
+            # nothing, and inferring it is not free: an output schema forces
+            # structured content, so a tool returning `[ImageContent, {...}]`
+            # under a `-> list` annotation sends the base64 image BOTH as an
+            # image block and again inside `structuredContent`. Clients
+            # mishandle that in both directions -- some render the JSON blob
+            # instead of the picture, others inject the base64 into model
+            # context and blow their tool-output token cap.
+            if _is_unconstrained_sequence(output_type):
                 output_type = _UnserializableType
 
             # there are a variety of types that we don't want to attempt to

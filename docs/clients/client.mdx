@@ -22,6 +22,7 @@ This is a programmatic client that requires explicit function calls and provides
 You provide a server source and the client automatically infers the appropriate transport mechanism.
 
 ```python
+from pathlib import Path
 import asyncio
 from fastmcp import Client, FastMCP
 
@@ -33,7 +34,7 @@ client = Client(server)
 client = Client("https://example.com/mcp")
 
 # Local Python script
-client = Client("my_mcp_server.py")
+client = Client(Path("my_mcp_server.py"))
 
 async def main():
     async with client:
@@ -67,11 +68,12 @@ client = Client(server)  # In-memory, no network or subprocess
 **STDIO transport** launches a server as a subprocess and communicates through stdin/stdout pipes. This is the standard mechanism used by desktop clients like Claude Desktop. By default, the subprocess receives the MCP SDK's default environment; pass an explicit transport when you need to add environment variables, set a working directory, or control process reuse.
 
 ```python
+from pathlib import Path
 from fastmcp import Client
 from fastmcp.client.transports import PythonStdioTransport
 
 # Simple inference from file path
-client = Client("my_server.py")
+client = Client(Path("my_server.py"))
 
 # With explicit environment configuration
 transport = PythonStdioTransport(
@@ -151,9 +153,10 @@ async with Client(mcp) as client:
 For advanced scenarios where you need precise control over when initialization happens, disable automatic initialization and call `initialize()` manually. `initialize()` is a handshake-era operation, so pin the connection with `mode="legacy"`: the modern protocol has no `initialize` round trip, and calling it on a modern connection raises.
 
 ```python
+from pathlib import Path
 from fastmcp import Client
 
-client = Client("my_mcp_server.py", auto_initialize=False, mode="legacy")
+client = Client(Path("my_mcp_server.py"), auto_initialize=False, mode="legacy")
 
 async with client:
     # Connection established, but not initialized yet
@@ -344,6 +347,8 @@ The client supports callback handlers for advanced server interactions. These le
 Sampling, elicitation, and roots are the requests a server makes of the client. A server reaches your handler by whichever route its [era](#protocol-negotiation) allows — pushed down the open session on the handshake, returned as an input-required result on the modern protocol — and both routes dispatch to the same handler, so one registration covers both. Logging and progress arrive as notifications on the response stream and work in either era.
 
 ```python
+from pathlib import Path
+
 from fastmcp import Client
 from fastmcp.client.logging import LogMessage
 
@@ -358,7 +363,7 @@ async def sampling_handler(messages, params, context):
     return "Generated response"
 
 client = Client(
-    "my_mcp_server.py",
+    Path("my_mcp_server.py"),
     log_handler=log_handler,
     progress_handler=progress_handler,
     sampling_handler=sampling_handler,

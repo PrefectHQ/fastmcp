@@ -35,8 +35,11 @@ class ClientGroup:
     version. The group only combines tool discovery and routes tool calls.
 
     Callers may manage the clients' connections themselves or use the group as
-    a convenience context manager. Entering an already-connected FastMCP client
-    is safe because client contexts are reference counted.
+    a convenience context manager. The group's context is reentrant in the
+    same way a client's is: entries are reference counted, the first entry
+    connects every client, and the last exit disconnects them. Entering an
+    already-connected FastMCP client is likewise safe because client contexts
+    are reference counted.
     """
 
     def __init__(self, clients: Mapping[str, Client[Any]]) -> None:
@@ -45,6 +48,8 @@ class ClientGroup:
 
         self._clients = dict(clients)
         self._exit_stack: contextlib.AsyncExitStack | None = None
+        self._nesting_counter = 0
+        self._lifecycle_lock = anyio.Lock()
         self._tool_routes: dict[str, ToolRoute] = {}
         self._catalog_loaded = False
         self._route_lock = anyio.Lock()
@@ -89,13 +94,14 @@ class ClientGroup:
         return {name: client.protocol_version for name, client in self._clients.items()}
 
     async def __aenter__(self) -> ClientGroup:
-        if self._exit_stack is not None:
-            raise RuntimeError("ClientGroup is already connected")
+        async with self._lifecycle_lock:
+            if self._exit_stack is None:
+                self._exit_stack = await self._connect_all()
+            self._nesting_counter += 1
+        return self
 
-        # Claim the stack before the first await so a concurrent entry hits the
-        # guard above instead of racing past it and overwriting this one.
+    async def _connect_all(self) -> contextlib.AsyncExitStack:
         stack = contextlib.AsyncExitStack()
-        self._exit_stack = stack
         await stack.__aenter__()
 
         # Connect concurrently: entry latency stays one handshake deep instead
@@ -112,14 +118,12 @@ class ClientGroup:
                 if not isinstance(result, BaseException):
                     with contextlib.suppress(Exception):
                         await client.__aexit__(None, None, None)
-            self._exit_stack = None
             await stack.aclose()
             raise errors[0]
 
         for client in clients:
             stack.push_async_exit(client)
-
-        return self
+        return stack
 
     async def __aexit__(
         self,
@@ -127,13 +131,18 @@ class ClientGroup:
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> bool | None:
-        stack = self._exit_stack
-        self._exit_stack = None
-        self._tool_routes.clear()
-        self._catalog_loaded = False
-        if stack is not None:
-            return await stack.__aexit__(exc_type, exc_value, traceback)
-        return None
+        async with self._lifecycle_lock:
+            self._nesting_counter = max(0, self._nesting_counter - 1)
+            if self._nesting_counter > 0:
+                return None
+
+            stack = self._exit_stack
+            self._exit_stack = None
+            self._tool_routes.clear()
+            self._catalog_loaded = False
+            if stack is not None:
+                return await stack.__aexit__(exc_type, exc_value, traceback)
+            return None
 
     def _require_connected(self) -> None:
         disconnected = [

@@ -83,7 +83,7 @@ Use this when:
 
 **Methods:**
 
-#### `load_access_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/jwt.py#L485" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `load_access_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/jwt.py#L497" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 load_access_token(self, token: str) -> AccessToken | None
@@ -98,7 +98,7 @@ Validate a JWT bearer token and return an AccessToken when the token is valid.
 - AccessToken | None: An AccessToken populated from token claims if the token is valid; `None` if the token is expired, has an invalid signature or format, fails issuer/audience/scope validation, or any other validation error occurs.
 
 
-#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/jwt.py#L628" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/jwt.py#L631" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None
@@ -116,7 +116,7 @@ to our existing load_access_token method.
 - AccessToken object if valid, None if invalid or expired
 
 
-### `StaticTokenVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/jwt.py#L644" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `StaticTokenVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/jwt.py#L647" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Simple static token verifier for testing and development.
@@ -137,7 +137,7 @@ WARNING: Never use this in production - tokens are stored in plain text!
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/jwt.py#L678" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/jwt.py#L681" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None

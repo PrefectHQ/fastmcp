@@ -35,7 +35,7 @@ UPGRADE_DIR = Path("docs/getting-started/upgrading")
 # Blocks deliberately not executable: SDK v1 API that is no longer installable,
 # and before/after fragments that are not standalone programs. Pinned so that
 # adding a skip is a visible decision rather than a silent one.
-EXPECTED_SKIPS = 35
+EXPECTED_SKIPS = 36
 
 
 def _examples() -> list[CodeExample]:

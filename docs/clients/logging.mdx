@@ -105,7 +105,8 @@ This structure is preserved even when logs are forwarded through a FastMCP proxy
 If you do not provide a custom `log_handler`, FastMCP's default handler routes server logs to Python's logging system at the appropriate severity level. The MCP levels map as follows: `notice` becomes INFO; `alert` and `emergency` become CRITICAL.
 
 ```python
-client = Client("my_mcp_server.py")
+from pathlib import Path
+client = Client(Path("my_mcp_server.py"))
 
 async with client:
     # Server logs are forwarded at proper severity automatically

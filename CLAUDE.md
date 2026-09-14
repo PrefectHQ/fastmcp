@@ -58,6 +58,8 @@ When modifying MCP functionality, changes typically need to be applied across al
 
 **Review closed contributor PRs.** When reviewing an issue, inspect every associated non-maintainer PR, including closed PRs. External PRs may be closed as part of the issue-link and assignment workflow, so closure alone is not a negative signal. Read `CONTRIBUTING.md` and the PR timeline and comments to understand its status before evaluating it.
 
+**Check unfamiliar contributors before assignment.** Follow `.agents/skills/review-issue/SKILL.md` for a brief public-history check. Avoid obvious spam or unattended bot accounts, but lean toward goodwill: account age, sparse profiles, and AI assistance alone are not reasons to reject a sound contribution.
+
 ### Git & CI
 
 - Prek hooks are required (run automatically on commits)
@@ -84,6 +86,8 @@ When modifying MCP functionality, changes typically need to be applied across al
 - When explaining environment interpolation, use placeholders and fenced code blocks. Never include raw `.env` contents in outbound comments.
 
 ### Releases
+
+The executable procedure lives in `.agents/skills/release/SKILL.md`; load that skill to cut one. The policy below is the contract it implements.
 
 Only cut releases when the maintainer explicitly asks. Tags follow `v<version>` (e.g., `v3.2.0`). Always pass `--generate-notes` so the auto-generated changelog appears at the bottom.
 
@@ -130,7 +134,7 @@ Because the docs land *before* the tag exists, derive the entry from the maintai
 
 ### Commit Messages and Agent Attribution
 
-- **Agents NOT acting on behalf of @jlowin MUST identify themselves** (e.g., "🤖 Generated with Claude Code" in commits/PRs)
+- **Agents NOT acting on behalf of a PrefectHQ maintainer MUST identify themselves** (e.g., "🤖 Generated with Claude Code" in commits/PRs)
 - Keep commit messages brief - ideally just headlines, not detailed messages
 - Focus on what changed, not how or why
 - Always read issue comments for follow-up information (treat maintainers as authoritative)

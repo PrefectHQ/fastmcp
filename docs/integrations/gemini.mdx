@@ -58,11 +58,12 @@ export GEMINI_API_KEY="your-api-key"
 Gemini's SDK interacts directly with the MCP client session. To call the server, you'll need to instantiate a FastMCP client, enter its connection context, and pass the client session to the Gemini SDK.
 
 ```python {5, 9, 15}
+from pathlib import Path
 from fastmcp import Client
 from google import genai
 import asyncio
 
-mcp_client = Client("server.py")
+mcp_client = Client(Path("server.py"))
 gemini_client = genai.Client()
 
 async def main():    

@@ -25,13 +25,16 @@ Each client retains its own transport, session, capabilities, and protocol
 version. The group only combines tool discovery and routes tool calls.
 
 Callers may manage the clients' connections themselves or use the group as
-a convenience context manager. Entering an already-connected FastMCP client
-is safe because client contexts are reference counted.
+a convenience context manager. The group's context is reentrant in the
+same way a client's is: entries are reference counted, the first entry
+connects every client, and the last exit disconnects them. Entering an
+already-connected FastMCP client is likewise safe because client contexts
+are reference counted.
 
 
 **Methods:**
 
-#### `clients` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/group.py#L53" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `clients` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/group.py#L58" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 clients(self) -> Mapping[str, Client[Any]]
@@ -44,7 +47,7 @@ hold the client that advertised each tool and would silently go stale
 if the mapping were swapped underneath them.
 
 
-#### `from_config` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/group.py#L63" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_config` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/group.py#L68" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_config(cls, config: MCPConfig | dict[str, Any]) -> ClientGroup
@@ -56,13 +59,13 @@ A server entry may include a FastMCP-specific ``mode`` field. It applies
 only to that server; entries without one use ``default_mode``.
 
 
-#### `protocol_versions` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/group.py#L88" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `protocol_versions` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/group.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 protocol_versions(self) -> dict[str, str | None]
 ```
 
-#### `list_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/group.py#L152" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/group.py#L161" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_tools(self) -> list[mcp_types.Tool]
@@ -77,7 +80,7 @@ what every server advertises now. Pass `cache_mode="use"` to allow
 cache hits when staleness within the server's hint is acceptable.
 
 
-#### `resolve_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/group.py#L189" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `resolve_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/group.py#L198" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 resolve_tool(self, name: str) -> ToolRoute
@@ -91,7 +94,7 @@ Loading the catalog (the first resolution, or after a refresh) still
 requires every client, since discovery queries them all.
 
 
-#### `call_tool_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/group.py#L224" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `call_tool_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/group.py#L233" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 call_tool_mcp(self, name: str, arguments: dict[str, Any] | None = None) -> mcp_types.CallToolResult
@@ -100,7 +103,7 @@ call_tool_mcp(self, name: str, arguments: dict[str, Any] | None = None) -> mcp_t
 Call a namespaced tool and return its raw MCP result.
 
 
-#### `call_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/group.py#L243" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `call_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/group.py#L252" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> CallToolResult

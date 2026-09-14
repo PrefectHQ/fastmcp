@@ -91,13 +91,13 @@ For each item found, show the original code, name what changed, and give the Fas
 
 ## Install
 
-FastMCP 4 is in prerelease, so pin the exact version rather than installing unqualified — a bare `pip install fastmcp` resolves to the latest *stable* release, which today is FastMCP 3:
+FastMCP 4 is a stable release:
 
 ```bash
-pip install "fastmcp==4.0.0b4"
+pip install "fastmcp>=4"
 ```
 
-An exact pip pin installs even though it's a prerelease; it does not need `--pre`. uv also needs an explicit constraint for the transitive `fastmcp-slim` prerelease, so follow [Install the v4 Prerelease](/getting-started/upgrading/from-fastmcp-3#install-the-v4-prerelease) for a reproducible uv setup.
+The `fastmcp` package depends on `fastmcp-slim` at the same version; both resolve together with no extra constraints.
 
 FastMCP 4 depends on the MCP SDK v2, so nothing you already import from `mcp_types` moves. That is the practical benefit of migrating at this version rather than an earlier one: you and FastMCP are on the same protocol layer, with the same snake_case field names and the same type package, so the migration touches only the server API.
 

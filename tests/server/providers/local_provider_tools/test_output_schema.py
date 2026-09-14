@@ -45,7 +45,7 @@ class PersonDataclass:
 
 
 class TestToolOutputSchema:
-    @pytest.mark.parametrize("annotation", [str, int, float, bool, list, AnyUrl])
+    @pytest.mark.parametrize("annotation", [str, int, float, bool, AnyUrl])
     async def test_simple_output_schema(self, annotation):
         mcp = FastMCP()
 

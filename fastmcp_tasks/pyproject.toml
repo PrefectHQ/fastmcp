@@ -2,7 +2,7 @@
 name = "fastmcp-tasks"
 dynamic = ["version", "dependencies"]
 description = "Background task execution for FastMCP servers via the io.modelcontextprotocol/tasks extension (SEP-2663)."
-authors = [{ name = "Jeremiah Lowin" }]
+authors = [{ name = "Jeremiah Lowin" }, { name = "Nate Nowack" }]
 
 requires-python = ">=3.10"
 readme = "README.md"

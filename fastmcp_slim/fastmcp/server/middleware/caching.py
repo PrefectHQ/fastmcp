@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from logging import Logger
 from typing import Any, TypedDict
 
@@ -68,6 +68,7 @@ FIVE_MINUTES_IN_SECONDS = 300
 ONE_MB_IN_BYTES = 1024 * 1024
 
 ANONYMOUS_AUTH_KEY = "__anonymous__"
+DEFAULT_VERSION_CACHE_KEY = "__default__"
 
 BaseModelT = TypeVar("BaseModelT", bound=FastMCPBaseModel)
 
@@ -243,11 +244,12 @@ class ResponseCachingMiddleware(Middleware):
 
     Notes:
     - Caches `tools/call`, `resources/read`, `prompts/get`, `tools/list`, `resources/list`, and `prompts/list` requests.
-    - Cache keys are derived from the method name, arguments, and the caller's
-      access token. Entries are partitioned per-token so that responses filtered
-      by per-component authorization (e.g. `auth=require_scopes(...)`) cannot
-      leak across users with different permissions. Unauthenticated callers
-      (including STDIO) share a single anonymous partition.
+    - Cache keys are derived from the method name, requested component version,
+      arguments, and the caller's access token. Entries are partitioned per-token
+      so that responses filtered by per-component authorization (e.g.
+      `auth=require_scopes(...)`) cannot leak across users with different
+      permissions. Unauthenticated callers (including STDIO) share a single
+      anonymous partition.
     """
 
     def __init__(
@@ -649,25 +651,51 @@ def _get_auth_partition_key() -> str:
     return _hash_cache_key(token.token)
 
 
+def _get_component_version_cache_key(msg: mcp_types.RequestParams) -> str:
+    """Return a cache partition for the requested component version."""
+    if not msg.meta:
+        return DEFAULT_VERSION_CACHE_KEY
+
+    fastmcp_meta = msg.meta.get("fastmcp")
+    if not isinstance(fastmcp_meta, Mapping):
+        return DEFAULT_VERSION_CACHE_KEY
+
+    version = fastmcp_meta.get("version")
+    if version is None:
+        return DEFAULT_VERSION_CACHE_KEY
+
+    # Encode the selector as a canonical JSON value so strings and range
+    # selectors cannot collide and equivalent selectors share a partition.
+    return f"__version__:{_get_arguments_str({'version': version})}"
+
+
 def _make_call_tool_cache_key(
     msg: mcp_types.CallToolRequestParams, auth_key: str = ANONYMOUS_AUTH_KEY
 ) -> str:
-    """Make a cache key for a tool call using a stable hash of name and arguments."""
+    """Make a cache key for a tool call using name, version, and arguments."""
 
-    return _hash_cache_key(f"{auth_key}:{msg.name}:{_get_arguments_str(msg.arguments)}")
+    return _hash_cache_key(
+        f"{auth_key}:{_get_component_version_cache_key(msg)}:{msg.name}:"
+        f"{_get_arguments_str(msg.arguments)}"
+    )
 
 
 def _make_read_resource_cache_key(
     msg: mcp_types.ReadResourceRequestParams, auth_key: str = ANONYMOUS_AUTH_KEY
 ) -> str:
-    """Make a cache key for a resource read using a stable hash of URI."""
+    """Make a cache key for a resource read using version and URI."""
 
-    return _hash_cache_key(f"{auth_key}:{msg.uri}")
+    return _hash_cache_key(
+        f"{auth_key}:{_get_component_version_cache_key(msg)}:{msg.uri}"
+    )
 
 
 def _make_get_prompt_cache_key(
     msg: mcp_types.GetPromptRequestParams, auth_key: str = ANONYMOUS_AUTH_KEY
 ) -> str:
-    """Make a cache key for a prompt get using a stable hash of name and arguments."""
+    """Make a cache key for a prompt get using name, version, and arguments."""
 
-    return _hash_cache_key(f"{auth_key}:{msg.name}:{_get_arguments_str(msg.arguments)}")
+    return _hash_cache_key(
+        f"{auth_key}:{_get_component_version_cache_key(msg)}:{msg.name}:"
+        f"{_get_arguments_str(msg.arguments)}"
+    )

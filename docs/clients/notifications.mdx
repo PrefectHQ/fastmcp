@@ -18,6 +18,8 @@ MCP servers can send notifications to inform clients about state changes. The me
 The simplest approach is a function that receives all messages and filters for the notifications you care about:
 
 ```python
+from pathlib import Path
+
 from fastmcp import Client
 
 async def message_handler(message):
@@ -35,7 +37,7 @@ async def message_handler(message):
             print("A resource was updated")
 
 client = Client(
-    "my_mcp_server.py",
+    Path("my_mcp_server.py"),
     message_handler=message_handler,
 )
 ```
@@ -45,6 +47,8 @@ client = Client(
 For fine-grained targeting, subclass `MessageHandler` to use specific hooks:
 
 ```python
+from pathlib import Path
+
 from fastmcp import Client
 from fastmcp.client.messages import MessageHandler
 import mcp.types
@@ -69,7 +73,7 @@ class MyMessageHandler(MessageHandler):
         print("Prompt list changed")
 
 client = Client(
-    "my_mcp_server.py",
+    Path("my_mcp_server.py"),
     message_handler=MyMessageHandler(),
 )
 ```
@@ -139,6 +143,7 @@ class MyMessageHandler(MessageHandler):
 A practical example of maintaining a tool cache that refreshes when tools change:
 
 ```python
+from pathlib import Path
 from fastmcp import Client
 from fastmcp.client.messages import MessageHandler
 import mcp.types
@@ -154,7 +159,7 @@ class ToolCacheHandler(MessageHandler):
         print("Tools changed - clearing cache")
         self.cached_tools = []  # Force refresh on next access
 
-client = Client("server.py", message_handler=ToolCacheHandler())
+client = Client(Path("server.py"), message_handler=ToolCacheHandler())
 ```
 
 ## Server Requests

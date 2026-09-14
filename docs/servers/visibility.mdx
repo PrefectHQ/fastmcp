@@ -3,7 +3,6 @@ title: Component Visibility
 sidebarTitle: Visibility
 description: Control which components are available to clients
 icon: toggle-on
-tag: NEW
 ---
 
 import { VersionBadge } from '/snippets/version-badge.mdx'
@@ -241,6 +240,7 @@ Server-level visibility state applies to all components from all providers. When
 from fastmcp import FastMCP
 
 main = FastMCP("Main")
+sub_server = FastMCP("Sub")
 main.mount(sub_server, namespace="api")
 
 @main.tool(tags={"internal"})

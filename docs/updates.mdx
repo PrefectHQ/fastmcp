@@ -5,6 +5,58 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 4.0.3" description="September 4, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.3: Once Is Enough"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.3"
+cta="Read the release notes"
+>
+Multi-server clients with legacy-only backends now avoid unnecessary startup retries, and tools returning unconstrained sequences no longer send images twice. This patch also fixes task timing values rejected by strict clients and cleans up unfinished Monty callbacks when execution ends.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.2" description="September 2, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.2: Root Access"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.2"
+cta="Read the release notes"
+>
+`ClientGroup` is now importable from the package root, `from fastmcp import ClientGroup`, with the same lazy export and install hint as `Client`, so integrations no longer couple to FastMCP's internal module layout.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.1" description="September 1, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.1: Come Back Any Time"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.1"
+cta="Read the release notes"
+>
+`ClientGroup` is now reentrant like `Client`: nested or concurrent entries reuse the group's connections, and only the last exit closes them.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.0" description="August 31, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.0: Four Real"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.0"
+cta="Read the release notes"
+>
+FastMCP 4 is stable: the FastMCP release for the new MCP protocol and the rewritten Python SDK v2, with old-protocol clients supported through per-connection negotiation. Read the announcement: [FastMCP 4 is GA](https://blog.gofastmcp.com/3mufbh2vcv22o).
+
+🌐 **Every protocol era** — one deployment serves `2026-07-28` and legacy clients; `Client(url)` negotiates from the other side.
+
+🔁 **Interactive tools** — tools request follow-up input across complete request-response rounds.
+
+⚙️ **Background tasks** — `@mcp.tool(task=True)` via the `io.modelcontextprotocol/tasks` extension in the optional `fastmcp-tasks` package.
+
+🧩 **Extensions** — `add_extension()` registers capability-negotiated protocol extensions with their own methods and lifespan.
+
+💉 **Dependency injection** — `Depends` + `CallArgument` bind dependencies to call arguments while keeping them out of tool schemas.
+
+🤝 **Client groups** — `ClientGroup` manages one client per server with collision-checked namespacing.
+</Card>
+</Update>
+
 <Update label="FastMCP 4.0.0b5" description="August 28, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v4.0.0b5: Group Effourt"

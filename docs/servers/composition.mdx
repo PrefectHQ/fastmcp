@@ -39,6 +39,7 @@ main.mount(weather)
 Mount remote HTTP servers or subprocess-based MCP servers using `create_proxy()`:
 
 ```python
+from pathlib import Path
 from fastmcp import FastMCP
 from fastmcp.server import create_proxy
 
@@ -48,7 +49,7 @@ mcp = FastMCP("Orchestrator")
 mcp.mount(create_proxy("http://api.example.com/mcp"), namespace="api")
 
 # Mount local Python scripts (file paths work directly)
-mcp.mount(create_proxy("./my_server.py"), namespace="local")
+mcp.mount(create_proxy(Path("./my_server.py")), namespace="local")
 ```
 
 ### Mounting npm/uvx Packages

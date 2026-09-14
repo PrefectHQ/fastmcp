@@ -40,6 +40,7 @@ Our test organization mirrors the source package structure, creating a predictab
 We use pytest markers to categorize tests that require special resources or take longer to run:
 
 ```python
+from pathlib import Path
 @pytest.mark.integration
 async def test_github_api_integration():
     """Test GitHub API integration with real service."""
@@ -56,7 +57,7 @@ async def test_github_api_integration():
 async def test_stdio_transport():
     """Test STDIO transport with separate process."""
     # This spawns a subprocess
-    async with Client("python examples/simple_echo.py") as client:
+    async with Client(Path("examples/simple_echo.py")) as client:
         result = await client.call_tool("echo", {"message": "test"})
         assert result.content[0].text == "test"
 ```

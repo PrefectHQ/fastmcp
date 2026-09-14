@@ -1,19 +1,30 @@
 [project]
 name = "smart-home"
 version = "0.1.0"
-description = "Add your description here"
+description = "Observable Philips Hue control for MCP agents"
 readme = "README.md"
 authors = [{ name = "zzstoatzz", email = "thrast36@gmail.com" }]
 requires-python = ">=3.12"
-dependencies = ["fastmcp@git+https://github.com/PrefectHQ/fastmcp.git", "phue2"]
+dependencies = [
+    "fastmcp>=4.0.3,<5",
+    "phue2==1.0.0a1",
+    "pydantic-settings",
+]
 
 [project.scripts]
 smart-home = "smart_home.__main__:main"
 
 [dependency-groups]
-dev = ["ruff", "ipython"]
+dev = ["ruff", "pytest", "pytest-asyncio"]
 
 
 [build-system]
 requires = ["uv_build"]
 build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.uv]
+exclude-newer-package = { phue2 = false }
