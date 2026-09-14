@@ -1480,6 +1480,59 @@ class TestCookieParameters:
         assert "session_id" in request.headers.get("cookie", "")
         assert "abc123" in request.headers.get("cookie", "")
 
+    @pytest.fixture
+    def complex_cookie_route(self):
+        return HTTPRoute(
+            path="/things",
+            method="GET",
+            operation_id="get_things",
+            parameters=[
+                ParameterInfo(
+                    name="id",
+                    location="cookie",
+                    schema={"type": "array", "items": {"type": "integer"}},
+                ),
+                ParameterInfo(
+                    name="color",
+                    location="cookie",
+                    schema={"type": "object"},
+                ),
+                ParameterInfo(
+                    name="flat_color",
+                    location="cookie",
+                    schema={"type": "object"},
+                    explode=False,
+                ),
+            ],
+            parameter_map={
+                "id": {"location": "cookie", "openapi_name": "id"},
+                "color": {"location": "cookie", "openapi_name": "color"},
+                "flat_color": {"location": "cookie", "openapi_name": "flat_color"},
+            },
+        )
+
+    def test_cookie_array_param_joined_with_commas(self, director, complex_cookie_route):
+        """Array cookie values serialize in form style, not as a Python repr."""
+        request = director.build(complex_cookie_route, {"id": [3, 4, 5]})
+        assert "id=3,4,5" in request.headers.get("cookie", "")
+
+    def test_cookie_object_param_explodes_by_default(
+        self, director, complex_cookie_route
+    ):
+        """Object cookie values become one cookie pair per property (form, explode=true)."""
+        request = director.build(complex_cookie_route, {"color": {"R": 100, "G": 200}})
+        cookie = request.headers.get("cookie", "")
+        assert "R=100" in cookie
+        assert "G=200" in cookie
+        assert "color=" not in cookie
+
+    def test_cookie_object_param_explode_false(self, director, complex_cookie_route):
+        """Object cookie values with explode=false join as name,value pairs."""
+        request = director.build(
+            complex_cookie_route, {"flat_color": {"R": 100, "G": 200}}
+        )
+        assert "flat_color=R,100,G,200" in request.headers.get("cookie", "")
+
     def test_cookie_parameter_with_fallback_mapping(self, director):
         """Cookie parameters should work in fallback (no parameter_map) mode."""
         route = HTTPRoute(

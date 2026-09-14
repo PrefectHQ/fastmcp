@@ -85,13 +85,9 @@ class RequestDirector:
             raw_content_type = next(iter(route.request_body.content_schema))
             declared_content_type = raw_content_type.split(";")[0].strip().lower()
 
-        # httpx requires cookie values to be strings; use OpenAPI-style
-        # serialization (e.g. true/false for booleans, not True/False)
-        cookies = (
-            {k: _query_scalar_to_str(v) for k, v in cookie_params.items()}
-            if cookie_params
-            else None
-        )
+        # httpx requires cookie values to be strings; serialize per the
+        # OpenAPI "form" style used for cookie parameters.
+        cookies = self._serialize_cookie_params(route, cookie_params)
 
         # Step 6: Handle request body — dispatch on declared content type.
         # httpx body kwargs (json, content, data, files) are mutually exclusive
@@ -286,6 +282,54 @@ class RequestDirector:
         "spaceDelimited": " ",
         "pipeDelimited": "|",
     }
+
+
+    @staticmethod
+    def _serialize_cookie_params(
+        route: HTTPRoute, cookie_params: dict[str, Any]
+    ) -> dict[str, str] | None:
+        """Serialize cookie parameter values per the OpenAPI "form" style.
+
+        Cookie parameters always use the form style. Arrays join with commas
+        whether exploded or not (id=3,4,5). Objects explode into one cookie
+        pair per property by default (R=100; G=200), and join as
+        name,value,name,value pairs when explode=false (id=R,100,G,200).
+        Empty arrays and objects are omitted.
+        """
+        if not cookie_params:
+            return None
+
+        param_lookup: dict[str, ParameterInfo] = {
+            p.name: p for p in route.parameters if p.location == "cookie"
+        }
+
+        cookies: dict[str, str] = {}
+        for key, value in cookie_params.items():
+            param_info = param_lookup.get(key)
+            explode = (
+                param_info.explode
+                if param_info is not None and param_info.explode is not None
+                else True
+            )
+            if isinstance(value, list):
+                if not value:
+                    continue
+                cookies[key] = ",".join(_query_scalar_to_str(v) for v in value)
+            elif isinstance(value, dict):
+                if not value:
+                    continue
+                if explode:
+                    for k, v in value.items():
+                        cookies[_query_scalar_to_str(k)] = _query_scalar_to_str(v)
+                else:
+                    parts: list[str] = []
+                    for k, v in value.items():
+                        parts.append(_query_scalar_to_str(k))
+                        parts.append(_query_scalar_to_str(v))
+                    cookies[key] = ",".join(parts)
+            else:
+                cookies[key] = _query_scalar_to_str(value)
+        return cookies or None
 
     def _serialize_query_params(
         self,
