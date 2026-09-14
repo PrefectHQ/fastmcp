@@ -26,6 +26,18 @@ def _query_scalar_to_str(value: Any) -> str:
     return str(value)
 
 
+def _cookie_param_to_str(value: Any) -> str:
+    """Serialize a cookie parameter as a single OpenAPI form-style value."""
+    if isinstance(value, dict):
+        parts: list[str] = []
+        for key, item in value.items():
+            parts.extend((_query_scalar_to_str(key), _query_scalar_to_str(item)))
+        return ",".join(parts)
+    if isinstance(value, list):
+        return ",".join(_query_scalar_to_str(item) for item in value)
+    return _query_scalar_to_str(value)
+
+
 class RequestDirector:
     """Builds httpx2.Request objects from HTTPRoute and arguments using openapi-core."""
 
@@ -85,10 +97,10 @@ class RequestDirector:
             raw_content_type = next(iter(route.request_body.content_schema))
             declared_content_type = raw_content_type.split(";")[0].strip().lower()
 
-        # httpx requires cookie values to be strings; use OpenAPI-style
-        # serialization (e.g. true/false for booleans, not True/False)
+        # httpx requires cookie values to be strings and cannot represent
+        # repeated names, so collections use a single comma-delimited value.
         cookies = (
-            {k: _query_scalar_to_str(v) for k, v in cookie_params.items()}
+            {k: _cookie_param_to_str(v) for k, v in cookie_params.items()}
             if cookie_params
             else None
         )
