@@ -7,13 +7,16 @@ strict_input_validation=False, the default).
 """
 
 import json
+from typing import Any
 
 import pytest
+from mcp.shared.exceptions import MCPError
 from mcp_types import TextContent
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from fastmcp import Client, FastMCP
-from fastmcp.exceptions import ToolError
+from fastmcp.exceptions import ToolError, ValidationError
+from fastmcp.tools.base import Tool, ToolResult
 
 
 class UserProfile(BaseModel):
@@ -22,6 +25,26 @@ class UserProfile(BaseModel):
     name: str
     age: int
     email: str
+
+
+class PrivatePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    token: str
+    values: dict[str, int] = Field(default_factory=dict)
+
+    @field_validator("token")
+    @classmethod
+    def reject_private_token(cls, value: str) -> str:
+        if value.startswith("PRIVATE"):
+            raise ValueError(f"Rejected token: {value}")
+        return value
+
+
+class RawValidationTool(Tool):
+    async def run(self, arguments: dict[str, Any]) -> ToolResult:
+        PrivatePayload.model_validate(arguments)
+        return ToolResult(content="ok")
 
 
 class TestStringToIntegerCoercion:
@@ -373,8 +396,83 @@ class TestExpectedToolFailureLogging:
         assert records, "expected a single 'Invalid arguments' warning"
         assert records[0].levelname == "WARNING"
         assert records[0].exc_info is None
-        assert "int_parsing" in records[0].getMessage()
+        assert records[0].getMessage() == "Invalid arguments for tool 'create_user'"
         assert "errors.pydantic.dev" not in records[0].getMessage()
+
+    @pytest.mark.parametrize(
+        "arguments",
+        [
+            {"note": "PRIVATE_VALUE"},
+            {"payload": ["PRIVATE_VALUE"]},
+            {"payload": {"token": "ok"}, "PRIVATE_KEY": 1},
+            {"payload": {"token": "ok", "PRIVATE_KEY": 1}},
+            {"payload": {"token": "ok", "values": {"PRIVATE_KEY": "bad"}}},
+            {"payload": {"token": "PRIVATE_TOKEN"}},
+        ],
+        ids=[
+            "missing",
+            "wrong-type",
+            "extra",
+            "nested-extra",
+            "dict-key",
+            "validator-message",
+        ],
+    )
+    async def test_validation_logs_omit_client_data(self, caplog, arguments):
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def submit(payload: PrivatePayload, note: str = "") -> str:
+            return "ok"
+
+        with caplog.at_level("WARNING", logger="fastmcp.server.server"):
+            async with Client(mcp) as client:
+                result = await client.call_tool(
+                    "submit", arguments, raise_on_error=False
+                )
+
+        assert result.is_error
+        # The client still gets its detailed validation error.
+        assert "PRIVATE" in str(result.content)
+        records = [r for r in caplog.records if r.name == "fastmcp.server.server"]
+        assert len(records) == 1
+        assert records[0].getMessage() == "Invalid arguments for tool 'submit'"
+        assert records[0].exc_info is None
+
+    @pytest.mark.parametrize("raw_pydantic", [False, True])
+    async def test_other_validation_logs_omit_client_data(self, caplog, raw_pydantic):
+        mcp = FastMCP("TestServer")
+        if raw_pydantic:
+            mcp.add_tool(
+                RawValidationTool(name="submit", parameters={"type": "object"})
+            )
+            arguments = {"token": "PRIVATE_TOKEN"}
+        else:
+
+            @mcp.tool
+            def submit() -> str:
+                raise ValidationError("PRIVATE_CUSTOM_ERROR")
+
+            arguments = {}
+
+        with caplog.at_level("WARNING", logger="fastmcp.server.server"):
+            async with Client(mcp) as client:
+                if raw_pydantic:
+                    with pytest.raises(MCPError, match="Invalid request parameters"):
+                        await client.call_tool(
+                            "submit", arguments, raise_on_error=False
+                        )
+                else:
+                    result = await client.call_tool(
+                        "submit", arguments, raise_on_error=False
+                    )
+                    assert result.is_error
+                    assert "PRIVATE" in str(result.content)
+
+        records = [r for r in caplog.records if r.name == "fastmcp.server.server"]
+        assert len(records) == 1
+        assert records[0].getMessage() == "Invalid arguments for tool 'submit'"
+        assert records[0].exc_info is None
 
     async def test_tool_raised_tool_error_logs_without_traceback(self, caplog):
         mcp = FastMCP("TestServer")

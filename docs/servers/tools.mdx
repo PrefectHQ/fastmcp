@@ -812,7 +812,7 @@ For reusable serialization across multiple tools, create a wrapper decorator tha
 
 If your tool encounters an error, you can raise a standard Python exception (`ValueError`, `TypeError`, `FileNotFoundError`, custom exceptions, etc.) or a FastMCP `ToolError`.
 
-By default, all exceptions (including their details) are logged and converted into an MCP error response to be sent back to the client LLM. This helps the LLM understand failures and react appropriately.
+By default, exceptions are converted into an MCP error response to be sent back to the client LLM. This helps the LLM understand failures and react appropriately. Validation warnings identify the tool without logging argument values, validation locations, or validator messages, which may contain private client data. This does not change the validation details returned to the caller or redact explicit debug logging or custom middleware logs.
 
 If you want to mask internal error details for security reasons, you can:
 

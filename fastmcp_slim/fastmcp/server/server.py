@@ -1490,34 +1490,21 @@ class FastMCP(
                 span.set_attributes(tool.get_span_attributes())
                 try:
                     return await tool._run(arguments or {})
-                except ValidationError as e:
-                    # Argument-validation failure (a bad call). FunctionTool
-                    # converts pydantic's call-validation error into fastmcp's
-                    # ValidationError (see #4128) so it can be filtered as a
-                    # client error. Log the underlying detail without a URL or
-                    # traceback, matching the previous pydantic-error logging.
-                    cause = e.__cause__
-                    detail = (
-                        cause.errors(include_url=False)
-                        if isinstance(cause, PydanticValidationError)
-                        else str(e)
-                    )
-                    logger.warning("Invalid arguments for tool %r: %s", name, detail)
+                except ValidationError:
+                    # Inputs, locations, and validator messages can all contain
+                    # client data. Keep details in the response, not the warning.
+                    logger.warning("Invalid arguments for tool %r", name)
                     raise
                 except FastMCPError as e:
                     logger.log(
                         e.log_level, f"Error calling tool {name!r}", exc_info=False
                     )
                     raise
-                except PydanticValidationError as e:
+                except PydanticValidationError:
                     # A pydantic error that is NOT an argument-validation failure
                     # (e.g. raised by a non-FunctionTool's own validation). Kept
                     # for backward compatibility.
-                    logger.warning(
-                        "Invalid arguments for tool %r: %s",
-                        name,
-                        e.errors(include_url=False),
-                    )
+                    logger.warning("Invalid arguments for tool %r", name)
                     raise
                 except Exception as e:
                     # Most MCPErrors raised under a tool describe how the call
