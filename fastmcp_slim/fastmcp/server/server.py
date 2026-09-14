@@ -16,7 +16,16 @@ from contextlib import (
 )
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Generic,
+    Literal,
+    TypeVar,
+    cast,
+    get_args,
+    overload,
+)
 
 import httpx2
 import mcp_types
@@ -31,6 +40,7 @@ from mcp_types import (
 from mcp_types.jsonrpc import MISSING_REQUIRED_CLIENT_CAPABILITY
 from pydantic import AnyUrl
 from pydantic import ValidationError as PydanticValidationError
+from pydantic_core import ErrorType
 from starlette.routing import BaseRoute
 from typing_extensions import Self
 
@@ -111,6 +121,21 @@ if TYPE_CHECKING:
     from fastmcp.server.providers.proxy import FastMCPProxy
 
 logger = get_logger(__name__)
+
+_BUILTIN_VALIDATION_ERROR_TYPES = frozenset(get_args(ErrorType))
+
+
+def _validation_error_summary(error: PydanticValidationError) -> dict[str, Any]:
+    """Keep counts and built-in codes, never input-derived validation details."""
+    error_types = {
+        detail["type"]
+        if detail["type"] in _BUILTIN_VALIDATION_ERROR_TYPES
+        else "custom_error"
+        for detail in error.errors(
+            include_url=False, include_context=False, include_input=False
+        )
+    }
+    return {"error_count": error.error_count(), "error_types": sorted(error_types)}
 
 
 def _version_request_meta(
@@ -1490,21 +1515,31 @@ class FastMCP(
                 span.set_attributes(tool.get_span_attributes())
                 try:
                     return await tool._run(arguments or {})
-                except ValidationError:
-                    # Inputs, locations, and validator messages can all contain
-                    # client data. Keep details in the response, not the warning.
-                    logger.warning("Invalid arguments for tool %r", name)
+                except ValidationError as e:
+                    cause = e.__cause__
+                    if isinstance(cause, PydanticValidationError):
+                        logger.warning(
+                            "Invalid arguments for tool %r: %s",
+                            name,
+                            _validation_error_summary(cause),
+                        )
+                    else:
+                        logger.warning("Invalid arguments for tool %r", name)
                     raise
                 except FastMCPError as e:
                     logger.log(
                         e.log_level, f"Error calling tool {name!r}", exc_info=False
                     )
                     raise
-                except PydanticValidationError:
+                except PydanticValidationError as e:
                     # A pydantic error that is NOT an argument-validation failure
                     # (e.g. raised by a non-FunctionTool's own validation). Kept
                     # for backward compatibility.
-                    logger.warning("Invalid arguments for tool %r", name)
+                    logger.warning(
+                        "Invalid arguments for tool %r: %s",
+                        name,
+                        _validation_error_summary(e),
+                    )
                     raise
                 except Exception as e:
                     # Most MCPErrors raised under a tool describe how the call

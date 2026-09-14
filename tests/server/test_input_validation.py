@@ -13,6 +13,7 @@ import pytest
 from mcp.shared.exceptions import MCPError
 from mcp_types import TextContent
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic_core import PydanticCustomError
 
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError, ValidationError
@@ -36,7 +37,8 @@ class PrivatePayload(BaseModel):
     @field_validator("token")
     @classmethod
     def reject_private_token(cls, value: str) -> str:
-        if value.startswith("PRIVATE"):
+        # Simulate a validator that includes the rejected input in its message.
+        if value != "ok":
             raise ValueError(f"Rejected token: {value}")
         return value
 
@@ -396,18 +398,25 @@ class TestExpectedToolFailureLogging:
         assert records, "expected a single 'Invalid arguments' warning"
         assert records[0].levelname == "WARNING"
         assert records[0].exc_info is None
-        assert records[0].getMessage() == "Invalid arguments for tool 'create_user'"
+        assert "int_parsing" in records[0].getMessage()
+        assert "'error_count': 1" in records[0].getMessage()
         assert "errors.pydantic.dev" not in records[0].getMessage()
 
     @pytest.mark.parametrize(
-        "arguments",
+        "arguments, error_type",
         [
-            {"note": "PRIVATE_VALUE"},
-            {"payload": ["PRIVATE_VALUE"]},
-            {"payload": {"token": "ok"}, "PRIVATE_KEY": 1},
-            {"payload": {"token": "ok", "PRIVATE_KEY": 1}},
-            {"payload": {"token": "ok", "values": {"PRIVATE_KEY": "bad"}}},
-            {"payload": {"token": "PRIVATE_TOKEN"}},
+            ({"note": "PRIVATE_VALUE"}, "missing_argument"),
+            ({"payload": ["PRIVATE_VALUE"]}, "model_type"),
+            (
+                {"payload": {"token": "ok"}, "PRIVATE_KEY": 1},
+                "unexpected_keyword_argument",
+            ),
+            ({"payload": {"token": "ok", "PRIVATE_KEY": 1}}, "extra_forbidden"),
+            (
+                {"payload": {"token": "ok", "values": {"PRIVATE_KEY": "bad"}}},
+                "int_parsing",
+            ),
+            ({"payload": {"token": "PRIVATE_TOKEN"}}, "value_error"),
         ],
         ids=[
             "missing",
@@ -418,7 +427,9 @@ class TestExpectedToolFailureLogging:
             "validator-message",
         ],
     )
-    async def test_validation_logs_omit_client_data(self, caplog, arguments):
+    async def test_validation_logs_omit_client_data(
+        self, caplog, arguments, error_type
+    ):
         mcp = FastMCP("TestServer")
 
         @mcp.tool
@@ -436,7 +447,9 @@ class TestExpectedToolFailureLogging:
         assert "PRIVATE" in str(result.content)
         records = [r for r in caplog.records if r.name == "fastmcp.server.server"]
         assert len(records) == 1
-        assert records[0].getMessage() == "Invalid arguments for tool 'submit'"
+        assert "PRIVATE" not in records[0].getMessage()
+        assert error_type in records[0].getMessage()
+        assert "'error_count': 1" in records[0].getMessage()
         assert records[0].exc_info is None
 
     @pytest.mark.parametrize("raw_pydantic", [False, True])
@@ -471,7 +484,47 @@ class TestExpectedToolFailureLogging:
 
         records = [r for r in caplog.records if r.name == "fastmcp.server.server"]
         assert len(records) == 1
-        assert records[0].getMessage() == "Invalid arguments for tool 'submit'"
+        assert "PRIVATE" not in records[0].getMessage()
+        if raw_pydantic:
+            assert "value_error" in records[0].getMessage()
+        else:
+            assert records[0].getMessage() == "Invalid arguments for tool 'submit'"
+        assert records[0].exc_info is None
+
+    async def test_custom_error_codes_are_not_logged(self, caplog):
+        class Payload(BaseModel):
+            values: list[str]
+
+            @field_validator("values")
+            @classmethod
+            def reject_values(cls, values: list[str]) -> list[str]:
+                # Runtime validators can use input-derived codes despite the type hint.
+                raise PydanticCustomError(
+                    values[0],  # ty: ignore[invalid-argument-type]
+                    "Rejected {value}",
+                    {"value": values},
+                )
+
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def submit(payload: Payload, count: int) -> str:
+            return "ok"
+
+        async with Client(mcp) as client:
+            result = await client.call_tool(
+                "submit",
+                {"payload": {"values": ["PRIVATE_CODE"]}, "count": "PRIVATE_VALUE"},
+                raise_on_error=False,
+            )
+        assert result.is_error
+        assert "PRIVATE" in str(result.content)
+        records = [r for r in caplog.records if r.name == "fastmcp.server.server"]
+        assert len(records) == 1
+        assert "PRIVATE" not in records[0].getMessage()
+        assert "'error_count': 2" in records[0].getMessage()
+        assert "custom_error" in records[0].getMessage()
+        assert "int_parsing" in records[0].getMessage()
         assert records[0].exc_info is None
 
     async def test_tool_raised_tool_error_logs_without_traceback(self, caplog):
