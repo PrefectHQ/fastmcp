@@ -405,9 +405,7 @@ class AzureProvider(OAuthProxy):
                     )
         # Don't modify the scopes in params - they stay unprefixed for MCP clients
         # We'll prefix them when building the Azure authorization URL (in _build_upstream_authorize_url)
-        auth_url = await super().authorize(client, params_to_use)
-        separator = "&" if "?" in auth_url else "?"
-        return f"{auth_url}{separator}prompt=select_account"
+        return await super().authorize(client, params_to_use)
 
     def _prefix_scopes_for_azure(self, scopes: list[str]) -> list[str]:
         """Prefix unprefixed custom API scopes with identifier_uri for Azure.
@@ -486,8 +484,11 @@ class AzureProvider(OAuthProxy):
         modified_transaction = transaction.copy()
         modified_transaction["scopes"] = prefixed_scopes
 
-        # Let parent build the URL with prefixed scopes
-        return super()._build_upstream_authorize_url(txn_id, modified_transaction)
+        # Let parent build the URL with prefixed scopes, then ask Microsoft to
+        # show the account picker on the upstream request.
+        auth_url = super()._build_upstream_authorize_url(txn_id, modified_transaction)
+        separator = "&" if "?" in auth_url else "?"
+        return f"{auth_url}{separator}prompt=select_account"
 
     def _prepare_scopes_for_token_exchange(self, scopes: list[str]) -> list[str]:
         """Prepare scopes for Azure authorization code exchange.
