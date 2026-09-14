@@ -742,3 +742,25 @@ class TestCollision:
             hashed_backend_name("billing", "save"), {"name": "Eve"}
         )
         assert result_b.content[0].text == "from B: Eve"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+
+class TestHashedNameHonorsDisable:
+    async def test_disable_blocks_hashed_backend_name(self):
+        """Hashed UI callbacks must not skip server.disable()."""
+        from fastmcp.exceptions import NotFoundError
+
+        app = FastMCPApp("Demo")
+
+        @app.tool()
+        def next_page(offset: int = 0) -> dict:
+            return {"offset": offset}
+
+        server = FastMCP("Repro")
+        server.add_provider(app)
+        hashed = hashed_backend_name("Demo", "next_page")
+
+        result = await server.call_tool(hashed, {"offset": 1})
+        assert result.structured_content == {"offset": 1}
+
+        server.disable(names={"next_page"})
+        with pytest.raises((NotFoundError, ToolError), match="Unknown tool"):
+            await server.call_tool(hashed, {"offset": 2})
