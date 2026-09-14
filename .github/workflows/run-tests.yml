@@ -30,7 +30,7 @@ jobs:
     outputs:
       run-tests: ${{ steps.classify.outputs.result }}
     steps:
-      - uses: actions/github-script@v8
+      - uses: actions/github-script@v9
         id: classify
         with:
           script: |

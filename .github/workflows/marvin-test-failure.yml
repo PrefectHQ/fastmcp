@@ -33,7 +33,7 @@ jobs:
 
       - name: Collect investigation context
         id: collect
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const { collect } = await import(`${process.env.GITHUB_WORKSPACE}/.github/scripts/analyze-ci-failure.mjs`);
@@ -100,7 +100,7 @@ jobs:
       - name: Validate investigation result
         if: steps.collect.outputs.ready == 'true'
         id: analyze
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const { acceptResult } = await import(`${process.env.GITHUB_WORKSPACE}/.github/scripts/analyze-ci-failure.mjs`);
@@ -120,7 +120,7 @@ jobs:
 
       - name: Publish current diagnosis
         if: steps.analyze.outputs.publish == 'true'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           github-token: ${{ steps.marvin-token.outputs.token }}
           script: |
