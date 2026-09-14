@@ -113,6 +113,27 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+def _public_validation_errors(errors: list[Any]) -> list[dict[str, Any]]:
+    """Strip client-supplied values from pydantic errors before logging.
+
+    A malformed tools/call is exactly when a client is most likely to send
+    prompts, documents, or tokens. Keep the error type, the schema field, and
+    the message. Drop `input`, and redact loc entries for unexpected keys.
+    """
+    public: list[dict[str, Any]] = []
+    for err in errors:
+        if not isinstance(err, dict):
+            public.append({"type": "error", "msg": str(err)})
+            continue
+        loc = err.get("loc") or ()
+        err_type = err.get("type")
+        if err_type == "unexpected_keyword_argument":
+            loc = ("<unexpected>",)
+        public.append({"type": err_type, "loc": loc, "msg": err.get("msg")})
+    return public
+
+
+
 def _version_request_meta(
     version: VersionSpec | None,
 ) -> mcp_types.RequestParamsMeta | None:
@@ -1498,7 +1519,7 @@ class FastMCP(
                     # traceback, matching the previous pydantic-error logging.
                     cause = e.__cause__
                     detail = (
-                        cause.errors(include_url=False)
+                        _public_validation_errors(cause.errors(include_url=False))
                         if isinstance(cause, PydanticValidationError)
                         else str(e)
                     )
@@ -1516,7 +1537,7 @@ class FastMCP(
                     logger.warning(
                         "Invalid arguments for tool %r: %s",
                         name,
-                        e.errors(include_url=False),
+                        _public_validation_errors(e.errors(include_url=False)),
                     )
                     raise
                 except Exception as e:

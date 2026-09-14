@@ -376,6 +376,37 @@ class TestExpectedToolFailureLogging:
         assert "int_parsing" in records[0].getMessage()
         assert "errors.pydantic.dev" not in records[0].getMessage()
 
+    async def test_invalid_arguments_log_omits_client_values(self, caplog):
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def ask(question: str, context: str = "") -> str:
+            return question
+
+        with caplog.at_level("WARNING", logger="fastmcp.server.server"):
+            async with Client(mcp) as client:
+                await client.call_tool(
+                    "ask", {"context": "SECRET-1"}, raise_on_error=False
+                )
+                await client.call_tool(
+                    "ask", {"question": ["SECRET-2"]}, raise_on_error=False
+                )
+                await client.call_tool(
+                    "ask", {"question": "q", "SECRET-3": 1}, raise_on_error=False
+                )
+
+        messages = [
+            r.getMessage()
+            for r in caplog.records
+            if "Invalid arguments for tool" in r.getMessage()
+        ]
+        joined = "\n".join(messages)
+        assert "SECRET-1" not in joined
+        assert "SECRET-2" not in joined
+        assert "SECRET-3" not in joined
+        assert "missing" in joined.lower() or "missing_argument" in joined
+
+
     async def test_tool_raised_tool_error_logs_without_traceback(self, caplog):
         mcp = FastMCP("TestServer")
 
