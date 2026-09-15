@@ -10,8 +10,9 @@ if TYPE_CHECKING:
 import anyio
 from mcp_types import TextContent
 from pydantic import Field
+from pydantic import ValidationError as PydanticValidationError
 
-from fastmcp.exceptions import NotFoundError, ToolError
+from fastmcp.exceptions import NotFoundError, ToolError, ValidationError
 from fastmcp.server.context import Context
 from fastmcp.server.transforms import GetToolNext
 from fastmcp.server.transforms.catalog import CatalogTransform
@@ -50,6 +51,46 @@ def _ensure_async(fn: Callable[..., Any]) -> Callable[..., Any]:
         return fn(*args, **kwargs)
 
     return wrapper
+
+
+_VALIDATION_ERROR_MARKERS = (
+    "validation error for",
+    "unexpected keyword argument",
+    "missing required argument",
+)
+
+
+def _legible_call_error(
+    tool_name: str, tool: Tool, error: dict[str, Any] | str | Exception
+) -> str:
+    """Rewrite a failed call's error for the model that wrote the code.
+
+    A failed `call_tool` raises so the failure interrupts the chain instead of
+    flowing onward as a return value. Validation failures get the tool's
+    parameter list appended — the error names what was wrong, the schema names
+    what would be right — and always speak in the name the caller used, not
+    the backend's internal identity.
+    """
+    validation = isinstance(error, ValidationError)
+    if validation and isinstance(error.__cause__, PydanticValidationError):
+        text = "; ".join(
+            f"{'.'.join(str(part) for part in item['loc']) or 'arguments'}: {item['msg']}"
+            for item in error.__cause__.errors(include_url=False)
+        )
+    else:
+        text = json.dumps(error) if isinstance(error, dict) else str(error)
+    message = f"call_tool({tool_name!r}) failed: {text}"
+    if validation or any(
+        marker in text.lower() for marker in _VALIDATION_ERROR_MARKERS
+    ):
+        properties = (tool.parameters or {}).get("properties")
+        if isinstance(properties, dict) and properties:
+            required = set((tool.parameters or {}).get("required") or [])
+            params = ", ".join(
+                name + ("*" if name in required else "") for name in properties
+            )
+            message += f"\nValid parameters for {tool_name} (* = required): {params}"
+    return message
 
 
 def _unwrap_tool_result(result: ToolResult) -> dict[str, Any] | str:
@@ -257,7 +298,7 @@ ToolDetailLevel = Literal["brief", "detailed", "full"]
 """Detail level for discovery tool output.
 
 - ``"brief"``: tool names and one-line descriptions
-- ``"detailed"``: compact markdown with parameter names, types, and required markers
+- ``"detailed"``: compact markdown with parameter names, types, literal values, defaults, and required markers
 - ``"full"``: complete JSON schema
 """
 
@@ -670,7 +711,23 @@ class CodeMode(CatalogTransform):
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {tool_name}")
 
-                result = await ctx.fastmcp.call_tool(tool.name, params)
+                try:
+                    result = await ctx.fastmcp.call_tool(tool.name, params)
+                except (ToolError, ValidationError) as exc:
+                    raise ToolError(_legible_call_error(tool_name, tool, exc)) from exc
+                if result.is_error:
+                    raise ToolError(
+                        _legible_call_error(
+                            tool_name,
+                            tool,
+                            "\n".join(
+                                item.text
+                                for item in result.content
+                                if isinstance(item, TextContent) and item.text
+                            )
+                            or _unwrap_tool_result(result),
+                        )
+                    )
                 return _unwrap_tool_result(result)
 
             return await transform.sandbox_provider.run(
