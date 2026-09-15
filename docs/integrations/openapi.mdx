@@ -458,6 +458,8 @@ Header parameters are automatically converted to strings and included in the HTT
 
 Dictionary bodies without named properties use one tool argument containing the entire dictionary. For a dictionary schema titled `Labels`, calling the tool with `{"labels": {"team": "infra"}}` sends `{"team": "infra"}` to the API. Schemas without a title use the argument name `body`.
 
+If a whole-body argument shares a name with a path, query, header, or cookie parameter, the HTTP parameter receives a location suffix. For example, an array body titled `Values` and a query parameter named `values` become `values` and `values__query`; calling with `{"values": [1, 2], "values__query": "active"}` sends `[1, 2]` as the body and `?values=active` in the URL.
+
 For request bodies declared as `application/json` or a `+json` media type, pass strings, numbers, and booleans as their actual values. FastMCP JSON-encodes them and preserves the declared Content-Type, including media-type parameters. Do not JSON-encode a string yourself: passing `"true"` sends the JSON string `"true"`, while passing `True` sends the JSON boolean `true`.
 
 Earlier versions sent string bodies as raw text even when the schema declared JSON. If you worked around that behavior by pre-encoding a string, remove the extra encoding. Bodies declared as `text/plain` continue to be sent as raw text.
