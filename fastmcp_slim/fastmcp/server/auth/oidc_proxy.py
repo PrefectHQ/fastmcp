@@ -246,6 +246,8 @@ class OIDCProxy(OAuthProxy):
         fastmcp_access_token_expiry_seconds: int | None = None,
         # Token refresh threshold
         token_expiry_threshold_seconds: int = 0,
+        # Client refresh-token retry grace period
+        refresh_token_grace_period_seconds: int = 0,
         # CIMD configuration
         enable_cimd: bool = True,
         # Identity assertion (SEP-990 ID-JAG) support
@@ -339,6 +341,9 @@ class OIDCProxy(OAuthProxy):
             token_expiry_threshold_seconds: Number of seconds before actual expiry to consider
                 a token as expired (default 0). Prevents race conditions where a token
                 passes the expiry check but expires before the next operation completes.
+            refresh_token_grace_period_seconds: Number of seconds after client-facing
+                refresh-token rotation in which an identical retry returns the original
+                successful response. Defaults to 0; values must be between 0 and 60.
             enable_cimd: Whether to enable CIMD (Client ID Metadata Document) client support.
                 When True, clients can use their metadata document URL as client_id instead of
                 Dynamic Client Registration. Default is True.
@@ -436,6 +441,7 @@ class OIDCProxy(OAuthProxy):
             "fallback_refresh_token_expiry_seconds": fallback_refresh_token_expiry_seconds,
             "fastmcp_access_token_expiry_seconds": fastmcp_access_token_expiry_seconds,
             "token_expiry_threshold_seconds": token_expiry_threshold_seconds,
+            "refresh_token_grace_period_seconds": refresh_token_grace_period_seconds,
             "enable_cimd": enable_cimd,
             "identity_assertion": identity_assertion,
         }

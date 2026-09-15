@@ -9,7 +9,11 @@ import hashlib
 from typing import Any, Final
 from urllib.parse import urlparse
 
-from mcp.shared.auth import InvalidRedirectUriError, OAuthClientInformationFull
+from mcp.shared.auth import (
+    InvalidRedirectUriError,
+    OAuthClientInformationFull,
+    OAuthToken,
+)
 from pydantic import AnyUrl, BaseModel, Field, ValidationError
 
 from fastmcp.server.auth.cimd import CIMDDocument
@@ -146,6 +150,18 @@ class RefreshTokenMetadata(BaseModel):
     client_id: str
     scopes: list[str]
     expires_at: int | None = None
+    created_at: float
+
+
+class RefreshTokenRotationResponse(BaseModel):
+    """A short-lived response for an idempotent refresh-token retry."""
+
+    client_id: str
+    refresh_token_scopes: list[str]
+    refresh_token_expires_at: int | None
+    request_scopes: list[str]
+    token_response: OAuthToken
+    successor_token_hash: str
     created_at: float
 
 
