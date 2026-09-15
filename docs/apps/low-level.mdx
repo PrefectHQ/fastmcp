@@ -291,7 +291,7 @@ The tool generates a QR code as a base64 PNG. The resource loads the MCP Apps JS
 
 ## Checking client support
 
-Not all hosts support the Apps extension. You can check at runtime using the tool's [context](/servers/context):
+Not all hosts support the Apps extension, and a server declares `io.modelcontextprotocol/ui` in `capabilities.extensions` only while it has an app to serve — a tool carrying `_meta.ui`, or a `ui://` resource. A host that supports the extension declares it back, which is what you check at runtime using the tool's [context](/servers/context):
 
 ```python
 from fastmcp import Context

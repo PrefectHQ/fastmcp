@@ -79,6 +79,21 @@ class Provider:
         return f"{self.__class__.__name__}()"
 
     @property
+    def may_serve_apps(self) -> bool:
+        """Whether this provider may serve MCP App UI (``meta["ui"]`` or ``ui://``).
+
+        Advertised capabilities are a promise the server has to keep, so a
+        provider that cannot be enumerated synchronously answers ``True``: a
+        proxy to a remote server, or a third-party provider, may well be holding
+        an app, and hiding the extension from it would leave the host unable to
+        render a UI that does exist. A spurious declaration is the lesser error.
+
+        ``LocalProvider`` answers precisely from its registry, and
+        ``AggregateProvider`` combines its children.
+        """
+        return True
+
+    @property
     def transforms(self) -> list[Transform]:
         """All transforms applied to components from this provider."""
         return list(self._transforms)
