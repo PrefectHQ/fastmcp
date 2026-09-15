@@ -269,12 +269,14 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
     if "const" in schema:
         return Literal[schema["const"]]  # type: ignore
 
+    base: Any = str
     if fmt := schema.get("format"):
         if fmt == "uri":
             return AnyUrl
         elif fmt == "uri-reference":
-            return str
-        return FORMAT_TYPES.get(fmt, str)
+            base = str
+        else:
+            base = FORMAT_TYPES.get(fmt, str)
 
     constraints = {
         k: v
@@ -286,10 +288,15 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
         if v is not None
     }
 
-    if not constraints:
-        return str
+    # StringConstraints (min/max length, pattern) only apply to str-based types.
+    # Non-str formats (e.g. date-time -> datetime, json -> Json) carry no such
+    # constraints. Previously *any* format made this function return early,
+    # silently dropping minLength/maxLength/pattern even for plain-string
+    # formats (e.g. a custom format that falls back to str).
+    if not constraints or not (isinstance(base, type) and issubclass(base, str)):
+        return base
 
-    annotated: Any = Annotated[str, StringConstraints(**constraints)]
+    annotated: Any = Annotated[base, StringConstraints(**constraints)]
 
     if "pattern" in constraints:
         try:
@@ -307,10 +314,10 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
             pattern_field = Field(json_schema_extra={"x-unsupported-pattern": pattern})
             if constraints:
                 annotated = Annotated[
-                    str, StringConstraints(**constraints), pattern_field
+                    base, StringConstraints(**constraints), pattern_field
                 ]  # type: ignore[valid-type]
             else:
-                annotated = Annotated[str, pattern_field]  # type: ignore[valid-type]
+                annotated = Annotated[base, pattern_field]  # type: ignore[valid-type]
 
     return annotated
 

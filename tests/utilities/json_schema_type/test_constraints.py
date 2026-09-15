@@ -130,3 +130,39 @@ class TestNumberConstraints:
         validator = TypeAdapter(exclusive_max_number)
         with pytest.raises(ValidationError):
             validator.validate_python(100)
+
+
+class TestStringFormatConstraints:
+    """A ``format`` must not silently drop string length/pattern constraints."""
+
+    def test_custom_format_keeps_max_length(self):
+        # An unrecognized format falls back to ``str``; maxLength must still apply.
+        t = json_schema_to_type({"type": "string", "format": "phone", "maxLength": 3})
+        validator = TypeAdapter(t)
+        assert validator.validate_python("abc") == "abc"
+        with pytest.raises(ValidationError):
+            validator.validate_python("abcd")
+
+    def test_custom_format_keeps_min_length(self):
+        t = json_schema_to_type({"type": "string", "format": "phone", "minLength": 3})
+        validator = TypeAdapter(t)
+        assert validator.validate_python("abc") == "abc"
+        with pytest.raises(ValidationError):
+            validator.validate_python("ab")
+
+    def test_uri_reference_format_keeps_max_length(self):
+        t = json_schema_to_type(
+            {"type": "string", "format": "uri-reference", "maxLength": 5}
+        )
+        validator = TypeAdapter(t)
+        assert validator.validate_python("a/b") == "a/b"
+        with pytest.raises(ValidationError):
+            validator.validate_python("too/long/path")
+
+    def test_non_string_format_ignores_length(self):
+        # date-time resolves to ``datetime`` (not str), so length constraints do
+        # not apply and the type must stay datetime (regression guard).
+        import datetime
+
+        t = json_schema_to_type({"type": "string", "format": "date-time"})
+        assert t is datetime.datetime
