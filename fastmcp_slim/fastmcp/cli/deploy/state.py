@@ -68,6 +68,7 @@ def _restrict_windows_access(path: Path) -> None:
             check=True,
             capture_output=True,
             text=True,
+            timeout=15,
             env={**os.environ, "FASTMCP_STATE_PATH": str(path)},
         )
     except (OSError, subprocess.SubprocessError) as exc:
