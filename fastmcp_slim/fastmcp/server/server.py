@@ -82,7 +82,11 @@ from fastmcp.server.transforms import (
     ToolTransform,
     Transform,
 )
-from fastmcp.server.transforms.visibility import apply_session_transforms, is_enabled
+from fastmcp.server.transforms.visibility import (
+    Visibility,
+    apply_session_transforms,
+    is_enabled,
+)
 from fastmcp.settings import DuplicateBehavior as DuplicateBehaviorSetting
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.function_tool import FunctionTool
