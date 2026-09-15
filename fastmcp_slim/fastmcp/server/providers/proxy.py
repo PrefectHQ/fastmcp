@@ -11,7 +11,8 @@ import base64
 import inspect
 import time
 import warnings
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
+from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast
@@ -59,6 +60,17 @@ from fastmcp.server.dependencies import fastmcp_request_ctx, get_context
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.providers.aggregate import ProviderErrorStrategy
 from fastmcp.server.providers.base import Provider
+from fastmcp.server.providers.proxy_sessions import (
+    ClientFactoryT,
+    ProxySessionScope,
+    RequestProxySession,
+)
+from fastmcp.server.request_resources import (
+    RequestResourceKey,
+    get_request_resource,
+    request_resources_active,
+    set_request_resource,
+)
 from fastmcp.server.server import FastMCP
 from fastmcp.telemetry import inject_trace_context
 from fastmcp.tools.base import InputRequiredToolResult, Tool, ToolResult
@@ -74,8 +86,6 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-# Type alias for client factory functions
-ClientFactoryT = Callable[[], Client] | Callable[[], Awaitable[Client]]
 ProxyIdentity = Literal["proxy", "upstream"]
 
 
@@ -246,13 +256,11 @@ async def _relay_read_resource(
 def _stash_proxy_request_context(client: Client, ctx: Context) -> None:
     """Stash the proxy's ``RequestContext`` on a ``ProxyClient`` before a backend call.
 
-    Every proxy component (tool, resource, template, prompt) must call this
-    before relaying to its backend so the forwarding handlers can restore the
-    proxy's request context before relaying a server-initiated request
-    (roots/sampling/elicitation) back to the proxy's client. Required for every
-    proxy client: under SDK v2 an in-memory backend shares this event loop, so a
-    handler's ``get_context()`` would otherwise resolve to the backend context
-    and the server-initiated request would hang until timeout.
+    The shared proxy client context manager calls this for every backend operation
+    so forwarding handlers can restore the frontend request before relaying a
+    server-initiated request (roots/sampling/elicitation). Under SDK v2 an
+    in-memory backend shares this event loop, so a handler's ``get_context()``
+    would otherwise resolve to the backend context and hang until timeout.
 
     We stash a ``(RequestContext, weakref[FastMCP])`` tuple — never a ``Context``
     instance — because ``Context`` properties are themselves ContextVar-dependent
@@ -263,6 +271,36 @@ def _stash_proxy_request_context(client: Client, ctx: Context) -> None:
             ctx.request_context,
             ctx._fastmcp,  # weakref to FastMCP, not the Context
         )
+
+
+_REQUEST_PROXY_SESSIONS = RequestResourceKey[dict[Client, RequestProxySession]]()
+
+
+@asynccontextmanager
+async def _proxy_client_context(client: Client) -> AsyncIterator[None]:
+    """Balance one operation while retaining its request-owned connection."""
+    try:
+        frontend_context = get_context()
+    except RuntimeError:
+        frontend_context = None
+    if frontend_context is not None:
+        _stash_proxy_request_context(client, frontend_context)
+
+    sessions = get_request_resource(_REQUEST_PROXY_SESSIONS)
+    request_session = sessions.get(client) if sessions is not None else None
+    try:
+        if request_session is not None:
+            await request_session.retain()
+        async with client:
+            yield
+    except MCPError as error:
+        if (
+            error.error.code == mcp_types.CONNECTION_CLOSED
+            and error.error.message == "Connection closed"
+            and not client.is_connected()
+        ):
+            raise _proxy_upstream_error(RuntimeError(error.error.message)) from error
+        raise
 
 
 class ProxyInitializeMiddleware(Middleware):
@@ -289,14 +327,7 @@ class ProxyInitializeMiddleware(Middleware):
         client = await self.proxy._get_client()
         upstream_instructions: str | None = None
         try:
-            if isinstance(client, ProxyClient):
-                ctx = context.fastmcp_context
-                if ctx is not None:
-                    client._proxy_rc_ref[0] = (
-                        ctx.request_context,
-                        ctx._fastmcp,
-                    )
-            async with client:
+            async with _proxy_client_context(client):
                 # Entering the context already ran connect-time negotiation.
                 # `initialize()` returns the handshake result on a legacy backend,
                 # but raises on a modern (server/discover) backend, which has no
@@ -398,9 +429,8 @@ class ProxyTool(Tool):
         ) as span:
             span.set_attribute("fastmcp.provider.type", "ProxyProvider")
             client = await self._get_client()
-            async with client:
+            async with _proxy_client_context(client):
                 ctx = context or get_context()
-                _stash_proxy_request_context(client, ctx)
                 # Forward the inbound request's hop-safe `_meta` (trace
                 # context, progress token, etc.) to the backend. Task
                 # submission is a first-class params field rather than context
@@ -546,8 +576,7 @@ class ProxyResource(Resource):
             span.set_attribute("fastmcp.provider.type", "ProxyProvider")
             client = await self._get_client()
             ctx = get_context()
-            async with client:
-                _stash_proxy_request_context(client, ctx)
+            async with _proxy_client_context(client):
                 result = await _relay_read_resource(client, backend_uri, ctx)
             if isinstance(result, mcp_types.InputRequiredResult):
                 return InputRequiredResourceResult(result)
@@ -647,8 +676,7 @@ class ProxyTemplate(ResourceTemplate):
         parameterized_uri = expand_uri_template(backend_template, params)
         client = await self._get_client()
         ctx = context or get_context()
-        async with client:
-            _stash_proxy_request_context(client, ctx)
+        async with _proxy_client_context(client):
             result = await _relay_read_resource(client, parameterized_uri, ctx)
 
         if isinstance(result, mcp_types.InputRequiredResult):
@@ -785,8 +813,7 @@ class ProxyPrompt(Prompt):
             span.set_attribute("fastmcp.provider.type", "ProxyProvider")
             client = await self._get_client()
             ctx = get_context()
-            async with client:
-                _stash_proxy_request_context(client, ctx)
+            async with _proxy_client_context(client):
                 meta = _forwardable_request_meta(ctx)
                 if client.protocol_version in MODERN_PROTOCOL_VERSIONS:
                     # See `_relay_read_resource`: surface a backend guard's ask
@@ -888,19 +915,28 @@ class ProxyProvider(Provider):
         self,
         client_factory: ClientFactoryT,
         cache_ttl: float | None = None,
+        session_scope: ProxySessionScope = "request",
     ):
         """Initialize a ProxyProvider.
 
         Args:
-            client_factory: A callable that returns a Client instance when called.
-                           This gives you full control over session creation and reuse.
-                           Can be either a synchronous or asynchronous function.
+            client_factory: A synchronous or asynchronous callable that creates
+                or returns a Client. The factory does not connect it; connection
+                lifetime is controlled by ``session_scope``.
             cache_ttl: How long (in seconds) to cache component lists for
                       individual lookups.  Defaults to 300.  Set to 0 to
                       disable caching.
+            session_scope: ``"request"`` reuses one isolated backend session
+                within each frontend request. ``"operation"`` preserves the
+                legacy behavior where every proxy operation manages only its
+                own client context.
         """
         super().__init__()
+        if session_scope not in ("request", "operation"):
+            raise ValueError("session_scope must be 'request' or 'operation'")
         self.client_factory = client_factory
+        self.session_scope = session_scope
+        self._request_session_key = RequestResourceKey[RequestProxySession]()
         self._cache_ttl = cache_ttl if cache_ttl is not None else _DEFAULT_CACHE_TTL
         self._tools_cache: _CacheEntry[Tool] | None = None
         self._resources_cache: _CacheEntry[Resource] | None = None
@@ -908,7 +944,24 @@ class ProxyProvider(Provider):
         self._prompts_cache: _CacheEntry[Prompt] | None = None
 
     async def _get_client(self) -> Client:
-        """Gets a client instance by calling the sync or async factory."""
+        """Get a client without connecting it."""
+        if self.session_scope == "request" and request_resources_active():
+            request_session = get_request_resource(self._request_session_key)
+            if request_session is None:
+                request_session = RequestProxySession(self.client_factory)
+                set_request_resource(
+                    self._request_session_key,
+                    request_session,
+                    request_session.close,
+                )
+            client = await request_session.get_client()
+            sessions = get_request_resource(_REQUEST_PROXY_SESSIONS)
+            if sessions is None:
+                sessions = {}
+                set_request_resource(_REQUEST_PROXY_SESSIONS, sessions)
+            sessions[client] = request_session
+            return client
+
         client = self.client_factory()
         if inspect.isawaitable(client):
             client = cast(Client, await client)
@@ -922,10 +975,10 @@ class ProxyProvider(Provider):
         """List all tools from the remote server."""
         try:
             client = await self._get_client()
-            async with client:
+            async with _proxy_client_context(client):
                 mcp_tools = await client.list_tools()
                 tools = [
-                    ProxyTool.from_mcp_tool(self.client_factory, t) for t in mcp_tools
+                    ProxyTool.from_mcp_tool(self._get_client, t) for t in mcp_tools
                 ]
         except MCPError as e:
             if e.error.code == METHOD_NOT_FOUND:
@@ -1008,10 +1061,10 @@ class ProxyProvider(Provider):
         """List all resources from the remote server."""
         try:
             client = await self._get_client()
-            async with client:
+            async with _proxy_client_context(client):
                 mcp_resources = await client.list_resources()
                 resources = [
-                    ProxyResource.from_mcp_resource(self.client_factory, r)
+                    ProxyResource.from_mcp_resource(self._get_client, r)
                     for r in mcp_resources
                 ]
         except MCPError as e:
@@ -1047,10 +1100,10 @@ class ProxyProvider(Provider):
         """List all resource templates from the remote server."""
         try:
             client = await self._get_client()
-            async with client:
+            async with _proxy_client_context(client):
                 mcp_templates = await client.list_resource_templates()
                 templates = [
-                    ProxyTemplate.from_mcp_template(self.client_factory, t)
+                    ProxyTemplate.from_mcp_template(self._get_client, t)
                     for t in mcp_templates
                 ]
         except MCPError as e:
@@ -1086,10 +1139,10 @@ class ProxyProvider(Provider):
         """List all prompts from the remote server."""
         try:
             client = await self._get_client()
-            async with client:
+            async with _proxy_client_context(client):
                 mcp_prompts = await client.list_prompts()
                 prompts = [
-                    ProxyPrompt.from_mcp_prompt(self.client_factory, p)
+                    ProxyPrompt.from_mcp_prompt(self._get_client, p)
                     for p in mcp_prompts
                 ]
         except MCPError as e:
@@ -1216,16 +1269,9 @@ class ProxyMetadataMiddleware(Middleware):
             return _UpstreamServerMetadata.from_discover(result)
         return _UpstreamServerMetadata.from_client(client)
 
-    async def _read_upstream(
-        self, client: Client, context: Context | None
-    ) -> _UpstreamServerMetadata | None:
-        if context is not None:
-            _stash_proxy_request_context(client, context)
-
+    async def _read_upstream(self, client: Client) -> _UpstreamServerMetadata | None:
         try:
-            if client.is_connected():
-                return await self._read_connected(client)
-            async with client:
+            async with _proxy_client_context(client):
                 return await self._read_connected(client)
         except (MCPError, *_PROXY_TRANSPORT_ERRORS) as error:
             if isinstance(error, RuntimeError) and not _has_transport_cause(error):
@@ -1266,7 +1312,7 @@ class ProxyMetadataMiddleware(Middleware):
         result = await call_next(context)
         if result is None:
             return None
-        upstream = await self._read_upstream(client, context.fastmcp_context)
+        upstream = await self._read_upstream(client)
         if upstream is None:
             return result
         return result.model_copy(update=self._updates(result, upstream))
@@ -1283,7 +1329,7 @@ class ProxyMetadataMiddleware(Middleware):
         if not isinstance(result, mcp_types.DiscoverResult):
             return result
         client = await self.provider._get_client()
-        upstream = await self._read_upstream(client, context.fastmcp_context)
+        upstream = await self._read_upstream(client)
         if upstream is None:
             return result
         return result.model_copy(update=self._updates(result, upstream))
@@ -1473,38 +1519,42 @@ class FastMCPProxy(FastMCP):
         client_factory: ClientFactoryT,
         provider_error_strategy: ProviderErrorStrategy = "warn",
         identity: ProxyIdentity = "proxy",
+        session_scope: ProxySessionScope = "request",
         **kwargs,
     ):
         """Initialize the proxy server.
 
-        FastMCPProxy requires explicit session management via client_factory.
-        Use create_proxy() for convenience with automatic session strategy.
+        FastMCPProxy requires an explicit client factory. Use create_proxy() for
+        convenience when FastMCP should build the factory from a target.
 
         Args:
-            client_factory: A callable that returns a Client instance when called.
-                           This gives you full control over session creation and reuse.
-                           Can be either a synchronous or asynchronous function.
+            client_factory: A synchronous or asynchronous callable that creates
+                or returns a Client. It must not connect the client.
             provider_error_strategy: How provider errors should affect aggregate
                 operations. Defaults to ``"warn"`` for compatibility; use
                 ``"raise"`` when the proxy should surface upstream failures.
             identity: Whether clients see the proxy's server identity or the
                 upstream server's when available. Defaults to ``"proxy"``
                 for compatibility.
+            session_scope: Backend session lifetime. ``"request"`` reuses an
+                isolated session within one frontend request; ``"operation"``
+                preserves the legacy per-operation lifecycle.
             **kwargs: Additional settings for the FastMCP server.
         """
         super().__init__(**kwargs)
         self.provider_error_strategy = provider_error_strategy
         self.client_factory = client_factory
-        provider = ProxyProvider(client_factory)
-        self.add_provider(provider)
-        self.middleware.append(ProxyMetadataMiddleware(provider, identity=identity))
+        self._proxy_provider = ProxyProvider(
+            client_factory, session_scope=session_scope
+        )
+        self.add_provider(self._proxy_provider)
+        self.middleware.append(
+            ProxyMetadataMiddleware(self._proxy_provider, identity=identity)
+        )
         self._setup_proxy_ping_handler()
 
     async def _get_client(self) -> Client:
-        client = self.client_factory()
-        if inspect.isawaitable(client):
-            client = cast(Client, await client)
-        return client
+        return await self._proxy_provider._get_client()
 
     def _setup_proxy_ping_handler(self) -> None:
         async def ping_remote(
@@ -1512,7 +1562,7 @@ class FastMCPProxy(FastMCP):
             _params: mcp_types.RequestParams | None,
         ) -> mcp_types.EmptyResult:
             client = await self._get_client()
-            async with client:
+            async with _proxy_client_context(client):
                 await client.ping()
             return mcp_types.EmptyResult()
 

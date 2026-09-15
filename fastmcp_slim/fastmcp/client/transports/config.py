@@ -322,8 +322,8 @@ class MCPConfigTransport(ClientTransport):
         """Create underlying transport, proxy client, and proxy server for a single backend.
 
         The ProxyClient is connected via the AsyncExitStack *before* being
-        passed to create_proxy so the factory sees it as connected and reuses
-        the same session for all tool calls (instead of creating fresh copies).
+        passed to create_proxy and the proxy uses operation scope so every tool
+        call reuses that connection.
 
         `backend_mode` is the connect mode the calling client wants this backend
         leg to negotiate; `None` leaves the client at its own default era.
@@ -355,9 +355,9 @@ class MCPConfigTransport(ClientTransport):
         client = StatefulProxyClient(
             transport=transport, timeout=timeout, **client_kwargs
         )
-        # Connect the client *before* create_proxy so _create_client_factory
-        # detects it as connected and reuses it for all tool calls, preserving
-        # the session ID across requests. StatefulProxyClient is used instead
+        # Connect the client before create_proxy so its operation-scoped proxy
+        # reuses the connection across tool calls, preserving the session ID.
+        # StatefulProxyClient is used instead
         # of ProxyClient because its context-restoring handler wrappers prevent
         # stale ContextVars in the reused session's receive loop.
         #
@@ -375,6 +375,7 @@ class MCPConfigTransport(ClientTransport):
         proxy = create_proxy(
             client,
             name=f"Proxy-{name}",
+            session_scope="operation",
         )
         # Add tool transforms FIRST - they may add/modify tags
         if tool_transforms:
