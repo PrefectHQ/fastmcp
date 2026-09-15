@@ -4,10 +4,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Generic, Literal, cast, get_origin
 
-from mcp.server.elicitation import (
-    CancelledElicitation,
-    DeclinedElicitation,
-)
+from mcp.server.elicitation import CancelledElicitation as _CancelledElicitation
+from mcp.server.elicitation import DeclinedElicitation as _DeclinedElicitation
 from pydantic import BaseModel
 from pydantic.json_schema import GenerateJsonSchema, JsonSchemaValue
 from pydantic_core import core_schema
@@ -107,6 +105,24 @@ class AcceptedElicitation(BaseModel, Generic[T]):
 
     action: Literal["accept"] = "accept"
     data: T
+
+
+class DeclinedElicitation(_DeclinedElicitation):
+    """Result when the user declines the elicitation.
+
+    Falsy, so `if not result:` refuses the action. The accepted result stays
+    truthy even when its data is a negative answer; check `result.data` for that.
+    """
+
+    def __bool__(self) -> Literal[False]:
+        return False
+
+
+class CancelledElicitation(_CancelledElicitation):
+    """Result when the user cancels the elicitation. Falsy, like a decline."""
+
+    def __bool__(self) -> Literal[False]:
+        return False
 
 
 @dataclass
