@@ -284,3 +284,131 @@ class TestDiscriminatorRequestBodies:
 
         assert set(schema["properties"]) == {"petType", "meowVolume"}
         assert sorted(schema["required"]) == ["meowVolume", "petType"]
+
+
+def envelope_discriminator_spec(
+    mapping: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """The discriminated parent nested one level below the request body."""
+    spec = discriminator_spec(mapping=mapping)
+    spec["components"]["schemas"]["PetEnvelope"] = {
+        "type": "object",
+        "required": ["pet"],
+        "properties": {"pet": {"$ref": "#/components/schemas/Pet"}},
+    }
+    body = spec["paths"]["/pets"]["post"]["requestBody"]["content"]
+    body["application/json"]["schema"] = {"$ref": "#/components/schemas/PetEnvelope"}
+    return spec
+
+
+def array_envelope_discriminator_spec() -> dict[str, Any]:
+    """The discriminated parent nested inside an array of envelope items."""
+    spec = envelope_discriminator_spec()
+    envelope = spec["components"]["schemas"]["PetEnvelope"]
+    envelope["properties"] = {
+        "pets": {
+            "type": "array",
+            "items": {"$ref": "#/components/schemas/Pet"},
+        }
+    }
+    envelope["required"] = ["pets"]
+    return spec
+
+
+class TestNestedDiscriminatorRequestBodies:
+    """A discriminated schema below the top level flattens like the body itself."""
+
+    async def test_subtype_fields_are_advertised(self):
+        """Fields reachable only through the nested mapping reach the schema."""
+        schema = await tool_schema(envelope_discriminator_spec())
+
+        pet = schema["properties"]["pet"]
+        assert pet["type"] == "object"
+        assert pet["properties"].keys() >= {"petType", "meowVolume", "packSize"}
+
+    async def test_subtype_fields_are_optional(self):
+        """Only the discriminator is required inside the nested schema."""
+        schema = await tool_schema(envelope_discriminator_spec())
+
+        assert schema["properties"]["pet"]["required"] == ["petType"]
+        assert schema["required"] == ["pet"]
+
+    async def test_discriminator_property_describes_the_variants(self):
+        """The nested discriminator names which fields belong to which variant."""
+        schema = await tool_schema(envelope_discriminator_spec())
+
+        description = schema["properties"]["pet"]["properties"]["petType"][
+            "description"
+        ]
+        assert "meowVolume" in description
+        assert "packSize" in description
+
+    async def test_discriminator_keyword_is_dropped(self):
+        """The nested mapping points at defs that no longer survive."""
+        schema = await tool_schema(envelope_discriminator_spec())
+
+        assert "discriminator" not in schema["properties"]["pet"]
+        assert (
+            "discriminator" not in schema["properties"]["pet"]["properties"]["petType"]
+        )
+
+    async def test_subtype_fields_reach_the_request_body(self):
+        """The reported failure: meowVolume must reach the upstream API."""
+        received: dict[str, object] = {}
+
+        def handler(request):
+            received["body"] = json.loads(request.content)
+            return httpx2.Response(200, json={"ok": True})
+
+        async with httpx2.AsyncClient(
+            transport=httpx2.MockTransport(handler),
+            base_url="https://api.example.com",
+        ) as client:
+            server = create_openapi_server(envelope_discriminator_spec(), client)
+            async with Client(server) as mcp_client:
+                await mcp_client.call_tool(
+                    "create_pet",
+                    {"pet": {"petType": "cat", "meowVolume": 11}},
+                )
+
+        assert received["body"] == {"pet": {"petType": "cat", "meowVolume": 11}}
+
+    async def test_array_items_are_flattened(self):
+        """A discriminated schema under array items flattens the same way."""
+        schema = await tool_schema(array_envelope_discriminator_spec())
+
+        pet = schema["properties"]["pets"]["items"]
+        assert pet["properties"].keys() >= {"petType", "meowVolume", "packSize"}
+        assert pet["required"] == ["petType"]
+
+    async def test_unresolvable_mapping_is_ignored(self):
+        """An unusable mapping leaves the nested schema as it was."""
+        schema = await tool_schema(
+            envelope_discriminator_spec(mapping={"cat": "#/components/schemas/Missing"})
+        )
+
+        pet = schema["properties"]["pet"]
+        assert set(pet.get("properties", {})) <= {"petType"}
+
+    async def test_subtype_envelope_body_is_unaffected(self):
+        """A nested child ref keeps its allOf shape; merging stays top-level."""
+        spec = envelope_discriminator_spec()
+        spec["components"]["schemas"]["PetEnvelope"]["properties"] = {
+            "cat": {"$ref": "#/components/schemas/Cat"}
+        }
+        spec["components"]["schemas"]["PetEnvelope"]["required"] = ["cat"]
+
+        schema = await tool_schema(spec)
+
+        cat = schema["properties"]["cat"]
+        members = cat.get("allOf", [])
+        if members:
+            declared = {
+                prop
+                for member in members
+                if isinstance(member, dict)
+                for prop in member.get("properties", {})
+            }
+            assert declared == {"petType", "meowVolume"}
+        else:
+            assert set(cat["properties"]) == {"petType", "meowVolume"}
