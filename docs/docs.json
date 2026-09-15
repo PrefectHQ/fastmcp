@@ -301,6 +301,7 @@
                       "integrations/propelauth",
                       "integrations/scalekit",
                       "integrations/supabase",
+                      "integrations/tenuo",
                       "integrations/workos"
                     ]
                   },
