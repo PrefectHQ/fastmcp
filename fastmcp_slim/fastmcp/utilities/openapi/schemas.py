@@ -434,11 +434,7 @@ def _combine_schemas_and_map_params(
             # Update body_schema with merged properties
             body_schema["properties"] = merged_props
             if merged_required:
-                # Remove duplicates while preserving order
-                seen = set()
-                body_schema["required"] = [
-                    x for x in merged_required if not (x in seen or seen.add(x))
-                ]
+                body_schema["required"] = list(dict.fromkeys(merged_required))
             # Remove the allOf since we've merged it
             body_schema.pop("allOf", None)
 
