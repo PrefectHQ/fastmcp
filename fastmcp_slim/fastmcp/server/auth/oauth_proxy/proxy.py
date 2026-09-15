@@ -2174,6 +2174,12 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             # swap for. Return directly from the verified claims, unless the
             # token was revoked (tracked by jti until natural expiry).
             if payload.get("fastmcp_grant") == _ID_JAG_GRANT_MARKER:
+                if self._identity_assertion is None:
+                    logger.warning(
+                        "Rejected ID-JAG token: identity assertion is not configured (jti=%s)",
+                        jti[:16],
+                    )
+                    return None
                 if jti in self._revoked_id_jag_jtis:
                     logger.info("Rejected revoked ID-JAG access token jti=%s", jti[:16])
                     return None
