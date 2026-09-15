@@ -454,6 +454,14 @@ FastMCP handles array parameters according to OpenAPI specifications:
 
 Header parameters are automatically converted to strings and included in the HTTP request.
 
+### Multipart Request Bodies
+
+For `multipart/form-data`, non-empty string arrays use one form field per element. Calling a tool with `{"tags": ["a", "b"]}` sends two `tags` fields, so a backend reading repeated fields receives `["a", "b"]`.
+
+This applies when the property's `encoding` is omitted or explicitly uses the defaults: `style: form`, `explode: true`, `contentType: text/plain`, `allowReserved: false`, and no custom headers. Existing scalar fields and binary file parts keep their serialization.
+
+Empty arrays still send one field containing `[]`, and non-string arrays still use their Python string representation. Custom encodings, including `explode: false`, JSON parts, and charset overrides, are not implemented by this fix and retain their existing serialization. If a backend depended on Python list strings for non-empty string arrays, adapt it to read repeated fields.
+
 ### JSON Request Bodies
 
 Dictionary bodies without named properties use one tool argument containing the entire dictionary. For a dictionary schema titled `Labels`, calling the tool with `{"labels": {"team": "infra"}}` sends `{"team": "infra"}` to the API. Schemas without a title use the argument name `body`.
