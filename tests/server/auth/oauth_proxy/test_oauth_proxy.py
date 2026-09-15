@@ -1,12 +1,15 @@
 """Tests for OAuth proxy initialization and configuration."""
 
 import time
+from collections.abc import Mapping
+from typing import Any
 from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs, urlparse
 
 import httpx2
 import pytest
 from key_value.aio.stores.memory import MemoryStore
+from mcp.server.auth.provider import AuthorizationParams
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 from starlette.applications import Starlette
@@ -654,3 +657,138 @@ class TestCIMDTokenEndpointAudience:
             metadata = client.get("/.well-known/oauth-authorization-server").json()
 
         assert proxy.token_endpoint_url == metadata["token_endpoint"]
+
+
+class ScopeSendingProxy(OAuthProxy):
+    """A provider that opts back into sending scopes at the token endpoint."""
+
+    def _prepare_scopes_for_token_exchange(self, scopes: list[str]) -> list[str]:
+        return scopes
+
+
+class TestUpstreamTokenExchangeParams:
+    """The auth-code token request carries only RFC 6749 §4.1.3 parameters.
+
+    `scope` is requested at the authorization endpoint; the token endpoint
+    reports what was granted. Sending `scope` on the exchange is tolerated by
+    many providers but rejected by spec-following ones, so the default omits it.
+    """
+
+    @staticmethod
+    def _make_proxy(jwt_verifier, cls: type[OAuthProxy] = OAuthProxy) -> OAuthProxy:
+        return cls(
+            upstream_authorization_endpoint="https://auth.example.com/authorize",
+            upstream_token_endpoint="https://auth.example.com/token",
+            upstream_client_id="client-123",
+            upstream_client_secret="secret-456",
+            token_verifier=jwt_verifier,
+            base_url="https://myserver.com",
+            redirect_path="/auth/callback",
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+            require_authorization_consent=False,
+        )
+
+    @staticmethod
+    async def _exchange_kwargs(
+        proxy: OAuthProxy, txn_id: str, scopes: list[str]
+    ) -> Mapping[str, Any]:
+        """Drive the IdP callback and return the token-endpoint kwargs."""
+        client_info = OAuthClientInformationFull(
+            client_id="exchange-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+        await proxy.register_client(client_info)
+        await proxy._transaction_store.put(
+            key=txn_id,
+            value=OAuthTransaction(
+                txn_id=txn_id,
+                client_id="exchange-client",
+                client_redirect_uri="http://localhost:12345/callback",
+                client_state="client-state",
+                code_challenge=None,
+                code_challenge_method="S256",
+                scopes=scopes,
+                created_at=time.time(),
+            ),
+        )
+
+        app = Starlette(routes=proxy.get_routes())
+        transport = httpx2.ASGITransport(app=app)
+        with patch(
+            "fastmcp.server.auth.oauth_proxy.proxy.AsyncOAuth2Client"
+        ) as MockClient:
+            mock_client = AsyncMock()
+            mock_client.fetch_token = AsyncMock(
+                return_value={
+                    "access_token": "upstream-access-token",
+                    "token_type": "Bearer",
+                    "expires_in": 3600,
+                    "scope": " ".join(scopes),
+                }
+            )
+            MockClient.return_value = mock_client
+
+            async with httpx2.AsyncClient(
+                transport=transport,
+                base_url="https://myserver.com",
+                follow_redirects=False,
+            ) as http_client:
+                response = await http_client.get(
+                    f"/auth/callback?code=idp-code&state={txn_id}"
+                )
+
+        assert response.status_code == 302
+        call = mock_client.fetch_token.await_args
+        assert call is not None
+        return call.kwargs
+
+    async def test_token_exchange_omits_scope(self, jwt_verifier):
+        """The client's scopes are not echoed back at the token endpoint."""
+        proxy = self._make_proxy(jwt_verifier)
+
+        kwargs = await self._exchange_kwargs(
+            proxy, "txn-no-scope", ["openid", "profile"]
+        )
+
+        assert "scope" not in kwargs
+        # The parameters that *do* belong on an authorization-code exchange
+        # are still sent.
+        assert kwargs["code"] == "idp-code"
+        assert kwargs["redirect_uri"] == "https://myserver.com/auth/callback"
+
+    async def test_provider_override_can_still_send_scope(self, jwt_verifier):
+        """Opting back in stays possible for providers that require it."""
+        proxy = self._make_proxy(jwt_verifier, cls=ScopeSendingProxy)
+
+        kwargs = await self._exchange_kwargs(
+            proxy, "txn-sends-scope", ["openid", "profile"]
+        )
+
+        assert kwargs["scope"] == "openid profile"
+
+    async def test_scope_is_still_requested_at_the_authorization_endpoint(
+        self, jwt_verifier
+    ):
+        """Omitting scope on the exchange must not drop it from the authorize leg."""
+        proxy = self._make_proxy(jwt_verifier)
+        client_info = OAuthClientInformationFull(
+            client_id="authorize-client",
+            client_secret="test-secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+        await proxy.register_client(client_info)
+
+        url = await proxy.authorize(
+            client_info,
+            AuthorizationParams(
+                redirect_uri=AnyUrl("http://localhost:12345/callback"),
+                redirect_uri_provided_explicitly=True,
+                state="client-state",
+                code_challenge="",
+                scopes=["openid", "profile"],
+            ),
+        )
+
+        assert parse_qs(urlparse(url).query)["scope"] == ["openid profile"]
