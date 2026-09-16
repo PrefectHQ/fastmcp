@@ -384,7 +384,7 @@ class FunctionTool(Tool):
         exec_fn = _wrap_body_errors(wrapper_fn)
         type_adapter = get_cached_typeadapter(exec_fn)
         exec_is_async = is_coroutine_function(wrapper_fn)
-        strict = _strict_input_validation()
+        strict = True if _strict_input_validation() else None
 
         result = await self._run_body(
             type_adapter, exec_is_async, arguments, strict=strict
@@ -406,7 +406,7 @@ class FunctionTool(Tool):
         exec_is_async: bool,
         arguments: dict[str, Any],
         *,
-        strict: bool,
+        strict: bool | None,
     ) -> Any:
         """Validate arguments and execute the body, applying any timeout."""
         try:
@@ -453,7 +453,7 @@ class FunctionTool(Tool):
         exec_is_async: bool,
         arguments: dict[str, Any],
         *,
-        strict: bool = False,
+        strict: bool | None = None,
     ) -> Any:
         """Validate arguments and execute the tool body.
 

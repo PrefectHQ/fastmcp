@@ -7,12 +7,12 @@ strict_input_validation=False, the default).
 """
 
 import json
-from typing import Any
+from typing import Annotated, Any
 
 import pytest
 from mcp.shared.exceptions import MCPError
 from mcp_types import TextContent
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 from pydantic_core import PydanticCustomError
 
 from fastmcp import Client, FastMCP
@@ -225,6 +225,62 @@ class TestPydanticModelArguments:
                         }
                     },
                 )
+
+
+class TestFieldLevelStrictness:
+    """Strictness declared on the parameter itself must survive lax server mode."""
+
+    async def test_strict_field_rejects_coercion(self):
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def echo(value: Annotated[int, Field(strict=True)]) -> int:
+            return value
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool("echo", {"value": "5"})
+            result = await client.call_tool("echo", {"value": 5})
+            assert isinstance(result.content[0], TextContent)
+            assert result.content[0].text == "5"
+
+    async def test_strict_type_rejects_coercion(self):
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def echo(value: StrictInt) -> int:
+            return value
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool("echo", {"value": 5.0})
+
+    async def test_strict_model_config_rejects_coercion(self):
+        class Payload(BaseModel):
+            model_config = ConfigDict(strict=True)
+            count: int
+
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def echo(payload: Payload) -> int:
+            return payload.count
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool("echo", {"payload": {"count": "5"}})
+
+    async def test_lax_fields_still_coerce(self):
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def echo(value: int) -> int:
+            return value
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("echo", {"value": "5"})
+            assert isinstance(result.content[0], TextContent)
+            assert result.content[0].text == "5"
 
 
 class TestValidationErrorMessages:
