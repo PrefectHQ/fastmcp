@@ -87,6 +87,9 @@ def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
     - Path params: `{var}`, `{var*}`
     - Query params: `{?var1,var2}`
     """
+    # Strip URI fragment: fragments are client-side only and must not leak
+    # into query values (e.g. ?filter=active#section -> filter=active).
+    uri, _, _ = uri.partition("#")
     # Split URI into path and query parts
     uri_path, _, query_string = uri.partition("?")
 
