@@ -408,3 +408,43 @@ class TestResourceTemplateFieldDefaults:
         assert result2["limit"] == 50  # overridden
         assert result2["offset"] == 0  # default
         assert result2["format"] == "xml"  # overridden
+
+
+class TestUriFragmentStripping:
+    """URI fragments must not leak into matched params (issue #5129)."""
+
+    async def test_query_value_ignores_fragment(self):
+        def get_data(id: str, filter: str = "all") -> str:
+            return f"{id}:{filter}"
+
+        template = ResourceTemplate.from_function(
+            fn=get_data,
+            uri_template="test://items{?filter}",
+            name="test",
+        )
+        params = template.matches("test://items?filter=active#section")
+        assert params == {"filter": "active"}
+
+    async def test_path_param_ignores_fragment(self):
+        def get_item(id: str) -> str:
+            return id
+
+        template = ResourceTemplate.from_function(
+            fn=get_item,
+            uri_template="test://items/{id}",
+            name="test",
+        )
+        params = template.matches("test://items/42#frag")
+        assert params == {"id": "42"}
+
+    async def test_encoded_hash_preserved(self):
+        def get_data(filter: str = "all") -> str:
+            return filter
+
+        template = ResourceTemplate.from_function(
+            fn=get_data,
+            uri_template="test://items{?filter}",
+            name="test",
+        )
+        params = template.matches("test://items?filter=a%23b")
+        assert params == {"filter": "a#b"}
