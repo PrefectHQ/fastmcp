@@ -5,6 +5,59 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v4.0.4" description="2026-09-15">
+
+**[v4.0.4: Here Be No Dragons](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.4)**
+
+OpenAPI request bodies get most of the attention in this patch: multipart string arrays are sent as repeated fields, whole-body arguments no longer clobber same-named HTTP parameters, dictionary bodies and raw content types survive intact, and JSON scalar bodies are encoded. On the auth side, OAuthProxy rejects ID-JAG tokens unless identity assertion is configured and refuses non-positive upstream token expiries. Clients now follow empty pagination cursors and servers reject malformed ones.
+
+### Enhancements ✨
+* Refresh the smart-home example with Hue V2 and native effects by [@zzstoatzz](https://github.com/zzstoatzz) in [#5009](https://github.com/PrefectHQ/fastmcp/pull/5009)
+* Update CodeMode for pydantic-monty 0.0.21 by [@strawgate](https://github.com/strawgate) in [#5033](https://github.com/PrefectHQ/fastmcp/pull/5033)
+* Keep linked contributor PRs open while awaiting assignment by [@zzstoatzz](https://github.com/zzstoatzz) in [#5048](https://github.com/PrefectHQ/fastmcp/pull/5048)
+* Reduce redundant CI execution while preserving required checks by [@zzstoatzz](https://github.com/zzstoatzz) in [#5049](https://github.com/PrefectHQ/fastmcp/pull/5049)
+* Share and streamline repository skills by [@zzstoatzz](https://github.com/zzstoatzz) in [#5013](https://github.com/PrefectHQ/fastmcp/pull/5013)
+* Support anthropic 1.x alongside 0.x by [@tdsmith](https://github.com/tdsmith) in [#5066](https://github.com/PrefectHQ/fastmcp/pull/5066)
+* renovate: cap routine PRs at 5 concurrent and 5 per hour by [@zzstoatzz](https://github.com/zzstoatzz) in [#5110](https://github.com/PrefectHQ/fastmcp/pull/5110)
+* Give docs quality checks a corpus-wide timeout by [@zzstoatzz](https://github.com/zzstoatzz) in [#5109](https://github.com/PrefectHQ/fastmcp/pull/5109)
+* Resolve ty 0.0.79 warnings from upgrade checks by [@zzstoatzz](https://github.com/zzstoatzz) in [#5123](https://github.com/PrefectHQ/fastmcp/pull/5123)
+### Security 🔒
+* Fix #5115: OAuthProxy accepts self-contained ID-JAG tokens even when identity_ass by [@nandanadileep](https://github.com/nandanadileep) in [#5119](https://github.com/PrefectHQ/fastmcp/pull/5119)
+### Fixes 🐞
+* Fix upgrade checks for the M2M storage warning test by [@zzstoatzz](https://github.com/zzstoatzz) in [#5040](https://github.com/PrefectHQ/fastmcp/pull/5040)
+* Fix OpenAPI query explode defaults by [@zzstoatzz](https://github.com/zzstoatzz) in [#5065](https://github.com/PrefectHQ/fastmcp/pull/5065)
+* fix(openapi): encode JSON scalar request bodies by [@Gonghan-Princess](https://github.com/Gonghan-Princess) in [#5052](https://github.com/PrefectHQ/fastmcp/pull/5052)
+* fix(versions): deterministic meta.fastmcp.versions ordering by [@feiiiiii5](https://github.com/feiiiiii5) in [#4880](https://github.com/PrefectHQ/fastmcp/pull/4880)
+* Parse skills frontmatter with yaml.safe_load, falling back to the line parser by [@vishnujayvel](https://github.com/vishnujayvel) in [#4701](https://github.com/PrefectHQ/fastmcp/pull/4701)
+* Keep client data out of tool validation warnings by [@zzstoatzz](https://github.com/zzstoatzz) in [#5106](https://github.com/PrefectHQ/fastmcp/pull/5106)
+* fix: follow empty pagination cursors in client lists by [@sicauzxl](https://github.com/sicauzxl) in [#5026](https://github.com/PrefectHQ/fastmcp/pull/5026)
+* fix: reject non-positive upstream token expiry by [@sui-ni2](https://github.com/sui-ni2) in [#4849](https://github.com/PrefectHQ/fastmcp/pull/4849)
+* fix(server): reject a malformed pagination cursor offset by [@L4XB](https://github.com/L4XB) in [#5071](https://github.com/PrefectHQ/fastmcp/pull/5071)
+* fix(openapi): preserve dictionary request bodies by [@asts-top](https://github.com/asts-top) in [#5097](https://github.com/PrefectHQ/fastmcp/pull/5097)
+* Preserve OpenAPI raw body content types by [@pentaoa](https://github.com/pentaoa) in [#5093](https://github.com/PrefectHQ/fastmcp/pull/5093)
+* fix(openapi): preserve HTTP parameters that match whole-body names by [@asts-top](https://github.com/asts-top) in [#5113](https://github.com/PrefectHQ/fastmcp/pull/5113)
+* fix(local-provider): apply transforms in get_tasks by [@BlueX888](https://github.com/BlueX888) in [#5117](https://github.com/PrefectHQ/fastmcp/pull/5117)
+* Fix multipart string-array default encoding by [@zzstoatzz](https://github.com/zzstoatzz) in [#5121](https://github.com/PrefectHQ/fastmcp/pull/5121)
+### Other Changes 🦾
+* chore(deps): Update github actions (major) by @prefect-renovate[bot] in https://github.com/PrefectHQ/fastmcp/pull/4890
+
+## New Contributors
+* @Gonghan-Princess made their first contribution in [#5052](https://github.com/PrefectHQ/fastmcp/pull/5052)
+* @tdsmith made their first contribution in [#5066](https://github.com/PrefectHQ/fastmcp/pull/5066)
+* @feiiiiii5 made their first contribution in [#4880](https://github.com/PrefectHQ/fastmcp/pull/4880)
+* @vishnujayvel made their first contribution in [#4701](https://github.com/PrefectHQ/fastmcp/pull/4701)
+* @sicauzxl made their first contribution in [#5026](https://github.com/PrefectHQ/fastmcp/pull/5026)
+* @sui-ni2 made their first contribution in [#4849](https://github.com/PrefectHQ/fastmcp/pull/4849)
+* @L4XB made their first contribution in [#5071](https://github.com/PrefectHQ/fastmcp/pull/5071)
+* @asts-top made their first contribution in [#5097](https://github.com/PrefectHQ/fastmcp/pull/5097)
+* @pentaoa made their first contribution in [#5093](https://github.com/PrefectHQ/fastmcp/pull/5093)
+* @BlueX888 made their first contribution in [#5117](https://github.com/PrefectHQ/fastmcp/pull/5117)
+* @nandanadileep made their first contribution in [#5119](https://github.com/PrefectHQ/fastmcp/pull/5119)
+
+**Full Changelog**: [v4.0.3...v4.0.4](https://github.com/PrefectHQ/fastmcp/compare/v4.0.3...v4.0.4)
+
+</Update>
+
 <Update label="v4.0.3" description="2026-09-04">
 
 **[v4.0.3: Once Is Enough](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.3)**
