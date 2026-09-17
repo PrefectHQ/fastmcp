@@ -6,7 +6,8 @@ import functools
 import inspect
 import re
 from collections.abc import Callable
-from typing import Any, ClassVar
+from types import UnionType
+from typing import Annotated, Any, ClassVar, Union, get_args, get_origin
 from urllib.parse import parse_qs, quote, unquote
 
 from mcp_types import Annotations, Icon
@@ -36,10 +37,45 @@ from fastmcp.utilities.types import get_cached_typeadapter
 
 
 def extract_query_params(uri_template: str) -> set[str]:
-    """Extract query parameter names from RFC 6570 `{?param1,param2}` syntax."""
+    """Extract query parameter names from RFC 6570 `{?param1,param2}` syntax.
+
+    The explode modifier is stripped, so `{?tags*}` yields `{"tags"}`. Use
+    `extract_exploded_query_params` to find which names carried it.
+    """
     match = re.search(r"\{\?([^}]+)\}", uri_template)
     if match:
-        return {p.strip() for p in match.group(1).split(",")}
+        return {p.strip().removesuffix("*") for p in match.group(1).split(",")}
+    return set()
+
+
+def _is_list_annotation(annotation: Any) -> bool:
+    """Whether an annotation accepts a list — including `Annotated[list[str] | None, ...]`.
+
+    Only `list` counts: it is the only collection `expand_uri_template` emits as
+    repeated keys, so it is the only one that round-trips.
+    """
+    if annotation is list:
+        return True
+    origin = get_origin(annotation)
+    if origin is list:
+        return True
+    if origin is Annotated:
+        return _is_list_annotation(get_args(annotation)[0])
+    if origin in (Union, UnionType):
+        return any(_is_list_annotation(arg) for arg in get_args(annotation))
+    return False
+
+
+def extract_exploded_query_params(uri_template: str) -> set[str]:
+    """Extract query parameter names declared with the RFC 6570 explode modifier.
+
+    `{?tags*}` marks `tags` as repeatable — `?tags=a&tags=b` collects into a
+    list rather than collapsing to the first value.
+    """
+    match = re.search(r"\{\?([^}]+)\}", uri_template)
+    if match:
+        names = [p.strip() for p in match.group(1).split(",")]
+        return {n.removesuffix("*") for n in names if n.endswith("*")}
     return set()
 
 
@@ -80,7 +116,7 @@ def build_regex(template: str) -> re.Pattern[str] | None:
         return None
 
 
-def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
+def match_uri_template(uri: str, uri_template: str) -> dict[str, Any] | None:
     """Match URI against template and extract both path and query parameters.
 
     Supports RFC 6570 URI templates:
@@ -98,7 +134,7 @@ def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
     if not match:
         return None
 
-    params = {k: unquote(v) for k, v in match.groupdict().items()}
+    params: dict[str, Any] = {k: unquote(v) for k, v in match.groupdict().items()}
 
     # Extract query parameters if present in URI and template
     if query_string:
@@ -107,14 +143,21 @@ def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
         # so callers can distinguish "explicitly empty" from "missing".
         parsed_query = parse_qs(query_string, keep_blank_values=True)
 
+        exploded = extract_exploded_query_params(uri_template)
+
         for name in query_param_names:
             if name in parsed_query:
-                # Take first value if multiple provided.
                 # Normalize hyphens to underscores to match Python param names.
                 # Don't overwrite path params that were already extracted.
                 key = name.replace("-", "_")
                 if key not in params:
-                    params[key] = parsed_query[name][0]
+                    # An exploded `{?name*}` param keeps every repetition;
+                    # a plain `{?name}` param is a scalar, so take the first.
+                    params[key] = (
+                        parsed_query[name]
+                        if name in exploded
+                        else parsed_query[name][0]
+                    )
 
     return params
 
@@ -153,11 +196,24 @@ def expand_uri_template(uri_template: str, params: dict[str, Any]) -> str:
         names = [n.strip() for n in match.group(1).split(",")]
         parts = []
         for name in names:
+            # The template decides the serialization, not the runtime value:
+            # `{?tags*}` emits a repeated key, `{?tags}` stays a single value.
+            # Keying off the value type instead would expand a list under a
+            # plain `{?tags}`, which match_uri_template then reads back as just
+            # its first element.
+            exploded = name.endswith("*")
+            name = name.removesuffix("*")
             underscored = name.replace("-", "_")
             if name in params:
-                parts.append(f"{quote(name)}={quote(str(params[name]))}")
+                value = params[name]
             elif underscored in params:
-                parts.append(f"{quote(name)}={quote(str(params[underscored]))}")
+                value = params[underscored]
+            else:
+                continue
+            if exploded and isinstance(value, (list, tuple)):
+                parts.extend(f"{quote(name)}={quote(str(v))}" for v in value)
+            else:
+                parts.append(f"{quote(name)}={quote(str(value))}")
         if parts:
             return "?" + "&".join(parts)
         return ""
@@ -516,6 +572,38 @@ class FunctionResourceTemplate(ResourceTemplate):
                 raise ValueError(
                     f"Query parameters {invalid_query_params} must be optional function parameters with default values"
                 )
+
+            # A list-typed query parameter needs the RFC 6570 explode modifier;
+            # without it the parameter is a scalar and every value but the first
+            # is silently dropped, which then fails validation at read time.
+            #
+            # Resolve the hints rather than reading the raw signature: under
+            # `from __future__ import annotations` every annotation is a string,
+            # and `Annotated[...]` wrappers hide the underlying type.
+            from fastmcp.tools.function_tool import _resolve_param_hints
+
+            try:
+                hints = _resolve_param_hints(fn)
+            except NameError:
+                # Pydantic resolves annotations against namespaces this doesn't
+                # see, so a name we can't resolve may still be valid. Fall back
+                # to the raw form rather than failing a working registration.
+                hints = {}
+
+            exploded = {
+                p.replace("-", "_") for p in extract_exploded_query_params(uri_template)
+            }
+            for param_name in sorted(query_params - exploded):
+                annotation = hints.get(
+                    param_name, user_sig.parameters[param_name].annotation
+                )
+                if _is_list_annotation(annotation):
+                    raise ValueError(
+                        f"Query parameter '{param_name}' is a list type, so it "
+                        f"must be declared with the RFC 6570 explode modifier: "
+                        f"use '{{?{param_name}*}}' instead of '{{?{param_name}}}' "
+                        f"so repeated values (?{param_name}=a&{param_name}=b) are collected."
+                    )
 
         # Check if required parameters are a subset of the path parameters
         if not required_params.issubset(path_params):
