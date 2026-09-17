@@ -1165,6 +1165,26 @@ async def test_mounted_validation_error_uses_public_identity() -> None:
     assert "https://" not in message
 
 
+async def test_detailed_schema_enum_union_rules() -> None:
+    from typing import Literal
+
+    mcp = FastMCP("Unions")
+
+    @mcp.tool
+    def send(
+        mixed: Literal["a"] | int = 3,
+        merged: Literal["x"] | Literal["y", "z"] | None = None,
+    ) -> str:
+        return str(mixed)
+
+    mcp.add_transform(CodeMode())
+    result = await _run_tool(mcp, "get_schema", {"tools": ["send"]})
+    text = str(_unwrap_result(result))
+    assert 'one of "a"' not in text
+    assert "default 3" in text
+    assert 'one of "x"/"y"/"z"' in text
+
+
 async def test_detailed_schema_includes_single_value_literals() -> None:
     from typing import Literal
 

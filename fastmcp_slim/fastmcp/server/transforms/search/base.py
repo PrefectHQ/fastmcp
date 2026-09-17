@@ -137,6 +137,34 @@ def _schema_section(schema: dict[str, Any] | None, title: str) -> list[str]:
     return lines
 
 
+def _enum_values(schema: Any) -> list[Any] | None:
+    if not isinstance(schema, dict):
+        return None
+    if "const" in schema:
+        return [schema["const"]]
+    enum = schema.get("enum")
+    return enum if isinstance(enum, list) else None
+
+
+def _union_enum_values(variants: Any) -> list[Any] | None:
+    """Enum values of a union, only when every non-null branch is enumerated.
+
+    A union such as `Literal["a"] | int` has no closed set of valid values, so
+    listing "a" alone would contradict the rendered type.
+    """
+    if not isinstance(variants, list):
+        return None
+    values: list[Any] = []
+    for variant in variants:
+        if isinstance(variant, dict) and variant.get("type") == "null":
+            continue
+        branch = _enum_values(variant)
+        if branch is None:
+            return None
+        values.extend(v for v in branch if v not in values)
+    return values or None
+
+
 def _render_param(name: str, field: Any, *, required: bool) -> str:
     """One compact line per parameter: type, enum values, default.
 
@@ -148,18 +176,9 @@ def _render_param(name: str, field: Any, *, required: bool) -> str:
     """
     qualifiers = [_schema_type(field)]
     if isinstance(field, dict):
-        enum = [field["const"]] if "const" in field else field.get("enum")
-        if not isinstance(enum, list):
-            for variant in field.get("anyOf", []):
-                if isinstance(variant, dict):
-                    candidate = (
-                        [variant["const"]]
-                        if "const" in variant
-                        else variant.get("enum")
-                    )
-                    if isinstance(candidate, list):
-                        enum = candidate
-                        break
+        enum = _enum_values(field)
+        if enum is None and "anyOf" in field:
+            enum = _union_enum_values(field["anyOf"])
         if isinstance(enum, list) and 0 < len(enum) <= 8:
             qualifiers.append("one of " + "/".join(json.dumps(v) for v in enum))
         if field.get("default") is not None:
