@@ -1,5 +1,6 @@
 """Schema manipulation utilities for OpenAPI operations."""
 
+import re
 from collections import Counter
 from typing import Any
 
@@ -433,11 +434,7 @@ def _combine_schemas_and_map_params(
             # Update body_schema with merged properties
             body_schema["properties"] = merged_props
             if merged_required:
-                # Remove duplicates while preserving order
-                seen = set()
-                body_schema["required"] = [
-                    x for x in merged_required if not (x in seen or seen.add(x))
-                ]
+                body_schema["required"] = list(dict.fromkeys(merged_required))
             # Remove the allOf since we've merged it
             body_schema.pop("allOf", None)
 
@@ -461,6 +458,17 @@ def _combine_schemas_and_map_params(
         all_non_body_params.update(location_params)
 
     body_param_names = set(body_props.keys())
+    body_param_name = "body"
+    if route.request_body and route.request_body.content_schema and not body_props:
+        # Whole-body arguments participate in collision detection too. References
+        # keep the name "body"; other schemas use their normalized title.
+        if "$ref" not in body_schema:
+            body_param_name = re.sub(
+                r"[^a-zA-Z0-9_]", "_", body_schema.get("title", "body").lower()
+            )
+            if not body_param_name or body_param_name[0].isdigit():
+                body_param_name = "body_data"
+        body_param_names.add(body_param_name)
     non_body_param_counts = Counter(param.name for param in route.parameters)
     colliding_params = (all_non_body_params & body_param_names) | {
         name for name, count in non_body_param_counts.items() if count > 1
@@ -524,16 +532,7 @@ def _combine_schemas_and_map_params(
 
     # Add request body properties (no suffixes for body parameters)
     if route.request_body and route.request_body.content_schema:
-        # If body is just a $ref, we need to handle it differently
-        if "$ref" in body_schema and not body_props:
-            # The entire body is a reference to a schema
-            # We need to expand this inline or keep the ref
-            # For simplicity, we'll keep it as a single property
-            properties["body"] = body_schema
-            if route.request_body.required:
-                required.append("body")
-            parameter_map["body"] = {"location": "body", "openapi_name": "body"}
-        elif body_props:
+        if body_props:
             # Normal case: body has properties
             for prop_name, prop_schema in body_props.items():
                 properties[prop_name] = prop_schema
@@ -547,21 +546,13 @@ def _combine_schemas_and_map_params(
             if route.request_body.required:
                 required.extend(body_schema.get("required", []))
         else:
-            # Handle direct array/primitive schemas (like list[str] parameters from FastAPI)
-            # Use the schema title as parameter name, fall back to generic name
-            param_name = body_schema.get("title", "body").lower()
-
-            # Clean the parameter name to be valid
-            import re
-
-            param_name = re.sub(r"[^a-zA-Z0-9_]", "_", param_name)
-            if not param_name or param_name[0].isdigit():
-                param_name = "body_data"
-
-            properties[param_name] = body_schema
+            properties[body_param_name] = body_schema
             if route.request_body.required:
-                required.append(param_name)
-            parameter_map[param_name] = {"location": "body", "openapi_name": param_name}
+                required.append(body_param_name)
+            parameter_map[body_param_name] = {
+                "location": "body",
+                "openapi_name": body_param_name,
+            }
 
     result = {
         "type": "object",

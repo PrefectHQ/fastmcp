@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 
 @dataclass
 class SkillFileInfo:
@@ -30,14 +32,61 @@ class SkillInfo:
     frontmatter: dict[str, Any] = field(default_factory=dict)
 
 
+def _parse_frontmatter_line_based(frontmatter_text: str) -> dict[str, Any]:
+    """Legacy line-based frontmatter parser (key: value only).
+
+    Used as a fallback when full YAML parsing fails so plain scalar keys
+    (including values that contain `: `) are not discarded entirely.
+    Multiline YAML block scalars (`|` / `>`) are not supported here —
+    those require a successful `yaml.safe_load`.
+    """
+    frontmatter: dict[str, Any] = {}
+    for line in frontmatter_text.strip().split("\n"):
+        if ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        key = key.strip()
+        value = value.strip()
+
+        # Handle quoted strings
+        if (value.startswith('"') and value.endswith('"')) or (
+            value.startswith("'") and value.endswith("'")
+        ):
+            value = value[1:-1]
+
+        # Handle lists [a, b, c]
+        if value.startswith("[") and value.endswith("]"):
+            items = value[1:-1].split(",")
+            value = [item.strip().strip("\"'") for item in items if item.strip()]
+
+        frontmatter[key] = value
+    return frontmatter
+
+
 def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     """Parse YAML frontmatter from markdown content.
+
+    Uses `yaml.BaseLoader` so multiline block scalars (`|` / `>`) work while
+    every scalar value is returned as a plain string. `SkillInfo.frontmatter`
+    is a public mapping; letting a full loader (e.g. `safe_load`) apply
+    implicit scalar typing would silently turn `version: 1.10` into the float
+    `1.1`, `enabled: yes` into `True`, or a date-like value into
+    `datetime.date` for every skill author, which is a backwards-incompatible
+    surprise rather than an internal detail. `BaseLoader` has no such
+    constructors, so values round-trip as written. If YAML parsing fails
+    (invalid YAML, recursion limit, etc.), falls back to a line-based
+    key:value parser so plain frontmatter is not discarded.
 
     Args:
         content: Markdown content potentially starting with ---
 
     Returns:
-        Tuple of (frontmatter dict, remaining content)
+        Tuple of (frontmatter dict, remaining content). If no frontmatter
+        block is found at all (no opening/closing `---` delimiters),
+        returns `({}, content)` unchanged. If a delimited block is found
+        but is empty or does not parse to a YAML mapping (and the line-based
+        fallback also yields nothing), returns `({}, remaining)` with the
+        delimited block stripped.
     """
     content = content.removeprefix("\ufeff")
 
@@ -52,28 +101,16 @@ def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     frontmatter_text = content[3 : 3 + end_match.start()]
     remaining = content[3 + end_match.end() :]
 
-    # Parse YAML (simple key: value parsing, no complex types)
-    frontmatter: dict[str, Any] = {}
-    for line in frontmatter_text.strip().split("\n"):
-        if ":" in line:
-            key, _, value = line.partition(":")
-            key = key.strip()
-            value = value.strip()
+    try:
+        parsed = yaml.load(frontmatter_text, Loader=yaml.BaseLoader)
+    except (yaml.YAMLError, RecursionError):
+        # Prefer partial recovery over discarding every key (issue #4416 review).
+        return _parse_frontmatter_line_based(frontmatter_text), remaining
 
-            # Handle quoted strings
-            if (value.startswith('"') and value.endswith('"')) or (
-                value.startswith("'") and value.endswith("'")
-            ):
-                value = value[1:-1]
+    if not isinstance(parsed, dict):
+        return {}, remaining
 
-            # Handle lists [a, b, c]
-            if value.startswith("[") and value.endswith("]"):
-                items = value[1:-1].split(",")
-                value = [item.strip().strip("\"'") for item in items if item.strip()]
-
-            frontmatter[key] = value
-
-    return frontmatter, remaining
+    return parsed, remaining
 
 
 def compute_file_hash(path: Path) -> str:

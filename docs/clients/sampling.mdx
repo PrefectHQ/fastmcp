@@ -143,7 +143,9 @@ client = Client(
 ```
 
 <Note>
-Install the Anthropic handler with `pip install 'fastmcp[anthropic]'`.
+Install the Anthropic handler with `pip install 'fastmcp[anthropic]'`. The handler supports Anthropic SDK 0.48.0 through 1.x.
+
+When upgrading to Anthropic SDK 1.x, custom HTTP clients passed to `AsyncAnthropic` must use `httpx2` instead of `httpx`. See Anthropic's [migration guide](https://github.com/anthropics/anthropic-sdk-python/blob/main/MIGRATION.md) for changes to SDK integrations. The handler continues to forward an explicitly requested temperature, including zero, for models that support it.
 </Note>
 
 ### Google Gemini Handler

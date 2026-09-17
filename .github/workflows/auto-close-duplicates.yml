@@ -26,7 +26,7 @@ jobs:
           private-key: ${{ secrets.MARVIN_APP_PRIVATE_KEY }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v9.0.0
+        uses: astral-sh/setup-uv@v10.0.1
 
       - name: Auto-close duplicate issues
         run: uv run scripts/auto_close_duplicates.py

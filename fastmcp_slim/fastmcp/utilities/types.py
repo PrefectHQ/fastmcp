@@ -274,9 +274,9 @@ class Image:
         if self.path:
             # Workaround for WEBP in Py3.10
             mimetypes.add_type("image/webp", ".webp")
-            resp = mimetypes.guess_type(self.path, strict=False)
-            if resp and resp[0] is not None:
-                return resp[0]
+            mime_type, _ = mimetypes.guess_type(self.path, strict=False)
+            if mime_type is not None:
+                return mime_type
             return "application/octet-stream"
         return "image/png"  # default for raw binary data
 

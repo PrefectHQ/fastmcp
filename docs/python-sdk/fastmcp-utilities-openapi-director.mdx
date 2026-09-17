@@ -10,7 +10,7 @@ Request director using openapi-core for stateless HTTP request building.
 
 ## Classes
 
-### `RequestDirector` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/openapi/director.py#L29" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `RequestDirector` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/openapi/director.py#L44" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Builds httpx2.Request objects from HTTPRoute and arguments using openapi-core.
@@ -18,7 +18,7 @@ Builds httpx2.Request objects from HTTPRoute and arguments using openapi-core.
 
 **Methods:**
 
-#### `build` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/openapi/director.py#L36" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `build` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/utilities/openapi/director.py#L51" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 build(self, route: HTTPRoute, flat_args: dict[str, Any], base_url: str = 'http://localhost') -> httpx2.Request

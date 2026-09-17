@@ -144,7 +144,7 @@ def coerce_task_arguments(
     component: FastMCPComponent,
     arguments: dict[str, Any],
     *,
-    strict: bool = False,
+    strict: bool | None = None,
 ) -> dict[str, Any]:
     """Validate and coerce task arguments before any task state is created.
 
