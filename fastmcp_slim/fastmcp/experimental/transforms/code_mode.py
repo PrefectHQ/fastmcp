@@ -93,6 +93,24 @@ def _legible_call_error(
     return message
 
 
+def _error_detail(result: ToolResult) -> dict[str, Any] | str:
+    """What an `is_error` result tells the model: text, else structured, else generic.
+
+    Non-text blocks are never stringified; an image's base64 payload would
+    swamp the model's context without explaining the failure.
+    """
+    text = "\n".join(
+        item.text
+        for item in result.content
+        if isinstance(item, TextContent) and item.text
+    )
+    if text:
+        return text
+    if result.structured_content is not None:
+        return result.structured_content
+    return "tool returned an error"
+
+
 def _unwrap_tool_result(result: ToolResult) -> dict[str, Any] | str:
     """Convert a ToolResult for use in the sandbox.
 
@@ -717,16 +735,7 @@ class CodeMode(CatalogTransform):
                     raise ToolError(_legible_call_error(tool_name, tool, exc)) from exc
                 if result.is_error:
                     raise ToolError(
-                        _legible_call_error(
-                            tool_name,
-                            tool,
-                            "\n".join(
-                                item.text
-                                for item in result.content
-                                if isinstance(item, TextContent) and item.text
-                            )
-                            or _unwrap_tool_result(result),
-                        )
+                        _legible_call_error(tool_name, tool, _error_detail(result))
                     )
                 return _unwrap_tool_result(result)
 
