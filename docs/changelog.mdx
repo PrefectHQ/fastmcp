@@ -5,6 +5,22 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v4.0.5" description="2026-09-17">
+
+**[v4.0.5: No Country for Loose Ints](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.5)**
+
+Tool parameters declared strict with `Field(strict=True)`, `StrictInt`, or a strict model config are honored again, on both direct calls and task submission. Since the SDK v2 migration the server's lax default overrode them and silently coerced values.
+
+### Security 🔒
+* Add regression test for the unconfigured ID-JAG guard by [@zzstoatzz](https://github.com/zzstoatzz) in [#5146](https://github.com/PrefectHQ/fastmcp/pull/5146)
+### Fixes 🐞
+* Preserve field-level strict validation in lax mode by [@zzstoatzz](https://github.com/zzstoatzz) in [#5141](https://github.com/PrefectHQ/fastmcp/pull/5141)
+
+
+**Full Changelog**: [v4.0.4...v4.0.5](https://github.com/PrefectHQ/fastmcp/compare/v4.0.4...v4.0.5)
+
+</Update>
+
 <Update label="v4.0.4" description="2026-09-15">
 
 **[v4.0.4: Here Be No Dragons](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.4)**
