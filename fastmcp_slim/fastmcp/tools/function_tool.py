@@ -121,19 +121,21 @@ def _wrap_body_errors(fn: Callable[..., Any]) -> Callable[..., Any]:
     return wrapper
 
 
-def _strict_input_validation() -> bool:
-    """Whether the running server enforces strict argument validation.
+def _strict_input_validation() -> Literal[True] | None:
+    """The ``strict`` value to pass to pydantic for the running server.
 
     Reads ``strict_input_validation`` off the active request's ``FastMCP``
-    instance. Returns ``False`` outside a request context (e.g. a tool invoked
-    directly in tests), preserving the default coercing behavior.
+    instance. Returns ``None`` when the server is lax or outside a request
+    context (e.g. a tool invoked directly in tests): pydantic then keeps any
+    strictness declared on the parameters themselves, whereas an explicit
+    ``False`` would override it.
     """
     from fastmcp.server.context import _current_context
 
     context = _current_context.get(None)
-    if context is None:
-        return False
-    return context.fastmcp.strict_input_validation
+    if context is None or not context.fastmcp.strict_input_validation:
+        return None
+    return True
 
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -384,7 +386,7 @@ class FunctionTool(Tool):
         exec_fn = _wrap_body_errors(wrapper_fn)
         type_adapter = get_cached_typeadapter(exec_fn)
         exec_is_async = is_coroutine_function(wrapper_fn)
-        strict = True if _strict_input_validation() else None
+        strict = _strict_input_validation()
 
         result = await self._run_body(
             type_adapter, exec_is_async, arguments, strict=strict
