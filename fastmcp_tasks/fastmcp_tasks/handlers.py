@@ -47,6 +47,7 @@ from fastmcp_tasks.input_store import (
     load_task_args,
     mark_cancelled,
     read_outstanding_inputs,
+    refresh_args_ttl,
     refresh_current_leg_ttl,
     release_update_lock,
     save_current_leg,
@@ -165,6 +166,9 @@ async def _lookup_task(
         await redis.expire(created_at_key, refresh_ttl)
         await redis.expire(poll_key, refresh_ttl)
     await refresh_current_leg_ttl(docket, task_scope, task_id, refresh_ttl)
+    # A re-entered leg re-reads the original arguments, so the args key has to
+    # outlive the polling window for the same reason the keys above do.
+    await refresh_args_ttl(docket, task_scope, task_id, refresh_ttl)
     # The snapshot must outlive the routing keys it serves: a re-entered leg
     # restores the submitting caller from it, and with encryption configured a
     # missing snapshot fails the task instead of degrading to an anonymous run.
@@ -433,6 +437,11 @@ async def tasks_update(
             next_leg_key,
             next_leg,
             _task_key_ttl_seconds(docket),
+        )
+        # The next leg reads the arguments through ``load_task_args``, so extend
+        # them over the new window as the leg pointer is advanced.
+        await refresh_args_ttl(
+            docket, task_scope, task_id, _task_key_ttl_seconds(docket)
         )
         # The answered leg's surfaced keys are now superseded; drop them so they
         # are never reused (SEP-2663 L350).
