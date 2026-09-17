@@ -148,6 +148,36 @@ def test_schema_section_unions_fields_across_object_branches() -> None:
     assert "- `composed` (object): `id`, `extra`" in lines
 
 
+def test_schema_section_stops_on_recursive_refs() -> None:
+    """`Json = list[Json] | int` refers to itself through anyOf and items and must not loop."""
+    schema = {
+        "type": "object",
+        "$defs": {
+            "Json": {
+                "anyOf": [
+                    {"type": "array", "items": {"$ref": "#/$defs/Json"}},
+                    {"type": "integer"},
+                ]
+            },
+            "Node": {
+                "type": "object",
+                "properties": {
+                    "value": {},
+                    "children": {"type": "array", "items": {"$ref": "#/$defs/Node"}},
+                },
+            },
+        },
+        "properties": {
+            "payload": {"$ref": "#/$defs/Json"},
+            "tree": {"$ref": "#/$defs/Node"},
+        },
+        "required": ["payload"],
+    }
+    lines = _schema_section(schema, "Parameters")
+    assert "- `payload` (object, required)" in lines
+    assert "- `tree` (object): `value`, `children`" in lines
+
+
 def test_schema_section_truncates_long_nested_objects() -> None:
     fields = {f"f{i}": {} for i in range(20)}
     schema = {

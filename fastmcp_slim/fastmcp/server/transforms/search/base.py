@@ -127,7 +127,9 @@ def _resolve_ref(schema: Any, defs: dict[str, Any]) -> Any:
     return schema
 
 
-def _object_fields(schema: Any, defs: dict[str, Any]) -> list[str] | None:
+def _object_fields(
+    schema: Any, defs: dict[str, Any], seen: frozenset[str] = frozenset()
+) -> list[str] | None:
     """Field names of the object a schema describes, one level deep, or None.
 
     Looks through a local `$ref`, an array's `items`, every object branch
@@ -138,17 +140,23 @@ def _object_fields(schema: Any, defs: dict[str, Any]) -> list[str] | None:
     without this step a typed return renders as `object[]` and the caller
     has to fetch once just to learn the field names.
     """
+    if isinstance(schema, dict) and isinstance(schema.get("$ref"), str):
+        # A recursive alias (`Json = list[Json] | int`) refers back to itself
+        # through anyOf/items; stop at the second visit instead of looping.
+        if schema["$ref"] in seen:
+            return None
+        seen = seen | {schema["$ref"]}
     schema = _resolve_ref(schema, defs)
     if not isinstance(schema, dict):
         return None
     if schema.get("type") == "array":
-        return _object_fields(schema.get("items"), defs)
+        return _object_fields(schema.get("items"), defs, seen)
     fields: list[str] = []
     for key in ("anyOf", "oneOf", "allOf"):
         branches = schema.get(key)
         if isinstance(branches, list):
             for branch in branches:
-                fields.extend(_object_fields(branch, defs) or [])
+                fields.extend(_object_fields(branch, defs, seen) or [])
     props = schema.get("properties")
     if isinstance(props, dict):
         fields.extend(props)
