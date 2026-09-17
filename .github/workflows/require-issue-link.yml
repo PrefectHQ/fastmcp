@@ -3,9 +3,9 @@
 # unless the referenced issue is labeled "prs welcome", which waives the
 # assignment requirement for everyone (the link itself is still required,
 # since that's how the check finds the issue to read the label from).
-# Otherwise the PR is labeled "missing-issue-link", commented on, and
-# closed. CONTRIBUTING.md requires external contributors to be assigned to
-# an issue before opening a PR; this enforces that.
+# Missing requirements fail the check and receive a "missing-issue-link"
+# label and explanatory comment. Only PRs without a valid issue link are
+# closed; linked PRs stay open while maintainers decide on assignment.
 #
 # Adapted from langchain-ai/langchain's require_issue_link.yml. Differences:
 #   - Self-contained: it does NOT depend on a separate labeler workflow
@@ -21,7 +21,7 @@
 #     version is split across four, forcing the label/comment/reopen helpers
 #     to be duplicated per scope).
 #   - Issue assignment events are handled in this same workflow so assigning
-#     the linked issue reopens previously closed PRs automatically.
+#     the linked issue clears waiting PRs and reopens previously gated PRs.
 #
 # Maintainer override: reopen the PR, or remove the "missing-issue-link"
 # label — either applies a sticky "bypass-issue-check" label and reopens.
@@ -39,8 +39,8 @@ on:
     # becomes reviewable.
     types: [opened, edited, reopened, ready_for_review, labeled, unlabeled]
   issues:
-    # Assignment is what makes a previously closed "not assigned" PR compliant,
-    # so it needs a separate event path that finds and reopens matching PRs.
+    # Assignment makes waiting PRs compliant, so it needs a separate event
+    # path that clears their checks and reopens previously gated PRs.
     types: [assigned]
 
 # Dry run: when 'false' the check still runs and logs its verdict but makes
@@ -302,9 +302,8 @@ jobs:
             }
 
             // The author must be assigned to at least one linked issue.
-            // CONTRIBUTING.md requires external contributors to be assigned
-            // before opening a PR (so maintainers can deconflict / steer
-            // approach first).
+            // Linked PRs remain open while maintainers decide on assignment;
+            // the failing check keeps them gated until that decision.
             //
             // Exception: an issue labeled OPEN_LABEL waives that requirement
             // for everyone. It's how maintainers advertise "the reporter
@@ -373,7 +372,7 @@ jobs:
             console.log('Linked and assigned — clearing any prior enforcement');
             await clearEnforcement();
 
-            // ── Label, comment, close, and fail ────────────────────────────
+            // ── Explain missing requirements and fail ────────────────────────────
             // `kind`: 'no-link' (no valid issue reference) or 'not-assigned'
             // (referenced an issue, but the author isn't assigned to it).
             async function enforceFailure(kind) {
@@ -385,20 +384,20 @@ jobs:
                     "2. Add `Fixes #<issue>`, `Closes #<issue>`, or `Resolves #<issue>` to **this** PR's description — edit it in place, don't open a new PR.",
                   ]
                 : [
-                    "1. If you opened the linked issue, a maintainer will assign you when they pick it up and this PR reopens automatically. If someone else opened it, the PR reopens only if a maintainer chooses to assign it to you — please don't comment to ask.",
+                    "1. A maintainer will review the issue and decide whether to assign you. Please don't comment just to request assignment.",
                   ];
 
               const commentBody = [
                 MARKER,
-                '**This pull request was closed because it must link to an issue assigned to you.** ' +
-                  'Once this PR links to an issue and a maintainer assigns that issue to you, it will ' +
-                  'reopen automatically. Please update this PR rather than opening a new one.',
+                kind === 'no-link'
+                  ? '**This pull request was closed because it needs a valid issue link.** Please update this PR rather than opening a new one.'
+                  : '**This pull request is awaiting maintainer assignment.** Linked PRs stay open while maintainers triage the issue; this check remains failing until assignment.',
                 '',
                 `Per [CONTRIBUTING.md](https://github.com/${owner}/${repo}/blob/main/CONTRIBUTING.md), an external PR must reference an issue that's assigned to its author. To get there:`,
                 '',
                 ...steps,
                 '',
-                "Once you're assigned and the link is present, this PR reopens automatically — no further action needed.",
+                "Once you're assigned and the link is present, this check is re-run automatically. Previously gate-closed PRs also reopen — no further action needed.",
                 '',
                 `*Maintainers: reopen this PR or remove the \`${LABEL}\` label to bypass this check.*`,
               ].join('\n');
@@ -420,10 +419,27 @@ jobs:
                 console.log('Requirement comment already present — skipping');
               }
 
-              if (pr.state === 'open') {
+              if (kind === 'no-link' && pr.state === 'open') {
                 await mutate(`close PR #${prNumber}`, () => github.rest.pulls.update({
                   owner, repo, pull_number: prNumber, state: 'closed',
                 }));
+              } else if (
+                kind === 'not-assigned' && pr.state === 'closed' &&
+                pr.labels.some(label => label.name === LABEL)
+              ) {
+                // Adding the missing link moves a gate-closed PR back into
+                // the open triage queue. A later human closure takes priority
+                // even if the enforcement label was left on the PR.
+                const events = await github.paginate(
+                  github.rest.issues.listEvents,
+                  { owner, repo, issue_number: prNumber, per_page: 100 },
+                );
+                const lastClosure = events.filter(event => event.event === 'closed').pop();
+                if (lastClosure?.actor?.login === 'github-actions[bot]') {
+                  await mutate(`reopen linked PR #${prNumber} for triage`, () => github.rest.pulls.update({
+                    owner, repo, pull_number: prNumber, state: 'open',
+                  }));
+                }
               }
 
               if (enforce) {
@@ -448,7 +464,7 @@ jobs:
       pull-requests: write
 
     steps:
-      - name: Reopen linked PRs
+      - name: Clear assigned PRs
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
@@ -478,11 +494,11 @@ jobs:
               await fn();
             }
 
-            console.log(`Issue #${issueNumber} assigned to ${assignee} — searching for closed PRs to reopen`);
+            console.log(`Issue #${issueNumber} assigned to ${assignee} — searching for gated PRs`);
 
             const q = [
               'is:pr',
-              'is:closed',
+              'is:unmerged',
               `author:${assignee}`,
               `label:${LABEL}`,
               `repo:${owner}/${repo}`,
@@ -496,13 +512,13 @@ jobs:
               }));
             } catch (e) {
               throw new Error(
-                `Failed to search closed PRs for ${assignee} after assigning #${issueNumber} ` +
+                `Failed to search gated PRs for ${assignee} after assigning #${issueNumber} ` +
                   `(HTTP ${e.status ?? 'unknown'}): ${e.message}`,
               );
             }
 
             if (search.total_count === 0) {
-              console.log('No matching closed PRs found');
+              console.log('No matching gated PRs found');
               return;
             }
 
@@ -534,9 +550,11 @@ jobs:
               }
 
               try {
-                await mutate(`reopen PR #${prNumber}`, () => github.rest.pulls.update({
-                  owner, repo, pull_number: prNumber, state: 'open',
-                }));
+                if (issue.state === 'closed') {
+                  await mutate(`reopen PR #${prNumber}`, () => github.rest.pulls.update({
+                    owner, repo, pull_number: prNumber, state: 'open',
+                  }));
+                }
               } catch (e) {
                 if (e.status === 422) {
                   core.warning(`Cannot reopen PR #${prNumber}: the head branch was likely deleted`);

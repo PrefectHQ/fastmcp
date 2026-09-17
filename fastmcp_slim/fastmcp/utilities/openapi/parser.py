@@ -372,6 +372,11 @@ class OpenAPIParser(
             # Extract content schemas
             if hasattr(request_body, "content") and request_body.content:
                 for media_type_str, media_type_obj in request_body.content.items():
+                    if media_type_obj and media_type_obj.encoding:
+                        request_body_info.encoding[media_type_str] = {
+                            name: value.model_dump(by_alias=True, exclude_unset=True)
+                            for name, value in media_type_obj.encoding.items()
+                        }
                     if (
                         media_type_obj
                         and hasattr(media_type_obj, "media_type_schema")

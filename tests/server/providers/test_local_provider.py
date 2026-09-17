@@ -17,6 +17,7 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.prompts.base import Prompt
 from fastmcp.server.providers.local_provider import LocalProvider
+from fastmcp.server.transforms import Namespace
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.tasks import TaskConfig
 
@@ -742,6 +743,21 @@ class TestLocalProviderTaskRegistration:
         tasks = await provider.get_tasks()
         assert len(tasks) == 1
         assert tasks[0].name == "custom"
+
+    async def test_get_tasks_applies_transforms(self):
+        """Test that get_tasks applies provider transforms to registration keys."""
+        provider = LocalProvider()
+
+        @provider.tool(task=True)
+        async def square(x: int) -> int:
+            return x * x
+
+        provider.add_transform(Namespace("api"))
+
+        tasks = await provider.get_tasks()
+        assert len(tasks) == 1
+        assert tasks[0].name == "api_square"
+        assert tasks[0].key == "tool:api_square@"
 
 
 class TestLocalProviderStandaloneUsage:

@@ -2,6 +2,7 @@
 
 import io
 import json as _json
+from email.message import Message
 from typing import Any, ClassVar
 from urllib.parse import quote, urljoin
 
@@ -24,6 +25,20 @@ def _query_scalar_to_str(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     return str(value)
+
+
+def _uses_default_multipart_encoding(encoding: dict[str, Any]) -> bool:
+    """Explicit defaults serialize like omitted encoding; overrides stay unchanged."""
+    defaults = {
+        "style": "form",
+        "explode": True,
+        "contentType": "text/plain",
+        "allowReserved": False,
+        "headers": {},
+    }
+    return all(
+        key in defaults and value == defaults[key] for key, value in encoding.items()
+    )
 
 
 class RequestDirector:
@@ -73,7 +88,7 @@ class RequestDirector:
         method: str = route.method.upper()
         params = query_params if query_params else None
         headers = header_params if header_params else None
-        json_body: dict[str, Any] | list[Any] | None = None
+        json_body: dict[str, Any] | list[Any] | str | int | float | bool | None = None
         content: str | bytes | None = None
 
         # Step 5: Determine the declared content type from the OpenAPI spec.
@@ -96,7 +111,7 @@ class RequestDirector:
         # Step 6: Handle request body — dispatch on declared content type.
         # httpx body kwargs (json, content, data, files) are mutually exclusive
         # but all accept None, so we set exactly one and pass all to Request().
-        files: dict[str, Any] | None = None
+        files: list[tuple[str, Any]] | None = None
         data: dict[str, Any] | None = None
         if body is not None:
             if declared_content_type == "multipart/form-data" and isinstance(
@@ -106,32 +121,50 @@ class RequestDirector:
                 # treats them as form fields. Scalars must be stringified
                 # because httpx rejects non-string/bytes values in files=.
                 # Use _query_scalar_to_str for booleans (true/false, not True/False).
-                files = {}
+                files = []
+                encoding = (
+                    route.request_body.encoding.get(raw_content_type, {})
+                    if route.request_body and raw_content_type is not None
+                    else {}
+                )
                 for k, v in body.items():
-                    if isinstance(v, tuple):
-                        files[k] = v
+                    if (
+                        isinstance(v, list)
+                        and v
+                        and all(isinstance(item, str) for item in v)
+                        and _uses_default_multipart_encoding(encoding.get(k, {}))
+                    ):
+                        files.extend((k, (None, item)) for item in v)
+                    elif isinstance(v, tuple):
+                        files.append((k, v))
                     elif isinstance(v, bytes | io.IOBase):
                         # bytes and file-like objects are passed directly so
                         # httpx can transmit them as binary parts without
                         # stringifying to their Python repr.
-                        files[k] = (None, v)
+                        files.append((k, (None, v)))
                     else:
-                        files[k] = (None, _query_scalar_to_str(v))
+                        files.append((k, (None, _query_scalar_to_str(v))))
             elif (
                 declared_content_type == "application/x-www-form-urlencoded"
                 and isinstance(body, dict)
             ):
                 data = body
-            elif isinstance(body, dict | list):
+            elif (
+                isinstance(body, dict | list)
+                or declared_content_type == "application/json"
+                or (
+                    declared_content_type is not None
+                    and declared_content_type.endswith("+json")
+                )
+            ):
                 if (
                     declared_content_type is not None
-                    and declared_content_type != "application/json"
+                    and raw_content_type != "application/json"
                     and "json" in declared_content_type
                 ):
-                    # JSON-compatible types like application/json-patch+json
-                    # or application/merge-patch+json need an explicit
-                    # Content-Type header since httpx's json= always
-                    # sets application/json.
+                    # JSON media types with parameters or custom subtypes need
+                    # an explicit Content-Type header since httpx's json=
+                    # always sets bare application/json.
                     content = _json.dumps(body, allow_nan=False).encode("utf-8")
                     headers = dict(headers) if headers else {}
                     headers["Content-Type"] = raw_content_type
@@ -139,6 +172,15 @@ class RequestDirector:
                     json_body = body
             else:
                 content = body
+                if raw_content_type is not None:
+                    headers = dict(headers) if headers else {}
+                    headers["Content-Type"] = raw_content_type
+                    if isinstance(body, str):
+                        media_type = Message()
+                        media_type["Content-Type"] = raw_content_type
+                        content = body.encode(
+                            media_type.get_content_charset() or "utf-8"
+                        )
 
         # Step 7: Create httpx2.Request
         return httpx2.Request(
@@ -257,17 +299,14 @@ class RequestDirector:
                 content_type = next(iter(route.request_body.content_schema))
                 body_schema = route.request_body.content_schema[content_type]
 
-                if (
-                    isinstance(body_schema, dict)
-                    and body_schema.get("type") == "object"
-                ):
+                # Only named properties are flattened into individual arguments.
+                if isinstance(body_schema, dict) and body_schema.get("properties"):
                     body = body_props
                 elif len(body_props) == 1:
-                    # If body schema is not an object and we have exactly one property,
-                    # use the property value directly
+                    # Free-form objects, arrays, and primitives use a single
+                    # argument containing the entire body.
                     body = next(iter(body_props.values()))
                 else:
-                    # Multiple properties but schema is not object - wrap in object
                     body = body_props
             else:
                 body = body_props
@@ -290,7 +329,9 @@ class RequestDirector:
         Serialize query parameter values according to their OpenAPI style/explode settings.
 
         By default (style=form, explode=true), list values are passed through as-is
-        so httpx repeats the key (e.g. values=a&values=b). When explode=false,
+        so httpx repeats the key (e.g. values=a&values=b). For pipeDelimited and
+        spaceDelimited arrays, omitted explode defaults to false. Object values
+        retain the existing default of true. When explode=false,
         list values are joined with the style-appropriate delimiter:
           - form (default): comma  (values=a,b)
           - pipeDelimited:  pipe   (values=a|b)
@@ -308,7 +349,14 @@ class RequestDirector:
         for key, value in query_params.items():
             param_info = param_lookup.get(key)
             if param_info is not None:
+                style = param_info.style or "form"
                 explode = param_info.explode if param_info.explode is not None else True
+                if (
+                    param_info.explode is None
+                    and isinstance(value, list)
+                    and style in {"pipeDelimited", "spaceDelimited"}
+                ):
+                    explode = False
                 if isinstance(value, dict):
                     if not value:
                         continue
@@ -321,7 +369,6 @@ class RequestDirector:
                                 property_name = f"{key}[{property_name}]"
                             serialized[property_name] = _query_scalar_to_str(v)
                     else:
-                        style = param_info.style or "form"
                         delimiter = self._STYLE_DELIMITERS.get(style, ",")
                         # form,explode=false on objects: key,value pairs
                         # e.g. {"R": 100, "G": 200} → "R,100,G,200"
@@ -332,7 +379,6 @@ class RequestDirector:
                         serialized[key] = delimiter.join(parts)
                     continue
                 if not explode:
-                    style = param_info.style or "form"
                     delimiter = self._STYLE_DELIMITERS.get(style, ",")
                     if isinstance(value, list):
                         if not value:

@@ -65,7 +65,7 @@ bump = true
 fallback-version = "0.0.0"
 
 [tool.hatch.metadata.hooks.uv-dynamic-versioning.optional-dependencies]
-anthropic = ["anthropic>=0.48.0,<1"]
+anthropic = ["anthropic>=0.48.0,<2"]
 apps = ["prefab-ui>=0.18.0"]
 # PyJWT floor: transitive via msal; CVE-2026-32597 affects <= 2.11.0
 azure = ["azure-identity>=1.16.0", "PyJWT>=2.12.0"]

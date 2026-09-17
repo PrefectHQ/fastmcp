@@ -12,11 +12,11 @@ from __future__ import annotations
 
 import asyncio
 import functools
-from typing import Any
+from typing import Annotated, Any
 
 import pytest
 from fastmcp_tasks.models import CreateTaskResult
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import fastmcp.tools.function_tool as function_tool
 from fastmcp import FastMCP
@@ -143,6 +143,24 @@ async def test_valid_argument_submits_under_strict_validation():
     assert final.status == "completed"
     assert final.result is not None
     assert final.result["structuredContent"] == {"result": 16}
+
+
+async def test_task_submission_honors_field_level_strictness():
+    """A lax server still rejects coercion the parameter itself declared strict."""
+    mcp = FastMCP("field-strict-task-server")
+    mcp.add_extension(TasksExtension())
+
+    @mcp.tool(task=True)
+    async def square(n: Annotated[int, Field(strict=True)]) -> int:
+        return n * n
+
+    async with running_task_server(mcp):
+        with pytest.raises(ValidationError):
+            await submit_task(mcp, "square", {"n": "1"})
+        final = await run_task(mcp, "square", {"n": 3})
+    assert final.status == "completed"
+    assert final.result is not None
+    assert final.result["structuredContent"] == {"result": 9}
 
 
 def test_resolve_param_hints_handles_partials(monkeypatch: pytest.MonkeyPatch):

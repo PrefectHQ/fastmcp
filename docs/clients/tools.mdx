@@ -32,7 +32,7 @@ For page-by-page control over large catalogs, `list_tools_mcp()` returns one raw
 ```python
 async with client:
     page = await client.list_tools_mcp()
-    while page.next_cursor:
+    while page.next_cursor is not None:
         page = await client.list_tools_mcp(cursor=page.next_cursor)
 ```
 

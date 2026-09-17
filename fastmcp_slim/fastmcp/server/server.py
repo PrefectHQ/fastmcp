@@ -16,7 +16,16 @@ from contextlib import (
 )
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Generic,
+    Literal,
+    TypeVar,
+    cast,
+    get_args,
+    overload,
+)
 
 import httpx2
 import mcp_types
@@ -31,6 +40,7 @@ from mcp_types import (
 from mcp_types.jsonrpc import MISSING_REQUIRED_CLIENT_CAPABILITY
 from pydantic import AnyUrl
 from pydantic import ValidationError as PydanticValidationError
+from pydantic_core import ErrorType
 from starlette.routing import BaseRoute
 from typing_extensions import Self
 
@@ -111,6 +121,21 @@ if TYPE_CHECKING:
     from fastmcp.server.providers.proxy import FastMCPProxy
 
 logger = get_logger(__name__)
+
+_BUILTIN_VALIDATION_ERROR_TYPES = frozenset(get_args(ErrorType))
+
+
+def _validation_error_summary(error: PydanticValidationError) -> dict[str, Any]:
+    """Keep counts and built-in codes, never input-derived validation details."""
+    error_types = {
+        detail["type"]
+        if detail["type"] in _BUILTIN_VALIDATION_ERROR_TYPES
+        else "custom_error"
+        for detail in error.errors(
+            include_url=False, include_context=False, include_input=False
+        )
+    }
+    return {"error_count": error.error_count(), "error_types": sorted(error_types)}
 
 
 def _version_request_meta(
@@ -1491,18 +1516,15 @@ class FastMCP(
                 try:
                     return await tool._run(arguments or {})
                 except ValidationError as e:
-                    # Argument-validation failure (a bad call). FunctionTool
-                    # converts pydantic's call-validation error into fastmcp's
-                    # ValidationError (see #4128) so it can be filtered as a
-                    # client error. Log the underlying detail without a URL or
-                    # traceback, matching the previous pydantic-error logging.
                     cause = e.__cause__
-                    detail = (
-                        cause.errors(include_url=False)
-                        if isinstance(cause, PydanticValidationError)
-                        else str(e)
-                    )
-                    logger.warning("Invalid arguments for tool %r: %s", name, detail)
+                    if isinstance(cause, PydanticValidationError):
+                        logger.warning(
+                            "Invalid arguments for tool %r: %s",
+                            name,
+                            _validation_error_summary(cause),
+                        )
+                    else:
+                        logger.warning("Invalid arguments for tool %r", name)
                     raise
                 except FastMCPError as e:
                     logger.log(
@@ -1516,7 +1538,7 @@ class FastMCP(
                     logger.warning(
                         "Invalid arguments for tool %r: %s",
                         name,
-                        e.errors(include_url=False),
+                        _validation_error_summary(e),
                     )
                     raise
                 except Exception as e:

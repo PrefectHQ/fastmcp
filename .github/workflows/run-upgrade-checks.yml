@@ -4,15 +4,6 @@ env:
   PY_COLORS: 1
 
 on:
-  push:
-    branches: ["main"]
-    paths:
-      - "fastmcp_slim/**"
-      - "tests/**"
-      - "pyproject.toml"
-      - "uv.lock"
-      - ".github/workflows/**"
-
   schedule:
     # Run daily at 2 AM UTC
     - cron: "0 2 * * *"

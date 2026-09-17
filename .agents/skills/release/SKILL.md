@@ -45,7 +45,7 @@ one gets a follow-up patch, never a re-tag.
    both blocks (the last argument is the branch the notes are generated against):
 
    ```bash
-   uv run .claude/skills/release/scripts/changelog_entry.py v<new> v<prev> "<pun>" /tmp/notes.md <branch>
+   uv run .agents/skills/release/scripts/changelog_entry.py v<new> v<prev> "<pun>" /tmp/notes.md <branch>
    ```
 
    Validate, and repeat until it reports no errors; a parse error names the file
