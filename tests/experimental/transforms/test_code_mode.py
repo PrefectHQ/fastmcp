@@ -1152,6 +1152,32 @@ async def test_code_mode_get_schema_names_return_fields_one_level_down() -> None
     assert "`text`" not in text
 
 
+@pytest.mark.parametrize("content", [[], ["image"]])
+async def test_error_result_without_text_uses_generic_message(
+    content: list[str],
+) -> None:
+    mcp = FastMCP("Non-text errors")
+    blocks = [
+        ImageContent(type="image", data="A" * 4096, mime_type="image/png")
+        for _ in content
+    ]
+
+    @mcp.tool
+    def fail() -> ToolResult:
+        return ToolResult(content=blocks, is_error=True)
+
+    mcp.add_transform(CodeMode())
+    result = await _run_tool(
+        mcp,
+        "execute",
+        {
+            "code": 'try:\n    await call_tool("fail", {})\nexcept Exception as exc:\n    return str(exc)'
+        },
+    )
+    message = str(_unwrap_result(result))
+    assert message == "call_tool('fail') failed: tool returned an error"
+
+
 @pytest.mark.parametrize("text", ["backend exploded", ""])
 async def test_error_result_preserves_text_with_structured_content(text: str) -> None:
     mcp = FastMCP("Structured errors")
