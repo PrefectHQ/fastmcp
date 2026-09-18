@@ -120,6 +120,7 @@ class AzureProvider(OAuthProxy):
         token_expiry_threshold_seconds: int = 0,
         base_authority: str = "login.microsoftonline.com",
         token_issuer: str | None = None,
+        extra_authorize_params: dict[str, str] | None = None,
         http_client: httpx2.AsyncClient | None = None,
         enable_cimd: bool = True,
     ) -> None:
@@ -177,6 +178,11 @@ class AzureProvider(OAuthProxy):
                 but the warning is suppressed as an operator acknowledgment that
                 equivalent protections are enforced externally.
                 SECURITY WARNING: Only set to False for local development or testing environments.
+            extra_authorize_params: Parameters to forward to Azure's authorization endpoint.
+                Defaults to `{"prompt": "select_account"}` so users can choose which Microsoft
+                account to sign in with. An explicit dict replaces that default rather than
+                merging with it, so `{"domain_hint": "contoso.com"}` sends the hint without the
+                account picker, and `{}` sends neither.
             http_client: Optional httpx2.AsyncClient for connection pooling in JWKS fetches.
                 When provided, the client is reused for JWT key fetches and the caller
                 is responsible for its lifecycle. When None (default), a fresh client is created per fetch.
@@ -256,6 +262,14 @@ class AzureProvider(OAuthProxy):
         )
         token_endpoint = f"https://{base_authority}/{tenant_id}/oauth2/v2.0/token"
 
+        # prompt=select_account lets users with multiple or stale Microsoft sessions pick
+        # an account instead of Entra silently reusing whichever one the browser holds.
+        # An explicit dict replaces this default outright rather than merging over it, so
+        # callers can drop the prompt entirely - from_b2c() relies on that, since Azure AD
+        # B2C supports prompt=login and rejects select_account.
+        if extra_authorize_params is None:
+            extra_authorize_params = {"prompt": "select_account"}
+
         # Initialize OAuth proxy with Azure endpoints
         # Remember there's hooks called, such as _prepare_scopes_for_token_exchange
         # and _prepare_scopes_for_upstream_refresh
@@ -278,6 +292,7 @@ class AzureProvider(OAuthProxy):
             fallback_refresh_token_expiry_seconds=fallback_refresh_token_expiry_seconds,
             fastmcp_access_token_expiry_seconds=fastmcp_access_token_expiry_seconds,
             token_expiry_threshold_seconds=token_expiry_threshold_seconds,
+            extra_authorize_params=extra_authorize_params,
             valid_scopes=parsed_required_scopes,
             enable_cimd=enable_cimd,
         )
@@ -337,7 +352,9 @@ class AzureProvider(OAuthProxy):
                 `https://{tenant_name}.onmicrosoft.com/{client_id}`.
             token_issuer: Expected `iss` claim. `None` (default) disables
                 issuer validation.
-            **kwargs: Forwarded to `AzureProvider.__init__`.
+            **kwargs: Forwarded to `AzureProvider.__init__`. `extra_authorize_params`
+                defaults to `{}` here rather than to the account-picker prompt, because
+                B2C user flows only support `prompt=login`.
         """
         if ".onmicrosoft.com" in tenant_name:
             raise ValueError(
@@ -355,6 +372,11 @@ class AzureProvider(OAuthProxy):
         authority = custom_domain or f"{tenant_name}.b2clogin.com"
         tenant_path = f"{tenant_name}.onmicrosoft.com/{policy_name}"
         uri = identifier_uri or f"https://{tenant_name}.onmicrosoft.com/{client_id}"
+
+        # B2C user flows reject prompt=select_account (login is the only value they
+        # support), so opt out of the account-picker default the standard constructor
+        # applies. Callers can still pass extra_authorize_params to set their own.
+        kwargs.setdefault("extra_authorize_params", {})
 
         provider = cls(
             client_id=client_id,
@@ -388,7 +410,8 @@ class AzureProvider(OAuthProxy):
             params: Authorization parameters from the client
 
         Returns:
-            Authorization URL to redirect the user to Azure AD
+            URL to redirect the user to: the local consent screen when consent is
+            enabled, otherwise the Azure AD authorization URL.
         """
         # Clear the resource parameter that Azure AD v2.0 doesn't support
         # This parameter comes from RFC 8707 (OAuth 2.0 Resource Indicators)
@@ -405,9 +428,7 @@ class AzureProvider(OAuthProxy):
                     )
         # Don't modify the scopes in params - they stay unprefixed for MCP clients
         # We'll prefix them when building the Azure authorization URL (in _build_upstream_authorize_url)
-        auth_url = await super().authorize(client, params_to_use)
-        separator = "&" if "?" in auth_url else "?"
-        return f"{auth_url}{separator}prompt=select_account"
+        return await super().authorize(client, params_to_use)
 
     def _prefix_scopes_for_azure(self, scopes: list[str]) -> list[str]:
         """Prefix unprefixed custom API scopes with identifier_uri for Azure.
