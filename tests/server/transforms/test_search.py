@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Literal
 from unittest.mock import MagicMock
 
 import mcp_types
@@ -326,6 +326,49 @@ class TestRegexSearch:
 
 
 class TestBM25Search:
+    @pytest.mark.parametrize("version", ["1", "2"], ids=["replacement", "new-version"])
+    async def test_search_returns_current_schema(self, version: str) -> None:
+        mcp = FastMCP("test", on_duplicate="replace")
+        mcp.add_transform(BM25SearchTransform())
+
+        @mcp.tool(name="job_status", version="1")
+        def old(state: Literal["queued"]) -> str:
+            """Check job status."""
+            return state
+
+        await mcp.call_tool("search_tools", {"query": "status"})
+
+        @mcp.tool(name="job_status", version=version)
+        def new(state: Literal["running"]) -> int:
+            """Check job status."""
+            return 1
+
+        result = await mcp.call_tool("search_tools", {"query": "status"})
+        current = await mcp.get_tool("job_status")
+        assert current is not None
+        (found,) = _parse_tool_result(result)
+        assert found["inputSchema"] == current.parameters
+        assert found["outputSchema"] == current.output_schema
+        assert found["_meta"]["fastmcp"]["version"] == version
+
+    async def test_cached_index_resolves_current_tools_after_reordering(self) -> None:
+        def alpha() -> str:
+            return "alpha"
+
+        def beta() -> str:
+            return "beta"
+
+        first = Tool.from_function(alpha)
+        second = Tool.from_function(beta)
+        transform = BM25SearchTransform()
+        assert await transform._search([first, second], "alpha") == [first]
+        index = transform._index
+
+        updated = first.model_copy(update={"title": "Updated alpha"})
+        results = await transform._search([second, updated], "alpha")
+        assert results == [updated]
+        assert transform._index is index
+
     async def test_search_relevance(self):
         mcp = _make_server_with_tools()
         mcp.add_transform(BM25SearchTransform())
