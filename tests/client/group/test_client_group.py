@@ -82,6 +82,19 @@ async def test_clients_negotiate_independently():
     assert not modern.is_connected()
 
 
+async def test_list_tools_propagates_child_cancellation():
+    healthy = Client(make_server("healthy"))
+    cancelled = Client(make_server("cancelled"))
+    group = ClientGroup({"healthy": healthy, "cancelled": cancelled})
+
+    async with group:
+        original_tools = await group.list_tools()
+        with patch.object(cancelled, "list_tools", side_effect=asyncio.CancelledError):
+            with pytest.raises(asyncio.CancelledError):
+                await group.list_tools()
+        assert await group.list_tools() == original_tools
+
+
 async def test_from_config_applies_mode_per_server():
     config = MCPConfig(
         mcpServers={
