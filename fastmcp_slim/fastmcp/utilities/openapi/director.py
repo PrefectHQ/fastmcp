@@ -27,6 +27,17 @@ def _query_scalar_to_str(value: Any) -> str:
     return str(value)
 
 
+def _cookie_value_to_str(value: Any) -> str:
+    """Serialize a cookie parameter using OpenAPI's form-style delimiter."""
+    if isinstance(value, dict):
+        return ",".join(
+            _query_scalar_to_str(item) for pair in value.items() for item in pair
+        )
+    if isinstance(value, list):
+        return ",".join(_query_scalar_to_str(item) for item in value)
+    return _query_scalar_to_str(value)
+
+
 def _uses_default_multipart_encoding(encoding: dict[str, Any]) -> bool:
     """Explicit defaults serialize like omitted encoding; overrides stay unchanged."""
     defaults = {
@@ -100,10 +111,11 @@ class RequestDirector:
             raw_content_type = next(iter(route.request_body.content_schema))
             declared_content_type = raw_content_type.split(";")[0].strip().lower()
 
-        # httpx requires cookie values to be strings; use OpenAPI-style
-        # serialization (e.g. true/false for booleans, not True/False)
+        # httpx requires cookie values to be strings. OpenAPI cookie parameters
+        # use form-style serialization, with commas delimiting array items and
+        # object key/value pairs.
         cookies = (
-            {k: _query_scalar_to_str(v) for k, v in cookie_params.items()}
+            {k: _cookie_value_to_str(v) for k, v in cookie_params.items()}
             if cookie_params
             else None
         )

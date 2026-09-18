@@ -243,6 +243,47 @@ class TestRequestDirector:
         assert body_data["title"] == "Required Title"
         assert "description" not in body_data  # Should not include None description
 
+    def test_build_request_serializes_collection_cookie_parameters(self, director):
+        route = HTTPRoute(
+            path="/items",
+            method="GET",
+            operation_id="list_items",
+            parameters=[
+                ParameterInfo(
+                    name="tags",
+                    location="cookie",
+                    required=False,
+                    schema={"type": "array", "items": {"type": "string"}},
+                ),
+                ParameterInfo(
+                    name="preferences",
+                    location="cookie",
+                    required=False,
+                    schema={"type": "object"},
+                ),
+            ],
+            parameter_map={
+                "tags": {"location": "cookie", "openapi_name": "tags"},
+                "preferences": {
+                    "location": "cookie",
+                    "openapi_name": "preferences",
+                },
+            },
+        )
+
+        request = director.build(
+            route,
+            {
+                "tags": ["alpha", "beta"],
+                "preferences": {"theme": "dark", "compact": True},
+            },
+            "https://api.example.com",
+        )
+
+        assert request.headers["cookie"] == (
+            "tags=alpha,beta; preferences=theme,dark,compact,true"
+        )
+
     def test_build_request_fallback_mapping(self, director):
         """Test fallback parameter mapping when parameter_map is not available."""
         # Create route without parameter_map
