@@ -16,6 +16,35 @@ class TestFileSystemProvider:
         """Provider should work with empty directory."""
         provider = FileSystemProvider(tmp_path)
         assert repr(provider).startswith("FileSystemProvider")
+        assert provider.discovery_failures == {}
+
+    def test_provider_exposes_discovery_failures(self, tmp_path: Path):
+        """Provider should expose failures from the initial discovery pass."""
+        broken_file = tmp_path / "broken.py"
+        broken_file.write_text("raise RuntimeError('broken import')")
+
+        provider = FileSystemProvider(tmp_path)
+
+        assert set(provider.discovery_failures) == {broken_file}
+        assert "broken import" in provider.discovery_failures[broken_file]
+
+        # The public value is a snapshot, not the provider's mutable state.
+        failures = provider.discovery_failures
+        assert isinstance(failures, dict)
+        failures.clear()
+        assert set(provider.discovery_failures) == {broken_file}
+
+    async def test_discovery_failures_refresh_on_reload(self, tmp_path: Path):
+        """Reload mode should expose the latest discovery failures."""
+        broken_file = tmp_path / "broken.py"
+        broken_file.write_text("raise RuntimeError('broken import')")
+        provider = FileSystemProvider(tmp_path, reload=True)
+
+        assert set(provider.discovery_failures) == {broken_file}
+
+        broken_file.unlink()
+        assert await provider.list_tools() == []
+        assert provider.discovery_failures == {}
 
     def test_provider_discovers_tools(self, tmp_path: Path):
         """Provider should discover @tool decorated functions."""
