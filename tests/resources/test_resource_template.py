@@ -860,6 +860,20 @@ class TestMalformedURITemplates:
         assert result is not None
         assert result == {"id": "42", "format": ""}
 
+    def test_fragment_does_not_prevent_match(self):
+        result = match_uri_template(
+            "test://items/42#section",
+            "test://items/{id}",
+        )
+        assert result == {"id": "42"}
+
+    def test_query_fragment_is_not_part_of_param(self):
+        result = match_uri_template(
+            "test://items?filter=active#section",
+            "test://items{?filter}",
+        )
+        assert result == {"filter": "active"}
+
     def test_query_param_with_blank_and_present_values(self):
         """Mix of blank and non-blank query values are both surfaced."""
         result = match_uri_template(
