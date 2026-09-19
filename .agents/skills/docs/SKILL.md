@@ -14,11 +14,11 @@ The docs are a Mintlify site built from `docs/`. A page exists only when `docs/d
 3. Write the page with the template below. Explain why the feature exists before showing how, and keep the first code block small enough to read without scrolling.
 4. Make every code block runnable: imports present, names defined, one idea per block. Pull intermediate values into named variables instead of nesting calls.
 5. Run the checks in **Verify** and fix what they report.
-6. Open a PR on `main`. Merged is not live: the site serves `published-docs`. A stable release publishes automatically; for a docs-only change, follow "Publishing docs by hand" in `.agents/skills/release/SKILL.md` and watch the `Deploy docs` run.
+6. When the change is ready to ship, open a PR against `main`. Merged is not live: the site serves `published-docs`. A stable release from `main` opens a `Publish FastMCP v<version> docs` PR against `published-docs` that a maintainer merges; for a docs-only change between releases, follow "Publishing docs by hand" in `.agents/skills/release/SKILL.md`. Either way, the `Deploy docs` run's verdict is what says the site changed.
 
 ## Template
 
-```mdx
+````mdx
 ---
 title: Feature Name
 sidebarTitle: Feature
@@ -26,7 +26,9 @@ description: One sentence a search result can show.
 icon: some-fontawesome-icon
 ---
 
-<VersionBadge version="4.1.0" />
+import { VersionBadge } from '/snippets/version-badge.mdx'
+
+<VersionBadge version="<version that introduces the feature>" />
 
 One paragraph on the problem this solves and when to reach for it.
 
@@ -52,7 +54,7 @@ One subsection per option that changes behavior, each with a sentence on the def
 ## How it works
 
 Only when the mechanism affects what the reader should do. Put a one-sentence text description before any diagram.
-```
+````
 
 ## Voice
 
@@ -65,7 +67,7 @@ Every `<img>` and `![]()` gets alt text that says what the picture shows. Decora
 ## Verify
 
 ```bash
-cd docs && npx --yes mint@latest broken-links
+(cd docs && npx --yes mint@latest broken-links)
 uv run pytest tests/docs -n 0
 ```
 
