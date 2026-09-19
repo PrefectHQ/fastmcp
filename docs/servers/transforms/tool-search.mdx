@@ -26,7 +26,7 @@ Search results are returned in the same JSON format as `list_tools`, including t
 
 ## Search Strategies
 
-FastMCP provides two search transforms. They share the same interface — two synthetic tools, same configuration options — but differ in how they match queries to tools.
+FastMCP provides two search transforms, plus an experimental third. They share the same interface — two synthetic tools, same configuration options — but differ in how they match queries to tools.
 
 ### Regex Search
 
@@ -92,15 +92,69 @@ result = await client.call_tool("search_tools", {
 
 BM25 builds an in-memory index from the searchable text of all tools. The index is created lazily on the first search and automatically rebuilt whenever the tool catalog changes — for example, when tools are added, removed, or have their descriptions updated. The staleness check is based on a hash of all searchable text, so description changes are detected even when tool names stay the same.
 
+### Jev Search (Experimental)
+
+<Warning>
+`JevSearchTransform` is experimental. It lives in `fastmcp.experimental.transforms` and its ranking parameters may change as we learn what works on real catalogs.
+</Warning>
+
+`JevSearchTransform` ranks tools with [TypeSafe's Jev](https://docs.typesafe.ai), a model that returns calibrated probabilities over options you define instead of generated text. It reads the query and the tool descriptions for meaning, so `"archive last week's invoices"` finds `archive_invoices` without sharing a token with it, and a request that no tool serves comes back empty instead of returning the least-wrong match.
+
+<Tip>
+Jev search requires the `jev` extra and a TypeSafe API key in `TYPESAFE_API_KEY`. Install it with `pip install "fastmcp[jev]"`. A missing key is an error when the transform is constructed.
+</Tip>
+
+```python
+from fastmcp import FastMCP
+from fastmcp.experimental.transforms.jev_search import JevSearchTransform
+
+mcp = FastMCP("My Server", transforms=[JevSearchTransform()])
+
+# ... define tools ...
+```
+
+The LLM's `search_tools` call takes a natural-language `query`, the same as BM25:
+
+```python
+result = await client.call_tool("search_tools", {
+    "query": "show me the flow runs that failed in the last hour"
+})
+# Returns the best-fitting tool definitions first, or nothing when none fits
+```
+
+A search is a few Jev requests. On a 187-tool catalog generated from the Prefect OpenAPI spec, each of five queries completed in 0.6 to 1.1 seconds end to end:
+
+1. **Wide pass.** One request per chunk of the catalog. The query is the state, each tool name is an option, and its one-line summary is the option's description. Each chunk's top `shortlist` goes forward. If more than `3 * shortlist` candidates survive, they are ranked again in chunks until the close read fits.
+2. **Close read.** One request over the candidates with each tool's full description and parameters. A Choice question decides which candidate fits best and sets the order. One yes/no question per candidate asks whether that tool does what the query asks; candidates below `fit_threshold` are dropped, which is how an off-topic query returns nothing.
+
+A catalog no larger than `3 * shortlist` skips the wide pass.
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `model` | `jev-latest` | TypeSafe model. Pin a versioned id once `fit_threshold` is tuned. |
+| `api_key` | `TYPESAFE_API_KEY` | TypeSafe API key. |
+| `client` | none | A ready `AsyncTypeSafeClient` to use instead of building one. |
+| `shortlist` | 8 | Candidates each wide-pass request carries forward; the close read sees at most three times this. |
+| `fit_threshold` | 0.3 | Minimum "does this tool do it" probability for a tool to be returned. |
+| `chunk_size` | 150 | Tools per wide-pass request, at most 255. |
+| `close_read` | `True` | Re-read the shortlist with full descriptions in a second request. `False` asks the fit question of every tool in the wide pass instead: one round trip, summaries only. On the 187-tool Prefect catalog it was 0.06s faster and six points worse at returning the right tool first. |
+| `timeout` | 10 | Seconds per API attempt. |
+| `summary_chars` | 160 | Description characters per tool in the wide pass. |
+| `detail_chars` | 1200 | Rendered characters per tool in the close read. |
+
+`fit_threshold` comes from TypeSafe's skill-suggestion cookbook; the other defaults were chosen for this transform and none were tuned on your catalog. Log what `search_tools` returns for real queries before relying on the threshold. Tool descriptions are model input: a description written to argue for its own selection can move the ranking, so treat catalogs from third-party servers accordingly.
+
 ### Which to Choose
 
 Use **regex** when your LLM is good at constructing targeted patterns and you want deterministic, predictable results. Regex is also simpler to debug — you can see exactly what pattern was sent.
 
 Use **BM25** when your LLM tends to describe what it needs in natural language, or when your tool catalog has nuanced descriptions where relevance ranking adds value. BM25 handles partial matches and synonyms better because it scores on individual terms rather than requiring a single pattern to match.
 
+Use **Jev** when queries and tool descriptions rarely share vocabulary, when the catalog has lookalike tools that only a full read separates, or when returning nothing for an unserved request matters. It costs a network call per search and needs an API key.
+
 ## Configuration
 
-Both search transforms accept the same configuration options.
+All search transforms accept the same configuration options.
 
 ### Limiting Results
 
