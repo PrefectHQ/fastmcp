@@ -7,6 +7,7 @@ probabilities keyed by tool name.
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -20,6 +21,7 @@ from fastmcp.experimental.transforms.jev_search import (
     WIDE_INSTRUCTIONS,
     JevSearchTransform,
 )
+from fastmcp.tools.base import Tool
 
 
 @dataclass
@@ -40,17 +42,19 @@ class FakeJev:
     """Answers Choice questions from ``weights`` and Nouls from ``fits``.
 
     Options missing from ``weights`` get a small equal share; Nouls missing
-    from ``fits`` are answered as a confident yes.
+    from ``fits`` are answered as a confident yes. ``delay`` yields to the
+    event loop inside each request so concurrent searches interleave.
     """
 
     weights: Mapping[str, float] = field(default_factory=dict)
     fits: Mapping[str, float] = field(default_factory=dict)
+    delay: float = 0.0
     requests: list[dict[str, Any]] = field(default_factory=list)
 
-    async def system_one(
-        self, state: Any, questions: Mapping[str, Any], **kwargs: Any
-    ) -> _Response:
+    async def system_one(self, state: Any, questions: Any) -> _Response:
         self.requests.append({"state": state, "questions": dict(questions)})
+        if self.delay:
+            await asyncio.sleep(self.delay)
         answers: dict[str, _Answer] = {}
         for qid, question in questions.items():
             if question["type"] == "choice":
@@ -69,6 +73,26 @@ class FakeJev:
                 name = qid.removeprefix("fits::")
                 answers[qid] = _Answer(noul=self.fits.get(name, 0.9))
         return _Response(answers=answers)
+
+
+def _tool(name: str, doc: str | None = None, params: tuple[str, ...] = ("query",)):
+    def fn(query: str = "") -> str:
+        return f"{name}:{query}"
+
+    fn.__name__ = name
+    fn.__doc__ = (
+        doc
+        if doc is not None
+        else f"The {name.replace('_', ' ')} tool.\n\nMore detail about {name}."
+    )
+    parameters = {
+        "type": "object",
+        "properties": {p: {"type": "string"} for p in params},
+        "required": list(params),
+    }
+    return Tool.from_function(fn=fn, name=name, description=fn.__doc__).model_copy(
+        update={"parameters": parameters}
+    )
 
 
 def _server(*names: str) -> FastMCP:
@@ -112,7 +136,7 @@ class TestListing:
 
 
 class TestSmallCatalog:
-    """A catalog no larger than the shortlist goes straight to the close read."""
+    """A catalog that fits the close read goes there directly."""
 
     async def test_single_request_orders_by_choice_probability(self):
         jev = FakeJev(weights={"delete_record": 5, "send_email": 3, "add": 1})
@@ -126,14 +150,20 @@ class TestSmallCatalog:
         ]
         assert len(jev.requests) == 1
 
-    async def test_close_read_carries_detail_and_one_noul_per_tool(self):
+    async def test_close_read_puts_summaries_in_state_and_detail_in_criteria(self):
         jev = FakeJev()
         mcp = _server("send_email", "delete_record")
         mcp.add_transform(JevSearchTransform(client=jev))
         await _search(mcp, "email someone")
 
         [request] = jev.requests
-        assert request["state"] == {"request": "email someone"}
+        state = request["state"]
+        assert state["request"] == "email someone"
+        # the description a noul refers to lives in state, not in the question
+        assert state["tools"] == {
+            "send_email": "The send email tool.",
+            "delete_record": "The delete record tool.",
+        }
         which = request["questions"]["which"]
         assert which["instructions"] == RERANK_INSTRUCTIONS
         assert set(which["criteria"]) == {"send_email", "delete_record"}
@@ -143,7 +173,8 @@ class TestSmallCatalog:
         for name in ("send_email", "delete_record"):
             noul = request["questions"][f"fits::{name}"]
             assert noul["type"] == "noul"
-            assert f"`{name}`" in noul["instructions"]
+            assert f"`tools.{name}`" in noul["instructions"]
+            assert "The " not in noul["instructions"]
 
     async def test_tools_below_fit_threshold_are_dropped(self):
         jev = FakeJev(
@@ -168,7 +199,7 @@ class TestSmallCatalog:
 
 
 class TestLargeCatalog:
-    """Above the shortlist, a wide pass per chunk feeds the close read."""
+    """Above the close-read size, wide passes per chunk narrow the field."""
 
     async def test_wide_pass_is_chunked_and_shortlisted(self):
         names = [f"tool_{i:02d}" for i in range(7)]
@@ -182,6 +213,7 @@ class TestLargeCatalog:
             }
         )
         mcp = _server(*names)
+        # close read holds 3 * shortlist = 6; seven tools need a wide pass
         mcp.add_transform(
             JevSearchTransform(client=jev, shortlist=2, chunk_size=3, max_results=3)
         )
@@ -203,6 +235,7 @@ class TestLargeCatalog:
             r["questions"]["which"]["instructions"] == WIDE_INSTRUCTIONS for r in wide
         )
         assert all(len(r["questions"]) == 1 for r in wide)
+        assert all(r["state"] == {"request": "the sixth thing"} for r in wide)
         # two per chunk survive the wide pass; the third chunk only has one
         assert sorted(close["questions"]["which"]["criteria"]) == [
             "tool_01",
@@ -212,13 +245,64 @@ class TestLargeCatalog:
             "tool_06",
         ]
 
+    async def test_wide_pass_repeats_until_the_close_read_fits(self):
+        names = [f"t{i:02d}" for i in range(30)]
+        jev = FakeJev(weights={"t29": 9})
+        mcp = _server(*names)
+        mcp.add_transform(JevSearchTransform(client=jev, shortlist=2, chunk_size=5))
+
+        assert (await _search(mcp, "the last one"))[0] == "t29"
+        # round one: 6 chunks of 5 keep 12; round two: 3 chunks of 5 keep 6;
+        # six fits the close read (3 * shortlist), so one more request
+        assert len(jev.requests) == 6 + 3 + 1
+        close = jev.requests[-1]
+        assert len(close["questions"]["which"]["criteria"]) == 6
+
     async def test_wide_pass_uses_first_paragraph_only(self):
         jev = FakeJev()
-        mcp = _server(*(f"t{i}" for i in range(3)))
+        mcp = _server(*(f"t{i}" for i in range(4)))
         mcp.add_transform(JevSearchTransform(client=jev, shortlist=1))
         await _search(mcp, "x")
         summary = jev.requests[0]["questions"]["which"]["criteria"]["t0"]
         assert summary == "The t0 tool."
+
+
+class TestRenderedText:
+    def test_summary_and_detail_are_truncated(self):
+        transform = JevSearchTransform(
+            client=FakeJev(), summary_chars=12, detail_chars=40
+        )
+        tool = _tool("send_email", "Send an email to the given recipient.")
+        summaries, details = transform._render([tool])
+        assert summaries["send_email"] == "Send an ema…"
+        assert len(summaries["send_email"]) == 12
+        assert len(details["send_email"]) == 40
+        assert details["send_email"].endswith("…")
+
+    def test_parameter_change_rerenders_the_detail(self):
+        transform = JevSearchTransform(client=FakeJev())
+        before = _tool("send_email", "Send mail.", params=("to",))
+        after = _tool("send_email", "Send mail.", params=("to", "subject"))
+        _, first = transform._render([before])
+        _, second = transform._render([after])
+        assert "`subject`" not in first["send_email"]
+        assert "`subject`" in second["send_email"]
+
+
+class TestConcurrency:
+    async def test_searches_with_different_catalogs_do_not_interfere(self):
+        """Two sessions can see different tools and search at the same time;
+        neither may lose the text it needs mid-search."""
+        jev = FakeJev(weights={"tool_11": 9, "tool_03": 5}, delay=0.01)
+        transform = JevSearchTransform(client=jev, shortlist=2, chunk_size=4)
+        tools = [_tool(f"tool_{i:02d}") for i in range(12)]
+
+        full, partial = await asyncio.gather(
+            transform._search(tools, "the eleventh"),
+            transform._search(tools[:6], "the third"),
+        )
+        assert [t.name for t in full][0] == "tool_11"
+        assert [t.name for t in partial][0] == "tool_03"
 
 
 class TestCatalogChanges:
@@ -256,16 +340,29 @@ class TestCallThrough:
 
 
 class TestConfiguration:
-    def test_rejects_bad_thresholds(self):
+    def test_rejects_bad_settings(self):
         with pytest.raises(ValueError):
             JevSearchTransform(client=FakeJev(), fit_threshold=1.5)
         with pytest.raises(ValueError):
             JevSearchTransform(client=FakeJev(), shortlist=0)
+        with pytest.raises(ValueError, match="255"):
+            JevSearchTransform(client=FakeJev(), chunk_size=300)
+        with pytest.raises(ValueError):
+            JevSearchTransform(client=FakeJev(), summary_chars=0)
 
-    def test_missing_sdk_is_a_clear_error(self, monkeypatch):
+    def test_missing_api_key_fails_at_construction(self, monkeypatch):
+        monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+        with pytest.raises(ValueError, match="TYPESAFE_API_KEY"):
+            JevSearchTransform()
+
+    def test_api_key_from_environment_is_accepted(self, monkeypatch):
+        monkeypatch.setenv("TYPESAFE_API_KEY", "key-from-env")
+        assert JevSearchTransform()._api_key == "key-from-env"
+
+    async def test_missing_sdk_is_a_clear_error(self, monkeypatch):
         monkeypatch.setitem(sys.modules, "typesafe_sdk", None)
         with pytest.raises(ImportError, match="typesafe-sdk"):
-            JevSearchTransform()._get_client()
+            await JevSearchTransform(api_key="k")._get_client()
 
     async def test_empty_query_makes_no_request(self):
         jev = FakeJev()

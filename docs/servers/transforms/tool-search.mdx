@@ -101,7 +101,7 @@ BM25 builds an in-memory index from the searchable text of all tools. The index 
 `JevSearchTransform` ranks tools with [TypeSafe's Jev](https://docs.typesafe.ai), a model that returns calibrated probabilities over options you define instead of generated text. It reads the query and the tool descriptions for meaning, so `"archive last week's invoices"` finds `archive_invoices` without sharing a token with it, and a request that no tool serves comes back empty instead of returning the least-wrong match.
 
 <Tip>
-Jev search requires the `jev` extra and a TypeSafe API key in `TYPESAFE_API_KEY`. Install it with `pip install "fastmcp[jev]"`.
+Jev search requires the `jev` extra and a TypeSafe API key in `TYPESAFE_API_KEY`. Install it with `pip install "fastmcp[jev]"`. A missing key is an error when the transform is constructed.
 </Tip>
 
 ```python
@@ -119,28 +119,29 @@ The LLM's `search_tools` call takes a natural-language `query`, the same as BM25
 result = await client.call_tool("search_tools", {
     "query": "show me the flow runs that failed in the last hour"
 })
-# Returns: read_flow_runs first, then read_flow_run_history
+# Returns the best-fitting tool definitions first, or nothing when none fits
 ```
 
-A search is one or two Jev requests, typically well under a second in total:
+A search is a few Jev requests. On a 187-tool catalog generated from the Prefect OpenAPI spec, each of five queries completed in 0.6 to 1.1 seconds end to end:
 
-1. **Wide pass.** One request ranks the whole catalog. The query is the state, each tool name is an option, and its one-line summary is the option's description. Catalogs larger than `chunk_size` are split into concurrent requests, and each chunk's top `shortlist` goes forward.
-2. **Close read.** One request over the shortlist with each tool's full description and parameters. A Choice question decides which candidate fits best and sets the order. One yes/no question per candidate asks whether that tool does what the query asks; candidates below `fit_threshold` are dropped, which is how an off-topic query returns nothing.
+1. **Wide pass.** One request per chunk of the catalog. The query is the state, each tool name is an option, and its one-line summary is the option's description. Each chunk's top `shortlist` goes forward. If more than `3 * shortlist` candidates survive, they are ranked again in chunks until the close read fits.
+2. **Close read.** One request over the candidates with each tool's full description and parameters. A Choice question decides which candidate fits best and sets the order. One yes/no question per candidate asks whether that tool does what the query asks; candidates below `fit_threshold` are dropped, which is how an off-topic query returns nothing.
 
-A catalog no larger than `shortlist` skips the wide pass.
+A catalog no larger than `3 * shortlist` skips the wide pass.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `model` | `jev-latest` | TypeSafe model. Pin a versioned id once `fit_threshold` is tuned. |
 | `api_key` | `TYPESAFE_API_KEY` | TypeSafe API key. |
 | `client` | none | A ready `AsyncTypeSafeClient` to use instead of building one. |
-| `shortlist` | 8 | Candidates carried from each wide-pass chunk into the close read. |
+| `shortlist` | 8 | Candidates each wide-pass request carries forward; the close read sees at most three times this. |
 | `fit_threshold` | 0.3 | Minimum "does this tool do it" probability for a tool to be returned. |
-| `chunk_size` | 150 | Tools per wide-pass request. |
+| `chunk_size` | 150 | Tools per wide-pass request, at most 255. |
+| `timeout` | 10 | Seconds per API attempt. |
 | `summary_chars` | 160 | Description characters per tool in the wide pass. |
 | `detail_chars` | 1200 | Rendered characters per tool in the close read. |
 
-The defaults come from TypeSafe's skill-suggestion cookbook, not from your catalog. Log what `search_tools` returns for real queries before relying on the threshold.
+`fit_threshold` comes from TypeSafe's skill-suggestion cookbook; the other defaults were chosen for this transform and none were tuned on your catalog. Log what `search_tools` returns for real queries before relying on the threshold. Tool descriptions are model input: a description written to argue for its own selection can move the ranking, so treat catalogs from third-party servers accordingly.
 
 ### Which to Choose
 
@@ -152,7 +153,7 @@ Use **Jev** when queries and tool descriptions rarely share vocabulary, when the
 
 ## Configuration
 
-Both search transforms accept the same configuration options.
+All search transforms accept the same configuration options.
 
 ### Limiting Results
 
