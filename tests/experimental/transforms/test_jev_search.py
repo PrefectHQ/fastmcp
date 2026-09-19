@@ -267,6 +267,42 @@ class TestLargeCatalog:
         assert summary == "The t0 tool."
 
 
+class TestSinglePass:
+    """``close_read=False`` ranks and filters in one request per chunk."""
+
+    async def test_one_request_with_a_fit_question_per_tool(self):
+        jev = FakeJev(
+            weights={"delete_record": 5, "send_email": 3},
+            fits={"add": 0.1},
+        )
+        mcp = _server("add", "send_email", "delete_record")
+        mcp.add_transform(JevSearchTransform(client=jev, close_read=False))
+
+        assert await _search(mcp, "remove a row") == ["delete_record", "send_email"]
+        [request] = jev.requests
+        assert request["questions"]["which"]["instructions"] == WIDE_INSTRUCTIONS
+        assert set(request["questions"]) == {
+            "which",
+            "fits::add",
+            "fits::send_email",
+            "fits::delete_record",
+        }
+        # summaries only: the rendered parameter list never goes out
+        assert "`query`" not in request["questions"]["which"]["criteria"]["add"]
+        assert set(request["state"]["tools"]) == {"add", "send_email", "delete_record"}
+
+    async def test_large_catalog_is_still_one_round_trip(self):
+        names = [f"t{i:02d}" for i in range(30)]
+        jev = FakeJev(weights={"t29": 9})
+        mcp = _server(*names)
+        mcp.add_transform(
+            JevSearchTransform(client=jev, close_read=False, chunk_size=10)
+        )
+        assert (await _search(mcp, "the last one"))[0] == "t29"
+        assert len(jev.requests) == 3
+        assert all(len(r["questions"]) == 11 for r in jev.requests)
+
+
 class TestRenderedText:
     def test_summary_and_detail_are_truncated(self):
         transform = JevSearchTransform(

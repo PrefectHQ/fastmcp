@@ -137,6 +137,7 @@ A catalog no larger than `3 * shortlist` skips the wide pass.
 | `shortlist` | 8 | Candidates each wide-pass request carries forward; the close read sees at most three times this. |
 | `fit_threshold` | 0.3 | Minimum "does this tool do it" probability for a tool to be returned. |
 | `chunk_size` | 150 | Tools per wide-pass request, at most 255. |
+| `close_read` | `True` | Re-read the shortlist with full descriptions in a second request. `False` asks the fit question of every tool in the wide pass instead: one round trip, summaries only. On the 187-tool Prefect catalog it was 0.06s faster and six points worse at returning the right tool first. |
 | `timeout` | 10 | Seconds per API attempt. |
 | `summary_chars` | 160 | Description characters per tool in the wide pass. |
 | `detail_chars` | 1200 | Rendered characters per tool in the close read. |

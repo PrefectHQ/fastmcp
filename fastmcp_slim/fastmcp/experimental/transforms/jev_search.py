@@ -112,6 +112,10 @@ class JevSearchTransform(BaseSearchTransform):
         fit_threshold: A candidate whose "does this tool do what the request
             asks" probability falls below this is dropped from the results.
             Tune it against queries from your own users.
+        close_read: Whether to re-read the shortlist with full descriptions
+            and parameters in a second request. ``False`` asks the fit
+            question of every tool in the wide pass instead, on summaries
+            only, so a search is a single round trip.
         chunk_size: Tools per wide-pass request. Catalogs above this size
             are ranked in concurrent chunks. At most 255, the Choice limit.
         summary_chars: Characters of description per tool in the wide pass.
@@ -130,6 +134,7 @@ class JevSearchTransform(BaseSearchTransform):
         timeout: float = 10.0,
         shortlist: int = 8,
         fit_threshold: float = 0.3,
+        close_read: bool = True,
         chunk_size: int = 150,
         summary_chars: int = 160,
         detail_chars: int = 1200,
@@ -169,6 +174,7 @@ class JevSearchTransform(BaseSearchTransform):
         self._shortlist = shortlist
         self._max_candidates = 3 * shortlist
         self._fit_threshold = fit_threshold
+        self._close_read = close_read
         self._chunk_size = chunk_size
         self._summary_chars = summary_chars
         self._detail_chars = detail_chars
@@ -242,6 +248,16 @@ class JevSearchTransform(BaseSearchTransform):
             summaries[tool.name], details[tool.name] = self._texts[key]
         return summaries, details
 
+    @staticmethod
+    def _fit_question(name: str) -> dict[str, str]:
+        return {
+            "type": "noul",
+            "instructions": (
+                f"Does the tool described at `tools.{name}` do the specific "
+                "thing the user's request in `request` asks for?"
+            ),
+        }
+
     async def _rank_chunk(
         self, query: str, names: Sequence[str], summaries: Mapping[str, str]
     ) -> list[str]:
@@ -260,6 +276,59 @@ class JevSearchTransform(BaseSearchTransform):
         probabilities: Mapping[str, float] = response.answers["which"].probabilities
         ranked = sorted(names, key=lambda name: -probabilities.get(name, 0.0))
         return ranked[: self._shortlist]
+
+    async def _rank_and_fit_chunk(
+        self, query: str, names: Sequence[str], summaries: Mapping[str, str]
+    ) -> list[tuple[str, float]]:
+        """One request that both ranks a chunk and asks the fit question of
+        every tool in it, on summaries. Returns the fitting names with their
+        Choice probability."""
+        questions: dict[str, Any] = {
+            "which": {
+                "type": "choice",
+                "instructions": WIDE_INSTRUCTIONS,
+                "criteria": {name: summaries[name] for name in names},
+            }
+        }
+        for name in names:
+            questions[_fit_id(name)] = self._fit_question(name)
+        client = await self._get_client()
+        response = await client.system_one(
+            state={
+                "request": query,
+                "tools": {name: summaries[name] for name in names},
+            },
+            questions=questions,
+        )
+        answers = response.answers
+        probabilities: Mapping[str, float] = answers["which"].probabilities
+        return [
+            (name, probabilities.get(name, 0.0))
+            for name in names
+            if answers[_fit_id(name)].noul >= self._fit_threshold
+        ]
+
+    async def _single_pass(
+        self, query: str, names: list[str], summaries: Mapping[str, str]
+    ) -> list[str]:
+        """Rank and filter in one round trip. Chunks run concurrently; their
+        probabilities are not comparable, so the merged order is a heuristic."""
+        chunks = [
+            names[i : i + self._chunk_size]
+            for i in range(0, len(names), self._chunk_size)
+        ]
+        tasks = [
+            asyncio.ensure_future(self._rank_and_fit_chunk(query, chunk, summaries))
+            for chunk in chunks
+        ]
+        try:
+            results = await asyncio.gather(*tasks)
+        except BaseException:
+            for task in tasks:
+                task.cancel()
+            raise
+        fitting = [pair for result in results for pair in result]
+        return [name for name, _ in sorted(fitting, key=lambda pair: -pair[1])]
 
     async def _narrow(
         self, query: str, names: list[str], summaries: Mapping[str, str]
@@ -307,13 +376,7 @@ class JevSearchTransform(BaseSearchTransform):
             }
         }
         for name in names:
-            questions[_fit_id(name)] = {
-                "type": "noul",
-                "instructions": (
-                    f"Does the tool described at `tools.{name}` do the specific "
-                    "thing the user's request in `request` asks for?"
-                ),
-            }
+            questions[_fit_id(name)] = self._fit_question(name)
         client = await self._get_client()
         response = await client.system_one(
             state={
@@ -334,6 +397,9 @@ class JevSearchTransform(BaseSearchTransform):
             return []
         summaries, details = self._render(tools)
         by_name = {t.name: t for t in tools}
-        candidates = await self._narrow(query, list(by_name), summaries)
-        fitting = await self._rerank(query, candidates, summaries, details)
+        if self._close_read:
+            candidates = await self._narrow(query, list(by_name), summaries)
+            fitting = await self._rerank(query, candidates, summaries, details)
+        else:
+            fitting = await self._single_pass(query, list(by_name), summaries)
         return [by_name[name] for name in fitting[: self._max_results]]
