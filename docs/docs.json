@@ -405,7 +405,7 @@
             "icon": "code"
           }
         ],
-        "version": "v4.0.0 (beta 1)"
+        "version": "v4.0.5"
       },
       {
         "$ref": "./v3-navigation.json"
