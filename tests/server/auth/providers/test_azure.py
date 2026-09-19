@@ -1,6 +1,7 @@
 """Tests for Azure (Microsoft Entra) OAuth provider."""
 
 import time
+from typing import Literal
 from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs, urlparse
 
@@ -848,6 +849,169 @@ class TestAzureProvider:
         # Should have 3 items (read deduplicated, plus offline_access)
         assert len(result) == 3
         assert result.count("api://my-api/read") == 1
+
+
+class TestAzureProviderPrompt:
+    """Tests that prompt reaches Azure rather than FastMCP's own consent page."""
+
+    @pytest.fixture
+    def client(self) -> OAuthClientInformationFull:
+        return OAuthClientInformationFull(
+            client_id="dummy",
+            client_secret="secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+
+    @pytest.fixture
+    def params(self) -> AuthorizationParams:
+        return AuthorizationParams(
+            redirect_uri=AnyUrl("http://localhost:12345/callback"),
+            redirect_uri_provided_explicitly=True,
+            scopes=["read"],
+            state="abc",
+            code_challenge="xyz",
+        )
+
+    @pytest.mark.parametrize("consent", [True, "remember"])
+    async def test_prompt_reaches_azure_not_the_consent_url(
+        self,
+        memory_storage: MemoryStore,
+        client: OAuthClientInformationFull,
+        params: AuthorizationParams,
+        consent: bool | Literal["remember"],
+    ):
+        """With the consent screen in the loop, prompt belongs on the Azure URL."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="common",
+            required_scopes=["read"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+            require_authorization_consent=consent,
+        )
+        await provider.register_client(client)
+
+        url = await provider.authorize(client, params)
+
+        # authorize() returns the local consent page, which must stay clean
+        assert url.startswith("https://srv.example/consent?")
+        assert "prompt" not in url
+
+        txn_id = parse_qs(urlparse(url).query)["txn_id"][0]
+        transaction = await provider._transaction_store.get(key=txn_id)
+        assert transaction is not None
+
+        upstream_url = provider._build_upstream_authorize_url(
+            txn_id, transaction.model_dump()
+        )
+        assert upstream_url.startswith("https://login.microsoftonline.com/")
+        assert "prompt=select_account" in upstream_url
+
+    async def test_prompt_sent_once_when_consent_disabled(
+        self,
+        memory_storage: MemoryStore,
+        client: OAuthClientInformationFull,
+        params: AuthorizationParams,
+    ):
+        """Without the consent screen, authorize() returns the Azure URL directly."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="common",
+            required_scopes=["read"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+            require_authorization_consent=False,
+        )
+        await provider.register_client(client)
+
+        url = await provider.authorize(client, params)
+
+        assert url.startswith("https://login.microsoftonline.com/")
+        assert "prompt=select_account" in url
+        assert url.count("prompt=") == 1
+
+    async def test_extra_authorize_params_override_default_prompt(
+        self,
+        memory_storage: MemoryStore,
+        client: OAuthClientInformationFull,
+        params: AuthorizationParams,
+    ):
+        """Caller-supplied params win over the select_account default."""
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="common",
+            required_scopes=["read"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+            require_authorization_consent=False,
+            extra_authorize_params={
+                "prompt": "login",
+                "domain_hint": "contoso.com",
+            },
+        )
+        await provider.register_client(client)
+
+        url = await provider.authorize(client, params)
+
+        assert "prompt=login" in url
+        assert "domain_hint=contoso.com" in url
+        assert "select_account" not in url
+
+    async def test_b2c_does_not_send_select_account(
+        self,
+        memory_storage: MemoryStore,
+        client: OAuthClientInformationFull,
+        params: AuthorizationParams,
+    ):
+        """B2C user flows only support prompt=login, so send no prompt by default."""
+        provider = AzureProvider.from_b2c(
+            tenant_name="mytenant",
+            policy_name="B2C_1_susi",
+            client_id="test_client",
+            client_secret="test_secret",
+            required_scopes=["read"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+            require_authorization_consent=False,
+        )
+        await provider.register_client(client)
+
+        url = await provider.authorize(client, params)
+
+        assert url.startswith("https://mytenant.b2clogin.com/")
+        assert "prompt=" not in url
+
+    async def test_b2c_accepts_an_explicit_prompt(
+        self,
+        memory_storage: MemoryStore,
+        client: OAuthClientInformationFull,
+        params: AuthorizationParams,
+    ):
+        """The B2C opt-out is a default, not a restriction."""
+        provider = AzureProvider.from_b2c(
+            tenant_name="mytenant",
+            policy_name="B2C_1_susi",
+            client_id="test_client",
+            client_secret="test_secret",
+            required_scopes=["read"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+            require_authorization_consent=False,
+            extra_authorize_params={"prompt": "login"},
+        )
+        await provider.register_client(client)
+
+        url = await provider.authorize(client, params)
+
+        assert "prompt=login" in url
 
 
 class TestAzureProviderTokenIssuer:
