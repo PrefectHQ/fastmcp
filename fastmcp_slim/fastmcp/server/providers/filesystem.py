@@ -99,8 +99,8 @@ class FileSystemProvider(LocalProvider):
         self._reload_lock: asyncio.Lock | None = None
         # Generation counter to deduplicate concurrent reloads
         self._reload_generation: int = 0
-        # Failures from the most recent discovery pass
-        self._discovery_failures: dict[Path, str] = {}
+        # Failures from the most recent discovery and registration pass
+        self._failed_files: dict[Path, str] = {}
 
         # Always load once at init to catch errors early
         self._load_components()
@@ -114,7 +114,7 @@ class FileSystemProvider(LocalProvider):
             logger.warning("FileSystemProvider root does not exist: %s", self._root)
 
         result = discover_and_import(self._root)
-        self._discovery_failures = dict(result.failed_files)
+        self._failed_files = dict(result.failed_files)
 
         # Log warnings for failed files (only once per file version)
         for file_path, error in result.failed_files.items():
@@ -137,7 +137,8 @@ class FileSystemProvider(LocalProvider):
         for file_path, component in result.components:
             try:
                 self._register_component(component)
-            except Exception:
+            except Exception as exc:
+                self._failed_files[file_path] = f"{type(exc).__name__}: {exc}"
                 logger.exception(
                     "Failed to register %s from %s",
                     getattr(component, "name", repr(component)),
@@ -163,14 +164,15 @@ class FileSystemProvider(LocalProvider):
             logger.debug("Ignoring unknown component type: %r", type(component))
 
     @property
-    def discovery_failures(self) -> Mapping[Path, str]:
-        """Files that failed to import during the most recent discovery pass.
+    def failed_files(self) -> Mapping[Path, str]:
+        """Files that failed to import or register during the most recent load.
 
         The returned mapping is a snapshot. Import failures are also logged as
-        warnings, but applications that need a strict startup policy can
-        inspect this property without importing the modules again.
+        warnings and registration failures as errors, but applications that
+        need a strict startup policy can inspect this property without
+        importing the modules again.
         """
-        return dict(self._discovery_failures)
+        return dict(self._failed_files)
 
     async def _with_reload(self, coro_fn: Callable[..., Any], *args: Any) -> Any:
         """Acquire the reload lock, reload if needed, then run *coro_fn*.
