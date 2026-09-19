@@ -380,6 +380,50 @@ class TestAzureProvider:
             or "api://my-api/write" in upstream_url
         )
 
+    @pytest.mark.parametrize("require_authorization_consent", [True, False])
+    async def test_authorize_sends_select_account_to_azure(
+        self,
+        memory_storage: MemoryStore,
+        require_authorization_consent: bool,
+    ):
+        provider = AzureProvider(
+            client_id="test_client",
+            client_secret="test_secret",
+            tenant_id="common",
+            required_scopes=["read"],
+            base_url="https://srv.example",
+            jwt_signing_key="test-secret",
+            client_storage=memory_storage,
+            require_authorization_consent=require_authorization_consent,
+        )
+        client = OAuthClientInformationFull(
+            client_id="dummy",
+            client_secret="secret",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+        params = AuthorizationParams(
+            redirect_uri=AnyUrl("http://localhost:12345/callback"),
+            redirect_uri_provided_explicitly=True,
+            scopes=["read"],
+            state="abc",
+            code_challenge="xyz",
+        )
+
+        url = await provider.authorize(client, params)
+        if require_authorization_consent:
+            parsed = urlparse(url)
+            query = parse_qs(parsed.query)
+            assert "prompt" not in query
+            transaction = await provider._transaction_store.get(key=query["txn_id"][0])
+            assert transaction is not None
+            url = provider._build_upstream_authorize_url(
+                query["txn_id"][0], transaction.model_dump()
+            )
+
+        parsed = urlparse(url)
+        assert parsed.netloc == "login.microsoftonline.com"
+        assert parse_qs(parsed.query)["prompt"] == ["select_account"]
+
     async def test_authorize_appends_additional_scopes(
         self, memory_storage: MemoryStore
     ):
