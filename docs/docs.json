@@ -16,7 +16,7 @@
       "dark": "#475569",
       "light": "#1e3a5f"
     },
-    "content": "FastMCP 4 is here — built for the new MCP protocol. [See what's new](/getting-started/whats-new)."
+    "content": "FastMCP 4 is here \u2014 built for the new MCP protocol. [See what's new](/getting-started/whats-new)."
   },
   "colors": {
     "dark": "#f72585",
@@ -24,12 +24,15 @@
     "primary": "#2d00f7"
   },
   "contextual": {
-    "options": ["copy", "view"]
+    "options": [
+      "copy",
+      "view"
+    ]
   },
   "description": "The fast, Pythonic way to build MCP servers and clients.",
   "errors": {
     "404": {
-      "description": "You’ve wandered outside the context.",
+      "description": "You\u2019ve wandered outside the context.",
       "redirect": false,
       "title": "Don't panic."
     }
@@ -308,7 +311,10 @@
                     "collapsed": true,
                     "group": "Web Frameworks",
                     "icon": "code",
-                    "pages": ["integrations/fastapi", "integrations/openapi"]
+                    "pages": [
+                      "integrations/fastapi",
+                      "integrations/openapi"
+                    ]
                   },
                   {
                     "collapsed": true,
@@ -383,7 +389,10 @@
                     "collapsed": true,
                     "group": "What's New",
                     "icon": "sparkles",
-                    "pages": ["updates", "changelog"]
+                    "pages": [
+                      "updates",
+                      "changelog"
+                    ]
                   },
                   "more/faq"
                 ]
@@ -405,7 +414,7 @@
             "icon": "code"
           }
         ],
-        "version": "v4.0.0 (beta 1)"
+        "version": "v4.0.5"
       },
       {
         "$ref": "./v3-navigation.json"
@@ -531,6 +540,10 @@
     {
       "destination": "/getting-started/upgrading/from-fastmcp-3",
       "source": "/getting-started/upgrading/to-mcp-sdk-v2"
+    },
+    {
+      "source": "/servers/transforms/namespacing",
+      "destination": "/servers/transforms/transforms"
     }
   ],
   "search": {

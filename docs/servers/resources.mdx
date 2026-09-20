@@ -306,7 +306,7 @@ While `@mcp.resource` is ideal for dynamic content, you can directly register pr
 ```python
 from pathlib import Path
 from fastmcp import FastMCP
-from fastmcp.resources import FileResource, TextResource, DirectoryResource
+from fastmcp.resources import DirectoryResource, FileResource, HttpResource, TextResource
 
 mcp = FastMCP(name="DataServer")
 
@@ -344,14 +344,25 @@ if data_dir_path.is_dir():
         recursive=False # Set to True to list subdirectories
     )
     mcp.add_resource(data_listing_resource) # Returns JSON list of files
+
+# 4. Serving a web page fetched by the server
+page_resource = HttpResource(
+    uri="docs://service-public/f23533",
+    url="https://entreprendre.service-public.gouv.fr/vosdroits/F23533",
+    name="Service Public F23533",
+    mime_type="text/html",
+)
+mcp.add_resource(page_resource)
 ```
+
+`HttpResource` has two addresses. `uri` is the identity clients see in the resource list, and `url` is what the server fetches when a client reads it. Keep them different: the MCP specification reserves `https://` URIs for content the client can fetch on its own, so advertising the fetched URL as the `uri` tells clients they don't need your server for it. A custom scheme like `docs://` makes it clear the content comes through the server.
 
 **Common Resource Classes:**
 
 -   `TextResource`: For simple string content.
 -   `BinaryResource`: For raw `bytes` content.
 -   `FileResource`: Reads content from a local file path. Handles text/binary modes, encoding, and lazy reading.
--   `HttpResource`: Fetches content from an HTTP(S) URL (requires `httpx2`).
+-   `HttpResource`: Fetches content from an HTTP(S) URL on the server side when a client reads it (requires `httpx2`).
 -   `DirectoryResource`: Lists files in a local directory (returns JSON).
 -   (`FunctionResource`: Internal class used by `@mcp.resource`).
 
