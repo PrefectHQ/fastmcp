@@ -1653,7 +1653,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         Returns:
             List of scopes to send, or empty list to omit scope parameter
         """
-        return scopes
+        return []
 
     def _translate_scopes_from_idp(self, scopes: list[str]) -> list[str]:
         """Translate IdP-returned scopes into the client-facing form.
