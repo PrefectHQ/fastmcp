@@ -658,8 +658,10 @@ class Context:
     def client_supports_extension(self, extension_id: str) -> bool:
         """Check whether the connected client supports a given MCP extension.
 
-        Inspects the ``extensions`` extra field on ``ClientCapabilities``
-        sent by the client during initialization.
+        Inspects the ``extensions`` field on the ``ClientCapabilities`` the
+        client declared — on the modern per-request envelope those capabilities
+        are required while ``clientInfo`` is optional, so a conformant client
+        can advertise an extension without ever sending client info.
 
         Reads the client's advertised capabilities from the session, which is
         available in request mode and in background-task mode (where the

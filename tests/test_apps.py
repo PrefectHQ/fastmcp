@@ -6,6 +6,7 @@ extension negotiation, and the ``Context.client_supports_extension`` method.
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 from typing import Any
 
@@ -15,6 +16,7 @@ from mcp_types import (
     Implementation,
     InitializeRequestParams,
 )
+from mcp_types.version import LATEST_MODERN_VERSION
 
 from fastmcp import Client, FastMCP
 from fastmcp.apps import (
@@ -27,6 +29,7 @@ from fastmcp.apps import (
 )
 from fastmcp.server.context import Context
 from fastmcp.server.low_level import client_supports_extension
+from fastmcp.utilities.tests import asgi_server
 
 # ---------------------------------------------------------------------------
 # Model serialization
@@ -477,6 +480,35 @@ class TestClientSupportsExtension:
         session = self._session_with_capabilities(caps)
         assert client_supports_extension(session, UI_EXTENSION_ID) is False
 
+    def test_capabilities_without_client_params(self):
+        """A modern-envelope client that declared capabilities but no client
+        info is detected.
+
+        On 2026-07-28 the request envelope declares capabilities while
+        ``clientInfo`` stays optional, so ``client_capabilities`` can be set
+        with no synthesized ``client_params``. Reading the params first would
+        report a conformant client as unsupported.
+        """
+        caps = ClientCapabilities(extensions={UI_EXTENSION_ID: {}})
+        session: Any = SimpleNamespace(client_capabilities=caps, client_params=None)
+        assert client_supports_extension(session, UI_EXTENSION_ID) is True
+
+    def test_capabilities_without_target_extension_and_without_client_params(self):
+        caps = ClientCapabilities(extensions={"other/extension": {}})
+        session: Any = SimpleNamespace(client_capabilities=caps, client_params=None)
+        assert client_supports_extension(session, UI_EXTENSION_ID) is False
+
+    def test_falls_back_to_client_params_when_capabilities_absent(self):
+        """A session exposing only ``client_params`` is still supported."""
+        caps = ClientCapabilities(extensions={UI_EXTENSION_ID: {}})
+        params = InitializeRequestParams(
+            protocol_version=LATEST_MODERN_VERSION,
+            capabilities=caps,
+            client_info=Implementation(name="test-client", version="1.0"),
+        )
+        session: Any = SimpleNamespace(client_params=params)
+        assert client_supports_extension(session, UI_EXTENSION_ID) is True
+
     def test_legacy_model_extra_fallback(self):
         """Defensive fallback: capabilities whose real `extensions` field is None
         but which carry `extensions` in `model_extra` are still detected.
@@ -502,6 +534,88 @@ class TestClientSupportsExtension:
     def test_no_capabilities(self):
         session = self._session_with_capabilities(None)
         assert client_supports_extension(session, UI_EXTENSION_ID) is False
+
+
+class TestModernEnvelopeWithoutClientInfo:
+    """A 2026-07-28 client that advertises extensions without ``clientInfo``.
+
+    Capabilities are required on the modern per-request envelope while client
+    info is optional, so a fully conformant client can reach a tool with
+    ``client_capabilities`` set and ``client_params`` absent. FastMCP's own
+    ``Client`` always sends ``clientInfo``, so the envelope is posted raw.
+    """
+
+    @staticmethod
+    def _envelope(*, with_client_info: bool) -> dict[str, Any]:
+        meta: dict[str, Any] = {
+            "io.modelcontextprotocol/protocolVersion": LATEST_MODERN_VERSION,
+            "io.modelcontextprotocol/clientCapabilities": {
+                "extensions": {UI_EXTENSION_ID: {}}
+            },
+        }
+        if with_client_info:
+            meta["io.modelcontextprotocol/clientInfo"] = {
+                "name": "envelope-client",
+                "version": "1.0",
+            }
+        return {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "supports_ui", "arguments": {}, "_meta": meta},
+        }
+
+    @staticmethod
+    def _server() -> FastMCP:
+        server = FastMCP("envelope")
+
+        @server.tool
+        def supports_ui(ctx: Context) -> str:
+            session = ctx.session
+            return json.dumps(
+                {
+                    "supports": ctx.client_supports_extension(UI_EXTENSION_ID),
+                    "has_client_params": session.client_params is not None,
+                },
+                sort_keys=True,
+            )
+
+        return server
+
+    async def _call(self, running: Any, *, with_client_info: bool) -> dict[str, Any]:
+        headers = {
+            "Accept": "application/json, text/event-stream",
+            "MCP-Protocol-Version": LATEST_MODERN_VERSION,
+            "Mcp-Method": "tools/call",
+            "Mcp-Name": "supports_ui",
+        }
+        async with running.http_client() as client:
+            response = await client.post(
+                running.url,
+                json=self._envelope(with_client_info=with_client_info),
+                headers=headers,
+            )
+        body = response.text
+        for line in body.splitlines():  # streamable HTTP answers with SSE
+            if line.startswith("data: "):
+                body = line[len("data: ") :]
+                break
+        payload = json.loads(body)["result"]["content"][0]["text"]
+        return json.loads(payload)
+
+    async def test_extension_detected_without_client_info(self):
+        async with asgi_server(self._server(), stateless_http=True) as running:
+            result = await self._call(running, with_client_info=False)
+
+        assert result["has_client_params"] is False
+        assert result["supports"] is True
+
+    async def test_extension_detected_with_client_info(self):
+        async with asgi_server(self._server(), stateless_http=True) as running:
+            result = await self._call(running, with_client_info=True)
+
+        assert result["has_client_params"] is True
+        assert result["supports"] is True
 
 
 # ---------------------------------------------------------------------------

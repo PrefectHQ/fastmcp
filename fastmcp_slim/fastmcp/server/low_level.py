@@ -112,18 +112,22 @@ def client_supports_extension(session: ServerSession, extension_id: str) -> bool
     """Check whether the connected client supports a given MCP extension.
 
     Inspects the ``extensions`` capability on ``ClientCapabilities`` sent by the
-    client during initialization. In v2 the client's initialize params are
-    reachable via ``session.client_params``.
+    client during initialization. In v2 that is ``session.client_capabilities``:
+    on the modern per-request envelope capabilities are required while client
+    info is optional, so a conformant client can declare extensions without a
+    synthesized ``client_params``. Reading the params first would miss exactly
+    those clients, so the recorded capabilities are the source of truth and the
+    params are only a fallback for sessions that do not expose them.
 
     SDK v2 declares ``extensions`` as a real field on ``ClientCapabilities``, so
     a client sending ``ClientCapabilities(extensions={...})`` populates the field
     directly. We read that field first and fall back to ``model_extra`` only for
     legacy-serialized clients that carried ``extensions`` as an extra key.
     """
-    client_params = session.client_params
-    if client_params is None:
-        return False
-    caps = client_params.capabilities
+    caps = getattr(session, "client_capabilities", None)
+    if caps is None:
+        client_params = getattr(session, "client_params", None)
+        caps = client_params.capabilities if client_params is not None else None
     if caps is None:
         return False
     extensions: dict[str, Any] | None = caps.extensions
