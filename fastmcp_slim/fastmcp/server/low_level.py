@@ -112,10 +112,9 @@ def client_supports_extension(session: ServerSession, extension_id: str) -> bool
     """Check whether the connected client supports a given MCP extension.
 
     Inspects the ``extensions`` capability the client declared, read from
-    ``session.client_capabilities``. On 2026-07-28 capabilities ride every
-    request's ``_meta`` envelope while client info stays optional, so a client
-    that declares the extension without identifying itself has capabilities on
-    the session and no ``session.client_params`` to read them from.
+    ``session.client_capabilities``. On 2026-07-28+ capabilities ride every
+    request's ``_meta`` envelope while client info stays optional, so
+    capabilities can be present while ``session.client_params`` is ``None``.
 
     SDK v2 declares ``extensions`` as a real field on ``ClientCapabilities``, so
     a client sending ``ClientCapabilities(extensions={...})`` populates the field

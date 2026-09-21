@@ -448,7 +448,9 @@ class TestClientSupportsExtension:
     SDK v2 declares ``extensions`` as a real field on ``ClientCapabilities``, so
     a client sending ``ClientCapabilities(extensions={...})`` populates the field
     directly (``model_extra`` stays ``None``). The helper must read the real
-    field, not only ``model_extra``.
+    field, not only ``model_extra``. It also covers the 2026-07-28 envelope,
+    where a client declares capabilities without ``clientInfo`` and the session
+    therefore has no ``client_params``.
     """
 
     CLIENT_INFO = Implementation(name="test-client", version="1.0")
