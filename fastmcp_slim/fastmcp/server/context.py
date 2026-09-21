@@ -658,15 +658,13 @@ class Context:
     def client_supports_extension(self, extension_id: str) -> bool:
         """Check whether the connected client supports a given MCP extension.
 
-        Inspects the ``extensions`` extra field on ``ClientCapabilities``
-        sent by the client during initialization.
-
-        Reads the client's advertised capabilities from the session, which is
-        available in request mode and in background-task mode (where the
-        snapshot session preserves the client's initialize params). Returns
-        ``False`` when no session is available (e.g., a distributed worker with
-        no live session, or outside any context) or when the client did not
-        advertise the extension.
+        Inspects the ``extensions`` capability the client declared, read from
+        the session's ``client_capabilities``. The session is available in
+        request mode and in background-task mode, where the snapshot session
+        preserves the declared capabilities. Returns ``False`` when no session
+        is available (e.g., a distributed worker with no live session, or
+        outside any context) or when the client did not advertise the
+        extension.
 
         Example::
 
