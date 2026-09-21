@@ -27,10 +27,12 @@ Example:
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
+
+import anyio
+from anyio.to_thread import run_sync
 
 from fastmcp.prompts.base import Prompt
 from fastmcp.resources.base import Resource
@@ -96,7 +98,7 @@ class FileSystemProvider(LocalProvider):
         # Re-warn if file changes (mtime differs)
         self._warned_files: dict[Path, float] = {}
         # Lock for serializing reload operations (created lazily)
-        self._reload_lock: asyncio.Lock | None = None
+        self._reload_lock: anyio.Lock | None = None
         # Generation counter to deduplicate concurrent reloads
         self._reload_generation: int = 0
 
@@ -173,9 +175,9 @@ class FileSystemProvider(LocalProvider):
         if not self._reload and self._loaded:
             return await coro_fn(*args)
 
-        # Create lock lazily (can't create in __init__ without event loop)
+        # Create the lock lazily in the active async backend.
         if self._reload_lock is None:
-            self._reload_lock = asyncio.Lock()
+            self._reload_lock = anyio.Lock()
 
         generation_before = self._reload_generation
 
@@ -183,7 +185,8 @@ class FileSystemProvider(LocalProvider):
             if not self._loaded or (
                 self._reload and self._reload_generation == generation_before
             ):
-                await asyncio.to_thread(self._load_components)
+                # Defer cancel-scope cancellation until component mutations finish.
+                await run_sync(self._load_components)
                 self._reload_generation += 1
             return await coro_fn(*args)
 
