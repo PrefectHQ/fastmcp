@@ -1001,6 +1001,39 @@ class TestMalformedURITemplates:
             "tags": "alpha",
         }
 
+    async def test_union_with_list_query_param_accepts_explode(self):
+        """A mixed union can opt into repeated values with explode."""
+
+        def search(
+            category: str, tags: str | list[str] | None = None
+        ) -> dict[str, object]:
+            return {"category": category, "tags": tags}
+
+        template = ResourceTemplate.from_function(
+            fn=search, uri_template="items://{category}{?tags*}"
+        )
+        params = match_uri_template(
+            "items://books?tags=alpha&tags=beta",
+            "items://{category}{?tags*}",
+        )
+
+        assert params == {"category": "books", "tags": ["alpha", "beta"]}
+        assert await template.read(params) == {
+            "category": "books",
+            "tags": ["alpha", "beta"],
+        }
+
+    def test_scalar_query_param_rejects_explode(self):
+        """Explode always produces a list, so a scalar-only parameter is invalid."""
+
+        def search(category: str, tag: str = "") -> dict[str, str]:
+            return {"category": category, "tag": tag}
+
+        with pytest.raises(ValueError, match="must accept a list"):
+            ResourceTemplate.from_function(
+                fn=search, uri_template="items://{category}{?tag*}"
+            )
+
     def test_non_list_collection_query_params_are_unrestricted(self):
         """Only `list` round-trips through expansion, so only `list` is checked."""
 
@@ -1155,7 +1188,7 @@ class TestMatchExpandRoundTrip:
         assert params is not None
         assert expand_uri_template("test://x{?tags}", params) == uri
 
-    def test_exploded_query_values_encode_reserved_characters(self):
+    def test_query_values_encode_reserved_characters(self):
         """RFC 6570 query expansion permits only unreserved value characters."""
         template = "test://x{?tags*}"
         params = {"tags": ["", "a b", "a+b", "a&b", "a/b", "café"]}
@@ -1166,6 +1199,7 @@ class TestMatchExpandRoundTrip:
             "test://x?tags=&tags=a%20b&tags=a%2Bb&tags=a%26b&tags=a%2Fb&tags=caf%C3%A9"
         )
         assert match_uri_template(uri, template) == params
+        assert expand_uri_template("test://x{?q}", {"q": "a/b"}) == "test://x?q=a%2Fb"
 
     @pytest.mark.parametrize(
         "template, params",

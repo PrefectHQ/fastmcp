@@ -63,6 +63,27 @@ def _requires_exploded_query(annotation: Any) -> bool:
     return False
 
 
+def _accepts_exploded_query(annotation: Any) -> bool:
+    """Whether an annotation explicitly accepts the list produced by explode."""
+    if (
+        annotation is Any
+        or annotation is object
+        or annotation is inspect.Parameter.empty
+        or isinstance(annotation, str)
+    ):
+        return True
+    if annotation is list:
+        return True
+    origin = get_origin(annotation)
+    if origin is list:
+        return True
+    if origin is Annotated:
+        return _accepts_exploded_query(get_args(annotation)[0])
+    if origin in (Union, UnionType):
+        return any(_accepts_exploded_query(arg) for arg in get_args(annotation))
+    return False
+
+
 def extract_exploded_query_params(uri_template: str) -> set[str]:
     """Extract query parameter names declared with the RFC 6570 explode modifier.
 
@@ -243,11 +264,11 @@ def expand_uri_template(uri_template: str, params: dict[str, Any]) -> str:
             else:
                 continue
             if exploded and isinstance(value, (list, tuple)):
-                parts.extend(f"{quote(name)}={quote(str(v), safe='')}" for v in value)
-            elif exploded:
-                parts.append(f"{quote(name)}={quote(str(value), safe='')}")
+                parts.extend(
+                    f"{quote(name, safe='')}={quote(str(v), safe='')}" for v in value
+                )
             else:
-                parts.append(f"{quote(name)}={quote(str(value))}")
+                parts.append(f"{quote(name, safe='')}={quote(str(value), safe='')}")
         if parts:
             return "?" + "&".join(parts)
         return ""
@@ -627,7 +648,21 @@ class FunctionResourceTemplate(ResourceTemplate):
             exploded = {
                 p.replace("-", "_") for p in extract_exploded_query_params(uri_template)
             }
+            for param_name in sorted(exploded):
+                if param_name not in user_sig.parameters:
+                    continue
+                annotation = hints.get(
+                    param_name, user_sig.parameters[param_name].annotation
+                )
+                if not _accepts_exploded_query(annotation):
+                    raise ValueError(
+                        f"Query parameter '{param_name}' uses the RFC 6570 "
+                        "explode modifier, so its function parameter must accept "
+                        f"a list: use '{{?{param_name}}}' for a scalar value"
+                    )
             for param_name in sorted(query_params - exploded):
+                if param_name not in user_sig.parameters:
+                    continue
                 annotation = hints.get(
                     param_name, user_sig.parameters[param_name].annotation
                 )
