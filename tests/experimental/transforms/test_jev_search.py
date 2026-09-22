@@ -17,6 +17,7 @@ import pytest
 
 from fastmcp import Client, FastMCP
 from fastmcp.experimental.transforms.jev_search import (
+    MAX_CHOICE_OPTIONS,
     RERANK_INSTRUCTIONS,
     WIDE_INSTRUCTIONS,
     JevSearchTransform,
@@ -258,6 +259,20 @@ class TestLargeCatalog:
         close = jev.requests[-1]
         assert len(close["questions"]["which"]["criteria"]) == 6
 
+    async def test_close_read_never_exceeds_choice_limit(self):
+        names = [f"t{i:03d}" for i in range(MAX_CHOICE_OPTIONS + 1)]
+        jev = FakeJev()
+        mcp = _server(*names)
+        mcp.add_transform(JevSearchTransform(client=jev, shortlist=100, chunk_size=150))
+
+        await _search(mcp, "x")
+
+        choice_sizes = [
+            len(request["questions"]["which"]["criteria"]) for request in jev.requests
+        ]
+        assert choice_sizes == [150, 106, 200]
+        assert max(choice_sizes) <= MAX_CHOICE_OPTIONS
+
     async def test_wide_pass_uses_first_paragraph_only(self):
         jev = FakeJev()
         mcp = _server(*(f"t{i}" for i in range(4)))
@@ -381,6 +396,11 @@ class TestConfiguration:
             JevSearchTransform(client=FakeJev(), fit_threshold=1.5)
         with pytest.raises(ValueError):
             JevSearchTransform(client=FakeJev(), shortlist=0)
+        with pytest.raises(ValueError, match="less than chunk_size"):
+            JevSearchTransform(client=FakeJev(), shortlist=8, chunk_size=5)
+        JevSearchTransform(
+            client=FakeJev(), close_read=False, shortlist=8, chunk_size=5
+        )
         with pytest.raises(ValueError, match="255"):
             JevSearchTransform(client=FakeJev(), chunk_size=300)
         with pytest.raises(ValueError):
