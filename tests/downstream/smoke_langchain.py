@@ -1,30 +1,36 @@
-# /// script
-# requires-python = ">=3.10"
-# dependencies = ["langchain-mcp-adapters", "langchain"]
-# ///
-"""Exercise a FastMCP server through langchain-mcp-adapters.
+"""Drive a FastMCP server through langchain-mcp-adapters, the way LangChain users reach it.
 
 The adapters pin `mcp<2` while FastMCP 4 needs `mcp>=2`, so they cannot share an
-environment. This script runs in its own environment and reaches the server
-over the wire, the way LangChain users do:
+environment. This runs in its own environment against servers started from the
+checkout, which also covers handshake-era (mcp v1) clients:
 
-    uv run tests/downstream/smoke_langchain.py
+    uv run --isolated --no-project --with langchain-mcp-adapters --with langchain \
+        python tests/downstream/smoke_langchain.py
 """
 
 import asyncio
+from importlib.metadata import version
 from typing import Any
 
-from _http import SERVER, http_server
+from _harness import INSTRUCTIONS, Report, serve, server_env, stdio_command
 from langchain.agents import create_agent
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, ToolMessage
 from langchain_mcp_adapters.callbacks import Callbacks
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.tools import load_mcp_tools
 from mcp.types import ElicitResult
 
-REPO = SERVER.parents[2]
-FASTMCP_PYTHON = ["uv", "run", "--project", str(REPO), "--frozen", "python"]
+TOOLS = {
+    "add",
+    "forecast",
+    "divide",
+    "count_to",
+    "snapshot",
+    "chime",
+    "attachments",
+    "confirm",
+}
 
 
 class ScriptedToolModel(GenericFakeChatModel):
@@ -53,7 +59,14 @@ def scripted_model() -> ScriptedToolModel:
     )
 
 
-async def exercise(label: str, connection: dict[str, Any]) -> None:
+async def call(tool: Any, args: dict[str, Any]) -> ToolMessage:
+    """Invoke a tool the way an agent does, so the result is a ToolMessage with its artifact."""
+    return await tool.ainvoke(
+        {"type": "tool_call", "name": tool.name, "args": args, "id": "call-1"}
+    )
+
+
+async def exercise(report: Report, connection: dict[str, Any]) -> None:
     progress: list[float] = []
     logs: list[str] = []
 
@@ -78,70 +91,150 @@ async def exercise(label: str, connection: dict[str, Any]) -> None:
             on_elicitation=on_elicitation,
         ),
     )
+    tools: dict[str, Any] = {}
 
-    tools = {tool.name: tool for tool in await client.get_tools()}
-    assert {"add", "forecast", "divide", "count_to", "confirm"} <= set(tools), tools
+    async def lists_tools() -> None:
+        tools.update({tool.name: tool for tool in await client.get_tools()})
+        assert TOOLS <= set(tools), sorted(tools)
 
-    agent = create_agent(scripted_model(), list(tools.values()))
-    state = await agent.ainvoke(
-        {"messages": [("user", "add 2 and 3, then get the Chicago forecast")]}
-    )
-    returned = {m.name: m.content for m in state["messages"] if m.type == "tool"}
-    assert "5" in str(returned["add"]), returned
-    assert "sunny" in str(returned["forecast"]), returned
+    async def server_info() -> None:
+        info = (await client.get_server_info(server_name="smoke"))["smoke"]
+        assert info.instructions == INSTRUCTIONS, info.instructions
+        assert info.serverInfo.name == "downstream-smoke", info.serverInfo
 
-    assert "42" in str(await tools["add"].ainvoke({"a": 40, "b": 2}))
-    failed = await tools["divide"].ainvoke(
-        {
-            "type": "tool_call",
-            "name": "divide",
-            "args": {"a": 1, "b": 0},
-            "id": "call-divide",
-        }
-    )
-    assert failed.status == "error" and "divide by zero" in str(failed.content), failed
+    async def agent_loop() -> None:
+        agent = create_agent(scripted_model(), list(tools.values()))
+        state = await agent.ainvoke(
+            {"messages": [("user", "add 2 and 3, then get the Chicago forecast")]}
+        )
+        returned = {m.name: m.content for m in state["messages"] if m.type == "tool"}
+        assert "5" in str(returned["add"]) and "sunny" in str(returned["forecast"]), (
+            returned
+        )
 
-    assert "deploy: approved" in str(
-        await tools["confirm"].ainvoke({"action": "deploy"})
-    )
-    assert "counted to 3" in str(await tools["count_to"].ainvoke({"n": 3}))
-    assert progress == [1, 2, 3], progress
-    assert any("counted to 3" in line for line in logs), logs
+    async def structured_output() -> None:
+        message = await call(tools["forecast"], {"city": "Oslo"})
+        expected = {"city": "Oslo", "celsius": 21.5, "conditions": ["sunny"]}
+        assert message.artifact == {"structured_content": expected}, message.artifact
 
-    async with client.session("smoke") as session:
-        assert {"add", "forecast"} <= {
-            tool.name for tool in await load_mcp_tools(session)
-        }
+    async def tool_error() -> None:
+        message = await call(tools["divide"], {"a": 1, "b": 0})
+        assert message.status == "error" and "divide by zero" in str(message.content), (
+            message
+        )
 
-    blobs = await client.get_resources(
-        "smoke", uris=["config://app", "greeting://nate"]
-    )
-    assert [blob.as_string() for blob in blobs] == [
-        '{"mode": "smoke"}',
-        "hello, nate",
-    ], blobs
+    async def image() -> None:
+        [block] = (await call(tools["snapshot"], {})).content
+        assert (
+            block["type"] == "image"
+            and block["mime_type"] == "image/png"
+            and block["base64"]
+        ), block
 
-    messages = await client.get_prompt("smoke", "review", arguments={"code": "x = 1"})
-    assert "x = 1" in str(messages[0].content), messages
-    print(f"ok  langchain via {label}")
+    async def mixed_content() -> None:
+        blocks = (await call(tools["attachments"], {})).content
+        shapes = [(b["type"], b.get("text") or b.get("url")) for b in blocks]
+        assert shapes == [
+            ("text", "see attached"),
+            ("text", "buy milk"),
+            ("file", "config://app"),
+        ], shapes
+
+    async def elicitation() -> None:
+        assert "deploy: approved" in str(
+            (await call(tools["confirm"], {"action": "deploy"})).content
+        )
+
+    async def progress_and_logging() -> None:
+        assert "counted to 3" in str((await call(tools["count_to"], {"n": 3})).content)
+        assert progress == [1, 2, 3], progress
+        assert any("counted to 3" in line for line in logs), logs
+
+    async def explicit_session() -> None:
+        async with client.session("smoke") as session:
+            assert TOOLS <= {tool.name for tool in await load_mcp_tools(session)}
+
+    async def resources() -> None:
+        [blob] = await client.get_resources("smoke", uris=["config://app"])
+        assert (
+            blob.as_string() == '{"mode": "smoke"}'
+            and blob.mimetype == "application/json"
+        ), blob
+
+    async def resource_template() -> None:
+        [blob] = await client.get_resources("smoke", uris=["greeting://nate"])
+        assert blob.as_string() == "hello, nate", blob
+
+    async def prompt() -> None:
+        messages = await client.get_prompt(
+            "smoke", "review", arguments={"code": "x = 1"}
+        )
+        assert "x = 1" in str(messages[0].content), messages
+
+    for check in (
+        lists_tools,
+        server_info,
+        agent_loop,
+        structured_output,
+        tool_error,
+        image,
+        mixed_content,
+        elicitation,
+        progress_and_logging,
+        explicit_session,
+        resources,
+        resource_template,
+        prompt,
+    ):
+        await report.check(check.__name__.replace("_", " "), check)
 
 
 async def main() -> None:
-    from importlib.metadata import version
-
-    print(
-        f"langchain-mcp-adapters {version('langchain-mcp-adapters')}, mcp {version('mcp')}"
-    )
-    await exercise(
-        "stdio",
+    report = Report(
+        "langchain",
         {
-            "transport": "stdio",
-            "command": FASTMCP_PYTHON[0],
-            "args": [*FASTMCP_PYTHON[1:], str(SERVER), "stdio"],
+            "langchain-mcp-adapters": version("langchain-mcp-adapters"),
+            "langchain": version("langchain"),
+            "mcp": version("mcp"),
         },
     )
-    with http_server(FASTMCP_PYTHON) as url:
-        await exercise("streamable HTTP", {"transport": "streamable_http", "url": url})
+    command, args = stdio_command()
+    with report.transport("stdio"):
+        await exercise(
+            report,
+            {
+                "transport": "stdio",
+                "command": command,
+                "args": args,
+                "env": server_env(),
+            },
+        )
+
+    for transport, label, kind in (
+        ("http", "streamable HTTP", "streamable_http"),
+        ("sse", "SSE", "sse"),
+    ):
+        with report.transport(label), serve(transport) as server:
+
+            async def rejects_missing_token() -> None:
+                client = MultiServerMCPClient(
+                    {"smoke": {"transport": kind, "url": server.url}}
+                )
+                try:
+                    await client.get_tools()
+                except BaseException as error:
+                    if isinstance(error, KeyboardInterrupt):
+                        raise
+                    return
+                raise AssertionError("listed tools without a bearer token")
+
+            await report.check("rejects missing bearer token", rejects_missing_token)
+            await exercise(
+                report,
+                {"transport": kind, "url": server.url, "headers": server.headers},
+            )
+
+    report.finish()
 
 
 if __name__ == "__main__":
