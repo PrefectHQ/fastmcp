@@ -224,10 +224,8 @@ class GitHubTokenVerifier(TokenVerifier):
                 "GitHub token verification unavailable due to a transport error"
             ) from e
         except Exception as e:
-            logger.warning("GitHub token verification failed unexpectedly: %s", e)
-            raise TokenVerificationError(
-                "GitHub token verification failed unexpectedly"
-            ) from e
+            logger.debug("GitHub token verification error: %s", e)
+            return None
 
 
 class GitHubProvider(OAuthProxy):
