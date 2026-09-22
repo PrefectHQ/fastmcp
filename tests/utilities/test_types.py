@@ -492,6 +492,25 @@ class TestFile:
         assert resource.resource.mime_type == "application/pdf"
         assert str(resource.resource.uri) == "file:///report.pdf"
 
+    @pytest.mark.parametrize(
+        ("name", "expected_uri"),
+        [
+            ("report#draft.pdf", "file:///report%23draft.pdf"),
+            ("report?draft.pdf", "file:///report%3Fdraft.pdf"),
+            ("report%20draft.pdf", "file:///report%2520draft.pdf"),
+            ("report#draft", "file:///report%23draft.pdf"),
+            ("report draft.pdf", "file:///report%20draft.pdf"),
+            ("résumé.pdf", "file:///r%C3%A9sum%C3%A9.pdf"),
+            ("reports/report.pdf", "file:///reports/report.pdf"),
+        ],
+    )
+    def test_to_resource_content_encodes_name(self, name: str, expected_uri: str):
+        file = File(data=b"report data", format="pdf", name=name)
+
+        resource = file.to_resource_content()
+
+        assert resource.resource.uri == expected_uri
+
     def test_to_resource_content_with_text_data(self):
         """Test conversion to ResourceContent with text data (TextResourceContents)."""
         test_data = b"hello world"

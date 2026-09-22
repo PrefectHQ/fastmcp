@@ -18,6 +18,7 @@ from typing import (
     get_origin,
     get_type_hints,
 )
+from urllib.parse import quote
 
 import mcp_types
 from mcp_types import Annotations, ContentBlock, ModelPreferences, SamplingMessage
@@ -429,7 +430,7 @@ class File:
                     if Path(self._name).suffix
                     else f".{self._mime_type.split('/')[1]}"
                 )
-                uri_str = f"file:///{self._name}{extension}"
+                uri_str = f"file:///{quote(self._name + extension)}"
             else:
                 uri_str = f"file:///resource.{self._mime_type.split('/')[1]}"
         else:
