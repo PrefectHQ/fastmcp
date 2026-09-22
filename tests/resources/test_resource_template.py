@@ -989,6 +989,23 @@ class TestMalformedURITemplates:
             fn=search, uri_template="items://{category}{?tags}"
         )
 
+    async def test_union_accepting_a_scalar_does_not_require_explode(self):
+        """`str | list[str] | None` works on a plain `{?tags}` via the scalar
+        branch, so requiring explode would break a template valid today."""
+
+        def search(category: str, tags: str | list[str] | None = None) -> dict:
+            return {"category": category, "tags": tags}
+
+        template = ResourceTemplate.from_function(
+            fn=search, uri_template="items://{category}{?tags}"
+        )
+
+        matched = match_uri_template(
+            "items://books?tags=a", "items://{category}{?tags}"
+        )
+        assert matched is not None
+        assert await template.read(matched) == {"category": "books", "tags": "a"}
+
     def test_from_function_rejects_hyphen_underscore_collision(self):
         """Two raw param names that normalize to the same key are rejected."""
 
@@ -1093,6 +1110,25 @@ class TestExpandUriTemplate:
         self, template: str, params: dict[str, str], expected: str
     ):
         """Path values are percent-encoded so the result round-trips through match."""
+        assert expand_uri_template(template, params) == expected
+
+    @pytest.mark.parametrize(
+        "template, params, expected",
+        [
+            ("test://x{?tags*}", {"tags": ["a/b"]}, "test://x?tags=a%2Fb"),
+            (
+                "test://x{?tags*}",
+                {"tags": ["a/b", "c d"]},
+                "test://x?tags=a%2Fb&tags=c%20d",
+            ),
+            ("test://x{?q}", {"q": "a/b"}, "test://x?q=a%2Fb"),
+        ],
+    )
+    def test_expand_encodes_reserved_characters_in_query_values(
+        self, template: str, params: dict, expected: str
+    ):
+        """RFC 6570 §3.2.8 permits only unreserved characters in query values,
+        so "/" is encoded here even though it is safe in a wildcard path."""
         assert expand_uri_template(template, params) == expected
 
 

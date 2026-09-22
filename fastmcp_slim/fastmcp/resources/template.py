@@ -48,11 +48,14 @@ def extract_query_params(uri_template: str) -> set[str]:
     return set()
 
 
-def _is_list_annotation(annotation: Any) -> bool:
-    """Whether an annotation accepts a list — including `Annotated[list[str] | None, ...]`.
+def _requires_explode(annotation: Any) -> bool:
+    """Whether an annotation can *only* be satisfied by a list.
 
     Only `list` counts: it is the only collection `expand_uri_template` emits as
-    repeated keys, so it is the only one that round-trips.
+    repeated keys, so it is the only one that round-trips. A union that also
+    admits a scalar (`str | list[str] | None`) does not require explode — the
+    scalar branch still works without it, and rejecting it would break templates
+    that are valid today.
     """
     if annotation is list:
         return True
@@ -60,9 +63,10 @@ def _is_list_annotation(annotation: Any) -> bool:
     if origin is list:
         return True
     if origin is Annotated:
-        return _is_list_annotation(get_args(annotation)[0])
+        return _requires_explode(get_args(annotation)[0])
     if origin in (Union, UnionType):
-        return any(_is_list_annotation(arg) for arg in get_args(annotation))
+        members = [a for a in get_args(annotation) if a is not type(None)]
+        return bool(members) and all(_requires_explode(a) for a in members)
     return False
 
 
@@ -245,10 +249,15 @@ def expand_uri_template(uri_template: str, params: dict[str, Any]) -> str:
                 value = params[underscored]
             else:
                 continue
+            # RFC 6570 §3.2.8 permits only unreserved characters in query
+            # values, so nothing is safe here — notably "/", which quote()
+            # leaves alone by default.
             if exploded and isinstance(value, (list, tuple)):
-                parts.extend(f"{quote(name)}={quote(str(v))}" for v in value)
+                parts.extend(
+                    f"{quote(name, safe='')}={quote(str(v), safe='')}" for v in value
+                )
             else:
-                parts.append(f"{quote(name)}={quote(str(value))}")
+                parts.append(f"{quote(name, safe='')}={quote(str(value), safe='')}")
         if parts:
             return "?" + "&".join(parts)
         return ""
@@ -632,7 +641,7 @@ class FunctionResourceTemplate(ResourceTemplate):
                 annotation = hints.get(
                     param_name, user_sig.parameters[param_name].annotation
                 )
-                if _is_list_annotation(annotation):
+                if _requires_explode(annotation):
                     raise ValueError(
                         f"Query parameter '{param_name}' is a list type, so it "
                         f"must be declared with the RFC 6570 explode modifier: "
