@@ -163,6 +163,7 @@ exclude = [
     "examples/screenshot.py",           # needs pyautogui, Pillow
     "examples/memory.py",               # needs asyncpg, numpy, pydantic_ai, pgvector
     "examples/get_file.py",             # needs aiohttp
+    "tests/downstream/smoke_*.py",      # needs langchain / pydantic_ai, installed per-job in CI
 ]
 
 [tool.ty.environment]
