@@ -75,6 +75,7 @@ client = [
     "py-key-value-aio[filetree,keyring,memory]>=0.4.4,<0.5.0",
 ]
 code-mode = ["pydantic-monty==0.0.21"]
+jev = ["typesafe-sdk>=0.5.7"]
 gemini = ["google-genai>=1.18.0", "jsonref>=1.1.0"]
 mcp = [
     "exceptiongroup>=1.2.2",

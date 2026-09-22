@@ -1140,3 +1140,54 @@ class TestInternalMetaNotLeaked:
             result = await client.read_resource("data://tagged/1")
 
         assert result[0].meta == {"team": "infra"}
+
+
+class TestLiteralEncoding:
+    """RFC 6570 section 3.1: literal template text is percent-encoded."""
+
+    @pytest.mark.parametrize(
+        "uri_template, expected",
+        [
+            # A literal the URI grammar does not allow is UTF-8 percent-encoded.
+            ("file:///docs/café/{name}", "file:///docs/caf%C3%A9/a.txt"),
+            ("file:///my docs/{name}", "file:///my%20docs/a.txt"),
+            # Reserved and unreserved characters are structural, so they stay.
+            ("file:///a-b_c~d.e/{name}", "file:///a-b_c~d.e/a.txt"),
+            # An already-encoded literal is not encoded twice.
+            ("file:///docs/caf%C3%A9/{name}", "file:///docs/caf%C3%A9/a.txt"),
+        ],
+    )
+    def test_expand_encodes_literals(self, uri_template: str, expected: str):
+        assert expand_uri_template(uri_template, {"name": "a.txt"}) == expected
+
+    @pytest.mark.parametrize(
+        "uri_template, uri",
+        [
+            ("file:///docs/café/{name}", "file:///docs/caf%C3%A9/a.txt"),
+            ("file:///my docs/{name}", "file:///my%20docs/a.txt"),
+        ],
+    )
+    def test_match_accepts_the_encoded_form(self, uri_template: str, uri: str):
+        """An AnyUrl percent-encodes the URI, so that is the form matching sees."""
+        assert match_uri_template(uri, uri_template) == {"name": "a.txt"}
+
+    def test_expand_match_roundtrip(self):
+        uri_template = "file:///docs/café/{name}"
+        expanded = expand_uri_template(uri_template, {"name": "a.txt"})
+        assert match_uri_template(expanded, uri_template) == {"name": "a.txt"}
+
+    async def test_template_with_non_ascii_literal_is_readable(self):
+        """Regression: the template was listed but every read returned Not Found."""
+        mcp = FastMCP("test")
+
+        @mcp.resource("file:///docs/café/{name}")
+        def doc(name: str) -> str:
+            return f"contents of {name}"
+
+        async with Client(mcp) as client:
+            templates = await client.list_resource_templates()
+            assert templates[0].uri_template == "file:///docs/café/{name}"
+
+            result = await client.read_resource("file:///docs/caf%C3%A9/a.txt")
+
+        assert result[0].text == "contents of a.txt"  # type: ignore[union-attr]
