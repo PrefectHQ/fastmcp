@@ -98,6 +98,8 @@ The SDK v2 raises FastMCP's dependency floors, which matters before any of your 
 
 **pydantic >= 2.12 is now the floor.** If your project pins an older pydantic (for example `pydantic==2.11.*`), installing this FastMCP release fails with an unsatisfiable-resolution error from your installer — bump your pin to `>=2.12` first. If you don't pin pydantic at all, installers upgrade it silently as part of the FastMCP upgrade.
 
+**Pydantic AI users need `pydantic-ai-slim` 2.45 or newer.** Releases 2.32 through 2.44 import `httpx` in their MCP module without depending on it. FastMCP 3 installed `httpx`, which hid this; with FastMCP 4, `import pydantic_ai.mcp` fails. See [Pydantic AI](/integrations/pydantic-ai).
+
 **The server extra floors Starlette >= 1.0.1.** This is the requirement most likely to force an unrelated upgrade, because FastAPI pinned Starlette to a sub-1.0 range for a long time — FastAPI 0.115.12, for example, requires `starlette<0.47.0`. **FastAPI 0.133.0 is the first release that admits Starlette 1.x**, so a project pinned below that gets an unsatisfiable resolution rather than a version bump. Raise your FastAPI pin to `>=0.133.0` before upgrading FastMCP. Mounting a FastMCP server inside a FastAPI app is otherwise unaffected — verified against FastAPI 0.135.2 on Starlette 1.3.1.
 
 ## What FastMCP Absorbs
@@ -441,7 +443,7 @@ The client side is unaffected. `sampling_handler=` and `roots=` mean what they a
 
 Most servers upgrade untouched. Work down this list to find the ones that don't:
 
-1. **Bump your environment.** Raise any pin below `pydantic>=2.12`; upgrade FastAPI if your resolver complains about Starlette `<1.0.1`.
+1. **Bump your environment.** Raise any pin below `pydantic>=2.12` or `pydantic-ai-slim>=2.45`; upgrade FastAPI if your resolver complains about Starlette `<1.0.1`.
 2. **Fix imports that moved out.** `from mcp.types import X` still works, but update any import from the [removed modules](#moved-imports) (`fastmcp.server.proxy`, `fastmcp.server.openapi`, `fastmcp.server.apps`, the `fastmcp.tools.tool` / `resources.resource` / `prompts.prompt` component shims).
 3. **Update removed server APIs.** Swap `as_proxy` → `create_proxy`, `import_server` → `mount`, `mount(prefix=)` → `mount(namespace=)`, and the [other removed methods and keywords](#removed-server-methods).
 4. **Replace `ctx.sample` and `ctx.list_roots`.** Both are gone from `Context`, as are `FastMCP(sampling_handler=...)` and `sampling_handler_behavior=`. Call an LLM directly from your server for generation; ask for roots through the guard pattern, or take file paths as tool arguments. A server whose purpose is to use the caller's model should stay on FastMCP 3.x rather than migrate.
