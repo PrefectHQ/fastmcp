@@ -1064,3 +1064,21 @@ class TestExitUnderCancelledScope:
         with anyio.move_on_after(0.2):
             await asyncio.create_task(tool_call())
         await self.assert_eventually_disconnected(client)
+
+    async def test_close_racing_a_new_context_leaves_that_context_connected(
+        self, server: FastMCP
+    ):
+        """close() stops the session it finds before a context entered after it
+        can reuse that session, as on 4.0.5."""
+        client = Client(server)
+        await client._connect()
+        close = asyncio.create_task(client.close())
+
+        async def enter_and_call() -> str:
+            async with client:
+                await anyio.sleep(0.05)
+                return (await client.call_tool("fast", {})).data
+
+        assert await asyncio.create_task(enter_and_call()) == "fast"
+        await close
+        self.assert_disconnected(client)

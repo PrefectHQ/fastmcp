@@ -1065,18 +1065,21 @@ class Client(
         that was resetting events outside the lock, causing race conditions.
         Event recreation now happens only in _connect() when actually needed.
         """
+        if force:
+            # An explicit close stops the session it finds, in order with the
+            # contexts around it, so it runs here under the lock as before.
+            await self._stop_session(None, force=True)
+            return
+
         # Release this context's hold before any await. A context that exits
         # because it was cancelled can be interrupted at every await below, by
         # an enclosing anyio scope or by a native cancellation that repeats
         # while it unwinds (as when a caller runs each tool call in its own
         # task). A hold that is never released keeps the client connected for
         # good, so a nested exit finishes here without awaiting at all.
-        if force:
-            self._session_state.nesting_counter = 0
-        else:
-            self._session_state.nesting_counter = max(
-                0, self._session_state.nesting_counter - 1
-            )
+        self._session_state.nesting_counter = max(
+            0, self._session_state.nesting_counter - 1
+        )
         if self._session_state.nesting_counter > 0:
             return
 
@@ -1087,13 +1090,16 @@ class Client(
         # the session lock itself, since another task can hold it through a
         # reconnect that is slow or never finishes: a cancelled exit returns at
         # once through the shield, and the stop still runs to completion.
-        stopper = asyncio.create_task(self._stop_session(held, force=force))
+        stopper = asyncio.create_task(self._stop_session(held, force=False))
         self._stoppers.add(stopper)
         stopper.add_done_callback(self._stoppers.discard)
         await asyncio.shield(stopper)
 
-    async def _stop_session(self, held: asyncio.Task[Any], *, force: bool) -> None:
-        """Stop the session a last exit held, unless another context now uses it."""
+    async def _stop_session(
+        self, held: asyncio.Task[Any] | None, *, force: bool
+    ) -> None:
+        """Stop the session. A last exit passes the session it held, and the stop is
+        skipped if another context now uses it; a forced stop takes whatever is current."""
         # ensure only one session is running at a time to avoid race conditions
         async with self._session_state.lock:
             if force:
