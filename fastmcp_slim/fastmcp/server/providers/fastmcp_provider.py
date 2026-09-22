@@ -18,7 +18,7 @@ from pydantic import AnyUrl
 
 from fastmcp.prompts.base import Prompt, PromptResult
 from fastmcp.resources.base import Resource, ResourceResult
-from fastmcp.resources.template import ResourceTemplate, expand_uri_template
+from fastmcp.resources.template import ResourceTemplate, forward_uri
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.telemetry import delegate_span
 from fastmcp.tools.base import Tool, ToolResult
@@ -306,8 +306,8 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
         We use `_original_uri_template` with `params` to construct the internal
         URI that the nested server understands.
         """
-        # Expand the original template with params to get internal URI
-        original_uri = expand_uri_template(self._original_uri_template or "", params)
+        # Expand the original template's path; forward the query as sent
+        original_uri = forward_uri(self._original_uri_template or "", params, uri)
         return FastMCPProviderResource(
             server=self._server,
             original_uri=original_uri,
@@ -327,8 +327,8 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
 
         fn_key is already set by the parent server before calling this method.
         """
-        # Expand the original template with params to get internal URI
-        original_uri = expand_uri_template(self._original_uri_template or "", params)
+        # Expand the original template's path; forward the query as sent
+        original_uri = forward_uri(self._original_uri_template or "", params, uri)
 
         # Pass exact version so child reads the correct version
         version = VersionSpec(eq=self.version) if self.version else None

@@ -53,7 +53,7 @@ from fastmcp.resources.base import (
     ResourceContent,
     ResourceResult,
 )
-from fastmcp.resources.template import expand_uri_template
+from fastmcp.resources.template import forward_uri
 from fastmcp.server.context import Context
 from fastmcp.server.dependencies import fastmcp_request_ctx, get_context
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
@@ -640,11 +640,10 @@ class ProxyTemplate(ResourceTemplate):
         context: Context | None = None,
     ) -> ProxyResource:
         """Create a resource from the template by calling the remote server."""
-        # don't use the provided uri, because it may not be the same as the
-        # uri_template on the remote server. expand_uri_template percent-encodes
-        # path and query values so the backend URI round-trips correctly.
+        # The path comes from the backend's own template, because the local
+        # uri_template may differ; the query is forwarded exactly as sent.
         backend_template = self._backend_uri_template or self.uri_template
-        parameterized_uri = expand_uri_template(backend_template, params)
+        parameterized_uri = forward_uri(backend_template, params, uri)
         client = await self._get_client()
         ctx = context or get_context()
         async with client:
