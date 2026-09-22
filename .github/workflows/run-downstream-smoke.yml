@@ -67,7 +67,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.0.1
+        uses: astral-sh/setup-uv@v10.1.0
 
       - name: Build wheels
         id: build
@@ -134,7 +134,7 @@ jobs:
           path: dist
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.0.1
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           python-version: "3.13"
           enable-cache: true
