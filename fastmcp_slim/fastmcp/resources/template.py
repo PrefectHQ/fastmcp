@@ -125,6 +125,36 @@ def encode_literal(text: str) -> str:
     return "".join(out)
 
 
+def _literal_pattern(text: str) -> str:
+    """Regex for a literal run that matches it either as written or percent-encoded.
+
+    `AnyUrl` percent-encodes some characters that section 3.1 requires encoding
+    (non-ASCII, a space in a hierarchical path) but leaves others as written
+    (`|`, `^`, `\\`, a stray `%`, a space in an opaque path), and in-process
+    reads skip `AnyUrl` entirely. Each character that encoding would change
+    therefore matches in both forms, with the hex digits in either case.
+    """
+
+    def chars(run: str) -> str:
+        out = []
+        for ch in run:
+            encoded = quote(ch, safe=_RESERVED)
+            if encoded == ch:
+                out.append(re.escape(ch))
+            else:
+                out.append(f"(?:{re.escape(ch)}|(?i:{re.escape(encoded)}))")
+        return "".join(out)
+
+    pattern: list[str] = []
+    last = 0
+    for match in _PCT_TRIPLET.finditer(text):
+        pattern.append(chars(text[last : match.start()]))
+        pattern.append(f"(?i:{re.escape(match.group())})")
+        last = match.end()
+    pattern.append(chars(text[last:]))
+    return "".join(pattern)
+
+
 def build_regex(template: str) -> re.Pattern[str] | None:
     """Build regex pattern for URI template, handling RFC 6570 syntax.
 
@@ -155,9 +185,7 @@ def build_regex(template: str) -> re.Pattern[str] | None:
                 group = name.replace("-", "_")
                 pattern += f"(?P<{group}>[^/]+)"
         else:
-            # Encoded so the pattern lines up with the URI that actually
-            # arrives, and with what expand_uri_template emits (RFC 6570 3.1).
-            pattern += re.escape(encode_literal(part))
+            pattern += _literal_pattern(part)
     try:
         return re.compile(f"^{pattern}$")
     except re.error:

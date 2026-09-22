@@ -3,6 +3,7 @@ from typing import Annotated
 from urllib.parse import quote
 
 import pytest
+from mcp.types import TextResourceContents
 from pydantic import BaseModel, Field
 
 from fastmcp import Client, Context, FastMCP
@@ -1395,3 +1396,42 @@ class TestLiteralEncoding:
             result = await client.read_resource("file:///docs/caf%C3%A9/a.txt")
 
         assert result[0].text == "contents of a.txt"  # type: ignore[union-attr]
+
+
+class TestLiteralMatchingAcceptsRawAndEncodedForms:
+    """AnyUrl leaves some literal characters as written, and in-process reads skip it."""
+
+    @pytest.mark.parametrize(
+        "uri_template, uri",
+        [
+            ("data://pair/{a}|{b}", "data://pair/one|two"),
+            ("data://pct/100%/{a}", "data://pct/100%/one"),
+            ("data://caret/v^{a}", "data://caret/v^one"),
+            ("note:my notes/{a}", "note:my notes/one"),
+            ("data://docs/café/{a}", "data://docs/café/one"),
+        ],
+    )
+    async def test_read_through_client_and_in_process(
+        self, uri_template: str, uri: str
+    ):
+        mcp = FastMCP("test")
+
+        @mcp.resource(uri_template)
+        def read(a: str, b: str = "") -> str:
+            return f"{a}{b}"
+
+        async with Client(mcp) as client:
+            [contents] = await client.read_resource(uri)
+            assert isinstance(contents, TextResourceContents)
+            assert contents.text.startswith("one")
+
+        result = await mcp.read_resource(uri)
+        content = result.contents[0].content
+        assert isinstance(content, str) and content.startswith("one")
+
+    @pytest.mark.parametrize(
+        "uri",
+        ["data://docs/na%C3%AFve/one", "data://docs/na%c3%afve/one"],
+    )
+    def test_encoded_literal_matches_in_either_hex_case(self, uri: str):
+        assert match_uri_template(uri, "data://docs/naïve/{a}") == {"a": "one"}
