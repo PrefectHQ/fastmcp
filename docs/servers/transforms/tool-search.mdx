@@ -134,7 +134,7 @@ A catalog no larger than `3 * shortlist` skips the wide pass.
 | `model` | `jev-latest` | TypeSafe model. Pin a versioned id once `fit_threshold` is tuned. |
 | `api_key` | `TYPESAFE_API_KEY` | TypeSafe API key. |
 | `client` | none | A ready `AsyncTypeSafeClient` to use instead of building one. |
-| `shortlist` | 8 | Candidates each wide-pass request carries forward; with `close_read=True`, it must be smaller than `chunk_size`. The close read sees at most three times this or 255 tools, whichever is smaller. |
+| `shortlist` | 8 | Candidates each wide-pass request carries forward; with `close_read=True`, it must be at most half of `chunk_size` so repeated passes remain bounded. The close read sees at most three times this or 255 tools, whichever is smaller. |
 | `fit_threshold` | 0.3 | Minimum "does this tool do it" probability for a tool to be returned. |
 | `chunk_size` | 150 | Tools per wide-pass request, at most 255. |
 | `close_read` | `True` | Re-read the shortlist with full descriptions in a second request. `False` asks the fit question of every tool in the wide pass instead: one round trip, summaries only. On the 187-tool Prefect catalog it was 0.06s faster and six points worse at returning the right tool first. |
