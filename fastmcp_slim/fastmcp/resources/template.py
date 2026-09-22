@@ -7,7 +7,7 @@ import inspect
 import re
 from collections.abc import Callable
 from typing import Any, ClassVar
-from urllib.parse import parse_qs, quote, unquote
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from mcp_types import Annotations, Icon
 from mcp_types import ResourceTemplate as SDKResourceTemplate
@@ -117,8 +117,10 @@ def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
     - Path params: `{var}`, `{var*}`
     - Query params: `{?var1,var2}`
     """
-    # Split URI into path and query parts
-    uri_path, _, query_string = uri.partition("?")
+    # Split the URI so a fragment is not treated as part of the query value.
+    uri_parts = urlsplit(uri)
+    uri_path = uri_parts._replace(query="", fragment="").geturl()
+    query_string = uri_parts.query
 
     # Match path parameters
     regex = build_regex(uri_template)
