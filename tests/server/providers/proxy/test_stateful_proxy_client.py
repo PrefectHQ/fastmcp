@@ -67,7 +67,7 @@ async def stateful_proxy_server(fastmcp_server: FastMCP):
     # front `Client` to `mode="legacy"` too: those server-initiated
     # interactions do not exist on modern connections.
     client = StatefulProxyClient(transport=FastMCPTransport(fastmcp_server))
-    return FastMCPProxy(client_factory=client.new_stateful)
+    return FastMCPProxy(client_factory=client.new_stateful, session_scope="operation")
 
 
 @pytest.fixture
@@ -185,10 +185,12 @@ class TestStatefulProxyClient:
             return "b"
 
         proxy_mcp_a = FastMCPProxy(
-            client_factory=StatefulProxyClient(mcp_a).new_stateful
+            client_factory=StatefulProxyClient(mcp_a).new_stateful,
+            session_scope="operation",
         )
         proxy_mcp_b = FastMCPProxy(
-            client_factory=StatefulProxyClient(mcp_b).new_stateful
+            client_factory=StatefulProxyClient(mcp_b).new_stateful,
+            session_scope="operation",
         )
         multi_proxy_mcp = FastMCP()
         multi_proxy_mcp.mount(proxy_mcp_a, namespace="a")
@@ -234,6 +236,7 @@ class TestStatefulProxyClient:
         stateful_client = StatefulProxyClient(backend)
         proxy = FastMCPProxy(
             client_factory=stateful_client.new_stateful,
+            session_scope="operation",
             name="proxy",
         )
 
