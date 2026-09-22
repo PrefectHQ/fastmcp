@@ -75,7 +75,7 @@ def bridge(monkeypatch):
 async def test_native_effect_discovery_and_lifespan(bridge):
     async with Client(hub_mcp) as client:
         tools = await client.list_tools()
-        assert len(tools) == 6
+        assert len(tools) == 10
         assert all(
             "bridge" not in tool.input_schema.get("properties", {}) for tool in tools
         )

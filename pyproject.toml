@@ -56,6 +56,7 @@ anthropic = ["fastmcp-slim[anthropic]=={{ version }}"]
 apps = ["fastmcp-slim[apps]=={{ version }}"]
 azure = ["fastmcp-slim[azure]=={{ version }}"]
 code-mode = ["fastmcp-slim[code-mode]=={{ version }}"]
+jev = ["fastmcp-slim[jev]=={{ version }}"]
 gemini = ["fastmcp-slim[gemini]=={{ version }}"]
 openai = ["fastmcp-slim[openai]=={{ version }}"]
 tasks = ["fastmcp-tasks=={{ version }}"]
@@ -82,7 +83,7 @@ exclude-newer-package = { fastmcp = false, fastmcp-slim = false, fastmcp-remote 
 [dependency-groups]
 dev = [
     "dirty-equals>=0.9.0",
-    "fastmcp[anthropic,apps,azure,code-mode,gemini,openai,tasks]",
+    "fastmcp[anthropic,apps,azure,code-mode,gemini,jev,openai,tasks]",
     "fastapi>=0.115.12",
     "fastmcp-remote",
     "opentelemetry-sdk>=1.20.0",
@@ -162,6 +163,7 @@ exclude = [
     "examples/screenshot.py",           # needs pyautogui, Pillow
     "examples/memory.py",               # needs asyncpg, numpy, pydantic_ai, pgvector
     "examples/get_file.py",             # needs aiohttp
+    "tests/downstream/smoke_*.py",      # needs langchain / pydantic_ai, installed per-job in CI
 ]
 
 [tool.ty.environment]
@@ -246,3 +248,4 @@ known-first-party = ["fastmcp", "fastmcp_remote"]
 
 [tool.codespell]
 ignore-words-list = "asend,shttp,te"
+ignore-regex = 'caf%C3%A9'

@@ -6,7 +6,8 @@ import functools
 import inspect
 import re
 from collections.abc import Callable
-from typing import Any, ClassVar
+from types import UnionType
+from typing import Annotated, Any, ClassVar, Union, get_args, get_origin
 from urllib.parse import parse_qs, quote, unquote
 
 from mcp_types import Annotations, Icon
@@ -36,11 +37,122 @@ from fastmcp.utilities.types import get_cached_typeadapter
 
 
 def extract_query_params(uri_template: str) -> set[str]:
-    """Extract query parameter names from RFC 6570 `{?param1,param2}` syntax."""
+    """Extract query parameter names from RFC 6570 `{?param1,param2}` syntax.
+
+    The explode modifier is stripped, so `{?tags*}` yields `{"tags"}`. Use
+    `extract_exploded_query_params` to find which names carried it.
+    """
     match = re.search(r"\{\?([^}]+)\}", uri_template)
     if match:
-        return {p.strip() for p in match.group(1).split(",")}
+        return {p.strip().removesuffix("*") for p in match.group(1).split(",")}
     return set()
+
+
+def _requires_exploded_query(annotation: Any) -> bool:
+    """Whether an annotation accepts only lists, optionally wrapped or nullable."""
+    if annotation is list:
+        return True
+    origin = get_origin(annotation)
+    if origin is list:
+        return True
+    if origin is Annotated:
+        return _requires_exploded_query(get_args(annotation)[0])
+    if origin in (Union, UnionType):
+        members = [arg for arg in get_args(annotation) if arg is not type(None)]
+        return bool(members) and all(_requires_exploded_query(arg) for arg in members)
+    return False
+
+
+def _accepts_exploded_query(annotation: Any) -> bool:
+    """Whether an annotation explicitly accepts the list produced by explode."""
+    if (
+        annotation is Any
+        or annotation is object
+        or annotation is inspect.Parameter.empty
+        or isinstance(annotation, str)
+    ):
+        return True
+    if annotation is list:
+        return True
+    origin = get_origin(annotation)
+    if origin is list:
+        return True
+    if origin is Annotated:
+        return _accepts_exploded_query(get_args(annotation)[0])
+    if origin in (Union, UnionType):
+        return any(_accepts_exploded_query(arg) for arg in get_args(annotation))
+    return False
+
+
+def extract_exploded_query_params(uri_template: str) -> set[str]:
+    """Extract query parameter names declared with the RFC 6570 explode modifier.
+
+    `{?tags*}` marks `tags` as repeatable — `?tags=a&tags=b` collects into a
+    list rather than collapsing to the first value.
+    """
+    match = re.search(r"\{\?([^}]+)\}", uri_template)
+    if match:
+        names = [p.strip() for p in match.group(1).split(",")]
+        return {n.removesuffix("*") for n in names if n.endswith("*")}
+    return set()
+
+
+# RFC 3986 reserved characters, which stay as written in a template literal.
+_RESERVED = ":/?#[]@!$&'()*+,;="
+_PCT_TRIPLET = re.compile(r"%[0-9A-Fa-f]{2}")
+
+
+def encode_literal(text: str) -> str:
+    """Percent-encode literal template text per RFC 6570 section 3.1.
+
+    A template may be written with characters the URI grammar does not allow —
+    a non-ASCII `ucschar` (`file:///docs/café/`) or a space — and section 3.1
+    requires those to be UTF-8 percent-encoded in the expanded URI. Reserved
+    and unreserved characters are structural and stay as written, and existing
+    `%XX` triplets pass through so an already-encoded literal is not encoded
+    twice.
+
+    A resource URI reaches the server as an `AnyUrl`, which percent-encodes it,
+    so the encoded form is what matching has to line up with.
+    """
+    out: list[str] = []
+    last = 0
+    for match in _PCT_TRIPLET.finditer(text):
+        out.append(quote(text[last : match.start()], safe=_RESERVED))
+        out.append(match.group())
+        last = match.end()
+    out.append(quote(text[last:], safe=_RESERVED))
+    return "".join(out)
+
+
+def _literal_pattern(text: str) -> str:
+    """Regex for a literal run that matches it either as written or percent-encoded.
+
+    `AnyUrl` percent-encodes some characters that section 3.1 requires encoding
+    (non-ASCII, a space in a hierarchical path) but leaves others as written
+    (`|`, `^`, `\\`, a stray `%`, a space in an opaque path), and in-process
+    reads skip `AnyUrl` entirely. Each character that encoding would change
+    therefore matches in both forms, with the hex digits in either case.
+    """
+
+    def chars(run: str) -> str:
+        out = []
+        for ch in run:
+            encoded = quote(ch, safe=_RESERVED)
+            if encoded == ch:
+                out.append(re.escape(ch))
+            else:
+                out.append(f"(?:{re.escape(ch)}|(?i:{re.escape(encoded)}))")
+        return "".join(out)
+
+    pattern: list[str] = []
+    last = 0
+    for match in _PCT_TRIPLET.finditer(text):
+        pattern.append(chars(text[last : match.start()]))
+        pattern.append(f"(?i:{re.escape(match.group())})")
+        last = match.end()
+    pattern.append(chars(text[last:]))
+    return "".join(pattern)
 
 
 def build_regex(template: str) -> re.Pattern[str] | None:
@@ -73,14 +185,14 @@ def build_regex(template: str) -> re.Pattern[str] | None:
                 group = name.replace("-", "_")
                 pattern += f"(?P<{group}>[^/]+)"
         else:
-            pattern += re.escape(part)
+            pattern += _literal_pattern(part)
     try:
         return re.compile(f"^{pattern}$")
     except re.error:
         return None
 
 
-def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
+def match_uri_template(uri: str, uri_template: str) -> dict[str, Any] | None:
     """Match URI against template and extract both path and query parameters.
 
     Supports RFC 6570 URI templates:
@@ -98,7 +210,7 @@ def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
     if not match:
         return None
 
-    params = {k: unquote(v) for k, v in match.groupdict().items()}
+    params: dict[str, Any] = {k: unquote(v) for k, v in match.groupdict().items()}
 
     # Extract query parameters if present in URI and template
     if query_string:
@@ -107,14 +219,21 @@ def match_uri_template(uri: str, uri_template: str) -> dict[str, str] | None:
         # so callers can distinguish "explicitly empty" from "missing".
         parsed_query = parse_qs(query_string, keep_blank_values=True)
 
+        exploded = extract_exploded_query_params(uri_template)
+
         for name in query_param_names:
             if name in parsed_query:
-                # Take first value if multiple provided.
                 # Normalize hyphens to underscores to match Python param names.
                 # Don't overwrite path params that were already extracted.
                 key = name.replace("-", "_")
                 if key not in params:
-                    params[key] = parsed_query[name][0]
+                    # An exploded `{?name*}` param keeps every repetition;
+                    # a plain `{?name}` param is a scalar, so take the first.
+                    params[key] = (
+                        parsed_query[name]
+                        if name in exploded
+                        else parsed_query[name][0]
+                    )
 
     return params
 
@@ -126,7 +245,12 @@ def expand_uri_template(uri_template: str, params: dict[str, Any]) -> str:
     - Path params: `{var}`, `{var*}`
     - Query params: `{?var1,var2}`
     """
-    result = uri_template
+    # Literal runs carry their own encoding (RFC 6570 3.1); placeholders are
+    # left alone here and encoded with their substituted values below.
+    result = "".join(
+        part if part.startswith("{") and part.endswith("}") else encode_literal(part)
+        for part in re.split(r"(\{[^}]+\})", uri_template)
+    )
 
     # Replace {name} and {name*} path placeholders, percent-encoding the
     # substituted values so the result round-trips through match_uri_template
@@ -153,11 +277,26 @@ def expand_uri_template(uri_template: str, params: dict[str, Any]) -> str:
         names = [n.strip() for n in match.group(1).split(",")]
         parts = []
         for name in names:
+            # The template decides the serialization, not the runtime value:
+            # `{?tags*}` emits a repeated key, `{?tags}` stays a single value.
+            # Keying off the value type instead would expand a list under a
+            # plain `{?tags}`, which match_uri_template then reads back as just
+            # its first element.
+            exploded = name.endswith("*")
+            name = name.removesuffix("*")
             underscored = name.replace("-", "_")
             if name in params:
-                parts.append(f"{quote(name)}={quote(str(params[name]))}")
+                value = params[name]
             elif underscored in params:
-                parts.append(f"{quote(name)}={quote(str(params[underscored]))}")
+                value = params[underscored]
+            else:
+                continue
+            if exploded and isinstance(value, (list, tuple)):
+                parts.extend(
+                    f"{quote(name, safe='')}={quote(str(v), safe='')}" for v in value
+                )
+            else:
+                parts.append(f"{quote(name, safe='')}={quote(str(value), safe='')}")
         if parts:
             return "?" + "&".join(parts)
         return ""
@@ -516,6 +655,52 @@ class FunctionResourceTemplate(ResourceTemplate):
                 raise ValueError(
                     f"Query parameters {invalid_query_params} must be optional function parameters with default values"
                 )
+
+            # A list-typed query parameter needs the RFC 6570 explode modifier;
+            # without it the parameter is a scalar and every value but the first
+            # is silently dropped, which then fails validation at read time.
+            #
+            # Resolve the hints rather than reading the raw signature: under
+            # `from __future__ import annotations` every annotation is a string,
+            # and `Annotated[...]` wrappers hide the underlying type.
+            from fastmcp.tools.function_tool import _resolve_param_hints
+
+            try:
+                hints = _resolve_param_hints(fn)
+            except NameError:
+                # Pydantic resolves annotations against namespaces this doesn't
+                # see, so a name we can't resolve may still be valid. Fall back
+                # to the raw form rather than failing a working registration.
+                hints = {}
+
+            exploded = {
+                p.replace("-", "_") for p in extract_exploded_query_params(uri_template)
+            }
+            for param_name in sorted(exploded):
+                if param_name not in user_sig.parameters:
+                    continue
+                annotation = hints.get(
+                    param_name, user_sig.parameters[param_name].annotation
+                )
+                if not _accepts_exploded_query(annotation):
+                    raise ValueError(
+                        f"Query parameter '{param_name}' uses the RFC 6570 "
+                        "explode modifier, so its function parameter must accept "
+                        f"a list: use '{{?{param_name}}}' for a scalar value"
+                    )
+            for param_name in sorted(query_params - exploded):
+                if param_name not in user_sig.parameters:
+                    continue
+                annotation = hints.get(
+                    param_name, user_sig.parameters[param_name].annotation
+                )
+                if _requires_exploded_query(annotation):
+                    raise ValueError(
+                        f"Query parameter '{param_name}' is a list type, so it "
+                        f"must be declared with the RFC 6570 explode modifier: "
+                        f"use '{{?{param_name}*}}' instead of '{{?{param_name}}}' "
+                        f"so repeated values (?{param_name}=a&{param_name}=b) are collected."
+                    )
 
         # Check if required parameters are a subset of the path parameters
         if not required_params.issubset(path_params):

@@ -72,7 +72,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest]
         python-version: ["3.10"]
         include:
           - os: ubuntu-latest
@@ -104,6 +104,25 @@ jobs:
       - name: Run documentation tests
         if: needs.changes.outputs.run-tests == 'false' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
         run: uv run pytest tests/docs -n 0
+
+  run_windows_tests:
+    if: github.event_name != 'pull_request'
+    name: "Tests: Python 3.10 on windows-latest"
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup uv
+        uses: ./.github/actions/setup-uv
+        with:
+          python-version: "3.10"
+          resolution: locked
+      - name: Run unit tests
+        uses: ./.github/actions/run-pytest
+      - name: Run serial subprocess tests
+        uses: ./.github/actions/run-pytest
+        with:
+          test-type: client_process
 
   run_tests_lowest_direct:
     needs: changes
