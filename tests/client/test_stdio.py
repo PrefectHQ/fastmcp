@@ -306,7 +306,9 @@ class TestKeepAlive:
             async with Client(transport) as abandoned:
                 pid = (await abandoned.call_tool("pid")).data
                 await anyio.sleep(10)
-        assert not abandoned.is_connected()
+        with anyio.fail_after(3):
+            while abandoned.is_connected():
+                await anyio.sleep(0.01)
         del abandoned
         gc_collect_harder()
         await wait_for_process_exit(pid)

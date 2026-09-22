@@ -580,6 +580,8 @@ class Client(
         # Normally disconnects complete in <100ms; this is a safety net for
         # unresponsive servers.
         self._disconnect_timeout: float = fastmcp.settings.client_disconnect_timeout
+        # Session stops handed off by exiting contexts; referenced until done.
+        self._stoppers: set[asyncio.Task[None]] = set()
 
         # Session context management - see class docstring for detailed explanation
         self._session_state = ClientSessionState()
@@ -1078,33 +1080,46 @@ class Client(
         if self._session_state.nesting_counter > 0:
             return
 
+        held = self._session_state.session_task
+        if held is None:
+            return
+        # Stop the session in its own task. The exiting context never waits on
+        # the session lock itself, since another task can hold it through a
+        # reconnect that is slow or never finishes: a cancelled exit returns at
+        # once through the shield, and the stop still runs to completion.
+        stopper = asyncio.create_task(self._stop_session(held, force=force))
+        self._stoppers.add(stopper)
+        stopper.add_done_callback(self._stoppers.discard)
+        await asyncio.shield(stopper)
+
+    async def _stop_session(self, held: asyncio.Task[Any], *, force: bool) -> None:
+        """Stop the session a last exit held, unless another context now uses it."""
         # ensure only one session is running at a time to avoid race conditions
-        with anyio.CancelScope(shield=True):
-            await self._session_state.lock.acquire()
-        try:
-            # another context may have connected while we waited for the lock
+        async with self._session_state.lock:
             if force:
                 self._session_state.nesting_counter = 0
-            elif self._session_state.nesting_counter > 0:
+                session_task = self._session_state.session_task
+            elif (
+                self._session_state.session_task is not held
+                or self._session_state.nesting_counter > 0
+            ):
+                # Stopped already, or another context connected while we waited.
                 return
-
-            # stop the active session
-            if self._session_state.session_task is None:
+            else:
+                session_task = held
+            if session_task is None:
                 return
-            session_task = self._session_state.session_task
             self._session_state.stop_event.set()
             # Wait (bounded) for the runner to unwind gracefully. If it
             # overruns — e.g. the transport's termination POST is blocked on
             # a stale HTTP keep-alive connection — cancel the background
             # task so transport resources (httpx connections, subprocess
             # pipes) are actually released instead of leaking into the
-            # event loop. Force paths additionally shield the wait so an
-            # outer cancellation can't abandon cleanup half-done.
+            # event loop.
             try:
-                with anyio.CancelScope(shield=force):
-                    with anyio.move_on_after(self._disconnect_timeout):
-                        with suppress(asyncio.CancelledError):
-                            await session_task
+                with anyio.move_on_after(self._disconnect_timeout):
+                    with suppress(asyncio.CancelledError):
+                        await session_task
             finally:
                 if not session_task.done():
                     session_task.cancel()
@@ -1113,8 +1128,6 @@ class Client(
                             with suppress(Exception):
                                 await session_task
                 self._session_state.session_task = None
-        finally:
-            self._session_state.lock.release()
 
     async def _session_runner(self):
         """
