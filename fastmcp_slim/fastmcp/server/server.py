@@ -1514,7 +1514,8 @@ class FastMCP(
                     raise NotFoundError(f"Unknown tool: {name!r}")
                 span.set_attributes(tool.get_span_attributes())
                 try:
-                    return await tool._run(arguments or {})
+                    result = await tool._run(arguments or {})
+                    return tool._apply_result_transforms(result)
                 except ValidationError as e:
                     cause = e.__cause__
                     if isinstance(cause, PydanticValidationError):
