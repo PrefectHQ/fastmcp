@@ -3,7 +3,12 @@ import pytest
 from pydantic import AnyHttpUrl
 
 from fastmcp import FastMCP
-from fastmcp.server.auth import MultiAuth, RemoteAuthProvider, TokenVerifier
+from fastmcp.server.auth import (
+    MultiAuth,
+    RemoteAuthProvider,
+    TokenVerificationError,
+    TokenVerifier,
+)
 from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.providers.azure import AzureJWTVerifier
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
@@ -14,6 +19,13 @@ class RaisingVerifier(TokenVerifier):
 
     async def verify_token(self, token: str) -> AccessToken | None:
         raise RuntimeError("simulated failure")
+
+
+class UnavailableVerifier(TokenVerifier):
+    """A verifier whose upstream dependency is temporarily unavailable."""
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        raise TokenVerificationError("simulated verifier unavailable")
 
 
 class UnderScopedVerifier(TokenVerifier):
@@ -295,6 +307,26 @@ class TestMultiAuthVerifyToken:
         auth = MultiAuth(server=RaisingVerifier(), verifiers=[good])
 
         result = await auth.verify_token("valid")
+        assert result is not None
+        assert result.client_id == "fallback"
+
+    async def test_operational_failure_raises_without_successful_fallback(self):
+        """Operational failure is re-raised if no later source validates."""
+        rejecting = StaticTokenVerifier(tokens={})
+        auth = MultiAuth(verifiers=[UnavailableVerifier(), rejecting])
+
+        with pytest.raises(TokenVerificationError, match="simulated verifier unavailable"):
+            await auth.verify_token("anything")
+
+    async def test_operational_failure_allows_successful_fallback(self):
+        """A later successful verifier still wins after an operational failure."""
+        good = StaticTokenVerifier(
+            tokens={"valid": {"client_id": "fallback", "scopes": []}}
+        )
+        auth = MultiAuth(verifiers=[UnavailableVerifier(), good])
+
+        result = await auth.verify_token("valid")
+
         assert result is not None
         assert result.client_id == "fallback"
 

@@ -760,21 +760,34 @@ class MultiAuth(AuthProvider):
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify a token by trying the server, then each verifier in order.
 
-        Each source is tried independently. If a source raises an exception,
-        it is logged and treated as a non-match so that remaining sources
-        still get a chance to verify the token.
+        Each source is tried independently. Operational verification failures
+        do not prevent later sources from validating the token, but are
+        re-raised if no source ultimately succeeds.
         """
+        verification_error: TokenVerificationError | None = None
+
         for source in self._sources:
             try:
                 result = await source.verify_token(token)
                 if result is not None:
                     return result
+            except TokenVerificationError as e:
+                if verification_error is None:
+                    verification_error = e
+                logger.debug(
+                    "Token verification unavailable for %s, trying next source",
+                    type(source).__name__,
+                    exc_info=True,
+                )
             except Exception:
                 logger.debug(
                     "Token verification failed for %s, trying next source",
                     type(source).__name__,
                     exc_info=True,
                 )
+
+        if verification_error is not None:
+            raise verification_error
 
         return None
 

@@ -113,6 +113,26 @@ async def test_github_transport_failure_raises_typed_error():
         await verifier.verify_token("still-valid-token")
 
 
+async def test_github_malformed_user_json_raises_typed_error():
+    client = AsyncMock()
+    response = _response(200)
+    response.json.side_effect = ValueError("malformed json")
+    client.get.return_value = response
+    verifier = GitHubTokenVerifier(http_client=client)
+
+    with pytest.raises(TokenVerificationError, match="invalid user response"):
+        await verifier.verify_token("still-valid-token")
+
+
+async def test_github_missing_user_id_raises_typed_error():
+    client = AsyncMock()
+    client.get.return_value = _response(200, json_data={"login": "testuser"})
+    verifier = GitHubTokenVerifier(http_client=client)
+
+    with pytest.raises(TokenVerificationError, match="invalid user response"):
+        await verifier.verify_token("still-valid-token")
+
+
 @pytest.mark.parametrize("status_code", [403, 429, 500, 503])
 async def test_scope_operational_http_failure_raises_typed_error(status_code):
     client = AsyncMock()

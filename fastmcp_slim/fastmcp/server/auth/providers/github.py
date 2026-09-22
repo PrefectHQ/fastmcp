@@ -128,7 +128,16 @@ class GitHubTokenVerifier(TokenVerifier):
                         f"GitHub token verification unavailable: HTTP {response.status_code}"
                     )
 
-                user_data = response.json()
+                try:
+                    user_data = response.json()
+                    user_id = user_data["id"]
+                except (ValueError, TypeError, KeyError) as e:
+                    logger.warning(
+                        "GitHub token verification returned invalid user data: %s", e
+                    )
+                    raise TokenVerificationError(
+                        "GitHub token verification returned an invalid user response"
+                    ) from e
 
                 # Scope discovery is part of verification. A definitive 401 means
                 # the credential is invalid; transient HTTP/transport failures are
@@ -191,12 +200,12 @@ class GitHubTokenVerifier(TokenVerifier):
 
                 result = AccessToken(
                     token=token,
-                    client_id=str(user_data.get("id", "unknown")),
+                    client_id=str(user_id),
                     scopes=token_scopes,
                     expires_at=None,
-                    subject=str(user_data["id"]),
+                    subject=str(user_id),
                     claims={
-                        "sub": str(user_data["id"]),
+                        "sub": str(user_id),
                         "login": user_data.get("login"),
                         "name": user_data.get("name"),
                         "email": user_data.get("email"),
@@ -215,8 +224,10 @@ class GitHubTokenVerifier(TokenVerifier):
                 "GitHub token verification unavailable due to a transport error"
             ) from e
         except Exception as e:
-            logger.debug("GitHub token verification error: %s", e)
-            return None
+            logger.warning("GitHub token verification failed unexpectedly: %s", e)
+            raise TokenVerificationError(
+                "GitHub token verification failed unexpectedly"
+            ) from e
 
 
 class GitHubProvider(OAuthProxy):
