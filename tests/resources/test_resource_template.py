@@ -979,6 +979,28 @@ class TestMalformedURITemplates:
                 fn=search, uri_template="items://{category}{?tags}"
             )
 
+    async def test_union_with_scalar_query_param_does_not_require_explode(self):
+        """A scalar union branch preserves the existing plain-query contract."""
+
+        def search(
+            category: str, tags: str | list[str] | None = None
+        ) -> dict[str, object]:
+            return {"category": category, "tags": tags}
+
+        template = ResourceTemplate.from_function(
+            fn=search, uri_template="items://{category}{?tags}"
+        )
+        params = match_uri_template(
+            "items://books?tags=alpha&tags=beta",
+            "items://{category}{?tags}",
+        )
+
+        assert params == {"category": "books", "tags": "alpha"}
+        assert await template.read(params) == {
+            "category": "books",
+            "tags": "alpha",
+        }
+
     def test_non_list_collection_query_params_are_unrestricted(self):
         """Only `list` round-trips through expansion, so only `list` is checked."""
 
@@ -1132,6 +1154,18 @@ class TestMatchExpandRoundTrip:
         params = match_uri_template(uri, "test://x{?tags}")
         assert params is not None
         assert expand_uri_template("test://x{?tags}", params) == uri
+
+    def test_exploded_query_values_encode_reserved_characters(self):
+        """RFC 6570 query expansion permits only unreserved value characters."""
+        template = "test://x{?tags*}"
+        params = {"tags": ["", "a b", "a+b", "a&b", "a/b", "café"]}
+
+        uri = expand_uri_template(template, params)
+
+        assert uri == (
+            "test://x?tags=&tags=a%20b&tags=a%2Bb&tags=a%26b&tags=a%2Fb&tags=caf%C3%A9"
+        )
+        assert match_uri_template(uri, template) == params
 
     @pytest.mark.parametrize(
         "template, params",

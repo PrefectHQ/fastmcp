@@ -48,21 +48,18 @@ def extract_query_params(uri_template: str) -> set[str]:
     return set()
 
 
-def _is_list_annotation(annotation: Any) -> bool:
-    """Whether an annotation accepts a list — including `Annotated[list[str] | None, ...]`.
-
-    Only `list` counts: it is the only collection `expand_uri_template` emits as
-    repeated keys, so it is the only one that round-trips.
-    """
+def _requires_exploded_query(annotation: Any) -> bool:
+    """Whether an annotation accepts only lists, optionally wrapped or nullable."""
     if annotation is list:
         return True
     origin = get_origin(annotation)
     if origin is list:
         return True
     if origin is Annotated:
-        return _is_list_annotation(get_args(annotation)[0])
+        return _requires_exploded_query(get_args(annotation)[0])
     if origin in (Union, UnionType):
-        return any(_is_list_annotation(arg) for arg in get_args(annotation))
+        members = [arg for arg in get_args(annotation) if arg is not type(None)]
+        return bool(members) and all(_requires_exploded_query(arg) for arg in members)
     return False
 
 
@@ -246,7 +243,9 @@ def expand_uri_template(uri_template: str, params: dict[str, Any]) -> str:
             else:
                 continue
             if exploded and isinstance(value, (list, tuple)):
-                parts.extend(f"{quote(name)}={quote(str(v))}" for v in value)
+                parts.extend(f"{quote(name)}={quote(str(v), safe='')}" for v in value)
+            elif exploded:
+                parts.append(f"{quote(name)}={quote(str(value), safe='')}")
             else:
                 parts.append(f"{quote(name)}={quote(str(value))}")
         if parts:
@@ -632,7 +631,7 @@ class FunctionResourceTemplate(ResourceTemplate):
                 annotation = hints.get(
                     param_name, user_sig.parameters[param_name].annotation
                 )
-                if _is_list_annotation(annotation):
+                if _requires_exploded_query(annotation):
                     raise ValueError(
                         f"Query parameter '{param_name}' is a list type, so it "
                         f"must be declared with the RFC 6570 explode modifier: "
