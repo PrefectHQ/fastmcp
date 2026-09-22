@@ -902,3 +902,84 @@ def test_client_new_preserves_internal_task_extension(fastmcp_server):
     assert clone is not client
     assert ClientCreateTaskResult in clone._claim_by_model
     assert clone._claim_by_model is not client._claim_by_model
+
+
+class TestExitUnderCancelledScope:
+    """An `async with client` exited by a cancelled anyio scope must release its
+    hold on the session. It used to skip the release, leaving the client connected
+    for good: every later exit saw a stale nesting count and never disconnected."""
+
+    @pytest.fixture
+    def server(self) -> FastMCP:
+        mcp = FastMCP("slow")
+
+        @mcp.tool
+        async def slow() -> str:
+            await anyio.sleep(10)
+            return "done"
+
+        @mcp.tool
+        def fast() -> str:
+            return "fast"
+
+        return mcp
+
+    @staticmethod
+    def assert_disconnected(client: Client) -> None:
+        assert client._session_state.nesting_counter == 0
+        assert client._session_state.session_task is None
+        assert not client.is_connected()
+
+    async def test_move_on_after_stops_the_session(self, server: FastMCP):
+        client = Client(server)
+        with anyio.move_on_after(0.2) as scope:
+            async with client:
+                await client.call_tool("slow", {})
+        assert scope.cancelled_caught
+        self.assert_disconnected(client)
+
+    async def test_fail_after_still_raises(self, server: FastMCP):
+        client = Client(server)
+        with pytest.raises(TimeoutError):
+            with anyio.fail_after(0.2):
+                async with client:
+                    await client.call_tool("slow", {})
+        self.assert_disconnected(client)
+
+    async def test_inner_exit_keeps_the_outer_context(self, server: FastMCP):
+        client = Client(server)
+        async with client:
+            with anyio.move_on_after(0.2):
+                async with client:
+                    await client.call_tool("slow", {})
+            assert client._session_state.nesting_counter == 1
+            assert (await client.call_tool("fast", {})).data == "fast"
+        self.assert_disconnected(client)
+
+    async def test_later_contexts_disconnect_normally(self, server: FastMCP):
+        client = Client(server)
+        with anyio.move_on_after(0.2):
+            async with client:
+                await client.call_tool("slow", {})
+        async with client:
+            assert (await client.call_tool("fast", {})).data == "fast"
+        self.assert_disconnected(client)
+
+    async def test_nested_exit_in_a_task_cancelled_by_its_awaiter(
+        self, server: FastMCP
+    ):
+        """LangChain runs each tool call in its own task and awaits it, so a deadline
+        on the caller reaches the call as a native cancellation, which can repeat
+        while the call's `async with client` is unwinding."""
+        client = Client(server)
+
+        async def tool_call() -> None:
+            async with client:
+                await client.call_tool("slow", {})
+
+        async with client:
+            with anyio.move_on_after(0.2):
+                await asyncio.create_task(tool_call())
+            assert client._session_state.nesting_counter == 1
+            assert (await client.call_tool("fast", {})).data == "fast"
+        self.assert_disconnected(client)

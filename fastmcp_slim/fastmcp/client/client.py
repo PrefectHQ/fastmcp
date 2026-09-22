@@ -1063,20 +1063,29 @@ class Client(
         that was resetting events outside the lock, causing race conditions.
         Event recreation now happens only in _connect() when actually needed.
         """
+        # Release this context's hold before any await. A context that exits
+        # because it was cancelled can be interrupted at every await below, by
+        # an enclosing anyio scope or by a native cancellation that repeats
+        # while it unwinds (as when a caller runs each tool call in its own
+        # task). A hold that is never released keeps the client connected for
+        # good, so a nested exit finishes here without awaiting at all.
+        if force:
+            self._session_state.nesting_counter = 0
+        else:
+            self._session_state.nesting_counter = max(
+                0, self._session_state.nesting_counter - 1
+            )
+        if self._session_state.nesting_counter > 0:
+            return
+
         # ensure only one session is running at a time to avoid race conditions
-        async with self._session_state.lock:
-            # if we are forcing a disconnect, reset the nesting counter
+        with anyio.CancelScope(shield=True):
+            await self._session_state.lock.acquire()
+        try:
+            # another context may have connected while we waited for the lock
             if force:
                 self._session_state.nesting_counter = 0
-
-            # otherwise decrement to check if we are done nesting
-            else:
-                self._session_state.nesting_counter = max(
-                    0, self._session_state.nesting_counter - 1
-                )
-
-            # if we are still nested, return
-            if self._session_state.nesting_counter > 0:
+            elif self._session_state.nesting_counter > 0:
                 return
 
             # stop the active session
@@ -1104,6 +1113,8 @@ class Client(
                             with suppress(Exception):
                                 await session_task
                 self._session_state.session_task = None
+        finally:
+            self._session_state.lock.release()
 
     async def _session_runner(self):
         """

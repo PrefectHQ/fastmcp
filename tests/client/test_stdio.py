@@ -1,5 +1,4 @@
 import asyncio
-import contextlib
 import gc
 import inspect
 import os
@@ -295,29 +294,22 @@ class TestKeepAlive:
 
         await wait_for_process_exit(pid)
 
-    @pytest.mark.filterwarnings(
-        "ignore:Exception ignored in.*coroutine:pytest.PytestUnraisableExceptionWarning"
-    )
     async def test_client_abandoned_by_cancellation_does_not_wedge_transport(
         self, stdio_script
     ):
-        """A Client left behind by a cancelled scope, once garbage-collected, must
-        not leave the transport unusable for the next Client.
-
-        Abandoning a Client this way leaks its session runner, a known issue that
-        finalization reports as `coroutine ignored GeneratorExit`; that noise is
-        tolerated here so the test checks only that the next Client connects.
-        """
+        """A Client exited by a cancelled scope, once garbage-collected, must not
+        leave the transport unusable for the next Client, and must stop its
+        subprocess rather than leak its session."""
         transport = PythonStdioTransport(stdio_script, keep_alive=False)
 
         with anyio.move_on_after(0.5):
             async with Client(transport) as abandoned:
-                await abandoned.ping()
+                pid = (await abandoned.call_tool("pid")).data
                 await anyio.sleep(10)
+        assert not abandoned.is_connected()
         del abandoned
-        await asyncio.sleep(0.1)
-        with contextlib.suppress(RuntimeError):
-            gc_collect_harder()
+        gc_collect_harder()
+        await wait_for_process_exit(pid)
 
         with anyio.fail_after(3):
             async with Client(transport) as client:
