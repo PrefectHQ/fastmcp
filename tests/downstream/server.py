@@ -3,12 +3,16 @@
 python server.py stdio
 python server.py http <port> <bearer-token>
 python server.py sse <port> <bearer-token>
+python server.py proxy <port> <bearer-token>   (a FastMCP proxy in front of the stdio server)
 """
 
 import base64
+import json
+import os
 import sys
 from dataclasses import dataclass
 
+import anyio
 from _harness import INSTRUCTIONS
 from mcp.types import (
     ElicitRequest,
@@ -21,10 +25,12 @@ from mcp.types import (
     TextResourceContents,
 )
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from fastmcp import Context, FastMCP
+from fastmcp.client.transports import StdioTransport
 from fastmcp.exceptions import ToolError
+from fastmcp.server import create_proxy
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 from fastmcp.utilities.types import Audio, Image
 
@@ -144,6 +150,41 @@ def build(auth_token: str | None = None) -> FastMCP:
             return f"{action}: approved"
         return f"{action}: {result.action}"
 
+    @mcp.tool
+    async def sleep(seconds: float) -> str:
+        """Sleep, so a caller can time out mid-call and then reuse the connection."""
+        await anyio.sleep(seconds)
+        return "slept"
+
+    @mcp.tool(
+        output_schema={
+            "type": "object",
+            "properties": {
+                "when": {"type": "string", "format": "date-time", "maxLength": 20.0}
+            },
+            "required": ["when"],
+        }
+    )
+    def stamp() -> dict[str, str]:
+        """Structured output whose schema writes a count as a float."""
+        return {"when": "2026-09-22T00:00:00Z"}
+
+    @mcp.resource("data://pair/{a}|{b}")
+    def pair(a: str, b: str) -> str:
+        return f"{a}+{b}"
+
+    @mcp.resource("data://docs/café/{name}")
+    def doc(name: str) -> str:
+        return f"doc {name}"
+
+    @mcp.resource("items://{category}{?tags}")
+    def tagged(category: str, tags: list[str] = Field(default_factory=list)) -> str:
+        return json.dumps({"category": category, "tags": tags})
+
+    @mcp.resource("ids://{category}{?ids*}")
+    def by_id(category: str, ids: list[int] = Field(default_factory=list)) -> str:
+        return json.dumps({"category": category, "ids": ids})
+
     @mcp.resource("config://app", mime_type="application/json")
     def app_config() -> str:
         return '{"mode": "smoke"}'
@@ -161,9 +202,26 @@ def build(auth_token: str | None = None) -> FastMCP:
 
 
 if __name__ == "__main__":
+    if log := os.environ.get("DOWNSTREAM_SMOKE_SERVER_LOG"):
+        sys.stderr = open(log, "a")  # noqa: SIM115
     match sys.argv[1:]:
         case [] | ["stdio"]:
             build().run("stdio", show_banner=False)
+        case ["proxy", port, token]:
+            backend = StdioTransport(
+                sys.executable, [__file__, "stdio"], env=dict(os.environ)
+            )
+            proxy = create_proxy(backend, name="downstream-smoke")
+            proxy.auth = StaticTokenVerifier(
+                {token: {"client_id": "smoke", "scopes": []}}
+            )
+            proxy.run(
+                "http",
+                host="127.0.0.1",
+                port=int(port),
+                show_banner=False,
+                log_level="critical",
+            )
         case ["http" | "sse" as transport, port, token]:
             build(token).run(
                 transport,

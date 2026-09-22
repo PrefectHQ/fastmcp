@@ -168,6 +168,65 @@ jobs:
         if: always() && hashFiles('junit.xml') != ''
         run: python3 fastmcp/tests/downstream/_harness.py junit.xml "pydantic-ai ${{ needs.plan.outputs.pydantic-ai }} MCP test suite"
 
+  langchain-suite:
+    name: langchain test suite
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: fastmcp
+
+      - uses: actions/checkout@v7
+        with:
+          repository: langchain-ai/langchain
+          ref: langchain==${{ needs.plan.outputs.langchain }}
+          path: langchain
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: fastmcp-wheels
+          path: dist
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.1.0
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: langchain/libs/langchain_v1/uv.lock
+
+      # langchain.mcp builds on fastmcp.Client and ClientGroup; run its own MCP
+      # tests in its locked environment with FastMCP overlaid from the wheels.
+      - name: Resolve environment
+        working-directory: langchain/libs/langchain_v1
+        run: |
+          echo "UV_RUN=uv run --group test \
+            --with fastmcp@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp-4*.whl) \
+            --with fastmcp-slim@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp_slim-*.whl)" >> "$GITHUB_ENV"
+
+      - name: Check the build under test is installed
+        working-directory: langchain/libs/langchain_v1
+        run: >-
+          $UV_RUN --quiet python -c "import fastmcp;
+          assert fastmcp.__version__ == '${{ needs.plan.outputs.fastmcp }}', fastmcp.__version__;
+          print('fastmcp', fastmcp.__version__)"
+
+      # The deselected test asserts on the caller's Client while MCPAdapter
+      # connects a clone, so it fails against every fastmcp 4.0.x release.
+      - name: Run langchain's MCP tests
+        working-directory: langchain/libs/langchain_v1
+        run: >-
+          $UV_RUN --quiet pytest -p no:cacheprovider -q
+          --junitxml=$GITHUB_WORKSPACE/junit.xml
+          tests/unit_tests/mcp tests/integration_tests/mcp
+          --deselect tests/integration_tests/mcp/test_protocol_eras.py::test_separate_adapters_keep_their_own_protocol_era
+
+      - name: Summarize
+        if: always() && hashFiles('junit.xml') != ''
+        run: python3 fastmcp/tests/downstream/_harness.py junit.xml "langchain ${{ needs.plan.outputs.langchain }} MCP test suite"
+
   smoke:
     name: ${{ matrix.consumer }} smoke
     needs: plan
@@ -183,9 +242,16 @@ jobs:
             with: >-
               --with "pydantic-ai-slim[mcp]==${{ needs.plan.outputs.pydantic-ai }}"
               --with "fastmcp-slim[client] @ file://$GITHUB_WORKSPACE/$(ls dist/fastmcp_slim-*.whl)"
+          # langchain.mcp wraps fastmcp.Client and ClientGroup, with the build under test.
+          - consumer: langchain.mcp
+            script: smoke_langchain_mcp.py
+            with: >-
+              --with "langchain[mcp]==${{ needs.plan.outputs.langchain }}"
+              --with "fastmcp @ file://$GITHUB_WORKSPACE/$(ls dist/fastmcp-4*.whl)"
+              --with "fastmcp-slim @ file://$GITHUB_WORKSPACE/$(ls dist/fastmcp_slim-*.whl)"
           # The adapters pin mcp<2, so they reach FastMCP over the wire.
-          - consumer: langchain
-            script: smoke_langchain.py
+          - consumer: langchain-mcp-adapters
+            script: smoke_langchain_mcp_adapters.py
             with: >-
               --with "langchain-mcp-adapters==${{ needs.plan.outputs.langchain-mcp-adapters }}"
               --with "langchain==${{ needs.plan.outputs.langchain }}"

@@ -1,10 +1,12 @@
 """Shared plumbing for the downstream smoke scripts: server processes and reporting."""
 
+import logging
 import os
 import secrets
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import traceback
 import warnings
@@ -12,13 +14,51 @@ from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 HERE = Path(__file__).parent
 SERVER = HERE / "server.py"
 REPO = HERE.parents[1]
 INSTRUCTIONS = "Arithmetic and weather for smoke tests."
 IN_ACTIONS = os.environ.get("GITHUB_ACTIONS") == "true"
+# Server stderr (for example a broken pipe after a check cancels a call on purpose)
+# goes here instead of into the consumer's output; `finish` points at it on failure.
+SERVER_LOG = Path(tempfile.gettempdir()) / f"downstream-smoke-{os.getpid()}.log"
+TOOLS = {
+    "add",
+    "forecast",
+    "divide",
+    "count_to",
+    "snapshot",
+    "chime",
+    "attachments",
+    "confirm",
+    "sleep",
+    "stamp",
+}
+# Gaps a FastMCP proxy already had in 4.0.5. Checks named here are expected to
+# fail through the proxy and are reported as known gaps, not failures.
+PROXY_GAPS = {
+    "logging": "a proxy with a stdio backend drops log messages (also in 4.0.5)",
+}
+LEGACY_PROXY_GAPS = {
+    **PROXY_GAPS,
+    "elicitation": (
+        "a handshake-era client gets no elicitation through a proxy whose backend "
+        "negotiated 2026-07-28 (also in 4.0.5)"
+    ),
+}
+# Template reads that past releases got wrong: literals `AnyUrl` leaves as written
+# or encodes, and both list query styles, each with the text the server returns.
+TEMPLATE_READS = {
+    "data://pair/one|two": "one+two",
+    "data://docs/café/x": "doc x",
+    "items://books?tags=a%2Cb,c": '{"category": "books", "tags": ["a,b", "c"]}',
+    "ids://books?ids=1&ids=2": '{"category": "books", "ids": [1, 2]}',
+}
 os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
+# In-process servers and FastMCP clients log into the consumer's output; checks report failures.
+os.environ.setdefault("FASTMCP_LOG_LEVEL", "CRITICAL")
 
 
 def server_python() -> str:
@@ -29,12 +69,26 @@ def server_python() -> str:
 
 
 def server_env() -> dict[str, str]:
-    """Keep the server's own logs and warnings out of the consumer's output."""
-    return {**os.environ, "FASTMCP_LOG_LEVEL": "CRITICAL", "PYTHONWARNINGS": "ignore"}
+    """Keep the server's own logs, warnings, and stderr out of the consumer's output."""
+    return {
+        **os.environ,
+        "FASTMCP_LOG_LEVEL": "CRITICAL",
+        "PYTHONWARNINGS": "ignore",
+        "DOWNSTREAM_SMOKE_SERVER_LOG": str(SERVER_LOG),
+    }
 
 
 def stdio_command() -> tuple[str, list[str]]:
     return server_python(), [str(SERVER), "stdio"]
+
+
+def stdio_transport() -> Any:
+    """A FastMCP StdioTransport for the smoke server; imported lazily so consumers
+    that reach FastMCP only over the wire never import it."""
+    from fastmcp.client.transports import StdioTransport
+
+    command, args = stdio_command()
+    return StdioTransport(command, args, env=server_env())
 
 
 @dataclass
@@ -49,7 +103,7 @@ class Server:
 
 @contextmanager
 def serve(transport: str) -> Iterator[Server]:
-    """Run server.py over `http` or `sse` with bearer auth for the length of the block."""
+    """Run server.py over `http`, `sse`, or `proxy` (HTTP) with bearer auth for the block."""
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
@@ -78,12 +132,26 @@ def serve(transport: str) -> Iterator[Server]:
         proc.wait(timeout=10)
 
 
+@contextmanager
+def quiet(*loggers: str) -> Iterator[None]:
+    """Silence loggers that report an interruption a check causes on purpose."""
+    saved = {name: logging.getLogger(name).level for name in loggers}
+    for name in loggers:
+        logging.getLogger(name).setLevel(logging.CRITICAL + 1)
+    try:
+        yield
+    finally:
+        for name, level in saved.items():
+            logging.getLogger(name).setLevel(level)
+
+
 @dataclass
 class Result:
     transport: str
     check: str
     error: str | None
     seconds: float
+    gap: str | None = None
 
 
 @dataclass
@@ -114,14 +182,34 @@ class Report:
         if IN_ACTIONS:
             print("::endgroup::")
 
-    async def check(self, name: str, fn: Callable[[], Awaitable[object]]) -> None:
+    async def check(
+        self,
+        name: str,
+        fn: Callable[[], Awaitable[object]],
+        *,
+        known_gap: str | None = None,
+    ) -> None:
+        """Run one check. A `known_gap` check is expected to fail and is reported
+        without failing the run; if it starts passing, the run fails so the
+        marker gets removed."""
         start = time.monotonic()
         try:
             await fn()
             error = None
         except Exception as exc:
             error = exc
-        self._record(name, error, time.monotonic() - start)
+        seconds = time.monotonic() - start
+        if known_gap is None:
+            self._record(name, error, seconds)
+        elif error is None:
+            self._record(
+                name,
+                AssertionError(f"known gap now passes, remove its marker: {known_gap}"),
+                seconds,
+            )
+        else:
+            self.results.append(Result(self._transport, name, None, seconds, known_gap))
+            print(f"  ⚠ {name:<34} {seconds * 1000:6.0f} ms  known gap: {known_gap}")
 
     def _record(self, name: str, error: BaseException | None, seconds: float) -> None:
         detail = None if error is None else f"{type(error).__name__}: {error}"
@@ -139,9 +227,10 @@ class Report:
         transports = list(dict.fromkeys(r.transport for r in self.results))
         checks = list(dict.fromkeys(r.check for r in self.results))
         cell = {
-            (r.transport, r.check): ("✅" if not r.error else "❌")
+            (r.transport, r.check): "❌" if r.error else "⚠️" if r.gap else "✅"
             for r in self.results
         }
+        gaps = {(r.transport, r.check): r.gap for r in self.results if r.gap}
 
         lines = [
             f"### {'❌' if failed else '✅'} {self.consumer}",
@@ -160,6 +249,9 @@ class Report:
         if failed:
             lines += ["", "**Failures**", ""]
             lines += [f"- `{r.transport}` / `{r.check}`: {r.error}" for r in failed]
+        if gaps:
+            lines += ["", "**Known gaps**", ""]
+            lines += [f"- `{t}` / `{c}`: {gap}" for (t, c), gap in gaps.items()]
         if self.warnings:
             lines += [
                 "",
@@ -183,6 +275,8 @@ class Report:
             with open(path, "a") as fh:
                 fh.write(summary)
         if failed:
+            if SERVER_LOG.exists():
+                print(f"stdio server stderr: {SERVER_LOG}")
             sys.exit(1)
 
 

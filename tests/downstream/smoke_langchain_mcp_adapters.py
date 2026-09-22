@@ -4,15 +4,25 @@ The adapters pin `mcp<2` while FastMCP 4 needs `mcp>=2`, so they cannot share an
 environment. This runs in its own environment against servers started from the
 checkout, which also covers handshake-era (mcp v1) clients:
 
-    uv run --isolated --no-project --with langchain-mcp-adapters --with langchain \
-        python tests/downstream/smoke_langchain.py
+    uv run --isolated --no-project --no-config --with langchain-mcp-adapters \
+        --with langchain python tests/downstream/smoke_langchain_mcp_adapters.py
 """
 
 import asyncio
 from importlib.metadata import version
 from typing import Any
 
-from _harness import INSTRUCTIONS, Report, serve, server_env, stdio_command
+from _harness import (
+    INSTRUCTIONS,
+    LEGACY_PROXY_GAPS,
+    TEMPLATE_READS,
+    TOOLS,
+    Report,
+    quiet,
+    serve,
+    server_env,
+    stdio_command,
+)
 from langchain.agents import create_agent
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, ToolMessage
@@ -20,17 +30,6 @@ from langchain_mcp_adapters.callbacks import Callbacks
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.tools import load_mcp_tools
 from mcp.types import ElicitResult
-
-TOOLS = {
-    "add",
-    "forecast",
-    "divide",
-    "count_to",
-    "snapshot",
-    "chime",
-    "attachments",
-    "confirm",
-}
 
 
 class ScriptedToolModel(GenericFakeChatModel):
@@ -66,7 +65,9 @@ async def call(tool: Any, args: dict[str, Any]) -> ToolMessage:
     )
 
 
-async def exercise(report: Report, connection: dict[str, Any]) -> None:
+async def exercise(
+    report: Report, connection: dict[str, Any], gaps: dict[str, str] | None = None
+) -> None:
     progress: list[float] = []
     logs: list[str] = []
 
@@ -145,10 +146,24 @@ async def exercise(report: Report, connection: dict[str, Any]) -> None:
             (await call(tools["confirm"], {"action": "deploy"})).content
         )
 
-    async def progress_and_logging() -> None:
+    async def progress_notifications() -> None:
+        progress.clear()
         assert "counted to 3" in str((await call(tools["count_to"], {"n": 3})).content)
         assert progress == [1, 2, 3], progress
-        assert any("counted to 3" in line for line in logs), logs
+
+    async def log_messages() -> None:
+        logs.clear()
+        await call(tools["count_to"], {"n": 1})
+        assert any("counted to 1" in line for line in logs), logs
+
+    async def template_literals_and_list_queries() -> None:
+        blobs = await client.get_resources("smoke", uris=list(TEMPLATE_READS))
+        assert [b.as_string() for b in blobs] == list(TEMPLATE_READS.values()), blobs
+
+    async def float_count_output_schema() -> None:
+        message = await call(tools["stamp"], {})
+        expected = {"structured_content": {"when": "2026-09-22T00:00:00Z"}}
+        assert message.artifact == expected, message.artifact
 
     async def explicit_session() -> None:
         async with client.session("smoke") as session:
@@ -180,18 +195,22 @@ async def exercise(report: Report, connection: dict[str, Any]) -> None:
         image,
         mixed_content,
         elicitation,
-        progress_and_logging,
+        progress_notifications,
         explicit_session,
         resources,
         resource_template,
         prompt,
+        template_literals_and_list_queries,
+        float_count_output_schema,
     ):
-        await report.check(check.__name__.replace("_", " "), check)
+        name = check.__name__.replace("_", " ")
+        await report.check(name, check, known_gap=(gaps or {}).get(name))
+    await report.check("logging", log_messages, known_gap=(gaps or {}).get("logging"))
 
 
 async def main() -> None:
     report = Report(
-        "langchain",
+        "langchain-mcp-adapters",
         {
             "langchain-mcp-adapters": version("langchain-mcp-adapters"),
             "langchain": version("langchain"),
@@ -213,8 +232,14 @@ async def main() -> None:
     for transport, label, kind in (
         ("http", "streamable HTTP", "streamable_http"),
         ("sse", "SSE", "sse"),
+        ("proxy", "FastMCP proxy", "streamable_http"),
     ):
-        with report.transport(label), serve(transport) as server:
+        # The SDK's SSE reader logs a traceback when a session closes mid-stream.
+        with (
+            report.transport(label),
+            serve(transport) as server,
+            quiet("mcp.client.sse"),
+        ):
 
             async def rejects_missing_token() -> None:
                 client = MultiServerMCPClient(
@@ -232,6 +257,7 @@ async def main() -> None:
             await exercise(
                 report,
                 {"transport": kind, "url": server.url, "headers": server.headers},
+                gaps=LEGACY_PROXY_GAPS if transport == "proxy" else None,
             )
 
     report.finish()
