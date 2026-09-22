@@ -1,0 +1,68 @@
+name: Downstream smoke
+
+# Drive this checkout's FastMCP through the frameworks that depend on it, using
+# their latest releases, so a change that breaks them fails here first.
+
+env:
+  PY_COLORS: 1
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "fastmcp_slim/**"
+      - "tests/downstream/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/run-downstream-smoke.yml"
+
+  pull_request:
+    paths:
+      - "fastmcp_slim/**"
+      - "tests/downstream/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/run-downstream-smoke.yml"
+
+  schedule:
+    # Downstream releases can break us without any change here.
+    - cron: "30 2 * * *"
+
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # pydantic-ai builds on fastmcp.Client, so it shares FastMCP's environment.
+          - name: pydantic-ai
+            run: uv run --with 'pydantic-ai-slim[mcp]' tests/downstream/smoke_pydantic_ai.py
+          # langchain-mcp-adapters pins mcp<2, so it runs in its own environment and reaches FastMCP over the wire.
+          - name: langchain
+            run: uv run tests/downstream/smoke_langchain.py
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup uv
+        uses: ./.github/actions/setup-uv
+        with:
+          python-version: "3.12"
+
+      - name: Run ${{ matrix.name }} smoke
+        run: ${{ matrix.run }}
+        env:
+          PYDANTIC_AI_NO_BANNER: 1
+          FASTMCP_LOG_LEVEL: WARNING
