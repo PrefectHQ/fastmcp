@@ -269,12 +269,8 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
     if "const" in schema:
         return Literal[schema["const"]]  # type: ignore
 
-    if fmt := schema.get("format"):
-        if fmt == "uri":
-            return AnyUrl
-        elif fmt == "uri-reference":
-            return str
-        return FORMAT_TYPES.get(fmt, str)
+    fmt = schema.get("format")
+    base: Any = FORMAT_TYPES.get(fmt, str) if fmt else str
 
     constraints = {
         k: v
@@ -287,7 +283,7 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
     }
 
     if not constraints:
-        return str
+        return base
 
     annotated: Any = Annotated[str, StringConstraints(**constraints)]
 
@@ -312,7 +308,14 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
             else:
                 annotated = Annotated[str, pattern_field]  # type: ignore[valid-type]
 
-    return annotated
+    if base is str:
+        return annotated
+    # JSON Schema applies string keywords to the raw instance, before any format parsing.
+    raw = TypeAdapter(annotated)
+    return Annotated[
+        base,
+        BeforeValidator(lambda v: raw.validate_python(v) if isinstance(v, str) else v),
+    ]
 
 
 def _create_numeric_type(

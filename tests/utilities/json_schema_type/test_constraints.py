@@ -1,9 +1,10 @@
 """Tests for type constraints in JSON schema conversion."""
 
 from dataclasses import Field
+from datetime import datetime, timezone
 
 import pytest
-from pydantic import TypeAdapter, ValidationError
+from pydantic import AnyUrl, TypeAdapter, ValidationError
 
 from fastmcp.utilities.json_schema_type import (
     json_schema_to_type,
@@ -130,3 +131,47 @@ class TestNumberConstraints:
         validator = TypeAdapter(exclusive_max_number)
         with pytest.raises(ValidationError):
             validator.validate_python(100)
+
+
+class TestStringFormatConstraints:
+    """String keywords apply to the raw string whatever its `format` (#4404)."""
+
+    @pytest.mark.parametrize(
+        ("schema", "valid", "invalid"),
+        [
+            ({"format": "phone", "maxLength": 3}, "abc", "abcd"),
+            ({"format": "phone", "minLength": 3}, "abc", "ab"),
+            ({"format": "uri-reference", "maxLength": 5}, "a/b", "too/long/path"),
+            ({"format": "uri-reference", "pattern": "^/"}, "/a", "a"),
+            ({"format": "email", "maxLength": 10}, "a@b.co", "someone@example.com"),
+            (
+                {"format": "uri", "maxLength": 14},
+                "https://a.co",
+                "https://example.com/x",
+            ),
+            (
+                {"format": "date-time", "maxLength": 20},
+                "2026-09-22T00:00:00Z",
+                "2026-09-22T00:00:00.000000+00:00",
+            ),
+            ({"format": "json", "maxLength": 5}, '"ab"', '"abcdef"'),
+        ],
+    )
+    def test_constraints_survive_format(self, schema, valid, invalid):
+        validator = TypeAdapter(json_schema_to_type({"type": "string", **schema}))
+        validator.validate_python(valid)
+        with pytest.raises(ValidationError):
+            validator.validate_python(invalid)
+
+    def test_constrained_format_still_parses(self):
+        schema = {"type": "string", "format": "date-time", "maxLength": 20}
+        parsed = TypeAdapter(json_schema_to_type(schema)).validate_python(
+            "2026-09-22T00:00:00Z"
+        )
+        assert parsed == datetime(2026, 9, 22, tzinfo=timezone.utc)
+
+    def test_format_without_constraints_is_unchanged(self):
+        assert (
+            json_schema_to_type({"type": "string", "format": "date-time"}) is datetime
+        )
+        assert json_schema_to_type({"type": "string", "format": "uri"}) is AnyUrl
