@@ -61,6 +61,7 @@ from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import MISSING, field, make_dataclass
 from datetime import date, datetime
+from functools import lru_cache
 from typing import (
     Annotated,
     Any,
@@ -310,8 +311,28 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
 
     if base is str:
         return annotated
-    # JSON Schema applies string keywords to the raw instance, before any format parsing.
-    raw = TypeAdapter(annotated)
+    return _constrain_raw_string(base, **constraints)
+
+
+@lru_cache(maxsize=1024)
+def _constrain_raw_string(
+    base: Any,
+    min_length: int | None = None,
+    max_length: int | None = None,
+    pattern: str | None = None,
+) -> Any:
+    """Apply string keywords to the raw instance before `base` parses it, as JSON Schema does.
+
+    Cached so a schema seen on every tool call maps to one type, and so one TypeAdapter.
+    """
+    raw = TypeAdapter(
+        Annotated[
+            str,
+            StringConstraints(
+                min_length=min_length, max_length=max_length, pattern=pattern
+            ),
+        ]
+    )
     return Annotated[
         base,
         BeforeValidator(lambda v: raw.validate_python(v) if isinstance(v, str) else v),

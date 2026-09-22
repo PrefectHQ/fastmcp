@@ -175,3 +175,8 @@ class TestStringFormatConstraints:
             json_schema_to_type({"type": "string", "format": "date-time"}) is datetime
         )
         assert json_schema_to_type({"type": "string", "format": "uri"}) is AnyUrl
+
+    def test_repeat_schema_maps_to_one_type(self):
+        """The client converts a tool's output schema on every call, so repeats must hit its adapter cache."""
+        schema = {"type": "string", "format": "email", "maxLength": 10}
+        assert json_schema_to_type(schema) is json_schema_to_type(dict(schema))
