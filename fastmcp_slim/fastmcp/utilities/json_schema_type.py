@@ -56,6 +56,7 @@ import hashlib
 import json
 import keyword
 import re
+import sys
 import warnings
 from collections.abc import Callable, Mapping
 from copy import deepcopy
@@ -265,9 +266,19 @@ def _resolve_ref(ref: str, schemas: Mapping[str, Any]) -> Mapping[str, Any]:
     return current
 
 
-def _count(value: Any) -> Any:
-    """JSON Schema counts are non-negative integers, and JSON allows writing them as `2.0`."""
-    return int(value) if isinstance(value, float) and value.is_integer() else value
+def _count(value: Any, *, maximum: bool = False) -> Any:
+    """Normalize a JSON Schema count such as minLength or maxItems for Pydantic.
+
+    JSON allows writing a count as `2.0`. A count above `sys.maxsize` exceeds any
+    real length: as a maximum it constrains nothing and is dropped, and as a
+    minimum it is clamped to a value Pydantic accepts that still rejects
+    everything.
+    """
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    if isinstance(value, int) and not isinstance(value, bool) and value > sys.maxsize:
+        return None if maximum else sys.maxsize + 1
+    return value
 
 
 def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]:
@@ -282,7 +293,7 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
         k: v
         for k, v in {
             "min_length": _count(schema.get("minLength")),
-            "max_length": _count(schema.get("maxLength")),
+            "max_length": _count(schema.get("maxLength"), maximum=True),
             "pattern": schema.get("pattern"),
         }.items()
         if v is not None
@@ -399,7 +410,7 @@ def _create_array_type(
         k: v
         for k, v in {
             "min_length": _count(schema.get("minItems")),
-            "max_length": _count(schema.get("maxItems")),
+            "max_length": _count(schema.get("maxItems"), maximum=True),
         }.items()
         if v is not None
     }

@@ -214,3 +214,33 @@ class TestIntegralFloatCounts:
             json_schema_to_type({"type": "string", "format": "email", "maxLength": 30})
         )
         validator.validate_python("a@b.co")
+
+
+class TestHugeCounts:
+    """Counts beyond any real length must not make a valid schema fail to convert."""
+
+    @pytest.mark.parametrize(
+        ("schema", "value"),
+        [
+            ({"type": "string", "maxLength": 10**20}, "abc"),
+            ({"type": "string", "maxLength": 1e20}, "abc"),
+            (
+                {"type": "string", "format": "date-time", "maxLength": 1e20},
+                "2026-09-22T00:00:00Z",
+            ),
+            ({"type": "array", "items": {"type": "integer"}, "maxItems": 10**20}, [1]),
+        ],
+    )
+    def test_huge_maximum_constrains_nothing(self, schema, value):
+        TypeAdapter(json_schema_to_type(schema)).validate_python(value)
+
+    @pytest.mark.parametrize(
+        ("schema", "value"),
+        [
+            ({"type": "string", "minLength": 10**20}, "abc"),
+            ({"type": "array", "items": {"type": "integer"}, "minItems": 1e20}, [1]),
+        ],
+    )
+    def test_huge_minimum_still_rejects(self, schema, value):
+        with pytest.raises(ValidationError):
+            TypeAdapter(json_schema_to_type(schema)).validate_python(value)
