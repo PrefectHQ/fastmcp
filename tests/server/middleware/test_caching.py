@@ -31,9 +31,10 @@ from fastmcp.client.client import CallToolResult, Client
 from fastmcp.client.transports import FastMCPTransport
 from fastmcp.prompts.base import Message, Prompt
 from fastmcp.prompts.function_prompt import FunctionPrompt
-from fastmcp.resources.base import Resource
+from fastmcp.resources.base import Resource, ResourceContent, ResourceResult
 from fastmcp.server.middleware.caching import (
     ANONYMOUS_AUTH_KEY,
+    CacheableResourceResult,
     CacheableToolResult,
     CallToolSettings,
     ResponseCachingMiddleware,
@@ -49,6 +50,7 @@ from fastmcp.server.middleware.middleware import (
 )
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.tasks import TaskConfig
+from tests.conftest import user_meta
 
 TEST_URI = AnyUrl("https://test_uri")
 
@@ -394,6 +396,71 @@ class TestResponseCachingMiddlewareIntegration:
             assert len(post_tool_list) == 5
 
             assert pre_tool_list == post_tool_list
+
+    @pytest.mark.parametrize(
+        "contents",
+        [
+            b"",
+            b"hello",
+            b"\x89PNG\r\n\x1a\n",
+            bytes(range(256)),
+            "",
+            "hello",
+            "coffee \u2615",
+            "aGVsbG8=",
+            [
+                ResourceContent("text", meta={"item": "text"}),
+                ResourceContent(b"\xff\x00", meta={"item": "binary"}),
+                ResourceContent(b"hello", mime_type="text/plain"),
+            ],
+        ],
+        ids=[
+            "empty-bytes",
+            "ascii-bytes",
+            "png-header",
+            "all-bytes",
+            "empty-text",
+            "ascii-text",
+            "unicode-text",
+            "base64-like-text",
+            "mixed",
+        ],
+    )
+    async def test_resource_contents_survive_cache(
+        self,
+        caching_server: FastMCP,
+        contents: str | bytes | list[ResourceContent],
+    ) -> None:
+        expected = ResourceResult(
+            contents
+            if isinstance(contents, list)
+            else [
+                ResourceContent(
+                    contents,
+                    mime_type="application/octet-stream",
+                    meta={"item": "sample"},
+                )
+            ],
+            meta={"result": "sample"},
+        )
+        calls = 0
+
+        @caching_server.resource("data://cached-content")
+        def sample() -> ResourceResult:
+            nonlocal calls
+            calls += 1
+            return expected
+
+        async with Client(caching_server) as client:
+            for _ in range(2):
+                result = await client.read_resource_mcp("data://cached-content")
+                assert (
+                    result.contents
+                    == expected.to_mcp_result("data://cached-content").contents
+                )
+                assert user_meta(result.meta) == expected.meta
+
+        assert calls == 1
 
     async def test_list_operations_preserve_component_metadata(self):
         """Base component fields should survive conversion through the cache."""
@@ -797,6 +864,31 @@ class TestCachingWithImportedServerPrefixes:
             result = await client.call_tool("child_add", {"a": 5, "b": 3})
             assert not result.is_error
             assert tracking_calculator.add_calls == 1
+
+
+def test_resource_cache_accepts_existing_text_entries() -> None:
+    cached = CacheableResourceResult.model_validate(
+        {
+            "contents": [
+                {
+                    "content": "aGVsbG8=",
+                    "mime_type": "application/octet-stream",
+                    "meta": {"item": "sample"},
+                }
+            ],
+            "meta": {"result": "sample"},
+        }
+    )
+    assert cached.unwrap() == ResourceResult(
+        [
+            ResourceContent(
+                "aGVsbG8=",
+                mime_type="application/octet-stream",
+                meta={"item": "sample"},
+            )
+        ],
+        meta={"result": "sample"},
+    )
 
 
 class TestCacheKeyGeneration:

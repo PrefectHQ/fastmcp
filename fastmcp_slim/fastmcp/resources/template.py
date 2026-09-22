@@ -43,6 +43,34 @@ def extract_query_params(uri_template: str) -> set[str]:
     return set()
 
 
+# RFC 3986 reserved characters, which stay as written in a template literal.
+_RESERVED = ":/?#[]@!$&'()*+,;="
+_PCT_TRIPLET = re.compile(r"%[0-9A-Fa-f]{2}")
+
+
+def encode_literal(text: str) -> str:
+    """Percent-encode literal template text per RFC 6570 section 3.1.
+
+    A template may be written with characters the URI grammar does not allow —
+    a non-ASCII `ucschar` (`file:///docs/café/`) or a space — and section 3.1
+    requires those to be UTF-8 percent-encoded in the expanded URI. Reserved
+    and unreserved characters are structural and stay as written, and existing
+    `%XX` triplets pass through so an already-encoded literal is not encoded
+    twice.
+
+    A resource URI reaches the server as an `AnyUrl`, which percent-encodes it,
+    so the encoded form is what matching has to line up with.
+    """
+    out: list[str] = []
+    last = 0
+    for match in _PCT_TRIPLET.finditer(text):
+        out.append(quote(text[last : match.start()], safe=_RESERVED))
+        out.append(match.group())
+        last = match.end()
+    out.append(quote(text[last:], safe=_RESERVED))
+    return "".join(out)
+
+
 def build_regex(template: str) -> re.Pattern[str] | None:
     """Build regex pattern for URI template, handling RFC 6570 syntax.
 
@@ -73,7 +101,9 @@ def build_regex(template: str) -> re.Pattern[str] | None:
                 group = name.replace("-", "_")
                 pattern += f"(?P<{group}>[^/]+)"
         else:
-            pattern += re.escape(part)
+            # Encoded so the pattern lines up with the URI that actually
+            # arrives, and with what expand_uri_template emits (RFC 6570 3.1).
+            pattern += re.escape(encode_literal(part))
     try:
         return re.compile(f"^{pattern}$")
     except re.error:
@@ -126,7 +156,12 @@ def expand_uri_template(uri_template: str, params: dict[str, Any]) -> str:
     - Path params: `{var}`, `{var*}`
     - Query params: `{?var1,var2}`
     """
-    result = uri_template
+    # Literal runs carry their own encoding (RFC 6570 3.1); placeholders are
+    # left alone here and encoded with their substituted values below.
+    result = "".join(
+        part if part.startswith("{") and part.endswith("}") else encode_literal(part)
+        for part in re.split(r"(\{[^}]+\})", uri_template)
+    )
 
     # Replace {name} and {name*} path placeholders, percent-encoding the
     # substituted values so the result round-trips through match_uri_template
