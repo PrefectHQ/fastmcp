@@ -70,6 +70,30 @@ def _requires_explode(annotation: Any) -> bool:
     return False
 
 
+def _accepts_list(annotation: Any) -> bool:
+    """Whether an annotation can hold a list.
+
+    The mirror of `_requires_explode`: `{?tags*}` always collects into a list,
+    so a scalar parameter declared with it fails validation on every read. Stays
+    permissive for untyped or unresolved annotations, where Pydantic is the real
+    arbiter and a false rejection would break a working registration.
+    """
+    if annotation in (inspect.Parameter.empty, Any, object):
+        return True
+    if isinstance(annotation, str):
+        return True
+    if annotation is list:
+        return True
+    origin = get_origin(annotation)
+    if origin is list:
+        return True
+    if origin is Annotated:
+        return _accepts_list(get_args(annotation)[0])
+    if origin in (Union, UnionType):
+        return any(_accepts_list(arg) for arg in get_args(annotation))
+    return False
+
+
 def extract_exploded_query_params(uri_template: str) -> set[str]:
     """Extract query parameter names declared with the RFC 6570 explode modifier.
 
@@ -647,6 +671,24 @@ class FunctionResourceTemplate(ResourceTemplate):
                         f"must be declared with the RFC 6570 explode modifier: "
                         f"use '{{?{param_name}*}}' instead of '{{?{param_name}}}' "
                         f"so repeated values (?{param_name}=a&{param_name}=b) are collected."
+                    )
+
+            # The mirror case: the explode modifier always collects into a
+            # list, so a scalar parameter declared with it fails validation on
+            # every read. Before explode was honored, `{?tag*}` matched no
+            # parameter at all and was rejected here; keep rejecting it rather
+            # than deferring the failure to read time.
+            for param_name in sorted(query_params & exploded):
+                annotation = hints.get(
+                    param_name, user_sig.parameters[param_name].annotation
+                )
+                if not _accepts_list(annotation):
+                    raise ValueError(
+                        f"Query parameter '{param_name}' is declared with the "
+                        f"RFC 6570 explode modifier ('{{?{param_name}*}}'), which "
+                        f"collects repeated values into a list, but its type "
+                        f"accepts only a scalar. Use '{{?{param_name}}}' instead, "
+                        f"or widen the annotation to a list type."
                     )
 
         # Check if required parameters are a subset of the path parameters

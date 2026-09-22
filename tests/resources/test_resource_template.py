@@ -1006,6 +1006,53 @@ class TestMalformedURITemplates:
         assert matched is not None
         assert await template.read(matched) == {"category": "books", "tags": "a"}
 
+    def test_explode_on_a_scalar_query_param_is_rejected(self):
+        """The mirror of the list-without-explode guard.
+
+        `{?tag*}` always collects into a list, so a scalar parameter declared
+        with it failed validation on every read. Before explode was honored,
+        `tag*` matched no function parameter and was rejected at registration —
+        keep rejecting it rather than deferring the failure to read time.
+        """
+
+        def search(category: str, tag: str = "") -> dict:
+            return {"category": category, "tag": tag}
+
+        with pytest.raises(ValueError, match="accepts only a scalar"):
+            ResourceTemplate.from_function(
+                fn=search, uri_template="items://{category}{?tag*}"
+            )
+
+    @pytest.mark.parametrize(
+        "annotation",
+        [
+            list[str] | None,
+            str | list[str] | None,
+            Annotated[list[str] | None, Field()],
+        ],
+    )
+    def test_explode_accepts_any_annotation_that_can_hold_a_list(self, annotation):
+        """The guard must not reject annotations Pydantic would accept."""
+
+        def search(category: str, tag=None) -> dict:
+            return {"category": category, "tag": tag}
+
+        search.__annotations__ = {"category": str, "tag": annotation, "return": dict}
+
+        ResourceTemplate.from_function(
+            fn=search, uri_template="items://{category}{?tag*}"
+        )
+
+    def test_explode_allows_untyped_query_params(self):
+        """An unannotated parameter is Pydantic's call, not the guard's."""
+
+        def search(category: str, tag=None) -> dict:
+            return {"category": category, "tag": tag}
+
+        ResourceTemplate.from_function(
+            fn=search, uri_template="items://{category}{?tag*}"
+        )
+
     def test_from_function_rejects_hyphen_underscore_collision(self):
         """Two raw param names that normalize to the same key are rejected."""
 
