@@ -6,6 +6,7 @@ import time
 import weakref
 from pathlib import Path
 
+import anyio
 import psutil
 import pytest
 from mcp.shared.exceptions import MCPError
@@ -307,6 +308,20 @@ class TestKeepAlive:
             assert await first.ping()
             assert (await first.call_tool("pid")).data == pid
 
+        await wait_for_process_exit(pid)
+
+    async def test_cancelled_scope_still_stops_unshared_subprocess(self, stdio_script):
+        transport = PythonStdioTransport(stdio_script, keep_alive=False)
+        pid: int | None = None
+
+        with anyio.CancelScope() as scope:
+            async with transport.connect_session() as session:
+                result = await session.call_tool("pid", {})
+                pid = int(result.content[0].text)  # ty: ignore[unresolved-attribute]
+                scope.cancel()
+
+        assert pid is not None
+        assert transport._connect_task is None
         await wait_for_process_exit(pid)
 
     async def test_cancelled_client_leaves_shared_transport_connected(
