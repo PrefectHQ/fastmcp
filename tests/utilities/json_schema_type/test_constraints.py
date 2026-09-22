@@ -180,3 +180,37 @@ class TestStringFormatConstraints:
         """The client converts a tool's output schema on every call, so repeats must hit its adapter cache."""
         schema = {"type": "string", "format": "email", "maxLength": 10}
         assert json_schema_to_type(schema) is json_schema_to_type(dict(schema))
+
+
+class TestIntegralFloatCounts:
+    """JSON allows counts like minLength to be written as 2.0, and they must still apply."""
+
+    @pytest.mark.parametrize(
+        ("schema", "valid", "invalid"),
+        [
+            ({"type": "string", "minLength": 2.0}, "ab", "a"),
+            ({"type": "string", "maxLength": 2.0}, "ab", "abc"),
+            (
+                {"type": "string", "format": "date-time", "maxLength": 20.0},
+                "2026-09-22T00:00:00Z",
+                "2026-09-22T00:00:00.000000+00:00",
+            ),
+            (
+                {"type": "array", "items": {"type": "string"}, "minItems": 1.0},
+                ["a"],
+                [],
+            ),
+        ],
+    )
+    def test_integral_float_counts_apply(self, schema, valid, invalid):
+        validator = TypeAdapter(json_schema_to_type(schema))
+        validator.validate_python(valid)
+        with pytest.raises(ValidationError):
+            validator.validate_python(invalid)
+
+    def test_float_count_does_not_poison_a_later_int_count(self):
+        json_schema_to_type({"type": "string", "format": "email", "maxLength": 30.0})
+        validator = TypeAdapter(
+            json_schema_to_type({"type": "string", "format": "email", "maxLength": 30})
+        )
+        validator.validate_python("a@b.co")

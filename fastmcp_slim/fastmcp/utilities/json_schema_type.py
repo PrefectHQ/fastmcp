@@ -265,6 +265,11 @@ def _resolve_ref(ref: str, schemas: Mapping[str, Any]) -> Mapping[str, Any]:
     return current
 
 
+def _count(value: Any) -> Any:
+    """JSON Schema counts are non-negative integers, and JSON allows writing them as `2.0`."""
+    return int(value) if isinstance(value, float) and value.is_integer() else value
+
+
 def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]:
     """Create string type with optional constraints."""
     if "const" in schema:
@@ -276,8 +281,8 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
     constraints = {
         k: v
         for k, v in {
-            "min_length": schema.get("minLength"),
-            "max_length": schema.get("maxLength"),
+            "min_length": _count(schema.get("minLength")),
+            "max_length": _count(schema.get("maxLength")),
             "pattern": schema.get("pattern"),
         }.items()
         if v is not None
@@ -393,8 +398,8 @@ def _create_array_type(
     constraints = {
         k: v
         for k, v in {
-            "min_length": schema.get("minItems"),
-            "max_length": schema.get("maxItems"),
+            "min_length": _count(schema.get("minItems")),
+            "max_length": _count(schema.get("maxItems")),
         }.items()
         if v is not None
     }
