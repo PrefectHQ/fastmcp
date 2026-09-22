@@ -315,7 +315,9 @@ class TestMultiAuthVerifyToken:
         rejecting = StaticTokenVerifier(tokens={})
         auth = MultiAuth(verifiers=[UnavailableVerifier(), rejecting])
 
-        with pytest.raises(TokenVerificationError, match="simulated verifier unavailable"):
+        with pytest.raises(
+            TokenVerificationError, match="simulated verifier unavailable"
+        ):
             await auth.verify_token("anything")
 
     async def test_operational_failure_allows_successful_fallback(self):
