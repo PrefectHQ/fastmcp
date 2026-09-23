@@ -5,6 +5,25 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v4.0.8" description="2026-09-23">
+
+**[v4.0.8: Take Three](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.8)**
+
+Completion goes back to its 4.0.5 behavior. The visibility check added in 4.0.6 and reworked in 4.0.7 simulated list requests through middleware, and in 4.0.7 that could let a response cache serve hidden prompts to other clients. New tests pin both problems, and withholding suggestions for hidden references will return with a proper design. Resource template patterns are now cached without a size limit, so servers with thousands of templates read fast again, and OAuthProxy revokes the upstream refresh token instead of sending its own token upstream.
+
+### Security 🔒
+* completions: revert the list-based visibility check (#5240, #5244) by [@zzstoatzz](https://github.com/zzstoatzz) in [#5250](https://github.com/PrefectHQ/fastmcp/pull/5250)
+### Fixes 🐞
+* Fix OAuthProxy upstream refresh token revocation by [@Ujemny](https://github.com/Ujemny) in [#5243](https://github.com/PrefectHQ/fastmcp/pull/5243)
+* resources: keep every compiled template pattern cached by [@zzstoatzz](https://github.com/zzstoatzz) in [#5248](https://github.com/PrefectHQ/fastmcp/pull/5248)
+
+## New Contributors
+* @Ujemny made their first contribution in [#5243](https://github.com/PrefectHQ/fastmcp/pull/5243)
+
+**Full Changelog**: [v4.0.7...v4.0.8](https://github.com/PrefectHQ/fastmcp/compare/v4.0.7...v4.0.8)
+
+</Update>
+
 <Update label="v4.0.7" description="2026-09-23">
 
 **[v4.0.7: Double Take](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.7)**
