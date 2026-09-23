@@ -862,8 +862,9 @@ class ProxyProvider(Provider):
     instead of opening a new backend connection.  The cache stores the
     backend's raw component metadata and is shared across all sessions;
     per-session visibility and auth filtering are applied after cache lookup
-    by the server layer.  The cache is refreshed whenever a ``list_*`` call
-    is made, and entries expire after ``cache_ttl`` seconds (default 300).
+    by the server layer.  ``list_*`` calls are also served from the cache
+    while it is fresh, and the cache is refetched once entries expire after
+    ``cache_ttl`` seconds (default 300).
     Set ``cache_ttl=0`` to disable caching.  Disabling is recommended for
     backends whose component lists change dynamically.
 
@@ -918,7 +919,14 @@ class ProxyProvider(Provider):
     # -------------------------------------------------------------------------
 
     async def _list_tools(self) -> Sequence[Tool]:
-        """List all tools from the remote server."""
+        """List all tools from the remote server.
+
+        Serves from the cache while it is fresh (within ``cache_ttl``);
+        a missing or stale cache triggers a fetch from the backend.
+        """
+        cache = self._tools_cache
+        if cache is not None and cache.is_fresh(self._cache_ttl):
+            return cache.items
         try:
             client = await self._get_client()
             async with client:
