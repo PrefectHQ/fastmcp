@@ -781,6 +781,27 @@ class TestMalformedURITemplates:
         assert match is not None
         assert match.group("user_id") == "alice"
 
+    def test_pattern_cache_holds_more_templates_than_4096(self, monkeypatch):
+        """A read walks every template, so a pattern must still be cached after a
+        server with thousands of templates has matched against all of them."""
+        from fastmcp.resources import template as template_module
+
+        templates = [f"many-templates://{i}/{{x}}" for i in range(5000)]
+        for uri_template in templates:
+            match_uri_template("many-templates://none", uri_template)
+
+        builds = 0
+        literal_pattern = template_module._literal_pattern
+
+        def counting(text: str) -> str:
+            nonlocal builds
+            builds += 1
+            return literal_pattern(text)
+
+        monkeypatch.setattr(template_module, "_literal_pattern", counting)
+        assert match_uri_template("many-templates://0/a", templates[0]) == {"x": "a"}
+        assert builds == 0
+
     def test_matching_reuses_the_compiled_template_pattern(self, monkeypatch):
         """Reads try every template in turn, so a template's pattern is built
         once, not on every match attempt."""
