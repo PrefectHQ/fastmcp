@@ -5,6 +5,21 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v4.0.7" description="2026-09-23">
+
+**[v4.0.7: Double Take](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.7)**
+
+Fixes two regressions from 4.0.6. The completion visibility check runs only the list-specific middleware hooks, so rate limits, logging, and metrics see a single request per completion again. Resource template patterns are cached, which makes template reads faster than in 4.0.5.
+
+### Fixes 🐞
+* completions: check reference visibility through typed list hooks only by [@zzstoatzz](https://github.com/zzstoatzz) in [#5244](https://github.com/PrefectHQ/fastmcp/pull/5244)
+* resources: cache compiled URI template patterns by [@zzstoatzz](https://github.com/zzstoatzz) in [#5245](https://github.com/PrefectHQ/fastmcp/pull/5245)
+
+
+**Full Changelog**: [v4.0.6...v4.0.7](https://github.com/PrefectHQ/fastmcp/compare/v4.0.6...v4.0.7)
+
+</Update>
+
 <Update label="v4.0.6" description="2026-09-23">
 
 **[v4.0.6: Comma Chameleon](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.6)**
