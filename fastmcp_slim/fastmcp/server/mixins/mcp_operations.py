@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import mcp_types
@@ -47,6 +47,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 PaginateT = TypeVar("PaginateT")
+T = TypeVar("T")
 
 
 def _apply_pagination(
@@ -456,14 +457,57 @@ class MCPOperationsMixin:
         ref: mcp_types.PromptReference | mcp_types.ResourceTemplateReference,
     ) -> bool:
         """Whether the caller can list the prompt or template a completion
-        refers to, after visibility, component auth, and middleware. A hidden
-        reference completes like an unknown one, so suggestions cannot
-        disclose what the listing withholds."""
-        if isinstance(ref, mcp_types.PromptReference):
-            return any(p.name == ref.name for p in await self.list_prompts())
-        if any(t.uri_template == ref.uri for t in await self.list_resource_templates()):
-            return True
-        return any(str(r.uri) == ref.uri for r in await self.list_resources())
+        refers to, after visibility, component auth, and the typed ``on_list_*``
+        middleware hooks. A hidden reference completes like an unknown one, so
+        suggestions cannot disclose what the listing withholds.
+
+        Only the typed hooks run: generic ``on_request``/``on_message``
+        middleware (rate limits, logging, metrics) must see one
+        ``completion/complete``, not the listings behind it. A listing that
+        fails hides the reference.
+        """
+        try:
+            if isinstance(ref, mcp_types.PromptReference):
+                prompts = await self._list_for_completion(
+                    "prompts/list", self.list_prompts
+                )
+                return any(p.name == ref.name for p in prompts)
+            templates = await self._list_for_completion(
+                "resources/templates/list", self.list_resource_templates
+            )
+            if any(t.uri_template == ref.uri for t in templates):
+                return True
+            resources = await self._list_for_completion(
+                "resources/list", self.list_resources
+            )
+            return any(str(r.uri) == ref.uri for r in resources)
+        except Exception:
+            logger.warning(
+                "Listing failed while checking completion reference %s",
+                ref,
+                exc_info=True,
+            )
+            return False
+
+    async def _list_for_completion(
+        self: FastMCP, method: str, list_fn: Callable[..., Awaitable[Sequence[T]]]
+    ) -> Sequence[T]:
+        from fastmcp.server.context import Context
+        from fastmcp.server.middleware import MiddlewareContext
+
+        async with Context(fastmcp=self) as ctx:
+            mw_context = MiddlewareContext(
+                message={},
+                source="client",
+                type="request",
+                method=method,
+                fastmcp_context=ctx,
+            )
+            return await self._run_middleware(
+                mw_context,
+                lambda context: list_fn(run_middleware=False),
+                phase="typed",
+            )
 
     def _register_completion_handler(self: FastMCP) -> None:
         """Register the low-level ``completion/complete`` handler.

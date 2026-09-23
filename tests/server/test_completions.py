@@ -381,3 +381,40 @@ async def test_completion_answers_a_listed_static_resource_uri():
         )
     assert listed.values == ["value"]
     assert unknown.values == []
+
+
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("ref", HIDDEN_REFS, ids=["prompt", "template"])
+async def test_visibility_check_does_not_run_generic_middleware(ref, mode):
+    from fastmcp.server.middleware import Middleware
+
+    seen: list[str] = []
+
+    class Recorder(Middleware):
+        async def on_request(self, context, call_next):
+            seen.append(context.method)
+            return await call_next(context)
+
+    mcp = _suggesting_server(middleware=[Recorder()])
+    async with Client(mcp, mode=mode) as client:
+        seen.clear()
+        result = await client.complete(ref, {"name": "path", "value": ""})
+    assert result.values == ["private/salary.md"]
+    assert seen == ["completion/complete"]
+
+
+@pytest.mark.parametrize("ref", HIDDEN_REFS, ids=["prompt", "template"])
+async def test_raising_list_hook_fails_completion_closed(ref):
+    from fastmcp.server.middleware import Middleware
+
+    class BrokenListing(Middleware):
+        async def on_list_prompts(self, context, call_next):
+            raise RuntimeError("listing is down")
+
+        async def on_list_resource_templates(self, context, call_next):
+            raise RuntimeError("listing is down")
+
+    mcp = _suggesting_server(middleware=[BrokenListing()])
+    async with Client(mcp) as client:
+        result = await client.complete(ref, {"name": "path", "value": ""})
+    assert result.values == []
