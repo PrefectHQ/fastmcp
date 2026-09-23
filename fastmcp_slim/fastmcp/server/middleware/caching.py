@@ -31,10 +31,8 @@ from fastmcp.resources.base import (
     ResourceContent,
     ResourceResult,
 )
-from fastmcp.server.dependencies import (
-    get_access_token,
-    get_http_headers,
-)
+from fastmcp.server import dependencies
+from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.base import InputRequiredToolResult, Tool, ToolResult
 from fastmcp.utilities.logging import get_logger
@@ -664,7 +662,7 @@ def _normalize_accept_header(accept: str) -> str:
 def _make_list_cache_key() -> str:
     """Return a cache partition key for list operations, varying by auth and Accept header."""
     auth_key = _get_auth_partition_key()
-    headers = get_http_headers()
+    headers = dependencies.get_http_headers()
     accept = headers.get("accept")
     if not accept:
         return auth_key
