@@ -781,6 +781,31 @@ class TestMalformedURITemplates:
         assert match is not None
         assert match.group("user_id") == "alice"
 
+    def test_matching_reuses_the_compiled_template_pattern(self, monkeypatch):
+        """Reads try every template in turn, so a template's pattern is built
+        once, not on every match attempt."""
+        from fastmcp.resources import template as template_module
+
+        builds = 0
+        literal_pattern = template_module._literal_pattern
+
+        def counting(text: str) -> str:
+            nonlocal builds
+            builds += 1
+            return literal_pattern(text)
+
+        monkeypatch.setattr(template_module, "_literal_pattern", counting)
+        uri_template = "cache-probe://reports/café/{year}"
+        assert match_uri_template("cache-probe://other/2024", uri_template) is None
+        first_build = builds
+        assert first_build > 0
+        for _ in range(50):
+            assert match_uri_template("cache-probe://other/2024", uri_template) is None
+        assert match_uri_template(
+            "cache-probe://reports/caf%C3%A9/2024", uri_template
+        ) == {"year": "2024"}
+        assert builds == first_build
+
     def test_build_regex_returns_none_for_duplicate_group_names(self):
         assert build_regex("test://{a}/{a}/path") is None
 
