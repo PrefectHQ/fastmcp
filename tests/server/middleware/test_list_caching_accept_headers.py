@@ -1,6 +1,5 @@
 """Regression tests for issue #4461: list responses cached across content-type changes."""
 
-import pytest
 from fastmcp.server.middleware.caching import (
     ANONYMOUS_AUTH_KEY,
     _make_list_cache_key,

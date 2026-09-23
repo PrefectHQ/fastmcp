@@ -31,7 +31,10 @@ from fastmcp.resources.base import (
     ResourceContent,
     ResourceResult,
 )
-from fastmcp.server.dependencies import get_access_token
+from fastmcp.server.dependencies import (
+    get_access_token,
+    get_http_headers,
+)
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.base import InputRequiredToolResult, Tool, ToolResult
 from fastmcp.utilities.logging import get_logger
@@ -355,7 +358,7 @@ class ResponseCachingMiddleware(Middleware):
         if self._list_tools_settings.get("enabled") is False:
             return await call_next(context)
 
-        cache_key: str = _get_auth_partition_key()
+        cache_key: str = _make_list_cache_key()
 
         # an empty list is a cached result, not a miss: `get` returns None when the key is
         # absent, so testing truthiness would re-list on every request for any caller whose
@@ -388,7 +391,7 @@ class ResponseCachingMiddleware(Middleware):
         if self._list_resources_settings.get("enabled") is False:
             return await call_next(context)
 
-        cache_key: str = _get_auth_partition_key()
+        cache_key: str = _make_list_cache_key()
 
         # an empty list is a cached result, not a miss (see on_list_tools)
         cached_value = await self._list_resources_cache.get(key=cache_key)
@@ -421,7 +424,7 @@ class ResponseCachingMiddleware(Middleware):
         if self._list_prompts_settings.get("enabled") is False:
             return await call_next(context)
 
-        cache_key: str = _get_auth_partition_key()
+        cache_key: str = _make_list_cache_key()
 
         # an empty list is a cached result, not a miss (see on_list_tools)
         cached_value = await self._list_prompts_cache.get(key=cache_key)
@@ -649,6 +652,25 @@ def _get_auth_partition_key() -> str:
     if token is None:
         return ANONYMOUS_AUTH_KEY
     return _hash_cache_key(token.token)
+
+
+def _normalize_accept_header(accept: str) -> str:
+    """Normalize the Accept header value for deterministic partitioning."""
+    return ",".join(
+        sorted(part.strip().lower() for part in accept.split(",") if part.strip())
+    )
+
+
+def _make_list_cache_key() -> str:
+    """Return a cache partition key for list operations, varying by auth and Accept header."""
+    auth_key = _get_auth_partition_key()
+    headers = get_http_headers()
+    accept = headers.get("accept")
+    if not accept:
+        return auth_key
+
+    normalized_accept = _normalize_accept_header(accept)
+    return f"{auth_key}:{_hash_cache_key(normalized_accept)}"
 
 
 def _get_component_version_cache_key(msg: mcp_types.RequestParams) -> str:
