@@ -5,6 +5,16 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 4.0.6" description="September 23, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.6: Comma Chameleon"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.6"
+cta="Read the release notes"
+>
+Resource templates now match what clients actually send: literals raw or percent-encoded, and list query parameters exploded or comma-joined. A `Client` whose exit is cancelled releases its session instead of leaking it, completion no longer answers for prompts and templates the caller can't see, and JSON schemas with float or oversized length limits load instead of failing. The auth fixes cache OIDC discovery and keep Google tokens out of request URLs.
+</Card>
+</Update>
+
 <Update label="FastMCP 4.0.5" description="September 17, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v4.0.5: No Country for Loose Ints"
