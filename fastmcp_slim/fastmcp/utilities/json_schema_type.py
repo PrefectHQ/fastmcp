@@ -355,6 +355,36 @@ def _constrain_raw_string(
     ]
 
 
+def _exclusive_bound(
+    schema: Mapping[str, Any], modifier: str, bound: str
+) -> int | float | None:
+    """Value for a strict bound, or None when the schema states no strict bound.
+
+    ``exclusiveMinimum``/``exclusiveMaximum`` take a number since draft-06. Draft-04
+    instead writes a boolean that tightens the numeric sibling: ``{"minimum": 1,
+    "exclusiveMinimum": true}`` excludes 1. Passing that boolean straight through as
+    Pydantic's ``gt``/``lt`` reads it as the number 1, which rejects every value
+    except 0 regardless of the sibling.
+    """
+    value = schema.get(modifier)
+    if isinstance(value, bool):
+        return schema.get(bound) if value else None
+    return value
+
+
+def _inclusive_bound(
+    schema: Mapping[str, Any], modifier: str, bound: str
+) -> int | float | None:
+    """Value for a non-strict bound, or None when a strict bound replaces the sibling.
+
+    A numeric ``exclusiveMinimum``/``exclusiveMaximum`` (draft-06+) makes the sibling
+    ``minimum``/``maximum`` redundant, so no inclusive bound is emitted for it.
+    """
+    if schema.get(modifier) is True:
+        return None
+    return schema.get(bound)
+
+
 def _create_numeric_type(
     base: type[int | float], schema: Mapping[str, Any]
 ) -> type | Annotated[Any, ...]:
@@ -365,10 +395,10 @@ def _create_numeric_type(
     constraints = {
         k: v
         for k, v in {
-            "gt": schema.get("exclusiveMinimum"),
-            "ge": schema.get("minimum"),
-            "lt": schema.get("exclusiveMaximum"),
-            "le": schema.get("maximum"),
+            "gt": _exclusive_bound(schema, "exclusiveMinimum", "minimum"),
+            "ge": _inclusive_bound(schema, "exclusiveMinimum", "minimum"),
+            "lt": _exclusive_bound(schema, "exclusiveMaximum", "maximum"),
+            "le": _inclusive_bound(schema, "exclusiveMaximum", "maximum"),
             "multiple_of": schema.get("multipleOf"),
         }.items()
         if v is not None
