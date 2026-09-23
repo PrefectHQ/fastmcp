@@ -433,7 +433,7 @@ class MCPOperationsMixin:
         with bind_request_context(ctx):
             logger.debug(f"[{self.name}] Handler called: complete %s", params.ref)
             handler = self._completion_handler
-            if handler is None or not await self._completion_ref_is_listed(params.ref):
+            if handler is None:
                 return mcp_types.CompleteResult(
                     completion=mcp_types.Completion(values=[])
                 )
@@ -450,20 +450,6 @@ class MCPOperationsMixin:
             result = await raw if inspect.isawaitable(raw) else raw
             completion = normalize_completion(cast(CompletionValues, result))
             return mcp_types.CompleteResult(completion=completion)
-
-    async def _completion_ref_is_listed(
-        self: FastMCP,
-        ref: mcp_types.PromptReference | mcp_types.ResourceTemplateReference,
-    ) -> bool:
-        """Whether the caller can list the prompt or template a completion
-        refers to, after visibility, component auth, and middleware. A hidden
-        reference completes like an unknown one, so suggestions cannot
-        disclose what the listing withholds."""
-        if isinstance(ref, mcp_types.PromptReference):
-            return any(p.name == ref.name for p in await self.list_prompts())
-        if any(t.uri_template == ref.uri for t in await self.list_resource_templates()):
-            return True
-        return any(str(r.uri) == ref.uri for r in await self.list_resources())
 
     def _register_completion_handler(self: FastMCP) -> None:
         """Register the low-level ``completion/complete`` handler.

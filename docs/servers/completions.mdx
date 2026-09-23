@@ -118,8 +118,6 @@ A handler may return any of three things:
 - `None` — treated as an empty completion, for references and arguments the handler does not recognize.
 - A `Completion` object — when you want to include pagination hints alongside the values.
 
-The handler only runs for references the caller can list. A prompt or template hidden by `disable()`, component auth, or middleware such as `AuthMiddleware` gets an empty completion, as an unknown reference would, so suggestions never reveal what the listing withholds.
-
 The MCP protocol caps a single response at 100 values. When more candidates exist, return a `Completion` and set `total` (how many candidates match in all) and `has_more` (whether values were truncated) so the client can indicate that the list is partial.
 
 ```python
