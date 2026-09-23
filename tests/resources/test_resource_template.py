@@ -822,6 +822,48 @@ class TestMalformedURITemplates:
         assert renamed.matches("before://oslo") is None
         assert renamed.matches("after://oslo") == {"city": "oslo"}
 
+    def test_mounted_template_wrapper_shares_the_source_pattern(self, monkeypatch):
+        """A mount wraps every template on every list, so a wrapper must not
+        compile the pattern again."""
+        from fastmcp.resources import template as template_module
+        from fastmcp.server.providers.fastmcp_provider import (
+            FastMCPProviderResourceTemplate,
+        )
+
+        def weather(city: str) -> str:
+            return city
+
+        source = ResourceTemplate.from_function(
+            weather, uri_template="mounted://forecast/{city}"
+        )
+        source.matches("mounted://forecast/oslo")
+
+        builds = 0
+        literal_pattern = template_module._literal_pattern
+
+        def counting(text: str) -> str:
+            nonlocal builds
+            builds += 1
+            return literal_pattern(text)
+
+        monkeypatch.setattr(template_module, "_literal_pattern", counting)
+        template_module.build_regex.cache_clear()
+        for _ in range(3):
+            wrapped = FastMCPProviderResourceTemplate.wrap(None, source)
+            assert wrapped.matches("mounted://forecast/bergen") == {"city": "bergen"}
+        assert builds == 0
+
+    def test_copy_can_override_list_query_params(self):
+        def search(tags: list[str] | None = None) -> str:
+            return ",".join(tags or [])
+
+        template = ResourceTemplate.from_function(
+            search, uri_template="items://all{?tags}"
+        )
+        assert template.matches("items://all?tags=a,b") == {"tags": ["a", "b"]}
+        scalar = template.model_copy(update={"_list_query_params": frozenset()})
+        assert scalar.matches("items://all?tags=a,b") == {"tags": "a,b"}
+
     def test_shared_pattern_cache_is_bounded(self):
         """Template strings can come from a proxied server, so the shared cache
         must not grow with every template a remote ever sends."""

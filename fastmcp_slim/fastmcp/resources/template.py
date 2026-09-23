@@ -447,22 +447,29 @@ class ResourceTemplate(FastMCPComponent):
 
     def matches(self, uri: str) -> dict[str, Any] | None:
         """Check if URI matches template and extract parameters."""
-        # Reads call this for every template, and pydantic's private-attribute
-        # access costs ~0.3us, so the pattern is read from the private dict.
+        regex = self._compiled_pattern()
+        if regex is None:
+            return None
+        return match_uri_template(
+            uri,
+            self.uri_template,
+            list_params=self._list_query_params if "?" in uri else (),
+            regex=regex,
+        )
+
+    def _compiled_pattern(self) -> re.Pattern[str] | None:
+        """This template's path pattern, built once per `uri_template`.
+
+        Reads match every template in turn, and pydantic's private-attribute
+        access costs ~0.3us, so the pattern lives in the private dict directly.
+        """
         private = self.__pydantic_private__
         assert private is not None
         cached = private.get("_pattern")
         if cached is None or cached[0] != self.uri_template:
             cached = (self.uri_template, build_regex(self.uri_template))
             private["_pattern"] = cached
-        if cached[1] is None:
-            return None
-        return match_uri_template(
-            uri,
-            self.uri_template,
-            list_params=private["_list_query_params"],
-            regex=cached[1],
-        )
+        return cached[1]
 
     async def read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult:
         """Read the resource content."""
