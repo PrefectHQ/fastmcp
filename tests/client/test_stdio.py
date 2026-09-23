@@ -301,11 +301,14 @@ class TestKeepAlive:
         leave the transport unusable for the next Client, and must stop its
         subprocess rather than leak its session."""
         transport = PythonStdioTransport(stdio_script, keep_alive=False)
+        abandoned = Client(transport)
+        pid = None
 
         with anyio.move_on_after(0.5):
-            async with Client(transport) as abandoned:
+            async with abandoned:
                 pid = (await abandoned.call_tool("pid")).data
                 await anyio.sleep(10)
+        assert pid is not None
         with anyio.fail_after(3):
             while abandoned.is_connected():
                 await anyio.sleep(0.01)
