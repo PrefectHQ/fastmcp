@@ -381,7 +381,7 @@ class TransportMixin:
         host_origin_protection: HostOriginProtection | None = None,
         allowed_hosts: list[str] | None = None,
         allowed_origins: list[str] | None = None,
-        session_idle_timeout: float | None = None,
+        session_idle_timeout: float | Literal["auto"] | None = None,
     ) -> StarletteWithLifespan:
         """Create a Starlette app using the specified HTTP transport.
 
@@ -408,7 +408,9 @@ class TransportMixin:
                 cross-origin responses.
             session_idle_timeout: Maximum time in seconds a streamable-HTTP
                 session may remain idle before it is terminated. When None,
-                falls back to the ``http_session_idle_timeout`` setting.
+                falls back to the `http_session_idle_timeout` setting.
+                "auto" uses the MCP SDK's default. To disable the timeout,
+                set `fastmcp.settings.http_session_idle_timeout = None`.
 
         Returns:
             A Starlette application configured with the specified transport
