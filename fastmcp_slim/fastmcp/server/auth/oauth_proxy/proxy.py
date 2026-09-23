@@ -2377,35 +2377,29 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 # For refresh tokens, resolve the upstream refresh token via
                 # JTI mapping so we revoke the token the authorization server
                 # actually issued, not the FastMCP-issued JWT wrapper.
-                upstream_token_to_revoke = token.token
                 if isinstance(token, RefreshToken):
-                    try:
-                        refresh_payload = self.jwt_issuer.verify_token(
-                            token.token, expected_token_use="refresh"
-                        )
-                        refresh_jti = refresh_payload["jti"]
-                        jti_mapping = await self._jti_mapping_store.get(
-                            key=refresh_jti
-                        )
-                        if jti_mapping:
-                            upstream_token_set = (
-                                await self._upstream_token_store.get(
-                                    key=jti_mapping.upstream_token_id
-                                )
-                            )
-                            if (
-                                upstream_token_set
-                                and upstream_token_set.refresh_token
-                            ):
-                                upstream_token_to_revoke = (
-                                    upstream_token_set.refresh_token
-                                )
-                    except Exception as e:
-                        logger.debug(
-                            "Could not resolve upstream refresh token "
-                            "for revocation, using original: %s",
-                            e,
-                        )
+                    refresh_payload = self.jwt_issuer.verify_token(
+                        token.token, expected_token_use="refresh"
+                    )
+                    refresh_jti = refresh_payload["jti"]
+                    jti_mapping = await self._jti_mapping_store.get(key=refresh_jti)
+                    if jti_mapping is None:
+                        logger.warning("No JTI mapping found for refresh token")
+                        return
+
+                    upstream_token_set = await self._upstream_token_store.get(
+                        key=jti_mapping.upstream_token_id
+                    )
+                    if (
+                        upstream_token_set is None
+                        or not upstream_token_set.refresh_token
+                    ):
+                        logger.warning("No upstream refresh token found")
+                        return
+
+                    upstream_token_to_revoke = upstream_token_set.refresh_token
+                else:
+                    upstream_token_to_revoke = token.token
 
                 async with httpx2.AsyncClient(
                     timeout=HTTP_TIMEOUT_SECONDS
