@@ -781,14 +781,18 @@ class TestMalformedURITemplates:
         assert match is not None
         assert match.group("user_id") == "alice"
 
-    def test_pattern_cache_holds_more_templates_than_4096(self, monkeypatch):
-        """A read walks every template, so a pattern must still be cached after a
-        server with thousands of templates has matched against all of them."""
+    def test_template_keeps_its_own_pattern(self, monkeypatch):
+        """Reads walk every template, so each keeps its compiled pattern for as
+        long as it lives, independent of any shared cache."""
         from fastmcp.resources import template as template_module
 
-        templates = [f"many-templates://{i}/{{x}}" for i in range(5000)]
-        for uri_template in templates:
-            match_uri_template("many-templates://none", uri_template)
+        def weather(city: str) -> str:
+            return city
+
+        template = ResourceTemplate.from_function(
+            weather, uri_template="own-pattern://forecast/{city}"
+        )
+        assert template.matches("own-pattern://forecast/oslo") == {"city": "oslo"}
 
         builds = 0
         literal_pattern = template_module._literal_pattern
@@ -799,8 +803,33 @@ class TestMalformedURITemplates:
             return literal_pattern(text)
 
         monkeypatch.setattr(template_module, "_literal_pattern", counting)
-        assert match_uri_template("many-templates://0/a", templates[0]) == {"x": "a"}
+        template_module.build_regex.cache_clear()
+        for _ in range(10):
+            assert template.matches("own-pattern://forecast/bergen") == {
+                "city": "bergen"
+            }
         assert builds == 0
+
+    def test_template_pattern_follows_a_changed_uri_template(self):
+        def weather(city: str) -> str:
+            return city
+
+        template = ResourceTemplate.from_function(
+            weather, uri_template="before://{city}"
+        )
+        assert template.matches("before://oslo") == {"city": "oslo"}
+        renamed = template.model_copy(update={"uri_template": "after://{city}"})
+        assert renamed.matches("before://oslo") is None
+        assert renamed.matches("after://oslo") == {"city": "oslo"}
+
+    def test_shared_pattern_cache_is_bounded(self):
+        """Template strings can come from a proxied server, so the shared cache
+        must not grow with every template a remote ever sends."""
+        from fastmcp.resources import template as template_module
+
+        for i in range(5000):
+            match_uri_template("remote://none", f"remote-{i}://{{x}}")
+        assert template_module.build_regex.cache_info().currsize <= 4096
 
     def test_matching_reuses_the_compiled_template_pattern(self, monkeypatch):
         """Reads try every template in turn, so a template's pattern is built
