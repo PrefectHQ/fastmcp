@@ -106,9 +106,10 @@ class JevSearchTransform(BaseSearchTransform):
         timeout: Seconds per API attempt when the transform builds its own
             client. A search is one to a few requests.
         shortlist: How many candidates each wide-pass request carries
-            forward. The close read sees at most ``3 * shortlist``
-            candidates; a larger catalog is narrowed with further wide
-            passes first.
+            forward. With ``close_read=True``, this must be at most half of
+            ``chunk_size`` so every wide pass reduces the candidate set by a
+            meaningful amount. The close read sees at most
+            ``min(3 * shortlist, 255)`` candidates.
         fit_threshold: A candidate whose "does this tool do what the request
             asks" probability falls below this is dropped from the results.
             Tune it against queries from your own users.
@@ -155,6 +156,10 @@ class JevSearchTransform(BaseSearchTransform):
             raise ValueError("shortlist must be at least 1")
         if not 1 <= chunk_size <= MAX_CHOICE_OPTIONS:
             raise ValueError(f"chunk_size must be between 1 and {MAX_CHOICE_OPTIONS}")
+        if close_read and shortlist * 2 > chunk_size:
+            raise ValueError(
+                "shortlist must be at most half of chunk_size when close_read is enabled"
+            )
         if not 0 <= fit_threshold <= 1:
             raise ValueError("fit_threshold must be between 0 and 1")
         if summary_chars < 8 or detail_chars < 8:
@@ -172,7 +177,7 @@ class JevSearchTransform(BaseSearchTransform):
         self._client = client
         self._client_lock: asyncio.Lock | None = None
         self._shortlist = shortlist
-        self._max_candidates = 3 * shortlist
+        self._max_candidates = min(3 * shortlist, MAX_CHOICE_OPTIONS)
         self._fit_threshold = fit_threshold
         self._close_read = close_read
         self._chunk_size = chunk_size

@@ -6,6 +6,7 @@ import time
 import weakref
 from pathlib import Path
 
+import anyio
 import psutil
 import pytest
 from mcp.shared.exceptions import MCPError
@@ -293,46 +294,38 @@ class TestKeepAlive:
 
         await wait_for_process_exit(pid)
 
-    async def test_shared_transport_stays_alive_until_last_client_exits(
+    async def test_client_abandoned_by_cancellation_does_not_wedge_transport(
         self, stdio_script
     ):
+        """A Client exited by a cancelled scope, once garbage-collected, must not
+        leave the transport unusable for the next Client, and must stop its
+        subprocess rather than leak its session."""
         transport = PythonStdioTransport(stdio_script, keep_alive=False)
-        first, second = Client(transport), Client(transport)
 
-        async with first:
-            pid = (await first.call_tool("pid")).data
-            async with second:
-                assert (await second.call_tool("pid")).data == pid
-
-            assert await first.ping()
-            assert (await first.call_tool("pid")).data == pid
-
+        with anyio.move_on_after(0.5):
+            async with Client(transport) as abandoned:
+                pid = (await abandoned.call_tool("pid")).data
+                await anyio.sleep(10)
+        with anyio.fail_after(3):
+            while abandoned.is_connected():
+                await anyio.sleep(0.01)
+        del abandoned
+        gc_collect_harder()
         await wait_for_process_exit(pid)
 
-    async def test_cancelled_client_leaves_shared_transport_connected(
-        self, stdio_script
-    ):
-        transport = PythonStdioTransport(stdio_script, keep_alive=False)
-        connected = asyncio.Event()
-
-        async def cancelled_client():
+        with anyio.fail_after(3):
             async with Client(transport) as client:
-                await client.ping()
-                connected.set()
-                await asyncio.Event().wait()
+                assert (await client.call_tool("pid")).data
 
-        async with Client(transport) as client:
-            pid = (await client.call_tool("pid")).data
-            task = asyncio.create_task(cancelled_client())
-            try:
-                await connected.wait()
-            finally:
-                task.cancel()
-                with pytest.raises(asyncio.CancelledError):
-                    await task
+    async def test_cancelled_scope_still_stops_unshared_subprocess(self, stdio_script):
+        transport = PythonStdioTransport(stdio_script, keep_alive=False)
+        pid: int | None = None
 
-            assert await client.ping()
-            assert (await client.call_tool("pid")).data == pid
+        with anyio.CancelScope() as scope:
+            async with transport.connect_session() as session:
+                result = await session.call_tool("pid", {})
+                pid = int(result.content[0].text)  # ty: ignore[unresolved-attribute]
+                scope.cancel()
 
         await wait_for_process_exit(pid)
 

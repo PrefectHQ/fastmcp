@@ -90,12 +90,7 @@ class StdioTransport(ClientTransport):
                 self._active_sessions -= 1
         finally:
             if not self.keep_alive:
-                # Other clients may still be using this transport. Serialize
-                # final cleanup with connect() so a new client cannot acquire
-                # the session while it is being disconnected.
-                async with self._connect_lock:
-                    if not self._active_sessions:
-                        await self.disconnect()
+                await self.disconnect()
             else:
                 logger.debug("Stdio transport has keep_alive=True, not disconnecting")
 
