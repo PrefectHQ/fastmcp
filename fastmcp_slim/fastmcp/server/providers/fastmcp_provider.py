@@ -281,7 +281,7 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
         cls, server: Any, template: ResourceTemplate
     ) -> FastMCPProviderResourceTemplate:
         """Wrap a ResourceTemplate to create FastMCPProviderResources."""
-        return cls(
+        wrapped = cls(
             server=server,
             original_uri_template=template.uri_template,
             uri_template=template.uri_template,
@@ -298,6 +298,11 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
             icons=template.icons,
             security=template.security,
         )
+        # Mounts wrap every template on every list, so share the source's
+        # compiled pattern instead of rebuilding it per wrapper.
+        template._compiled_pattern()
+        wrapped._pattern = template._pattern
+        return wrapped
 
     async def create_resource(self, uri: str, params: dict[str, Any]) -> Resource:
         """Create a FastMCPProviderResource for the given URI.
