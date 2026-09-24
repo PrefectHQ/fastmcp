@@ -512,29 +512,47 @@ class Provider:
                 self._list_prompts,
             )
         )
-        tools = cast("Sequence[Tool]", results[0])
-        resources = cast("Sequence[Resource]", results[1])
-        templates = cast("Sequence[ResourceTemplate]", results[2])
-        prompts = cast("Sequence[Prompt]", results[3])
+        components = [component for result in results for component in result]
+        return [
+            c
+            for c in await self._apply_task_transforms(components)
+            if c.task_config.supports_tasks()
+        ]
 
-        # Apply provider's own transforms sequentially
-        # For tasks, we need the fully-transformed names
+    async def _apply_task_transforms(
+        self, components: Sequence[FastMCPComponent]
+    ) -> list[FastMCPComponent]:
+        """Apply this provider's transforms to components bound for Docket.
+
+        Registration needs the names components are called by, so renaming
+        transforms apply. Catalog transforms (search, CodeMode) only replace
+        what is *listed*: the components they hide stay callable, so they must
+        stay registered too, and the synthetic tools they add are never tasks.
+        """
+        from fastmcp.prompts.base import Prompt
+        from fastmcp.resources.base import Resource
+        from fastmcp.resources.template import ResourceTemplate
+        from fastmcp.server.transforms.catalog import CatalogTransform
+        from fastmcp.tools.base import Tool
+
+        tools: Sequence[Tool] = [c for c in components if isinstance(c, Tool)]
+        resources: Sequence[Resource] = [
+            c for c in components if isinstance(c, Resource)
+        ]
+        templates: Sequence[ResourceTemplate] = [
+            c for c in components if isinstance(c, ResourceTemplate)
+        ]
+        prompts: Sequence[Prompt] = [c for c in components if isinstance(c, Prompt)]
+
         for transform in self.transforms:
+            if isinstance(transform, CatalogTransform):
+                continue
             tools = await transform.list_tools(tools)
             resources = await transform.list_resources(resources)
             templates = await transform.list_resource_templates(templates)
             prompts = await transform.list_prompts(prompts)
 
-        return [
-            c
-            for c in [
-                *tools,
-                *resources,
-                *templates,
-                *prompts,
-            ]
-            if c.task_config.supports_tasks()
-        ]
+        return [*tools, *resources, *templates, *prompts]
 
     # -------------------------------------------------------------------------
     # Lifecycle methods
