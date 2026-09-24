@@ -31,7 +31,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from functools import partial
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
 from typing_extensions import Self
 
@@ -52,6 +52,18 @@ if TYPE_CHECKING:
         Transform,
     )
     from fastmcp.tools.base import Tool
+
+
+_C = TypeVar("_C", bound=FastMCPComponent)
+
+
+def _listed(before: Sequence[_C], after: Sequence[_C]) -> Sequence[_C]:
+    return after
+
+
+def _keep_hidden(before: Sequence[_C], after: Sequence[_C]) -> Sequence[_C]:
+    listed = {c.key for c in after}
+    return [*after, *(c for c in before if c.key not in listed)]
 
 
 class Provider:
@@ -526,8 +538,8 @@ class Provider:
 
         Registration needs the names components are called by, so renaming
         transforms apply. Catalog transforms (search, CodeMode) only replace
-        what is *listed*: the components they hide stay callable, so they must
-        stay registered too, and the synthetic tools they add are never tasks.
+        what is *listed*: the components they hide stay callable, so they are
+        kept alongside whatever the catalog transform returns.
         """
         from fastmcp.prompts.base import Prompt
         from fastmcp.resources.base import Resource
@@ -545,12 +557,13 @@ class Provider:
         prompts: Sequence[Prompt] = [c for c in components if isinstance(c, Prompt)]
 
         for transform in self.transforms:
-            if isinstance(transform, CatalogTransform):
-                continue
-            tools = await transform.list_tools(tools)
-            resources = await transform.list_resources(resources)
-            templates = await transform.list_resource_templates(templates)
-            prompts = await transform.list_prompts(prompts)
+            keep = _keep_hidden if isinstance(transform, CatalogTransform) else _listed
+            tools = keep(tools, await transform.list_tools(tools))
+            resources = keep(resources, await transform.list_resources(resources))
+            templates = keep(
+                templates, await transform.list_resource_templates(templates)
+            )
+            prompts = keep(prompts, await transform.list_prompts(prompts))
 
         return [*tools, *resources, *templates, *prompts]
 

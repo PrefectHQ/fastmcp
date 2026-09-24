@@ -7,12 +7,16 @@ callable, not what is listed.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import pytest
 
 from fastmcp import Client, FastMCP
 from fastmcp.experimental.transforms.code_mode import CodeMode
 from fastmcp.server.transforms import Namespace
+from fastmcp.server.transforms.catalog import CatalogTransform
 from fastmcp.server.transforms.search import BM25SearchTransform, RegexSearchTransform
+from fastmcp.tools.base import Tool
 from fastmcp.utilities.tasks import TaskConfig
 from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import run_task, running_task_server
@@ -89,3 +93,20 @@ async def test_search_listing_still_hides_task_tool():
 
     names = [t.name for t in await mcp.list_tools()]
     assert "slow_thing" not in names
+
+
+async def test_task_tool_added_by_catalog_transform_is_registered():
+    async def synthetic_slow(n: int) -> int:
+        return n
+
+    class AddsTaskTool(CatalogTransform):
+        async def transform_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
+            return [Tool.from_function(synthetic_slow, task=True)]
+
+    mcp = make_server()
+    mcp.add_transform(AddsTaskTool())
+
+    assert sorted(c.name for c in await mcp.get_tasks()) == [
+        "slow_thing",
+        "synthetic_slow",
+    ]

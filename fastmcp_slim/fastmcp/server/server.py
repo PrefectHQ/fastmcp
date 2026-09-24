@@ -816,7 +816,11 @@ class FastMCP(
         # Get tasks from AggregateProvider (handles aggregation and namespacing)
         components = list(await super().get_tasks())
 
-        return await self._apply_task_transforms(components)
+        return [
+            c
+            for c in await self._apply_task_transforms(components)
+            if c.task_config.supports_tasks()
+        ]
 
     def add_transform(self, transform: Transform) -> None:
         """Add a server-level transform.
