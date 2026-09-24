@@ -5,6 +5,103 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v4.0.8" description="2026-09-23">
+
+**[v4.0.8: Take Three](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.8)**
+
+Completion goes back to its 4.0.5 behavior. The visibility check added in 4.0.6 and reworked in 4.0.7 simulated list requests through middleware, and in 4.0.7 that could let a response cache serve hidden prompts to other clients. New tests pin both problems, and withholding suggestions for hidden references will return with a proper design. Resource template patterns are now cached without a size limit, so servers with thousands of templates read fast again, and OAuthProxy revokes the upstream refresh token instead of sending its own token upstream.
+
+### Security 🔒
+* completions: revert the list-based visibility check (#5240, #5244) by [@zzstoatzz](https://github.com/zzstoatzz) in [#5250](https://github.com/PrefectHQ/fastmcp/pull/5250)
+### Fixes 🐞
+* Fix OAuthProxy upstream refresh token revocation by [@Ujemny](https://github.com/Ujemny) in [#5243](https://github.com/PrefectHQ/fastmcp/pull/5243)
+* resources: keep every compiled template pattern cached by [@zzstoatzz](https://github.com/zzstoatzz) in [#5248](https://github.com/PrefectHQ/fastmcp/pull/5248)
+
+## New Contributors
+* @Ujemny made their first contribution in [#5243](https://github.com/PrefectHQ/fastmcp/pull/5243)
+
+**Full Changelog**: [v4.0.7...v4.0.8](https://github.com/PrefectHQ/fastmcp/compare/v4.0.7...v4.0.8)
+
+</Update>
+
+<Update label="v4.0.7" description="2026-09-23">
+
+**[v4.0.7: Double Take](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.7)**
+
+Fixes two regressions from 4.0.6. The completion visibility check runs only the list-specific middleware hooks, so rate limits, logging, and metrics see a single request per completion again. Resource template patterns are cached, which makes template reads faster than in 4.0.5.
+
+### Fixes 🐞
+* completions: check reference visibility through typed list hooks only by [@zzstoatzz](https://github.com/zzstoatzz) in [#5244](https://github.com/PrefectHQ/fastmcp/pull/5244)
+* resources: cache compiled URI template patterns by [@zzstoatzz](https://github.com/zzstoatzz) in [#5245](https://github.com/PrefectHQ/fastmcp/pull/5245)
+
+
+**Full Changelog**: [v4.0.6...v4.0.7](https://github.com/PrefectHQ/fastmcp/compare/v4.0.6...v4.0.7)
+
+</Update>
+
+<Update label="v4.0.6" description="2026-09-23">
+
+**[v4.0.6: Comma Chameleon](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.6)**
+
+Resource templates now match what clients actually send: literals raw or percent-encoded, and list query parameters exploded or comma-joined. A `Client` whose exit is cancelled releases its session instead of leaking it, completion no longer answers for prompts and templates the caller can't see, and JSON schemas with float or oversized length limits load instead of failing. The auth fixes cache OIDC discovery and keep Google tokens out of request URLs.
+
+### Enhancements ✨
+* Name nested fields in detailed CodeMode schemas by [@zzstoatzz](https://github.com/zzstoatzz) in [#5111](https://github.com/PrefectHQ/fastmcp/pull/5111)
+* Add a docs skill by [@zzstoatzz](https://github.com/zzstoatzz) in [#5175](https://github.com/PrefectHQ/fastmcp/pull/5175)
+* Add constrained Fire TV tools to the smart-home example by [@zzstoatzz](https://github.com/zzstoatzz) in [#5187](https://github.com/PrefectHQ/fastmcp/pull/5187)
+* transforms: add experimental JevSearchTransform by [@zzstoatzz](https://github.com/zzstoatzz) in [#5170](https://github.com/PrefectHQ/fastmcp/pull/5170)
+* Expose FileSystemProvider discovery failures by [@spark-328](https://github.com/spark-328) in [#5164](https://github.com/PrefectHQ/fastmcp/pull/5164)
+* Run Windows tests on main and manual runs only by [@zzstoatzz](https://github.com/zzstoatzz) in [#5198](https://github.com/PrefectHQ/fastmcp/pull/5198)
+* Add langchain.mcp, ClientGroup, and a FastMCP proxy to the downstream smoke by [@zzstoatzz](https://github.com/zzstoatzz) in [#5222](https://github.com/PrefectHQ/fastmcp/pull/5222)
+### Security 🔒
+* fix(auth): keep Google access tokens out of request URLs by [@zzstoatzz](https://github.com/zzstoatzz) in [#5185](https://github.com/PrefectHQ/fastmcp/pull/5185)
+* completions: answer only references the caller can list by [@zzstoatzz](https://github.com/zzstoatzz) in [#5240](https://github.com/PrefectHQ/fastmcp/pull/5240)
+### Fixes 🐞
+* codemode: raise legible errors in the sandbox; render enums and defaults in `get_schema` by [@zzstoatzz](https://github.com/zzstoatzz) in [#4970](https://github.com/PrefectHQ/fastmcp/pull/4970)
+* fix(ci): stabilize Marvin label triage by [@zzstoatzz](https://github.com/zzstoatzz) in [#5197](https://github.com/PrefectHQ/fastmcp/pull/5197)
+* fix(resources): percent-encode URI template literals (RFC 6570 §3.1) by [@LGUIUX](https://github.com/LGUIUX) in [#5167](https://github.com/PrefectHQ/fastmcp/pull/5167)
+* fix(resources): encode data-backed file names by [@RaycarlLei](https://github.com/RaycarlLei) in [#5140](https://github.com/PrefectHQ/fastmcp/pull/5140)
+* Preserve binary resource contents in response cache by [@brennanbutler01](https://github.com/brennanbutler01) in [#5181](https://github.com/PrefectHQ/fastmcp/pull/5181)
+* fix(auth): preserve DNS resolver order when deduplicating resolved IP addresses (#5151) by [@seotarek](https://github.com/seotarek) in [#5157](https://github.com/PrefectHQ/fastmcp/pull/5157)
+* Keep shared stdio sessions alive until the last client exits by [@Aurelucien](https://github.com/Aurelucien) in [#5180](https://github.com/PrefectHQ/fastmcp/pull/5180)
+* fix(transforms): bound Jev search narrowing by [@zzstoatzz](https://github.com/zzstoatzz) in [#5199](https://github.com/PrefectHQ/fastmcp/pull/5199)
+* fix(auth): cache OIDC discovery configuration by [@sui-ni2](https://github.com/sui-ni2) in [#4861](https://github.com/PrefectHQ/fastmcp/pull/4861)
+* fix(resources): support exploded list query parameters by [@zzstoatzz](https://github.com/zzstoatzz) in [#5206](https://github.com/PrefectHQ/fastmcp/pull/5206)
+* Keep string length and pattern constraints when a format is set by [@zzstoatzz](https://github.com/zzstoatzz) in [#5208](https://github.com/PrefectHQ/fastmcp/pull/5208)
+* fix(openapi): rewrite model references in prefixItems by [@asts-top](https://github.com/asts-top) in [#5131](https://github.com/PrefectHQ/fastmcp/pull/5131)
+* Accept integral float counts like minLength 2.0 in JSON schemas by [@zzstoatzz](https://github.com/zzstoatzz) in [#5214](https://github.com/PrefectHQ/fastmcp/pull/5214)
+* Stop an unshared stdio subprocess when its session exits under cancellation by [@zzstoatzz](https://github.com/zzstoatzz) in [#5215](https://github.com/PrefectHQ/fastmcp/pull/5215)
+* Match resource template literals whether they arrive raw or percent-encoded by [@zzstoatzz](https://github.com/zzstoatzz) in [#5216](https://github.com/PrefectHQ/fastmcp/pull/5216)
+* Accept non-exploded list query params as comma-joined values by [@zzstoatzz](https://github.com/zzstoatzz) in [#5218](https://github.com/PrefectHQ/fastmcp/pull/5218)
+* Revert shared keep_alive=False stdio sessions (#5180, #5215) by [@zzstoatzz](https://github.com/zzstoatzz) in [#5219](https://github.com/PrefectHQ/fastmcp/pull/5219)
+* Render non-JSON schema defaults and enums in the markdown tool serializer by [@zzstoatzz](https://github.com/zzstoatzz) in [#5220](https://github.com/PrefectHQ/fastmcp/pull/5220)
+* Tolerate JSON schema counts larger than any real length by [@zzstoatzz](https://github.com/zzstoatzz) in [#5221](https://github.com/PrefectHQ/fastmcp/pull/5221)
+* Release a Client's session hold before any await when a context exits by [@zzstoatzz](https://github.com/zzstoatzz) in [#5223](https://github.com/PrefectHQ/fastmcp/pull/5223)
+* ci: retry downstream version lookups and bind the wedge test's names by [@zzstoatzz](https://github.com/zzstoatzz) in [#5239](https://github.com/PrefectHQ/fastmcp/pull/5239)
+### Docs 📚
+* docs: explain HttpResource uri versus url by [@zzstoatzz](https://github.com/zzstoatzz) in [#5168](https://github.com/PrefectHQ/fastmcp/pull/5168)
+* docs: fix version label and language dropdown overlap by [@zzstoatzz](https://github.com/zzstoatzz) in [#5172](https://github.com/PrefectHQ/fastmcp/pull/5172)
+* docs: accessibility sweep by [@zzstoatzz](https://github.com/zzstoatzz) in [#5174](https://github.com/PrefectHQ/fastmcp/pull/5174)
+* docs: fix dead links to relocated Anthropic and Docket docs by [@uhhgxg](https://github.com/uhhgxg) in [#5205](https://github.com/PrefectHQ/fastmcp/pull/5205)
+* Update the Pydantic AI integration docs for MCPToolset and the 2.45 floor by [@zzstoatzz](https://github.com/zzstoatzz) in [#5211](https://github.com/PrefectHQ/fastmcp/pull/5211)
+### Dependencies 📦
+* chore(deps): bump the uv group across 2 directories with 3 updates by @dependabot[bot] in https://github.com/PrefectHQ/fastmcp/pull/5171
+### Other Changes 🦾
+* chore(deps): Update astral-sh/setup-uv action to v10.1.0 by @prefect-renovate[bot] in https://github.com/PrefectHQ/fastmcp/pull/5191
+
+## New Contributors
+* @LGUIUX made their first contribution in [#5167](https://github.com/PrefectHQ/fastmcp/pull/5167)
+* @RaycarlLei made their first contribution in [#5140](https://github.com/PrefectHQ/fastmcp/pull/5140)
+* @brennanbutler01 made their first contribution in [#5181](https://github.com/PrefectHQ/fastmcp/pull/5181)
+* @seotarek made their first contribution in [#5157](https://github.com/PrefectHQ/fastmcp/pull/5157)
+* @spark-328 made their first contribution in [#5164](https://github.com/PrefectHQ/fastmcp/pull/5164)
+* @Aurelucien made their first contribution in [#5180](https://github.com/PrefectHQ/fastmcp/pull/5180)
+* @uhhgxg made their first contribution in [#5205](https://github.com/PrefectHQ/fastmcp/pull/5205)
+
+**Full Changelog**: [v4.0.5...v4.0.6](https://github.com/PrefectHQ/fastmcp/compare/v4.0.5...v4.0.6)
+
+</Update>
+
 <Update label="v4.0.5" description="2026-09-17">
 
 **[v4.0.5: No Country for Loose Ints](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.5)**

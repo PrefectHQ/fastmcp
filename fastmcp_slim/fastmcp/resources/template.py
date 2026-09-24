@@ -156,6 +156,9 @@ def _literal_pattern(text: str) -> str:
     return "".join(pattern)
 
 
+# Unbounded: keys are server-defined templates, and a read walks every template,
+# so a capped cache would evict on every read once a server outgrew it.
+@functools.cache
 def build_regex(template: str) -> re.Pattern[str] | None:
     """Build regex pattern for URI template, handling RFC 6570 syntax.
 

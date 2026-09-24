@@ -89,17 +89,25 @@ jobs:
         env:
           LATEST: ${{ github.event_name == 'schedule' || inputs.latest == true }}
         run: |
+          set -euo pipefail
           pick() {
+            local version="$2"
             if [ "$LATEST" = true ]; then
-              curl -fsS "https://pypi.org/pypi/$1/json" | jq -r .info.version
-            else
-              echo "$2"
+              version=$(curl -fsS --retry 5 --retry-all-errors "https://pypi.org/pypi/$1/json" | jq -r .info.version)
             fi
+            if [ -z "$version" ] || [ "$version" = null ]; then
+              echo "::error::could not resolve a version for $1" >&2
+              exit 1
+            fi
+            echo "$version"
           }
+          pydantic_ai=$(pick pydantic-ai-slim "$PYDANTIC_AI_VERSION")
+          adapters=$(pick langchain-mcp-adapters "$LANGCHAIN_MCP_ADAPTERS_VERSION")
+          langchain=$(pick langchain "$LANGCHAIN_VERSION")
           {
-            echo "pydantic-ai=$(pick pydantic-ai-slim "$PYDANTIC_AI_VERSION")"
-            echo "langchain-mcp-adapters=$(pick langchain-mcp-adapters "$LANGCHAIN_MCP_ADAPTERS_VERSION")"
-            echo "langchain=$(pick langchain "$LANGCHAIN_VERSION")"
+            echo "pydantic-ai=$pydantic_ai"
+            echo "langchain-mcp-adapters=$adapters"
+            echo "langchain=$langchain"
           } | tee -a "$GITHUB_OUTPUT" > versions.txt
           {
             echo "### Downstream smoke plan"

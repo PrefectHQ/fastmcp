@@ -5,6 +5,36 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 4.0.8" description="September 23, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.8: Take Three"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.8"
+cta="Read the release notes"
+>
+Completion goes back to its 4.0.5 behavior. The visibility check added in 4.0.6 and reworked in 4.0.7 simulated list requests through middleware, and in 4.0.7 that could let a response cache serve hidden prompts to other clients. New tests pin both problems, and withholding suggestions for hidden references will return with a proper design. Resource template patterns are now cached without a size limit, so servers with thousands of templates read fast again, and OAuthProxy revokes the upstream refresh token instead of sending its own token upstream.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.7" description="September 23, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.7: Double Take"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.7"
+cta="Read the release notes"
+>
+Fixes two regressions from 4.0.6. The completion visibility check runs only the list-specific middleware hooks, so rate limits, logging, and metrics see a single request per completion again. Resource template patterns are cached, which makes template reads faster than in 4.0.5.
+</Card>
+</Update>
+
+<Update label="FastMCP 4.0.6" description="September 23, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.6: Comma Chameleon"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.6"
+cta="Read the release notes"
+>
+Resource templates now match what clients actually send: literals raw or percent-encoded, and list query parameters exploded or comma-joined. A `Client` whose exit is cancelled releases its session instead of leaking it, completion no longer answers for prompts and templates the caller can't see, and JSON schemas with float or oversized length limits load instead of failing. The auth fixes cache OIDC discovery and keep Google tokens out of request URLs.
+</Card>
+</Update>
+
 <Update label="FastMCP 4.0.5" description="September 17, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v4.0.5: No Country for Loose Ints"
