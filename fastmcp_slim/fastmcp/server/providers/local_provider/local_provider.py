@@ -30,7 +30,7 @@ from typing import Literal, TypeVar
 from fastmcp.prompts.base import Prompt
 from fastmcp.resources.base import Resource
 from fastmcp.resources.template import ResourceTemplate
-from fastmcp.server.providers.base import Provider
+from fastmcp.server.providers.base import Provider, matching_templates
 from fastmcp.server.providers.local_provider.decorators import (
     PromptDecoratorMixin,
     ResourceDecoratorMixin,
@@ -405,13 +405,10 @@ class LocalProvider(
             uri: The URI to match against templates.
             version: Optional version filter. If None, returns highest version.
         """
-        # Find all templates that match the URI
-        matching = [
-            component
-            for component in self._components.values()
-            if isinstance(component, ResourceTemplate)
-            and component.matches(uri) is not None
-        ]
+        matching = matching_templates(
+            [c for c in self._components.values() if isinstance(c, ResourceTemplate)],
+            uri,
+        )
         if version:
             matching = [t for t in matching if version.matches(t.version)]
         if not matching:

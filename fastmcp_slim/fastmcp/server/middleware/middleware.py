@@ -189,6 +189,8 @@ class Middleware:
                     )
                 case "prompts/list":
                     handler = make_handler_wrapper(self.on_list_prompts, handler)
+                case "completion/complete":
+                    handler = make_handler_wrapper(self.on_complete, handler)
 
         if phase in ("all", "outer"):
             match context.type:
@@ -285,4 +287,11 @@ class Middleware:
         context: MiddlewareContext[mt.ListPromptsRequest],
         call_next: CallNext[mt.ListPromptsRequest, Sequence[Prompt]],
     ) -> Sequence[Prompt]:
+        return await call_next(context)
+
+    async def on_complete(
+        self,
+        context: MiddlewareContext[mt.CompleteRequestParams],
+        call_next: CallNext[mt.CompleteRequestParams, mt.CompleteResult],
+    ) -> mt.CompleteResult:
         return await call_next(context)

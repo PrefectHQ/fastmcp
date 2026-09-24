@@ -452,3 +452,39 @@ class AuthMiddleware(Middleware):
             )
 
         return await call_next(context)
+
+    async def on_complete(
+        self,
+        context: MiddlewareContext[mt.CompleteRequestParams],
+        call_next: CallNext[mt.CompleteRequestParams, mt.CompleteResult],
+    ) -> mt.CompleteResult:
+        """Complete only for a prompt or template the caller may get.
+
+        A denied reference gets the same empty completion as an unknown one,
+        rather than an authorization error, so completion cannot confirm that a
+        hidden component exists.
+        """
+        from fastmcp.server.context import _current_transport
+
+        if _current_transport.get() == "stdio":
+            return await call_next(context)
+
+        fastmcp = context.fastmcp_context
+        if fastmcp is None:
+            logger.warning(
+                "AuthMiddleware: fastmcp_context is None for completion. "
+                "Denying access for security."
+            )
+            return mt.CompleteResult(completion=mt.Completion(values=[]))
+
+        component = await fastmcp.fastmcp._resolve_completion_ref(context.message.ref)
+        if component is not None:
+            ctx = AuthContext(token=get_access_token(), component=component)
+            try:
+                authorized = await run_auth_checks(self.auth, ctx)
+            except AuthorizationError:
+                authorized = False
+            if not authorized:
+                return mt.CompleteResult(completion=mt.Completion(values=[]))
+
+        return await call_next(context)

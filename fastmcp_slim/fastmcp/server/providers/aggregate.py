@@ -21,7 +21,7 @@ Example:
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from typing import TYPE_CHECKING, Literal, TypeVar
 
@@ -157,6 +157,7 @@ class AggregateProvider(Provider):
         self,
         results: list[FastMCPComponent | None | BaseException],
         operation: str,
+        prefer: Callable[[FastMCPComponent], bool] | None = None,
     ) -> FastMCPComponent | None:
         """Get the highest version from successful non-None results.
 
@@ -176,6 +177,8 @@ class AggregateProvider(Provider):
                 continue
             if result is not None:
                 valid.append(result)
+        if prefer is not None:
+            valid = [c for c in valid if prefer(c)] or valid
         if not valid:
             return None
         return max(valid, key=version_sort_key)
@@ -300,7 +303,9 @@ class AggregateProvider(Provider):
             return_exceptions=True,
         )
         return self._get_highest_version_result(
-            list(results), f"get_resource_template({uri!r})"
+            list(results),
+            f"get_resource_template({uri!r})",
+            prefer=lambda t: getattr(t, "uri_template", None) == uri,
         )  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
 
     # -------------------------------------------------------------------------

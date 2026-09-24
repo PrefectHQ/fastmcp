@@ -14,7 +14,7 @@ from jsonschema_path import SchemaPath
 from fastmcp._warnings import FastMCPDeprecationWarning
 from fastmcp.prompts import Prompt
 from fastmcp.resources import Resource, ResourceTemplate
-from fastmcp.server.providers.base import Provider
+from fastmcp.server.providers.base import Provider, matching_templates
 from fastmcp.server.providers.openapi.components import (
     OpenAPIResource,
     OpenAPIResourceTemplate,
@@ -438,7 +438,7 @@ class OpenAPIProvider(Provider):
         self, uri: str, version: VersionSpec | None = None
     ) -> ResourceTemplate | None:
         """Get a resource template that matches the given URI."""
-        matching = [t for t in self._templates.values() if t.matches(uri) is not None]
+        matching = matching_templates(list(self._templates.values()), uri)
         if not matching:
             return None
         if version is not None:

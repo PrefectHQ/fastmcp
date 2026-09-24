@@ -54,6 +54,20 @@ if TYPE_CHECKING:
     from fastmcp.tools.base import Tool
 
 
+def matching_templates(
+    templates: Sequence[ResourceTemplate], uri: str
+) -> list[ResourceTemplate]:
+    """The templates a lookup by `uri` refers to.
+
+    A template whose `uri_template` is exactly `uri` wins: a completion
+    reference names its template by that string, which may not match the
+    template's own pattern (query-only templates) or may also match an
+    overlapping one.
+    """
+    exact = [t for t in templates if t.uri_template == uri]
+    return exact or [t for t in templates if t.matches(uri) is not None]
+
+
 class Provider:
     """Base class for dynamic component providers.
 
@@ -447,7 +461,7 @@ class Provider:
             The ResourceTemplate if a matching one is found, or None to continue searching.
         """
         templates = await self._list_resource_templates()
-        matching = [t for t in templates if t.matches(uri) is not None]
+        matching = matching_templates(templates, uri)
         if version:
             matching = [t for t in matching if version.matches(t.version)]
         if not matching:

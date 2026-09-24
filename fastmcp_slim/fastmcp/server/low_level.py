@@ -51,6 +51,7 @@ _INTERIOR_METHODS = frozenset(
         "resources/templates/list",
         "prompts/get",
         "prompts/list",
+        "completion/complete",
     }
 )
 

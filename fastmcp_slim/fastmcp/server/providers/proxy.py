@@ -58,7 +58,7 @@ from fastmcp.server.context import Context
 from fastmcp.server.dependencies import fastmcp_request_ctx, get_context
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.providers.aggregate import ProviderErrorStrategy
-from fastmcp.server.providers.base import Provider
+from fastmcp.server.providers.base import Provider, matching_templates
 from fastmcp.server.server import FastMCP
 from fastmcp.telemetry import inject_trace_context
 from fastmcp.tools.base import InputRequiredToolResult, Tool, ToolResult
@@ -1070,7 +1070,7 @@ class ProxyProvider(Provider):
             await self._list_resource_templates()
             cache = self._templates_cache
         assert cache is not None
-        matching = [t for t in cache.items if t.matches(uri) is not None]
+        matching = matching_templates(cache.items, uri)
         if version:
             matching = [t for t in matching if version.matches(t.version)]
         if not matching:

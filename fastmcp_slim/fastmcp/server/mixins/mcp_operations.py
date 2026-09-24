@@ -42,6 +42,9 @@ from fastmcp.utilities.pagination import paginate_sequence
 from fastmcp.utilities.versions import VersionSpec, dedupe_with_versions
 
 if TYPE_CHECKING:
+    from fastmcp.prompts.base import Prompt
+    from fastmcp.resources.base import Resource
+    from fastmcp.resources.template import ResourceTemplate
     from fastmcp.server.server import FastMCP
 
 logger = get_logger(__name__)
@@ -429,27 +432,68 @@ class MCPOperationsMixin:
         protocol failure. This handler is registered on the low-level server
         only once a completion handler exists, so the completions capability is
         declared exactly when the server can answer.
+
+        Completion is a component request like ``prompts/get``: it runs the
+        middleware chain once, with ``on_complete`` as its typed hook, and the
+        referenced component is resolved directly. A reference the caller could
+        not get (disabled, hidden, or denied by component auth) completes
+        exactly like an unknown one.
         """
+        from fastmcp.server.context import Context
+        from fastmcp.server.middleware import MiddlewareContext
+
         with bind_request_context(ctx):
             logger.debug(f"[{self.name}] Handler called: complete %s", params.ref)
-            handler = self._completion_handler
-            if handler is None:
-                return mcp_types.CompleteResult(
-                    completion=mcp_types.Completion(values=[])
+            async with Context(fastmcp=self) as fastmcp_ctx:
+                mw_context = MiddlewareContext(
+                    message=params,
+                    source="client",
+                    type="request",
+                    method="completion/complete",
+                    fastmcp_context=fastmcp_ctx,
+                )
+                return await self._dispatch_component_middleware(
+                    mw_context,
+                    lambda context: self._complete(context.message),
                 )
 
-            if is_coroutine_function(handler):
-                raw = handler(params.ref, params.argument, params.context)
-            else:
-                # A sync handler may perform blocking work (a database lookup,
-                # say); run it in a threadpool so it does not stall the event
-                # loop, matching how sync tools/prompts/resources are invoked.
-                raw = await call_sync_fn_in_threadpool(
-                    handler, params.ref, params.argument, params.context
-                )
-            result = await raw if inspect.isawaitable(raw) else raw
-            completion = normalize_completion(cast(CompletionValues, result))
-            return mcp_types.CompleteResult(completion=completion)
+    async def _complete(
+        self: FastMCP, params: CompleteRequestParams
+    ) -> mcp_types.CompleteResult:
+        handler = self._completion_handler
+        if handler is None or await self._resolve_completion_ref(params.ref) is None:
+            return mcp_types.CompleteResult(completion=mcp_types.Completion(values=[]))
+
+        if is_coroutine_function(handler):
+            raw = handler(params.ref, params.argument, params.context)
+        else:
+            # A sync handler may perform blocking work (a database lookup,
+            # say); run it in a threadpool so it does not stall the event
+            # loop, matching how sync tools/prompts/resources are invoked.
+            raw = await call_sync_fn_in_threadpool(
+                handler, params.ref, params.argument, params.context
+            )
+        result = await raw if inspect.isawaitable(raw) else raw
+        completion = normalize_completion(cast(CompletionValues, result))
+        return mcp_types.CompleteResult(completion=completion)
+
+    async def _resolve_completion_ref(
+        self: FastMCP,
+        ref: mcp_types.PromptReference | mcp_types.ResourceTemplateReference,
+    ) -> Prompt | ResourceTemplate | Resource | None:
+        """The component a completion refers to, resolved the way ``prompts/get``
+        and ``resources/read`` resolve theirs, or None if the caller could not get
+        it. A resource reference names a template by its URI template, or a
+        concrete resource by its URI."""
+        if isinstance(ref, mcp_types.PromptReference):
+            return await self.get_prompt(ref.name)
+        template = await self.get_resource_template(ref.uri)
+        if template is not None and template.uri_template == ref.uri:
+            return template
+        resource = await self.get_resource(ref.uri)
+        if resource is not None and str(resource.uri) == ref.uri:
+            return resource
+        return None
 
     def _register_completion_handler(self: FastMCP) -> None:
         """Register the low-level ``completion/complete`` handler.

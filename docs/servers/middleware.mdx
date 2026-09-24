@@ -68,6 +68,7 @@ When using [mounted servers](/servers/composition), middleware behavior follows 
 
 - **Parent middleware** runs for all requests, including those routed to mounted servers
 - **Mounted server middleware** only runs for requests handled by that specific server
+- **Completion** (`completion/complete`) runs the parent's middleware, not the mounted server's, even when the reference names a mounted server's prompt or template
 
 ```python
 from fastmcp import FastMCP
@@ -273,6 +274,26 @@ async def on_list_prompts(self, context: MiddlewareContext, call_next):
 ```
 
 **Returns:** `list[Prompt]`
+
+#### on_complete
+
+<VersionBadge version="4.1.0" />
+
+Called for a `completion/complete` request. The `context.message` carries `ref` (the prompt or resource template being completed), `argument` (its `name` and the partial `value`), and `context` (arguments already resolved).
+
+Completion resolves its reference like `prompts/get` does, so a middleware that hides components from listings (in `on_list_prompts` or `on_list_resource_templates`) does not hide them from completion. To withhold suggestions, handle it here, and return an empty completion rather than raising so the response does not confirm the component exists. `AuthMiddleware` does this for its own checks.
+
+```python
+from mcp_types import CompleteResult, Completion, PromptReference
+
+async def on_complete(self, context: MiddlewareContext, call_next):
+    ref = context.message.ref
+    if isinstance(ref, PromptReference) and ref.name.startswith("internal_"):
+        return CompleteResult(completion=Completion(values=[]))
+    return await call_next(context)
+```
+
+**Returns:** `CompleteResult`.
 
 #### on_initialize
 
