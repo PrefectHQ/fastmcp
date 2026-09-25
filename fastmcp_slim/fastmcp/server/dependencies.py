@@ -271,6 +271,28 @@ def _claim_client_tool_call() -> bool:
     return True
 
 
+#: Whether the ``call_tool`` dispatch in progress is the client's own call. Each
+#: dispatch sets it on entry, before middleware runs, so a tool that middleware
+#: or a tool body calls sets its own (False) value without disturbing this one.
+_client_dispatch: ContextVar[bool] = ContextVar(
+    "fastmcp_client_dispatch", default=False
+)
+
+
+@contextmanager
+def _dispatching_tool_call() -> Generator[None, None, None]:
+    token = _client_dispatch.set(_claim_client_tool_call())
+    try:
+        yield
+    finally:
+        _client_dispatch.reset(token)
+
+
+def _is_client_tool_call() -> bool:
+    """Whether the tool being dispatched is the one the client's ``tools/call`` named."""
+    return _client_dispatch.get()
+
+
 # --- Docket availability check ---
 
 _DOCKET_AVAILABLE: bool | None = None

@@ -15,6 +15,7 @@ from fastmcp_tasks.client import call_tool_task
 from fastmcp import Client, Context, FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.experimental.transforms.code_mode import CodeMode
+from fastmcp.server.middleware import Middleware
 from fastmcp.server.transforms import Namespace
 from fastmcp.server.transforms.catalog import CatalogTransform
 from fastmcp.server.transforms.search import BM25SearchTransform, RegexSearchTransform
@@ -202,3 +203,25 @@ class TestNestedCallsRunInForeground:
             result = await client.call_tool("relay", {})
 
         assert result.data
+
+    async def test_middleware_calling_a_tool_keeps_the_client_opt_in(self):
+        mcp = make_server()
+
+        @mcp.tool
+        async def policy() -> str:
+            return "ok"
+
+        class CheckPolicyFirst(Middleware):
+            async def on_call_tool(self, context, call_next):
+                if context.message.name != "policy":
+                    assert context.fastmcp_context is not None
+                    await context.fastmcp_context.fastmcp.call_tool("policy", {})
+                return await call_next(context)
+
+        mcp.add_middleware(CheckPolicyFirst())
+
+        async with Client(mcp) as client:
+            task = await call_tool_task(client, "slow_thing", {"n": 9})
+            result = await task.result()
+
+        assert result.structured_content == {"n": 9}

@@ -38,7 +38,7 @@ from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
 from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.server.dependencies import (
-    _claim_client_tool_call,
+    _is_client_tool_call,
     extract_version_spec,
     get_http_request,
 )
@@ -227,11 +227,10 @@ class TasksExtension(ServerExtension):
         opt in), ``optional`` tasks only when the client opted in, ``forbidden``
         never tasks. A non-task call passes straight through to the tool body.
         """
-        # The client's opt-in covers the tool it named, which is the first
-        # dispatch of its tools/call. Claim it before anything returns early, so
-        # a tool that body calls in turn (a search proxy, CodeMode's execute)
-        # runs in the foreground and gets its result inline.
-        from_client = _claim_client_tool_call()
+        # The client's opt-in covers the tool it named. A tool that middleware,
+        # a tool body (a search proxy, CodeMode's execute), a resource, or a
+        # prompt calls in turn runs in the foreground and returns inline.
+        from_client = _is_client_tool_call()
 
         # Resolve the same version core would dispatch: a versioned tools/call
         # carries its VersionSpec in the request _meta, so omitting it here would
