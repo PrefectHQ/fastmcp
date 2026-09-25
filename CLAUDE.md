@@ -67,6 +67,7 @@ When modifying MCP functionality, changes typically need to be applied across al
 - Never apply labels manually or invent new ones — issues and PRs are auto-labeled by a bot based on title/body/code changes. Don't note a "suggested" or "appropriate" label anywhere in the PR body either. See the review-pr skill.
 - Improvements = enhancements (not features) unless specified
 - **NEVER** force-push on collaborative repos
+- **NEVER** use `git stash` when worktrees exist: stashes are shared across every worktree of the clone, so `stash pop` can apply someone else's changes. Copy a file aside instead, or commit to a scratch branch.
 - **ALWAYS** run prek before PRs
 - **NEVER** create a release, comment on an issue, or open a PR unless specifically instructed to do so.
 - **NEVER** merge a PR marked as do-not-merge or draft. Check title, body, AND labels for `[DNM]`, `DNM`, `DO NOT MERGE`, `DON'T MERGE`, `DONT MERGE`, `do-not-merge`, `dont-merge`, `[DRAFT]`, or `DRAFT` (case-insensitive, any variation — some authors use `[DRAFT]` in the title even when `isDraft` is false). Authors use these as hard stops — respect them even if CI is green and review looks clean. When triaging a batch of PRs, filter these out up front AND re-check each one's labels immediately before merging, since labels can change mid-session.
@@ -205,6 +206,22 @@ Because the docs land *before* the tag exists, derive the entry from the maintai
 ### Prior discussion and proportionality
 
 - When prior review threads and author or maintainer replies are available, read them before commenting. Evaluate responses on their merits and do not repeat a resolved or convincingly rebutted finding without new evidence. Avoid fixating on speculative edge cases: report an edge case only when it is reachable under supported usage or a credible threat model and has meaningful impact; otherwise omit it or clearly treat it as non-blocking.
+
+### Premise and blast radius
+
+- Question why a change exists, not only whether its diff is right. Check who asked and how many (an issue from a single probing contributor with no reactions is a lead, not demand). A change that bends FastMCP to satisfy one third party's validator or client quirk, when FastMCP already follows the spec, belongs with that third party. A rename or new public API to fix confusion needs to outweigh the deprecation cycle it forces on every user, which usually means a docs fix is the better answer.
+- Before calling something a regression, reproduce it on a worktree at the last release tag. State findings at the level the evidence supports.
+- New features and behavior changes do not belong in patch releases unless the maintainer says so.
+
+### Downstream consumers
+
+FastMCP's client is a dependency, not only an entry point. Changes to these surfaces land directly in other frameworks, and `tests/downstream/` drives each one against built wheels on every library change:
+
+- **pydantic-ai** (`MCPToolset`) builds on `fastmcp.Client` and installs the client-only `fastmcp-slim[client]`: imports, handlers (elicitation, sampling, progress, logging), transports, and result mapping.
+- **langchain** (`langchain.mcp.MCPAdapter`, in `langchain[mcp]`) wraps `Client` and `ClientGroup`: `resolve_tool`, `list_tools(cache_mode=...)`, `call_tool(raise_on_error=False)`, `Client.new()`, elicitation callbacks, `MCPConfig`, and `mode="legacy"`/`"auto"`. It opens `async with client` on every tool call, each in its own task.
+- **langchain-mcp-adapters** pins `mcp<2`, so it reaches FastMCP servers only over the wire, as a handshake-era client.
+
+Open gaps that are known and not regressions live in `dev-docs/known-issues.md`.
 
 ## Critical Patterns
 

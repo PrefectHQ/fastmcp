@@ -18,4 +18,4 @@ For promising candidates:
 
 Lead with the strongest pick as soon as evidence supports it: link, what breaks, why it matters, where the cause is, and the next action. Include a few alternatives when useful. Do not turn selection into an exhaustive audit or a full review of every linked PR. Save continuation notes only when needed.
 
-When the user chooses implementation, use [fix-issue](../fix-issue/SKILL.md). For an assignment decision on an external contribution, use [review-issue](../review-issue/SKILL.md). Triage alone does not authorize public mutations or implementation.
+To work down open pull requests rather than pick issues, use [pr-queue](../pr-queue/SKILL.md). When the user chooses implementation, use [fix-issue](../fix-issue/SKILL.md). For an assignment decision on an external contribution, use [review-issue](../review-issue/SKILL.md). Triage alone does not authorize public mutations or implementation.

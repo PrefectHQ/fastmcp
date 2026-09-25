@@ -15,6 +15,18 @@ the release. Two hand-maintained docs files mirror every release and must be on 
 tagged commit, so the docs PR always lands first. PyPI releases are immutable; a bad
 one gets a follow-up patch, never a re-tag.
 
+## Gate: regressions since the last release
+
+Before proposing a patch, find what the release would break. Everything here is read-only.
+
+- **Run the downstream smoke** on the release commit (`gh workflow run run-downstream-smoke.yml -f latest=true` for current consumer releases too). It drives FastMCP through pydantic-ai, `langchain.mcp`, and langchain-mcp-adapters; see `tests/downstream/README.md`.
+- **Review each library commit since the last tag adversarially**, grouping commits that touch the same area. A finding counts only with a repro that fails on the release commit; run the same repro on a worktree at the last tag to decide whether it is a regression. Hand each finding to an independent reviewer that tries to refute it. Then make one cross-cutting pass: downstream API, protocol eras and proxies, concurrency, security, and wheel contents.
+- **Give reviewers `dev-docs/known-issues.md`** so they do not re-report open gaps, and add anything new that is real but not a regression.
+- **Treat fix-on-fix chains as a signal.** When a change needs a second or third follow-up to undo regressions it caused, prefer reverting it out of the patch and landing it in a minor.
+- **Hold features for minors.** A behavior change or new feature in a patch needs the maintainer's explicit yes.
+
+A regression blocks the tag until it is fixed or its change is reverted.
+
 ## Procedure
 
 1. **Preview what's in it.**
