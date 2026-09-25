@@ -228,6 +228,8 @@ mcp.add_transform(BM25SearchTransform(always_visible=["delete_record"]))
 
 The proxy's annotations and its pinned-tool check are computed from the tools the search transform sees. Add the search transform after any transform that renames or adds tools, such as `Namespace`, `ToolTransform`, or `PromptsAsTools`; a transform added later changes names and tools the proxy can't account for.
 
+Those tools include ones that are disabled or restricted by auth, so a disabled write tool still makes the proxy a write. The hints can be stricter than what a caller can reach, never looser. To keep a disabled tool out of the proxy's hints, pin it with `always_visible`; a disabled tool is still left out of the listing.
+
 <Note>
 Tools discovered through search can also be called directly via `client.call_tool("search_database", {...})` without going through the proxy. The proxy exists for LLMs that only know about the tools returned by `list_tools` and need a way to invoke discovered tools through a tool they can see.
 </Note>
