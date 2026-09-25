@@ -99,8 +99,10 @@ Spans form a hierarchy showing the request flow. For mounted servers:
 tools/call weather_forecast (CLIENT)
   └── tools/call weather_forecast (SERVER, provider=FastMCPProvider)
         └── delegate get_weather (INTERNAL)
-              └── tools/call get_weather (SERVER, provider=LocalProvider)
+              └── tools/call get_weather (INTERNAL, provider=LocalProvider)
 ```
+
+Each request has exactly one `SERVER` span. The mounted server's span is `INTERNAL`, as is the span for a tool that calls another tool through `ctx.fastmcp.call_tool()`, so trace backends that count `SERVER` spans as requests count each call once.
 
 For proxy providers connecting to remote servers:
 
