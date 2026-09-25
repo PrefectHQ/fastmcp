@@ -8,9 +8,10 @@ from unittest.mock import MagicMock
 
 import mcp_types
 import pytest
-from mcp_types import TextContent
+from mcp_types import TextContent, ToolAnnotations
 
-from fastmcp import Client, FastMCP
+from fastmcp import Client, FastMCP, FastMCPApp
+from fastmcp.exceptions import ToolError
 from fastmcp.server.context import Context
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.transforms import Visibility
@@ -496,6 +497,127 @@ class TestCallToolGuard:
                 await client.call_tool(
                     "run_tool", {"name": "find_tools", "arguments": {"pattern": "add"}}
                 )
+
+
+class TestCallToolProxyScope:
+    """The proxy reaches only what search can return, and its hints say so."""
+
+    @staticmethod
+    def _server(*, read: ToolAnnotations | None, write: ToolAnnotations | None):
+        mcp = FastMCP("scope")
+
+        @mcp.tool(annotations=ToolAnnotations(destructive_hint=True))
+        def delete_thing(key: str) -> str:
+            return f"deleted {key}"
+
+        @mcp.tool(annotations=read)
+        def read_thing(key: str) -> str:
+            return f"read {key}"
+
+        @mcp.tool(annotations=write)
+        def write_thing(key: str) -> str:
+            return f"wrote {key}"
+
+        return mcp
+
+    @staticmethod
+    async def _proxy_hints(mcp: FastMCP) -> mcp_types.ToolAnnotations | None:
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+        (proxy,) = [t for t in tools if t.name == "call_tool"]
+        return proxy.annotations
+
+    async def test_proxy_rejects_pinned_tool(self):
+        mcp = self._server(read=None, write=None)
+        mcp.add_transform(RegexSearchTransform(always_visible=["delete_thing"]))
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="call it directly"):
+                await client.call_tool(
+                    "call_tool", {"name": "delete_thing", "arguments": {"key": "k"}}
+                )
+            direct = await client.call_tool("delete_thing", {"key": "k"})
+            proxied = await client.call_tool(
+                "call_tool", {"name": "read_thing", "arguments": {"key": "k"}}
+            )
+        assert direct.data == "deleted k"
+        assert proxied.data == "read k"
+
+    async def test_proxy_is_read_only_when_every_hidden_tool_is(self):
+        mcp = self._server(
+            read=ToolAnnotations(read_only_hint=True),
+            write=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+        )
+        mcp.add_transform(RegexSearchTransform(always_visible=["delete_thing"]))
+
+        hints = await self._proxy_hints(mcp)
+
+        assert hints is not None
+        assert hints.read_only_hint is True
+        assert hints.open_world_hint is True
+
+    async def test_proxy_takes_least_permissive_hints(self):
+        mcp = self._server(
+            read=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+            write=ToolAnnotations(
+                destructive_hint=False, idempotent_hint=True, open_world_hint=False
+            ),
+        )
+        mcp.add_transform(RegexSearchTransform(always_visible=["delete_thing"]))
+
+        hints = await self._proxy_hints(mcp)
+
+        assert hints is not None
+        assert hints.read_only_hint is False
+        assert hints.destructive_hint is False
+        assert hints.idempotent_hint is True
+        assert hints.open_world_hint is False
+
+    async def test_app_only_tools_do_not_count(self):
+        app = FastMCPApp("contacts")
+
+        @app.tool()
+        def save_contact(name: str) -> str:
+            return f"saved {name}"
+
+        mcp = FastMCP("apps")
+
+        @mcp.tool(annotations=ToolAnnotations(read_only_hint=True))
+        def read_thing(key: str) -> str:
+            return f"read {key}"
+
+        mcp.add_provider(app)
+        mcp.add_transform(RegexSearchTransform())
+
+        hints = await self._proxy_hints(mcp)
+
+        assert hints is not None
+        assert hints.read_only_hint is True
+
+    async def test_overridden_call_tool_keeps_working(self):
+        class CustomProxy(RegexSearchTransform):
+            def _make_call_tool(self) -> Tool:
+                return Tool.from_function(fn=lambda name: name, name="call_tool")
+
+        mcp = self._server(read=ToolAnnotations(read_only_hint=True), write=None)
+        mcp.add_transform(CustomProxy())
+
+        hints = await self._proxy_hints(mcp)
+
+        assert hints is not None
+        assert hints.destructive_hint is True
+
+    async def test_unannotated_hidden_tool_gets_spec_defaults(self):
+        mcp = self._server(read=ToolAnnotations(read_only_hint=True), write=None)
+        mcp.add_transform(RegexSearchTransform())
+
+        hints = await self._proxy_hints(mcp)
+
+        assert hints is not None
+        assert hints.read_only_hint is False
+        assert hints.destructive_hint is True
+        assert hints.idempotent_hint is False
+        assert hints.open_world_hint is True
 
 
 # ---------------------------------------------------------------------------
