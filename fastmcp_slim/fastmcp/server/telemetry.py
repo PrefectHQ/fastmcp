@@ -39,6 +39,14 @@ _active_seam_span: ContextVar[Span | None] = ContextVar(
     "fastmcp_active_seam_span", default=None
 )
 
+# Set once `server_span` has claimed the request's SERVER span. A mounted
+# server, or a tool calling `ctx.fastmcp.call_tool`, reaches `server_span`
+# again inside that request; it records an INTERNAL span instead, so trace
+# consumers see one request no matter how deep the call goes.
+_server_span_open: ContextVar[bool] = ContextVar(
+    "fastmcp_server_span_open", default=False
+)
+
 
 def get_auth_span_attributes() -> dict[str, str]:
     """Get auth attributes for the current request, if authenticated."""
@@ -211,12 +219,16 @@ def seam_span(method: str, server_name: str) -> Generator[Span, None, None]:
         if span.is_recording():
             restore_dropped_attributes(span, attrs)
         token = _active_seam_span.set(span)
+        # A seam is a new inbound request, even one an in-process proxy sends
+        # from inside another server's tool call.
+        open_token = _server_span_open.set(False)
         try:
             yield span
         except Exception as e:
             record_span_exception(span, e)
             raise
         finally:
+            _server_span_open.reset(open_token)
             _active_seam_span.reset(token)
 
 
@@ -241,6 +253,10 @@ def server_span(
     e.g. in-process `mcp.call_tool()` calls that bypass the dispatcher) it opens a
     new SERVER span as before.
 
+    A call nested inside that span, through a mounted server or a tool calling
+    `ctx.fastmcp.call_tool`, gets an INTERNAL span under the current one, so a
+    request has exactly one SERVER span.
+
     Automatically records any exception on the span and sets error status.
 
     In `propagation_only` mode no span is opened or enriched. The seam has
@@ -263,6 +279,19 @@ def server_span(
         prompt_name,
     )
 
+    if _server_span_open.get():
+        with get_tracer().start_as_current_span(
+            name, kind=SpanKind.INTERNAL, attributes=attrs
+        ) as span:
+            if span.is_recording():
+                restore_dropped_attributes(span, attrs)
+            try:
+                yield span
+            except Exception as e:
+                record_span_exception(span, e)
+                raise
+        return
+
     seam = _active_seam_span.get()
     active = get_current_span()
     if (
@@ -274,11 +303,14 @@ def server_span(
         # Enrich the already-active seam span rather than opening a second one.
         seam.update_name(name)
         seam.set_attributes(attrs)
+        token = _server_span_open.set(True)
         try:
             yield seam
         except Exception as e:
             record_span_exception(seam, e)
             raise
+        finally:
+            _server_span_open.reset(token)
         return
 
     tracer = get_tracer()
@@ -294,11 +326,14 @@ def server_span(
         # fires when the span ends up with no attributes at all.
         if span.is_recording():
             restore_dropped_attributes(span, attrs)
+        token = _server_span_open.set(True)
         try:
             yield span
         except Exception as e:
             record_span_exception(span, e)
             raise
+        finally:
+            _server_span_open.reset(token)
 
 
 @contextmanager
