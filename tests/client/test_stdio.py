@@ -126,6 +126,42 @@ async def recover_proxy_pid(proxy, old_pid: int, **kwargs) -> int:
     return await _recover_new_pid(call, old_pid, **kwargs)
 
 
+class TestPartialConstruction:
+    """A transport whose construction raised must still be collectable.
+
+    Subclasses validate the command before calling `super().__init__`, so an
+    object whose construction raised never got a `_stop_event`. `__del__` used to
+    dereference it anyway, and CPython reported an unraisable AttributeError that
+    buried the error the caller was meant to see.
+    """
+
+    def test_del_tolerates_a_transport_that_never_finished_init(self):
+        """The exact shape a failed subclass __init__ leaves behind."""
+        transport = object.__new__(PythonStdioTransport)
+        assert not hasattr(transport, "_stop_event")
+
+        transport.__del__()  # must not raise
+
+    def test_failed_subclass_construction_is_collectable(self, tmp_path):
+        not_python = tmp_path / "server.txt"
+        not_python.write_text("not a python script", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="Not a Python script"):
+            PythonStdioTransport(script_path=not_python)
+
+        gc_collect_harder()
+
+    def test_failed_subclass_construction_does_not_fabricate_an_event(self, tmp_path):
+        """The guard must skip the event, not invent one to set."""
+        missing = tmp_path / "nope.py"
+        with pytest.raises(FileNotFoundError, match="Script not found"):
+            PythonStdioTransport(script_path=missing)
+
+        transport = object.__new__(PythonStdioTransport)
+        transport.__del__()
+        assert not hasattr(transport, "_stop_event")
+
+
 class TestDisconnect:
     async def test_cancelled_connection_task_is_cleaned_up(self):
         transport = StdioTransport(command="python", args=[])
