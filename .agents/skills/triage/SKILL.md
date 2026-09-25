@@ -7,6 +7,16 @@ description: Find worthwhile FastMCP issues to work on in a backlog or release w
 
 Read AGENTS.md and CONTRIBUTING.md. Honor the requested scope. For "since the last patch," identify the release timestamp, then look for open issues created or substantively updated afterward. Use a bounded inventory internally; report truncation if it affects coverage.
 
+Start from an inventory, then link each candidate to the PRs that mention it:
+
+```bash
+gh release list --repo PrefectHQ/fastmcp --limit 1
+gh issue list --repo PrefectHQ/fastmcp --state open --limit 30 \
+  --json number,title,author,createdAt,updatedAt,labels,comments
+gh pr list --repo PrefectHQ/fastmcp --state all --search "<issue-number> in:body" \
+  --json number,title,state,author
+```
+
 Pick work with concrete user impact, a supported contract being violated, and a tractable causal fix. Do not rank solely by recency, comment count, or how small a proposed patch looks. Automated dashboard churn is not itself useful work.
 
 For promising candidates:

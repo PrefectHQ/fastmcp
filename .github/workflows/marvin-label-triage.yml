@@ -35,21 +35,14 @@ jobs:
       issues: write
       pull-requests: write
 
-    # TEMPORARY PIN — remove once upstream ships a fix.
-    #
-    # Claude Code 2.1.216 regressed the sandbox that claude-code-action wraps
-    # every Bash call in when `allowed_non_write_users` is set: the mountpoint
-    # walk fails closed, so every command — down to `true` — dies with
-    # `bwrap: Can't create file at /home/.mcp.json: Permission denied`.
-    # Marvin still reads the issue and picks correct labels, then cannot run
-    # the helper that applies them, so triage silently applied zero labels
-    # from 2026-07-20 onward while every run reported success.
-    #
-    # 2.1.215 is the last release without the regression.
+    # Pinned Claude Code. The repository instructions are AGENTS.md, which
+    # Claude Code reads natively from 2.1.281 on. Releases 2.1.216 through
+    # 2.1.226 broke every Bash call under the action's sandbox (`bwrap: Can't
+    # create file at /home/.mcp.json`), which let triage apply zero labels
+    # while reporting success; the sandbox check below fails the run instead.
     # https://github.com/anthropics/claude-code/issues/79997
-    # https://github.com/anthropics/claude-code-action/issues/1547
     env:
-      PINNED_CLAUDE_CODE_VERSION: "2.1.215"
+      PINNED_CLAUDE_CODE_VERSION: "2.1.282"
 
     steps:
       - name: Checkout base repository

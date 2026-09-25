@@ -108,7 +108,7 @@ for (const filename of [
   "docs/script.js",
   "docs/snippets/example.py",
   "new-package/README.md",
-  "CLAUDE.md",
+  "AGENTS.md",
 ]) {
   test(`full coverage with mixed changes: ${filename}`, async () => {
     assert.equal(

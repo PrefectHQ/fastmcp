@@ -20,6 +20,8 @@ That's it. No need to diagnose root causes, propose API designs, or suggest impl
 
 We encourage you to use LLMs to help identify bugs, write MREs, and prepare contributions. But if you do, your LLM must take into account the conventions and contributing guidelines of this repo — including how we want issues formatted and when it's appropriate to open a PR. Generic LLM output that ignores these guidelines tells us the contribution wasn't made thoughtfully, and we will close it. A good AI-assisted contribution is indistinguishable from a good human one. A bad one is obvious.
 
+Start your agent from [AGENTS.md](AGENTS.md). It holds the development workflow, the required checks, and the conventions reviewers expect. The repository also ships skills in [`.agents/skills/`](.agents/skills/) (linked into `.claude/skills/` for Claude Code) that walk an agent through common jobs: `fix-issue` carries a bug from reproduction to a PR, `python-tests` covers the test conventions, `docs` covers documentation pages, and `code-review` is the review your PR will get, so run it on your own change before opening one.
+
 If you're driving an agent: do **not** have it post comments asking to be assigned to an issue or announcing that it intends to work on one. Those comments are ignored. If the agent intends to contribute, open a PR instead — it will be gated on assignment (see below). Comment on an issue only to propose a genuinely novel, differentiated solution, never to claim a task that's already described.
 
 ## When to open a pull request
@@ -53,6 +55,10 @@ If you do open a PR:
 - **Write tests.** Bug fixes should include a test that fails without the fix. Enhancements should include tests for the new behavior.
 - **Fix the cause, not the symptom.** If the bug is that a code path skips a step, the fix should make it stop skipping that step — not add compensation elsewhere. Workaround-style fixes will be sent back for revision.
 - **Don't submit generated boilerplate.** We review every line. PRs that read like unedited LLM output — verbose descriptions, speculative changes, shotgun-style fixes — will be closed.
+
+## Maintaining FastMCP
+
+Maintainers use the same skills for the rest of the project's work: `triage` finds worthwhile issues, `review-issue` decides whether to assign an external contributor, `review-pr` follows a PR through CI and bot review, `review-security-report` evaluates vulnerability reports, and `release` cuts a release from notes preview to a verified docs deploy. The table in [AGENTS.md](AGENTS.md#skills) maps each job to its skill. Skills stop before public actions such as commenting, assigning, merging, or tagging, and ask the maintainer driving them.
 
 ## What we'll close without review
 
