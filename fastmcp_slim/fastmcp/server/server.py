@@ -76,6 +76,7 @@ from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth import AuthCheck, AuthContext, AuthProvider, run_auth_checks
 from fastmcp.server.caching import build_cache_hints
 from fastmcp.server.completions import CompletionHandler
+from fastmcp.server.dependencies import _dispatching_tool_call
 from fastmcp.server.lifespan import Lifespan
 from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
@@ -808,7 +809,7 @@ class FastMCP(
     # are inherited from AggregateProvider which handles aggregation and namespacing
 
     async def get_tasks(self) -> Sequence[FastMCPComponent]:
-        """Get task-eligible components with all transforms applied.
+        """Get task-eligible components with server-level transforms applied.
 
         Overrides AggregateProvider.get_tasks() to apply server-level transforms
         after aggregation. AggregateProvider handles provider-level namespacing.
@@ -816,24 +817,10 @@ class FastMCP(
         # Get tasks from AggregateProvider (handles aggregation and namespacing)
         components = list(await super().get_tasks())
 
-        # Separate by component type for server-level transform application
-        tools = [c for c in components if isinstance(c, Tool)]
-        resources = [c for c in components if isinstance(c, Resource)]
-        templates = [c for c in components if isinstance(c, ResourceTemplate)]
-        prompts = [c for c in components if isinstance(c, Prompt)]
-
-        # Apply server-level transforms sequentially
-        for transform in self.transforms:
-            tools = await transform.list_tools(tools)
-            resources = await transform.list_resources(resources)
-            templates = await transform.list_resource_templates(templates)
-            prompts = await transform.list_prompts(prompts)
-
         return [
-            *tools,
-            *resources,
-            *templates,
-            *prompts,
+            c
+            for c in await self._apply_task_transforms(components)
+            if c.task_config.supports_tasks()
         ]
 
     def add_transform(self, transform: Transform) -> None:
@@ -1460,17 +1447,18 @@ class FastMCP(
                 # the whole thing (so it observes every call), and the
                 # interceptors sit between it and the tool body (so each is the
                 # last gate before execution).
-                dispatched = await self._dispatch_component_middleware(
-                    context=mw_context,
-                    call_next=self._compose_tool_call_interceptors(
-                        lambda context: self.call_tool(
-                            context.message.name,
-                            context.message.arguments or {},
-                            version=version,
-                            run_middleware=False,
-                        )
-                    ),
-                )
+                with _dispatching_tool_call():
+                    dispatched = await self._dispatch_component_middleware(
+                        context=mw_context,
+                        call_next=self._compose_tool_call_interceptors(
+                            lambda context: self.call_tool(
+                                context.message.name,
+                                context.message.arguments or {},
+                                version=version,
+                                run_middleware=False,
+                            )
+                        ),
+                    )
                 # Above the chain, so a Prefab payload is re-addressed however
                 # it was produced — middleware can answer a call itself, and
                 # such a result never reaches the core path below.
