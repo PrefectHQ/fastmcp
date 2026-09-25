@@ -5,6 +5,16 @@ icon: "sparkles"
 tag: NEW
 ---
 
+<Update label="FastMCP 4.0.10" description="September 25, 2026" tags={["Releases"]}>
+<Card
+title="FastMCP v4.0.10: Inside Job"
+href="https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.10"
+cta="Read the release notes"
+>
+Task-enabled tools now work behind search transforms and CodeMode: they're registered with the task backend even when hidden, and a tool, resource, or prompt that calls one through `ctx.fastmcp.call_tool()` (including the search `call_tool` proxy and CodeMode's `execute`) now gets its result instead of an empty task receipt.
+</Card>
+</Update>
+
 <Update label="FastMCP 4.0.9" description="September 24, 2026" tags={["Releases"]}>
 <Card
 title="FastMCP v4.0.9: Cache and Release"
