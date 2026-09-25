@@ -7,6 +7,7 @@ from mcp_types import CallToolResult, TextContent
 from pydantic import BaseModel, ConfigDict, Field, with_config
 
 from fastmcp import Client, FastMCP
+from fastmcp.exceptions import ToolError
 from fastmcp.tools.base import Tool, ToolResult
 from tests.conftest import user_meta
 
@@ -73,6 +74,25 @@ class TestToolResultCasting:
         assert result.content[0].text == "test data"
         assert result.structured_content == {"data_type": "test"}
         assert user_meta(result.meta) == {"some": "metadata"}
+
+
+class TestNonFiniteToolResults:
+    async def test_nonfinite_values_raise_descriptive_errors(self):
+        mcp = FastMCP()
+
+        @mcp.tool
+        def mapping_result() -> dict[str, float]:
+            return {"value": float("nan")}
+
+        @mcp.tool
+        def scalar_result() -> float:
+            return float("inf")
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="non-finite float value: nan"):
+                await client.call_tool("mapping_result", {})
+            with pytest.raises(ToolError, match="non-finite float value: inf"):
+                await client.call_tool("scalar_result", {})
 
 
 class TestToolResultIsError:
