@@ -284,3 +284,76 @@ def test_completion_argument_and_context_types_importable():
     context = CompletionContext(arguments={"owner": "prefecthq"})
     assert argument.name == "theme"
     assert context.arguments == {"owner": "prefecthq"}
+
+
+@pytest.mark.parametrize("mode", MODES)
+async def test_completion_does_not_poison_a_response_cache(mode):
+    """A completion must not make a caching layer store a listing that a
+    generic-hook filter never saw (4.0.7 served hidden prompts this way)."""
+    from fastmcp.server.middleware import Middleware
+    from fastmcp.server.middleware.caching import ResponseCachingMiddleware
+
+    class HideInternal(Middleware):
+        async def on_request(self, context, call_next):
+            result = await call_next(context)
+            if context.method == "prompts/list":
+                return [p for p in result if "internal" not in p.name]
+            return result
+
+    mcp = FastMCP(middleware=[ResponseCachingMiddleware(), HideInternal()])
+
+    @mcp.prompt
+    def public(x: str) -> str:
+        return x
+
+    @mcp.prompt
+    def internal_admin(x: str) -> str:
+        return x
+
+    @mcp.completion
+    def complete(ref, argument, context):
+        return ["v"]
+
+    async with Client(mcp, mode=mode) as first, Client(mcp, mode=mode) as second:
+        await first.complete(PromptReference(name="public"), {"name": "x", "value": ""})
+        listed = [p.name for p in await second.list_prompts()]
+    assert listed == ["public"]
+
+
+@pytest.mark.parametrize("mode", MODES)
+async def test_generic_middleware_sees_one_request_per_completion(mode):
+    """Rate limits, logging, and metrics must see a completion as one request
+    (4.0.6 charged each completion two or three times)."""
+    from fastmcp.server.middleware import Middleware
+
+    seen: list[str] = []
+
+    class Recorder(Middleware):
+        async def on_request(self, context, call_next):
+            seen.append(context.method)
+            return await call_next(context)
+
+    mcp = FastMCP(middleware=[Recorder()])
+
+    @mcp.prompt
+    def poem(theme: str) -> str:
+        return theme
+
+    @mcp.resource("notes://{path}")
+    def note(path: str) -> str:
+        return path
+
+    @mcp.completion
+    def complete(ref, argument, context):
+        return ["v"]
+
+    async with Client(mcp, mode=mode) as client:
+        seen.clear()
+        await client.complete(
+            PromptReference(name="poem"), {"name": "theme", "value": ""}
+        )
+        await client.complete(
+            ResourceTemplateReference(uri="notes://{path}"),
+            {"name": "path", "value": ""},
+        )
+    assert seen == ["completion/complete", "completion/complete"]

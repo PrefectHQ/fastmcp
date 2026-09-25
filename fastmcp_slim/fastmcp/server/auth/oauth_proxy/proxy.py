@@ -2374,10 +2374,39 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Attempt upstream revocation if endpoint is configured
         if self._upstream_revocation_endpoint:
             try:
+                # For refresh tokens, resolve the upstream refresh token via
+                # JTI mapping so we revoke the token the authorization server
+                # actually issued, not the FastMCP-issued JWT wrapper.
+                if isinstance(token, RefreshToken):
+                    refresh_payload = self.jwt_issuer.verify_token(
+                        token.token, expected_token_use="refresh"
+                    )
+                    refresh_jti = refresh_payload["jti"]
+                    jti_mapping = await self._jti_mapping_store.get(key=refresh_jti)
+                    if jti_mapping is None:
+                        logger.warning("No JTI mapping found for refresh token")
+                        return
+
+                    upstream_token_set = await self._upstream_token_store.get(
+                        key=jti_mapping.upstream_token_id
+                    )
+                    if (
+                        upstream_token_set is None
+                        or not upstream_token_set.refresh_token
+                    ):
+                        logger.warning("No upstream refresh token found")
+                        return
+
+                    upstream_token_to_revoke = upstream_token_set.refresh_token
+                else:
+                    upstream_token_to_revoke = token.token
+
                 async with httpx2.AsyncClient(
                     timeout=HTTP_TIMEOUT_SECONDS
                 ) as http_client:
-                    revocation_data: dict[str, str] = {"token": token.token}
+                    revocation_data: dict[str, str] = {
+                        "token": upstream_token_to_revoke
+                    }
                     request_kwargs: dict[str, Any] = {"data": revocation_data}
 
                     # Use the factory method when available (supports alternative auth like

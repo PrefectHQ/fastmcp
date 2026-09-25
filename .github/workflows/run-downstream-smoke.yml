@@ -1,0 +1,287 @@
+name: Downstream smoke
+
+# Drive this checkout's FastMCP through the frameworks that depend on it, the
+# way uv's ecosystem tests drive downstream projects: build once, install that
+# build where the consumer runs, and run the consumer's own usage against it.
+#
+# Pushes and PRs use the pinned versions below, so a failure points at the
+# change under test. The nightly run resolves each consumer's latest release
+# to catch breakage that ships downstream.
+
+env:
+  PY_COLORS: 1
+  PYDANTIC_AI_VERSION: "2.47.0"
+  LANGCHAIN_MCP_ADAPTERS_VERSION: "0.3.2"
+  LANGCHAIN_VERSION: "1.4.2"
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "fastmcp_slim/**"
+      - "fastmcp_tasks/**"
+      - "tests/downstream/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/run-downstream-smoke.yml"
+
+  pull_request:
+    paths:
+      - "fastmcp_slim/**"
+      - "fastmcp_tasks/**"
+      - "tests/downstream/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/run-downstream-smoke.yml"
+
+  schedule:
+    - cron: "30 2 * * *"
+
+  workflow_dispatch:
+    inputs:
+      latest:
+        description: "Test each consumer's latest release instead of the pins"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      fastmcp: ${{ steps.build.outputs.version }}
+      pydantic-ai: ${{ steps.versions.outputs.pydantic-ai }}
+      langchain-mcp-adapters: ${{ steps.versions.outputs.langchain-mcp-adapters }}
+      langchain: ${{ steps.versions.outputs.langchain }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.1.0
+
+      - name: Build wheels
+        id: build
+        run: |
+          for package in . fastmcp_slim fastmcp_tasks; do
+            uv build --quiet --wheel --out-dir dist "$package"
+          done
+          version=$(basename dist/fastmcp_slim-*.whl | cut -d- -f2)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          ls dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fastmcp-wheels
+          path: dist/*.whl
+
+      - name: Choose consumer versions
+        id: versions
+        env:
+          LATEST: ${{ github.event_name == 'schedule' || inputs.latest == true }}
+        run: |
+          set -euo pipefail
+          pick() {
+            local version="$2"
+            if [ "$LATEST" = true ]; then
+              version=$(curl -fsS --retry 5 --retry-all-errors "https://pypi.org/pypi/$1/json" | jq -r .info.version)
+            fi
+            if [ -z "$version" ] || [ "$version" = null ]; then
+              echo "::error::could not resolve a version for $1" >&2
+              exit 1
+            fi
+            echo "$version"
+          }
+          pydantic_ai=$(pick pydantic-ai-slim "$PYDANTIC_AI_VERSION")
+          adapters=$(pick langchain-mcp-adapters "$LANGCHAIN_MCP_ADAPTERS_VERSION")
+          langchain=$(pick langchain "$LANGCHAIN_VERSION")
+          {
+            echo "pydantic-ai=$pydantic_ai"
+            echo "langchain-mcp-adapters=$adapters"
+            echo "langchain=$langchain"
+          } | tee -a "$GITHUB_OUTPUT" > versions.txt
+          {
+            echo "### Downstream smoke plan"
+            echo
+            echo "FastMCP \`$(basename dist/fastmcp_slim-*.whl | cut -d- -f2)\` against $([ "$LATEST" = true ] && echo "each consumer's latest release" || echo "pinned consumer versions")"
+            echo
+            echo "| consumer | version |"
+            echo "|---|---|"
+            sed 's/^\(.*\)=\(.*\)$/| \1 | `\2` |/' versions.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  pydantic-ai-suite:
+    name: pydantic-ai test suite
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: fastmcp
+
+      - uses: actions/checkout@v7
+        with:
+          repository: pydantic/pydantic-ai
+          ref: v${{ needs.plan.outputs.pydantic-ai }}
+          path: pydantic-ai
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: fastmcp-wheels
+          path: dist
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.1.0
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: pydantic-ai/uv.lock
+
+      # Mirrors pydantic-ai's own "test FastMCP 4 compatibility" job: their locked
+      # environment, with FastMCP overlaid from the wheels under test.
+      - name: Resolve environment
+        working-directory: pydantic-ai
+        run: |
+          echo "UV_RUN=uv run --all-extras --no-extra mcp-tasks --all-packages \
+            --with fastmcp@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp-4*.whl) \
+            --with fastmcp-slim@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp_slim-*.whl) \
+            --with fastmcp-tasks@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp_tasks-*.whl)" >> "$GITHUB_ENV"
+
+      - name: Check the build under test is installed
+        working-directory: pydantic-ai
+        run: >-
+          $UV_RUN --quiet python -c "import fastmcp, mcp, importlib.metadata as m;
+          assert fastmcp.__version__ == '${{ needs.plan.outputs.fastmcp }}', fastmcp.__version__;
+          print('fastmcp', fastmcp.__version__, '· mcp', m.version('mcp'))"
+
+      - name: Run pydantic-ai's MCP tests
+        working-directory: pydantic-ai
+        run: >-
+          $UV_RUN --quiet pytest -p no:cacheprovider -q
+          --junitxml=$GITHUB_WORKSPACE/junit.xml
+          tests/test_mcp.py tests/models/test_mcp_sampling.py tests/test_conftest.py
+
+      - name: Summarize
+        if: always() && hashFiles('junit.xml') != ''
+        run: python3 fastmcp/tests/downstream/_harness.py junit.xml "pydantic-ai ${{ needs.plan.outputs.pydantic-ai }} MCP test suite"
+
+  langchain-suite:
+    name: langchain test suite
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: fastmcp
+
+      - uses: actions/checkout@v7
+        with:
+          repository: langchain-ai/langchain
+          ref: langchain==${{ needs.plan.outputs.langchain }}
+          path: langchain
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: fastmcp-wheels
+          path: dist
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.1.0
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: langchain/libs/langchain_v1/uv.lock
+
+      # langchain.mcp builds on fastmcp.Client and ClientGroup; run its own MCP
+      # tests in its locked environment with FastMCP overlaid from the wheels.
+      - name: Resolve environment
+        working-directory: langchain/libs/langchain_v1
+        run: |
+          echo "UV_RUN=uv run --group test \
+            --with fastmcp@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp-4*.whl) \
+            --with fastmcp-slim@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp_slim-*.whl)" >> "$GITHUB_ENV"
+
+      - name: Check the build under test is installed
+        working-directory: langchain/libs/langchain_v1
+        run: >-
+          $UV_RUN --quiet python -c "import fastmcp;
+          assert fastmcp.__version__ == '${{ needs.plan.outputs.fastmcp }}', fastmcp.__version__;
+          print('fastmcp', fastmcp.__version__)"
+
+      # The deselected test asserts on the caller's Client while MCPAdapter
+      # connects a clone, so it fails against every fastmcp 4.0.x release.
+      - name: Run langchain's MCP tests
+        working-directory: langchain/libs/langchain_v1
+        run: >-
+          $UV_RUN --quiet pytest -p no:cacheprovider -q
+          --junitxml=$GITHUB_WORKSPACE/junit.xml
+          tests/unit_tests/mcp tests/integration_tests/mcp
+          --deselect tests/integration_tests/mcp/test_protocol_eras.py::test_separate_adapters_keep_their_own_protocol_era
+
+      - name: Summarize
+        if: always() && hashFiles('junit.xml') != ''
+        run: python3 fastmcp/tests/downstream/_harness.py junit.xml "langchain ${{ needs.plan.outputs.langchain }} MCP test suite"
+
+  smoke:
+    name: ${{ matrix.consumer }} smoke
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Client-only, as `pydantic-ai-slim[mcp]` installs it, with the build under test.
+          - consumer: pydantic-ai
+            script: smoke_pydantic_ai.py
+            with: >-
+              --with "pydantic-ai-slim[mcp]==${{ needs.plan.outputs.pydantic-ai }}"
+              --with "fastmcp-slim[client] @ file://$GITHUB_WORKSPACE/$(ls dist/fastmcp_slim-*.whl)"
+          # langchain.mcp wraps fastmcp.Client and ClientGroup, with the build under test.
+          - consumer: langchain.mcp
+            script: smoke_langchain_mcp.py
+            with: >-
+              --with "langchain[mcp]==${{ needs.plan.outputs.langchain }}"
+              --with "fastmcp @ file://$GITHUB_WORKSPACE/$(ls dist/fastmcp-4*.whl)"
+              --with "fastmcp-slim @ file://$GITHUB_WORKSPACE/$(ls dist/fastmcp_slim-*.whl)"
+          # The adapters pin mcp<2, so they reach FastMCP over the wire.
+          - consumer: langchain-mcp-adapters
+            script: smoke_langchain_mcp_adapters.py
+            with: >-
+              --with "langchain-mcp-adapters==${{ needs.plan.outputs.langchain-mcp-adapters }}"
+              --with "langchain==${{ needs.plan.outputs.langchain }}"
+    env:
+      FASTMCP_EXPECTED_VERSION: ${{ needs.plan.outputs.fastmcp }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # The servers every smoke connects to run from this environment.
+      - name: Setup uv
+        uses: ./.github/actions/setup-uv
+        with:
+          python-version: "3.12"
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: fastmcp-wheels
+          path: dist
+
+      # Resolved outside the project and without its config, as a user's install is.
+      - name: Resolve ${{ matrix.consumer }} environment
+        run: uv run --isolated --no-project --no-config ${{ matrix.with }} python -c pass
+
+      - name: Run ${{ matrix.consumer }} smoke
+        run: uv run --quiet --isolated --no-project --no-config ${{ matrix.with }} python tests/downstream/${{ matrix.script }}

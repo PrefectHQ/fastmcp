@@ -19,7 +19,15 @@ concurrency:
 
 jobs:
   label-issue-or-pr:
-    if: github.actor != 'dependabot[bot]'
+    # claude-code-action refuses non-human actors (Bot type) unless they are
+    # in its allowed_bots list, so any bot-authored PR or issue that reaches
+    # this job fails the run. Marvin's own PRs are allow-listed in the action;
+    # every other bot — dependabot, prefect-renovate, whatever comes next —
+    # is either self-labeled by its integration or not worth triage tokens.
+    # Skip them here so a bot-authored event is a clean skip, not a red run.
+    if: >-
+      !endsWith(github.actor, '[bot]') ||
+      github.actor == 'marvin-context-protocol[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -171,7 +179,10 @@ jobs:
       - name: Install pinned Claude Code
         id: pin-claude
         run: |
-          curl -fsSL https://claude.ai/install.sh | bash -s -- "$PINNED_CLAUDE_CODE_VERSION"
+          installer="$RUNNER_TEMP/claude-install.sh"
+          curl -fsSL --connect-timeout 30 --retry 3 --retry-delay 5 --retry-all-errors \
+            --output "$installer" https://claude.ai/install.sh
+          bash "$installer" "$PINNED_CLAUDE_CODE_VERSION"
           echo "path=$HOME/.local/bin/claude" >> "$GITHUB_OUTPUT"
           "$HOME/.local/bin/claude" --version
 

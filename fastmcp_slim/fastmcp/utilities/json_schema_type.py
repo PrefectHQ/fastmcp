@@ -56,11 +56,13 @@ import hashlib
 import json
 import keyword
 import re
+import sys
 import warnings
 from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import MISSING, field, make_dataclass
 from datetime import date, datetime
+from functools import lru_cache
 from typing import (
     Annotated,
     Any,
@@ -264,30 +266,41 @@ def _resolve_ref(ref: str, schemas: Mapping[str, Any]) -> Mapping[str, Any]:
     return current
 
 
+def _count(value: Any, *, maximum: bool = False) -> Any:
+    """Normalize a JSON Schema count such as minLength or maxItems for Pydantic.
+
+    JSON allows writing a count as `2.0`. A count above `sys.maxsize` exceeds any
+    real length: as a maximum it constrains nothing and is dropped, and as a
+    minimum it is clamped to a value Pydantic accepts that still rejects
+    everything.
+    """
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    if isinstance(value, int) and not isinstance(value, bool) and value > sys.maxsize:
+        return None if maximum else sys.maxsize + 1
+    return value
+
+
 def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]:
     """Create string type with optional constraints."""
     if "const" in schema:
         return Literal[schema["const"]]  # type: ignore
 
-    if fmt := schema.get("format"):
-        if fmt == "uri":
-            return AnyUrl
-        elif fmt == "uri-reference":
-            return str
-        return FORMAT_TYPES.get(fmt, str)
+    fmt = schema.get("format")
+    base: Any = FORMAT_TYPES.get(fmt, str) if fmt else str
 
     constraints = {
         k: v
         for k, v in {
-            "min_length": schema.get("minLength"),
-            "max_length": schema.get("maxLength"),
+            "min_length": _count(schema.get("minLength")),
+            "max_length": _count(schema.get("maxLength"), maximum=True),
             "pattern": schema.get("pattern"),
         }.items()
         if v is not None
     }
 
     if not constraints:
-        return str
+        return base
 
     annotated: Any = Annotated[str, StringConstraints(**constraints)]
 
@@ -312,7 +325,34 @@ def _create_string_type(schema: Mapping[str, Any]) -> type | Annotated[Any, ...]
             else:
                 annotated = Annotated[str, pattern_field]  # type: ignore[valid-type]
 
-    return annotated
+    if base is str:
+        return annotated
+    return _constrain_raw_string(base, **constraints)
+
+
+@lru_cache(maxsize=1024)
+def _constrain_raw_string(
+    base: Any,
+    min_length: int | None = None,
+    max_length: int | None = None,
+    pattern: str | None = None,
+) -> Any:
+    """Apply string keywords to the raw instance before `base` parses it, as JSON Schema does.
+
+    Cached so a schema seen on every tool call maps to one type, and so one TypeAdapter.
+    """
+    raw = TypeAdapter(
+        Annotated[
+            str,
+            StringConstraints(
+                min_length=min_length, max_length=max_length, pattern=pattern
+            ),
+        ]
+    )
+    return Annotated[
+        base,
+        BeforeValidator(lambda v: raw.validate_python(v) if isinstance(v, str) else v),
+    ]
 
 
 def _create_numeric_type(
@@ -369,8 +409,8 @@ def _create_array_type(
     constraints = {
         k: v
         for k, v in {
-            "min_length": schema.get("minItems"),
-            "max_length": schema.get("maxItems"),
+            "min_length": _count(schema.get("minItems")),
+            "max_length": _count(schema.get("maxItems"), maximum=True),
         }.items()
         if v is not None
     }

@@ -1,3 +1,4 @@
+import datetime
 from typing import Any
 
 import pytest
@@ -306,3 +307,33 @@ async def test_serialize_tools_for_output_markdown_multiple_tools_separated() ->
     assert "### add" in result
     assert "### subtract" in result
     assert "\n\n" in result
+
+
+async def test_markdown_renders_non_json_defaults_and_enums() -> None:
+    """Regression: a YAML-loaded OpenAPI spec turns `default: 2024-01-01` into a
+    `datetime.date`, and one such parameter made the whole detailed render fail."""
+    since = datetime.date(2024, 1, 1)
+    mcp = FastMCP("test")
+
+    @mcp.tool
+    def events(since: str = "") -> str:
+        """List events."""
+        return since
+
+    tool = await mcp.get_tool("events")
+    assert tool is not None
+    tool = tool.model_copy(
+        update={
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "since": {"type": "string", "default": since, "enum": [since]}
+                },
+            }
+        }
+    )
+
+    rendered = serialize_tools_for_output_markdown([tool])
+
+    assert 'one of "2024-01-01"' in rendered
+    assert 'default "2024-01-01"' in rendered

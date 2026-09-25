@@ -52,3 +52,19 @@ the standalone decorators:
 - `reload`: If True, re-scan files on every request (dev mode).
 Defaults to False (scan once at init, cache results).
 
+
+**Methods:**
+
+#### `failed_files` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/filesystem.py#L167" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+failed_files(self) -> Mapping[Path, str]
+```
+
+Files that failed to import or register during the most recent load.
+
+The returned mapping is a snapshot. Import failures are also logged as
+warnings and registration failures as errors, but applications that
+need a strict startup policy can inspect this property without
+importing the modules again.
+

@@ -1,9 +1,9 @@
 # smart home MCP
 
-Control Philips Hue lights through FastMCP and the `phue2` 1.0 alpha's local Hue
-V2 API. An agent can discover real state and capabilities, inspect saved scenes,
-and activate native candle or fire effects. The bridge runs those effects;
-no agent polling loop is needed.
+Control Philips Hue lights and an Amazon Fire TV through FastMCP. Hue uses the
+`phue2` 1.0 alpha's local V2 API. Fire TV control reuses the `androidtv` backend
+shipped by Home Assistant's Android Debug Bridge integration; raw ADB shell access
+is not exposed to agents.
 
 ## Run
 
@@ -13,6 +13,8 @@ Create `.env` in this directory with your existing bridge credentials:
 HUE_BRIDGE_IP=<bridge IP>
 HUE_BRIDGE_USERNAME=<bridge application key>
 HUE_BRIDGE_CERTIFICATE=/absolute/path/to/trusted-bridge.pem
+FIRE_TV_HOST=<Fire TV IP>
+FIRE_TV_ADB_SERVER_IP=127.0.0.1
 ```
 
 HTTPS verification is enabled. The optional certificate file is an explicitly
@@ -20,15 +22,26 @@ trusted certificate obtained and verified for your bridge; its identity replaces
 hostname matching when connecting by IP. Without it, normal system trust and
 hostname verification apply. Credentials remain local and are not saved by the SDK.
 
+`FIRE_TV_HOST` is optional. When omitted, Hue tools continue to work and Fire TV
+tools return a configuration error. The example supports either an existing ADB
+server via `FIRE_TV_ADB_SERVER_IP` or direct Python ADB authentication via
+`FIRE_TV_ADB_KEY`. Enable ADB debugging and approve the host on the TV first.
+
 ```bash
 uv run smart-home
 ```
 
-The server owns one pooled asynchronous bridge connection in its lifespan. Tools
-receive that existing connection through dependency injection. Settings load at
+The server owns pooled asynchronous device connections in its lifespan. Tools
+receive those existing connections through dependency injection. Settings load at
 startup, so importing the example does not require live credentials.
 
 ## Agent workflow
+
+Use `fire_tv_read_status` before and after `fire_tv_press_home`,
+`fire_tv_launch_app`, or `fire_tv_play_youtube_video`. App launch requires an exact
+installed package ID; YouTube playback requires an 11-character video ID. Commands
+return acceptance receipts, not proof that navigation completed. The constrained
+surface deliberately exposes neither arbitrary URLs nor raw ADB shell commands.
 
 Start with `hue_read_rooms` and `hue_read_lights`. Rooms include member light UUIDs;
 lights include state, device connectivity and supported effects. Names must match

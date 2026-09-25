@@ -316,7 +316,7 @@ async def long_running_task(
 - **`Progress()`**: Track task progress with atomic updates
 
 <Note>
-`CurrentDocket()` and `CurrentWorker()` require `pip install 'fastmcp[tasks]'`. They resolve once the server lifespan has initialized Docket, which happens as soon as any component on the server is task-enabled — so regular foreground tools, resources, and prompts can inject them too, not only task-enabled components. `Progress()` can be injected anywhere regardless, though cross-process task progress requires Docket. For comprehensive task patterns, see the [Docket documentation](https://chrisguidry.github.io/docket/dependencies/).
+`CurrentDocket()` and `CurrentWorker()` require `pip install 'fastmcp[tasks]'`. They resolve once the server lifespan has initialized Docket, which happens as soon as any component on the server is task-enabled — so regular foreground tools, resources, and prompts can inject them too, not only task-enabled components. `Progress()` can be injected anywhere regardless, though cross-process task progress requires Docket. For comprehensive task patterns, see the [Docket documentation](https://docket.lol/en/latest/task-patterns/).
 </Note>
 
 ## Custom Dependencies
@@ -490,4 +490,4 @@ async def show_account(
 
 A binding that is a `Dependency`, such as `CallArgument(...)` or another `Depends(...)`, resolves first and the factory receives its value. Any other value passes through as it is. A binding replaces the default of the factory's own parameter, which is then never resolved. Two dependencies on the same factory share one cached result only when their bindings match. See the [Docket dependency documentation](https://docket.lol/en/latest/dependency-injection/) for more detail on call arguments and bindings.
 
-For advanced dependency patterns—like `TaskArgument()` for accessing task parameters, or custom `Dependency` subclasses—see the [Docket dependency documentation](https://chrisguidry.github.io/docket/dependencies/).
+For advanced dependency patterns—like `TaskArgument()` for accessing task parameters, or custom `Dependency` subclasses—see the [Docket dependency documentation](https://docket.lol/en/latest/dependency-injection/).

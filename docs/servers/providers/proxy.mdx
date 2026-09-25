@@ -20,6 +20,8 @@ The Proxy Provider enables:
 - **Add security**: Act as a controlled gateway with authentication and authorization
 - **Simplify access**: Provide a stable endpoint even if backend servers change
 
+The proxy sits between your client and the source server: the client sends an MCP request to the proxy, the proxy forwards it over whichever transport the backend speaks, and the response comes back the same way.
+
 ```mermaid
 sequenceDiagram
     participant Client as Your Client

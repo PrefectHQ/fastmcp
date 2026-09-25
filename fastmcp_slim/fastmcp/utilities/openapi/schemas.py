@@ -118,6 +118,11 @@ def _replace_ref_with_defs(
             }
     elif item_schema := schema.get("items"):
         schema["items"] = _replace_ref_with_defs(item_schema)
+    if "prefixItems" in schema:
+        schema["prefixItems"] = [
+            _replace_ref_with_defs(item) if isinstance(item, dict) else item
+            for item in schema["prefixItems"]
+        ]
     for section in ["anyOf", "allOf", "oneOf"]:
         if section in schema:
             schema[section] = [_replace_ref_with_defs(item) for item in schema[section]]

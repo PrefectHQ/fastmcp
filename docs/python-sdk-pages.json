@@ -126,7 +126,8 @@
       {
         "group": "transforms",
         "pages": [
-          "python-sdk/fastmcp-experimental-transforms-code_mode"
+          "python-sdk/fastmcp-experimental-transforms-code_mode",
+          "python-sdk/fastmcp-experimental-transforms-jev_search"
         ]
       }
     ]
