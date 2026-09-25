@@ -85,7 +85,7 @@ def escape_mdx(text: str) -> str:
             parts[i] = re.sub(r"(\{[^{}]*\})", r"`\1`", parts[i])
             parts[i] = re.sub(r"(?<!`)([{}])(?!`)", r"`\1`", parts[i])
             parts[i] = re.sub(
-                r"(?<![\w`])(__\w+?__(?:\.\w+)?)(?![\w`])", r"`\1`", parts[i]
+                r"(?<![\w`/])(__\w+?__(?:\.\w+)?)(?![\w`])", r"`\1`", parts[i]
             )
         return "`".join(parts)
 
