@@ -934,8 +934,9 @@ class FastMCP(
         transforms (including session-level) have been applied. This ensures
         session transforms can override provider-level disables.
 
-        When the highest version is disabled and no explicit version was
-        requested, falls back to the next-highest enabled version.
+        When the highest version is disabled or unauthorized and no explicit
+        version was requested, falls back to the highest version that is
+        both enabled and authorized, matching what the list methods expose.
 
         Args:
             name: The tool name.
@@ -945,17 +946,16 @@ class FastMCP(
             The tool if found and enabled, None otherwise.
         """
         tool = await super().get_tool(name, version)
-        if tool is None:
-            return None
+        if tool is not None:
+            # Apply session transforms to single item
+            tools = await apply_session_transforms([tool])
+            if tools and is_enabled(tools[0]):
+                return tools[0]
 
-        # Apply session transforms to single item
-        tools = await apply_session_transforms([tool])
-        if tools and is_enabled(tools[0]):
-            return tools[0]
-
-        # The highest version is disabled. If an explicit version was
-        # requested, respect that. Otherwise fall back to the next-highest
-        # enabled version.
+        # The highest version is disabled or failed component auth (or no
+        # such tool exists). If an explicit version was requested, respect
+        # that. Otherwise fall back to the highest version that is both
+        # enabled and authorized, consistent with list_tools.
         if version is not None:
             return None
 
@@ -1072,8 +1072,9 @@ class FastMCP(
         Overrides Provider.get_resource() to add visibility filtering after all
         transforms (including session-level) have been applied.
 
-        When the highest version is disabled and no explicit version was
-        requested, falls back to the next-highest enabled version.
+        When the highest version is disabled or unauthorized and no explicit
+        version was requested, falls back to the highest version that is
+        both enabled and authorized, matching what the list methods expose.
 
         Args:
             uri: The resource URI.
@@ -1083,13 +1084,11 @@ class FastMCP(
             The resource if found and enabled, None otherwise.
         """
         resource = await super().get_resource(uri, version)
-        if resource is None:
-            return None
-
-        # Apply session transforms to single item
-        resources = await apply_session_transforms([resource])
-        if resources and is_enabled(resources[0]):
-            return resources[0]
+        if resource is not None:
+            # Apply session transforms to single item
+            resources = await apply_session_transforms([resource])
+            if resources and is_enabled(resources[0]):
+                return resources[0]
 
         if version is not None:
             return None
@@ -1204,8 +1203,9 @@ class FastMCP(
         Overrides Provider.get_resource_template() to add visibility filtering after
         all transforms (including session-level) have been applied.
 
-        When the highest version is disabled and no explicit version was
-        requested, falls back to the next-highest enabled version.
+        When the highest version is disabled or unauthorized and no explicit
+        version was requested, falls back to the highest version that is
+        both enabled and authorized, matching what the list methods expose.
 
         Args:
             uri: The template URI.
@@ -1215,13 +1215,11 @@ class FastMCP(
             The template if found and enabled, None otherwise.
         """
         template = await super().get_resource_template(uri, version)
-        if template is None:
-            return None
-
-        # Apply session transforms to single item
-        templates = await apply_session_transforms([template])
-        if templates and is_enabled(templates[0]):
-            return templates[0]
+        if template is not None:
+            # Apply session transforms to single item
+            templates = await apply_session_transforms([template])
+            if templates and is_enabled(templates[0]):
+                return templates[0]
 
         if version is not None:
             return None
@@ -1330,8 +1328,9 @@ class FastMCP(
         Overrides Provider.get_prompt() to add visibility filtering after all
         transforms (including session-level) have been applied.
 
-        When the highest version is disabled and no explicit version was
-        requested, falls back to the next-highest enabled version.
+        When the highest version is disabled or unauthorized and no explicit
+        version was requested, falls back to the highest version that is
+        both enabled and authorized, matching what the list methods expose.
 
         Args:
             name: The prompt name.
@@ -1341,13 +1340,11 @@ class FastMCP(
             The prompt if found and enabled, None otherwise.
         """
         prompt = await super().get_prompt(name, version)
-        if prompt is None:
-            return None
-
-        # Apply session transforms to single item
-        prompts = await apply_session_transforms([prompt])
-        if prompts and is_enabled(prompts[0]):
-            return prompts[0]
+        if prompt is not None:
+            # Apply session transforms to single item
+            prompts = await apply_session_transforms([prompt])
+            if prompts and is_enabled(prompts[0]):
+                return prompts[0]
 
         if version is not None:
             return None
@@ -1471,30 +1468,32 @@ class FastMCP(
                 name,
                 tool_name=name,
             ) as span:
-                # Try normal display-name resolution first.
-                tool: Tool | None = await self.get_tool(name, version=version)
-
-                # If that fails, try hashed-name dispatch. This walks
-                # the provider tree recursively (same pattern as the old
+                # Try hashed-name dispatch first. A `<hash>_<local_name>`
+                # address cannot collide with a display name, and resolving
+                # it before get_tool keeps the versioned fallback (a full
+                # list + auth scan on a miss) off this path. This walks the
+                # provider tree recursively (same pattern as the old
                 # get_app_tool) looking for a tool whose stored hash
                 # matches the parsed prefix.
+                tool: Tool | None = None
+                hashed = parse_hashed_backend_name(name)
+                if hashed is not None:
+                    digest, local_name = hashed
+                    tool = await self.get_tool_by_hash(digest, local_name)
+                    if tool is not None:
+                        # Auth still applies on the bypass path.
+                        skip_auth, token = _get_auth_context()
+                        if not skip_auth and tool.auth is not None:
+                            try:
+                                auth_ctx = AuthContext(token=token, component=tool)
+                                if not await run_auth_checks(tool.auth, auth_ctx):
+                                    raise NotFoundError(f"Unknown tool: {name!r}")
+                            except AuthorizationError:
+                                raise NotFoundError(f"Unknown tool: {name!r}") from None
+
+                # Everything else goes through normal display-name resolution.
                 if tool is None:
-                    hashed = parse_hashed_backend_name(name)
-                    if hashed is not None:
-                        digest, local_name = hashed
-                        tool = await self.get_tool_by_hash(digest, local_name)
-                        if tool is not None:
-                            # Auth still applies on the bypass path.
-                            skip_auth, token = _get_auth_context()
-                            if not skip_auth and tool.auth is not None:
-                                try:
-                                    auth_ctx = AuthContext(token=token, component=tool)
-                                    if not await run_auth_checks(tool.auth, auth_ctx):
-                                        raise NotFoundError(f"Unknown tool: {name!r}")
-                                except AuthorizationError:
-                                    raise NotFoundError(
-                                        f"Unknown tool: {name!r}"
-                                    ) from None
+                    tool = await self.get_tool(name, version=version)
 
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {name!r}")
