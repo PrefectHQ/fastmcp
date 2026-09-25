@@ -293,13 +293,22 @@ class OAuth(OAuthClientProvider):
         else:
             scopes_str = ""
 
+        # No pre-registered secret: tell the server this is a public client.
+        extra = dict(self._additional_client_metadata or {})
+        if (
+            not self._client_id
+            and not self._client_secret
+            and "token_endpoint_auth_method" not in extra
+        ):
+            extra["token_endpoint_auth_method"] = "none"
+
         client_metadata = OAuthClientMetadata(
             client_name=self._client_name,
             redirect_uris=[AnyHttpUrl(redirect_uri)],
             grant_types=["authorization_code", "refresh_token"],
             response_types=["code"],
             scope=scopes_str,
-            **(self._additional_client_metadata or {}),
+            **extra,
         )
 
         if self._client_id:
