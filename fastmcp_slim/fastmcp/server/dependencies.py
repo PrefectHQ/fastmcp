@@ -238,32 +238,37 @@ _background_task_session_id: ContextVar[str | None] = ContextVar(
 )
 
 
-#: Set while a tool body runs. A request's client-declared settings (such as the
-#: tasks opt-in) describe the tool the client called; a tool the body calls in
-#: turn through ``ctx.fastmcp.call_tool`` was not what the client addressed.
-_tool_body_running: ContextVar[bool] = ContextVar(
-    "fastmcp_tool_body_running", default=False
+class _ClientToolCall:
+    """One ``tools/call`` a client sent, until its first dispatch claims it."""
+
+    claimed: bool = False
+
+
+#: The wire ``tools/call`` being served. Per-request client settings, such as
+#: the tasks opt-in, describe the tool the client named; the first dispatch of
+#: that request claims them. Calls a tool body makes in turn, and reads of
+#: resources or prompts, find nothing to claim.
+_client_tool_call: ContextVar[_ClientToolCall | None] = ContextVar(
+    "fastmcp_client_tool_call", default=None
 )
 
 
 @contextmanager
-def running_tool_body() -> Generator[None, None, None]:
-    """Mark the enclosed code as running inside a tool body."""
-    token = _tool_body_running.set(True)
+def _serving_client_tool_call() -> Generator[None, None, None]:
+    token = _client_tool_call.set(_ClientToolCall())
     try:
         yield
     finally:
-        _tool_body_running.reset(token)
+        _client_tool_call.reset(token)
 
 
-def called_from_tool() -> bool:
-    """Whether the current ``tools/call`` was made by another tool's body.
-
-    True for calls a tool makes through ``ctx.fastmcp.call_tool`` — a search
-    transform's ``call_tool`` proxy, CodeMode's ``execute``, or user code —
-    and False for the call the client itself sent.
-    """
-    return _tool_body_running.get()
+def _claim_client_tool_call() -> bool:
+    """True once per client ``tools/call``: for the dispatch the client addressed."""
+    call = _client_tool_call.get()
+    if call is None or call.claimed:
+        return False
+    call.claimed = True
+    return True
 
 
 # --- Docket availability check ---

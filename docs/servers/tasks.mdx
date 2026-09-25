@@ -111,7 +111,7 @@ The boolean shortcuts map to these modes:
 
 When a `mode="required"` tool is called by a client that didn't opt in, FastMCP returns a "missing required capability" error rather than running it synchronously.
 
-A client's opt-in applies to the tool it called. When a tool calls another tool through `ctx.fastmcp.call_tool()`, as a [search transform's](/servers/transforms/tool-search) `call_tool` proxy and [CodeMode's](/servers/transforms/code-mode) `execute` do, the inner call runs in the foreground so the outer tool gets its result. An `"optional"` tool runs synchronously there, and a `"required"` tool returns the "missing required capability" error, since the client has to call it directly to get a task.
+A client's opt-in applies to the tool it called. When a tool, resource, or prompt calls a tool through `ctx.fastmcp.call_tool()`, as a [search transform's](/servers/transforms/tool-search) `call_tool` proxy and [CodeMode's](/servers/transforms/code-mode) `execute` do, the inner call runs in the foreground so the caller gets its result. An `"optional"` tool runs synchronously there, and a `"required"` tool raises a tool error, since only the client can start a task by calling it directly.
 
 ### Poll Interval
 

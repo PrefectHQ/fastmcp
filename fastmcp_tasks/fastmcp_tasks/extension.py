@@ -36,9 +36,9 @@ from mcp.shared.inbound import MCP_NAME_HEADER, decode_header_value
 from mcp_types.jsonrpc import HEADER_MISMATCH
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
-from fastmcp.exceptions import NotFoundError
+from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.server.dependencies import (
-    called_from_tool,
+    _claim_client_tool_call,
     extract_version_spec,
     get_http_request,
 )
@@ -227,6 +227,12 @@ class TasksExtension(ServerExtension):
         opt in), ``optional`` tasks only when the client opted in, ``forbidden``
         never tasks. A non-task call passes straight through to the tool body.
         """
+        # The client's opt-in covers the tool it named, which is the first
+        # dispatch of its tools/call. Claim it before anything returns early, so
+        # a tool that body calls in turn (a search proxy, CodeMode's execute)
+        # runs in the foreground and gets its result inline.
+        from_client = _claim_client_tool_call()
+
         # Resolve the same version core would dispatch: a versioned tools/call
         # carries its VersionSpec in the request _meta, so omitting it here would
         # task the highest version even when the client targeted an older one
@@ -256,19 +262,11 @@ class TasksExtension(ServerExtension):
         )
         mode = tool.task_config.mode
 
-        # The client opted in for the tool it called. A tool that body calls in
-        # turn (a search proxy, CodeMode's execute) needs the result inline, so
-        # the nested call runs in the foreground.
-        if called_from_tool():
+        if not from_client:
             if mode == "required":
-                raise MCPError(
-                    code=MISSING_REQUIRED_CLIENT_CAPABILITY,
-                    message=(
-                        f"Tool {tool.name!r} requires the tasks extension and "
-                        "cannot run as a task when called from another tool; "
-                        "call it directly."
-                    ),
-                    data=missing_capability_error_data(),
+                raise ToolError(
+                    f"Tool {tool.name!r} only runs as a background task, which "
+                    "the client has to request by calling it directly."
                 )
             return await call_next()
 

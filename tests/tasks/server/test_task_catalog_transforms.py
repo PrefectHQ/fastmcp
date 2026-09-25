@@ -10,9 +10,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import pytest
-from mcp.shared.exceptions import MCPError
+from fastmcp_tasks.client import call_tool_task
 
 from fastmcp import Client, Context, FastMCP
+from fastmcp.exceptions import ToolError
 from fastmcp.experimental.transforms.code_mode import CodeMode
 from fastmcp.server.transforms import Namespace
 from fastmcp.server.transforms.catalog import CatalogTransform
@@ -162,7 +163,42 @@ class TestNestedCallsRunInForeground:
         mcp.add_transform(BM25SearchTransform())
 
         async with Client(mcp) as client:
-            with pytest.raises(MCPError, match="called from another tool"):
+            with pytest.raises(ToolError, match="only runs as a background task"):
                 await client.call_tool(
                     "call_tool", {"name": "must_task", "arguments": {"n": 1}}
                 )
+
+    async def test_resource_and_prompt_get_task_tool_result(self):
+        mcp = make_server()
+
+        @mcp.resource("data://thing")
+        async def thing(ctx: Context) -> dict:
+            result = await ctx.fastmcp.call_tool("slow_thing", {"n": 6})
+            return result.structured_content or {}
+
+        @mcp.prompt
+        async def ask(ctx: Context) -> str:
+            result = await ctx.fastmcp.call_tool("slow_thing", {"n": 7})
+            return str(result.structured_content)
+
+        async with Client(mcp) as client:
+            resource = await client.read_resource("data://thing")
+            prompt = await client.get_prompt("ask")
+
+        assert "6" in resource[0].text
+        assert "7" in prompt.messages[0].content.text
+
+    async def test_in_process_client_inside_tool_can_still_task(self):
+        other = make_server()
+        front = FastMCP("front")
+
+        @front.tool
+        async def relay() -> str:
+            async with Client(other) as inner:
+                task = await call_tool_task(inner, "slow_thing", {"n": 8})
+                return task.task_id
+
+        async with Client(front) as client:
+            result = await client.call_tool("relay", {})
+
+        assert result.data
