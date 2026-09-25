@@ -281,7 +281,7 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
         cls, server: Any, template: ResourceTemplate
     ) -> FastMCPProviderResourceTemplate:
         """Wrap a ResourceTemplate to create FastMCPProviderResources."""
-        return cls(
+        wrapped = cls(
             server=server,
             original_uri_template=template.uri_template,
             uri_template=template.uri_template,
@@ -298,6 +298,11 @@ class FastMCPProviderResourceTemplate(ResourceTemplate):
             icons=template.icons,
             security=template.security,
         )
+        # Mounts wrap every template on every list, so share the source's
+        # compiled pattern instead of rebuilding it per wrapper.
+        template._compiled_pattern()
+        wrapped._pattern = template._pattern
+        return wrapped
 
     async def create_resource(self, uri: str, params: dict[str, Any]) -> Resource:
         """Create a FastMCPProviderResource for the given URI.
@@ -549,28 +554,9 @@ class FastMCPProvider(Provider):
         # Get tasks with child server's transforms already applied
         components = list(await self.server.get_tasks())
 
-        # Separate by type for this provider's transform application
-        tools = [c for c in components if isinstance(c, Tool)]
-        resources = [c for c in components if isinstance(c, Resource)]
-        templates = [c for c in components if isinstance(c, ResourceTemplate)]
-        prompts = [c for c in components if isinstance(c, Prompt)]
-
-        # Apply this provider's transforms sequentially
-        for transform in self.transforms:
-            tools = await transform.list_tools(tools)
-            resources = await transform.list_resources(resources)
-            templates = await transform.list_resource_templates(templates)
-            prompts = await transform.list_prompts(prompts)
-
-        # Filter to only task-eligible components (same as base Provider)
         return [
             c
-            for c in [
-                *tools,
-                *resources,
-                *templates,
-                *prompts,
-            ]
+            for c in await self._apply_task_transforms(components)
             if c.task_config.supports_tasks()
         ]
 
