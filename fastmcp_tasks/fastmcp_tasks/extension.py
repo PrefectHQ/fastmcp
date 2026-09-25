@@ -37,7 +37,11 @@ from mcp_types.jsonrpc import HEADER_MISMATCH
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
 from fastmcp.exceptions import NotFoundError
-from fastmcp.server.dependencies import extract_version_spec, get_http_request
+from fastmcp.server.dependencies import (
+    called_from_tool,
+    extract_version_spec,
+    get_http_request,
+)
 from fastmcp.server.extensions import (
     MethodBinding,
     ServerExtension,
@@ -251,6 +255,22 @@ class TasksExtension(ServerExtension):
             and context.client_extension_settings(TASKS_EXTENSION_ID) is not None
         )
         mode = tool.task_config.mode
+
+        # The client opted in for the tool it called. A tool that body calls in
+        # turn (a search proxy, CodeMode's execute) needs the result inline, so
+        # the nested call runs in the foreground.
+        if called_from_tool():
+            if mode == "required":
+                raise MCPError(
+                    code=MISSING_REQUIRED_CLIENT_CAPABILITY,
+                    message=(
+                        f"Tool {tool.name!r} requires the tasks extension and "
+                        "cannot run as a task when called from another tool; "
+                        "call it directly."
+                    ),
+                    data=missing_capability_error_data(),
+                )
+            return await call_next()
 
         if mode == "required":
             if not opted_in:

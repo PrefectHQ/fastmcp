@@ -238,6 +238,34 @@ _background_task_session_id: ContextVar[str | None] = ContextVar(
 )
 
 
+#: Set while a tool body runs. A request's client-declared settings (such as the
+#: tasks opt-in) describe the tool the client called; a tool the body calls in
+#: turn through ``ctx.fastmcp.call_tool`` was not what the client addressed.
+_tool_body_running: ContextVar[bool] = ContextVar(
+    "fastmcp_tool_body_running", default=False
+)
+
+
+@contextmanager
+def running_tool_body() -> Generator[None, None, None]:
+    """Mark the enclosed code as running inside a tool body."""
+    token = _tool_body_running.set(True)
+    try:
+        yield
+    finally:
+        _tool_body_running.reset(token)
+
+
+def called_from_tool() -> bool:
+    """Whether the current ``tools/call`` was made by another tool's body.
+
+    True for calls a tool makes through ``ctx.fastmcp.call_tool`` — a search
+    transform's ``call_tool`` proxy, CodeMode's ``execute``, or user code —
+    and False for the call the client itself sent.
+    """
+    return _tool_body_running.get()
+
+
 # --- Docket availability check ---
 
 _DOCKET_AVAILABLE: bool | None = None

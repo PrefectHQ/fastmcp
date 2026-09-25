@@ -10,8 +10,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import pytest
+from mcp.shared.exceptions import MCPError
 
-from fastmcp import Client, FastMCP
+from fastmcp import Client, Context, FastMCP
 from fastmcp.experimental.transforms.code_mode import CodeMode
 from fastmcp.server.transforms import Namespace
 from fastmcp.server.transforms.catalog import CatalogTransform
@@ -110,3 +111,58 @@ async def test_task_tool_added_by_catalog_transform_is_registered():
         "slow_thing",
         "synthetic_slow",
     ]
+
+
+class TestNestedCallsRunInForeground:
+    """A client's tasks opt-in covers the tool it called, not tools that tool calls."""
+
+    async def test_search_proxy_returns_task_tool_result(self):
+        mcp = make_server()
+        mcp.add_transform(BM25SearchTransform())
+
+        async with Client(mcp) as client:
+            result = await client.call_tool(
+                "call_tool", {"name": "slow_thing", "arguments": {"n": 2}}
+            )
+
+        assert result.structured_content == {"n": 2}
+
+    async def test_code_mode_returns_task_tool_result(self):
+        mcp = make_server()
+        mcp.add_transform(CodeMode())
+
+        async with Client(mcp) as client:
+            result = await client.call_tool(
+                "execute",
+                {"code": "return await call_tool('slow_thing', {'n': 4})"},
+            )
+
+        assert "4" in result.content[0].text
+
+    async def test_tool_calling_task_tool_gets_its_result(self):
+        mcp = make_server()
+
+        @mcp.tool
+        async def outer(ctx: Context) -> dict:
+            result = await ctx.fastmcp.call_tool("slow_thing", {"n": 5})
+            return result.structured_content or {}
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("outer", {})
+
+        assert result.structured_content == {"n": 5}
+
+    async def test_required_task_tool_refuses_nested_call(self):
+        mcp = make_server()
+
+        @mcp.tool(task=TaskConfig(mode="required"))
+        async def must_task(n: int) -> dict:
+            return {"n": n}
+
+        mcp.add_transform(BM25SearchTransform())
+
+        async with Client(mcp) as client:
+            with pytest.raises(MCPError, match="called from another tool"):
+                await client.call_tool(
+                    "call_tool", {"name": "must_task", "arguments": {"n": 1}}
+                )
