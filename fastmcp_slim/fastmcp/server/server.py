@@ -808,7 +808,7 @@ class FastMCP(
     # are inherited from AggregateProvider which handles aggregation and namespacing
 
     async def get_tasks(self) -> Sequence[FastMCPComponent]:
-        """Get task-eligible components with all transforms applied.
+        """Get task-eligible components with server-level transforms applied.
 
         Overrides AggregateProvider.get_tasks() to apply server-level transforms
         after aggregation. AggregateProvider handles provider-level namespacing.
@@ -816,24 +816,10 @@ class FastMCP(
         # Get tasks from AggregateProvider (handles aggregation and namespacing)
         components = list(await super().get_tasks())
 
-        # Separate by component type for server-level transform application
-        tools = [c for c in components if isinstance(c, Tool)]
-        resources = [c for c in components if isinstance(c, Resource)]
-        templates = [c for c in components if isinstance(c, ResourceTemplate)]
-        prompts = [c for c in components if isinstance(c, Prompt)]
-
-        # Apply server-level transforms sequentially
-        for transform in self.transforms:
-            tools = await transform.list_tools(tools)
-            resources = await transform.list_resources(resources)
-            templates = await transform.list_resource_templates(templates)
-            prompts = await transform.list_prompts(prompts)
-
         return [
-            *tools,
-            *resources,
-            *templates,
-            *prompts,
+            c
+            for c in await self._apply_task_transforms(components)
+            if c.task_config.supports_tasks()
         ]
 
     def add_transform(self, transform: Transform) -> None:

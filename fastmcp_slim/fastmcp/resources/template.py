@@ -156,9 +156,7 @@ def _literal_pattern(text: str) -> str:
     return "".join(pattern)
 
 
-# Unbounded: keys are server-defined templates, and a read walks every template,
-# so a capped cache would evict on every read once a server outgrew it.
-@functools.cache
+@functools.lru_cache(maxsize=4096)
 def build_regex(template: str) -> re.Pattern[str] | None:
     """Build regex pattern for URI template, handling RFC 6570 syntax.
 
@@ -197,7 +195,11 @@ def build_regex(template: str) -> re.Pattern[str] | None:
 
 
 def match_uri_template(
-    uri: str, uri_template: str, *, list_params: Collection[str] = ()
+    uri: str,
+    uri_template: str,
+    *,
+    list_params: Collection[str] = (),
+    regex: re.Pattern[str] | None = None,
 ) -> dict[str, Any] | None:
     """Match URI against template and extract both path and query parameters.
 
@@ -208,12 +210,16 @@ def match_uri_template(
     `list_params` names non-exploded query params that hold lists. Per RFC 6570
     section 3.2.8 their value is comma-joined, with literal commas separating
     items and `%2C` inside an item, so they are split before decoding.
+
+    `regex` is the template's compiled path pattern when the caller already
+    holds it; otherwise it is built from `uri_template` through a bounded cache.
     """
     # Split URI into path and query parts
     uri_path, _, query_string = uri.partition("?")
 
     # Match path parameters
-    regex = build_regex(uri_template)
+    if regex is None:
+        regex = build_regex(uri_template)
     if regex is None:
         return None
     match = regex.match(uri_path)
@@ -353,6 +359,7 @@ class ResourceTemplate(FastMCPComponent):
 
     # Non-exploded `{?name}` query params whose function parameter is a list.
     _list_query_params: frozenset[str] = PrivateAttr(default_factory=frozenset)
+    _pattern: tuple[str, re.Pattern[str] | None] | None = PrivateAttr(default=None)
 
     uri_template: str = Field(
         description="URI template with parameters (e.g. weather://{city}/current)"
@@ -440,9 +447,29 @@ class ResourceTemplate(FastMCPComponent):
 
     def matches(self, uri: str) -> dict[str, Any] | None:
         """Check if URI matches template and extract parameters."""
+        regex = self._compiled_pattern()
+        if regex is None:
+            return None
         return match_uri_template(
-            uri, self.uri_template, list_params=self._list_query_params
+            uri,
+            self.uri_template,
+            list_params=self._list_query_params if "?" in uri else (),
+            regex=regex,
         )
+
+    def _compiled_pattern(self) -> re.Pattern[str] | None:
+        """This template's path pattern, built once per `uri_template`.
+
+        Reads match every template in turn, and pydantic's private-attribute
+        access costs ~0.3us, so the pattern lives in the private dict directly.
+        """
+        private = self.__pydantic_private__
+        assert private is not None
+        cached = private.get("_pattern")
+        if cached is None or cached[0] != self.uri_template:
+            cached = (self.uri_template, build_regex(self.uri_template))
+            private["_pattern"] = cached
+        return cached[1]
 
     async def read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult:
         """Read the resource content."""
