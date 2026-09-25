@@ -355,9 +355,7 @@ def _constrain_raw_string(
     ]
 
 
-def _exclusive_bound(
-    schema: Mapping[str, Any], modifier: str, bound: str
-) -> int | float | None:
+def _exclusive_bound(schema: Mapping[str, Any], modifier: str, bound: str) -> Any:
     """Value for a strict bound, or None when the schema states no strict bound.
 
     ``exclusiveMinimum``/``exclusiveMaximum`` take a number since draft-06. Draft-04
@@ -372,9 +370,7 @@ def _exclusive_bound(
     return value
 
 
-def _inclusive_bound(
-    schema: Mapping[str, Any], modifier: str, bound: str
-) -> int | float | None:
+def _inclusive_bound(schema: Mapping[str, Any], modifier: str, bound: str) -> Any:
     """Value for a non-strict bound, or None when a strict bound replaces the sibling.
 
     A numeric ``exclusiveMinimum``/``exclusiveMaximum`` (draft-06+) makes the sibling
