@@ -34,6 +34,10 @@ mcp = FastMCP("MyServer", lifespan=app_lifespan)
 
 The dict you yield becomes the **lifespan context**, accessible from tools.
 
+When running HTTP or SSE through `mcp.run()`, `SIGTERM` allows asynchronous lifespan cleanup to finish before terminating the process. Put cleanup in the lifespan rather than after `mcp.run()`: the process still exits when the signal is replayed.
+
+During final lifespan cleanup, the caller's original signal handlers are restored. With the default `SIGTERM` handler, sending another `SIGTERM` interrupts unfinished cleanup and terminates the process. Custom handlers retain their normal behavior.
+
 <Note>
 Always use `try/finally` for cleanup code to ensure it runs even if the server is cancelled.
 </Note>
