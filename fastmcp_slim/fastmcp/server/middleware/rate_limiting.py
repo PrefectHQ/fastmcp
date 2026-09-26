@@ -124,12 +124,13 @@ class RateLimitingMiddleware(Middleware):
         Args:
             max_requests_per_second: Sustained requests per second allowed
             burst_capacity: Maximum burst capacity. If None, defaults to 2x max_requests_per_second
+                (at least 1)
             get_client_id: Function to extract client ID from context. Can be sync or async.
                 If None, uses global limiting
             global_limit: If True, apply limit globally; if False, per-client
         """
         self.max_requests_per_second = max_requests_per_second
-        self.burst_capacity = burst_capacity or int(max_requests_per_second * 2)
+        self.burst_capacity = burst_capacity or max(1, int(max_requests_per_second * 2))
         self.get_client_id = get_client_id
         self.global_limit = global_limit
 
