@@ -1,6 +1,7 @@
 """Tests for container types in JSON schema conversion."""
 
 from dataclasses import Field, dataclass
+from datetime import date
 from typing import Any
 
 import pytest
@@ -228,3 +229,63 @@ class TestObjectTypes:
         object = json_schema_to_type(schema)
         object_schema = TypeAdapter(object).json_schema()
         assert object_schema == schema
+
+
+class TestPositionalArrayTypes:
+    """Positional (``prefixItems``) arrays hydrate per position when pinned."""
+
+    @pytest.fixture
+    def fixed_length_positional_array(self):
+        return json_schema_to_type(
+            {
+                "type": "array",
+                "prefixItems": [
+                    {"type": "string", "format": "date"},
+                    {"type": "integer"},
+                ],
+                "minItems": 2,
+                "maxItems": 2,
+            }
+        )
+
+    @pytest.fixture
+    def unpinned_positional_array(self):
+        return json_schema_to_type(
+            {
+                "type": "array",
+                "prefixItems": [
+                    {"type": "string", "format": "date"},
+                    {"type": "integer"},
+                ],
+            }
+        )
+
+    def test_fixed_length_positional_array_hydrates_each_position(
+        self, fixed_length_positional_array
+    ):
+        validator = TypeAdapter(fixed_length_positional_array)
+        result = validator.validate_python(["2024-01-01", 3])
+        assert result == (date(2024, 1, 1), 3)
+        assert isinstance(result[0], date)
+
+    def test_fixed_length_positional_array_rejects_wrong_length(
+        self, fixed_length_positional_array
+    ):
+        validator = TypeAdapter(fixed_length_positional_array)
+        with pytest.raises(ValidationError):
+            validator.validate_python(["2024-01-01"])
+
+    def test_fixed_length_positional_array_rejects_wrong_position_type(
+        self, fixed_length_positional_array
+    ):
+        validator = TypeAdapter(fixed_length_positional_array)
+        with pytest.raises(ValidationError):
+            validator.validate_python(["2024-01-01", "not-an-integer"])
+
+    def test_unpinned_positional_array_keeps_list_semantics(
+        self, unpinned_positional_array
+    ):
+        validator = TypeAdapter(unpinned_positional_array)
+        result = validator.validate_python(["2024-01-01", 3, "extra"])
+        assert isinstance(result, list)
+        assert result == ["2024-01-01", 3, "extra"]
