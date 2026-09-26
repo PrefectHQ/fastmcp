@@ -1,12 +1,13 @@
 """Tests for rate limiting middleware."""
 
 import asyncio
+import warnings
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from mcp import MCPError
 
-from fastmcp import FastMCP
+from fastmcp import FastMCP, FastMCPDeprecationWarning
 from fastmcp.client import Client
 from fastmcp.server.middleware.middleware import MiddlewareContext
 from fastmcp.server.middleware.rate_limiting import (
@@ -182,6 +183,24 @@ class TestRateLimitingMiddleware:
         """A rate of 0 has no default burst, so it still closes the endpoint."""
         middleware = RateLimitingMiddleware(max_requests_per_second=0)
         assert middleware.burst_capacity == 0
+
+    @pytest.mark.parametrize(
+        "burst_capacity, expected",
+        [(0, 20), (-1, -1), (0.5, 0.5)],
+    )
+    def test_burst_capacity_below_one_is_deprecated(self, burst_capacity, expected):
+        """Values below 1 warn but keep their 4.x behavior until FastMCP 5 (#5292)."""
+        with pytest.warns(FastMCPDeprecationWarning, match="burst_capacity=1"):
+            middleware = RateLimitingMiddleware(
+                max_requests_per_second=10, burst_capacity=burst_capacity
+            )
+        assert middleware.burst_capacity == expected
+
+    @pytest.mark.parametrize("burst_capacity", [None, 1, 20])
+    def test_valid_burst_capacity_does_not_warn(self, burst_capacity):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FastMCPDeprecationWarning)
+            RateLimitingMiddleware(burst_capacity=burst_capacity)
 
     def test_init_custom(self):
         """Test custom initialization."""

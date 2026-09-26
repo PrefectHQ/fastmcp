@@ -2,12 +2,15 @@
 
 import inspect
 import time
+import warnings
 from collections import defaultdict, deque
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
 import anyio
 from mcp import MCPError
+
+from fastmcp._warnings import FastMCPDeprecationWarning
 
 from .middleware import CallNext, Middleware, MiddlewareContext
 
@@ -123,12 +126,23 @@ class RateLimitingMiddleware(Middleware):
 
         Args:
             max_requests_per_second: Sustained requests per second allowed
-            burst_capacity: Maximum burst capacity. If None, defaults to 2x max_requests_per_second
-                (at least 1 for a positive rate)
+            burst_capacity: Maximum burst capacity, at least 1. If None or 0, defaults to
+                2x max_requests_per_second (at least 1 for a positive rate). Values below 1
+                are deprecated.
             get_client_id: Function to extract client ID from context. Can be sync or async.
                 If None, uses global limiting
             global_limit: If True, apply limit globally; if False, per-client
         """
+        if burst_capacity is not None and burst_capacity < 1:
+            warnings.warn(
+                f"RateLimitingMiddleware(burst_capacity={burst_capacity!r}) is deprecated "
+                "and will raise a ValueError in FastMCP 5: a bucket that holds less than "
+                "one token can't admit a request, so 0 falls back to the default and other "
+                "values reject every request. Pass burst_capacity=1 for no bursting beyond "
+                "the steady rate.",
+                FastMCPDeprecationWarning,
+                stacklevel=2,
+            )
         self.max_requests_per_second = max_requests_per_second
         default_capacity = int(max_requests_per_second * 2)
         if max_requests_per_second > 0:
