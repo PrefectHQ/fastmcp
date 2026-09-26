@@ -37,7 +37,7 @@ Assignment commits us to reviewing the PR, not to merging it. A gate closure is 
 
 2. **Decide whether the issue describes a bug.** Reproduce the MRE, then ask whether the behavior violates a contract FastMCP intends to hold. Behavior that only appears by mutating construction-time state or relying on internals is a property of the code, not a defect. The code shows what FastMCP does, not what it promises, so ask the maintainer "is X supported?" when the contract is unclear. Check `main`, duplicates, and prior maintainer decisions in related issues and closed PRs. If the issue is not a bug, recommend declining without reviewing the PR.
 
-3. **Check the category against CONTRIBUTING.md.** Simple bug fixes, docs, and auth providers are assignable. Enhancements need a maintainer-approved design in the issue first; approve the approach, then assign. Third-party integrations and sweeping changes without discussion are declined.
+3. **Check the category against [the contribution policy](../../../docs/development/contributing.mdx#choose-a-contribution).** Simple bug fixes, docs, and auth providers are assignable. Enhancements need a maintainer-approved design in the issue first; approve the approach, then assign. Third-party integrations and sweeping changes without discussion are declined.
 
 4. **Investigate the PR in context.** Read the full diff, then open each touched file. Trace the values and functions it changes to where they are produced and consumed. From the MRE, state in one line what was broken, where, and whether this change fixes it there. Compare with how adjacent code handles the same case, and check that the tests fail without the fix. Treat style issues as review comments; a wrong layer, a broken adjacent path, or an unfixed MRE changes the verdict.
 
@@ -63,7 +63,7 @@ gh issue edit N --repo PrefectHQ/fastmcp --add-assignee <login>
 
 Confirm the `require-issue-link` run passes and the PR reopens, then review it with [code-review](../code-review/SKILL.md) and follow it with [review-pr](../review-pr/SKILL.md). If the PR's head branch was deleted, assignment cannot reopen it; the workflow asks the author for a fresh PR.
 
-**Decline:** with authorization, comment on the issue with the reason and the relevant CONTRIBUTING.md section. Write the body to a file first:
+**Decline:** with authorization, comment on the issue with the reason and the relevant contribution-policy section. Write the body to a file first:
 
 ```bash
 gh issue comment N --repo PrefectHQ/fastmcp --body-file /tmp/triage-reply.md

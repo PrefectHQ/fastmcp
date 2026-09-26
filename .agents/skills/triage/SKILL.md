@@ -5,7 +5,7 @@ description: Find worthwhile FastMCP issues to work on in a backlog or release w
 
 # Find worthwhile work
 
-Read AGENTS.md and CONTRIBUTING.md. Honor the requested scope. For "since the last patch," identify the release timestamp, then look for open issues created or substantively updated afterward. Use a bounded inventory internally; report truncation if it affects coverage.
+Read AGENTS.md and the contribution policy in [the development guide](../../../docs/development/contributing.mdx). Honor the requested scope. For "since the last patch," identify the release timestamp, then look for open issues created or substantively updated afterward. Use a bounded inventory internally; report truncation if it affects coverage.
 
 Start from an inventory, then link each candidate to the PRs that mention it:
 

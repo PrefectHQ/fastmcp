@@ -387,7 +387,7 @@ def build() -> dict:
         "automations": automations + operator_entries(),
         "needs_judgment": JUDGMENT,
         "docs": {
-            "maintaining": f"https://github.com/{REPO}/blob/main/MAINTAINING.md",
+            "maintaining": f"https://github.com/{REPO}/blob/main/docs/development/contributing.mdx#maintenance-and-automation",
             "agents": f"https://github.com/{REPO}/blob/main/AGENTS.md",
         },
     }
@@ -407,7 +407,7 @@ def markdown(doc: dict) -> str:
         f"As of {doc['as_of']}. Generated twice a day by "
         f"[maintenance-status](https://github.com/{REPO}/actions/workflows/maintenance-status.yml); "
         "machine-readable as [status.json](status.json). "
-        f"How the project is run: [MAINTAINING.md]({doc['docs']['maintaining']}).",
+        f"How the project is run: [Development guide]({doc['docs']['maintaining']}).",
         "",
         "| automation | state | last ok | runs on | cadence |",
         "|---|---|---|---|---|",

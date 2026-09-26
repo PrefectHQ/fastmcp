@@ -5,7 +5,7 @@ description: Carry a selected FastMCP bug from reproduction through a scoped fix
 
 # Fix a selected issue
 
-Read AGENTS.md and CONTRIBUTING.md. Read the issue's full discussion, relevant history, and associated PRs in all states. Evaluate existing contributions before writing a competing fix; use [review-issue](../review-issue/SKILL.md) when assignment is the next decision. Preserve contributor authorship when carrying existing work forward.
+Read AGENTS.md and the contribution policy in [the development guide](../../../docs/development/contributing.mdx). Read the issue's full discussion, relevant history, and associated PRs in all states. Evaluate existing contributions before writing a competing fix; use [review-issue](../review-issue/SKILL.md) when assignment is the next decision. Preserve contributor authorship when carrying existing work forward.
 
 ## Establish the contract
 

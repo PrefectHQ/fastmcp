@@ -41,7 +41,7 @@ uv run prek run --all-files          # Ruff + Prettier + ty
 
 ## Skills
 
-Repository skills live in `.agents/skills/`, with symlinks in `.claude/skills/` for Claude Code. [MAINTAINING.md](MAINTAINING.md) says which work is automated and which needs a person. Load the skill that matches the job:
+Repository skills live in `.agents/skills/`, with symlinks in `.claude/skills/` for Claude Code. [The development guide](docs/development/contributing.mdx#maintenance-and-automation) says which work is automated and which needs a person. Load the skill that matches the job:
 
 | Job | Skill |
 | --- | --- |
@@ -68,7 +68,7 @@ When modifying MCP functionality, changes typically need to be applied across al
 
 ## Development Rules
 
-**Read `CONTRIBUTING.md` before opening issues or PRs.** It describes when PRs are appropriate, what we expect from enhancement proposals, and what we'll close without review.
+**Read `CONTRIBUTING.md` and its linked guide at `docs/development/contributing.mdx` before opening issues or PRs.** The guide describes when PRs are appropriate, what we expect from enhancement proposals, and what we'll close without review.
 
 **Review closed contributor PRs.** When reviewing an issue, inspect every associated non-maintainer PR, including closed PRs. External PRs may be closed as part of the issue-link and assignment workflow, so closure alone is not a negative signal. Read `CONTRIBUTING.md` and the PR timeline and comments to understand its status before evaluating it.
 

@@ -5,7 +5,7 @@ description: Review a complete FastMCP change for correctness, supported behavio
 
 # Review FastMCP code
 
-Read AGENTS.md, CONTRIBUTING.md, the entire diff against the merge base, and prior review threads and replies. Trace the changed code in context, including callers and shared abstractions. Collect independent consequential findings in one pass.
+Read AGENTS.md, the contribution policy in [the development guide](../../../docs/development/contributing.mdx), the entire diff against the merge base, and prior review threads and replies. Trace the changed code in context, including callers and shared abstractions. Collect independent consequential findings in one pass.
 
 Establish the intended contract from released docs, tests, history, and maintainer decisions. A reproducible behavior is not automatically a bug. Check whether the change fixes the cause where it occurs or adds compensation elsewhere.
 
