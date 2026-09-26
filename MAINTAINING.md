@@ -9,11 +9,11 @@ FastMCP is maintained by a small team with a lot of automation. Automations hand
 Everything below runs as a GitHub Actions workflow in this repository, so its runs are public.
 
 - **Contributions:** the issue-link gate holds an external PR until its author is assigned to an issue it links. Assigning the author reopens a PR the gate closed.
-- **Issues:** new issues and PRs are labeled and checked for duplicates. Issues marked as duplicates, and issues still missing a reproducible example after 7 days without a reply from the author, close on their own.
-- **Pull requests:** failed test runs get an explanation, and maintainers can ask the bot to act with `/marvin`.
+- **Issues:** new issues and PRs are labeled, and new issues are checked for duplicates. Issues marked as duplicates, and issues still missing a reproducible example after 7 days without a reply from the author, close on their own.
+- **Pull requests:** a PR whose tests or static analysis fail gets an explanation, and maintainers can ask the bot to act with `/marvin`.
 - **Health:** the test suite runs nightly against the newest dependency releases and opens an issue when it fails.
 - **Releases:** a tagged release publishes all four packages to PyPI, and publishing the docs deploys gofastmcp.com.
-- **Contributor queue:** twice a day, the gated PRs are sorted into worth assigning, needs a human, or decline. Only the counts are published.
+- **Contributor queue:** twice a day, the status page reports how many gated PRs are waiting and for how long.
 
 Maintainers also run a triage agent that may open **draft** PRs for bugs nobody has claimed. It never merges, comments, labels, or marks a PR ready, and it skips any issue that is assigned or already has a PR.
 

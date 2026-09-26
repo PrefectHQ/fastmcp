@@ -13,9 +13,10 @@ Digest of contributor PRs waiting on the issue-link gate.
 
 Code gathers the hard facts, Jev (through vibecheck) answers four yes/no
 questions about each PR, and explicit policy sorts every PR into "worth
-assigning", "needs a human", or "decline". Run it locally for the per-PR
-report; the maintenance-status workflow publishes only the counts, since the
-verdicts are judgments about contributors' work. It never comments, assigns,
+assigning", "needs a human", or "decline". Run it where its output stays
+private: the verdicts, and even their counts, are judgments about contributors'
+work, so the public maintenance status reports only how many PRs wait and for
+how long. It never comments, assigns,
 or labels.
 
 Requires `gh` authenticated with read access, and TYPESAFE_API_KEY.

@@ -1,12 +1,7 @@
 #!/usr/bin/env python
 # /// script
 # requires-python = ">=3.11"
-# dependencies = [
-#     "vibecheck-py==0.1.1",
-# ]
-#
-# [tool.uv]
-# exclude-newer-package = { vibecheck-py = false, typesafe-sdk = false }
+# dependencies = []
 # ///
 """
 Public maintenance status for FastMCP.
@@ -14,27 +9,23 @@ Public maintenance status for FastMCP.
 Writes `status.json` (schema `fastmcp-maintenance/1`), `STATUS.md`, and a
 shields.io `badge.json` into the output directory. Automation health comes
 from each workflow's own GitHub Actions runs, so every claim links to public
-evidence. The contributor queue is published as counts only; per-PR verdicts
-stay local (`uv run scripts/gate_digest.py`).
+evidence. Only facts are published: the contributor queue appears as how many
+PRs wait and for how long. Judgments about individual PRs, even as counts,
+stay private (`uv run scripts/gate_digest.py`).
 
 Entries published by other systems are merged in from OPERATOR_STATUS_URL
 when it is set, each keeping its own `as_of`.
 
-Requires `gh` authenticated with read access, and TYPESAFE_API_KEY.
+Requires `gh` authenticated with read access.
 """
 
-import asyncio
 import json
 import os
 import subprocess
 import sys
 import urllib.request
-from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent))
-import gate_digest  # noqa: E402
 
 REPO = "PrefectHQ/fastmcp"
 SCHEMA = "fastmcp-maintenance/1"
@@ -46,7 +37,7 @@ AUTOMATIONS = [
     {
         "id": "issue-link-gate",
         "name": "issue-link gate",
-        "what": "holds an external PR until its author is assigned to an issue it links; assignment reopens a gate-closed PR",
+        "what": "holds an external PR until its author is assigned to an issue it links; assignment reopens a gate-closed PR. A failed run is usually a PR it blocked, so this row shows only that the gate is running",
         "cadence": "on each external PR change and each issue assignment",
         "workflows": ["require-issue-link.yml"],
         # A failed run is the gate blocking a PR, not the gate breaking.
@@ -165,22 +156,38 @@ def one_workflow(file: str, since: date) -> dict:
         check=True,
     ).stdout
     runs = [json.loads(line) for line in out.splitlines() if line.strip()]
-    done = sorted(
-        (r for r in runs if r["conclusion"] not in (None, "skipped", "cancelled")),
-        key=lambda r: r["created_at"],
-    )
+    finished = ("success", "failure", "timed_out", "startup_failure", "action_required")
+    done = [r for r in runs if r["conclusion"] in finished]
     ok = [r for r in done if r["conclusion"] == "success"]
+    # The current state comes from the latest finished run even when it is
+    # older than the window, so a failure doesn't age into "idle".
+    latest = gh_json(
+        "api",
+        "-X",
+        "GET",
+        f"repos/{REPO}/actions/workflows/{file}/runs",
+        "-f",
+        "status=completed",
+        "-f",
+        "per_page=30",
+        "--jq",
+        "[.workflow_runs[] | {conclusion, created_at}]",
+    )
+    latest = [r for r in latest if r["conclusion"] in finished]
+    last_ok = next((r for r in latest if r["conclusion"] == "success"), None)
     if not enabled:
         state = "off"
+    elif not latest:
+        state = "idle"
+    elif latest[0]["conclusion"] != "success":
+        state = "degraded"
     elif not done:
         state = "idle"
-    elif done[-1]["conclusion"] != "success":
-        state = "degraded"
     else:
         state = "ok"
     return {
         "state": state,
-        "last_ok_day": ok[-1]["created_at"][:10] if ok else None,
+        "last_ok_day": last_ok["created_at"][:10] if last_ok else None,
         "succeeded": len(ok),
         "failed": len(done) - len(ok),
     }
@@ -222,13 +229,30 @@ def workflow_health(
 
 
 def contributor_queue() -> dict:
-    rows = gate_digest.gather()
-    asyncio.run(gate_digest.judge(rows))
-    verdicts = Counter(gate_digest.decide(r)[0] for r in rows)
+    """How many external PRs wait on the gate, and for how long. Facts only."""
+    prs = gh_json(
+        "pr",
+        "list",
+        "--repo",
+        REPO,
+        "--state",
+        "open",
+        "--label",
+        "missing-issue-link",
+        "--limit",
+        "500",
+        "--json",
+        "createdAt",
+    )
+    now = datetime.now(UTC)
+    ages = [
+        (now - datetime.fromisoformat(p["createdAt"].replace("Z", "+00:00"))).days
+        for p in prs
+    ]
     return {
         "id": "contributor-queue",
-        "name": "contributor queue digest",
-        "what": "sorts external PRs waiting on the issue-link gate into worth assigning, needs a human, or decline; only the counts are published",
+        "name": "contributor queue",
+        "what": "external PRs waiting for their author to be assigned to a linked issue",
         "cadence": "twice daily",
         "runs_on": "github-actions",
         "state": "ok",
@@ -236,10 +260,9 @@ def contributor_queue() -> dict:
         "evidence_url": f"https://github.com/{REPO}/pulls?q=is%3Apr+is%3Aopen+label%3Amissing-issue-link",
         "window": "now",
         "counts": {
-            "waiting": len(rows),
-            "worth_assigning": verdicts["worth assigning"],
-            "needs_a_human": verdicts["needs a human"],
-            "decline": verdicts["decline"],
+            "waiting": len(prs),
+            "oldest_days": max(ages, default=0),
+            "waiting_over_7_days": sum(age > 7 for age in ages),
         },
     }
 
@@ -331,7 +354,11 @@ def build() -> dict:
     since = date.today() - timedelta(days=WINDOW_DAYS)
     automations = []
     for a in AUTOMATIONS:
-        h = workflow_health(a["workflows"], since, a.get("outcomes"))
+        try:
+            h = workflow_health(a["workflows"], since, a.get("outcomes"))
+        except (subprocess.CalledProcessError, ValueError, KeyError) as e:
+            print(f"{a['id']}: could not read workflow runs: {e}", file=sys.stderr)
+            h = {"state": "degraded", "last_ok_day": None, "counts": {}}
         automations.append(
             {
                 "id": a["id"],
@@ -346,7 +373,10 @@ def build() -> dict:
                 "counts": h["counts"],
             }
         )
-    automations.append(contributor_queue())
+    try:
+        automations.append(contributor_queue())
+    except (subprocess.CalledProcessError, ValueError, KeyError) as e:
+        print(f"contributor-queue: {e}", file=sys.stderr)
     return {
         "schema": SCHEMA,
         "publisher": "fastmcp-actions",
@@ -392,15 +422,19 @@ def markdown(doc: dict) -> str:
         lines.append(
             f"| {name} | {state} | {a.get('last_ok_day') or '—'} | {a['runs_on']} | {a['cadence']} |"
         )
-    queue = next(a for a in doc["automations"] if a["id"] == "contributor-queue")[
-        "counts"
-    ]
+    queue = next(
+        (a["counts"] for a in doc["automations"] if a["id"] == "contributor-queue"),
+        None,
+    )
+    lines += [""]
+    if queue:
+        lines += [
+            f"**Contributor queue:** {queue['waiting']} PRs waiting on assignment; "
+            f"the oldest has waited {queue['oldest_days']} days, and "
+            f"{queue['waiting_over_7_days']} have waited more than a week.",
+            "",
+        ]
     lines += [
-        "",
-        f"**Contributor queue:** {queue['waiting']} PRs waiting on assignment: "
-        f"{queue['worth_assigning']} worth assigning, {queue['needs_a_human']} need a human, "
-        f"{queue['decline']} decline.",
-        "",
         "**Needs a maintainer's judgment:**",
         "",
         *[f"- {j}" for j in doc["needs_judgment"]],

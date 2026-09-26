@@ -8,15 +8,12 @@ on:
     paths:
       - ".github/workflows/maintenance-status.yml"
       - "scripts/maintenance_status.py"
-      - "scripts/gate_digest.py"
 
 permissions: {}
 
 jobs:
   # Runs the repository's script with a read-only token, including on PRs.
   build:
-    # Fork PRs can't read the Jev key.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -35,7 +32,8 @@ jobs:
         run: uv run scripts/maintenance_status.py "$RUNNER_TEMP/status" > /dev/null
         env:
           GH_TOKEN: ${{ github.token }}
-          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+          # Where other systems publish their own entries; unset means none.
+          OPERATOR_STATUS_URL: ${{ vars.OPERATOR_STATUS_URL }}
 
       - name: Show status
         run: cat "$RUNNER_TEMP/status/STATUS.md" >> "$GITHUB_STEP_SUMMARY"
