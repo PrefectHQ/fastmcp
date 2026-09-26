@@ -1,0 +1,184 @@
+{
+  "schema": "fastmcp-maintenance/1",
+  "publisher": "fastmcp-actions",
+  "as_of": "2026-09-26T08:35:35Z",
+  "automations": [
+    {
+      "id": "issue-link-gate",
+      "name": "issue-link gate",
+      "what": "holds an external PR until its author is assigned to an issue it links; assignment reopens a gate-closed PR. A failed run is usually a PR it blocked, so this row shows only that the gate is running",
+      "cadence": "on each external PR change and each issue assignment",
+      "runs_on": "github-actions",
+      "state": "ok",
+      "last_ok_day": "2026-09-26",
+      "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/require-issue-link.yml",
+      "window": "7d",
+      "counts": {
+        "passed": 80,
+        "blocked": 29
+      }
+    },
+    {
+      "id": "label-triage",
+      "name": "labeling",
+      "what": "labels each new issue and PR, and flags submissions that don't follow CONTRIBUTING.md",
+      "cadence": "on each new issue or PR",
+      "runs_on": "github-actions",
+      "state": "ok",
+      "last_ok_day": "2026-09-26",
+      "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-label-triage.yml",
+      "window": "7d",
+      "counts": {
+        "succeeded": 111,
+        "failed": 2
+      }
+    },
+    {
+      "id": "dedupe",
+      "name": "duplicate detection",
+      "what": "points out when a new issue duplicates an existing one",
+      "cadence": "on each new issue",
+      "runs_on": "github-actions",
+      "state": "ok",
+      "last_ok_day": "2026-09-25",
+      "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-dedupe-issues.yml",
+      "window": "7d",
+      "counts": {
+        "succeeded": 26,
+        "failed": 0
+      }
+    },
+    {
+      "id": "auto-close",
+      "name": "auto-close",
+      "what": "closes issues marked as duplicates, and issues still missing a reproducible example after 7 days of author inactivity",
+      "cadence": "daily",
+      "runs_on": "github-actions",
+      "state": "ok",
+      "last_ok_day": "2026-09-25",
+      "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/auto-close-duplicates.yml",
+      "window": "7d",
+      "counts": {
+        "succeeded": 14,
+        "failed": 0
+      }
+    },
+    {
+      "id": "bug-investigation",
+      "name": "bug investigation",
+      "what": "investigates new bug reports filed by maintainers and posts findings",
+      "cadence": "on each qualifying new issue",
+      "runs_on": "github-actions",
+      "state": "idle",
+      "last_ok_day": null,
+      "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-triage-issue.yml",
+      "window": "7d",
+      "counts": {
+        "succeeded": 0,
+        "failed": 0
+      }
+    },
+    {
+      "id": "ci-failure-analysis",
+      "name": "CI failure analysis",
+      "what": "explains failed test and static-analysis runs on pull requests",
+      "cadence": "after each failed PR run",
+      "runs_on": "github-actions",
+      "state": "ok",
+      "last_ok_day": "2026-09-26",
+      "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-test-failure.yml",
+      "window": "7d",
+      "counts": {
+        "succeeded": 401,
+        "failed": 7
+      }
+    },
+    {
+      "id": "maintainer-commands",
+      "name": "maintainer commands",
+      "what": "`/marvin` on an issue or PR asks the bot to act; `/tidy` hides resolved review threads",
+      "cadence": "on a maintainer's comment",
+      "runs_on": "github-actions",
+      "state": "ok",
+      "last_ok_day": "2026-09-26",
+      "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-comment-on-issue.yml",
+      "window": "7d",
+      "counts": {
+        "succeeded": 61,
+        "failed": 14
+      }
+    },
+    {
+      "id": "upgrade-checks",
+      "name": "upgrade checks",
+      "what": "runs the test suite against the newest dependency releases and opens an issue when it fails",
+      "cadence": "nightly",
+      "runs_on": "github-actions",
+      "state": "ok",
+      "last_ok_day": "2026-09-26",
+      "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/run-upgrade-checks.yml",
+      "window": "7d",
+      "counts": {
+        "succeeded": 6,
+        "failed": 2
+      }
+    },
+    {
+      "id": "release-publish",
+      "name": "release publishing",
+      "what": "publishes fastmcp-slim, then fastmcp-tasks, fastmcp-remote, and fastmcp to PyPI when a release is cut",
+      "cadence": "on each release",
+      "runs_on": "github-actions",
+      "state": "ok",
+      "last_ok_day": "2026-09-25",
+      "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/publish-fastmcp-slim.yml",
+      "window": "7d",
+      "counts": {
+        "succeeded": 20,
+        "failed": 0
+      }
+    },
+    {
+      "id": "docs-deploy",
+      "name": "docs deploy",
+      "what": "deploys gofastmcp.com when the published docs change",
+      "cadence": "on each docs publication",
+      "runs_on": "github-actions",
+      "state": "ok",
+      "last_ok_day": "2026-09-25",
+      "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/deploy-docs.yml",
+      "window": "7d",
+      "counts": {
+        "succeeded": 7,
+        "failed": 0
+      }
+    },
+    {
+      "id": "contributor-queue",
+      "name": "contributor queue",
+      "what": "external PRs waiting for their author to be assigned to a linked issue",
+      "cadence": "twice daily",
+      "runs_on": "github-actions",
+      "state": "ok",
+      "last_ok_day": "2026-09-26",
+      "evidence_url": "https://github.com/PrefectHQ/fastmcp/pulls?q=is%3Apr+is%3Aopen+label%3Amissing-issue-link",
+      "window": "now",
+      "counts": {
+        "waiting": 33,
+        "oldest_days": 26,
+        "waiting_over_7_days": 14
+      }
+    }
+  ],
+  "needs_judgment": [
+    "whether to assign an external contributor, which reopens their gated PR",
+    "merging, and marking agent-opened draft PRs ready",
+    "changes to documented behavior or compatibility, and any API addition",
+    "cutting a release, and its title and notes",
+    "classifying and disclosing security reports"
+  ],
+  "docs": {
+    "maintaining": "https://github.com/PrefectHQ/fastmcp/blob/main/MAINTAINING.md",
+    "agents": "https://github.com/PrefectHQ/fastmcp/blob/main/AGENTS.md"
+  }
+}
