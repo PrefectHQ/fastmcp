@@ -12,7 +12,7 @@ DID allowlist on every request.
 Example:
     ```python
     from fastmcp import FastMCP
-    from fastmcp.server.auth.providers.atproto import ATProtoProvider
+    from fastmcp.experimental.auth.atproto import ATProtoProvider
 
     auth = ATProtoProvider(
         base_url="https://my-server.example.com",
@@ -41,6 +41,24 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Re
 from starlette.routing import Route
 from typing_extensions import override
 
+from fastmcp.experimental.auth.atproto.identity import (
+    ATProtoError,
+    AuthorizationServer,
+    discover_authorization_server,
+    is_did,
+    is_handle,
+    normalize_identifier,
+    resolve_did,
+    resolve_handle,
+)
+from fastmcp.experimental.auth.atproto.login import create_login_html
+from fastmcp.experimental.auth.atproto.oauth import (
+    ATPROTO_SCOPE,
+    DPoPSession,
+    exchange_code,
+    push_authorization_request,
+    revoke_grant,
+)
 from fastmcp.server.auth.auth import AccessToken, TokenVerifier
 from fastmcp.server.auth.jwt_issuer import JWTIssuer, derive_jwt_key
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
@@ -51,24 +69,6 @@ from fastmcp.server.auth.oauth_proxy.models import (
 )
 from fastmcp.server.auth.oauth_proxy.ui import create_error_html
 from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client, OAuthError
-from fastmcp.server.auth.providers.atproto.identity import (
-    ATProtoError,
-    AuthorizationServer,
-    discover_authorization_server,
-    is_did,
-    is_handle,
-    normalize_identifier,
-    resolve_did,
-    resolve_handle,
-)
-from fastmcp.server.auth.providers.atproto.login import create_login_html
-from fastmcp.server.auth.providers.atproto.oauth import (
-    ATPROTO_SCOPE,
-    DPoPSession,
-    exchange_code,
-    push_authorization_request,
-    revoke_grant,
-)
 from fastmcp.server.auth.redirect_validation import build_client_redirect
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.ui import create_secure_html_response

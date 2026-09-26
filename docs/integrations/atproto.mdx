@@ -9,6 +9,10 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 
 <VersionBadge version="4.1.0" />
 
+<Warning>
+`ATProtoProvider` is experimental and lives in `fastmcp.experimental`. Its interface may change or be removed in any release, so pin your FastMCP version when you use it.
+</Warning>
+
 `ATProtoProvider` lets people sign in to your FastMCP server with an [AT Protocol](https://atproto.com) account, such as a Bluesky handle or any self-hosted PDS. You don't register an app anywhere: AT Protocol clients identify themselves by a URL they serve, and FastMCP serves it for you.
 
 MCP clients see a standard OAuth server with dynamic client registration, inherited from the [OAuth Proxy](/servers/auth/oauth-proxy). After the consent screen, users enter their handle and approve the sign-in on their own PDS. FastMCP keeps only the verified DID, revokes the PDS grant right away, and issues its own tokens.
@@ -17,7 +21,7 @@ MCP clients see a standard OAuth server with dynamic client registration, inheri
 
 ```python server.py
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.atproto import ATProtoProvider
+from fastmcp.experimental.auth.atproto import ATProtoProvider
 
 auth = ATProtoProvider(
     base_url="https://mcp.example.com",

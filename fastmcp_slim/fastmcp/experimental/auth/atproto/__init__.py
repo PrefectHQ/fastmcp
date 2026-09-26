@@ -1,4 +1,4 @@
-from fastmcp.server.auth.providers.atproto.provider import (
+from fastmcp.experimental.auth.atproto.provider import (
     ATProtoIdentityVerifier,
     ATProtoProvider,
 )

@@ -18,7 +18,7 @@ from urllib.parse import urlencode, urlsplit, urlunsplit
 from joserfc import jwt
 from joserfc.jwk import ECKey
 
-from fastmcp.server.auth.providers.atproto.identity import (
+from fastmcp.experimental.auth.atproto.identity import (
     MAX_DOCUMENT_BYTES,
     ATProtoError,
     AuthorizationServer,
