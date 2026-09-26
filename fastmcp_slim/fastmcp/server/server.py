@@ -93,7 +93,11 @@ from fastmcp.server.transforms import (
     ToolTransform,
     Transform,
 )
-from fastmcp.server.transforms.visibility import apply_session_transforms, is_enabled
+from fastmcp.server.transforms.visibility import (
+    Visibility,
+    apply_session_transforms,
+    is_enabled,
+)
 from fastmcp.settings import DuplicateBehavior as DuplicateBehaviorSetting
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.tools.function_tool import FunctionTool
@@ -1485,6 +1489,19 @@ class FastMCP(
                     if hashed is not None:
                         digest, local_name = hashed
                         tool = await self.get_tool_by_hash(digest, local_name)
+                        if tool is not None:
+                            # Hash lookup skips the transform chain, so replay
+                            # Visibility marks. Catalog transforms stay skipped:
+                            # a UI calling by identity is supposed to survive
+                            # those. enable/disable must still apply.
+                            for transform in self.transforms:
+                                if isinstance(transform, Visibility):
+                                    tool = transform._mark_component(tool)
+                            marked = await apply_session_transforms([tool])
+                            if not marked or not is_enabled(marked[0]):
+                                tool = None
+                            else:
+                                tool = marked[0]
                         if tool is not None:
                             # Auth still applies on the bypass path.
                             skip_auth, token = _get_auth_context()
