@@ -25,13 +25,13 @@ from key_value.aio.stores.memory import MemoryStore
 from starlette.testclient import TestClient
 
 from fastmcp import FastMCP
-from fastmcp.server.auth.providers.atproto import (
+from fastmcp.experimental.auth.atproto import (
     ATProtoIdentityVerifier,
     ATProtoProvider,
 )
-from fastmcp.server.auth.providers.atproto import identity as identity_module
-from fastmcp.server.auth.providers.atproto import oauth as oauth_module
-from fastmcp.server.auth.providers.atproto.identity import (
+from fastmcp.experimental.auth.atproto import identity as identity_module
+from fastmcp.experimental.auth.atproto import oauth as oauth_module
+from fastmcp.experimental.auth.atproto.identity import (
     ATProtoError,
     discover_authorization_server,
     normalize_identifier,
