@@ -20,7 +20,7 @@ from prefab_ui.app import PROTOCOL_VERSION
 
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
-from fastmcp.server.auth.providers.atproto import ATProtoProvider
+from fastmcp.experimental.auth.atproto import ATProtoProvider
 
 KNOWN_TITLES = {
     "jkAw87ZIwQA": ("The Mother of all Science Scandals", "BobbyBroccoli"),

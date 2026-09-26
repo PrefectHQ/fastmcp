@@ -39,7 +39,7 @@ from pydantic import BaseModel, Field
 
 from fastmcp import Client, FastMCP, FastMCPApp
 from fastmcp.exceptions import ToolError
-from fastmcp.server.auth.providers.atproto import ATProtoProvider
+from fastmcp.experimental.auth.atproto import ATProtoProvider
 
 Source = Literal["youtube"]
 ALL_SOURCES: frozenset[Source] = frozenset({"youtube"})
