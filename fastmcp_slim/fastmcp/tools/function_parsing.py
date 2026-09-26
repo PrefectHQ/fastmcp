@@ -299,9 +299,26 @@ class ParsedFunction:
                         "Functions with **kwargs are not supported as tools"
                     )
 
-        # collect name and description before we potentially modify the function
-        fn_name = getattr(fn, "__name__", None) or fn.__class__.__name__
-        outer_docstring = parse_docstring(fn)
+        # Collect name and description before we potentially modify the function.
+        # Keep `fn` itself as the partial so partially-bound args stay applied.
+        is_partial = isinstance(fn, functools.partial)
+        name_and_doc_fn = fn
+        partial_name = None
+        partial_docstring = ParsedDocstring()
+        has_partial_docstring = False
+        while isinstance(name_and_doc_fn, functools.partial):
+            partial_name = partial_name or getattr(name_and_doc_fn, "__name__", None)
+            if not has_partial_docstring and "__doc__" in name_and_doc_fn.__dict__:
+                partial_docstring = parse_docstring(name_and_doc_fn)
+                has_partial_docstring = True
+            name_and_doc_fn = name_and_doc_fn.func
+        fn_name = partial_name or getattr(name_and_doc_fn, "__name__", None)
+        fn_name = fn_name or name_and_doc_fn.__class__.__name__
+        outer_docstring = (
+            partial_docstring
+            if has_partial_docstring
+            else parse_docstring(name_and_doc_fn)
+        )
 
         # if the fn is a callable class, we need to get the __call__ method from here out
         if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
@@ -317,10 +334,23 @@ class ParsedFunction:
         # constructor docs into __call__'s schema on overlapping names.
         # The description, however, comes from the class docstring (which
         # describes what the tool IS) when present.
-        inner_docstring = parse_docstring(fn)
+        # For partials wrapping callable instances, parameter docs belong to
+        # __call__, while the class docstring describes the tool itself.
+        inner_doc_fn = name_and_doc_fn if is_partial else fn
+        if is_partial and not inspect.isroutine(inner_doc_fn):
+            inner_doc_fn = inner_doc_fn.__call__
+        inner_docstring = parse_docstring(inner_doc_fn)
         parsed_docstring = ParsedDocstring(
-            description=outer_docstring.description or inner_docstring.description,
-            parameters=inner_docstring.parameters,
+            description=(
+                outer_docstring.description
+                if has_partial_docstring
+                else outer_docstring.description or inner_docstring.description
+            ),
+            parameters=(
+                partial_docstring.parameters
+                if has_partial_docstring
+                else inner_docstring.parameters
+            ),
         )
 
         # Transform Context type annotations to Depends() for unified DI
