@@ -201,3 +201,19 @@ async def test_home_view_allows_youtube_thumbnails(hue: list[Any]) -> None:
             .get("resourceDomains", [])
         }
     assert "https://i.ytimg.com" in domains
+
+
+async def test_home_view_keeps_room_state_on_the_client(hue: list[Any]) -> None:
+    async with Client(mcp) as client:
+        result = await client.call_tool("show_home", {})
+    assert result.structured_content is not None
+    state = result.structured_content["state"]
+    assert state["r0_on"] is True and state["r1_on"] is False
+    assert (state["r0_lvl"], state["r0_pick"], state["r0_scene"]) == (30, 40, CANDLE)
+    assert (state["r1_lvl"], state["r1_pick"], state["r1_scene"]) == (0, 0, "")
+
+    rendered = json.dumps(result.structured_content)
+    assert "{{ r0_on && r0_pick == 40 }}" in rendered
+    assert f"{{{{ r0_on && r0_scene == '{CANDLE}' }}}}" in rendered
+    assert "{{ (r0_on ? 1 : 0) + (r1_on ? 1 : 0) }} of 2 rooms lit" in rendered
+    assert '"--accent": "{{ r0_color }}"' in rendered

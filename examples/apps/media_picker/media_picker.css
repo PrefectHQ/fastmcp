@@ -48,11 +48,18 @@
   border-radius: 10px;
   border: 1px solid var(--line);
   background: var(--surface);
-  transition: background 200ms var(--ease), border-color 200ms var(--ease);
+  position: relative;
+  isolation: isolate;
 }
-.home .room.lit {
+.home .room-glow {
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  z-index: -1;
+  pointer-events: none;
   background: color-mix(in srgb, var(--accent) 11%, var(--surface));
-  border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 26%, transparent);
+  transition: background 200ms var(--ease);
 }
 .home .room-head { align-items: center; gap: 10px; }
 .home .lamp {
@@ -62,7 +69,7 @@
   flex: none;
   background: var(--line);
 }
-.home .room.lit .lamp {
+.home .lamp.lit {
   background: var(--accent);
   box-shadow: 0 0 10px 1px color-mix(in srgb, var(--accent) 65%, transparent);
 }
@@ -83,8 +90,7 @@
   color: var(--ink-3);
   font-variant-numeric: tabular-nums;
 }
-.home .level.current { background: var(--surface); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
-.home .room.lit .level.current { background: color-mix(in srgb, var(--accent) 22%, var(--surface)); }
+.home .level.current { color: var(--ink); background: color-mix(in srgb, var(--accent) 24%, var(--surface)); box-shadow: 0 0 0 1px var(--line); }
 
 .home .scenes {
   gap: 6px;
@@ -200,5 +206,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .home .room, .home .play { transition: none; }
+  .home .room-glow, .home .play { transition: none; }
 }

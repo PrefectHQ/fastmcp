@@ -29,6 +29,8 @@ from prefab_ui.components import (
     Button,
     Column,
     Div,
+    Else,
+    If,
     Image,
     Muted,
     Row,
@@ -37,7 +39,7 @@ from prefab_ui.components import (
     Tabs,
     Text,
 )
-from prefab_ui.rx import ERROR, EVENT, RESULT
+from prefab_ui.rx import ERROR, EVENT, RESULT, Rx
 from pydantic import BaseModel, Field
 
 from fastmcp import Client, FastMCP, FastMCPApp
@@ -473,84 +475,126 @@ def _nearest_level(brightness: int) -> int:
     return min(LEVELS, key=lambda level: abs(level - brightness))
 
 
-def _room_row(room: RoomView) -> None:
+def _room_state(index: int, room: RoomView) -> dict[str, Any]:
     lit = room["lights_on"] > 0
-    accent = room["color"] or "#f2c27b"
-    with Div(
-        css_class="room lit" if lit else "room",
-        style={"--accent": accent} if lit else None,
-    ):
+    active = next((scene for scene in room["scenes"] if scene["active"]), None)
+    return {
+        f"r{index}_on": lit,
+        f"r{index}_lvl": room["brightness"] if lit else 0,
+        f"r{index}_pick": _nearest_level(room["brightness"]) if lit else 0,
+        f"r{index}_scene": active["id"] if active else "",
+        f"r{index}_color": room["color"] or (active and active["color"]) or "#f2c27b",
+    }
+
+
+def _toast() -> list[Any]:
+    return [ShowToast(RESULT.message, variant="success")]
+
+
+def _room_row(index: int, room: RoomView) -> None:
+    on, lvl, pick, scene_key, color = (
+        f"r{index}_on",
+        f"r{index}_lvl",
+        f"r{index}_pick",
+        f"r{index}_scene",
+        f"r{index}_color",
+    )
+    room_args = {"room_id": room["id"], "room_name": room["name"]}
+    with Div(css_class="room", style={"--accent": f"{{{{ {color} }}}}"}):
+        with If(Rx(on)):
+            Div(css_class="room-glow")
         with Row(css_class="room-head"):
-            Div(css_class="lamp")
+            with If(Rx(on)):
+                Div(css_class="lamp lit")
+            with Else():
+                Div(css_class="lamp")
             Text(room["name"], css_class="room-name")
             Muted(
-                f"{room['brightness']}%"
-                if lit and room["lights_on"] == room["lights_total"]
-                else f"{room['lights_on']}/{room['lights_total']} · {room['brightness']}%"
-                if lit
-                else "off",
+                f"{{{{ {on} ? ({lvl} > 0 ? {lvl} + '%' : 'on') : 'off' }}}}",
                 css_class="level-readout",
             )
             Switch(
-                value=lit,
+                name=on,
+                value=room["lights_on"] > 0,
                 css_class="room-switch",
-                on_change=CallTool(
-                    set_room_power,
-                    arguments={
-                        "room_id": room["id"],
-                        "room_name": room["name"],
-                        "on": EVENT,
-                    },
-                    on_success=ShowToast(RESULT.message, variant="success"),
-                    on_error=ShowToast(ERROR, variant="error"),
-                ),
+                on_change=[
+                    SetState(on, EVENT),
+                    CallTool(
+                        set_room_power,
+                        arguments={**room_args, "on": EVENT},
+                        on_success=_toast(),
+                        on_error=ShowToast(ERROR, variant="error"),
+                    ),
+                ],
             )
         with Row(css_class="room-controls"):
-            current = _nearest_level(room["brightness"]) if lit else None
             with Row(css_class="levels"):
                 for level in LEVELS:
-                    Button(
-                        str(level),
-                        variant="ghost",
-                        size="xs",
-                        css_class="level current" if level == current else "level",
-                        on_click=CallTool(
+                    actions = [
+                        SetState(pick, level),
+                        SetState(lvl, level),
+                        SetState(on, True),
+                        CallTool(
                             set_room_brightness,
-                            arguments={
-                                "room_id": room["id"],
-                                "room_name": room["name"],
-                                "brightness": level,
-                            },
-                            on_success=ShowToast(RESULT.message, variant="success"),
+                            arguments={**room_args, "brightness": level},
+                            on_success=_toast(),
                             on_error=ShowToast(ERROR, variant="error"),
                         ),
-                    )
+                    ]
+                    with If(Rx(on) & (Rx(pick) == level)):
+                        Button(
+                            str(level),
+                            variant="ghost",
+                            size="xs",
+                            css_class="level current",
+                            on_click=actions,
+                        )
+                    with Else():
+                        Button(
+                            str(level),
+                            variant="ghost",
+                            size="xs",
+                            css_class="level",
+                            on_click=actions,
+                        )
             if room["scenes"]:
                 with Row(css_class="scenes"):
                     for scene in room["scenes"]:
-                        with Div(
-                            css_class="scene active" if scene["active"] else "scene",
-                            style={"--swatch": scene["color"]}
-                            if scene["color"]
-                            else None,
-                        ):
-                            Button(
-                                scene["name"],
-                                variant="ghost",
-                                size="xs",
-                                on_click=CallTool(
-                                    activate_room_scene,
-                                    arguments={
-                                        "room_id": room["id"],
-                                        "scene_id": scene["id"],
-                                        "scene_name": scene["name"],
-                                    },
-                                    on_success=ShowToast(
-                                        RESULT.message, variant="success"
-                                    ),
-                                    on_error=ShowToast(ERROR, variant="error"),
-                                ),
-                            )
+                        actions = [
+                            SetState(scene_key, scene["id"]),
+                            SetState(on, True),
+                            SetState(pick, 0),
+                            SetState(lvl, 0),
+                            CallTool(
+                                activate_room_scene,
+                                arguments={
+                                    "room_id": room["id"],
+                                    "scene_id": scene["id"],
+                                    "scene_name": scene["name"],
+                                },
+                                on_success=_toast(),
+                                on_error=ShowToast(ERROR, variant="error"),
+                            ),
+                        ]
+                        if scene["color"]:
+                            actions.insert(0, SetState(color, scene["color"]))
+                        style = {"--swatch": scene["color"]} if scene["color"] else None
+                        with If(Rx(on) & (Rx(scene_key) == scene["id"])):
+                            with Div(css_class="scene active", style=style):
+                                Button(
+                                    scene["name"],
+                                    variant="ghost",
+                                    size="xs",
+                                    on_click=actions,
+                                )
+                        with Else():
+                            with Div(css_class="scene", style=style):
+                                Button(
+                                    scene["name"],
+                                    variant="ghost",
+                                    size="xs",
+                                    on_click=actions,
+                                )
 
 
 @app.ui(annotations=READ_ONLY, csp=THUMBNAIL_CSP)
@@ -563,19 +607,21 @@ async def show_home(links: list[MediaLink] | None = None) -> PrefabApp:
     """
     rooms = await read_home() if home_lights.lights_target() else []
     playable, notices, _, _ = await _playable_links(links or [])
-    lit = sum(room["lights_on"] > 0 for room in rooms)
+    lit_count = " + ".join(f"(r{index}_on ? 1 : 0)" for index in range(len(rooms)))
 
     with Column(css_class="home") as view:
         _header(
             "home",
-            f"{lit} of {len(rooms)} rooms lit" if rooms else "lights and tv",
+            f"{{{{ {lit_count} }}}} of {len(rooms)} rooms lit"
+            if rooms
+            else "lights and tv",
         )
         with Tabs(value="watch" if playable else "lights", variant="line"):
             with Tab(title="lights", value="lights"):
                 if rooms:
                     with Column(css_class="rooms"):
-                        for room in rooms:
-                            _room_row(room)
+                        for index, room in enumerate(rooms):
+                            _room_row(index, room)
                 else:
                     with Div(css_class="empty"):
                         Text("lights aren't connected")
@@ -590,6 +636,11 @@ async def show_home(links: list[MediaLink] | None = None) -> PrefabApp:
             "last_action": "",
             "room_ids": [room["id"] for room in rooms],
             "source_ids": [item["source_id"] for item in playable],
+            **{
+                key: value
+                for index, room in enumerate(rooms)
+                for key, value in _room_state(index, room).items()
+            },
         },
     )
 
