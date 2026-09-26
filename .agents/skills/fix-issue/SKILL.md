@@ -15,7 +15,7 @@ Trace the public request to the failing operation. Confirm supported behavior is
 
 Use [python-tests](../python-tests/SKILL.md). Reproduce the failure on unchanged code, confirm it fails for the right reason, then make the smallest causal fix. Test explicit overrides and neighboring supported paths that share the changed branch. Avoid expanding the fix to unrelated standards gaps.
 
-Self-review the full change with [code-review](../code-review/SKILL.md), including docs and dependency bounds. Separate necessary compatibility changes from accidental regressions and say whether a breaking change remains. Do not infer compatibility from passing tests.
+Self-review the full change with [review-pr](../review-pr/SKILL.md), including docs and dependency bounds. Separate necessary compatibility changes from accidental regressions and say whether a breaking change remains. Do not infer compatibility from passing tests.
 
 Run the repository's required dependency sync, full tests, and static checks before committing. Honor branch and attribution conventions. If a required check fails, investigate and report evidence rather than hiding the failure.
 

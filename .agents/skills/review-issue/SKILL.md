@@ -1,6 +1,6 @@
 ---
 name: review-issue
-description: Review an incoming external issue (and any gated-closed PR behind it) and decide whether to assign the contributor or decline. Use when the maintainer says "look at this issue", "review issue #N", "should we take this", or asks whether to assign someone. Assigning the author auto-reopens their PR for normal review. This is the entry point for incoming-issue triage — distinct from review-pr, which responds to bot reviews on your own open PR.
+description: Review an incoming external issue (and any gated-closed PR behind it) and decide whether to assign the contributor or decline. Use when the maintainer says "look at this issue", "review issue #N", "should we take this", or asks whether to assign someone. Assigning the author auto-reopens their PR for normal review. This is the entry point for incoming-issue triage — distinct from review-pr, which assesses the full change and follows CI and review feedback.
 ---
 
 # Review an incoming issue
@@ -61,7 +61,7 @@ Assignment commits us to reviewing the PR, not to merging it. A gate closure is 
 gh issue edit N --repo PrefectHQ/fastmcp --add-assignee <login>
 ```
 
-Confirm the `require-issue-link` run passes and the PR reopens, then review it with [code-review](../code-review/SKILL.md) and follow it with [review-pr](../review-pr/SKILL.md). If the PR's head branch was deleted, assignment cannot reopen it; the workflow asks the author for a fresh PR.
+Confirm the `require-issue-link` run passes and the PR reopens, then review it and follow CI and feedback with [review-pr](../review-pr/SKILL.md). If the PR's head branch was deleted, assignment cannot reopen it; the workflow asks the author for a fresh PR.
 
 **Decline:** with authorization, comment on the issue with the reason and the relevant CONTRIBUTING.md section. Write the body to a file first:
 

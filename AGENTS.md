@@ -48,8 +48,7 @@ Repository skills live in `.agents/skills/`, with symlinks in `.claude/skills/` 
 | Find worthwhile issues in a backlog or release window | `triage` |
 | Decide whether to assign an external contributor | `review-issue` |
 | Fix a chosen bug through to a PR | `fix-issue` |
-| Review a change, yours or a contributor's | `code-review` |
-| Follow a PR through CI and bot review | `review-pr` |
+| Review a PR or local change, including compatibility, tests, CI, and bot feedback | `review-pr` |
 | Write regression tests | `python-tests` |
 | Write or revise a docs page | `docs` |
 | Evaluate a vulnerability report | `review-security-report` |
@@ -171,6 +170,12 @@ Load the `release` skill to cut one; it holds the procedure. The policy it imple
 - **Docstrings:** FastMCP docstrings are automatically compiled into MDX documents. Use markdown (single backticks, fenced code blocks), not RST (no double backticks). Bare `{}` in examples will be interpreted as JSX — wrap in backticks instead.
 
 ## Code Review Rules
+
+These rules apply to automated reviewers and agents working locally. The [review-pr skill](.agents/skills/review-pr/SKILL.md) supplies the review procedure and maintainer follow-through; a review-only bot should report findings in its required format without taking over PR management.
+
+### Intended behavior and compatibility
+
+Establish the promised behavior from the protocol, released docs, history, and maintainer decisions before treating a reproducer as a bug. Current code and passing tests alone do not establish the intended contract. Check which existing inputs change behavior, including omitted defaults and explicit overrides, and whether the change restores a contract or introduces a new one. Preserve supported behavior in patch releases; surface unresolved intent as a maintainer decision rather than treating green tests as approval.
 
 ### Framework regressions and root causes
 
