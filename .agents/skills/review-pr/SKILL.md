@@ -11,7 +11,7 @@ For review-only tasks, assess and report; repair, push, and monitoring steps app
 
 ## Procedure
 
-1. **Establish the scope.** Read AGENTS.md, CONTRIBUTING.md, the issue's full discussion, the entire diff against the merge base, and prior review threads and replies. Record the base and head revisions. Find related issues and PRs in all states, and inspect open PRs touching the same files for overlapping lines or behavior even when they do not link the issue. Distinguish released behavior, fixes already on main, and competing proposals.
+1. **Establish the scope.** Read AGENTS.md, the contribution policy in [the development guide](../../../docs/development/contributing.mdx), the issue's full discussion, the entire diff against the merge base, and prior review threads and replies. Record the base and head revisions. Find related issues and PRs in all states, and inspect open PRs touching the same files for overlapping lines or behavior even when they do not link the issue. Distinguish released behavior, fixes already on main, and competing proposals.
 
 2. **Establish the contract before judging the fix.** Use the protocol, released docs, history, and maintainer decisions to explain what FastMCP promises for the reported inputs. Existing code and tests are evidence of behavior, not sufficient proof that it is intended. A reproducer can demonstrate surprising behavior without demonstrating a bug; a regression test can assert the wrong result. State whether this restores an established contract or proposes a behavior change. If the contract is unresolved, surface the precise maintainer decision and do not recommend readiness on the strength of passing tests.
 
