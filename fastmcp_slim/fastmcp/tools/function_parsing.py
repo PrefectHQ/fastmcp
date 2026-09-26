@@ -299,9 +299,18 @@ class ParsedFunction:
                         "Functions with **kwargs are not supported as tools"
                     )
 
-        # collect name and description before we potentially modify the function
-        fn_name = getattr(fn, "__name__", None) or fn.__class__.__name__
-        outer_docstring = parse_docstring(fn)
+        # collect name and description before we potentially modify the function.
+        # A functools.partial carries no __name__ and no docstring of its own —
+        # the name falls back to the partial class name, and inspect.getdoc
+        # returns functools.partial's class docstring — so unwrap to the wrapped
+        # function for both, mirroring the unwrap in _resolve_param_hints. The
+        # partial itself is kept for signature derivation below, since its
+        # signature already reflects the partial application.
+        target = fn
+        while isinstance(target, functools.partial):
+            target = target.func
+        fn_name = getattr(target, "__name__", None) or target.__class__.__name__
+        outer_docstring = parse_docstring(target)
 
         # if the fn is a callable class, we need to get the __call__ method from here out
         if not inspect.isroutine(fn) and not isinstance(fn, functools.partial):
@@ -316,8 +325,14 @@ class ParsedFunction:
         # describes __init__, so falling back to it would risk injecting
         # constructor docs into __call__'s schema on overlapping names.
         # The description, however, comes from the class docstring (which
-        # describes what the tool IS) when present.
-        inner_docstring = parse_docstring(fn)
+        # describes what the tool IS) when present. A partial likewise keeps
+        # its own partially-bound signature but declares its parameters in
+        # the wrapped function's docstring.
+        if isinstance(fn, functools.partial):
+            doc_fn = target if inspect.isroutine(target) else target.__call__
+        else:
+            doc_fn = fn
+        inner_docstring = parse_docstring(doc_fn)
         parsed_docstring = ParsedDocstring(
             description=outer_docstring.description or inner_docstring.description,
             parameters=inner_docstring.parameters,

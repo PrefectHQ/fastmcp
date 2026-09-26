@@ -1,3 +1,4 @@
+import functools
 from datetime import timedelta
 
 import pytest
@@ -10,6 +11,7 @@ from mcp_types import (
 )
 from pydantic import BaseModel
 
+from fastmcp import Client, FastMCP
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.types import Audio, File, Image
 
@@ -299,6 +301,55 @@ class TestToolFromFunction:
             ValueError, match="You must provide a name for lambda functions"
         ):
             Tool.from_function(lambda x: x)
+
+    async def test_partial_function(self):
+        """A partial takes its name and docstring from the wrapped function,
+        not from functools.partial's class."""
+
+        def multiply(x: int, y: int) -> int:
+            """Multiply two numbers.
+
+            Args:
+                x: The first number.
+                y: The second number.
+            """
+            return x * y
+
+        tool = Tool.from_function(functools.partial(multiply, y=2))
+
+        assert tool.name == "multiply"
+        assert tool.description == "Multiply two numbers."
+        assert tool.parameters["properties"] == {
+            "x": {"type": "integer", "description": "The first number."},
+            "y": {"default": 2, "type": "integer", "description": "The second number."},
+        }
+
+        result = await tool.run({"x": 3})
+        assert result.structured_content == {"result": 6}
+
+    async def test_partial_functions_do_not_collide(self):
+        """Partials over different functions must not share the name 'partial',
+        which makes the second registration replace the first."""
+
+        def multiply(x: int, y: int) -> int:
+            """Multiply two numbers."""
+            return x * y
+
+        def greet(name: str, greeting: str) -> str:
+            """Greet a person."""
+            return f"{greeting}, {name}!"
+
+        mcp = FastMCP()
+        mcp.add_tool(functools.partial(multiply, y=2))
+        mcp.add_tool(functools.partial(greet, greeting="Hello"))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+
+        assert {tool.name: tool.description for tool in tools} == {
+            "multiply": "Multiply two numbers.",
+            "greet": "Greet a person.",
+        }
 
     def test_private_arguments(self):
         def add(_a: int, _b: int) -> int:
