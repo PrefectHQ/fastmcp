@@ -1,13 +1,13 @@
 # FastMCP maintenance status
 
-As of 2026-09-26T08:37:26Z. Generated twice a day by [maintenance-status](https://github.com/PrefectHQ/fastmcp/actions/workflows/maintenance-status.yml); machine-readable as [status.json](status.json). How the project is run: [MAINTAINING.md](https://github.com/PrefectHQ/fastmcp/blob/main/MAINTAINING.md).
+As of 2026-09-26T13:10:04Z. Generated twice a day by [maintenance-status](https://github.com/PrefectHQ/fastmcp/actions/workflows/maintenance-status.yml); machine-readable as [status.json](status.json). How the project is run: [MAINTAINING.md](https://github.com/PrefectHQ/fastmcp/blob/main/MAINTAINING.md).
 
 | automation | state | last ok | runs on | cadence |
 |---|---|---|---|---|
 | [issue-link gate](https://github.com/PrefectHQ/fastmcp/actions/workflows/require-issue-link.yml) | ok | 2026-09-26 | github-actions | on each external PR change and each issue assignment |
 | [labeling](https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-label-triage.yml) | ok | 2026-09-26 | github-actions | on each new issue or PR |
 | [duplicate detection](https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-dedupe-issues.yml) | ok | 2026-09-25 | github-actions | on each new issue |
-| [auto-close](https://github.com/PrefectHQ/fastmcp/actions/workflows/auto-close-duplicates.yml) | ok | 2026-09-25 | github-actions | daily |
+| [auto-close](https://github.com/PrefectHQ/fastmcp/actions/workflows/auto-close-duplicates.yml) | ok | 2026-09-26 | github-actions | daily |
 | [bug investigation](https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-triage-issue.yml) | idle | — | github-actions | on each qualifying new issue |
 | [CI failure analysis](https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-test-failure.yml) | ok | 2026-09-26 | github-actions | after each failed PR run |
 | [maintainer commands](https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-comment-on-issue.yml) | ok | 2026-09-26 | github-actions | on a maintainer's comment |

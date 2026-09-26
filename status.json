@@ -1,7 +1,7 @@
 {
   "schema": "fastmcp-maintenance/1",
   "publisher": "fastmcp-actions",
-  "as_of": "2026-09-26T08:37:26Z",
+  "as_of": "2026-09-26T13:10:04Z",
   "automations": [
     {
       "id": "issue-link-gate",
@@ -55,11 +55,11 @@
       "cadence": "daily",
       "runs_on": "github-actions",
       "state": "ok",
-      "last_ok_day": "2026-09-25",
+      "last_ok_day": "2026-09-26",
       "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/auto-close-duplicates.yml",
       "window": "7d",
       "counts": {
-        "succeeded": 14,
+        "succeeded": 16,
         "failed": 0
       }
     },
@@ -89,7 +89,7 @@
       "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-test-failure.yml",
       "window": "7d",
       "counts": {
-        "succeeded": 402,
+        "succeeded": 408,
         "failed": 7
       }
     },
