@@ -19,12 +19,9 @@ jobs:
       issues: write
       id-token: write
 
-    # TEMPORARY PIN — see the matching note in marvin-label-triage.yml.
-    # Claude Code 2.1.216 broke every Bash call under the action's subprocess
-    # isolation, which this workflow needs for all of its `gh` searching.
-    # https://github.com/anthropics/claude-code/issues/79997
+    # Pinned Claude Code; see the matching note in marvin-label-triage.yml.
     env:
-      PINNED_CLAUDE_CODE_VERSION: "2.1.215"
+      PINNED_CLAUDE_CODE_VERSION: "2.1.282"
 
     steps:
       - name: Checkout repository

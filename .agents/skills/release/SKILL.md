@@ -141,8 +141,8 @@ connections instead of raising.
 ## Gotchas
 
 - `--generate-notes` copies PR titles verbatim; a title containing `<1`, `{`, or `}`
-  breaks MDX. `scripts/changelog_entry.py` wraps those in backticks; the validator
-  in step 4 catches anything it misses.
+  breaks MDX, and `__name__` renders as bold. `scripts/changelog_entry.py` wraps
+  those in backticks; the validator in step 4 catches anything else.
 - Mintlify's GitHub App also deploys on its own, but it only rebuilds files
   changed since the last commit it recorded, and it records commits it failed on
   or skipped. Only the `Deploy docs` run's verdict counts; its API-triggered
