@@ -178,6 +178,11 @@ class TestRateLimitingMiddleware:
         assert middleware.get_client_id is None
         assert middleware.global_limit is False
 
+    def test_zero_rate_keeps_rejecting_every_request(self):
+        """A rate of 0 has no default burst, so it still closes the endpoint."""
+        middleware = RateLimitingMiddleware(max_requests_per_second=0)
+        assert middleware.burst_capacity == 0
+
     def test_init_custom(self):
         """Test custom initialization."""
 
