@@ -199,18 +199,85 @@ def contributor_queue() -> dict:
     }
 
 
+OPERATOR_STATES = {"ok", "idle", "degraded", "off"}
+OPERATOR_RUNS_ON = {"operator-server", "operator-laptop"}
+OPERATOR_TEXT = ("id", "name", "what", "cadence", "window")
+EVIDENCE_PREFIX = f"https://github.com/{REPO}/"
+STALE_AFTER = timedelta(days=2)
+
+
+def _text(value: object) -> str:
+    """One table-safe line: no pipes or line breaks from another publisher."""
+    return " ".join(str(value).replace("|", "/").split())[:300]
+
+
+def _operator_entry(raw: dict, as_of: str, publisher: str, stale: bool) -> dict | None:
+    """Keep only the schema's fields from another system's entry."""
+    if (
+        raw.get("state") not in OPERATOR_STATES
+        or raw.get("runs_on") not in OPERATOR_RUNS_ON
+    ):
+        return None
+    entry = {k: _text(raw.get(k, "")) for k in OPERATOR_TEXT}
+    evidence = raw.get("evidence_url")
+    counts = raw.get("counts") if isinstance(raw.get("counts"), dict) else {}
+    entry.update(
+        runs_on=raw["runs_on"],
+        # A publisher that stopped reporting shows as idle, not ok; laptop-bound
+        # work can be legitimately quiet, so it isn't called degraded.
+        state="idle" if stale else raw["state"],
+        stale=stale,
+        last_ok_day=_text(raw["last_ok_day"])[:10] if raw.get("last_ok_day") else None,
+        evidence_url=evidence
+        if isinstance(evidence, str) and evidence.startswith(EVIDENCE_PREFIX)
+        else None,
+        counts={
+            _text(k): v
+            for k, v in counts.items()
+            if isinstance(v, int) and not isinstance(v, bool)
+        },
+        as_of=as_of,
+        publisher=publisher,
+    )
+    return entry
+
+
 def operator_entries() -> list[dict]:
+    """Entries another system publishes about itself, or one marker if it can't be read."""
     url = os.environ.get("OPERATOR_STATUS_URL")
     if not url:
         return []
-    with urllib.request.urlopen(url, timeout=10) as resp:
-        doc = json.load(resp)
-    if doc.get("schema") != SCHEMA:
-        return []
-    return [
-        dict(a, as_of=doc["as_of"], publisher=doc["publisher"])
-        for a in doc["automations"]
-    ]
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            doc = json.load(resp)
+        if doc.get("schema") != SCHEMA:
+            raise ValueError(f"unexpected schema {doc.get('schema')!r}")
+        as_of = _text(doc["as_of"])
+        publisher = _text(doc["publisher"])
+        age = datetime.now(UTC) - datetime.fromisoformat(as_of.replace("Z", "+00:00"))
+        stale = age > STALE_AFTER
+        entries = [
+            _operator_entry(raw, as_of, publisher, stale)
+            for raw in doc["automations"]
+            if isinstance(raw, dict)
+        ]
+        return [e for e in entries if e is not None]
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        print(f"operator status unavailable: {e}", file=sys.stderr)
+        return [
+            {
+                "id": "operator-status",
+                "name": "maintainer-run automations",
+                "what": "status published by automations that run outside GitHub Actions",
+                "cadence": "twice daily",
+                "runs_on": "operator-server",
+                "state": "degraded",
+                "last_ok_day": None,
+                "evidence_url": None,
+                "window": "now",
+                "counts": {},
+            }
+        ]
 
 
 def build() -> dict:
@@ -250,7 +317,9 @@ def build() -> dict:
 
 
 def overall(doc: dict) -> str:
-    mine = [a["state"] for a in doc["automations"] if a["runs_on"] == "github-actions"]
+    mine = [
+        a["state"] for a in doc["automations"] if a.get("runs_on") == "github-actions"
+    ]
     return "degraded" if "degraded" in mine else "ok"
 
 
@@ -272,8 +341,9 @@ def markdown(doc: dict) -> str:
             if a.get("evidence_url")
             else a["name"]
         )
+        state = a["state"] + (" (stale)" if a.get("stale") else "")
         lines.append(
-            f"| {name} | {a['state']} | {a['last_ok_day'] or '—'} | {a['runs_on']} | {a['cadence']} |"
+            f"| {name} | {state} | {a.get('last_ok_day') or '—'} | {a['runs_on']} | {a['cadence']} |"
         )
     queue = next(a for a in doc["automations"] if a["id"] == "contributor-queue")[
         "counts"
