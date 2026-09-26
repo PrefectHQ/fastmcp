@@ -1,0 +1,81 @@
+.watch-picker {
+  --watch-ink: #243237;
+  --watch-muted: #57676b;
+  --watch-glass: rgba(255, 255, 255, 0.72);
+  --watch-edge: rgba(255, 255, 255, 0.9);
+  --watch-accent: #315c50;
+  color: var(--watch-ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 28px;
+  gap: 22px;
+  border-radius: 28px;
+  background: radial-gradient(ellipse at 0 100%, #dbe8e0 0, transparent 65%),
+    linear-gradient(135deg, #edf2f3, #e8ecef);
+}
+.watch-heading { align-items: center; justify-content: space-between; gap: 20px; }
+.watch-heading-copy { gap: 5px; }
+.watch-picker .watch-title { font-size: 23px; line-height: 1.2; font-weight: 600; letter-spacing: -0.7px; }
+.watch-picker .watch-subtitle { font-size: 14px; color: var(--watch-muted); }
+.watch-device { width: 22px; height: 22px; color: var(--watch-muted); flex-shrink: 0; }
+.watch-list { gap: 12px; }
+.watch-item {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 20px;
+  padding: 22px;
+  border: 1px solid var(--watch-edge);
+  border-radius: 22px;
+  background: var(--watch-glass);
+  backdrop-filter: blur(22px) saturate(125%);
+  -webkit-backdrop-filter: blur(22px) saturate(125%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 6px 18px rgba(31, 49, 57, 0.045);
+}
+.watch-art {
+  display: grid; place-items: center; align-self: start;
+  width: 64px; height: 76px; border-radius: 15px;
+  color: #4c687d;
+  background: linear-gradient(145deg, #e3edf4, #cedee8);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.8);
+}
+.watch-art-live { color: #436956; background: linear-gradient(145deg, #e3eee1, #cfded0); }
+.watch-art-icon { width: 28px; height: 28px; stroke-width: 1.3; }
+.watch-copy { min-width: 0; gap: 8px; overflow-wrap: anywhere; }
+.watch-meta { align-items: center; gap: 12px; color: var(--watch-muted); font-size: 12px; line-height: 1.4; }
+.watch-live { display: flex; align-items: center; gap: 5px; }
+.watch-live::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--watch-accent); }
+.watch-picker .watch-item-title { font-size: 17px; font-weight: 600; line-height: 1.35; letter-spacing: -0.25px; text-wrap: pretty; }
+.watch-picker .watch-description { font-size: 13px; line-height: 1.5; color: var(--watch-muted); }
+.watch-actions { align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.watch-picker .watch-play {
+  border-radius: 999px; padding: 0 15px; height: 38px;
+  background: var(--watch-ink); color: #fff; border: 1px solid transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  font-size: 12px; font-weight: 500;
+}
+.watch-picker .watch-play:hover { background: #3e5157; }
+.watch-picker .watch-secondary { height: 38px; padding: 0 10px; border-radius: 999px; color: var(--watch-muted); font-size: 12px; }
+.watch-picker .watch-secondary:hover { background: rgba(100, 120, 127, 0.09); color: var(--watch-ink); }
+.watch-picker button:focus-visible { outline: 2px solid var(--watch-accent); outline-offset: 3px; }
+.watch-picker .watch-notice, .watch-picker .watch-receipt { color: var(--watch-muted); font-size: 12px; line-height: 1.5; }
+.watch-empty { padding: 22px; background: var(--watch-glass); border: 1px solid var(--watch-edge); border-radius: 22px; }
+.dark .watch-picker {
+  --watch-ink: #e4ecef; --watch-muted: #adbcc2;
+  --watch-glass: rgba(40, 52, 59, 0.78); --watch-edge: rgba(255, 255, 255, 0.12); --watch-accent: #a5cfbb;
+  background: radial-gradient(ellipse at 0 100%, #263c35 0, transparent 65%), linear-gradient(135deg, #26333b, #202a31);
+}
+.dark .watch-item { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 6px 18px rgba(0, 0, 0, 0.08); }
+.dark .watch-art { background: linear-gradient(145deg, #3f5563, #30444f); color: #c0d8e6; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1); }
+.dark .watch-art-live { background: linear-gradient(145deg, #435d4e, #32473c); color: #c4decd; }
+.dark .watch-picker .watch-play { color: #243237; }
+.dark .watch-picker .watch-play:hover { background: #cbdce2; }
+@media (max-width: 480px) {
+  .watch-picker { padding: 18px; gap: 18px; border-radius: 22px; }
+  .watch-picker .watch-title { font-size: 21px; }
+  .watch-item { grid-template-columns: minmax(0, 1fr); padding: 16px; border-radius: 18px; }
+  .watch-art { display: none; }
+  .watch-picker .watch-item-title { font-size: 16px; }
+  .watch-actions { column-gap: 2px; }
+}

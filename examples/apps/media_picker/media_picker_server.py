@@ -10,6 +10,7 @@ Usage:
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Literal, TypedDict
 
 from mcp.types import ToolAnnotations
@@ -17,16 +18,11 @@ from prefab_ui.actions import SetState, ShowToast
 from prefab_ui.actions.mcp import CallTool, SendMessage
 from prefab_ui.app import PrefabApp
 from prefab_ui.components import (
-    Badge,
     Button,
-    Card,
-    CardContent,
-    CardDescription,
-    CardFooter,
-    CardHeader,
-    CardTitle,
     Column,
+    Div,
     Heading,
+    Icon,
     If,
     Muted,
     Row,
@@ -247,54 +243,74 @@ def show_media_picker(candidate_ids: list[str] | None = None) -> PrefabApp:
     candidates = [item for item in candidates if _is_playable(item)]
     omitted_count = requested_count - len(candidates)
 
-    with Column(gap=4, css_class="p-4") as view:
-        Heading("Pick something worth watching")
-        Muted("Choose a result to play directly on the configured device.")
+    with Column(css_class="watch-picker") as view:
+        with Row(css_class="watch-heading"):
+            with Column(css_class="watch-heading-copy"):
+                Heading("Something worth watching", css_class="watch-title")
+                Muted("Choose what to watch next.", css_class="watch-subtitle")
+            Icon("tv", css_class="watch-device")
 
         if omitted_count:
             Muted(
                 f"{omitted_count} result{'s' if omitted_count != 1 else ''} hidden "
-                "because this device does not support that source."
+                "because this device does not support that source.",
+                css_class="watch-notice",
             )
 
         if not candidates:
-            with Card():
-                with CardContent(css_class="p-5"):
-                    Text("No playable candidates matched. Try another discovery query.")
+            with Div(css_class="watch-empty"):
+                Text("Nothing to play yet.")
+                Muted("Try another search to find something for this device.")
         else:
-            with Column(gap=3):
+            with Column(css_class="watch-list"):
                 for item in candidates:
-                    with Card():
-                        with CardHeader():
-                            with Row(gap=2, align="center"):
-                                Badge(item["source"].replace("_", " ").title())
-                                Badge(item["duration"], variant="outline")
-                            CardTitle(item["title"])
-                            CardDescription(item["summary"])
-
-                        with CardContent():
-                            Text(item["why"])
-                            Muted(" · ".join(item["tags"]))
-
-                        with CardFooter():
-                            with Row(gap=2):
+                    live = item["duration"] == "Live"
+                    with Div(css_class="watch-item"):
+                        with Div(
+                            css_class="watch-art watch-art-live"
+                            if live
+                            else "watch-art"
+                        ):
+                            Icon("leaf" if live else "film", css_class="watch-art-icon")
+                        with Column(css_class="watch-copy"):
+                            with Row(css_class="watch-meta"):
+                                Text(
+                                    "YouTube"
+                                    if item["source"] == "youtube"
+                                    else item["source"].replace("_", " ").title()
+                                )
+                                Text(
+                                    item["duration"],
+                                    css_class="watch-live"
+                                    if live
+                                    else "watch-duration",
+                                )
+                            Text(item["title"], css_class="watch-item-title")
+                            Muted(item["why"], css_class="watch-description")
+                            with Row(css_class="watch-actions"):
                                 Button(
-                                    "Play",
+                                    "Play on TV"
+                                    if os.getenv("MEDIA_PICKER_ACTUATOR_URL")
+                                    else "Preview play",
                                     icon="play",
+                                    css_class="watch-play",
                                     on_click=CallTool(
                                         play_media,
                                         arguments={"media_id": item["id"]},
                                         on_success=[
                                             SetState("last_action", RESULT.message),
-                                            ShowToast("Sent to TV", variant="success"),
+                                            ShowToast(
+                                                RESULT.message, variant="success"
+                                            ),
                                         ],
                                         on_error=ShowToast(ERROR, variant="error"),
                                     ),
                                 )
                                 Button(
                                     "Save",
-                                    variant="outline",
+                                    variant="ghost",
                                     icon="bookmark",
+                                    css_class="watch-secondary",
                                     on_click=CallTool(
                                         save_media,
                                         arguments={"media_id": item["id"]},
@@ -308,6 +324,7 @@ def show_media_picker(candidate_ids: list[str] | None = None) -> PrefabApp:
                                 Button(
                                     "More like this",
                                     variant="ghost",
+                                    css_class="watch-secondary watch-more",
                                     on_click=SendMessage(
                                         f"Find more media like “{item['title']}”, "
                                         "then reopen the media picker with the new candidates."
@@ -315,10 +332,11 @@ def show_media_picker(candidate_ids: list[str] | None = None) -> PrefabApp:
                                 )
 
         with If(Rx("last_action")):
-            Text(Rx("last_action"), css_class="text-sm font-medium")
+            Text(Rx("last_action"), css_class="watch-receipt")
 
     return PrefabApp(
         view=view,
+        css=[Path(__file__).with_name("media_picker.css").read_text()],
         state={
             "last_action": "",
             "candidate_ids": [item["id"] for item in candidates],
