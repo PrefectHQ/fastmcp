@@ -281,20 +281,21 @@ class Settings(BaseSettings):
     http_allowed_hosts: list[str] | None = None
     http_allowed_origins: list[str] | None = None
     http_session_idle_timeout: Annotated[
-        float | None,
+        Annotated[float, Field(gt=0)] | Literal["auto"] | None,
         Field(
             description=inspect.cleandoc(
                 """
                 Maximum time in seconds a streamable-HTTP session may remain
                 idle before it is terminated. A session's deadline is pushed
-                forward on every request. When None (default), sessions never
-                expire from inactivity. Not supported in stateless HTTP mode.
-                Must be a positive number of seconds when set.
+                forward on every request. Defaults to "auto", which uses the
+                MCP SDK's default (1800 seconds as of SDK 2.2). When None,
+                sessions never expire from inactivity. Only applies to stateful
+                HTTP sessions.
+                Explicit durations must be a positive number of seconds.
                 """
             ),
-            gt=0,
         ),
-    ] = None
+    ] = "auto"
 
     mounted_components_raise_on_load_error: Annotated[
         bool,

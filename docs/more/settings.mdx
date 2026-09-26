@@ -46,8 +46,13 @@ These control how the server listens when running with an HTTP transport.
 | `FASTMCP_HTTP_HOST_ORIGIN_PROTECTION` | `bool \| "auto"` | `false` | Validate `Host` and browser `Origin` headers for Streamable HTTP requests. `auto` protects localhost-bound servers and explicit host/origin allowlists. |
 | `FASTMCP_HTTP_ALLOWED_HOSTS` | `list[str] \| null` | `null` | Additional trusted hostnames when Host and Origin protection is enabled. Use a JSON array, such as `["mcp.example.com"]`. |
 | `FASTMCP_HTTP_ALLOWED_ORIGINS` | `list[str] \| null` | `null` | Browser origins trusted when Host and Origin protection is enabled. Configure CORS separately for cross-origin browser reads. Use a JSON array, such as `["https://app.example.com"]`. |
-| `FASTMCP_HTTP_SESSION_IDLE_TIMEOUT` | `float \| null` | `null` | Seconds a Streamable HTTP session may remain idle before it is terminated. The deadline resets on every request. When `null`, sessions never expire from inactivity. Not supported in stateless mode. |
+| `FASTMCP_HTTP_SESSION_IDLE_TIMEOUT` | `float \| "auto" \| null` | `"auto"` | Seconds a stateful Streamable HTTP session may remain idle before it is terminated. `"auto"` uses the MCP SDK's default: 1800 seconds (30 minutes) in SDK 2.2, no timeout in earlier versions. Set a positive number to override it, or set `fastmcp.settings.http_session_idle_timeout = None` in Python to disable it. |
 | `FASTMCP_DEBUG` | `bool` | `false` | Enable debug mode. |
+
+MCP SDK 2.2 also limits concurrent stateful HTTP sessions to 10,000. Keeping
+the default idle timeout lets abandoned sessions expire and frees capacity for
+new connections. Disabling it means clients must explicitly close their sessions
+to release that capacity. Stateless HTTP does not use the session pool.
 
 ## Error Handling
 

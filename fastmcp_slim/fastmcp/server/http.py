@@ -51,9 +51,12 @@ class FastMCPStreamableHTTPSessionManager(StreamableHTTPSessionManager):
         stateless: bool = False,
         security_settings: TransportSecuritySettings | None = None,
         retry_interval: int | None = None,
-        session_idle_timeout: float | None = None,
+        session_idle_timeout: float | Literal["auto"] | None = "auto",
     ) -> None:
         self._shared_event_store: EventStore | None = None
+        session_options: dict[str, Any] = {}
+        if session_idle_timeout != "auto":
+            session_options["session_idle_timeout"] = session_idle_timeout
         super().__init__(
             app=app,
             event_store=event_store,
@@ -61,7 +64,7 @@ class FastMCPStreamableHTTPSessionManager(StreamableHTTPSessionManager):
             stateless=stateless,
             security_settings=security_settings,
             retry_interval=retry_interval,
-            session_idle_timeout=session_idle_timeout,
+            **session_options,
         )
 
     @property
@@ -556,7 +559,7 @@ def create_streamable_http_app(
     host_origin_protection: HostOriginProtection = False,
     allowed_hosts: Sequence[str] | None = None,
     allowed_origins: Sequence[str] | None = None,
-    session_idle_timeout: float | None = None,
+    session_idle_timeout: float | Literal["auto"] | None = "auto",
 ) -> StarletteWithLifespan:
     """Return an instance of the StreamableHTTP server app.
 
@@ -583,8 +586,9 @@ def create_streamable_http_app(
             cross-origin responses.
         session_idle_timeout: Maximum time in seconds a session may remain idle
             before it is terminated. The deadline is pushed forward on every
-            request. When None, sessions never expire from inactivity. Not
-            supported in stateless mode.
+            request. Defaults to "auto", which uses the MCP SDK's default
+            (1800 seconds as of SDK 2.2). When None, sessions never expire
+            from inactivity. Only applies to stateful HTTP sessions.
 
     Returns:
         A Starlette application with StreamableHTTP support
