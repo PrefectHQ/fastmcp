@@ -69,12 +69,44 @@ class TestArrayTypes:
 
     def test_unique_items_accepts_unique(self, unique_items_array):
         validator = TypeAdapter(unique_items_array)
-        assert isinstance(validator.validate_python(["a", "b"]), set)
+        assert validator.validate_python(["a", "b"]) == ["a", "b"]
 
-    def test_unique_items_converts_duplicates(self, unique_items_array):
+    def test_unique_items_rejects_duplicates(self, unique_items_array):
         validator = TypeAdapter(unique_items_array)
-        result = validator.validate_python(["a", "a", "b"])
-        assert result == {"a", "b"}
+        with pytest.raises(ValidationError, match="Array items must be unique"):
+            validator.validate_python(["a", "a", "b"])
+
+    def test_unique_items_accepts_unique_objects(self):
+        unique_objects = json_schema_to_type(
+            {"type": "array", "items": {"type": "object"}, "uniqueItems": True}
+        )
+        validator = TypeAdapter(unique_objects)
+
+        users = [{"id": 1, "admin": True}, {"id": 2, "admin": False}]
+
+        assert validator.validate_python(users) == users
+
+    def test_unique_items_rejects_duplicate_objects(self):
+        unique_objects = json_schema_to_type(
+            {"type": "array", "items": {"type": "object"}, "uniqueItems": True}
+        )
+        validator = TypeAdapter(unique_objects)
+
+        with pytest.raises(ValidationError, match="Array items must be unique"):
+            validator.validate_python(
+                [{"id": 1, "admin": True}, {"admin": True, "id": 1}]
+            )
+
+    def test_unique_items_keeps_boolean_and_number_distinct(self):
+        unique_items = json_schema_to_type(
+            {"type": "array", "items": {}, "uniqueItems": True}
+        )
+        validator = TypeAdapter(unique_items)
+
+        assert validator.validate_python([True, 1]) == [True, 1]
+
+    def test_unique_items_is_preserved_in_generated_schema(self, unique_items_array):
+        assert TypeAdapter(unique_items_array).json_schema()["uniqueItems"] is True
 
 
 class TestObjectTypes:

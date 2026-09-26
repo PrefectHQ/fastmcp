@@ -18,6 +18,7 @@ from fastmcp.client.transports import (
     FastMCPTransport,
 )
 from fastmcp.server.server import FastMCP
+from fastmcp.tools.base import Tool
 from tests.conftest import user_meta
 
 
@@ -884,6 +885,40 @@ async def test_client_list_dict_return_type():
     async with client:
         result = await client.call_tool("get_temperatures", {})
         assert result.data == [{"city": "NYC", "temp": 72}, {"city": "LA", "temp": 85}]
+
+
+async def test_client_decodes_unique_object_array():
+    """Object arrays with uniqueItems should populate CallToolResult.data."""
+    server = FastMCP()
+
+    async def list_users() -> dict:
+        return {"users": [{"id": 1, "admin": True}, {"id": 2, "admin": False}]}
+
+    server.add_tool(
+        Tool.from_function(
+            list_users,
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "users": {
+                        "type": "array",
+                        "uniqueItems": True,
+                        "items": {"type": "object"},
+                    }
+                },
+                "required": ["users"],
+            },
+        )
+    )
+
+    async with Client(server) as client:
+        result = await client.call_tool("list_users", {})
+
+    assert result.data is not None
+    assert result.data.users == [
+        {"id": 1, "admin": True},
+        {"id": 2, "admin": False},
+    ]
 
 
 def test_client_new_preserves_internal_task_extension(fastmcp_server):
