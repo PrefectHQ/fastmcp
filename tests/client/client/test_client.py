@@ -9,7 +9,7 @@ import anyio
 import pytest
 from mcp import ClientSession, MCPError
 from mcp_types import TextContent
-from pydantic import AnyUrl
+from pydantic import AnyUrl, BaseModel
 
 import fastmcp
 from fastmcp.client import Client
@@ -866,6 +866,32 @@ async def test_client_does_not_unwrap_dict_result():
         assert result.structured_content == {"a": 1}
         assert result.data == {"a": 1}
         assert user_meta(result.meta) is None
+
+
+async def test_client_decodes_empty_structured_content():
+    """An empty object is a valid structured result, not a missing one (issue #5287)."""
+    server = FastMCP()
+
+    class Empty(BaseModel):
+        pass
+
+    @server.tool
+    def empty_dict() -> dict[str, str]:
+        return {}
+
+    @server.tool
+    def empty_model() -> Empty:
+        return Empty()
+
+    client = Client(transport=FastMCPTransport(server))
+    async with client:
+        dict_result = await client.call_tool("empty_dict", {})
+        assert dict_result.structured_content == {}
+        assert dict_result.data == {}
+
+        model_result = await client.call_tool("empty_model", {})
+        assert model_result.structured_content == {}
+        assert model_result.data is not None
 
 
 async def test_client_list_dict_return_type():
