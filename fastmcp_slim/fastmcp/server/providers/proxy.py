@@ -936,6 +936,21 @@ class ProxyProvider(Provider):
         self._tools_cache = _CacheEntry(tools, time.monotonic())
         return tools
 
+    async def list_tools(self) -> Sequence[Tool]:
+        """List tools, serving a fresh cache entry instead of re-listing the backend.
+
+        ``_get_tool`` already resolves names from ``_tools_cache``; without this,
+        the public listing path went to the backend on every ``tools/list`` even
+        though the result was cached immediately afterwards.
+        """
+        cache = self._tools_cache
+        if cache is not None and cache.is_fresh(self._cache_ttl):
+            tools: Sequence[Tool] = cache.items
+            for transform in self.transforms:
+                tools = await transform.list_tools(tools)
+            return tools
+        return await super().list_tools()
+
     async def _get_tool(
         self, name: str, version: VersionSpec | None = None
     ) -> Tool | None:
