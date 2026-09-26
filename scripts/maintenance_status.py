@@ -49,6 +49,8 @@ AUTOMATIONS = [
         "what": "holds an external PR until its author is assigned to an issue it links; assignment reopens a gate-closed PR",
         "cadence": "on each external PR change and each issue assignment",
         "workflows": ["require-issue-link.yml"],
+        # A failed run is the gate blocking a PR, not the gate breaking.
+        "outcomes": ("passed", "blocked"),
     },
     {
         "id": "label-triage",
@@ -138,27 +140,37 @@ def gh_json(*args: str):
     return json.loads(out.stdout)
 
 
-def workflow_health(files: list[str], since: date) -> dict:
-    states, runs = [], []
-    for f in files:
-        wf = gh_json("api", f"repos/{REPO}/actions/workflows/{f}")
-        states.append(wf["state"])
-        runs += gh_json(
+def one_workflow(file: str, since: date) -> dict:
+    """State, last success, and outcome counts for one workflow over the window."""
+    enabled = (
+        gh_json("api", f"repos/{REPO}/actions/workflows/{file}")["state"] == "active"
+    )
+    out = subprocess.run(
+        [
+            "gh",
             "api",
+            "--paginate",
             "-X",
             "GET",
-            f"repos/{REPO}/actions/workflows/{f}/runs",
+            f"repos/{REPO}/actions/workflows/{file}/runs",
             "-f",
             f"created=>={since.isoformat()}",
             "-f",
             "per_page=100",
             "--jq",
-            "[.workflow_runs[] | {conclusion, created_at}]",
-        )
-    done = [r for r in runs if r["conclusion"] not in (None, "skipped", "cancelled")]
-    done.sort(key=lambda r: r["created_at"])
+            ".workflow_runs[] | {conclusion, created_at}",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    runs = [json.loads(line) for line in out.splitlines() if line.strip()]
+    done = sorted(
+        (r for r in runs if r["conclusion"] not in (None, "skipped", "cancelled")),
+        key=lambda r: r["created_at"],
+    )
     ok = [r for r in done if r["conclusion"] == "success"]
-    if all(s != "active" for s in states):
+    if not enabled:
         state = "off"
     elif not done:
         state = "idle"
@@ -166,13 +178,46 @@ def workflow_health(files: list[str], since: date) -> dict:
         state = "degraded"
     else:
         state = "ok"
-    tally = Counter(
-        "succeeded" if r["conclusion"] == "success" else "failed" for r in done
-    )
     return {
         "state": state,
         "last_ok_day": ok[-1]["created_at"][:10] if ok else None,
-        "counts": {"succeeded": tally["succeeded"], "failed": tally["failed"]},
+        "succeeded": len(ok),
+        "failed": len(done) - len(ok),
+    }
+
+
+def workflow_health(
+    files: list[str], since: date, outcomes: tuple[str, str] | None = None
+) -> dict:
+    """Combine a group's workflows; any failing or disabled member degrades it.
+
+    With `outcomes`, a failed run is a legitimate result (the gate blocking a
+    PR), so the workflow is ok whenever it ran, and counts use those names.
+    """
+    members = [one_workflow(f, since) for f in files]
+    if outcomes:
+        for m in members:
+            if m["state"] == "degraded":
+                m["state"] = "ok"
+    states = {m["state"] for m in members}
+    if states == {"off"}:
+        state = "off"
+    elif "degraded" in states or "off" in states:
+        state = "degraded"
+    elif states == {"idle"}:
+        state = "idle"
+    else:
+        state = "ok"
+    days = [m["last_ok_day"] for m in members if m["last_ok_day"]]
+    return {
+        "state": state,
+        "last_ok_day": max(days) if days else None,
+        "counts": {
+            (outcomes or ("succeeded", "failed"))[0]: sum(
+                m["succeeded"] for m in members
+            ),
+            (outcomes or ("succeeded", "failed"))[1]: sum(m["failed"] for m in members),
+        },
     }
 
 
@@ -250,6 +295,8 @@ def operator_entries() -> list[dict]:
     try:
         with urllib.request.urlopen(url, timeout=10) as resp:
             doc = json.load(resp)
+        if not isinstance(doc, dict) or not isinstance(doc.get("automations"), list):
+            raise ValueError("operator status is not a status document")
         if doc.get("schema") != SCHEMA:
             raise ValueError(f"unexpected schema {doc.get('schema')!r}")
         as_of = _text(doc["as_of"])
@@ -262,7 +309,7 @@ def operator_entries() -> list[dict]:
             if isinstance(raw, dict)
         ]
         return [e for e in entries if e is not None]
-    except (OSError, ValueError, KeyError, TypeError) as e:
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
         print(f"operator status unavailable: {e}", file=sys.stderr)
         return [
             {
@@ -284,7 +331,7 @@ def build() -> dict:
     since = date.today() - timedelta(days=WINDOW_DAYS)
     automations = []
     for a in AUTOMATIONS:
-        h = workflow_health(a["workflows"], since)
+        h = workflow_health(a["workflows"], since, a.get("outcomes"))
         automations.append(
             {
                 "id": a["id"],

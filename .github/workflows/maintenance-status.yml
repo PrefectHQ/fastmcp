@@ -10,15 +10,18 @@ on:
       - "scripts/maintenance_status.py"
       - "scripts/gate_digest.py"
 
+permissions: {}
+
 jobs:
-  status:
+  # Runs the repository's script with a read-only token, including on PRs.
+  build:
     # Fork PRs can't read the Jev key.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       actions: read
-      contents: write
+      contents: read
       issues: read
       pull-requests: read
     steps:
@@ -35,18 +38,50 @@ jobs:
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
 
       - name: Show status
-        run: cat "$RUNNER_TEMP/status/STATUS.md" | tee -a "$GITHUB_STEP_SUMMARY"
+        run: cat "$RUNNER_TEMP/status/STATUS.md" >> "$GITHUB_STEP_SUMMARY"
 
-      # The status branch holds one commit: the latest snapshot.
-      - name: Publish to the status branch
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        working-directory: ${{ runner.temp }}/status
+      - name: Keep the snapshot
+        uses: actions/upload-artifact@v7
+        with:
+          name: status
+          path: ${{ runner.temp }}/status
+          retention-days: 3
+
+  # Holds the only write token, and runs no repository code: it copies the
+  # built files onto the status branch as a new commit.
+  publish:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    concurrency:
+      group: maintenance-status-publish
+      cancel-in-progress: false
+    steps:
+      - name: Fetch the snapshot
+        uses: actions/download-artifact@v8
+        with:
+          name: status
+          path: snapshot
+
+      - name: Commit to the status branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
         run: |
-          git init -q -b status
+          git init -q site
+          cd site
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git"
+          if git fetch -q --depth 1 origin status; then
+            git checkout -q -b status FETCH_HEAD
+          else
+            git checkout -q --orphan status
+          fi
+          cp ../snapshot/status.json ../snapshot/STATUS.md ../snapshot/badge.json .
           git add status.json STATUS.md badge.json
           git -c user.name="github-actions[bot]" \
               -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
               commit -q -m "status: $(jq -r .as_of status.json)"
-          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" status
-        env:
-          GH_TOKEN: ${{ github.token }}
+          git push -q origin status
