@@ -317,7 +317,7 @@ class TestSignIn:
     def test_full_flow_issues_tokens_bound_to_the_did(
         self, network: FakeATProtoNetwork
     ) -> None:
-        provider = _provider()
+        provider = _provider(allowed_dids=[DID, OTHER_DID])
         with TestClient(_app(provider), base_url=SERVER) as http:
             sign_in = _begin(http)
 
@@ -374,6 +374,47 @@ class TestSignIn:
 
             assert _initialize(http, access).status_code == 200
             assert _initialize(http, "not-a-token").status_code == 401
+
+    def test_single_allowed_did_goes_straight_to_its_pds(
+        self, network: FakeATProtoNetwork
+    ) -> None:
+        with TestClient(_app(_provider()), base_url=SERVER) as http:
+            sign_in = _begin(http)
+            started = http.get(
+                f"/atproto/login?txn_id={sign_in.txn_id}", follow_redirects=False
+            )
+            assert started.status_code == 303
+            assert started.headers["location"].startswith(f"{ISSUER}/oauth/authorize?")
+            [(state, par)] = network.pars.items()
+            assert par["login_hint"] == HANDLE
+            assert ("GET", f"https://{HANDLE}/.well-known/atproto-did") not in (
+                network.requests
+            )
+
+            cancelled = http.get(
+                f"/atproto/login?txn_id={sign_in.txn_id}&error=denied",
+                follow_redirects=False,
+            )
+            assert cancelled.status_code == 200
+            assert "Sign-in was cancelled." in cancelled.text
+            assert network.par_attempts == 1
+
+            finished = _callback(
+                sign_in, code=network.approve(state), state=state, iss=ISSUER
+            )
+            assert finished.status_code == 302
+            assert finished.headers["location"].startswith(CLIENT_REDIRECT)
+
+    def test_single_allowed_did_shows_the_page_when_its_pds_fails(
+        self, network: FakeATProtoNetwork
+    ) -> None:
+        network.as_issuer = "https://someone-else.test"
+        with TestClient(_app(_provider()), base_url=SERVER) as http:
+            sign_in = _begin(http)
+            page = http.get(f"/atproto/login?txn_id={sign_in.txn_id}")
+        assert page.status_code == 400
+        assert "couldn't start sign-in" in html.unescape(page.text)
+        assert network.par_attempts == 0
 
     def test_page_offers_typeahead_and_scrubs_errors(
         self, network: FakeATProtoNetwork

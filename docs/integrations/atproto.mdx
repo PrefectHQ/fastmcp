@@ -38,6 +38,8 @@ mcp = FastMCP("My Server", auth=auth)
 
 The allowlist is checked before the user is sent to their PDS, again when they return, and on every request. Removing a DID takes effect on that account's next request.
 
+With exactly one allowed DID, there is no handle to ask for: after the consent screen, the browser goes straight to that account's PDS. The handle page appears only to show an error.
+
 ## Local development
 
 AT Protocol treats `http://127.0.0.1` as a loopback client that needs no hosted metadata, so local development works without a tunnel:

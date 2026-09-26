@@ -115,6 +115,13 @@ class _AllowedDIDs:
     def __contains__(self, did: object) -> bool:
         return self._dids is None or did in self._dids
 
+    @property
+    def only(self) -> str | None:
+        """The single allowed DID, when exactly one is allowed."""
+        if self._dids is not None and len(self._dids) == 1:
+            return next(iter(self._dids))
+        return None
+
 
 class ATProtoIdentityVerifier(TokenVerifier):
     """Verifies the identity tokens `ATProtoProvider` signs after sign-in.
@@ -191,7 +198,9 @@ class ATProtoProvider(OAuthProxy):
         jwt_signing_key: Secret for the tokens this server issues. Keep it
             stable across restarts or every session ends on restart.
         allowed_dids: DIDs allowed to sign in. ``None`` allows any account.
-            Handles are not accepted here because they can change hands.
+            Handles are not accepted here because they can change hands. With
+            exactly one DID, the handle page is skipped and sign-in goes
+            straight to that account's PDS.
         client_name: Name shown on the account's authorization screen.
             Defaults to the FastMCP server's name.
         identity_token_expiry_seconds: Lifetime of each access token.
@@ -505,9 +514,22 @@ class ATProtoProvider(OAuthProxy):
             loaded = await self._load_bound_transaction(request, txn_id)
             if isinstance(loaded, HTMLResponse):
                 return loaded
-            return await self._render_login(
-                request, loaded, error=request.query_params.get("error")
-            )
+            error = request.query_params.get("error")
+            only = self._allowed_dids.only
+            if only is not None and error is None:
+                try:
+                    authorization_url = await self._start_authorization(txn_id, only)
+                except ATProtoError as e:
+                    logger.info("AT Protocol sign-in could not start: %s", e)
+                    return await self._render_login(
+                        request,
+                        loaded,
+                        identifier=only,
+                        error=e.reason,
+                        status_code=400,
+                    )
+                return RedirectResponse(authorization_url, status_code=303)
+            return await self._render_login(request, loaded, error=error)
 
         form = await request.form()
         txn_id = str(form.get("txn_id", ""))
