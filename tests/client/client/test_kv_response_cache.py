@@ -196,12 +196,14 @@ class TestAllowlist:
         assert await store.get(key) is None
 
     def test_allowlist_matches_cacheable_methods(self):
-        """The allowlist covers exactly the SDK's cacheable result models."""
+        """The allowlist covers SDK and built-in extension cacheable results."""
         assert set(CACHEABLE_RESULT_MODELS) == {
             "DiscoverResult",
+            "GetSkillResult",
             "ListPromptsResult",
             "ListResourceTemplatesResult",
             "ListResourcesResult",
+            "ListSkillsResult",
             "ListToolsResult",
             "ReadResourceResult",
         }
