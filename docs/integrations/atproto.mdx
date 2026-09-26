@@ -1,0 +1,69 @@
+---
+title: AT Protocol OAuth 🤝 FastMCP
+sidebarTitle: AT Protocol
+description: Let people sign in to your FastMCP server with their AT Protocol handle
+icon: at
+---
+
+import { VersionBadge } from "/snippets/version-badge.mdx"
+
+<VersionBadge version="4.1.0" />
+
+`ATProtoProvider` lets people sign in to your FastMCP server with an [AT Protocol](https://atproto.com) account, such as a Bluesky handle or any self-hosted PDS. You don't register an app anywhere: AT Protocol clients identify themselves by a URL they serve, and FastMCP serves it for you.
+
+MCP clients see a standard OAuth server with dynamic client registration, inherited from the [OAuth Proxy](/servers/auth/oauth-proxy). After the consent screen, users enter their handle and approve the sign-in on their own PDS. FastMCP keeps only the verified DID, revokes the PDS grant right away, and issues its own tokens.
+
+## Configuration
+
+```python server.py
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.atproto import ATProtoProvider
+
+auth = ATProtoProvider(
+    base_url="https://mcp.example.com",
+    jwt_signing_key="a-long-random-secret",
+    allowed_dids=["did:plc:ewvi7nxzyoun6zhxrhs64oiz"],
+)
+
+mcp = FastMCP("My Server", auth=auth)
+```
+
+- `base_url` is the public URL of your server. FastMCP serves the AT Protocol client metadata at `{base_url}/oauth-client-metadata.json` and receives the sign-in at `{base_url}/auth/callback`.
+- `jwt_signing_key` signs the tokens FastMCP issues. Keep it stable, or every session ends when the server restarts.
+- `allowed_dids` lists the accounts that may sign in. Leave it out to allow any account. Use DIDs rather than handles, because a handle can move to a different account. You can find an account's DID with `https://public.api.bsky.app/xrpc/com.atproto.identity.resolveHandle?handle=<handle>`.
+
+The allowlist is checked before the user is sent to their PDS, again when they return, and on every request. Removing a DID takes effect on that account's next request.
+
+## Local development
+
+AT Protocol treats `http://127.0.0.1` as a loopback client that needs no hosted metadata, so local development works without a tunnel:
+
+```python
+auth = ATProtoProvider(
+    base_url="http://127.0.0.1:8000",
+    jwt_signing_key="dev-secret",
+)
+```
+
+Use `127.0.0.1` rather than `localhost`: authorization servers reject `localhost` redirect URIs, so the provider refuses it.
+
+## Reading the signed-in account
+
+The access token carries the account's DID as its subject and its handle as a claim:
+
+```python
+from fastmcp.server.dependencies import get_access_token
+
+@mcp.tool
+def whoami() -> str:
+    token = get_access_token()
+    return f"{token.claims['handle']} ({token.subject})"
+```
+
+## Sessions
+
+`identity_token_expiry_seconds` (default one hour) sets how long each access token lasts, and `session_expiry_seconds` (default 30 days) sets how long a sign-in lasts before the user must sign in again. Refreshing re-checks the allowlist but doesn't contact the PDS.
+
+## Handles and suggestions
+
+The login page suggests accounts as the user types, using `typeahead_url`. Set it to `None` to turn suggestions off. Handles published only in DNS are resolved through `handle_resolver_url`'s `com.atproto.identity.resolveHandle`, and `did:plc` identities through `plc_directory_url`. Every lookup goes through FastMCP's SSRF-safe fetch, and the signed-in DID always comes from the account's own authorization server, never from these lookups.
