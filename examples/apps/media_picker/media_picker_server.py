@@ -15,7 +15,7 @@ import asyncio
 import os
 import re
 from pathlib import Path
-from typing import Literal, TypedDict
+from typing import Any, Literal, TypedDict
 from urllib.parse import parse_qs, urlparse
 
 import home_lights
@@ -29,9 +29,7 @@ from prefab_ui.components import (
     Button,
     Column,
     Div,
-    Heading,
-    Icon,
-    If,
+    Image,
     Muted,
     Row,
     Switch,
@@ -39,10 +37,11 @@ from prefab_ui.components import (
     Tabs,
     Text,
 )
-from prefab_ui.rx import ERROR, EVENT, RESULT, Rx
+from prefab_ui.rx import ERROR, EVENT, RESULT
 from pydantic import BaseModel, Field
 
 from fastmcp import Client, FastMCP, FastMCPApp
+from fastmcp.apps.config import ResourceCSP
 from fastmcp.exceptions import ToolError
 from fastmcp.experimental.auth.atproto import ATProtoProvider
 
@@ -311,85 +310,101 @@ async def _playable_links(
     return playable, notices, unverified, unplayable
 
 
+THUMBNAIL_CSP = ResourceCSP(resource_domains=["https://i.ytimg.com"])
+LEVELS = (10, 40, 70, 100)
+
+
+def _toast_result() -> list[Any]:
+    return [
+        SetState("last_action", RESULT.message),
+        ShowToast(RESULT.message, variant="success"),
+    ]
+
+
 def _media_list(playable: list[MediaCandidate], notices: list[str]) -> None:
     if notices:
-        Muted(" ".join(notices), css_class="watch-notice")
+        Muted(" ".join(notices), css_class="notice")
 
     if not playable:
-        with Div(css_class="watch-empty"):
-            Text("Nothing to play yet.")
-            Muted("Ask for something to watch and it will show up here.")
+        with Div(css_class="empty"):
+            Text("nothing queued")
+            Muted("ask claude for something to watch and it lands here.")
         return
 
-    with Column(css_class="watch-list"):
+    with Column(css_class="picks"):
         for item in playable:
-            live = item["label"].lower() == "live"
-            with Div(css_class="watch-item"):
-                with Div(css_class="watch-art watch-art-live" if live else "watch-art"):
-                    Icon("radio" if live else "film", css_class="watch-art-icon")
-                with Column(css_class="watch-copy"):
-                    with Row(css_class="watch-meta"):
-                        Text(item["channel"] or "YouTube")
+            identity = {
+                "source": item["source"],
+                "source_id": item["source_id"],
+                "title": item["title"],
+            }
+            with Div(css_class="pick"):
+                Image(
+                    src=f"https://i.ytimg.com/vi/{item['source_id']}/mqdefault.jpg",
+                    alt="",
+                    css_class="thumb",
+                )
+                with Column(css_class="pick-copy"):
+                    Text(item["title"], css_class="pick-title")
+                    with Row(css_class="pick-meta"):
+                        Text(item["channel"] or "youtube", css_class="channel")
                         if item["label"]:
                             Text(
-                                item["label"],
-                                css_class="watch-live" if live else "watch-duration",
+                                item["label"].lower(),
+                                css_class="tag live"
+                                if item["label"].lower() == "live"
+                                else "tag",
                             )
-                    Text(item["title"], css_class="watch-item-title")
                     if item["why"]:
-                        Muted(item["why"], css_class="watch-description")
-                    with Row(css_class="watch-actions"):
-                        identity = {
-                            "source": item["source"],
-                            "source_id": item["source_id"],
-                            "title": item["title"],
-                        }
+                        Muted(item["why"], css_class="why")
+                    with Row(css_class="pick-actions"):
                         Button(
-                            "Play on TV"
-                            if os.getenv("MEDIA_PICKER_ACTUATOR_URL")
-                            else "Preview play",
-                            icon="play",
-                            css_class="watch-play",
-                            on_click=CallTool(
-                                play_media,
-                                arguments=identity,
-                                on_success=[
-                                    SetState("last_action", RESULT.message),
-                                    ShowToast(RESULT.message, variant="success"),
-                                ],
-                                on_error=ShowToast(ERROR, variant="error"),
-                            ),
-                        )
-                        Button(
-                            "Save",
+                            "save",
                             variant="ghost",
-                            css_class="watch-secondary",
+                            size="xs",
+                            css_class="quiet",
                             on_click=CallTool(
                                 save_media,
                                 arguments=identity,
-                                on_success=[
-                                    SetState("last_action", RESULT.message),
-                                    ShowToast("Saved", variant="success"),
-                                ],
+                                on_success=_toast_result(),
                                 on_error=ShowToast(ERROR, variant="error"),
                             ),
                         )
                         Button(
-                            "More like this",
+                            "more like this",
                             variant="ghost",
-                            css_class="watch-secondary watch-more",
+                            size="xs",
+                            css_class="quiet",
                             on_click=SendMessage(
                                 f"Find more media like “{item['title']}”, "
-                                "then reopen the media picker with the new links."
+                                "then reopen the home view with the new links."
                             ),
                         )
+                Button(
+                    "play on tv" if os.getenv("MEDIA_PICKER_ACTUATOR_URL") else "play",
+                    icon="play",
+                    size="icon",
+                    css_class="play",
+                    on_click=CallTool(
+                        play_media,
+                        arguments=identity,
+                        on_success=_toast_result(),
+                        on_error=ShowToast(ERROR, variant="error"),
+                    ),
+                )
 
 
 def _css() -> list[str]:
     return [Path(__file__).with_name("media_picker.css").read_text()]
 
 
-@app.ui(annotations=READ_ONLY)
+def _header(title: str, status: str) -> None:
+    with Row(css_class="head"):
+        Text(title, css_class="title")
+        Muted(status, css_class="status")
+
+
+@app.ui(annotations=READ_ONLY, csp=THUMBNAIL_CSP)
 async def show_media_picker(links: list[MediaLink]) -> PrefabApp:
     """Show media choices the user can play on their TV.
 
@@ -399,15 +414,9 @@ async def show_media_picker(links: list[MediaLink]) -> PrefabApp:
     """
     playable, notices, unverified, unplayable = await _playable_links(links)
 
-    with Column(css_class="watch-picker") as view:
-        with Row(css_class="watch-heading"):
-            with Column(css_class="watch-heading-copy"):
-                Heading("Something worth watching", css_class="watch-title")
-                Muted("Choose what to watch next.", css_class="watch-subtitle")
-            Icon("tv", css_class="watch-device")
+    with Column(css_class="home") as view:
+        _header("watch", f"{len(playable)} to pick from" if playable else "")
         _media_list(playable, notices)
-        with If(Rx("last_action")):
-            Text(Rx("last_action"), css_class="watch-receipt")
 
     return PrefabApp(
         view=view,
@@ -460,23 +469,31 @@ async def activate_room_scene(
     return _light_receipt(f"{scene_name} on.")
 
 
-def _room_card(room: RoomView) -> None:
-    on = room["lights_on"] > 0
-    with Div(css_class="home-room"):
-        with Row(css_class="home-room-head"):
-            Div(
-                css_class="home-swatch" if on else "home-swatch home-swatch-off",
-                style={"background": room["color"]} if room["color"] else None,
+def _nearest_level(brightness: int) -> int:
+    return min(LEVELS, key=lambda level: abs(level - brightness))
+
+
+def _room_row(room: RoomView) -> None:
+    lit = room["lights_on"] > 0
+    accent = room["color"] or "#f2c27b"
+    with Div(
+        css_class="room lit" if lit else "room",
+        style={"--accent": accent} if lit else None,
+    ):
+        with Row(css_class="room-head"):
+            Div(css_class="lamp")
+            Text(room["name"], css_class="room-name")
+            Muted(
+                f"{room['brightness']}%"
+                if lit and room["lights_on"] == room["lights_total"]
+                else f"{room['lights_on']}/{room['lights_total']} · {room['brightness']}%"
+                if lit
+                else "off",
+                css_class="level-readout",
             )
-            with Column(css_class="home-room-copy"):
-                Text(room["name"].capitalize(), css_class="home-room-name")
-                Muted(
-                    f"{room['lights_on']} of {room['lights_total']} on"
-                    + (f" · {room['brightness']}%" if on else ""),
-                    css_class="home-room-meta",
-                )
             Switch(
-                value=on,
+                value=lit,
+                css_class="room-switch",
                 on_change=CallTool(
                     set_room_power,
                     arguments={
@@ -488,46 +505,55 @@ def _room_card(room: RoomView) -> None:
                     on_error=ShowToast(ERROR, variant="error"),
                 ),
             )
-        with Row(css_class="home-levels"):
-            for level in (10, 40, 70, 100):
-                Button(
-                    f"{level}%",
-                    variant="outline",
-                    size="sm",
-                    css_class="home-level",
-                    on_click=CallTool(
-                        set_room_brightness,
-                        arguments={
-                            "room_id": room["id"],
-                            "room_name": room["name"],
-                            "brightness": level,
-                        },
-                        on_success=ShowToast(RESULT.message, variant="success"),
-                        on_error=ShowToast(ERROR, variant="error"),
-                    ),
-                )
-        if room["scenes"]:
-            with Row(css_class="home-scenes"):
-                for scene in room["scenes"]:
+        with Row(css_class="room-controls"):
+            current = _nearest_level(room["brightness"]) if lit else None
+            with Row(css_class="levels"):
+                for level in LEVELS:
                     Button(
-                        scene["name"],
-                        variant="default" if scene["active"] else "ghost",
-                        size="sm",
-                        css_class="home-scene",
+                        str(level),
+                        variant="ghost",
+                        size="xs",
+                        css_class="level current" if level == current else "level",
                         on_click=CallTool(
-                            activate_room_scene,
+                            set_room_brightness,
                             arguments={
                                 "room_id": room["id"],
-                                "scene_id": scene["id"],
-                                "scene_name": scene["name"],
+                                "room_name": room["name"],
+                                "brightness": level,
                             },
                             on_success=ShowToast(RESULT.message, variant="success"),
                             on_error=ShowToast(ERROR, variant="error"),
                         ),
                     )
+            if room["scenes"]:
+                with Row(css_class="scenes"):
+                    for scene in room["scenes"]:
+                        with Div(
+                            css_class="scene active" if scene["active"] else "scene",
+                            style={"--swatch": scene["color"]}
+                            if scene["color"]
+                            else None,
+                        ):
+                            Button(
+                                scene["name"],
+                                variant="ghost",
+                                size="xs",
+                                on_click=CallTool(
+                                    activate_room_scene,
+                                    arguments={
+                                        "room_id": room["id"],
+                                        "scene_id": scene["id"],
+                                        "scene_name": scene["name"],
+                                    },
+                                    on_success=ShowToast(
+                                        RESULT.message, variant="success"
+                                    ),
+                                    on_error=ShowToast(ERROR, variant="error"),
+                                ),
+                            )
 
 
-@app.ui(annotations=READ_ONLY)
+@app.ui(annotations=READ_ONLY, csp=THUMBNAIL_CSP)
 async def show_home(links: list[MediaLink] | None = None) -> PrefabApp:
     """Show the home controls: every room's lights, plus media to play on the TV.
 
@@ -537,32 +563,25 @@ async def show_home(links: list[MediaLink] | None = None) -> PrefabApp:
     """
     rooms = await read_home() if home_lights.lights_target() else []
     playable, notices, _, _ = await _playable_links(links or [])
+    lit = sum(room["lights_on"] > 0 for room in rooms)
 
-    with Column(css_class="watch-picker home") as view:
-        with Row(css_class="watch-heading"):
-            with Column(css_class="watch-heading-copy"):
-                Heading("Home", css_class="watch-title")
-                Muted(
-                    f"{sum(room['lights_on'] > 0 for room in rooms)} of "
-                    f"{len(rooms)} rooms lit"
-                    if rooms
-                    else "Lights and TV",
-                    css_class="watch-subtitle",
-                )
-            Icon("house", css_class="watch-device")
+    with Column(css_class="home") as view:
+        _header(
+            "home",
+            f"{lit} of {len(rooms)} rooms lit" if rooms else "lights and tv",
+        )
         with Tabs(value="watch" if playable else "lights", variant="line"):
-            with Tab(title="Lights", value="lights"):
+            with Tab(title="lights", value="lights"):
                 if rooms:
-                    with Column(css_class="home-rooms"):
+                    with Column(css_class="rooms"):
                         for room in rooms:
-                            _room_card(room)
+                            _room_row(room)
                 else:
-                    with Div(css_class="watch-empty"):
-                        Text("Lights aren't connected.")
-            with Tab(title="Watch", value="watch"):
+                    with Div(css_class="empty"):
+                        Text("lights aren't connected")
+                        Muted("set MEDIA_PICKER_LIGHTS_URL on the server.")
+            with Tab(title="watch", value="watch"):
                 _media_list(playable, notices)
-        with If(Rx("last_action")):
-            Text(Rx("last_action"), css_class="watch-receipt")
 
     return PrefabApp(
         view=view,

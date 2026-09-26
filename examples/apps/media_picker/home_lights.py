@@ -18,6 +18,7 @@ class SceneView(TypedDict):
     id: str
     name: str
     active: bool
+    color: str
 
 
 class RoomView(TypedDict):
@@ -107,6 +108,33 @@ def light_color(state: dict[str, Any]) -> str | None:
     return None
 
 
+def _xy(value: Any) -> tuple[float, float] | None:
+    xy = (value or {}).get("xy") if isinstance(value, dict) else None
+    if isinstance(xy, dict) and "x" in xy and "y" in xy:
+        return xy["x"], xy["y"]
+    return None
+
+
+def scene_color(scene: dict[str, Any]) -> str:
+    """The first color a scene sets, from its palette or else its light actions."""
+    palette = scene.get("palette") or {}
+    for entry in palette.get("color") or []:
+        if xy := _xy(entry.get("color")):
+            return xy_to_hex(*xy)
+    for entry in palette.get("color_temperature") or []:
+        mirek = (entry.get("color_temperature") or {}).get("mirek")
+        if mirek:
+            return kelvin_to_hex(1_000_000 / mirek)
+    for action in scene.get("actions") or []:
+        body = action.get("action") or {}
+        if xy := _xy(body.get("color")):
+            return xy_to_hex(*xy)
+        mirek = (body.get("color_temperature") or {}).get("mirek")
+        if mirek:
+            return kelvin_to_hex(1_000_000 / mirek)
+    return ""
+
+
 def room_views(
     rooms: dict[str, Any], lights: dict[str, Any], scenes: dict[str, Any]
 ) -> list[RoomView]:
@@ -128,6 +156,7 @@ def room_views(
                 name=scene["name"],
                 active=(scene.get("status") or {}).get("active", "inactive")
                 != "inactive",
+                color=scene_color(scene),
             )
             for scene_id, scene in scenes.items()
             if scene.get("room_id") == room_id

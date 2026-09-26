@@ -5,7 +5,7 @@ from typing import Any
 
 import home_lights
 import pytest
-from home_lights import kelvin_to_hex, room_views, xy_to_hex
+from home_lights import kelvin_to_hex, room_views, scene_color, xy_to_hex
 from media_picker_server import mcp
 
 from fastmcp import Client, FastMCP
@@ -161,3 +161,43 @@ async def test_home_view_without_lights_configured(
         result = await client.call_tool("show_home", {})
     assert result.structured_content is not None
     assert result.structured_content["state"]["room_ids"] == []
+
+
+@pytest.mark.parametrize(
+    ("scene", "expected"),
+    [
+        ({"palette": {"color": [{"color": {"xy": {"x": 0.5, "y": 0.41}}}]}}, "xy"),
+        (
+            {"palette": {"color_temperature": [{"color_temperature": {"mirek": 454}}]}},
+            "kelvin",
+        ),
+        (
+            {"actions": [{"action": {"color": {"xy": {"x": 0.15, "y": 0.06}}}}]},
+            "xy",
+        ),
+        ({"palette": {}, "actions": [{"action": {"on": {"on": True}}}]}, ""),
+    ],
+)
+def test_scene_color_prefers_palette_then_actions(
+    scene: dict[str, Any], expected: str
+) -> None:
+    color = scene_color(scene)
+    if expected == "":
+        assert color == ""
+    else:
+        assert color.startswith("#") and len(color) == 7
+
+
+async def test_home_view_allows_youtube_thumbnails(hue: list[Any]) -> None:
+    async with Client(mcp) as client:
+        resources = await client.list_resources()
+        renderers = [r for r in resources if "prefab/tool" in str(r.uri)]
+        domains = {
+            domain
+            for renderer in renderers
+            for domain in (renderer.meta or {})
+            .get("ui", {})
+            .get("csp", {})
+            .get("resourceDomains", [])
+        }
+    assert "https://i.ytimg.com" in domains
