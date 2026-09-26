@@ -76,6 +76,7 @@ from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth import AuthCheck, AuthContext, AuthProvider, run_auth_checks
 from fastmcp.server.caching import build_cache_hints
 from fastmcp.server.completions import CompletionHandler
+from fastmcp.server.dependencies import _dispatching_tool_call
 from fastmcp.server.lifespan import Lifespan
 from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
@@ -1446,17 +1447,18 @@ class FastMCP(
                 # the whole thing (so it observes every call), and the
                 # interceptors sit between it and the tool body (so each is the
                 # last gate before execution).
-                dispatched = await self._dispatch_component_middleware(
-                    context=mw_context,
-                    call_next=self._compose_tool_call_interceptors(
-                        lambda context: self.call_tool(
-                            context.message.name,
-                            context.message.arguments or {},
-                            version=version,
-                            run_middleware=False,
-                        )
-                    ),
-                )
+                with _dispatching_tool_call():
+                    dispatched = await self._dispatch_component_middleware(
+                        context=mw_context,
+                        call_next=self._compose_tool_call_interceptors(
+                            lambda context: self.call_tool(
+                                context.message.name,
+                                context.message.arguments or {},
+                                version=version,
+                                run_middleware=False,
+                            )
+                        ),
+                    )
                 # Above the chain, so a Prefab payload is re-addressed however
                 # it was produced — middleware can answer a call itself, and
                 # such a result never reaches the core path below.

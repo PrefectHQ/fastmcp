@@ -21,6 +21,8 @@ For dependency changes, verify the declared minimum version supports every API n
 
 Report reachable defects with concrete triggers and consequences. Evaluate bot comments on their merits; do not repeat resolved or convincingly rebutted findings without new evidence. Avoid speculative cases, cosmetic blockers, and generic requests for more tests.
 
+When a change touches shared dispatch, a security boundary, or behavior other components rely on, also get an independent adversarial pass: give a fresh agent the PR and the paths to attack, have it run reproducers in a throwaway worktree, and keep only the findings it confirmed. Run it again after each substantive rework.
+
 Review regression tests for the actual failure and affected neighboring contracts. Record which checks were run and at what revision. Keep uncertainty explicit: an inspected diff, a passing focused test, and a complete validated review are different evidence.
 
 Use [review-pr](../review-pr/SKILL.md) to follow CI and automated feedback after publication. A merge still needs the user's authorization and the repository's current merge gates.

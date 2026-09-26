@@ -73,7 +73,10 @@ def linkify(body: str) -> str:
 
 
 def escape_mdx(text: str) -> str:
-    """Backtick-wrap bare `<digit`, `{`, `}` outside code spans; MDX reads them as JSX."""
+    """Backtick-wrap MDX-sensitive text outside code spans.
+
+    MDX reads bare `<digit`, `{`, and `}` as JSX, and `__name__` as bold.
+    """
 
     def fix(line: str) -> str:
         parts = line.split("`")
@@ -81,6 +84,9 @@ def escape_mdx(text: str) -> str:
             parts[i] = re.sub(r"(<\d[^\s`]*)", r"`\1`", parts[i])
             parts[i] = re.sub(r"(\{[^{}]*\})", r"`\1`", parts[i])
             parts[i] = re.sub(r"(?<!`)([{}])(?!`)", r"`\1`", parts[i])
+            parts[i] = re.sub(
+                r"(?<![\w`/])(__\w+?__(?:\.\w+)?)(?![\w`])", r"`\1`", parts[i]
+            )
         return "`".join(parts)
 
     return "\n".join(fix(line) for line in text.splitlines())
