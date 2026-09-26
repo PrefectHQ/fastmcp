@@ -81,6 +81,14 @@ The LLM generates trivia questions and passes them to the tool. The user answers
 fastmcp dev apps examples/apps/quiz/quiz_server.py
 ```
 
+### Media picker
+
+Separates model-visible media discovery from an interactive carousel. `Play` and `Save` call app-only backend tools directly, while `More like this` sends a follow-up request to the conversation. The normalized candidate shape keeps the UI independent of YouTube, Internet Archive, live cameras, or future source adapters.
+
+```bash
+fastmcp dev apps examples/apps/media_picker/media_picker_server.py
+```
+
 ### Interactive map
 
 Accepts addresses or place names, geocodes them via OpenStreetMap Nominatim (free, no API key), and renders an interactive Leaflet map using Prefab's `Embed` component with inline HTML. A reminder that Prefab apps can break out of built-in components when they need to.
