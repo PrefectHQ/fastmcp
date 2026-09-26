@@ -269,8 +269,14 @@ class Image:
 
     def _get_mime_type(self) -> str:
         """Get MIME type from format or guess from file extension."""
+        mapping = {
+            "jpg": "image/jpeg",
+            "svg": "image/svg+xml",
+            "tif": "image/tiff",
+        }
+
         if self._format:
-            return f"image/{self._format.lower()}"
+            return mapping.get(self._format.lower(), f"image/{self._format.lower()}")
 
         if self.path:
             # Workaround for WEBP in Py3.10
