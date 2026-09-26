@@ -1,7 +1,7 @@
 {
   "schema": "fastmcp-maintenance/1",
   "publisher": "fastmcp-actions",
-  "as_of": "2026-09-26T08:35:35Z",
+  "as_of": "2026-09-26T08:37:26Z",
   "automations": [
     {
       "id": "issue-link-gate",
@@ -89,7 +89,7 @@
       "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-test-failure.yml",
       "window": "7d",
       "counts": {
-        "succeeded": 401,
+        "succeeded": 402,
         "failed": 7
       }
     },
@@ -104,7 +104,7 @@
       "evidence_url": "https://github.com/PrefectHQ/fastmcp/actions/workflows/marvin-comment-on-issue.yml",
       "window": "7d",
       "counts": {
-        "succeeded": 61,
+        "succeeded": 63,
         "failed": 14
       }
     },
