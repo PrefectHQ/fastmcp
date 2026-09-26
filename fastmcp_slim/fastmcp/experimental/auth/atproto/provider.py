@@ -50,6 +50,7 @@ from fastmcp.experimental.auth.atproto.identity import (
     normalize_identifier,
     resolve_did,
     resolve_handle,
+    verified_handle,
 )
 from fastmcp.experimental.auth.atproto.login import create_login_html
 from fastmcp.experimental.auth.atproto.oauth import (
@@ -75,7 +76,6 @@ from fastmcp.utilities.ui import create_secure_html_response
 
 logger = get_logger(__name__)
 
-DEFAULT_HANDLE_RESOLVER_URL = "https://public.api.bsky.app"
 DEFAULT_PLC_DIRECTORY_URL = "https://plc.directory"
 DEFAULT_TYPEAHEAD_URL = (
     "https://typeahead.waow.tech/xrpc/app.bsky.actor.searchActorsTypeahead"
@@ -206,8 +206,6 @@ class ATProtoProvider(OAuthProxy):
         identity_token_expiry_seconds: Lifetime of each access token.
         session_expiry_seconds: How long a sign-in lasts before the user must
             sign in again.
-        handle_resolver_url: Service used for ``com.atproto.identity.resolveHandle``
-            when a handle has no ``/.well-known/atproto-did``. ``None`` disables it.
         plc_directory_url: PLC directory used to resolve ``did:plc`` identities.
         typeahead_url: ``app.bsky.actor.searchActorsTypeahead`` endpoint for the
             login page's suggestions. ``None`` disables suggestions.
@@ -233,7 +231,6 @@ class ATProtoProvider(OAuthProxy):
         consent_csp_policy: str | None = None,
         identity_token_expiry_seconds: int = 60 * 60,
         session_expiry_seconds: int = 30 * 24 * 60 * 60,
-        handle_resolver_url: str | None = DEFAULT_HANDLE_RESOLVER_URL,
         plc_directory_url: str = DEFAULT_PLC_DIRECTORY_URL,
         typeahead_url: str | None = DEFAULT_TYPEAHEAD_URL,
         enable_cimd: bool = True,
@@ -308,7 +305,6 @@ class ATProtoProvider(OAuthProxy):
         self._atproto_client_name = client_name
         self._identity_token_expiry_seconds = identity_token_expiry_seconds
         self._session_expiry_seconds = session_expiry_seconds
-        self._handle_resolver_url = handle_resolver_url
         self._plc_directory_url = plc_directory_url
         self._typeahead_url = typeahead_url
         self._flow_store: PydanticAdapter[ATProtoFlow] = PydanticAdapter[ATProtoFlow](
@@ -554,9 +550,7 @@ class ATProtoProvider(OAuthProxy):
         if is_did(identifier):
             did = identifier
         elif is_handle(identifier):
-            did = await resolve_handle(
-                identifier, handle_resolver_url=self._handle_resolver_url
-            )
+            did = await resolve_handle(identifier)
         else:
             raise ATProtoError(
                 "invalid_identifier", f"Not a handle or DID: {identifier!r}"
@@ -567,6 +561,7 @@ class ATProtoProvider(OAuthProxy):
 
         identity = await resolve_did(did, plc_directory_url=self._plc_directory_url)
         server = await discover_authorization_server(identity.pds_url)
+        handle = await verified_handle(identity)
 
         dpop = DPoPSession()
         state = secrets.token_urlsafe(32)
@@ -578,7 +573,7 @@ class ATProtoProvider(OAuthProxy):
             redirect_uri=self._atproto_redirect_uri,
             state=state,
             code_verifier=code_verifier,
-            login_hint=identity.handle or did,
+            login_hint=handle or did,
         )
         await self._flow_store.put(
             key=state,
@@ -586,7 +581,7 @@ class ATProtoProvider(OAuthProxy):
                 state=state,
                 txn_id=txn_id,
                 did=did,
-                handle=identity.handle,
+                handle=handle,
                 issuer=server.issuer,
                 token_endpoint=server.token_endpoint,
                 revocation_endpoint=server.revocation_endpoint,
@@ -678,6 +673,22 @@ class ATProtoProvider(OAuthProxy):
             return retry("identity_unavailable")
         if did not in self._allowed_dids:
             return retry("not_allowed")
+
+        # Hosting can move mid-sign-in; the issuer must match the DID's current PDS.
+        try:
+            current = await resolve_did(did, plc_directory_url=self._plc_directory_url)
+            current_server = await discover_authorization_server(current.pds_url)
+        except ATProtoError as e:
+            logger.warning("AT Protocol identity re-verification failed: %s", e)
+            return retry("identity_unavailable")
+        if current_server.issuer != flow.issuer:
+            logger.warning(
+                "AT Protocol issuer for %s changed during sign-in: %s != %s",
+                did,
+                current_server.issuer,
+                flow.issuer,
+            )
+            return retry("identity_unavailable")
 
         idp_tokens = self._mint_identity_tokens(
             did=did,

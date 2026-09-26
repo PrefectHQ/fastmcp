@@ -11,11 +11,15 @@ import json
 import re
 from dataclasses import dataclass
 from typing import Any, Literal
-from urllib.parse import quote, urlparse
+from urllib.parse import urlparse
+
+import dns.asyncresolver
+from dns.exception import DNSException
 
 from fastmcp.server.auth.ssrf import SSRFError, SSRFFetchError, ssrf_safe_fetch
 
 MAX_DOCUMENT_BYTES = 64 * 1024
+DNS_TIMEOUT_SECONDS = 5.0
 
 _HANDLE_RE = re.compile(
     r"^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+"
@@ -127,39 +131,58 @@ def _https_url(value: Any) -> str | None:
     return value
 
 
-async def resolve_handle(handle: str, *, handle_resolver_url: str | None) -> str:
-    """Resolve a handle to a DID.
+async def _txt_did(handle: str) -> str | None:
+    """Read the DID from a handle's ``_atproto`` TXT record, if exactly one is set."""
+    try:
+        answers = await dns.asyncresolver.resolve(
+            f"_atproto.{handle}", "TXT", lifetime=DNS_TIMEOUT_SECONDS
+        )
+    except DNSException:
+        return None
+    values = [
+        b"".join(record.strings).decode("utf-8", errors="replace") for record in answers
+    ]
+    dids = [value[len("did=") :] for value in values if value.startswith("did=")]
+    if len(dids) == 1 and is_did(dids[0]):
+        return dids[0]
+    return None
 
-    Tries the handle's own ``/.well-known/atproto-did`` first. Handles that are
-    published only as DNS TXT records fall back to ``handle_resolver_url``'s
-    ``com.atproto.identity.resolveHandle``. The resolved DID is only a routing
-    hint: sign-in trusts the ``sub`` returned by the DID's own authorization
-    server, never this lookup.
-    """
+
+async def _well_known_did(handle: str) -> str | None:
     try:
         body = await ssrf_safe_fetch(
             f"https://{handle}/.well-known/atproto-did", max_size=512
         )
-        did = body.decode("utf-8", errors="replace").strip()
-        if is_did(did):
-            return did
     except (SSRFError, SSRFFetchError):
-        pass
+        return None
+    did = body.decode("utf-8", errors="replace").strip()
+    return did if is_did(did) else None
 
-    if handle_resolver_url:
-        url = (
-            f"{handle_resolver_url.rstrip('/')}"
-            f"/xrpc/com.atproto.identity.resolveHandle?handle={quote(handle)}"
-        )
-        try:
-            data = await _fetch_json(url)
-        except (SSRFError, SSRFFetchError, ValueError):
-            data = {}
-        did = data.get("did")
-        if isinstance(did, str) and is_did(did):
-            return did
 
-    raise ATProtoError("handle_not_found", f"Could not resolve handle {handle!r}")
+async def resolve_handle(handle: str) -> str:
+    """Resolve a handle to a DID the way the handle's owner published it.
+
+    A handle is a DNS name, so it resolves through that domain: the
+    ``_atproto`` TXT record first, then ``/.well-known/atproto-did`` over
+    HTTPS. Where the account is hosted plays no part. The DID found here only
+    routes the sign-in; the account is authenticated by the authorization
+    server its DID document points to.
+    """
+    did = await _txt_did(handle) or await _well_known_did(handle)
+    if did is None:
+        raise ATProtoError("handle_not_found", f"Could not resolve handle {handle!r}")
+    return did
+
+
+async def verified_handle(identity: ResolvedIdentity) -> str | None:
+    """The DID document's handle, only if that handle resolves back to the DID."""
+    if identity.handle is None:
+        return None
+    try:
+        resolved = await resolve_handle(identity.handle)
+    except ATProtoError:
+        return None
+    return identity.handle if resolved == identity.did else None
 
 
 async def resolve_did(did: str, *, plc_directory_url: str) -> ResolvedIdentity:

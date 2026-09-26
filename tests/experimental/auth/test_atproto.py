@@ -71,6 +71,9 @@ class FakeATProtoNetwork:
     sub: str = DID
     nonce: str = "nonce-1"
     well_known_did: str | None = DID
+    txt_did: str | None = None
+    handle_owner: str = DID
+    pds_auth_server: str = ISSUER
     as_issuer: str = ISSUER
     requests: list[tuple[str, str]] = field(default_factory=list)
     pars: dict[str, dict[str, str]] = field(default_factory=dict)
@@ -93,7 +96,7 @@ class FakeATProtoNetwork:
             },
             f"{PDS}/.well-known/oauth-protected-resource": {
                 "resource": PDS,
-                "authorization_servers": [ISSUER],
+                "authorization_servers": [self.pds_auth_server],
             },
             f"{ISSUER}/.well-known/oauth-authorization-server": {
                 "issuer": self.as_issuer,
@@ -112,8 +115,6 @@ class FakeATProtoNetwork:
             if self.well_known_did is None:
                 raise SSRFFetchError("HTTP 404")
             return self.well_known_did.encode()
-        if url.startswith("https://public.api.bsky.app/xrpc/"):
-            raise SSRFFetchError("HTTP 400")
         document = self.documents().get(url)
         if document is None:
             raise SSRFFetchError(f"HTTP 404 fetching {url}")
@@ -194,6 +195,10 @@ class FakeATProtoNetwork:
             headers={"content-type": "application/json", **(headers or {})},
         )
 
+    async def txt(self, handle: str) -> str | None:
+        self.requests.append(("TXT", f"_atproto.{handle}"))
+        return self.txt_did if handle == HANDLE else None
+
     def approve(self, state: str) -> str:
         code = secrets.token_urlsafe(16)
         self.codes[code] = state
@@ -204,6 +209,7 @@ class FakeATProtoNetwork:
 def network(monkeypatch: pytest.MonkeyPatch) -> FakeATProtoNetwork:
     fake = FakeATProtoNetwork()
     monkeypatch.setattr(identity_module, "ssrf_safe_fetch", fake.fetch)
+    monkeypatch.setattr(identity_module, "_txt_did", fake.txt)
     monkeypatch.setattr(oauth_module, "ssrf_safe_fetch_response", fake.fetch_response)
     return fake
 
@@ -387,9 +393,7 @@ class TestSignIn:
             assert started.headers["location"].startswith(f"{ISSUER}/oauth/authorize?")
             [(state, par)] = network.pars.items()
             assert par["login_hint"] == HANDLE
-            assert ("GET", f"https://{HANDLE}/.well-known/atproto-did") not in (
-                network.requests
-            )
+            assert ("TXT", f"_atproto.{HANDLE}") in network.requests
 
             cancelled = http.get(
                 f"/atproto/login?txn_id={sign_in.txn_id}&error=denied",
@@ -499,6 +503,51 @@ class TestSignIn:
         assert response.status_code == 303
         assert "error=identity_unavailable" in response.headers["location"]
         assert network.revoked == ["pds-refresh"]
+
+    def test_callback_rejects_a_moved_authorization_server(
+        self, network: FakeATProtoNetwork
+    ) -> None:
+        with TestClient(_app(_provider()), base_url=SERVER) as http:
+            sign_in = _begin(http)
+            http.get(f"/atproto/login?txn_id={sign_in.txn_id}", follow_redirects=False)
+            [state] = network.pars
+            network.pds_auth_server = "https://elsewhere.test"
+            response = _callback(
+                sign_in, code=network.approve(state), state=state, iss=ISSUER
+            )
+        assert response.status_code == 303
+        assert "error=identity_unavailable" in response.headers["location"]
+
+    def test_handle_claim_requires_the_handle_to_point_back(
+        self, network: FakeATProtoNetwork
+    ) -> None:
+        network.well_known_did = OTHER_DID
+        with TestClient(_app(_provider()), base_url=SERVER) as http:
+            sign_in = _begin(http)
+            started = http.get(
+                f"/atproto/login?txn_id={sign_in.txn_id}", follow_redirects=False
+            )
+            assert started.status_code == 303
+            [(state, par)] = network.pars.items()
+            assert par["login_hint"] == DID
+            finished = _callback(
+                sign_in, code=network.approve(state), state=state, iss=ISSUER
+            )
+            code = parse_qs(urlparse(finished.headers["location"]).query)["code"][0]
+            tokens = http.post(
+                "/token",
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": CLIENT_REDIRECT,
+                    "client_id": sign_in.client_id,
+                    "code_verifier": sign_in.code_verifier,
+                },
+            )
+        claims = json.loads(
+            jws.extract_compact(tokens.json()["access_token"].encode()).payload
+        )
+        assert claims["upstream_claims"] == {"did": DID, "handle": None}
 
     def test_cancelled_sign_in_returns_to_the_login_page(
         self, network: FakeATProtoNetwork
@@ -628,17 +677,25 @@ class TestIdentityResolution:
     async def test_resolves_handle_and_did_document(
         self, network: FakeATProtoNetwork
     ) -> None:
-        did = await resolve_handle(HANDLE, handle_resolver_url=None)
+        did = await resolve_handle(HANDLE)
         identity = await resolve_did(did, plc_directory_url="https://plc.directory")
         assert (identity.did, identity.handle, identity.pds_url) == (DID, HANDLE, PDS)
 
     async def test_unresolvable_handle(self, network: FakeATProtoNetwork) -> None:
         network.well_known_did = None
         with pytest.raises(ATProtoError) as excinfo:
-            await resolve_handle(
-                HANDLE, handle_resolver_url="https://public.api.bsky.app"
-            )
+            await resolve_handle(HANDLE)
         assert excinfo.value.reason == "handle_not_found"
+
+    async def test_dns_txt_record_wins_over_well_known(
+        self, network: FakeATProtoNetwork
+    ) -> None:
+        network.txt_did = DID
+        network.well_known_did = None
+        assert await resolve_handle(HANDLE) == DID
+        assert ("GET", f"https://{HANDLE}/.well-known/atproto-did") not in (
+            network.requests
+        )
 
     async def test_rejects_authorization_server_issuer_mismatch(
         self, network: FakeATProtoNetwork

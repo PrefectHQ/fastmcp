@@ -1028,6 +1028,7 @@ openai = [
 server = [
     { name = "authlib" },
     { name = "cyclopts" },
+    { name = "dnspython" },
     { name = "exceptiongroup" },
     { name = "griffelib" },
     { name = "httpx2" },
@@ -1056,6 +1057,7 @@ requires-dist = [
     { name = "authlib", marker = "extra == 'server'", specifier = ">=1.6.11" },
     { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.16.0" },
     { name = "cyclopts", marker = "extra == 'server'", specifier = ">=4.0.0" },
+    { name = "dnspython", marker = "extra == 'server'", specifier = ">=2.6.0" },
     { name = "exceptiongroup", marker = "extra == 'client'", specifier = ">=1.2.2" },
     { name = "exceptiongroup", marker = "extra == 'mcp'", specifier = ">=1.2.2" },
     { name = "exceptiongroup", marker = "extra == 'server'", specifier = ">=1.2.2" },

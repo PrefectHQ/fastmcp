@@ -94,6 +94,7 @@ server = [
     "fastmcp-slim[mcp]=={{ version }}",
     "authlib>=1.6.11",
     "cyclopts>=4.0.0",
+    "dnspython>=2.6.0",
     "griffelib>=2.0.0",
     "jsonref>=1.1.0",
     "jsonschema-path>=0.3.4",
