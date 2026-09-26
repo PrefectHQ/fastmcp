@@ -129,7 +129,11 @@ class RateLimitingMiddleware(Middleware):
             global_limit: If True, apply limit globally; if False, per-client
         """
         self.max_requests_per_second = max_requests_per_second
-        self.burst_capacity = burst_capacity or int(max_requests_per_second * 2)
+        self.burst_capacity = (
+            burst_capacity
+            if burst_capacity is not None
+            else int(max_requests_per_second * 2)
+        )
         self.get_client_id = get_client_id
         self.global_limit = global_limit
 

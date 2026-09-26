@@ -1073,6 +1073,43 @@ class TestProxyProviderCache:
         await provider._list_tools()
         assert provider._tools_cache.timestamp > first_ts  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
+    async def test_list_tools_serves_a_fresh_cache_entry(self, fastmcp_server):
+        """Within the TTL the public listing path must not re-list the backend.
+
+        ``_get_tool`` resolves names from the cache, but ``tools/list`` went to
+        the backend on every call even though the result was cached right after.
+        """
+        provider = ProxyProvider(
+            lambda: ProxyClient(FastMCPTransport(fastmcp_server)),
+        )
+        call_count = 0
+        original_list = provider._list_tools
+
+        async def counting_list():
+            nonlocal call_count
+            call_count += 1
+            return await original_list()
+
+        with patch.object(provider, "_list_tools", side_effect=counting_list):
+            first = await provider.list_tools()
+            second = await provider.list_tools()
+            third = await provider.list_tools()
+
+        assert call_count == 1
+        assert [t.name for t in first] == [t.name for t in second]
+        assert [t.name for t in first] == [t.name for t in third]
+
+        # Disabling caching must keep listing the backend every time.
+        call_count = 0
+        uncached = ProxyProvider(
+            lambda: ProxyClient(FastMCPTransport(fastmcp_server)),
+            cache_ttl=0.0,
+        )
+        with patch.object(uncached, "_list_tools", side_effect=counting_list):
+            await uncached.list_tools()
+            await uncached.list_tools()
+        assert call_count == 2
+
     async def test_cache_ttl_zero_disables_caching(self, fastmcp_server):
         """With cache_ttl=0, every _get_tool call should re-fetch."""
         provider = ProxyProvider(
