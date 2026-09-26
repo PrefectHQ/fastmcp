@@ -79,3 +79,29 @@
   .watch-picker .watch-item-title { font-size: 16px; }
   .watch-actions { column-gap: 2px; }
 }
+.home-rooms { gap: 12px; }
+.home-room {
+  display: flex; flex-direction: column; gap: 14px;
+  padding: 18px 20px;
+  border: 1px solid var(--watch-edge);
+  border-radius: 22px;
+  background: var(--watch-glass);
+  backdrop-filter: blur(22px) saturate(125%);
+  -webkit-backdrop-filter: blur(22px) saturate(125%);
+}
+.home-room-head { align-items: center; gap: 14px; }
+.home-swatch {
+  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+  background: #f3c77a;
+  box-shadow: 0 0 18px 2px color-mix(in srgb, currentColor 0%, transparent), inset 0 1px 1px rgba(255, 255, 255, 0.6);
+}
+.home-swatch-off { background: rgba(120, 135, 140, 0.25); box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3); }
+.home-room-copy { flex: 1; min-width: 0; gap: 2px; }
+.watch-picker .home-room-name { font-size: 16px; font-weight: 600; letter-spacing: -0.2px; }
+.watch-picker .home-room-meta { font-size: 12px; color: var(--watch-muted); }
+.home-levels, .home-scenes { flex-wrap: wrap; gap: 6px; }
+.watch-picker .home-level, .watch-picker .home-scene { border-radius: 999px; font-size: 12px; height: 32px; padding: 0 12px; }
+.watch-picker .home-scene { color: var(--watch-muted); }
+@media (max-width: 480px) {
+  .home-room { padding: 16px; border-radius: 18px; }
+}

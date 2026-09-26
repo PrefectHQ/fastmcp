@@ -27,6 +27,20 @@ set `MEDIA_PICKER_ACTUATOR_TOOL=fire_tv_play_media`. When an actuator is configu
 `MEDIA_PICKER_ACTUATOR_SOURCES` is required: the picker hides unsupported results and
 direct calls fail before dispatch.
 
+## Home view and lights
+
+`show_home` combines the TV picks with a Lights tab: every Hue room with its live
+color, an on/off switch, brightness presets, and its saved scenes. It reads and
+controls lights through the smart-home example's Hue server over MCP:
+
+```bash
+export MEDIA_PICKER_LIGHTS_URL=http://127.0.0.1:8766/mcp
+```
+
+The light buttons call app-only tools, so the model never changes lights on its own.
+On macOS, start the Hue server from a process with Local Network permission: one
+launched without it gets `No route to host` from the bridge.
+
 ## Sign-in
 
 A picker that controls a TV shouldn't be open to anyone who finds its URL. Setting

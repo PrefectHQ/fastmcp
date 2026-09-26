@@ -148,7 +148,15 @@ async def test_mcp_host_loop_exposes_ui_and_marks_backend_tools_app_only(
 ) -> None:
     async with Client(mcp) as client:
         tools_by_name = {tool.name: tool for tool in await client.list_tools()}
-        assert set(tools_by_name) == {"play_media", "save_media", "show_media_picker"}
+        assert set(tools_by_name) == {
+            "play_media",
+            "save_media",
+            "show_media_picker",
+            "show_home",
+            "set_room_power",
+            "set_room_brightness",
+            "activate_room_scene",
+        }
         assert tools_by_name["play_media"].meta["ui"]["visibility"] == ["app"]
         assert tools_by_name["save_media"].meta["ui"]["visibility"] == ["app"]
 
