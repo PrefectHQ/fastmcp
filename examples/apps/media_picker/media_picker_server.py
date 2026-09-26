@@ -100,6 +100,7 @@ def _auth_from_env() -> ATProtoProvider | None:
         base_url=base_url,
         jwt_signing_key=os.environ["MEDIA_PICKER_JWT_SIGNING_KEY"],
         allowed_dids=allowed_dids,
+        require_authorization_consent="remember",
     )
 
 

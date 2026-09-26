@@ -56,6 +56,9 @@ export MEDIA_PICKER_JWT_SIGNING_KEY=a-long-random-secret
 Keep the base URL and signing key stable: the base URL is the sign-in's client ID, and
 a new signing key ends every session.
 
+With one allowed DID, signing in goes straight to that account's PDS. The consent
+screen shows once per client in each browser, then is remembered.
+
 ## Run
 
 From the repository root:

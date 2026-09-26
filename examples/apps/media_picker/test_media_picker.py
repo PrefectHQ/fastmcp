@@ -219,3 +219,4 @@ def test_auth_requires_an_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
     assert isinstance(provider, ATProtoProvider)
     assert "did:plc:abcdefghijklmnopqrstuvwx" in provider._allowed_dids
     assert "did:plc:zyxwvutsrqponmlkjihgfedc" not in provider._allowed_dids
+    assert provider._require_authorization_consent == "remember"
