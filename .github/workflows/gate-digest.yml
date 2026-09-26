@@ -2,7 +2,7 @@ name: Gate queue digest
 description: Sorts contributor PRs waiting on the issue-link gate into a job summary
 on:
   schedule:
-    - cron: "0 13 * * *" # Daily at 1 PM UTC
+    - cron: "0 13,21 * * *" # 1 PM and 9 PM UTC
   workflow_dispatch:
   pull_request:
     paths:
