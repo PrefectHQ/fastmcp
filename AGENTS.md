@@ -41,7 +41,7 @@ uv run prek run --all-files          # Ruff + Prettier + ty
 
 ## Skills
 
-Repository skills live in `.agents/skills/`, with symlinks in `.claude/skills/` for Claude Code. Load the one that matches the job:
+Repository skills live in `.agents/skills/`, with symlinks in `.claude/skills/` for Claude Code. [MAINTAINING.md](MAINTAINING.md) says which work is automated and which needs a person. Load the skill that matches the job:
 
 | Job | Skill |
 | --- | --- |

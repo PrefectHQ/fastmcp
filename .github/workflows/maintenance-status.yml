@@ -1,0 +1,52 @@
+name: Maintenance status
+description: Publishes automation health and contributor queue counts to the status branch
+on:
+  schedule:
+    - cron: "0 13,21 * * *" # 1 PM and 9 PM UTC
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/maintenance-status.yml"
+      - "scripts/maintenance_status.py"
+      - "scripts/gate_digest.py"
+
+jobs:
+  status:
+    # Fork PRs can't read the Jev key.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+      issues: read
+      pull-requests: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.1.0
+
+      - name: Build status
+        run: uv run scripts/maintenance_status.py "$RUNNER_TEMP/status" > /dev/null
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+
+      - name: Show status
+        run: cat "$RUNNER_TEMP/status/STATUS.md" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # The status branch holds one commit: the latest snapshot.
+      - name: Publish to the status branch
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        working-directory: ${{ runner.temp }}/status
+        run: |
+          git init -q -b status
+          git add status.json STATUS.md badge.json
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "status: $(jq -r .as_of status.json)"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" status
+        env:
+          GH_TOKEN: ${{ github.token }}

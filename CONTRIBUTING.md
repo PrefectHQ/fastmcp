@@ -58,7 +58,7 @@ If you do open a PR:
 
 ## Maintaining FastMCP
 
-Maintainers use the same skills for the rest of the project's work: `triage` finds worthwhile issues, `review-issue` decides whether to assign an external contributor, `review-pr` follows a PR through CI and bot review, `review-security-report` evaluates vulnerability reports, and `release` cuts a release from notes preview to a verified docs deploy. The table in [AGENTS.md](AGENTS.md#skills) maps each job to its skill. Skills stop before public actions such as commenting, assigning, merging, or tagging, and ask the maintainer driving them.
+Maintainers use the same skills for the rest of the project's work: `triage` finds worthwhile issues, `review-issue` decides whether to assign an external contributor, `review-pr` follows a PR through CI and bot review, `review-security-report` evaluates vulnerability reports, and `release` cuts a release from notes preview to a verified docs deploy. The table in [AGENTS.md](AGENTS.md#skills) maps each job to its skill, and [MAINTAINING.md](MAINTAINING.md) lists what runs on its own. Skills stop before public actions such as commenting, assigning, merging, or tagging, and ask the maintainer driving them.
 
 ## What we'll close without review
 
