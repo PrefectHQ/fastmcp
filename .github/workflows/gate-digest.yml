@@ -28,7 +28,7 @@ jobs:
         uses: astral-sh/setup-uv@v10.1.0
 
       - name: Write the digest
-        run: uv run scripts/gate_digest.py >> "$GITHUB_STEP_SUMMARY"
+        run: uv run scripts/gate_digest.py | tee -a "$GITHUB_STEP_SUMMARY"
         env:
           GH_TOKEN: ${{ github.token }}
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
