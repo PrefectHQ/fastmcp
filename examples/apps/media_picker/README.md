@@ -4,7 +4,7 @@ An interactive, source-agnostic media picker built with `FastMCPApp` and Prefab.
 It demonstrates a decoupled flow:
 
 1. `discover_media` returns normalized candidates that the model can reason about.
-2. `show_media_picker` renders selected candidate IDs as an in-conversation carousel.
+2. `show_media_picker` renders playable candidate IDs as a compact in-conversation list.
 3. `Play` and `Save` call app-only tools without another model turn.
 4. `More like this` sends a focused follow-up request back to the conversation.
 
@@ -14,11 +14,14 @@ real device, point it at an MCP server with a playback tool that accepts `source
 
 ```dotenv
 MEDIA_PICKER_ACTUATOR_URL=http://127.0.0.1:8764/mcp
-MEDIA_PICKER_ACTUATOR_TOOL=fire_tv_play_media
+MEDIA_PICKER_ACTUATOR_TOOL=play_media
+MEDIA_PICKER_ACTUATOR_SOURCES=youtube
 ```
 
-The smart-home example implements this contract for YouTube on Fire TV. Other sources
-fail closed until that actuator supports them.
+The smart-home example implements this contract for YouTube on Fire TV. When an
+actuator is configured, `MEDIA_PICKER_ACTUATOR_SOURCES` is required: the picker hides
+unsupported results and direct calls fail before dispatch. This prevents a source URL
+from reaching an actuator that cannot interpret it.
 
 ## Run
 

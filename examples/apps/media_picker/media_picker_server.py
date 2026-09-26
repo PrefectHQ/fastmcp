@@ -25,7 +25,6 @@ from prefab_ui.components import (
     CardFooter,
     CardHeader,
     CardTitle,
-    Carousel,
     Column,
     Heading,
     If,
@@ -39,6 +38,7 @@ from fastmcp import Client, FastMCP, FastMCPApp
 from fastmcp.exceptions import ToolError
 
 Source = Literal["youtube", "internet_archive", "live_cam"]
+ALL_SOURCES: frozenset[Source] = frozenset({"youtube", "internet_archive", "live_cam"})
 
 
 class MediaCandidate(TypedDict):
@@ -119,6 +119,28 @@ def _candidate(media_id: str) -> MediaCandidate:
         raise ValueError(f"Unknown media id: {media_id}") from exc
 
 
+def _actuator_sources() -> frozenset[Source] | None:
+    """Return configured actuator capabilities, or None in demo mode."""
+    if not os.getenv("MEDIA_PICKER_ACTUATOR_URL"):
+        return None
+
+    configured = {
+        source.strip()
+        for source in os.getenv("MEDIA_PICKER_ACTUATOR_SOURCES", "").split(",")
+        if source.strip()
+    }
+    unknown = configured - ALL_SOURCES
+    if unknown:
+        names = ", ".join(sorted(unknown))
+        raise ToolError(f"Unknown playback source in configuration: {names}")
+    return frozenset(source for source in ALL_SOURCES if source in configured)
+
+
+def _is_playable(item: MediaCandidate) -> bool:
+    sources = _actuator_sources()
+    return sources is None or item["source"] in sources
+
+
 async def _play_via_mcp(
     item: MediaCandidate, target: FastMCP | str, tool_name: str
 ) -> object:
@@ -134,7 +156,7 @@ async def _play_via_mcp(
             raise_on_error=False,
         )
     if result.is_error:
-        raise ToolError(f"Playback actuator rejected the request: {result.content}")
+        raise ToolError("The playback device could not start this item.")
     return result.data
 
 
@@ -168,6 +190,9 @@ async def play_media(media_id: str) -> dict[str, object]:
     item = _candidate(media_id)
     actuator_url = os.getenv("MEDIA_PICKER_ACTUATOR_URL")
     if actuator_url:
+        if not _is_playable(item):
+            source = item["source"].replace("_", " ").title()
+            raise ToolError(f"{source} playback is not available on this device.")
         tool_name = os.getenv("MEDIA_PICKER_ACTUATOR_TOOL", "play_media")
         receipt = await _play_via_mcp(item, actuator_url, tool_name)
         return {
@@ -218,19 +243,28 @@ def show_media_picker(candidate_ids: list[str] | None = None) -> PrefabApp:
         if candidate_ids is not None
         else list(CATALOG)
     )
+    requested_count = len(candidates)
+    candidates = [item for item in candidates if _is_playable(item)]
+    omitted_count = requested_count - len(candidates)
 
-    with Column(gap=5, css_class="p-5") as view:
+    with Column(gap=4, css_class="p-4") as view:
         Heading("Pick something worth watching")
-        Muted("Normalized results can come from any source; actions stay the same.")
+        Muted("Choose a result to play directly on the configured device.")
+
+        if omitted_count:
+            Muted(
+                f"{omitted_count} result{'s' if omitted_count != 1 else ''} hidden "
+                "because this device does not support that source."
+            )
 
         if not candidates:
             with Card():
                 with CardContent(css_class="p-5"):
-                    Text("No candidates matched. Try a broader discovery query.")
+                    Text("No playable candidates matched. Try another discovery query.")
         else:
-            with Carousel(visible=1.15, gap=16, loop=False, show_dots=True):
+            with Column(gap=3):
                 for item in candidates:
-                    with Card(css_class="h-full min-h-80"):
+                    with Card():
                         with CardHeader():
                             with Row(gap=2, align="center"):
                                 Badge(item["source"].replace("_", " ").title())
@@ -252,9 +286,7 @@ def show_media_picker(candidate_ids: list[str] | None = None) -> PrefabApp:
                                         arguments={"media_id": item["id"]},
                                         on_success=[
                                             SetState("last_action", RESULT.message),
-                                            ShowToast(
-                                                "Queued for playback", variant="success"
-                                            ),
+                                            ShowToast("Sent to TV", variant="success"),
                                         ],
                                         on_error=ShowToast(ERROR, variant="error"),
                                     ),
@@ -290,6 +322,7 @@ def show_media_picker(candidate_ids: list[str] | None = None) -> PrefabApp:
         state={
             "last_action": "",
             "candidate_ids": [item["id"] for item in candidates],
+            "omitted_count": omitted_count,
         },
     )
 

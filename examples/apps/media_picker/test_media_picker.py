@@ -13,6 +13,7 @@ from media_picker_server import (
 from prefab_ui.app import PROTOCOL_VERSION
 
 from fastmcp import Client, FastMCP
+from fastmcp.exceptions import ToolError
 
 
 def test_discovery_normalizes_and_filters_across_sources() -> None:
@@ -39,6 +40,18 @@ async def test_actions_are_idempotent_and_reject_unknown_ids() -> None:
 
     with pytest.raises(ValueError, match="Unknown media id"):
         await play_media("missing")
+
+
+async def test_playback_rejects_unsupported_sources_before_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MEDIA_PICKER_ACTUATOR_URL", "http://unreachable.invalid/mcp")
+    monkeypatch.setenv("MEDIA_PICKER_ACTUATOR_SOURCES", "youtube")
+
+    with pytest.raises(
+        ToolError, match="Internet Archive playback is not available on this device"
+    ):
+        await play_media("apollo-control-room")
 
 
 async def test_playback_routes_normalized_candidate_through_mcp() -> None:
@@ -90,3 +103,29 @@ async def test_mcp_host_loop_exposes_ui_and_marks_backend_tools_app_only() -> No
         "cold-fusion-documentary",
         "monterey-bay-live",
     ]
+
+
+async def test_picker_only_renders_sources_supported_by_the_actuator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MEDIA_PICKER_ACTUATOR_URL", "http://playback.example/mcp")
+    monkeypatch.setenv("MEDIA_PICKER_ACTUATOR_SOURCES", "youtube")
+
+    async with Client(mcp) as client:
+        result = await client.call_tool(
+            "show_media_picker",
+            {
+                "candidate_ids": [
+                    "cold-fusion-documentary",
+                    "apollo-control-room",
+                    "forest-bird-feeder-live",
+                ]
+            },
+        )
+
+    assert result.structured_content is not None
+    assert result.structured_content["state"]["candidate_ids"] == [
+        "cold-fusion-documentary",
+        "forest-bird-feeder-live",
+    ]
+    assert result.structured_content["state"]["omitted_count"] == 1
