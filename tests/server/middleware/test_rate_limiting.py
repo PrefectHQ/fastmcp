@@ -272,6 +272,27 @@ class TestRateLimitingMiddleware:
         ):
             await middleware.on_request(mock_context, mock_call_next)
 
+    async def test_burst_capacity_zero_is_honoured(self):
+        """Only None falls back to 2x; an explicit 0 means no bursting.
+
+        ``burst_capacity or ...`` treated 0 as unset, so an operator disabling
+        bursts silently got 2x max_requests_per_second instead.
+        """
+        middleware = RateLimitingMiddleware(max_requests_per_second=10, burst_capacity=0)
+
+        assert middleware.burst_capacity == 0
+        limiter = middleware.limiters["client-1"]
+        assert limiter.capacity == 0
+        assert await limiter.consume(1) is False
+
+    async def test_burst_capacity_defaults_only_when_none(self):
+        assert RateLimitingMiddleware(max_requests_per_second=10).burst_capacity == 20
+        assert (
+            RateLimitingMiddleware(max_requests_per_second=5, burst_capacity=None).burst_capacity == 10
+        )
+        assert RateLimitingMiddleware(max_requests_per_second=10, burst_capacity=3).burst_capacity == 3
+
+
 
 class TestSlidingWindowRateLimitingMiddleware:
     """Test sliding window rate limiting middleware."""
