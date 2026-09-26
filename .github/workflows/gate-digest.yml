@@ -1,0 +1,34 @@
+name: Gate queue digest
+description: Sorts contributor PRs waiting on the issue-link gate into a job summary
+on:
+  schedule:
+    - cron: "0 13 * * *" # Daily at 1 PM UTC
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/gate-digest.yml"
+      - "scripts/gate_digest.py"
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  digest:
+    # Fork PRs can't read the Jev key.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.1.0
+
+      - name: Write the digest
+        run: uv run scripts/gate_digest.py >> "$GITHUB_STEP_SUMMARY"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
