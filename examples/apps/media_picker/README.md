@@ -8,17 +8,21 @@ It demonstrates a decoupled flow:
 3. `Play` and `Save` call app-only tools without another model turn.
 4. `More like this` sends a focused follow-up request back to the conversation.
 
-The demo uses a static catalog and returns playback receipts by default. To control a
+`discover_media` searches a static sample catalog, not YouTube or the web. `Save`
+stores IDs in memory until the server restarts. Demo playback returns a receipt
+without controlling hardware. To control a
 real device, point it at an MCP server with a playback tool that accepts `source`,
 `source_id`, `url`, and `title`:
 
-```dotenv
-MEDIA_PICKER_ACTUATOR_URL=http://127.0.0.1:8764/mcp
-MEDIA_PICKER_ACTUATOR_TOOL=play_media
-MEDIA_PICKER_ACTUATOR_SOURCES=youtube
+```bash
+export MEDIA_PICKER_ACTUATOR_URL=http://127.0.0.1:8764/mcp
+export MEDIA_PICKER_ACTUATOR_TOOL=play_media
+export MEDIA_PICKER_ACTUATOR_SOURCES=youtube
 ```
 
-The smart-home example implements this contract for YouTube on Fire TV. When an
+The [smart-home example](../../smart_home/README.md) documents how to start the
+standalone Fire TV endpoint used above. If you expose its combined hub instead,
+set `MEDIA_PICKER_ACTUATOR_TOOL=fire_tv_play_media`. When an
 actuator is configured, `MEDIA_PICKER_ACTUATOR_SOURCES` is required: the picker hides
 unsupported results and direct calls fail before dispatch. This prevents a source URL
 from reaching an actuator that cannot interpret it.
