@@ -8,9 +8,17 @@ It demonstrates a decoupled flow:
 3. `Play` and `Save` call app-only tools without another model turn.
 4. `More like this` sends a focused follow-up request back to the conversation.
 
-The demo uses a static catalog and returns playback receipts rather than controlling a
-real device. Replace the catalog with source adapters and `play_media` with an actuator
-without changing the UI contract.
+The demo uses a static catalog and returns playback receipts by default. To control a
+real device, point it at an MCP server with a playback tool that accepts `source`,
+`source_id`, `url`, and `title`:
+
+```dotenv
+MEDIA_PICKER_ACTUATOR_URL=http://127.0.0.1:8764/mcp
+MEDIA_PICKER_ACTUATOR_TOOL=fire_tv_play_media
+```
+
+The smart-home example implements this contract for YouTube on Fire TV. Other sources
+fail closed until that actuator supports them.
 
 ## Run
 

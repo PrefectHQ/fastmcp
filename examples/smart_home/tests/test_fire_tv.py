@@ -62,6 +62,7 @@ async def test_status_and_commands_share_one_connection(configured_fire_tv):
             "read_status",
             "press_home",
             "launch_app",
+            "play_media",
             "play_youtube_video",
         }
         assert tools["read_status"].annotations.read_only_hint is True
@@ -87,6 +88,19 @@ async def test_status_and_commands_share_one_connection(configured_fire_tv):
         ).data
         assert video.command == "play_youtube_video:D1VM6V6wmU0"
 
+        media = (
+            await client.call_tool(
+                "play_media",
+                {
+                    "source": "youtube",
+                    "source_id": "jkAw87ZIwQA",
+                    "url": "https://www.youtube.com/watch?v=jkAw87ZIwQA",
+                    "title": "Cold Fusion",
+                },
+            )
+        ).data
+        assert media.command == "play_media:youtube:jkAw87ZIwQA"
+
     assert setup_calls == [
         {
             "host": "192.0.2.10",
@@ -106,6 +120,12 @@ async def test_status_and_commands_share_one_connection(configured_fire_tv):
             "-d https://www.youtube.com/watch?v=D1VM6V6wmU0 "
             "com.amazon.firetv.youtube",
         ),
+        (
+            "adb_shell",
+            "am start -a android.intent.action.VIEW "
+            "-d https://www.youtube.com/watch?v=jkAw87ZIwQA "
+            "com.amazon.firetv.youtube",
+        ),
     ]
     assert device.closed is True
 
@@ -117,6 +137,16 @@ async def test_status_and_commands_share_one_connection(configured_fire_tv):
         (
             "play_youtube_video",
             {"video_id": "invalid; reboot"},
+            "11 URL-safe characters",
+        ),
+        (
+            "play_media",
+            {
+                "source": "youtube",
+                "source_id": "invalid; reboot",
+                "url": "https://www.youtube.com/",
+                "title": "Bad",
+            },
             "11 URL-safe characters",
         ),
     ],

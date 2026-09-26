@@ -9,6 +9,7 @@ Usage:
 
 from __future__ import annotations
 
+import os
 from typing import Literal, TypedDict
 
 from mcp.types import ToolAnnotations
@@ -34,7 +35,8 @@ from prefab_ui.components import (
 )
 from prefab_ui.rx import ERROR, RESULT, Rx
 
-from fastmcp import FastMCP, FastMCPApp
+from fastmcp import Client, FastMCP, FastMCPApp
+from fastmcp.exceptions import ToolError
 
 Source = Literal["youtube", "internet_archive", "live_cam"]
 
@@ -43,6 +45,7 @@ class MediaCandidate(TypedDict):
     id: str
     title: str
     source: Source
+    source_id: str
     duration: str
     summary: str
     why: str
@@ -52,29 +55,32 @@ class MediaCandidate(TypedDict):
 
 CATALOG: list[MediaCandidate] = [
     {
-        "id": "tokyo-rain-walk",
-        "title": "Tokyo After Midnight — Rain Walk",
+        "id": "cold-fusion-documentary",
+        "title": "BobbyBroccoli — The Cold Fusion Scandal",
         "source": "youtube",
-        "duration": "2h 18m",
-        "summary": "A quiet, uncut walk through rainy side streets.",
-        "why": "Natural city sound, no host, no soundtrack.",
-        "tags": ["rain", "city", "walking", "ambient", "no music"],
-        "url": "https://www.youtube.com/",
+        "source_id": "jkAw87ZIwQA",
+        "duration": "3h 15m",
+        "summary": "A feature-length documentary about the cold fusion scandal.",
+        "why": "A deeply researched story with enough room to settle in.",
+        "tags": ["science", "history", "documentary", "long-form"],
+        "url": "https://www.youtube.com/watch?v=jkAw87ZIwQA",
     },
     {
-        "id": "norway-night-train",
-        "title": "Night Train Across Norway",
+        "id": "forest-bird-feeder-live",
+        "title": "HANS Nature — Live Bird Feeder and Forest Wildlife",
         "source": "youtube",
-        "duration": "7h 14m",
-        "summary": "A driver's-eye rail journey through the night.",
-        "why": "Long-form, steady visuals, only train and track sound.",
-        "tags": ["train", "travel", "night", "ambient", "no music"],
-        "url": "https://www.youtube.com/",
+        "source_id": "D1VM6V6wmU0",
+        "duration": "Live",
+        "summary": "A fixed woodland camera focused on a busy bird feeder.",
+        "why": "Natural forest sound, no host, and no soundtrack.",
+        "tags": ["birds", "forest", "wildlife", "ambient", "no music"],
+        "url": "https://www.youtube.com/watch?v=D1VM6V6wmU0",
     },
     {
         "id": "apollo-control-room",
         "title": "Apollo Mission Control Room Recordings",
         "source": "internet_archive",
+        "source_id": "apollo-control-room",
         "duration": "3h 05m",
         "summary": "Restored mission audio paired with archival visuals.",
         "why": "Absorbing primary-source material with a slow pace.",
@@ -85,6 +91,7 @@ CATALOG: list[MediaCandidate] = [
         "id": "monterey-bay-live",
         "title": "Monterey Bay Open Ocean Live Cam",
         "source": "live_cam",
+        "source_id": "open-sea-cam",
         "duration": "Live",
         "summary": "Open-ocean wildlife from a fixed underwater camera.",
         "why": "Genuinely live, visually calm, and naturally unpredictable.",
@@ -112,6 +119,25 @@ def _candidate(media_id: str) -> MediaCandidate:
         raise ValueError(f"Unknown media id: {media_id}") from exc
 
 
+async def _play_via_mcp(
+    item: MediaCandidate, target: FastMCP | str, tool_name: str
+) -> object:
+    async with Client(target) as client:
+        result = await client.call_tool(
+            tool_name,
+            {
+                "source": item["source"],
+                "source_id": item["source_id"],
+                "url": item["url"],
+                "title": item["title"],
+            },
+            raise_on_error=False,
+        )
+    if result.is_error:
+        raise ToolError(f"Playback actuator rejected the request: {result.content}")
+    return result.data
+
+
 @mcp.tool(annotations=READ_ONLY)
 def discover_media(
     query: str = "",
@@ -137,9 +163,24 @@ def discover_media(
 
 
 @app.tool()
-def play_media(media_id: str) -> dict[str, str]:
-    """Queue one candidate for playback and return an actuator-friendly receipt."""
+async def play_media(media_id: str) -> dict[str, object]:
+    """Play one candidate through the configured MCP actuator, or return a demo receipt."""
     item = _candidate(media_id)
+    actuator_url = os.getenv("MEDIA_PICKER_ACTUATOR_URL")
+    if actuator_url:
+        tool_name = os.getenv("MEDIA_PICKER_ACTUATOR_TOOL", "play_media")
+        receipt = await _play_via_mcp(item, actuator_url, tool_name)
+        return {
+            "action": "play",
+            "media_id": media_id,
+            "status": "accepted",
+            "title": item["title"],
+            "url": item["url"],
+            "actuator": tool_name,
+            "receipt": receipt,
+            "message": f"Sent “{item['title']}” to the playback device.",
+        }
+
     return {
         "action": "play",
         "media_id": media_id,
