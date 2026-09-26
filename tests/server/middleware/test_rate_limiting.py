@@ -240,6 +240,27 @@ class TestRateLimitingMiddleware:
         with pytest.raises(RateLimitError, match="Rate limit exceeded"):
             await middleware.on_request(mock_context, mock_call_next)
 
+    @pytest.mark.parametrize("global_limit", [False, True])
+    async def test_sub_half_rate_default_burst_admits_requests(
+        self, mock_context, mock_call_next, monkeypatch, global_limit
+    ):
+        current_time = 0.0
+        monkeypatch.setattr(
+            "fastmcp.server.middleware.rate_limiting.time.time",
+            lambda: current_time,
+        )
+        middleware = RateLimitingMiddleware(
+            max_requests_per_second=0.4, global_limit=global_limit
+        )
+        assert middleware.burst_capacity == 1
+
+        assert await middleware.on_request(mock_context, mock_call_next)
+        with pytest.raises(RateLimitError):
+            await middleware.on_request(mock_context, mock_call_next)
+
+        current_time += 2.6
+        assert await middleware.on_request(mock_context, mock_call_next)
+
     async def test_global_rate_limiting(self, mock_context, mock_call_next):
         """Test global rate limiting."""
         middleware = RateLimitingMiddleware(
