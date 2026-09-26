@@ -196,6 +196,17 @@ class TestRateLimitingMiddleware:
             )
         assert middleware.burst_capacity == expected
 
+    def test_zero_rate_deprecation_points_to_omitting_burst_capacity(self):
+        """The reject-all setup keeps its behavior and gets a migration that preserves it."""
+        with pytest.warns(FastMCPDeprecationWarning, match="omit burst_capacity"):
+            middleware = RateLimitingMiddleware(
+                max_requests_per_second=0, burst_capacity=0
+            )
+        assert middleware.burst_capacity == 0
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FastMCPDeprecationWarning)
+            assert RateLimitingMiddleware(max_requests_per_second=0).burst_capacity == 0
+
     @pytest.mark.parametrize("burst_capacity", [None, 1, 20])
     def test_valid_burst_capacity_does_not_warn(self, burst_capacity):
         with warnings.catch_warnings():

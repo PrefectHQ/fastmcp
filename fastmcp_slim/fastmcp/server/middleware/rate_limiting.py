@@ -134,12 +134,20 @@ class RateLimitingMiddleware(Middleware):
             global_limit: If True, apply limit globally; if False, per-client
         """
         if burst_capacity is not None and burst_capacity < 1:
+            if max_requests_per_second > 0:
+                instead = (
+                    "Pass burst_capacity=1 for no bursting beyond the steady rate."
+                )
+            else:
+                instead = (
+                    "To reject every request, omit burst_capacity: with "
+                    "max_requests_per_second=0 the default capacity is 0."
+                )
             warnings.warn(
                 f"RateLimitingMiddleware(burst_capacity={burst_capacity!r}) is deprecated "
                 "and will raise a ValueError in FastMCP 5: a bucket that holds less than "
                 "one token can't admit a request, so 0 falls back to the default and other "
-                "values reject every request. Pass burst_capacity=1 for no bursting beyond "
-                "the steady rate.",
+                f"values reject every request. {instead}",
                 FastMCPDeprecationWarning,
                 stacklevel=2,
             )
