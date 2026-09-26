@@ -18,6 +18,14 @@ __all__ = ["ResponseLimitingMiddleware"]
 
 logger = logging.getLogger(__name__)
 
+# The middleware measures a ToolResult, but the client measures the
+# CallToolResult that goes on the wire, whose envelope (annotations, isError,
+# structuredContent) adds a fixed overhead beyond it. Measured against mcp
+# 2.2.0: an empty text result is 126 bytes as ToolResult and 241 as
+# CallToolResult. Reserve that envelope so the response the client measures
+# also fits within max_size.
+_WIRE_ENVELOPE_BYTES = 128
+
 
 class ResponseLimitingMiddleware(Middleware):
     """Middleware that limits the response size of tool calls.
@@ -72,35 +80,51 @@ class ResponseLimitingMiddleware(Middleware):
     def _limits_tool(self, name: str) -> bool:
         return self.tools is None or name in self.tools
 
+    @staticmethod
+    def _serialized_size(result: ToolResult) -> int:
+        """Size of a result exactly as the middleware measures it elsewhere."""
+        return len(pydantic_core.to_json(result, fallback=str))
+
     def _truncate_to_result(
         self,
         text: str,
         meta: dict[str, Any] | None = None,
     ) -> ToolResult:
-        """Truncate text to fit within max_size and wrap in ToolResult."""
-        suffix_bytes = len(self.truncation_suffix.encode("utf-8"))
-        # Account for JSON wrapper overhead: {"content":[{"type":"text","text":"..."}]}
-        overhead = 50
-        target_size = self.max_size - suffix_bytes - overhead
+        """Truncate text so the *serialized* result fits within max_size.
 
-        if target_size <= 0:
-            # Edge case: max_size too small for even the suffix
-            truncated = self.truncation_suffix
-        else:
-            # Truncate to target size, preserving UTF-8 boundaries
-            encoded = text.encode("utf-8")
-            if len(encoded) <= target_size:
-                truncated = text + self.truncation_suffix
+        The limit is checked on ``len(pydantic_core.to_json(result))``, so the
+        budget has to be spent on that same measure: JSON escaping turns a
+        control character into six bytes (``\u0001``) and a quote into two, and
+        bounding the raw text length instead let escape-heavy responses come
+        back several times larger than max_size.
+        """
+
+        def build(candidate: str) -> ToolResult:
+            return ToolResult(
+                content=[TextContent(type="text", text=candidate)],
+                meta=meta,
+            )
+
+        budget = self.max_size - _WIRE_ENVELOPE_BYTES
+
+        suffix_result = build(self.truncation_suffix)
+        if self._serialized_size(suffix_result) > budget:
+            # Edge case: the budget cannot hold even the truncation suffix.
+            return suffix_result
+
+        if self._serialized_size(build(text + self.truncation_suffix)) <= budget:
+            return build(text + self.truncation_suffix)
+
+        # Longest prefix whose serialized form (suffix included) still fits.
+        low, high = 0, len(text)
+        while low < high:
+            mid = (low + high + 1) // 2
+            if self._serialized_size(build(text[:mid] + self.truncation_suffix)) <= budget:
+                low = mid
             else:
-                truncated = (
-                    encoded[:target_size].decode("utf-8", errors="ignore")
-                    + self.truncation_suffix
-                )
+                high = mid - 1
 
-        return ToolResult(
-            content=[TextContent(type="text", text=truncated)],
-            meta=meta,
-        )
+        return build(text[:low] + self.truncation_suffix)
 
     async def on_list_tools(
         self,
