@@ -278,10 +278,10 @@ class TestTransformedGuard:
 
         mcp = FastMCP("transformed")
         # A non-object output_schema is exactly the transform config that
-        # rebuilds ordinary ToolResults and would strip the ask.
-        transformed = TransformedTool.from_tool(
-            book, name="book", output_schema={"type": "string"}
-        )
+        # rebuilds ordinary ToolResults and would strip the ask. from_tool
+        # rejects non-object schemas, so set it directly.
+        transformed = TransformedTool.from_tool(book, name="book")
+        transformed.output_schema = {"type": "string"}
         mcp.add_tool(transformed)
 
         # The asking (first) round must reach the wire as an InputRequiredResult
