@@ -71,6 +71,44 @@ class TestUserCSPReachesResource:
         assert "https://base.example.com" in csp.get("baseUriDomains", [])
 
 
+class TestFastMCPAppUICSP:
+    """``FastMCPApp.ui(csp=...)`` reaches the resource like ``PrefabAppConfig``."""
+
+    async def test_ui_csp_reaches_resource_and_keeps_renderer_defaults(self):
+        app = FastMCPApp("Gallery")
+
+        @app.ui(csp=ResourceCSP(resource_domains=["https://i.ytimg.com"]))
+        def show_gallery() -> str:
+            return "gallery"
+
+        mcp = FastMCP("test", providers=[app])
+        tools = {tool.name: tool for tool in await mcp.list_tools()}
+        assert tools["show_gallery"].meta is not None
+        assert "csp" not in tools["show_gallery"].meta["ui"]
+
+        resources = list(await mcp.list_resources())
+        renderer = next(r for r in resources if "prefab/tool" in str(r.uri))
+        assert renderer.meta is not None
+        domains = renderer.meta["ui"]["csp"]["resourceDomains"]
+        assert "https://i.ytimg.com" in domains
+        assert "https://cdn.jsdelivr.net" in domains
+
+    async def test_ui_without_csp_keeps_only_renderer_defaults(self):
+        app = FastMCPApp("Plain")
+
+        @app.ui()
+        def show_plain() -> str:
+            return "plain"
+
+        mcp = FastMCP("test", providers=[app])
+        resources = list(await mcp.list_resources())
+        renderer = next(r for r in resources if "prefab/tool" in str(r.uri))
+        assert renderer.meta is not None
+        assert "https://i.ytimg.com" not in renderer.meta["ui"]["csp"].get(
+            "resourceDomains", []
+        )
+
+
 class TestCSPStrippedFromToolMeta:
     """CSP belongs on the resource, not the tool. The wire format that
     clients see for tools must not contain it."""
