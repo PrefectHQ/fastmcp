@@ -13,6 +13,7 @@ from mcp_types import (
     SamplingMessage,
     TextContent,
     TextResourceContents,
+    ToolResultContent,
     ToolUseContent,
 )
 from openai import AsyncOpenAI
@@ -340,3 +341,115 @@ def test_convert_messages_raises_on_unsupported_content_type():
 
     with pytest.raises(ValueError, match="Unsupported content type for OpenAI"):
         OpenAISamplingHandler._convert_to_openai_messages(None, [msg])
+
+
+def test_convert_user_message_with_tool_result_and_text():
+    """A user message mixing ToolResultContent with follow-up text must emit
+    the tool message before the user text.
+
+    https://github.com/PrefectHQ/fastmcp/issues/5182 — the tool result was
+    silently dropped, leaving an assistant tool_calls message with no
+    responding tool message (an OpenAI API error) and hiding the tool output
+    from the model.
+    """
+    msgs = OpenAISamplingHandler._convert_to_openai_messages(
+        system_prompt=None,
+        messages=[
+            SamplingMessage(
+                role="assistant",
+                content=[
+                    ToolUseContent(
+                        type="tool_use",
+                        id="call_1",
+                        name="get_weather",
+                        input={"city": "Paris"},
+                    )
+                ],
+            ),
+            SamplingMessage(
+                role="user",
+                content=[
+                    ToolResultContent(
+                        type="tool_result",
+                        tool_use_id="call_1",
+                        content=[TextContent(type="text", text="18C sunny")],
+                    ),
+                    TextContent(type="text", text="Now write the forecast."),
+                ],
+            ),
+        ],
+    )
+
+    assert [m["role"] for m in msgs] == ["assistant", "tool", "user"]
+    tool_msg = msgs[1]
+    assert tool_msg["tool_call_id"] == "call_1"
+    assert tool_msg["content"] == "18C sunny"
+    user_msg = msgs[2]
+    assert user_msg["content"] == [
+        ChatCompletionContentPartTextParam(type="text", text="Now write the forecast.")
+    ]
+
+
+def test_convert_user_message_with_tool_result_and_image():
+    """Mixed tool result + image content also emits the tool message first."""
+    msgs = OpenAISamplingHandler._convert_to_openai_messages(
+        system_prompt=None,
+        messages=[
+            SamplingMessage(
+                role="assistant",
+                content=[
+                    ToolUseContent(
+                        type="tool_use",
+                        id="call_1",
+                        name="capture",
+                        input={},
+                    )
+                ],
+            ),
+            SamplingMessage(
+                role="user",
+                content=[
+                    ToolResultContent(
+                        type="tool_result",
+                        tool_use_id="call_1",
+                        content=[TextContent(type="text", text="done")],
+                    ),
+                    ImageContent(
+                        type="image",
+                        data="aGVsbG8=",
+                        mime_type="image/png",
+                    ),
+                ],
+            ),
+        ],
+    )
+
+    assert [m["role"] for m in msgs] == ["assistant", "tool", "user"]
+    assert msgs[1]["tool_call_id"] == "call_1"
+    assert msgs[1]["content"] == "done"
+    user_parts = msgs[2]["content"]
+    assert len(user_parts) == 1
+    assert user_parts[0]["type"] == "image_url"
+
+
+def test_convert_tool_result_only_user_message_unchanged():
+    """A user message with only a tool result still emits just the tool
+    message (assistant tool_calls message came in a previous message)."""
+    msgs = OpenAISamplingHandler._convert_to_openai_messages(
+        system_prompt=None,
+        messages=[
+            SamplingMessage(
+                role="user",
+                content=[
+                    ToolResultContent(
+                        type="tool_result",
+                        tool_use_id="call_1",
+                        content=[TextContent(type="text", text="18C sunny")],
+                    )
+                ],
+            ),
+        ],
+    )
+
+    assert [m["role"] for m in msgs] == ["tool"]
+    assert msgs[0]["tool_call_id"] == "call_1"
