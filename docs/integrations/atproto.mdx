@@ -15,9 +15,11 @@ import { VersionBadge } from "/snippets/version-badge.mdx"
 
 `ATProtoProvider` lets people sign in to your FastMCP server with their [AT Protocol](https://atproto.com) account, wherever it is hosted. You don't register an app anywhere: AT Protocol clients identify themselves by a URL they serve, and FastMCP serves it for you.
 
-MCP clients see a standard OAuth server with dynamic client registration, inherited from the [OAuth Proxy](/servers/auth/oauth-proxy). After the consent screen, users enter their handle or DID and approve the sign-in with their account's authorization server. FastMCP keeps only the verified DID, revokes the grant right away, and issues its own tokens.
+MCP clients see a standard OAuth server with dynamic client registration, inherited from the [OAuth Proxy](/servers/auth/oauth-proxy). After the consent screen, users enter their handle or DID and approve the sign-in with their account's authorization server. FastMCP keeps only the verified DID, revokes the grant right away, and issues its own tokens. The AT Protocol side is handled by [`atproto-oauth`](https://pypi.org/project/atproto-oauth/), installed with the `atproto` extra:
 
-An account's identity is its DID. A handle is a domain name that points to a DID, through an `_atproto` DNS TXT record or `https://<handle>/.well-known/atproto-did`, and says nothing about where the account is hosted. The DID document names the account's PDS, and the PDS names the authorization server that signs the account in. The provider follows that chain for every account.
+```bash
+pip install "fastmcp[atproto]"
+```
 
 ## Configuration
 
@@ -68,12 +70,14 @@ def whoami() -> str:
     return f"{token.claims['handle']} ({token.subject})"
 ```
 
+The `handle` claim is set only when the account's handle resolves back to its DID; otherwise it is `None`.
+
 ## Sessions
 
 `identity_token_expiry_seconds` (default one hour) sets how long each access token lasts, and `session_expiry_seconds` (default 30 days) sets how long a sign-in lasts before the user must sign in again. Refreshing re-checks the allowlist but doesn't contact the account's authorization server.
 
-## Handles and suggestions
+## Login page
 
 The login page suggests accounts as the user types, using `typeahead_url`. Set it to `None` to turn suggestions off.
 
-Handles resolve through DNS first and then the handle's `/.well-known/atproto-did`; `did:plc` identities resolve through `plc_directory_url`, and `did:web` identities through their own domain. HTTP lookups go through FastMCP's SSRF-safe fetch. A lookup only decides where to send the user: the signed-in DID comes from the authorization server, and after sign-in the provider resolves the DID again to confirm that server still hosts it. The token's `handle` claim is set only when the handle in the DID document resolves back to the same DID.
+Pending sign-ins are kept in memory, so run a single server process per provider.

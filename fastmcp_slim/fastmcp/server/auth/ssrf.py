@@ -419,14 +419,11 @@ async def ssrf_safe_fetch_response(
     overall_timeout: float = 30.0,
     request_headers: Mapping[str, str] | None = None,
     allowed_status_codes: set[int] | None = None,
-    method: str = "GET",
-    content: bytes | None = None,
 ) -> SSRFFetchResponse:
     """Fetch URL with SSRF protection and return response metadata.
 
     This is equivalent to :func:`ssrf_safe_fetch` but returns response headers
-    and status code, and supports conditional request headers, other methods,
-    and a request body.
+    and status code, and supports conditional request headers.
     """
     start_time = time.monotonic()
 
@@ -485,10 +482,9 @@ async def ssrf_safe_fetch_response(
                     trust_env=target.proxy_url is None,
                 ) as client,
                 client.stream(
-                    method,
+                    "GET",
                     target.url,
                     headers=headers,
-                    content=content,
                     extensions=extensions,
                 ) as response,
             ):

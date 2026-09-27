@@ -54,6 +54,7 @@ dependencies = [
 [tool.hatch.metadata.hooks.uv-dynamic-versioning.optional-dependencies]
 anthropic = ["fastmcp-slim[anthropic]=={{ version }}"]
 apps = ["fastmcp-slim[apps]=={{ version }}"]
+atproto = ["fastmcp-slim[atproto]=={{ version }}"]
 azure = ["fastmcp-slim[azure]=={{ version }}"]
 code-mode = ["fastmcp-slim[code-mode]=={{ version }}"]
 jev = ["fastmcp-slim[jev]=={{ version }}"]
@@ -78,12 +79,12 @@ exclude-newer = "1 week"
 # MCP SDK, where a new major is the only version satisfying our floor and so
 # has nothing older to fall back to, and uncalled-for, the DI engine whose
 # releases we adopt deliberately.
-exclude-newer-package = { fastmcp = false, fastmcp-slim = false, fastmcp-remote = false, prefab-ui = false, mcp = false, mcp-types = false, uncalled-for = false, pydocket = false }
+exclude-newer-package = { fastmcp = false, fastmcp-slim = false, fastmcp-remote = false, prefab-ui = false, mcp = false, mcp-types = false, uncalled-for = false, pydocket = false, atproto-oauth = false }
 
 [dependency-groups]
 dev = [
     "dirty-equals>=0.9.0",
-    "fastmcp[anthropic,apps,azure,code-mode,gemini,jev,openai,tasks]",
+    "fastmcp[anthropic,apps,atproto,azure,code-mode,gemini,jev,openai,tasks]",
     "fastapi>=0.115.12",
     "fastmcp-remote",
     "opentelemetry-sdk>=1.20.0",
