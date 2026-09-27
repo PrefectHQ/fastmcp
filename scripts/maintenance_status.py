@@ -576,6 +576,8 @@ def main() -> None:
     out = Path(sys.argv[1] if len(sys.argv) > 1 else "status-out")
     out.mkdir(parents=True, exist_ok=True)
     doc = build()
+    if len(sys.argv) > 2:
+        doc["attention"] = json.loads(Path(sys.argv[2]).read_text())
     (out / "status.json").write_text(json.dumps(doc, indent=2) + "\n")
     (out / "STATUS.md").write_text(markdown(doc))
     (out / "badge.json").write_text(json.dumps(badge(doc)) + "\n")

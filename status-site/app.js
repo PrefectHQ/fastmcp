@@ -1,5 +1,11 @@
 const $ = (id) => document.getElementById(id);
 let snapshot;
+let rankingLimit = 10;
+const snapshotUrl =
+  window.location.origin === "https://prefecthq.github.io"
+    ? "https://raw.githubusercontent.com/PrefectHQ/fastmcp/status/status.json"
+    : new URL("status.json", window.location.href);
+
 const number = (value) => (value == null ? "—" : value.toLocaleString());
 function el(tag, text, className) {
   const node = document.createElement(tag);
@@ -178,6 +184,88 @@ function automations() {
   if (!$("automations").childElementCount)
     $("automations").append(el("p", "No automation issues reported.", "empty"));
 }
+
+function ranking() {
+  const data = snapshot.attention;
+  $("ranking").replaceChildren();
+  if (!data || data.schema !== "fastmcp-attention/1") {
+    $("ranking-coverage").textContent =
+      "Issue ranking unavailable. Queue age below is not a priority ranking.";
+    $("ranking-more").hidden = true;
+    return;
+  }
+  const judged =
+    data.judged === data.examined
+      ? `judge: ${data.judge}`
+      : `${data.judged}/${data.examined} model-assessed; remaining issues use facts and labels only`;
+  $("ranking-coverage").textContent =
+    `${data.examined} ${data.has_more ? "newest open issues examined; older issues not included" : "open issues examined; complete at collection"}. ${judged}. Ranked ${new Date(data.as_of).toLocaleString()}. Contributor assessments excluded.`;
+  const kind = $("ranking-kind").value;
+  $("ranking-kind").replaceChildren(
+    Object.assign(el("option", "all kinds"), { value: "all" }),
+  );
+  for (const value of [...new Set(data.items.map((i) => i.kind))].sort())
+    $("ranking-kind").append(Object.assign(el("option", value), { value }));
+  if ([...$("ranking-kind").options].some((o) => o.value === kind))
+    $("ranking-kind").value = kind;
+  const items = data.items.filter(
+    (i) =>
+      ($("ranking-kind").value === "all" ||
+        i.kind === $("ranking-kind").value) &&
+      (!$("ranking-unanswered").checked || i.maintainer_replied === false),
+  );
+  for (const item of items.slice(0, rankingLimit)) {
+    const row = el("details", null, "ranked-issue");
+    const summary = el("summary");
+    const heading = el("div", null, "rank-heading");
+    heading.append(
+      el("span", `#${item.number}`, "muted"),
+      el("span", item.title),
+    );
+    const reasons = item.reasons
+      .slice(0, 3)
+      .map((r) => `${r.contribution > 0 ? "+" : "−"} ${r.text}`)
+      .join(" · ");
+    heading.append(
+      el("p", reasons || "No weighted signals available.", "caption"),
+    );
+    summary.append(
+      el("span", item.score.toFixed(1), "rank-score"),
+      heading,
+      el("span", "+", "muted"),
+    );
+    const detail = el("div", null, "detail");
+    detail.append(
+      el(
+        "p",
+        `${item.kind} · ${item.judged ? "model-assessed" : "facts and labels only"} · ${item.maintainer_replied ? "maintainer replied" : item.maintainer_replied === false ? "no maintainer reply found" : "reply history incomplete"} · ${item.assigned ? "assigned" : "unassigned"}`,
+      ),
+    );
+    for (const reason of item.reasons)
+      detail.append(
+        el(
+          "p",
+          `${reason.contribution > 0 ? "+" : ""}${reason.contribution.toFixed(2)} ${reason.text}`,
+        ),
+      );
+    detail.append(link("open issue ↗", item.url));
+    for (const pr of item.linked_prs)
+      detail.append(
+        link(
+          ` · fix #${pr} ↗`,
+          `https://github.com/PrefectHQ/fastmcp/pull/${pr}`,
+        ),
+      );
+    row.append(summary, detail);
+    $("ranking").append(row);
+  }
+  if (!items.length)
+    $("ranking").append(el("p", "No issues match these filters.", "empty"));
+  $("ranking-more").hidden = items.length <= rankingLimit;
+  $("ranking-more").textContent =
+    `show more (${items.length - rankingLimit} remaining)`;
+}
+
 function render() {
   const doc = snapshot,
     queue = doc.automations.find((a) => a.id === "contributor-queue");
@@ -199,13 +287,13 @@ function render() {
   $("metrics").replaceChildren();
   const c = queue?.counts;
   for (const [value, label, warn] of [
-    [c?.waiting, "awaiting assignment", false],
-    [c?.waiting_over_7_days, "older than a week", true],
+    [doc.attention?.examined, "issues ranked", false],
     [
-      c?.oldest_days == null ? "—" : `${c.oldest_days}d`,
-      "oldest request",
+      doc.attention?.items.filter((i) => i.maintainer_replied === false).length,
+      "without maintainer reply",
       false,
     ],
+    [c?.waiting, "awaiting assignment", false],
     [problems.length, "automation issues", problems.length > 0],
   ]) {
     const metric = el("div", null, `metric ${warn ? "warn" : ""}`);
@@ -277,6 +365,7 @@ function render() {
     $("activity-filter").value = selection;
   chart();
   automations();
+  ranking();
   $("queue").replaceChildren();
   if (queue) {
     const all = link(
@@ -310,7 +399,7 @@ function render() {
 async function refresh() {
   $("refresh").disabled = true;
   try {
-    const response = await fetch(new URL("status.json", window.location.href), {
+    const response = await fetch(snapshotUrl, {
       cache: "no-store",
     });
     if (!response.ok) throw new Error("Snapshot request failed");
@@ -349,5 +438,19 @@ $("theme").addEventListener("click", () => {
 $("refresh").addEventListener("click", refresh);
 $("activity-filter").addEventListener("change", chart);
 $("attention-only").addEventListener("change", automations);
+document.querySelector('footer a[href="status.json"]').href = snapshotUrl;
 refresh();
 setInterval(refresh, 300000);
+
+$("ranking-kind").addEventListener("change", () => {
+  rankingLimit = 10;
+  ranking();
+});
+$("ranking-unanswered").addEventListener("change", () => {
+  rankingLimit = 10;
+  ranking();
+});
+$("ranking-more").addEventListener("click", () => {
+  rankingLimit += 10;
+  ranking();
+});

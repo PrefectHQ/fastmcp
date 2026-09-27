@@ -392,3 +392,31 @@ footer p {
     font-size: 10px;
   }
 }
+
+.ranking-controls {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  margin: 16px 0;
+}
+.ranked-issue summary {
+  grid-template-columns: 42px 1fr 12px;
+  align-items: start;
+}
+.rank-score {
+  color: var(--green);
+  font-variant-numeric: tabular-nums;
+  font-size: 16px;
+}
+.rank-heading > .muted {
+  margin-right: 10px;
+}
+.rank-heading .caption {
+  margin: 4px 0 0;
+}
+.ranked-issue .detail {
+  padding-left: 54px;
+}
+#ranking-more {
+  margin-top: 16px;
+}

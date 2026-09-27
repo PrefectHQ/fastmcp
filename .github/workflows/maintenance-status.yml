@@ -8,6 +8,7 @@ on:
     paths:
       - ".github/workflows/maintenance-status.yml"
       - "scripts/maintenance_status.py"
+      - "scripts/rank_issues.py"
       - "status-site/**"
 
 permissions: {}
@@ -29,8 +30,14 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v10.1.0
 
+      - name: Rank public issues
+        run: uv run scripts/rank_issues.py --public --limit 500 --json "$RUNNER_TEMP/attention.json"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TYPESAFE_API_KEY: ${{ github.event_name != 'pull_request' && secrets.TYPESAFE_API_KEY || '' }}
+
       - name: Build status
-        run: uv run scripts/maintenance_status.py "$RUNNER_TEMP/status" > /dev/null
+        run: uv run scripts/maintenance_status.py "$RUNNER_TEMP/status" "$RUNNER_TEMP/attention.json" > /dev/null
         env:
           GH_TOKEN: ${{ github.token }}
           # Where other systems publish their own entries; unset means none.

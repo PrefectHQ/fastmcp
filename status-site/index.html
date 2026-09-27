@@ -29,9 +29,28 @@
       </div>
       <p id="notice" class="notice" hidden></p>
       <section class="metrics" aria-label="At a glance" id="metrics"></section>
+      <section aria-labelledby="ranking-title">
+        <div class="section-heading">
+          <h2 id="ranking-title">what to look at</h2>
+          <span class="muted">ranked issue signals</span>
+        </div>
+        <p id="ranking-coverage" class="caption">
+          Ranking unavailable in this snapshot.
+        </p>
+        <div class="ranking-controls">
+          <select id="ranking-kind" aria-label="Filter ranked issues by kind">
+            <option value="all">all kinds</option></select
+          ><label
+            ><input type="checkbox" id="ranking-unanswered" /> unanswered
+            only</label
+          >
+        </div>
+        <div id="ranking"></div>
+        <button id="ranking-more" hidden>show more</button>
+      </section>
       <section aria-labelledby="attention-title">
         <div class="section-heading">
-          <h2 id="attention-title">needs attention</h2>
+          <h2 id="attention-title">operational attention</h2>
           <span class="muted">public evidence</span>
         </div>
         <div id="attention">Loading…</div>
