@@ -379,9 +379,8 @@ class Cache:
         path.write_text(json.dumps(value, default=str))
 
     def _path(self, key: Sequence[str]) -> Path:
-        *dirs, leaf = key
-        safe = hashlib.sha256(leaf.encode()).hexdigest()[:24]
-        return self.root.joinpath(*dirs, f"{safe}.json")
+        safe = hashlib.sha256(json.dumps(key).encode()).hexdigest()
+        return self.root / f"{safe}.json"
 
 
 Progress = Callable[[str, int, int], None]
