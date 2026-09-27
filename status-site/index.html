@@ -5,67 +5,103 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="FastMCP maintainer attention, main branch health, and automation status."
+      content="FastMCP maintenance: current checks, contributor queue, and automation activity."
     />
-    <title>FastMCP · Maintainer status</title>
+    <title>FastMCP / maintenance</title>
     <link rel="stylesheet" href="style.css" />
     <script src="app.js" defer></script>
   </head>
   <body>
     <main>
       <header>
-        <a class="brand" href="https://github.com/PrefectHQ/fastmcp"
-          >⚡ FastMCP</a
-        >
-        <span>Maintainer status</span>
-        <button id="refresh" type="button">Refresh</button>
+        <h1>
+          <a href="https://github.com/PrefectHQ/fastmcp">fastmcp</a
+          ><span> / maintenance</span>
+        </h1>
+        <nav aria-label="Page controls">
+          <button id="refresh">refresh</button
+          ><button id="theme" aria-label="Switch color theme">◐</button>
+        </nav>
       </header>
-      <div class="intro">
-        <h1>What needs attention?</h1>
-        <p id="freshness" role="status">
-          Loading the latest published snapshot…
-        </p>
+      <div class="status-line">
+        <span id="health">◌ reading snapshot</span
+        ><span id="freshness" role="status"></span>
       </div>
       <p id="notice" class="notice" hidden></p>
+      <section class="metrics" aria-label="At a glance" id="metrics"></section>
       <section aria-labelledby="attention-title">
-        <h2 id="attention-title">To look at</h2>
-        <div id="attention"><p>Checking the published evidence…</p></div>
+        <div class="section-heading">
+          <h2 id="attention-title">needs attention</h2>
+          <span class="muted">public evidence</span>
+        </div>
+        <div id="attention">Loading…</div>
       </section>
       <section aria-labelledby="main-title">
         <div class="section-heading">
-          <h2 id="main-title">Main branch</h2>
+          <h2 id="main-title">main</h2>
           <a
             id="commit"
             href="https://github.com/PrefectHQ/fastmcp/commits/main"
-            >Commits</a
+            >commits</a
           >
         </div>
-        <div id="main-checks">
-          <p>Main CI is not included in this snapshot yet.</p>
+        <div id="main-checks" class="checks"></div>
+      </section>
+      <section aria-labelledby="activity-title">
+        <div class="section-heading">
+          <h2 id="activity-title">automation activity</h2>
+          <select
+            id="activity-filter"
+            aria-label="Filter activity by automation"
+          >
+            <option value="all">all automation</option>
+          </select>
         </div>
+        <div id="activity-totals" class="legend"></div>
+        <div id="chart"></div>
+        <p class="caption">
+          Daily completed runs, UTC. Today is partial. Gate failures include
+          expected rejections and execution errors.
+        </p>
+      </section>
+      <section aria-labelledby="queue-title">
+        <div class="section-heading">
+          <h2 id="queue-title">awaiting assignment</h2>
+          <a id="queue-link" href="https://github.com/PrefectHQ/fastmcp/pulls"
+            >all requests</a
+          >
+        </div>
+        <p class="caption">
+          Oldest open requests first. Time waiting is not a judgment of the
+          contribution.
+        </p>
+        <div id="queue"></div>
       </section>
       <section aria-labelledby="automation-title">
         <div class="section-heading">
-          <h2 id="automation-title">Automation</h2>
+          <h2 id="automation-title">automation health</h2>
           <label
-            ><input type="checkbox" id="attention-only" /> Needs attention
-            only</label
+            ><input type="checkbox" id="attention-only" /> issues only</label
           >
         </div>
         <div id="automations"></div>
       </section>
       <footer>
+        <div>
+          <a href="status.json">json</a
+          ><a href="https://github.com/PrefectHQ/fastmcp/blob/status/STATUS.md"
+            >snapshot</a
+          ><a href="https://github.com/PrefectHQ/fastmcp/tree/main/status-site"
+            >source</a
+          ><a
+            href="https://github.com/PrefectHQ/fastmcp/blob/main/docs/development/contributing.mdx"
+            >development guide</a
+          >
+        </div>
         <p>
-          Public evidence, not an approval queue. A green check does not
-          establish that a change should ship.
+          Published twice daily. This page checks for a newer snapshot every
+          five minutes.
         </p>
-        <a href="https://github.com/PrefectHQ/fastmcp/blob/status/STATUS.md"
-          >GitHub snapshot</a
-        >
-        <a
-          href="https://github.com/PrefectHQ/fastmcp/blob/main/docs/development/contributing.mdx"
-          >Development guide</a
-        >
       </footer>
     </main>
   </body>

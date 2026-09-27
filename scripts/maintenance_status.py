@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # /// script
-# requires-python = ">=3.11"
+# requires-python = ">=3.10"
 # dependencies = []
 # ///
 """
@@ -25,8 +25,10 @@ import shutil
 import subprocess
 import sys
 import urllib.request
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+
+UTC = timezone.utc
 
 REPO = "PrefectHQ/fastmcp"
 SCHEMA = "fastmcp-maintenance/1"
@@ -179,6 +181,8 @@ def main_health() -> dict:
             and r.get("event") in {"push", "dynamic"}
         ]
         run = max(matching, key=lambda r: r["id"]) if matching else None
+        if run is None and name in {"Downstream smoke", "Schema Crash Test"}:
+            continue
         if run is None:
             state = "unknown"
         elif run["status"] != "completed":
@@ -259,7 +263,23 @@ def one_workflow(file: str, since: date) -> dict:
         "last_ok_day": last_ok["created_at"][:10] if last_ok else None,
         "succeeded": len(ok),
         "failed": len(done) - len(ok),
+        "daily": daily_runs(done, since),
     }
+
+
+def daily_runs(runs: list[dict], since: date) -> list[dict]:
+    days = []
+    for offset in range((datetime.now(UTC).date() - since).days + 1):
+        day = (since + timedelta(days=offset)).isoformat()
+        matching = [r for r in runs if r["created_at"][:10] == day]
+        days.append(
+            {
+                "day": day,
+                "succeeded": sum(r["conclusion"] == "success" for r in matching),
+                "failed": sum(r["conclusion"] != "success" for r in matching),
+            }
+        )
+    return days
 
 
 def workflow_health(
@@ -285,9 +305,19 @@ def workflow_health(
     else:
         state = "ok"
     days = [m["last_ok_day"] for m in members if m["last_ok_day"]]
+    daily = {}
+    for member in members:
+        for bucket in member["daily"]:
+            row = daily.setdefault(
+                bucket["day"],
+                {"day": bucket["day"], "succeeded": 0, "failed": 0, "blocked": 0},
+            )
+            row["succeeded"] += bucket["succeeded"]
+            row["blocked" if outcomes else "failed"] += bucket["failed"]
     return {
         "state": state,
         "last_ok_day": max(days) if days else None,
+        "daily": list(daily.values()),
         "counts": {
             (outcomes or ("succeeded", "failed"))[0]: sum(
                 m["succeeded"] for m in members
@@ -311,7 +341,7 @@ def contributor_queue() -> dict:
         "--limit",
         "500",
         "--json",
-        "createdAt",
+        "createdAt,number,title,url",
     )
     now = datetime.now(UTC)
     ages = [
@@ -319,6 +349,17 @@ def contributor_queue() -> dict:
         for p in prs
     ]
     return {
+        "items": [
+            {
+                "number": p["number"],
+                "title": p["title"],
+                "url": p["url"],
+                "age_days": (
+                    now - datetime.fromisoformat(p["createdAt"].replace("Z", "+00:00"))
+                ).days,
+            }
+            for p in sorted(prs, key=lambda p: p["createdAt"])[:10]
+        ],
         "id": "contributor-queue",
         "name": "contributor queue",
         "what": "external PRs waiting for their author to be assigned to a linked issue",
@@ -420,7 +461,7 @@ def operator_entries() -> list[dict]:
 
 
 def build() -> dict:
-    since = date.today() - timedelta(days=WINDOW_DAYS)
+    since = datetime.now(UTC).date() - timedelta(days=WINDOW_DAYS - 1)
     automations = []
     for a in AUTOMATIONS:
         try:
@@ -440,6 +481,7 @@ def build() -> dict:
                 "evidence_url": f"https://github.com/{REPO}/actions/workflows/{a['workflows'][0]}",
                 "window": f"{WINDOW_DAYS}d",
                 "counts": h["counts"],
+                "daily": h.get("daily", []),
             }
         )
     try:

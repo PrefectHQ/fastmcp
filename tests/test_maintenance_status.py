@@ -113,3 +113,31 @@ def test_main_health_uses_latest_attempt(
         "state": expected,
         "url": "new-run",
     }
+
+
+def test_missing_path_filtered_checks_are_not_reported(status_module, monkeypatch):
+    monkeypatch.setattr(
+        status_module,
+        "gh_json",
+        lambda *args: {"sha": "head", "html_url": "commit"}
+        if args[-1].endswith("commits/main")
+        else {"workflow_runs": []},
+    )
+    assert [c["name"] for c in status_module.main_health()["checks"]] == [
+        "Tests",
+        "Run static analysis",
+        "CodeQL",
+    ]
+
+
+def test_daily_history_keeps_zero_days_and_utc_boundaries(status_module):
+    today = status_module.datetime.now(status_module.UTC).date()
+    yesterday = today - status_module.timedelta(days=1)
+    runs = [
+        {"created_at": yesterday.isoformat() + "T23:59:59Z", "conclusion": "success"},
+        {"created_at": today.isoformat() + "T00:00:00Z", "conclusion": "failure"},
+    ]
+    result = status_module.daily_runs(runs, yesterday - status_module.timedelta(days=1))
+    assert result[0]["succeeded"] == result[0]["failed"] == 0
+    assert result[1] == {"day": yesterday.isoformat(), "succeeded": 1, "failed": 0}
+    assert result[2] == {"day": today.isoformat(), "succeeded": 0, "failed": 1}
