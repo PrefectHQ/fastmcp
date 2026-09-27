@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="FastMCP maintainer attention, main branch health, and automation status."
+    />
+    <title>FastMCP · Maintainer status</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <a class="brand" href="https://github.com/PrefectHQ/fastmcp"
+          >⚡ FastMCP</a
+        >
+        <span>Maintainer status</span>
+        <button id="refresh" type="button">Refresh</button>
+      </header>
+      <div class="intro">
+        <h1>What needs attention?</h1>
+        <p id="freshness" role="status">
+          Loading the latest published snapshot…
+        </p>
+      </div>
+      <p id="notice" class="notice" hidden></p>
+      <section aria-labelledby="attention-title">
+        <h2 id="attention-title">To look at</h2>
+        <div id="attention"><p>Checking the published evidence…</p></div>
+      </section>
+      <section aria-labelledby="main-title">
+        <div class="section-heading">
+          <h2 id="main-title">Main branch</h2>
+          <a
+            id="commit"
+            href="https://github.com/PrefectHQ/fastmcp/commits/main"
+            >Commits</a
+          >
+        </div>
+        <div id="main-checks">
+          <p>Main CI is not included in this snapshot yet.</p>
+        </div>
+      </section>
+      <section aria-labelledby="automation-title">
+        <div class="section-heading">
+          <h2 id="automation-title">Automation</h2>
+          <label
+            ><input type="checkbox" id="attention-only" /> Needs attention
+            only</label
+          >
+        </div>
+        <div id="automations"></div>
+      </section>
+      <footer>
+        <p>
+          Public evidence, not an approval queue. A green check does not
+          establish that a change should ship.
+        </p>
+        <a href="https://github.com/PrefectHQ/fastmcp/blob/status/STATUS.md"
+          >GitHub snapshot</a
+        >
+        <a
+          href="https://github.com/PrefectHQ/fastmcp/blob/main/docs/development/contributing.mdx"
+          >Development guide</a
+        >
+      </footer>
+    </main>
+  </body>
+</html>
