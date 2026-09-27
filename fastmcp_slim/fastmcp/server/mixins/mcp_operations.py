@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from fastmcp.exceptions import (
     DisabledError,
     FastMCPError,
+    InsufficientScopeError,
     NotFoundError,
     to_mcp_error,
 )
@@ -260,6 +261,16 @@ class MCPOperationsMixin:
                         )
                     ],
                     is_error=True,
+                )
+            except InsufficientScopeError as e:
+                # Component-level scope shortfall: signal as a spec-correct
+                # insufficient_step-up challenge (SEP-2350 / RFC 6750 §3)
+                # rather than an opaque tool error. The ASGI middleware
+                # converts the resulting JSONRPCError into an HTTP 403
+                # with WWW-Authenticate header.
+                raise MCPError(
+                    code=-32603,
+                    message=str(e),
                 )
             except FastMCPError as e:
                 # Tool-visible errors (ToolError, ValidationError, ...) must be
