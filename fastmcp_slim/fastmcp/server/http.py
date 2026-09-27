@@ -27,6 +27,7 @@ from starlette.types import ASGIApp, Lifespan, Receive, Scope, Send
 
 from fastmcp.server.auth import AuthProvider
 from fastmcp.server.auth.middleware import RequireAuthMiddleware
+from fastmcp.server.auth.scope_challenge import ScopeChallengeMiddleware
 from fastmcp.server.session_scoped_event_store import SessionScopedEventStore
 from fastmcp.utilities.logging import get_logger
 
@@ -38,65 +39,6 @@ logger = get_logger(__name__)
 DEFAULT_HOSTS = ("127.0.0.1", "localhost", "::1")
 HostOriginProtection = bool | Literal["auto"]
 HostOriginProtectionMode = Literal["auto", "strict"]
-
-
-class _InsufficientScopeMiddleware:
-    """ASGI middleware that converts component-level scope failures to HTTP 403.
-
-    When an InsufficientScopeError is raised inside the MCP protocol handler,
-    it becomes a JSONRPCError response with HTTP 200. This middleware detects
-    such responses and converts them to the spec-correct HTTP 403 with
-    WWW-Authenticate header (RFC 6750 §3 / SEP-2350).
-    """
-
-    def __init__(self, app: ASGIApp) -> None:
-        self.app = app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-
-        body_chunks: list[bytes] = []
-        status: int = 200
-        content_type: str = "application/json"
-
-        async def wrapped_send(message: dict[str, Any]) -> None:
-            if message["type"] == "http.response.start":
-                status = message["status"]
-                for header, value in message.get("headers", []):
-                    if header == b"content-type":
-                        content_type = value.decode()
-            elif message["type"] == "http.response.body":
-                body_chunks.append(message.get("body", b""))
-                if not message.get("more_body", False):
-                    full_body = b"".join(body_chunks)
-                    if status == 200 and full_body:
-                        try:
-                            import json
-                            body = json.loads(full_body)
-                            error = body.get("error")
-                            if isinstance(error, dict) and error.get("message", "").lower() == "insufficient scope":
-                                await send(
-                                    {
-                                        "type": "http.response.start",
-                                        "status": 403,
-                                        "headers": [
-                                            (b"content-type", content_type.encode()),
-                                            (b"content-length", str(len(full_body)).encode()),
-                                            (b"www-authenticate", f'Bearer error="insufficient_scope"'.encode()),
-                                        ],
-                                    }
-                                )
-                                await send({"type": "http.response.body", "body": full_body})
-                                return
-                        except (json.JSONDecodeError, TypeError, AttributeError):
-                            pass
-                    await send(message)
-                return
-            await send(message)
-
-        await self.app(scope, receive, wrapped_send)
 
 
 class FastMCPStreamableHTTPSessionManager(StreamableHTTPSessionManager):
@@ -680,7 +622,7 @@ def create_streamable_http_app(
             Route(
                 streamable_http_path,
                 endpoint=RequireAuthMiddleware(
-                    streamable_http_app,
+                    ScopeChallengeMiddleware(streamable_http_app, server),
                     auth.required_scopes,
                     resource_metadata_url,
                     auth.challenge_scopes,
@@ -720,10 +662,6 @@ def create_streamable_http_app(
         )
     if middleware:
         server_middleware.extend(middleware)
-
-    # Wrap the streamable HTTP app to convert insufficient_scope errors
-    # to HTTP 403 with WWW-Authenticate header (RFC 6750 §3 / SEP-2350).
-    streamable_http_app = _InsufficientScopeMiddleware(streamable_http_app)
 
     # Create a lifespan manager to start and stop the session manager
     @asynccontextmanager
