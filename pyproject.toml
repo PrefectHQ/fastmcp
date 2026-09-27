@@ -168,6 +168,11 @@ exclude = [
 
 [tool.ty.environment]
 python-version = "3.10"
+# Pin the platform ty checks against to the one CI uses. Without it ty uses the
+# host platform, and on Windows typeshed's fcntl has no flock/LOCK_EX/LOCK_UN,
+# so tests/utilities/json_schema_type/test_real_world_schemas.py fails the ty
+# hook for Windows contributors while ubuntu-latest stays green.
+python-platform = "linux"
 
 [tool.ty.analysis]
 # prefab_ui is the apps SDK and is not installed here.
