@@ -60,7 +60,12 @@ _DEFAULT_MIME_TYPE = "application/json"
 
 
 def _raise_for_status(response: httpx2.Response) -> None:
-    """Raise an OpenAPI-formatted error without relying on client exception types."""
+    """Raise an OpenAPI-formatted error without relying on client exception types.
+
+    The error is an `httpx2.HTTPStatusError` whatever library the client
+    belongs to, so the server can recognize an upstream error response by its
+    status code.
+    """
     if 200 <= response.status_code < 300:
         return
 
@@ -71,7 +76,9 @@ def _raise_for_status(response: httpx2.Response) -> None:
     except (json.JSONDecodeError, ValueError):
         if response.text:
             error_message += f" - {response.text}"
-    raise ValueError(error_message)
+    raise httpx2.HTTPStatusError(
+        error_message, request=response.request, response=response
+    )
 
 
 async def _send_request(
