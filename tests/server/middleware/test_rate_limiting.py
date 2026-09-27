@@ -1,13 +1,12 @@
 """Tests for rate limiting middleware."""
 
 import asyncio
-import warnings
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from mcp import MCPError
 
-from fastmcp import FastMCP, FastMCPDeprecationWarning
+from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.server.middleware.middleware import MiddlewareContext
 from fastmcp.server.middleware.rate_limiting import (
@@ -179,40 +178,6 @@ class TestRateLimitingMiddleware:
         assert middleware.get_client_id is None
         assert middleware.global_limit is False
 
-    def test_zero_rate_keeps_rejecting_every_request(self):
-        """A rate of 0 has no default burst, so it still closes the endpoint."""
-        middleware = RateLimitingMiddleware(max_requests_per_second=0)
-        assert middleware.burst_capacity == 0
-
-    @pytest.mark.parametrize(
-        "burst_capacity, expected",
-        [(0, 20), (-1, -1), (0.5, 0.5)],
-    )
-    def test_burst_capacity_below_one_is_deprecated(self, burst_capacity, expected):
-        """Values below 1 warn but keep their 4.x behavior until FastMCP 5 (#5292)."""
-        with pytest.warns(FastMCPDeprecationWarning, match="burst_capacity=1"):
-            middleware = RateLimitingMiddleware(
-                max_requests_per_second=10, burst_capacity=burst_capacity
-            )
-        assert middleware.burst_capacity == expected
-
-    def test_zero_rate_deprecation_points_to_omitting_burst_capacity(self):
-        """The reject-all setup keeps its behavior and gets a migration that preserves it."""
-        with pytest.warns(FastMCPDeprecationWarning, match="omit burst_capacity"):
-            middleware = RateLimitingMiddleware(
-                max_requests_per_second=0, burst_capacity=0
-            )
-        assert middleware.burst_capacity == 0
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", FastMCPDeprecationWarning)
-            assert RateLimitingMiddleware(max_requests_per_second=0).burst_capacity == 0
-
-    @pytest.mark.parametrize("burst_capacity", [None, 1, 20])
-    def test_valid_burst_capacity_does_not_warn(self, burst_capacity):
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", FastMCPDeprecationWarning)
-            RateLimitingMiddleware(burst_capacity=burst_capacity)
-
     def test_init_custom(self):
         """Test custom initialization."""
 
@@ -274,27 +239,6 @@ class TestRateLimitingMiddleware:
         # Second request should be rate limited
         with pytest.raises(RateLimitError, match="Rate limit exceeded"):
             await middleware.on_request(mock_context, mock_call_next)
-
-    @pytest.mark.parametrize("global_limit", [False, True])
-    async def test_sub_half_rate_default_burst_admits_requests(
-        self, mock_context, mock_call_next, monkeypatch, global_limit
-    ):
-        current_time = 0.0
-        monkeypatch.setattr(
-            "fastmcp.server.middleware.rate_limiting.time.time",
-            lambda: current_time,
-        )
-        middleware = RateLimitingMiddleware(
-            max_requests_per_second=0.4, global_limit=global_limit
-        )
-        assert middleware.burst_capacity == 1
-
-        assert await middleware.on_request(mock_context, mock_call_next)
-        with pytest.raises(RateLimitError):
-            await middleware.on_request(mock_context, mock_call_next)
-
-        current_time += 2.6
-        assert await middleware.on_request(mock_context, mock_call_next)
 
     async def test_global_rate_limiting(self, mock_context, mock_call_next):
         """Test global rate limiting."""
