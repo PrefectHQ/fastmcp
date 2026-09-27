@@ -18,6 +18,7 @@ from fastmcp.client.transports import (
     FastMCPTransport,
 )
 from fastmcp.server.server import FastMCP
+from fastmcp.tools import ToolResult
 from tests.conftest import user_meta
 
 
@@ -888,10 +889,28 @@ async def test_client_decodes_empty_structured_content():
         dict_result = await client.call_tool("empty_dict", {})
         assert dict_result.structured_content == {}
         assert dict_result.data == {}
+        assert type(dict_result.data) is dict
 
         model_result = await client.call_tool("empty_model", {})
         assert model_result.structured_content == {}
-        assert model_result.data is not None
+        assert model_result.data == {}
+        assert type(model_result.data) is dict
+
+
+@pytest.mark.parametrize("structured_content", [{}, {"value": "present"}, None])
+async def test_client_structured_content_without_output_schema(structured_content):
+    server = FastMCP()
+
+    @server.tool(output_schema=None)
+    def raw_result() -> ToolResult:
+        return ToolResult(content=[], structured_content=structured_content)
+
+    async with Client(server) as client:
+        result = await client.call_tool("raw_result")
+
+    assert result.structured_content == structured_content
+    assert result.data == structured_content
+    assert type(result.data) is type(structured_content)
 
 
 async def test_client_list_dict_return_type():
