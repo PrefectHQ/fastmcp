@@ -1,5 +1,4 @@
 name: Maintenance status
-description: Publishes automation health and contributor queue counts to the status branch
 on:
   schedule:
     - cron: "0 13,21 * * *" # 1 PM and 9 PM UTC
@@ -12,6 +11,10 @@ on:
       - "status-site/**"
 
 permissions: {}
+
+concurrency:
+  group: maintenance-status-${{ github.event.pull_request.number || 'publisher' }}
+  cancel-in-progress: false
 
 jobs:
   # Runs the repository's script with a read-only token, including on PRs.
@@ -30,11 +33,18 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v10.1.0
 
-      - name: Rank public issues
-        run: uv run scripts/rank_issues.py --public --limit 500 --json "$RUNNER_TEMP/attention.json"
+      - name: Read previous assessments
+        run: |
+          gh api -H 'Accept: application/vnd.github.raw+json' 'repos/PrefectHQ/fastmcp/contents/status.json?ref=status' > "$RUNNER_TEMP/previous.json"
         env:
           GH_TOKEN: ${{ github.token }}
-          TYPESAFE_API_KEY: ${{ github.event_name != 'pull_request' && secrets.TYPESAFE_API_KEY || '' }}
+
+      - name: Rank public issues
+        run: uv run scripts/rank_issues.py --public --judge jev --max-judgments "$JUDGMENT_LIMIT" --previous "$RUNNER_TEMP/previous.json" --limit 500 --json "$RUNNER_TEMP/attention.json"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JUDGMENT_LIMIT: ${{ github.event_name == 'schedule' && github.run_attempt == 1 && github.ref == 'refs/heads/main' && secrets.TYPESAFE_API_KEY && '10' || '0' }}
+          TYPESAFE_API_KEY: ${{ github.event_name == 'schedule' && github.run_attempt == 1 && github.ref == 'refs/heads/main' && secrets.TYPESAFE_API_KEY || '' }}
 
       - name: Build status
         run: uv run scripts/maintenance_status.py "$RUNNER_TEMP/status" "$RUNNER_TEMP/attention.json" > /dev/null

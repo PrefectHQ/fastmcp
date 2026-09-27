@@ -146,3 +146,100 @@ def test_public_kind_is_a_category_not_formatted_confidence(ranking_module):
     )
     assert doc["items"][0]["kind"] == "bug"
     assert doc["judged"] == 1
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_cold_cache_budget_limits_attempts_even_when_calls_fail(
+    ranking_module, tmp_path, fails
+):
+    import asyncio
+
+    m = ranking_module
+
+    class MeteredJudge:
+        def __init__(self):
+            self.calls = 0
+
+        async def judge(self, state):
+            self.calls += 1
+            await asyncio.sleep(0)
+            if fails:
+                raise RuntimeError("provider unavailable")
+            return m.Judgment(
+                kind={"bug": 1},
+                repro=1,
+                actionable=1,
+                severity=1,
+                security=0,
+                spec=0,
+                downstream=0,
+                low_effort=0,
+            )
+
+    judge = MeteredJudge()
+    config = m.Config(
+        repo="PrefectHQ/fastmcp", public=True, max_judgments=2, cache_dir=tmp_path
+    )
+    results = asyncio.run(
+        m.judge_all(
+            judge, [issue(m, n) for n in range(20)], config, m.Cache(tmp_path, True)
+        )
+    )
+    assert judge.calls == 2
+    assert len(results) == (0 if fails else 2)
+
+
+def test_previous_public_assessment_reused_without_credentials(
+    ranking_module, tmp_path
+):
+    import asyncio
+
+    m = ranking_module
+    config = m.Config(
+        repo="PrefectHQ/fastmcp",
+        public=True,
+        max_judgments=0,
+        previous=tmp_path / "previous.json",
+    )
+    original = issue(m)
+    judgment = m.Judgment(
+        kind={"bug": 1},
+        repro=1,
+        actionable=1,
+        severity=1,
+        security=0,
+        spec=0,
+        downstream=0,
+        low_effort=0.99,
+    )
+    ranked = m.score_issue(
+        original, None, judgment, [], config, datetime.now(timezone.utc)
+    )
+    snapshot = m.public_snapshot(m.RankedPage([ranked], None), config)
+    assert "low_effort" not in snapshot["items"][0]["assessment"]
+    config.previous.write_text(json.dumps({"attention": snapshot}))
+    metadata_changed = replace(
+        original,
+        updated_at=original.updated_at + timedelta(hours=1),
+        comment_count=1,
+        commenters=["someone"],
+    )
+    results = asyncio.run(
+        m.judge_all(None, [metadata_changed], config, m.Cache(tmp_path / "empty", True))
+    )
+    assert results[original.number].severity == 1
+    assert results[original.number].low_effort == 0
+    changed = replace(original, body="Different reproduction")
+    assert (
+        asyncio.run(
+            m.judge_all(None, [changed], config, m.Cache(tmp_path / "empty", True))
+        )
+        == {}
+    )
+    new_model = replace(config, jev_model="different-model")
+    assert (
+        asyncio.run(
+            m.judge_all(None, [original], new_model, m.Cache(tmp_path / "empty", True))
+        )
+        == {}
+    )

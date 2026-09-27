@@ -123,6 +123,8 @@ class Config:
     cache_dir: Path = Path.home() / ".cache" / "rank_issues"
     use_cache: bool = True
     public: bool = False
+    max_judgments: int | None = None
+    previous: Path | None = None
     weights: dict[str, float] = field(default_factory=lambda: dict(DEFAULT_WEIGHTS))
     label_signals: dict[str, frozenset[str]] = field(
         default_factory=lambda: dict(DEFAULT_LABEL_SIGNALS)
@@ -528,14 +530,17 @@ def jev_questions(project: str) -> dict[str, dict[str, Any]]:
 
 class JevJudge:
     def __init__(self, config: Config) -> None:
-        from typesafe_sdk import AsyncTypeSafeClient
+        from typesafe_sdk import AsyncTypeSafeClient, RetryPolicy
 
         api_key = os.environ.get("TYPESAFE_API_KEY")
         if not api_key:
             raise SystemExit("--judge jev needs TYPESAFE_API_KEY")
         self.name = f"jev:{config.jev_model}"
         self._client = AsyncTypeSafeClient(
-            api_key=api_key, model=config.jev_model, timeout=120
+            api_key=api_key,
+            model=config.jev_model,
+            timeout=120,
+            retry=RetryPolicy(max_retries=0),
         )
         self._questions = jev_questions(config.project)
 
@@ -596,7 +601,7 @@ class LunaJudge:
         if not os.environ.get("OPENAI_API_KEY"):
             raise SystemExit("--judge luna needs OPENAI_API_KEY")
         self.name = f"luna:{config.luna_model}"
-        self._client = AsyncOpenAI()
+        self._client = AsyncOpenAI(max_retries=0)
         self._model = config.luna_model
         questions = jev_questions(config.project)
         self._instructions = (
@@ -643,21 +648,39 @@ async def judge_all(
     cache: Cache,
     progress: Progress = _no_progress,
 ) -> dict[int, Judgment]:
-    if judge is None:
-        return {}
+    identity = assessment_model(config)
+    previous = {}
+    if config.public and config.previous:
+        snapshot = json.loads(config.previous.read_text()).get("attention", {})
+        if (
+            snapshot.get("repo") == config.repo
+            and snapshot.get("assessment_model") == identity
+        ):
+            previous = {row["number"]: row for row in snapshot.get("items", [])}
+    remaining = config.max_judgments
     semaphore = asyncio.Semaphore(config.concurrency)
     results: dict[int, Judgment] = {}
     progress("judging", 0, len(issues))
 
     async def one(issue: Issue) -> None:
+        nonlocal remaining
+        digest = assessment_digest(issue, config)
+        old = previous.get(issue.number, {})
+        if old.get("input_digest") == digest and old.get("assessment"):
+            results[issue.number] = Judgment(**old["assessment"], low_effort=0)
+            return
         key = f"{issue.number}:{issue.updated_at.isoformat()}"
         cached = cache.get(
-            "judgments", config.repo, config.project, judge.name, JUDGMENT_VERSION, key
+            "judgments", config.repo, config.project, identity, JUDGMENT_VERSION, key
         )
         if cached:
             results[issue.number] = Judgment(**cached)
             progress("judging", len(results), len(issues))
             return
+        if judge is None or remaining == 0:
+            return
+        if remaining is not None:
+            remaining -= 1
         async with semaphore:
             try:
                 judgment = await judge.judge(judge_state(issue, config))
@@ -670,7 +693,7 @@ async def judge_all(
             "judgments",
             config.repo,
             config.project,
-            judge.name,
+            identity,
             JUDGMENT_VERSION,
             key,
         )
@@ -950,7 +973,7 @@ async def rank(
 ) -> RankedPage:
     """Rank the next page of open issues (newest first) after `after`."""
     cache = Cache(config.cache_dir, config.use_cache)
-    judge = make_judge(config)
+    judge = make_judge(config) if config.max_judgments != 0 else None
     async with GitHub(github_token()) as gh:
         progress("issues", 0, config.limit)
         (issues, next_cursor), releases = await asyncio.gather(
@@ -972,6 +995,31 @@ async def rank(
         for i in issues
     ]
     return RankedPage(sorted(ranked, key=lambda r: -r.score), next_cursor)
+
+
+def assessment_model(config: Config) -> str:
+    model = config.jev_model if config.judge == "jev" else config.luna_model
+    return f"{config.judge}:{model}"
+
+
+def assessment_digest(issue: Issue, config: Config) -> str:
+    payload = {
+        "version": JUDGMENT_VERSION,
+        "model": assessment_model(config),
+        "state": judge_state(issue, config),
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+def public_assessment(judgment: Judgment | None) -> dict | None:
+    if judgment is None:
+        return None
+    return {
+        k: v
+        for k, v in asdict(judgment).items()
+        if k
+        in {"kind", "repro", "actionable", "severity", "security", "spec", "downstream"}
+    }
 
 
 PUBLIC_COMPONENTS = {
@@ -1019,6 +1067,8 @@ def public_snapshot(page: RankedPage, config: Config) -> dict:
                 if r.judgment and r.judgment.kind
                 else "unclassified",
                 "judged": r.judgment is not None,
+                "assessment": public_assessment(r.judgment),
+                "input_digest": assessment_digest(r.issue, config),
                 "reasons": reasons,
                 "maintainer_replied": maintainer_reply(r.issue),
                 "assigned": bool(r.issue.assignees),
@@ -1032,6 +1082,7 @@ def public_snapshot(page: RankedPage, config: Config) -> dict:
         "as_of": datetime.now(timezone.utc).isoformat(),
         "profile": "public-issue-signals",
         "judge": config.judge,
+        "assessment_model": assessment_model(config),
         "judged": sum(r.judgment is not None for r in page.ranked),
         "examined": len(page.ranked),
         "has_more": page.next_cursor is not None,
@@ -1046,6 +1097,16 @@ def parse_args(argv: Sequence[str] | None = None) -> tuple[Config, argparse.Name
         "--public",
         action="store_true",
         help="public issue signals only; excludes contributor assessments",
+    )
+    parser.add_argument(
+        "--max-judgments",
+        type=int,
+        help="maximum new model calls; zero uses cached assessments only",
+    )
+    parser.add_argument(
+        "--previous",
+        type=Path,
+        help="previous public status snapshot to reuse unchanged assessments",
     )
     parser.add_argument("--repo", default="PrefectHQ/fastmcp")
     parser.add_argument("--limit", type=int, default=30, help="issues per page")
@@ -1075,6 +1136,10 @@ def parse_args(argv: Sequence[str] | None = None) -> tuple[Config, argparse.Name
         "--explain", type=int, default=0, help="print the score breakdown for the top N"
     )
     args = parser.parse_args(argv)
+    if args.max_judgments is not None and args.max_judgments < 0:
+        parser.error("--max-judgments must be nonnegative")
+    if args.previous and not args.public:
+        parser.error("--previous requires --public")
     weights = dict(DEFAULT_WEIGHTS)
     if args.weights:
         weights.update(json.loads(args.weights.read_text()))
@@ -1100,6 +1165,8 @@ def parse_args(argv: Sequence[str] | None = None) -> tuple[Config, argparse.Name
         use_cache=not args.no_cache,
         weights=weights,
         public=args.public,
+        max_judgments=args.max_judgments,
+        previous=args.previous,
     )
     return config, args
 
