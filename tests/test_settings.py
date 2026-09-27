@@ -3,8 +3,8 @@ import pytest
 from fastmcp.settings import Settings
 
 
-def test_http_host_origin_protection_defaults_to_false():
-    assert Settings().http_host_origin_protection is False
+def test_http_host_origin_protection_defaults_to_auto():
+    assert Settings().http_host_origin_protection == "auto"
 
 
 @pytest.mark.parametrize(

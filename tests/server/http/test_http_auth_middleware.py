@@ -161,7 +161,7 @@ class TestStreamableHTTPAppResourceMetadataURL:
 class TestStreamableHTTPHostOriginProtection:
     """Test host and origin validation for streamable HTTP apps."""
 
-    def test_default_allows_untrusted_host_for_compatibility(self):
+    def test_default_protects_loopback_with_allowlist(self):
         server = FastMCP(name="TestServer")
         app = create_streamable_http_app(
             server=server,
@@ -180,8 +180,8 @@ class TestStreamableHTTPHostOriginProtection:
                 json=INITIALIZE_REQUEST,
             )
 
-        assert response.status_code == 200
-        assert "mcp-session-id" in response.headers
+        assert response.status_code == 421
+        assert "mcp-session-id" not in response.headers
 
     async def test_auto_allows_public_host_when_server_scope_is_ambiguous(self):
         status = await _guard_status(
