@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from fastmcp.cli.run import load_mcp_server_config
+from fastmcp.utilities.cli import load_and_merge_config
 from fastmcp.utilities.mcp_server_config import (
     Deployment,
     MCPServerConfig,
@@ -310,3 +311,27 @@ def test_environment_config_path_resolution(tmp_path):
     # Path should be resolved relative to config file
     req_idx = uv_cmd.index("--with-requirements") + 1
     assert Path(uv_cmd[req_idx]).is_absolute() or uv_cmd[req_idx] == "requirements.txt"
+
+
+def test_load_and_merge_config_reads_utf8(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, cp1252_default_encoding: None
+):
+    """fastmcp.json is UTF-8 regardless of the platform's default encoding."""
+    greeting = "Olá José, أهلاً"
+    config_file = tmp_path / "fastmcp.json"
+    config_file.write_text(
+        json.dumps(
+            {
+                "source": {"path": "server.py"},
+                "deployment": {"env": {"GREETING": greeting}},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    # Registered so monkeypatch restores the variable the config sets.
+    monkeypatch.setenv("GREETING", "unset")
+
+    load_and_merge_config(str(config_file))
+
+    assert os.environ["GREETING"] == greeting

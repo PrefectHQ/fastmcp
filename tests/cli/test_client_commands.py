@@ -257,6 +257,19 @@ class TestResolveServerSpec:
         assert isinstance(result, dict)
         assert "mcpServers" in result
 
+    def test_json_mcp_config_reads_utf8(
+        self, tmp_path: Path, cp1252_default_encoding: None
+    ):
+        """MCPConfig files are UTF-8 regardless of the platform's default encoding."""
+        config_file = tmp_path / "mcp.json"
+        config = {
+            "mcpServers": {
+                "notes": {"command": "node", "args": ["C:/Users/فاطمة/notes.js"]}
+            }
+        }
+        config_file.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
+        assert resolve_server_spec(str(config_file)) == config
+
     def test_json_fastmcp_config_exits(self, tmp_path: Path):
         config_file = tmp_path / "fastmcp.json"
         config_file.write_text(json.dumps({"source": {"type": "file"}}))

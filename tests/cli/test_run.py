@@ -16,6 +16,7 @@ from fastmcp.cli.cli import apps, inspector, run
 from fastmcp.cli.run import (
     create_mcp_config_server,
     is_url,
+    run_command,
     run_module_command,
     run_with_reload,
 )
@@ -145,6 +146,30 @@ class TestMCPConfig:
         async with client:
             tools = await client.list_tools()
             assert len(tools) == 1
+
+    async def test_run_mcp_config_reads_utf8(
+        self, tmp_path: Path, cp1252_default_encoding: None
+    ):
+        """MCPConfig files are UTF-8 regardless of the platform's default encoding."""
+        mcp_config_path = tmp_path / "mcp.json"
+        server_config = {
+            "command": "node",
+            "args": ["C:/Users/فاطمة/notes.js"],
+            "env": {"GREETING": "Olá José"},
+        }
+        mcp_config_path.write_text(
+            json.dumps({"mcpServers": {"notes": server_config}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        proxy = MagicMock()
+        proxy.run_async = AsyncMock()
+        with patch("fastmcp.cli.run.create_proxy", return_value=proxy) as create_proxy:
+            await run_command(str(mcp_config_path))
+
+        assert create_proxy.call_args.args[0] == {
+            "mcpServers": {"notes": server_config}
+        }
 
     async def test_validate_mcp_config(self, tmp_path: Path):
         """Test creating a server from an MCPConfig file."""

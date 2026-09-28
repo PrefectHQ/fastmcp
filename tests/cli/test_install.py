@@ -1,9 +1,11 @@
+import json
 from pathlib import Path
 
 import pytest
 
 from fastmcp.cli.install import install_app
-from fastmcp.cli.install.shared import validate_server_name
+from fastmcp.cli.install.claude_desktop import install_claude_desktop
+from fastmcp.cli.install.shared import process_common_args, validate_server_name
 from fastmcp.cli.install.stdio import install_stdio
 
 
@@ -158,6 +160,63 @@ class TestClaudeDesktopInstall:
         command, bound, _ = install_app.parse_args(["claude-desktop", "server.py"])
 
         assert bound.arguments.get("config_path") is None
+
+    def test_claude_desktop_reads_existing_config_as_utf8(
+        self, tmp_path: Path, cp1252_default_encoding: None
+    ):
+        """Claude's config is UTF-8 regardless of the platform's default encoding."""
+        server_file = tmp_path / "server.py"
+        server_file.write_text("", encoding="utf-8")
+        config_file = tmp_path / "claude_desktop_config.json"
+        config_file.write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "notes": {
+                            "command": "node",
+                            "args": ["C:/Users/فاطمة/notes.js"],
+                        },
+                        "demo": {"command": "old", "env": {"GREETING": "Olá José"}},
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        assert install_claude_desktop(server_file, None, "demo", config_path=tmp_path)
+
+        servers = json.loads(config_file.read_text(encoding="utf-8"))["mcpServers"]
+        assert servers["demo"]["env"] == {"GREETING": "Olá José"}
+        assert servers["notes"]["args"] == ["C:/Users/فاطمة/notes.js"]
+
+
+class TestProcessCommonArgs:
+    async def test_reads_fastmcp_json_as_utf8(
+        self, tmp_path: Path, cp1252_default_encoding: None
+    ):
+        """fastmcp.json is UTF-8 regardless of the platform's default encoding."""
+        (tmp_path / "server.py").write_text("", encoding="utf-8")
+        config_file = tmp_path / "fastmcp.json"
+        config_file.write_text(
+            json.dumps(
+                {
+                    "source": {"path": "server.py"},
+                    "environment": {"dependencies": ["httpx"]},
+                    "deployment": {"env": {"OWNER": "فاطمة"}},
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        file, _, name, packages, _ = await process_common_args(
+            str(config_file), "demo", None, None, None
+        )
+
+        assert file == (tmp_path / "server.py").resolve()
+        assert name == "demo"
+        assert packages == ["httpx"]
 
 
 class TestCursorInstall:
