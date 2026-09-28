@@ -18,9 +18,7 @@ from pathlib import Path
 from typing import Any, Literal, TypedDict
 from urllib.parse import parse_qs, urlparse
 
-import home_lights
 import httpx2
-from home_lights import RoomView, call_lights, checked_id, read_home
 from mcp.types import ToolAnnotations
 from prefab_ui.actions import SetState, ShowToast
 from prefab_ui.actions.mcp import CallTool, SendMessage
@@ -29,23 +27,15 @@ from prefab_ui.components import (
     Button,
     Column,
     Div,
-    Else,
-    If,
-    Image,
     Muted,
     Row,
-    Switch,
-    Tab,
-    Tabs,
     Text,
 )
-from prefab_ui.rx import ERROR, EVENT, RESULT, Rx
+from prefab_ui.rx import ERROR, RESULT
 from pydantic import BaseModel, Field
 
 from fastmcp import Client, FastMCP, FastMCPApp
-from fastmcp.apps.config import ResourceCSP
 from fastmcp.exceptions import ToolError
-from fastmcp.experimental.auth.atproto import ATProtoProvider
 
 Source = Literal["youtube"]
 ALL_SOURCES: frozenset[Source] = frozenset({"youtube"})
@@ -83,30 +73,8 @@ READ_ONLY = ToolAnnotations(
 )
 
 
-def _auth_from_env() -> ATProtoProvider | None:
-    """Require AT Protocol sign-in when MEDIA_PICKER_BASE_URL is set."""
-    base_url = os.getenv("MEDIA_PICKER_BASE_URL")
-    if not base_url:
-        return None
-    allowed_dids = [
-        did.strip()
-        for did in os.getenv("MEDIA_PICKER_ALLOWED_DIDS", "").split(",")
-        if did.strip()
-    ]
-    if not allowed_dids:
-        raise ValueError(
-            "MEDIA_PICKER_ALLOWED_DIDS is required with MEDIA_PICKER_BASE_URL"
-        )
-    return ATProtoProvider(
-        base_url=base_url,
-        jwt_signing_key=os.environ["MEDIA_PICKER_JWT_SIGNING_KEY"],
-        allowed_dids=allowed_dids,
-        require_authorization_consent="remember",
-    )
-
-
 app = FastMCPApp("Media Picker")
-mcp = FastMCP("Media Picker", providers=[app], auth=_auth_from_env())
+mcp = FastMCP("Media Picker", providers=[app])
 _saved: dict[str, MediaCandidate] = {}
 
 
@@ -312,10 +280,6 @@ async def _playable_links(
     return playable, notices, unverified, unplayable
 
 
-THUMBNAIL_CSP = ResourceCSP(resource_domains=["https://i.ytimg.com"])
-LEVELS = (10, 40, 70, 100)
-
-
 def _toast_result() -> list[Any]:
     return [
         SetState("last_action", RESULT.message),
@@ -341,11 +305,6 @@ def _media_list(playable: list[MediaCandidate], notices: list[str]) -> None:
                 "title": item["title"],
             }
             with Div(css_class="pick"):
-                Image(
-                    src=f"https://i.ytimg.com/vi/{item['source_id']}/mqdefault.jpg",
-                    alt="",
-                    css_class="thumb",
-                )
                 with Column(css_class="pick-copy"):
                     Text(item["title"], css_class="pick-title")
                     with Row(css_class="pick-meta"):
@@ -406,7 +365,7 @@ def _header(title: str, status: str) -> None:
         Muted(status, css_class="status")
 
 
-@app.ui(annotations=READ_ONLY, csp=THUMBNAIL_CSP)
+@app.ui(annotations=READ_ONLY)
 async def show_media_picker(links: list[MediaLink]) -> PrefabApp:
     """Show media choices the user can play on their TV.
 
@@ -428,219 +387,6 @@ async def show_media_picker(links: list[MediaLink]) -> PrefabApp:
             "source_ids": [item["source_id"] for item in playable],
             "unverified_count": unverified,
             "unplayable_count": unplayable,
-        },
-    )
-
-
-def _light_receipt(message: str) -> dict[str, str]:
-    return {"status": "accepted", "message": message}
-
-
-@app.tool()
-async def set_room_power(room_id: str, room_name: str, on: bool) -> dict[str, str]:
-    """Turn every light in one room on or off."""
-    await call_lights("set_room", {"target": checked_id(room_id), "state": {"on": on}})
-    return _light_receipt(f"{room_name} {'on' if on else 'off'}.")
-
-
-@app.tool()
-async def set_room_brightness(
-    room_id: str, room_name: str, brightness: int
-) -> dict[str, str]:
-    """Set one room's brightness percent, turning it on."""
-    if not 1 <= brightness <= 100:
-        raise ToolError("Brightness must be between 1 and 100.")
-    await call_lights(
-        "set_room",
-        {
-            "target": checked_id(room_id),
-            "state": {"on": True, "brightness": brightness, "transition_seconds": 0.4},
-        },
-    )
-    return _light_receipt(f"{room_name} at {brightness}%.")
-
-
-@app.tool()
-async def activate_room_scene(
-    room_id: str, scene_id: str, scene_name: str
-) -> dict[str, str]:
-    """Recall one saved Hue scene in a room."""
-    await call_lights(
-        "activate_scene", {"room": checked_id(room_id), "scene": checked_id(scene_id)}
-    )
-    return _light_receipt(f"{scene_name} on.")
-
-
-def _nearest_level(brightness: int) -> int:
-    return min(LEVELS, key=lambda level: abs(level - brightness))
-
-
-def _room_state(index: int, room: RoomView) -> dict[str, Any]:
-    lit = room["lights_on"] > 0
-    active = next((scene for scene in room["scenes"] if scene["active"]), None)
-    return {
-        f"r{index}_on": lit,
-        f"r{index}_lvl": room["brightness"] if lit else 0,
-        f"r{index}_pick": _nearest_level(room["brightness"]) if lit else 0,
-        f"r{index}_scene": active["id"] if active else "",
-        f"r{index}_color": room["color"] or (active and active["color"]) or "#f2c27b",
-    }
-
-
-def _toast() -> list[Any]:
-    return [ShowToast(RESULT.message, variant="success")]
-
-
-def _room_row(index: int, room: RoomView) -> None:
-    on, lvl, pick, scene_key, color = (
-        f"r{index}_on",
-        f"r{index}_lvl",
-        f"r{index}_pick",
-        f"r{index}_scene",
-        f"r{index}_color",
-    )
-    room_args = {"room_id": room["id"], "room_name": room["name"]}
-    with Div(css_class="room", style={"--accent": f"{{{{ {color} }}}}"}):
-        with If(Rx(on)):
-            Div(css_class="room-glow")
-        with Row(css_class="room-head"):
-            with If(Rx(on)):
-                Div(css_class="lamp lit")
-            with Else():
-                Div(css_class="lamp")
-            Text(room["name"], css_class="room-name")
-            Muted(
-                f"{{{{ {on} ? ({lvl} > 0 ? {lvl} + '%' : 'on') : 'off' }}}}",
-                css_class="level-readout",
-            )
-            Switch(
-                name=on,
-                value=room["lights_on"] > 0,
-                css_class="room-switch",
-                on_change=[
-                    SetState(on, EVENT),
-                    CallTool(
-                        set_room_power,
-                        arguments={**room_args, "on": EVENT},
-                        on_success=_toast(),
-                        on_error=ShowToast(ERROR, variant="error"),
-                    ),
-                ],
-            )
-        with Row(css_class="room-controls"):
-            with Row(css_class="levels"):
-                for level in LEVELS:
-                    actions = [
-                        SetState(pick, level),
-                        SetState(lvl, level),
-                        SetState(on, True),
-                        CallTool(
-                            set_room_brightness,
-                            arguments={**room_args, "brightness": level},
-                            on_success=_toast(),
-                            on_error=ShowToast(ERROR, variant="error"),
-                        ),
-                    ]
-                    with If(Rx(on) & (Rx(pick) == level)):
-                        Button(
-                            str(level),
-                            variant="ghost",
-                            size="xs",
-                            css_class="level current",
-                            on_click=actions,
-                        )
-                    with Else():
-                        Button(
-                            str(level),
-                            variant="ghost",
-                            size="xs",
-                            css_class="level",
-                            on_click=actions,
-                        )
-            if room["scenes"]:
-                with Row(css_class="scenes"):
-                    for scene in room["scenes"]:
-                        actions = [
-                            SetState(scene_key, scene["id"]),
-                            SetState(on, True),
-                            SetState(pick, 0),
-                            SetState(lvl, 0),
-                            CallTool(
-                                activate_room_scene,
-                                arguments={
-                                    "room_id": room["id"],
-                                    "scene_id": scene["id"],
-                                    "scene_name": scene["name"],
-                                },
-                                on_success=_toast(),
-                                on_error=ShowToast(ERROR, variant="error"),
-                            ),
-                        ]
-                        if scene["color"]:
-                            actions.insert(0, SetState(color, scene["color"]))
-                        style = {"--swatch": scene["color"]} if scene["color"] else None
-                        with If(Rx(on) & (Rx(scene_key) == scene["id"])):
-                            with Div(css_class="scene active", style=style):
-                                Button(
-                                    scene["name"],
-                                    variant="ghost",
-                                    size="xs",
-                                    on_click=actions,
-                                )
-                        with Else():
-                            with Div(css_class="scene", style=style):
-                                Button(
-                                    scene["name"],
-                                    variant="ghost",
-                                    size="xs",
-                                    on_click=actions,
-                                )
-
-
-@app.ui(annotations=READ_ONLY, csp=THUMBNAIL_CSP)
-async def show_home(links: list[MediaLink] | None = None) -> PrefabApp:
-    """Show the home controls: every room's lights, plus media to play on the TV.
-
-    Call with no links to control lights. To suggest something to watch, find
-    candidates with your own web search and pass their YouTube URLs as links;
-    each is verified before it is shown.
-    """
-    rooms = await read_home() if home_lights.lights_target() else []
-    playable, notices, _, _ = await _playable_links(links or [])
-    lit_count = " + ".join(f"(r{index}_on ? 1 : 0)" for index in range(len(rooms)))
-
-    with Column(css_class="home") as view:
-        _header(
-            "home",
-            f"{{{{ {lit_count} }}}} of {len(rooms)} rooms lit"
-            if rooms
-            else "lights and tv",
-        )
-        with Tabs(value="watch" if playable else "lights", variant="line"):
-            with Tab(title="lights", value="lights"):
-                if rooms:
-                    with Column(css_class="rooms"):
-                        for index, room in enumerate(rooms):
-                            _room_row(index, room)
-                else:
-                    with Div(css_class="empty"):
-                        Text("lights aren't connected")
-                        Muted("set MEDIA_PICKER_LIGHTS_URL on the server.")
-            with Tab(title="watch", value="watch"):
-                _media_list(playable, notices)
-
-    return PrefabApp(
-        view=view,
-        css=_css(),
-        state={
-            "last_action": "",
-            "room_ids": [room["id"] for room in rooms],
-            "source_ids": [item["source_id"] for item in playable],
-            **{
-                key: value
-                for index, room in enumerate(rooms)
-                for key, value in _room_state(index, room).items()
-            },
         },
     )
 

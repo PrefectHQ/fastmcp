@@ -289,7 +289,6 @@
                     "group": "Auth",
                     "icon": "key",
                     "pages": [
-                      "integrations/atproto",
                       "integrations/auth0",
                       "integrations/authkit",
                       "integrations/aws-cognito",

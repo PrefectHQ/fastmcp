@@ -33,120 +33,16 @@
 .home .title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
 .home .status { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 
-.home .pf-tabs-list { gap: 16px; border-bottom: 1px solid var(--line); width: 100%; justify-content: flex-start; }
-.home .pf-tabs-trigger { font-size: 13px; padding: 6px 0; color: var(--ink-3); }
-.home .pf-tabs-trigger[data-active] { color: var(--ink); }
-
-.home .rooms, .home .picks { gap: 8px; }
-.home [role=tabpanel] { margin-top: 10px; padding-top: 0; }
-
-.home .room {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  position: relative;
-  isolation: isolate;
-}
-.home .room-glow {
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  z-index: -1;
-  pointer-events: none;
-  background: color-mix(in srgb, var(--accent) 11%, var(--surface));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 26%, transparent);
-  transition: background 200ms var(--ease);
-}
-.home .room-head { align-items: center; gap: 10px; }
-.home .lamp {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex: none;
-  background: var(--line);
-}
-.home .lamp.lit {
-  background: var(--accent);
-  box-shadow: 0 0 10px 1px color-mix(in srgb, var(--accent) 65%, transparent);
-}
-.home .room-name { font-size: 14px; font-weight: 600; flex: 1; min-width: 0; }
-.home .level-readout { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
-.home .room .pf-switch[data-checked] { background: color-mix(in srgb, var(--accent) 75%, var(--ink-3)); }
-.home .room .pf-switch .pf-switch-thumb { background: #ffffff; }
-.home .room .pf-switch[data-unchecked] { background: color-mix(in srgb, var(--ink) 22%, transparent); }
-
-.home .room-controls { align-items: center; gap: 10px; min-width: 0; }
-.home .levels { gap: 2px; flex: none; padding: 2px; border-radius: 999px; background: var(--surface-2); }
-.home .level {
-  height: 24px;
-  min-width: 30px;
-  padding: 0 6px;
-  border-radius: 999px;
-  font-size: 12px;
-  color: var(--ink-3);
-  font-variant-numeric: tabular-nums;
-}
-.home .level.current { color: var(--ink); background: color-mix(in srgb, var(--accent) 24%, var(--surface)); box-shadow: 0 0 0 1px var(--line); }
-
-.home .scenes {
-  gap: 6px;
-  flex: 1;
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(to right, #000 85%, transparent);
-  mask-image: linear-gradient(to right, #000 85%, transparent);
-  padding-right: 24px;
-}
-.home .scenes::-webkit-scrollbar { display: none; }
-.home .scene { flex: none; }
-.home .scene .pf-button {
-  height: 24px;
-  padding: 0 10px 0 8px;
-  gap: 6px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--ink-2);
-  border: 1px solid var(--line);
-  background: var(--surface);
-  white-space: nowrap;
-}
-.home .scene .pf-button::before {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--swatch, var(--ink-3));
-  flex: none;
-}
-.home .scene.active .pf-button {
-  color: var(--ink);
-  border-color: color-mix(in srgb, var(--swatch, var(--ink-3)) 55%, var(--line));
-  background: color-mix(in srgb, var(--swatch, var(--ink-3)) 16%, var(--surface));
-}
-
+.home .picks { gap: 8px; }
 .home .pick {
   display: grid;
-  grid-template-columns: 96px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
   align-items: start;
   padding: 8px;
   border-radius: 10px;
   border: 1px solid var(--line);
   background: var(--surface);
-}
-.home .thumb {
-  width: 96px;
-  aspect-ratio: 16 / 9;
-  height: auto;
-  object-fit: cover;
-  border-radius: 6px;
-  background: var(--surface-2);
 }
 .home .pick-copy { gap: 3px; min-width: 0; }
 .home .pick-title {
@@ -200,11 +96,9 @@
 
 @media (max-width: 420px) {
   .home { padding: 10px; border-radius: 14px; }
-  .home .pick { grid-template-columns: 84px minmax(0, 1fr) auto; gap: 10px; }
-  .home .thumb { width: 84px; }
   .home .why { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .home .room-glow, .home .play { transition: none; }
+  .home .play { transition: none; }
 }

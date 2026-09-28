@@ -40,7 +40,6 @@ from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import AnyFunction
 
 if TYPE_CHECKING:
-    from fastmcp.apps.config import ResourceCSP
     from fastmcp.server.providers.local_provider import LocalProvider
     from fastmcp.tools.base import Tool
 
@@ -276,7 +275,6 @@ class FastMCPApp(Provider):
         annotations: ToolAnnotations | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         timeout: float | None = None,
-        csp: ResourceCSP | None = None,
     ) -> F: ...
 
     @overload
@@ -292,7 +290,6 @@ class FastMCPApp(Provider):
         annotations: ToolAnnotations | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         timeout: float | None = None,
-        csp: ResourceCSP | None = None,
     ) -> Callable[[F], F]: ...
 
     def ui(
@@ -307,7 +304,6 @@ class FastMCPApp(Provider):
         annotations: ToolAnnotations | None = None,
         auth: AuthCheck | list[AuthCheck] | None = None,
         timeout: float | None = None,
-        csp: ResourceCSP | None = None,
     ) -> Any:
         """Register a UI entry-point tool that the model calls.
 
@@ -325,10 +321,6 @@ class FastMCPApp(Provider):
 
             @app.ui("my_dashboard")
             def dashboard() -> Component: ...
-
-        Pass ``csp`` to let the rendered UI load from more origins, such as
-        ``ResourceCSP(resource_domains=["https://i.ytimg.com"])`` for images.
-        It is merged with the renderer's own CSP on the UI resource.
         """
 
         def _register(fn: F, tool_name: str | None) -> F:
@@ -346,7 +338,6 @@ class FastMCPApp(Provider):
             app_config = AppConfig(
                 resource_uri=PREFAB_RENDERER_URI,
                 visibility=["model"],
-                csp=csp,
             )
 
             meta: dict[str, Any] = {

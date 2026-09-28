@@ -7,7 +7,6 @@ import media_picker_server
 import pytest
 from media_picker_server import (
     MediaLink,
-    _auth_from_env,
     _play_via_mcp,
     _saved,
     mcp,
@@ -20,7 +19,6 @@ from prefab_ui.app import PROTOCOL_VERSION
 
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
-from fastmcp.experimental.auth.atproto import ATProtoProvider
 
 KNOWN_TITLES = {
     "jkAw87ZIwQA": ("The Mother of all Science Scandals", "BobbyBroccoli"),
@@ -152,10 +150,6 @@ async def test_mcp_host_loop_exposes_ui_and_marks_backend_tools_app_only(
             "play_media",
             "save_media",
             "show_media_picker",
-            "show_home",
-            "set_room_power",
-            "set_room_brightness",
-            "activate_room_scene",
         }
         assert tools_by_name["play_media"].meta["ui"]["visibility"] == ["app"]
         assert tools_by_name["save_media"].meta["ui"]["visibility"] == ["app"]
@@ -198,25 +192,3 @@ async def test_picker_hides_sources_the_actuator_cannot_play(
     assert result.structured_content is not None
     assert result.structured_content["state"]["source_ids"] == []
     assert result.structured_content["state"]["unplayable_count"] == 1
-
-
-def test_auth_is_off_without_a_public_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("MEDIA_PICKER_BASE_URL", raising=False)
-    assert _auth_from_env() is None
-
-
-def test_auth_requires_an_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MEDIA_PICKER_BASE_URL", "https://picker.example")
-    monkeypatch.setenv("MEDIA_PICKER_JWT_SIGNING_KEY", "test-secret")
-    monkeypatch.delenv("MEDIA_PICKER_ALLOWED_DIDS", raising=False)
-    with pytest.raises(ValueError, match="MEDIA_PICKER_ALLOWED_DIDS"):
-        _auth_from_env()
-
-    monkeypatch.setenv(
-        "MEDIA_PICKER_ALLOWED_DIDS", " did:plc:abcdefghijklmnopqrstuvwx , "
-    )
-    provider = _auth_from_env()
-    assert isinstance(provider, ATProtoProvider)
-    assert "did:plc:abcdefghijklmnopqrstuvwx" in provider._allowed_dids
-    assert "did:plc:zyxwvutsrqponmlkjihgfedc" not in provider._allowed_dids
-    assert provider._require_authorization_consent == "remember"

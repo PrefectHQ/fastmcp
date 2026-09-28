@@ -83,7 +83,7 @@ fastmcp dev apps examples/apps/quiz/quiz_server.py
 
 ### Media picker
 
-Separates model-visible media discovery from an interactive carousel. `Play` and `Save` call app-only backend tools directly, while `More like this` sends a follow-up request to the conversation. The normalized candidate shape keeps the UI independent of YouTube, Internet Archive, live cameras, or future source adapters.
+The model finds videos with its own search and passes their YouTube links; the server verifies each link through oEmbed before showing it. `Play` and `Save` call app-only tools directly, `Play` can drive a TV through another MCP server, and `More like this` sends a follow-up request to the conversation.
 
 ```bash
 fastmcp dev apps examples/apps/media_picker/media_picker_server.py
