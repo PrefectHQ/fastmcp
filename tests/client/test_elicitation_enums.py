@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from fastmcp import Context, FastMCP
 from fastmcp.client.client import Client
@@ -13,6 +13,8 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.elicitation import (
     AcceptedElicitation,
     get_elicitation_schema,
+    handle_elicit_accept,
+    parse_elicit_response_type,
     validate_elicitation_json_schema,
 )
 
@@ -331,6 +333,42 @@ async def test_list_enum_multi_select_direct():
     ) as client:
         result = await client.call_tool("my_tool", {})
         assert result.data == "low,high"
+
+
+CHOICE_SHORTHANDS = [
+    pytest.param(["low", "high"], "high", "urgent", id="single-select"),
+    pytest.param(
+        {"low": {"title": "Low"}, "high": {"title": "High"}},
+        "high",
+        "urgent",
+        id="titled-single-select",
+    ),
+    pytest.param([["bug", "feature"]], ["feature"], ["urgent"], id="multi-select"),
+    pytest.param([["bug", "feature"]], ["feature"], "feature", id="multi-select-str"),
+    pytest.param(
+        [{"bug": {"title": "Bug"}, "feature": {"title": "Feature"}}],
+        ["bug", "feature"],
+        ["bug", "urgent"],
+        id="titled-multi-select",
+    ),
+]
+
+
+@pytest.mark.parametrize("response_type, valid, invalid", CHOICE_SHORTHANDS)
+def test_choice_shorthand_accepts_offered_choices(response_type, valid, invalid):
+    config = parse_elicit_response_type(response_type)
+
+    result = handle_elicit_accept(config, {"value": valid})
+
+    assert result.data == valid
+
+
+@pytest.mark.parametrize("response_type, valid, invalid", CHOICE_SHORTHANDS)
+def test_choice_shorthand_rejects_values_not_offered(response_type, valid, invalid):
+    config = parse_elicit_response_type(response_type)
+
+    with pytest.raises(ValidationError):
+        handle_elicit_accept(config, {"value": invalid})
 
 
 async def test_validation_allows_enum_arrays():
