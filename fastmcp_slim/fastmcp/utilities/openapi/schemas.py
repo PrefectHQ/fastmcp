@@ -867,9 +867,10 @@ def extract_output_schema_from_responses(
 
     if openapi_version and openapi_version.startswith("3"):
         # Convert OpenAPI 3.x schema to JSON Schema format for proper handling
-        # of constructs like oneOf, anyOf, and nullable fields
+        # of constructs like oneOf, anyOf, and nullable fields. writeOnly
+        # properties belong to requests only, so responses never contain them.
         output_schema = convert_openapi_schema_to_json_schema(
-            output_schema, openapi_version
+            output_schema, openapi_version, remove_write_only=True
         )
 
     # MCP requires output schemas to be objects. If this schema is not an object,
@@ -897,7 +898,7 @@ def extract_output_schema_from_responses(
         if openapi_version and openapi_version.startswith("3"):
             for def_name in list(processed_defs.keys()):
                 processed_defs[def_name] = convert_openapi_schema_to_json_schema(
-                    processed_defs[def_name], openapi_version
+                    processed_defs[def_name], openapi_version, remove_write_only=True
                 )
 
         output_schema["$defs"] = processed_defs
