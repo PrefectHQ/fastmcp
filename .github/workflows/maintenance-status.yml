@@ -1,0 +1,104 @@
+name: Maintenance status
+on:
+  schedule:
+    - cron: "0 13,21 * * *" # 1 PM and 9 PM UTC
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/maintenance-status.yml"
+      - "scripts/maintenance_status.py"
+      - "scripts/rank_issues.py"
+      - "status-site/**"
+
+permissions: {}
+
+concurrency:
+  group: maintenance-status-${{ github.event.pull_request.number || 'publisher' }}
+  cancel-in-progress: false
+
+jobs:
+  # Runs the repository's script with a read-only token, including on PRs.
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.1.0
+
+      - name: Read previous assessments
+        run: |
+          gh api -H 'Accept: application/vnd.github.raw+json' 'repos/PrefectHQ/fastmcp/contents/status.json?ref=status' > "$RUNNER_TEMP/previous.json"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Rank public issues
+        run: uv run scripts/rank_issues.py --public --judge jev --max-judgments "$JUDGMENT_LIMIT" --previous "$RUNNER_TEMP/previous.json" --limit 500 --json "$RUNNER_TEMP/attention.json"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JUDGMENT_LIMIT: ${{ github.event_name == 'schedule' && github.run_attempt == 1 && github.ref == 'refs/heads/main' && secrets.TYPESAFE_API_KEY && '10' || '0' }}
+          TYPESAFE_API_KEY: ${{ github.event_name == 'schedule' && github.run_attempt == 1 && github.ref == 'refs/heads/main' && secrets.TYPESAFE_API_KEY || '' }}
+
+      - name: Build status
+        run: uv run scripts/maintenance_status.py "$RUNNER_TEMP/status" "$RUNNER_TEMP/attention.json" > /dev/null
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Where other systems publish their own entries; unset means none.
+          OPERATOR_STATUS_URL: ${{ vars.OPERATOR_STATUS_URL }}
+
+      - name: Show status
+        run: cat "$RUNNER_TEMP/status/STATUS.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the snapshot
+        uses: actions/upload-artifact@v7
+        with:
+          name: status
+          path: ${{ runner.temp }}/status
+          retention-days: 3
+
+  # Holds the only write token, and runs no repository code: it copies the
+  # built files onto the status branch as a new commit.
+  publish:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    concurrency:
+      group: maintenance-status-publish
+      cancel-in-progress: false
+    steps:
+      - name: Fetch the snapshot
+        uses: actions/download-artifact@v8
+        with:
+          name: status
+          path: snapshot
+
+      - name: Commit to the status branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          git init -q site
+          cd site
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git"
+          if git fetch -q --depth 1 origin status; then
+            git checkout -q -b status FETCH_HEAD
+          else
+            git checkout -q --orphan status
+          fi
+          cp ../snapshot/status.json ../snapshot/STATUS.md ../snapshot/badge.json .
+          cp ../snapshot/index.html ../snapshot/style.css ../snapshot/app.js .
+          git add status.json STATUS.md badge.json index.html style.css app.js
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "status: $(jq -r .as_of status.json)"
+          git push -q origin status

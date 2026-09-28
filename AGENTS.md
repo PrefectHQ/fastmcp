@@ -41,15 +41,14 @@ uv run prek run --all-files          # Ruff + Prettier + ty
 
 ## Skills
 
-Repository skills live in `.agents/skills/`, with symlinks in `.claude/skills/` for Claude Code. Load the one that matches the job:
+Repository skills live in `.agents/skills/`, with symlinks in `.claude/skills/` for Claude Code. [The development guide](docs/development/contributing.mdx#maintenance-and-automation) says which work is automated and which needs a person. Load the skill that matches the job:
 
 | Job | Skill |
 | --- | --- |
 | Find worthwhile issues in a backlog or release window | `triage` |
 | Decide whether to assign an external contributor | `review-issue` |
 | Fix a chosen bug through to a PR | `fix-issue` |
-| Review a change, yours or a contributor's | `code-review` |
-| Follow a PR through CI and bot review | `review-pr` |
+| Review a PR or local change, including compatibility, tests, CI, and bot feedback | `review-pr` |
 | Write regression tests | `python-tests` |
 | Write or revise a docs page | `docs` |
 | Evaluate a vulnerability report | `review-security-report` |
@@ -68,7 +67,7 @@ When modifying MCP functionality, changes typically need to be applied across al
 
 ## Development Rules
 
-**Read `CONTRIBUTING.md` before opening issues or PRs.** It describes when PRs are appropriate, what we expect from enhancement proposals, and what we'll close without review.
+**Read `CONTRIBUTING.md` and its linked guide at `docs/development/contributing.mdx` before opening issues or PRs.** The guide describes when PRs are appropriate, what we expect from enhancement proposals, and what we'll close without review.
 
 **Review closed contributor PRs.** When reviewing an issue, inspect every associated non-maintainer PR, including closed PRs. External PRs may be closed as part of the issue-link and assignment workflow, so closure alone is not a negative signal. Read `CONTRIBUTING.md` and the PR timeline and comments to understand its status before evaluating it.
 
@@ -171,6 +170,12 @@ Load the `release` skill to cut one; it holds the procedure. The policy it imple
 - **Docstrings:** FastMCP docstrings are automatically compiled into MDX documents. Use markdown (single backticks, fenced code blocks), not RST (no double backticks). Bare `{}` in examples will be interpreted as JSX — wrap in backticks instead.
 
 ## Code Review Rules
+
+These rules apply to automated reviewers and agents working locally. The [review-pr skill](.agents/skills/review-pr/SKILL.md) supplies the review procedure and maintainer follow-through; a review-only bot should report findings in its required format without taking over PR management.
+
+### Intended behavior and compatibility
+
+Establish intended behavior from the protocol, docs, history, and maintainer decisions; code and tests alone do not define the contract. Identify affected users and weigh migration cost against the cost of retaining the behavior. Surface unresolved decisions and follow the [release policy](docs/development/releases.mdx#versioning-policy).
 
 ### Framework regressions and root causes
 
