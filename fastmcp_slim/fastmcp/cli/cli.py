@@ -881,7 +881,7 @@ async def inspect(
         if server_spec.endswith(".json") and config is None:
             # This might be an MCPConfig, check the file
             try:
-                with open(Path(server_spec)) as f:
+                with open(Path(server_spec), encoding="utf-8") as f:
                     data = json.load(f)
                 if "mcpServers" in data:
                     logger.error("MCPConfig files are not supported by inspect command")

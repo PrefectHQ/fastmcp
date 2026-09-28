@@ -137,7 +137,7 @@ def _resolve_json_spec(path: Path) -> str | dict[str, Any]:
         sys.exit(1)
 
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         console.print(f"[bold red]Error:[/bold red] Invalid JSON in {path}: {exc}")
         sys.exit(1)
