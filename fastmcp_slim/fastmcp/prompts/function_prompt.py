@@ -14,6 +14,7 @@ from typing import (
     Protocol,
     TypeVar,
     cast,
+    get_type_hints,
     overload,
     runtime_checkable,
 )
@@ -139,6 +140,13 @@ class FunctionPrompt(Prompt):
             if param.kind == inspect.Parameter.VAR_KEYWORD:
                 raise ValueError("Functions with **kwargs are not supported as prompts")
 
+        # Resolve string annotations (`from __future__ import annotations`) so
+        # the argument types below are compared as types, not strings.
+        try:
+            param_hints = get_type_hints(fn, include_extras=True)
+        except Exception:
+            param_hints = {}
+
         # Parse the outer docstring (before unwrapping) to preserve the class
         # docstring as the prompt description for callable class instances.
         outer_docstring = parse_docstring(fn)
@@ -204,13 +212,11 @@ class FunctionPrompt(Prompt):
                 # understand the expected format when passing as strings (MCP requirement)
                 if param_name in sig.parameters:
                     sig_param = sig.parameters[param_name]
-                    if (
-                        sig_param.annotation != inspect.Parameter.empty
-                        and sig_param.annotation is not str
-                    ):
+                    annotation = param_hints.get(param_name, sig_param.annotation)
+                    if annotation != inspect.Parameter.empty and annotation is not str:
                         # Get the JSON schema for this specific parameter type
                         try:
-                            param_adapter = get_cached_typeadapter(sig_param.annotation)
+                            param_adapter = get_cached_typeadapter(annotation)
                             param_schema = param_adapter.json_schema()
 
                             # Create compact schema representation
