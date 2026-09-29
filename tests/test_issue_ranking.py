@@ -243,3 +243,21 @@ def test_previous_public_assessment_reused_without_credentials(
         )
         == {}
     )
+
+
+def test_cache_keys_are_portable_and_keep_boundaries(ranking_module, tmp_path):
+    cache = ranking_module.Cache(tmp_path, enabled=True)
+    keys = [
+        ("judgments", "PrefectHQ/fastmcp", "jev:jev-latest", "1"),
+        ("judgments", "PrefectHQ", "fastmcp/jev:jev-latest", "1"),
+    ]
+    for index, key in enumerate(keys):
+        cache.put({"index": index}, *key)
+    for index, key in enumerate(keys):
+        assert cache.get(*key) == {"index": index}
+    assert cache.get("missing") is None
+    files = list(tmp_path.rglob("*.json"))
+    assert len(files) == 2
+    for file in files:
+        assert file.parent == tmp_path
+        assert not set(file.name) & set('<>:"/\\|?*')
