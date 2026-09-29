@@ -590,20 +590,68 @@ def _patch_client():
         yield
 
 
+@pytest.fixture
+def _patch_unicode_client():
+    """Patch resolve_server_spec and _build_client with a non-ASCII tool description."""
+    server = FastMCP("UnicodeServer")
+
+    @server.tool
+    def get_weather(city: str) -> str:
+        """查询 Boston 的天气"""
+        return f"sunny in {city}"
+
+    def fake_resolve(server_spec: Any, **kwargs: Any) -> str:
+        return "fake://server"
+
+    def fake_build_client(resolved: Any, **kwargs: Any) -> Client:
+        return Client(server)
+
+    with (
+        patch.object(generate_module, "resolve_server_spec", side_effect=fake_resolve),
+        patch.object(generate_module, "_build_client", side_effect=fake_build_client),
+    ):
+        yield
+
+
 class TestGenerateCliCommand:
     @pytest.mark.usefixtures("_patch_client")
     async def test_writes_file(self, tmp_path: Path):
         output = tmp_path / "cli.py"
         await generate_cli_command("test-server", str(output))
         assert output.exists()
-        content = output.read_text()
+        content = output.read_text(encoding="utf-8")
         compile(content, str(output), "exec")
+
+    @pytest.mark.usefixtures("_patch_unicode_client")
+    async def test_non_ascii_tool_description_is_written_as_utf8(self, tmp_path: Path):
+        """The generated CLI must be UTF-8, not whatever the platform locale says.
+
+        On a non-UTF-8 locale (e.g. cp936 on zh-CN Windows) the script was written in
+        the locale encoding, which produces a file CPython cannot import because
+        source files are always decoded as UTF-8.
+        """
+        output = tmp_path / "cli.py"
+        await generate_cli_command("unicode-server", str(output))
+
+        raw = output.read_bytes()
+        content = raw.decode("utf-8")
+        assert "查询 Boston 的天气" in content
+        compile(raw, str(output), "exec")
+
+    @pytest.mark.usefixtures("_patch_unicode_client")
+    async def test_non_ascii_tool_description_skill_is_utf8(self, tmp_path: Path):
+        """SKILL.md is consumed by agents, so it must be UTF-8 too."""
+        output = tmp_path / "cli.py"
+        await generate_cli_command("unicode-server", str(output))
+
+        raw = (tmp_path / "SKILL.md").read_bytes()
+        assert "查询 Boston 的天气" in raw.decode("utf-8")
 
     @pytest.mark.usefixtures("_patch_client")
     async def test_contains_tools(self, tmp_path: Path):
         output = tmp_path / "cli.py"
         await generate_cli_command("test-server", str(output))
-        content = output.read_text()
+        content = output.read_text(encoding="utf-8")
         assert "async def greet(" in content
         assert "async def add(" in content
 
@@ -627,7 +675,7 @@ class TestGenerateCliCommand:
         output = tmp_path / "cli.py"
         output.write_text("existing")
         await generate_cli_command("test-server", str(output), force=True)
-        content = output.read_text()
+        content = output.read_text(encoding="utf-8")
         assert content != "existing"
         assert "async def greet(" in content
 
@@ -646,7 +694,7 @@ class TestGenerateCliCommand:
         await generate_cli_command("test-server", str(output))
         skill_path = tmp_path / "SKILL.md"
         assert skill_path.exists()
-        content = skill_path.read_text()
+        content = skill_path.read_text(encoding="utf-8")
         assert "---" in content
         assert "name:" in content
 
@@ -654,7 +702,7 @@ class TestGenerateCliCommand:
     async def test_skill_contains_tools(self, tmp_path: Path):
         output = tmp_path / "cli.py"
         await generate_cli_command("test-server", str(output))
-        content = (tmp_path / "SKILL.md").read_text()
+        content = (tmp_path / "SKILL.md").read_text(encoding="utf-8")
         assert "### greet" in content
         assert "### add" in content
         assert "--name" in content
@@ -678,7 +726,7 @@ class TestGenerateCliCommand:
         output = tmp_path / "cli.py"
         (tmp_path / "SKILL.md").write_text("existing")
         await generate_cli_command("test-server", str(output), force=True)
-        content = (tmp_path / "SKILL.md").read_text()
+        content = (tmp_path / "SKILL.md").read_text(encoding="utf-8")
         assert content != "existing"
         assert "### greet" in content
 
@@ -686,7 +734,7 @@ class TestGenerateCliCommand:
     async def test_skill_references_cli_filename(self, tmp_path: Path):
         output = tmp_path / "my_weather.py"
         await generate_cli_command("test-server", str(output))
-        content = (tmp_path / "SKILL.md").read_text()
+        content = (tmp_path / "SKILL.md").read_text(encoding="utf-8")
         assert "uv run --with fastmcp python my_weather.py" in content
 
 

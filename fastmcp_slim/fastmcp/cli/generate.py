@@ -767,7 +767,10 @@ async def generate_cli_command(
         tools=tools,
     )
 
-    output_path.write_text(script)
+    # UTF-8 regardless of locale: the script is Python source, which CPython always
+    # decodes as UTF-8, so writing it in the platform encoding can produce a file that
+    # cannot be imported.
+    output_path.write_text(script, encoding="utf-8")
     output_path.chmod(output_path.stat().st_mode | 0o111)  # make executable
 
     console.print(
@@ -781,7 +784,7 @@ async def generate_cli_command(
             cli_filename=output_path.name,
             tools=tools,
         )
-        skill_path.write_text(skill_content)
+        skill_path.write_text(skill_content, encoding="utf-8")
         console.print(f"[green]✓[/green] Wrote [cyan]{skill_path}[/cyan]")
 
     console.print(f"[dim]Run: python {output_path} --help[/dim]")
