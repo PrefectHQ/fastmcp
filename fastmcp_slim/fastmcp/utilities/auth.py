@@ -6,6 +6,10 @@ import base64
 import json
 from typing import Any
 
+from fastmcp.utilities.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 def _decode_jwt_part(token: str, part_index: int) -> dict[str, Any]:
     """Decode a JWT part (header or payload) without signature verification.
@@ -85,7 +89,7 @@ def parse_scopes(value: Any) -> list[str] | None:
                 if isinstance(data, list):
                     return [str(v).strip() for v in data if str(v).strip()]
             except Exception:
-                pass
+                logger.debug("Failed to parse %r as a JSON scopes array", value)
         # Fallback to comma/space separated list
         return [s.strip() for s in value.replace(",", " ").split() if s.strip()]
     return value

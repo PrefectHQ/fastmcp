@@ -353,7 +353,12 @@ class DescopeProvider(RemoteAuthProvider):
                             response = await client.get(metadata_url)
                             response.raise_for_status()
                             return JSONResponse(response.json())
-                        except Exception:
+                        except Exception as metadata_error:
+                            logger.debug(
+                                "Failed to fetch Descope metadata from %s: %s",
+                                metadata_url,
+                                metadata_error,
+                            )
                             continue
             except Exception as e:
                 return JSONResponse(
