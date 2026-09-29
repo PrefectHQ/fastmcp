@@ -89,7 +89,10 @@ def parse_scopes(value: Any) -> list[str] | None:
                 if isinstance(data, list):
                     return [str(v).strip() for v in data if str(v).strip()]
             except Exception:
-                logger.debug("Failed to parse %r as a JSON scopes array", value)
+                # Don't log `value`: callers pass scopes pulled straight out of
+                # token exchange responses, which CodeQL's taint tracking (and
+                # potentially a real payload) treats as sensitive.
+                logger.debug("Failed to parse scopes value as a JSON array")
         # Fallback to comma/space separated list
         return [s.strip() for s in value.replace(",", " ").split() if s.strip()]
     return value

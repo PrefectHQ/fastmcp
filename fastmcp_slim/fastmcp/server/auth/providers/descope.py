@@ -354,10 +354,12 @@ class DescopeProvider(RemoteAuthProvider):
                             response.raise_for_status()
                             return JSONResponse(response.json())
                         except Exception as metadata_error:
+                            # Don't log `metadata_url`: CodeQL's taint tracking
+                            # flags it as sensitive (it's built from the same
+                            # class attributes as authenticated request URLs
+                            # elsewhere in this provider).
                             logger.debug(
-                                "Failed to fetch Descope metadata from %s: %s",
-                                metadata_url,
-                                metadata_error,
+                                "Failed to fetch Descope metadata: %s", metadata_error
                             )
                             continue
             except Exception as e:
