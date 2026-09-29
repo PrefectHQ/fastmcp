@@ -19,7 +19,7 @@ FastMCP 4 makes extensions a first-class surface. `FastMCP.add_extension()` take
 
 Subclass `ServerExtension` and set an `identifier`. The identifier must carry a reverse-DNS prefix in `vendor-prefix/name` form, which FastMCP validates when the class is defined, so a malformed one fails immediately rather than at connection time. Everything else is optional: each contribution method has a working default, and a useful extension often overrides just one.
 
-Registering the extension binds it to the server and advertises its capability. The capability is advertised only while the extension is registered, and registering two extensions with the same identifier is an error.
+Registering the extension binds it to the server and advertises its capability. The capability is advertised only while the extension is registered. Two explicit registrations with the same identifier are an error; an explicit registration can replace a [provider-bundled extension](#provider-extensions).
 
 ```python
 from fastmcp import FastMCP
@@ -64,6 +64,52 @@ mcp.add_extension(UploadExtension())
 ```
 
 A client reads these alongside the capability itself, so it can adapt before making a single call.
+
+## Provider extensions
+
+A provider can bundle the extensions its components need, so adding the provider also enables the protocol methods clients use to access those components. The bundles follow providers through aggregates, namespaces, transforms, and mounted servers. You can compose a provider without knowing which extensions it needs.
+
+An extension opts into this behavior with `auto_register = True`. Choose this for extensions whose behavior can safely apply to the receiving server's entire component registry. Extensions that change unrelated tools or start infrastructure, such as the tasks extension, stay explicitly registered by default. A provider bundles extension instances by returning them from `required_extensions()`:
+
+```python
+from collections.abc import Sequence
+
+from fastmcp import FastMCP
+from fastmcp.server.extensions import ServerExtension
+from fastmcp.server.providers import Provider
+
+
+class CatalogExtension(ServerExtension):
+    identifier = "com.example/catalog"
+    auto_register = True
+
+    def __init__(self, *, include_details: bool = True) -> None:
+        self.include_details = include_details
+
+    def settings(self) -> dict[str, bool]:
+        return {"includeDetails": self.include_details}
+
+
+class CatalogProvider(Provider):
+    def required_extensions(self) -> Sequence[ServerExtension]:
+        return [CatalogExtension()]
+
+
+child = FastMCP("Catalog", providers=[CatalogProvider()])
+parent = FastMCP("Application")
+parent.mount(child)
+
+# Configure the extension for every catalog served by the parent.
+parent.add_extension(CatalogExtension(include_details=False))
+```
+
+Each server registers its own instance, bound to that server. In this example the child keeps its default configuration while the parent's explicit configuration applies to everything served through the parent. Explicit registration takes precedence whether it happens before or after adding providers or mounting children. For propagated extensions, a tool call through the parent runs the parent's interceptor once; mounted children keep their own interceptor for standalone requests and separate programmatic calls. Otherwise the first bundled extension with a given identifier wins. FastMCP warns once per identifier when bundled extensions have different types or advertise different settings, and logs automatic registrations and explicit precedence at the debug level.
+
+Mounted servers also contribute extensions they registered explicitly when those extensions allow automatic registration. Extensions use `clone()` to create an independent, unbound instance for the receiving server. The default deep-copies instance attributes and clears the server binding; override `clone()` to reconstruct configuration if your extension holds objects that cannot be copied or runtime state that should start fresh. Use a separate instance for each explicit registration as well.
+
+FastMCP registers bundles when a provider is added and checks again at startup, after the root's user lifespan and before extension lifespans begin. This includes extensions added to a mounted child or aggregate during setup. A mounted child's lifespan can use extensions already registered on the root, but cannot introduce a new root extension after the root's extension lifespans have begun. Finish composing providers that need new extensions before serving: introducing a new extension through `add_provider()` on a server or an active aggregate after startup raises. An aggregate shared by several running servers can accept a new bundle only when every server already has its extensions. If a bundled extension has not opted into automatic registration, register it explicitly on the receiving server before adding the provider.
+
+Custom composite providers should return their children's bundled extensions in provider order. `AggregateProvider`, `FastMCPProvider`, and transform wrappers already handle this forwarding.
 
 ## Adding request methods
 
@@ -143,7 +189,7 @@ Reach for middleware when you want to observe or modify requests generally; reac
 
 An extension that owns something with a lifecycle, such as a connection pool or a background worker, overrides `lifespan()` to return an async context manager. FastMCP enters it with the server's own [lifespan](/servers/lifespan) and exits it on shutdown, so setup and teardown stay with the extension that needs them rather than leaking into the application's startup code.
 
-The lifespan is entered once per runtime tree, at the root. This matters when you compose servers: extensions are served by the server they are registered on, and a mounted child's extensions do not propagate upward. The root server owns the wire, so only root-registered extensions advertise capabilities and answer methods. Register extensions on the server you actually run.
+The lifespan is entered once per runtime tree, at the root. The root server owns the wire, so its registered extensions advertise capabilities and answer methods. [Auto-registerable extensions](#provider-extensions) propagate through mounts as separate instances on the root; register other extensions on the server you actually run.
 
 ## Client extensions
 

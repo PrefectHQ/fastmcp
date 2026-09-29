@@ -97,14 +97,22 @@ class LifespanMixin:
         Extensions are entered in registration order; the ``AsyncExitStack``
         exits them in reverse on teardown.
         """
-        if _lifespan_root_active.get() or not self._extensions:
-            yield
-            return
+        # Mounts and aggregates remain live during setup. Reconcile once more
+        # after the user lifespan, before any extension lifespan is entered.
+        for provider in self.providers:
+            self._register_provider_extensions(provider)
+        self._extensions_started = True
+        try:
+            if _lifespan_root_active.get() or not self._extensions:
+                yield
+                return
 
-        async with AsyncExitStack() as stack:
-            for extension in self._extensions.values():
-                await stack.enter_async_context(extension.lifespan())
-            yield
+            async with AsyncExitStack() as stack:
+                for extension in self._extensions.values():
+                    await stack.enter_async_context(extension.lifespan())
+                yield
+        finally:
+            self._extensions_started = False
 
     async def _validate_task_extension_registered(self: FastMCP) -> None:
         """Fail loudly if a task-enabled tool has no tasks extension registered.

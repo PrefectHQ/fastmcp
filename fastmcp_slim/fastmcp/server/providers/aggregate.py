@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from fastmcp.prompts.base import Prompt
     from fastmcp.resources.base import Resource
     from fastmcp.resources.template import ResourceTemplate
+    from fastmcp.server.extensions import ServerExtension
     from fastmcp.tools.base import Tool
 
 logger = logging.getLogger(__name__)
@@ -86,6 +87,15 @@ class AggregateProvider(Provider):
         super().__init__()
         self.provider_error_strategy = provider_error_strategy
         self.providers: list[Provider] = list(providers or [])
+        self._extension_scopes: list[frozenset[str]] = []
+
+    def required_extensions(self) -> Sequence[ServerExtension]:
+        """Collect bundled extensions from children in provider order."""
+        return [
+            extension
+            for provider in self.providers
+            for extension in provider.required_extensions()
+        ]
 
     def add_provider(self, provider: Provider, *, namespace: str = "") -> None:
         """Add a provider with optional namespace.
@@ -102,6 +112,17 @@ class AggregateProvider(Provider):
         """
         # Import here to avoid circular imports
         from fastmcp.server.server import FastMCP
+
+        if self._extension_scopes:
+            required = {e.identifier for e in provider.required_extensions()}
+            for available in self._extension_scopes:
+                missing = required - available
+                if missing:
+                    raise RuntimeError(
+                        f"Cannot add {provider!r}: extensions {sorted(missing)!r} "
+                        "are unavailable in a running server using this provider. "
+                        "Finish composing providers before serving."
+                    )
 
         # Auto-wrap FastMCP servers to ensure middleware is invoked
         if isinstance(provider, FastMCP):
@@ -344,7 +365,22 @@ class AggregateProvider(Provider):
     @asynccontextmanager
     async def lifespan(self) -> AsyncIterator[None]:
         """Combine lifespans of all providers."""
-        async with AsyncExitStack() as stack:
-            for p in self.providers:
-                await stack.enter_async_context(p.lifespan())
-            yield
+        from fastmcp.server.dependencies import get_server
+
+        # An aggregate can be shared by independent running servers. A new
+        # provider's extensions must be available in every active runtime;
+        # mutating the aggregate must not bypass FastMCP.add_provider's guard.
+        try:
+            root = get_server()
+        except RuntimeError:
+            available = frozenset(e.identifier for e in self.required_extensions())
+        else:
+            available = frozenset(root._extensions)
+        self._extension_scopes.append(available)
+        try:
+            async with AsyncExitStack() as stack:
+                for p in self.providers:
+                    await stack.enter_async_context(p.lifespan())
+                yield
+        finally:
+            self._extension_scopes.remove(available)
