@@ -162,11 +162,15 @@ write tools do not promise idempotence. Tools interact with the external bridge.
 
 With the ADB-server transport, first check `adb devices` and connect with
 `adb connect <Fire TV IP>:5555`. If the TV is reachable but ADB reports a missing
-device, reconnect it. If TCP port 5555 is reachable but ADB still reports "No route
-to host," restarting the local ADB daemon can recover it: `adb kill-server`,
-`adb start-server`, then connect again. Restarting the daemon disconnects other
-ADB devices too; check its device list first.
+device, reconnect it.
 
-The current example does not supervise the ADB daemon or reconnect indefinitely.
-A configured but unavailable TV can fail server startup. Use the separate device
-servers when one device's availability must not block the other.
+On macOS, "No route to host" for a LAN address that ping and TCP reach from a
+terminal is Local Network privacy, not the network. A process inherits the
+permission of the app that launched it, so a server or ADB daemon started from an
+app without the grant (a tmux server, an editor) fails where the same command in
+a permitted terminal succeeds. Grant Local Network access to that app, or run the
+server on a Linux host on the same LAN.
+
+The Fire TV connection opens on the first tool call, not at startup, so a TV that
+is asleep or off does not stop the server or the lights. A call made while the
+TV is unreachable fails with an error, and the next call reconnects.
