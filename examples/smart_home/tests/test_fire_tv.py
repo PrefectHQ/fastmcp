@@ -3,6 +3,7 @@ from smart_home.fire_tv import client as fire_tv_client
 from smart_home.fire_tv.server import fire_tv_mcp
 
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 
 
 class FakeFireTV:
@@ -174,17 +175,27 @@ async def test_unconfigured_server_exposes_tools_but_refuses_calls(monkeypatch):
         assert "FIRE_TV_HOST" in str(result.content)
 
 
-async def test_unavailable_device_is_closed(monkeypatch):
+async def test_sleeping_tv_does_not_block_startup_and_reconnects(monkeypatch):
     device = FakeFireTV(available=False)
+    connects: list[bool] = []
 
     async def setup(**kwargs: object) -> FakeFireTV:
         return device
 
+    async def adb_connect(log_errors: bool = True) -> bool:
+        connects.append(log_errors)
+        return device.available
+
+    device.adb_connect = adb_connect  # type: ignore[attr-defined]
     monkeypatch.setenv("FIRE_TV_HOST", "192.0.2.10")
     monkeypatch.setattr(fire_tv_client, "setup_android_tv", setup)
 
-    with pytest.raises(RuntimeError, match="unavailable"):
-        async with Client(fire_tv_mcp):
-            pass
+    async with Client(fire_tv_mcp) as client:
+        with pytest.raises(ToolError, match="not reachable"):
+            await client.call_tool("press_home")
+        device.available = True
+        receipt = (await client.call_tool("press_home")).data
+        assert receipt.accepted is True
 
+    assert connects == [False]
     assert device.closed is True
