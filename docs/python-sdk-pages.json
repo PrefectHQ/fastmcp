@@ -236,6 +236,7 @@
         "group": "mixins",
         "pages": [
           "python-sdk/fastmcp-server-mixins-__init__",
+          "python-sdk/fastmcp-server-mixins-extensions",
           "python-sdk/fastmcp-server-mixins-lifespan",
           "python-sdk/fastmcp-server-mixins-mcp_operations",
           "python-sdk/fastmcp-server-mixins-transport"
