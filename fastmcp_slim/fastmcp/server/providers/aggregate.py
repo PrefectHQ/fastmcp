@@ -113,16 +113,7 @@ class AggregateProvider(Provider):
         # Import here to avoid circular imports
         from fastmcp.server.server import FastMCP
 
-        if self._extension_scopes:
-            required = {e.identifier for e in provider.required_extensions()}
-            for available in self._extension_scopes:
-                missing = required - available
-                if missing:
-                    raise RuntimeError(
-                        f"Cannot add {provider!r}: extensions {sorted(missing)!r} "
-                        "are unavailable in a running server using this provider. "
-                        "Finish composing providers before serving."
-                    )
+        self._validate_provider_extensions(provider)
 
         # Auto-wrap FastMCP servers to ensure middleware is invoked
         if isinstance(provider, FastMCP):
@@ -135,6 +126,20 @@ class AggregateProvider(Provider):
             provider = provider.wrap_transform(Namespace(namespace))
 
         self.providers.append(provider)
+
+    def _validate_provider_extensions(self, provider: Provider) -> None:
+        """Require a provider's bundles in every active runtime using this aggregate."""
+        if not self._extension_scopes:
+            return
+        required = {e.identifier for e in provider.required_extensions()}
+        for available in self._extension_scopes:
+            missing = required - available
+            if missing:
+                raise RuntimeError(
+                    f"Cannot use {provider!r}: extensions {sorted(missing)!r} "
+                    "are unavailable in a running server using this provider. "
+                    "Finish composing providers before serving."
+                )
 
     def _collect_list_results(
         self, results: list[Sequence[T] | BaseException], operation: str
@@ -380,6 +385,9 @@ class AggregateProvider(Provider):
         try:
             async with AsyncExitStack() as stack:
                 for p in self.providers:
+                    # An earlier child's setup can mutate a later descendant
+                    # before its own runtime guard has been established.
+                    self._validate_provider_extensions(p)
                     await stack.enter_async_context(p.lifespan())
                 yield
         finally:

@@ -804,3 +804,48 @@ async def test_lifespan_can_add_a_bundle_the_root_already_supports_to_a_later_si
 
     async with Client(root, mode="auto") as client:
         assert EXT_ID in client.server_capabilities.extensions
+
+
+@pytest.mark.parametrize("target_kind", ["mounted_server", "aggregate"])
+@pytest.mark.parametrize("wrapped", [False, True])
+async def test_aggregate_startup_rejects_new_extension_on_a_later_descendant(
+    target_kind: Literal["mounted_server", "aggregate"], wrapped: bool
+):
+    later = FastMCP("later") if target_kind == "mounted_server" else AggregateProvider()
+    aggregate = AggregateProvider([MutatingProvider(later)])
+    aggregate.add_provider(later)
+    composed: Provider = aggregate
+    if wrapped:
+        composed = AggregateProvider([aggregate.wrap_transform(Namespace("ns"))])
+    root = FastMCP("root", providers=[composed])
+
+    with pytest.raises(RuntimeError, match="unavailable in a running server"):
+        async with root._lifespan_manager():
+            pass
+    assert root._extensions == {}
+    assert aggregate._extension_scopes == []
+
+
+@pytest.mark.parametrize("target_kind", ["mounted_server", "aggregate"])
+@pytest.mark.parametrize("wrapped", [False, True])
+async def test_aggregate_startup_accepts_supported_bundle_on_a_later_descendant(
+    target_kind: Literal["mounted_server", "aggregate"], wrapped: bool
+):
+    later = FastMCP("later") if target_kind == "mounted_server" else AggregateProvider()
+    aggregate = AggregateProvider([MutatingProvider(later)])
+    aggregate.add_provider(later)
+    composed: Provider = aggregate
+    if wrapped:
+        composed = AggregateProvider([aggregate.wrap_transform(Namespace("ns"))])
+    root = FastMCP("root", providers=[BundledProvider(), composed])
+
+    async with Client(root, mode="auto") as client:
+        result = await client.session.send_request(
+            InspectRequest(params=RequestParams()), InspectResult
+        )
+        assert result.server == "root"
+        extension = root._extensions[EXT_ID]
+        assert isinstance(extension, BundledExtension)
+        assert extension.lifecycle == ["enter"]
+    assert extension.lifecycle == ["enter", "exit"]
+    assert aggregate._extension_scopes == []
