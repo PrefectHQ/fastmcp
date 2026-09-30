@@ -424,6 +424,61 @@ def test_unrelated_extension_method_collision_is_rejected():
     assert len(root.providers) == 1
 
 
+@pytest.mark.parametrize("failure", ["collision", "methods"])
+async def test_rejected_explicit_extension_can_be_registered_on_another_server(
+    failure: str,
+):
+    class RecoverableExtension(BundledExtension):
+        identifier = "com.example/recoverable"
+
+        def methods(self) -> Sequence[MethodBinding]:
+            if failure == "methods" and self.server.name == "first":
+                raise RuntimeError("Cannot build methods")
+            return super().methods()
+
+    first = FastMCP("first")
+    if failure == "collision":
+        first.add_extension(BundledExtension())
+    extension = RecoverableExtension()
+    error = ValueError if failure == "collision" else RuntimeError
+    message = "already registered" if failure == "collision" else "Cannot build methods"
+    with pytest.raises(error, match=message):
+        first.add_extension(extension)
+    assert extension.identifier not in first._extensions
+    with pytest.raises(RuntimeError, match="not bound"):
+        _ = extension.server
+
+    second = FastMCP("second")
+    second.add_extension(extension)
+    async with Client(second, mode="auto") as client:
+        result = await client.session.send_request(
+            InspectRequest(params=RequestParams()), InspectResult
+        )
+        assert result.server == "second"
+    assert extension.server is second
+
+
+def test_failed_registration_preserves_an_existing_server_binding():
+    class FailingExtension(BundledExtension):
+        fail_methods = False
+
+        def methods(self) -> Sequence[MethodBinding]:
+            if self.fail_methods:
+                raise RuntimeError("Cannot build methods")
+            return super().methods()
+
+    root = FastMCP("root", providers=[BundledProvider(FailingExtension())])
+    extension = root._extensions[EXT_ID]
+    assert isinstance(extension, FailingExtension)
+    handler = root._mcp_server.get_request_handler("bundled/inspect")
+    extension.fail_methods = True
+    with pytest.raises(RuntimeError, match="Cannot build methods"):
+        root.add_extension(extension)
+    assert extension.server is root
+    assert root._extensions[EXT_ID] is extension
+    assert root._mcp_server.get_request_handler("bundled/inspect") is handler
+
+
 async def test_failed_bundle_rolls_back_all_extensions_and_handlers():
     class ExplicitExtension(ServerExtension):
         identifier = "com.example/explicit"

@@ -98,31 +98,40 @@ class ExtensionsMixin:
                 "Use a separate instance or clone() for each server."
             )
 
-        extension._bind(self)
-        bindings = tuple(extension.methods())
-        old_methods = self._extension_methods.get(identifier, ())
-        # Automatic registration must not silently shadow an unrelated extension
-        # or an existing custom handler. Validate before changing any handlers.
-        for binding in bindings:
-            if (
-                binding.method not in old_methods
-                and self._mcp_server.get_request_handler(binding.method) is not None
-            ):
-                raise ValueError(
-                    f"Cannot register extension {identifier!r}: method "
-                    f"{binding.method!r} is already registered."
+        previous_binding = extension._server_ref
+        registered = False
+        try:
+            # methods() can depend on self.server, but a rejected registration
+            # must leave the extension's original binding intact.
+            extension._bind(self)
+            bindings = tuple(extension.methods())
+            old_methods = self._extension_methods.get(identifier, ())
+            # Automatic registration must not silently shadow an unrelated extension
+            # or an existing custom handler. Validate before changing any handlers.
+            for binding in bindings:
+                if (
+                    binding.method not in old_methods
+                    and self._mcp_server.get_request_handler(binding.method) is not None
+                ):
+                    raise ValueError(
+                        f"Cannot register extension {identifier!r}: method "
+                        f"{binding.method!r} is already registered."
+                    )
+            for method in old_methods:
+                # The SDK exposes lookup/registration but no removal API. Removing
+                # old bindings is necessary when explicit configuration disables
+                # an optional method from the bundled extension.
+                self._mcp_server._request_handlers.pop(method, None)
+            for binding in bindings:
+                self._mcp_server.add_request_handler(
+                    binding.method, binding.params_type, build_method_handler(binding)
                 )
-        for method in old_methods:
-            # The SDK exposes lookup/registration but no removal API. Removing
-            # old bindings is necessary when explicit configuration disables
-            # an optional method from the bundled extension.
-            self._mcp_server._request_handlers.pop(method, None)
-        for binding in bindings:
-            self._mcp_server.add_request_handler(
-                binding.method, binding.params_type, build_method_handler(binding)
-            )
-        self._extensions[identifier] = extension
-        self._extension_methods[identifier] = tuple(b.method for b in bindings)
+            self._extensions[identifier] = extension
+            self._extension_methods[identifier] = tuple(b.method for b in bindings)
+            registered = True
+        finally:
+            if not registered:
+                extension._server_ref = previous_binding
 
     def _register_provider_extensions(self: FastMCP, provider: Provider) -> None:
         """Register all bundled extensions, rolling back if any registration fails."""
