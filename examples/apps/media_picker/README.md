@@ -18,14 +18,12 @@ that accepts `source`, `source_id`, `url`, and `title`:
 ```bash
 export MEDIA_PICKER_ACTUATOR_URL=http://127.0.0.1:8764/mcp
 export MEDIA_PICKER_ACTUATOR_TOOL=play_media
-export MEDIA_PICKER_ACTUATOR_SOURCES=youtube
 ```
 
 The [smart-home example](../../smart_home/README.md) documents how to start the
 standalone Fire TV endpoint used above. If you expose its combined hub instead,
-set `MEDIA_PICKER_ACTUATOR_TOOL=fire_tv_play_media`. When an actuator is configured,
-`MEDIA_PICKER_ACTUATOR_SOURCES` is required: the picker hides unsupported results and
-direct calls fail before dispatch.
+set `MEDIA_PICKER_ACTUATOR_TOOL=fire_tv_play_media`. If the device can't play an
+item, `Play` reports the failure.
 
 ## Run
 

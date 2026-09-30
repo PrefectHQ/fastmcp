@@ -38,7 +38,6 @@ from fastmcp import Client, FastMCP, FastMCPApp
 from fastmcp.exceptions import ToolError
 
 Source = Literal["youtube"]
-ALL_SOURCES: frozenset[Source] = frozenset({"youtube"})
 MAX_LINKS = 12
 
 YOUTUBE_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
@@ -154,30 +153,8 @@ async def verify_links(
     return candidates, unsupported, unverified
 
 
-def _actuator_sources() -> frozenset[Source] | None:
-    """Return configured actuator capabilities, or None in demo mode."""
-    if not os.getenv("MEDIA_PICKER_ACTUATOR_URL"):
-        return None
-
-    configured = {
-        source.strip()
-        for source in os.getenv("MEDIA_PICKER_ACTUATOR_SOURCES", "").split(",")
-        if source.strip()
-    }
-    unknown = configured - ALL_SOURCES
-    if unknown:
-        names = ", ".join(sorted(unknown))
-        raise ToolError(f"Unknown playback source in configuration: {names}")
-    return frozenset(source for source in ALL_SOURCES if source in configured)
-
-
-def _is_playable(source: Source) -> bool:
-    sources = _actuator_sources()
-    return sources is None or source in sources
-
-
 def _checked(source: Source, source_id: str) -> str:
-    if source not in ALL_SOURCES or YOUTUBE_ID.fullmatch(source_id) is None:
+    if source != "youtube" or YOUTUBE_ID.fullmatch(source_id) is None:
         raise ToolError("That media link is not valid.")
     return f"https://www.youtube.com/watch?v={source_id}"
 
@@ -207,8 +184,6 @@ async def play_media(source: Source, source_id: str, title: str) -> dict[str, ob
     url = _checked(source, source_id)
     actuator_url = os.getenv("MEDIA_PICKER_ACTUATOR_URL")
     if actuator_url:
-        if not _is_playable(source):
-            raise ToolError("That source is not available on this device.")
         tool_name = os.getenv("MEDIA_PICKER_ACTUATOR_TOOL", "play_media")
         receipt = await _play_via_mcp(
             source, source_id, url, title, actuator_url, tool_name
@@ -266,8 +241,8 @@ async def _playable_links(
     links: list[MediaLink],
 ) -> tuple[list[MediaCandidate], list[str], int, int]:
     candidates, unsupported, unverified = await verify_links(links)
-    playable = [item for item in candidates if _is_playable(item["source"])]
-    unplayable = unsupported + len(candidates) - len(playable)
+    playable = candidates
+    unplayable = unsupported
     notices = []
     if unverified:
         notices.append(

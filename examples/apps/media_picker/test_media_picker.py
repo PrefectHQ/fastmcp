@@ -109,16 +109,6 @@ async def test_actions_are_idempotent_and_reject_malformed_ids() -> None:
         await play_media("youtube", "x; rm -rf /", "Nope")
 
 
-async def test_playback_rejects_unsupported_sources_before_dispatch(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("MEDIA_PICKER_ACTUATOR_URL", "http://unreachable.invalid/mcp")
-    monkeypatch.setenv("MEDIA_PICKER_ACTUATOR_SOURCES", "")
-
-    with pytest.raises(ToolError, match="not available on this device"):
-        await play_media("youtube", "D1VM6V6wmU0", "Live Bird Feeder")
-
-
 async def test_playback_routes_verified_item_through_mcp() -> None:
     actuator = FastMCP("Test actuator")
 
@@ -139,6 +129,24 @@ async def test_playback_routes_verified_item_through_mcp() -> None:
         "url": "https://www.youtube.com/watch?v=jkAw87ZIwQA",
         "title": "The Mother of all Science Scandals",
     }
+
+
+async def test_actuator_errors_surface_as_a_playback_failure() -> None:
+    actuator = FastMCP("Test actuator")
+
+    @actuator.tool
+    def play_media(source: str, source_id: str, url: str, title: str) -> None:
+        raise ToolError("The TV is not reachable")
+
+    with pytest.raises(ToolError, match="could not start this item"):
+        await _play_via_mcp(
+            "youtube",
+            "jkAw87ZIwQA",
+            "https://www.youtube.com/watch?v=jkAw87ZIwQA",
+            "The Mother of all Science Scandals",
+            actuator,
+            "play_media",
+        )
 
 
 async def test_mcp_host_loop_exposes_ui_and_marks_backend_tools_app_only(
@@ -175,20 +183,3 @@ async def test_mcp_host_loop_exposes_ui_and_marks_backend_tools_app_only(
     state = result.structured_content["state"]
     assert state["source_ids"] == ["jkAw87ZIwQA"]
     assert state["unverified_count"] == 1
-
-
-async def test_picker_hides_sources_the_actuator_cannot_play(
-    monkeypatch: pytest.MonkeyPatch, oembed: list[str]
-) -> None:
-    monkeypatch.setenv("MEDIA_PICKER_ACTUATOR_URL", "http://playback.example/mcp")
-    monkeypatch.setenv("MEDIA_PICKER_ACTUATOR_SOURCES", "")
-
-    async with Client(mcp) as client:
-        result = await client.call_tool(
-            "show_media_picker",
-            {"links": [{"url": "https://youtu.be/jkAw87ZIwQA"}]},
-        )
-
-    assert result.structured_content is not None
-    assert result.structured_content["state"]["source_ids"] == []
-    assert result.structured_content["state"]["unplayable_count"] == 1
