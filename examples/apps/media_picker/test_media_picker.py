@@ -174,6 +174,7 @@ async def test_mcp_host_loop_exposes_ui_and_marks_backend_tools_app_only(
                 "links": [
                     {"url": "https://youtu.be/jkAw87ZIwQA"},
                     {"url": "https://www.youtube.com/watch?v=aaaaaaaaaaa"},
+                    {"url": "https://vimeo.com/76979871"},
                 ]
             },
         )
@@ -183,3 +184,4 @@ async def test_mcp_host_loop_exposes_ui_and_marks_backend_tools_app_only(
     state = result.structured_content["state"]
     assert state["source_ids"] == ["jkAw87ZIwQA"]
     assert state["unverified_count"] == 1
+    assert state["unsupported_count"] == 1

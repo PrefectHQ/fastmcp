@@ -237,22 +237,22 @@ def save_media(source: Source, source_id: str, title: str) -> dict[str, str]:
     }
 
 
-async def _playable_links(
+async def _verified_links(
     links: list[MediaLink],
 ) -> tuple[list[MediaCandidate], list[str], int, int]:
     candidates, unsupported, unverified = await verify_links(links)
-    playable = candidates
-    unplayable = unsupported
     notices = []
     if unverified:
         notices.append(
             f"{unverified} link{'s' if unverified != 1 else ''} couldn't be verified."
         )
-    if unplayable:
+    if unsupported:
         notices.append(
-            f"{unplayable} link{'s' if unplayable != 1 else ''} can't play on this device."
+            "1 link isn't a YouTube video."
+            if unsupported == 1
+            else f"{unsupported} links aren't YouTube videos."
         )
-    return playable, notices, unverified, unplayable
+    return candidates, notices, unverified, unsupported
 
 
 def _toast_result() -> list[Any]:
@@ -269,7 +269,7 @@ def _media_list(playable: list[MediaCandidate], notices: list[str]) -> None:
     if not playable:
         with Div(css_class="empty"):
             Text("nothing queued")
-            Muted("ask claude for something to watch and it lands here.")
+            Muted("ask for something to watch and it lands here.")
         return
 
     with Column(css_class="picks"):
@@ -313,7 +313,7 @@ def _media_list(playable: list[MediaCandidate], notices: list[str]) -> None:
                             css_class="quiet",
                             on_click=SendMessage(
                                 f"Find more media like “{item['title']}”, "
-                                "then reopen the home view with the new links."
+                                "then reopen the picker with the new links."
                             ),
                         )
                 Button(
@@ -348,7 +348,7 @@ async def show_media_picker(links: list[MediaLink]) -> PrefabApp:
     URLs here. Each link is verified with YouTube before it is shown, so pass
     real URLs you found, never guessed ones. Prefer 3-6 varied options.
     """
-    playable, notices, unverified, unplayable = await _playable_links(links)
+    playable, notices, unverified, unsupported = await _verified_links(links)
 
     with Column(css_class="home") as view:
         _header("watch", f"{len(playable)} to pick from" if playable else "")
@@ -361,7 +361,7 @@ async def show_media_picker(links: list[MediaLink]) -> PrefabApp:
             "last_action": "",
             "source_ids": [item["source_id"] for item in playable],
             "unverified_count": unverified,
-            "unplayable_count": unplayable,
+            "unsupported_count": unsupported,
         },
     )
 
