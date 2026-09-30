@@ -207,8 +207,11 @@ class LifespanMixin:
             self._lifespan_result = user_lifespan_result
             self._lifespan_result_set = True
 
-            # Start lifespans for all providers
+            # Start lifespans for all providers. An earlier provider's lifespan
+            # can add bundled providers to a later one, so reconcile against
+            # each provider immediately before it starts.
             for provider in self.providers:
+                self._register_provider_extensions(provider)
                 await stack.enter_async_context(provider.lifespan())
 
             await self._validate_task_extension_registered()

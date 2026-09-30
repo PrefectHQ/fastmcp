@@ -763,3 +763,44 @@ async def test_aggregate_setup_cannot_introduce_a_new_root_extension():
             pass
     assert root._extensions == {}
     assert len(aggregate.providers) == 1
+
+
+class MutatingProvider(Provider):
+    """A provider whose lifespan adds a bundled provider to a later sibling."""
+
+    def __init__(self, target: FastMCP | AggregateProvider) -> None:
+        super().__init__()
+        self.target = target
+
+    @asynccontextmanager
+    async def lifespan(self) -> AsyncIterator[None]:
+        self.target.add_provider(BundledProvider())
+        yield
+
+
+@pytest.mark.parametrize("target_kind", ["mounted_server", "aggregate"])
+async def test_lifespan_cannot_introduce_a_root_extension_via_a_later_sibling(
+    target_kind: Literal["mounted_server", "aggregate"],
+):
+    target = (
+        FastMCP("later") if target_kind == "mounted_server" else AggregateProvider()
+    )
+    root = FastMCP("root", providers=[MutatingProvider(target)])
+    if isinstance(target, FastMCP):
+        root.mount(target)
+    else:
+        root.add_provider(target)
+
+    with pytest.raises(RuntimeError, match="lifespan has already started"):
+        async with root._lifespan_manager():
+            pass
+    assert root._extensions == {}
+
+
+async def test_lifespan_can_add_a_bundle_the_root_already_supports_to_a_later_sibling():
+    later = FastMCP("later")
+    root = FastMCP("root", providers=[BundledProvider(), MutatingProvider(later)])
+    root.mount(later)
+
+    async with Client(root, mode="auto") as client:
+        assert EXT_ID in client.server_capabilities.extensions
