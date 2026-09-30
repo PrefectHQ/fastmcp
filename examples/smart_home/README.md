@@ -1,8 +1,8 @@
 # smart home MCP
 
 Control Philips Hue lights and an Amazon Fire TV through one FastMCP server.
-The example demonstrates namespaced device tools, pooled connections, typed
-receipts, and reading device state after a command. It uses `phue2` for Hue's
+The example demonstrates namespaced device tools, connections owned by each
+server's lifespan, typed receipts, and reading device state after a command. It uses `phue2` for Hue's
 local V2 API and Home Assistant's `androidtv` backend for Fire TV.
 
 ## run
@@ -45,8 +45,8 @@ the Fire TV server can also run independently.
 
 An agent can find a current daylight wildlife feed and pass its video ID to
 `fire_tv_play_youtube_video` without changing this example. The optional
-[media picker](../apps/media_picker/README.md) adds a graphical selection surface
-over the same playback tools. Its catalog is sample data, not a search service.
+[media picker](../apps/media_picker/README.md) shows the links the agent found,
+verified, and plays the user's choice through `fire_tv_play_media`.
 
 Schedules, presence rules, and durable desired state belong to the calling
 application or workflow engine. This example provides the device operations that

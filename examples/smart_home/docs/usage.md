@@ -67,8 +67,10 @@ Standalone tools are named `read_status` and `play_media`; through the hub they
 are `fire_tv_read_status` and `fire_tv_play_media`. Use the standalone HTTP endpoint
 `http://127.0.0.1:8764/mcp` with the media picker's `play_media` configuration.
 
-The server owns pooled asynchronous device connections in its lifespan. Tools
-receive those existing connections through dependency injection. Settings load at
+Each device server's lifespan owns its connection. Hue opens a pooled
+connection at startup; the Fire TV connects on the first tool call and reconnects
+after the TV drops off. Tools receive the connection through dependency
+injection. Settings load at
 startup, so importing the example does not require live credentials.
 
 ## Agent workflow
