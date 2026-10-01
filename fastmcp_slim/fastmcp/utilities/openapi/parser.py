@@ -62,11 +62,31 @@ def parse_openapi_to_http_routes(openapi_dict: dict[str, Any]) -> list[HTTPRoute
     """
     # Check OpenAPI version to use appropriate model
     openapi_version = openapi_dict.get("openapi", "")
+    if not isinstance(openapi_version, str):
+        openapi_version = ""
+
+    # openapi-pydantic pins exact patch versions (e.g. Literal["3.1.0", "3.1.1"]),
+    # so coerce newer patches (3.1.2, 3.2.x, future 3.0.x) to the closest
+    # supported model for validation while preserving the original version
+    # string on the resulting routes.
+    spec_for_validation = dict(openapi_dict)
+    if openapi_version.startswith("3.0"):
+        if openapi_version not in {
+            "3.0.0",
+            "3.0.1",
+            "3.0.2",
+            "3.0.3",
+            "3.0.4",
+        }:
+            spec_for_validation["openapi"] = "3.0.0"
+    elif openapi_version.startswith("3.1.") or openapi_version.startswith("3.2."):
+        if openapi_version not in {"3.1.0", "3.1.1"}:
+            spec_for_validation["openapi"] = "3.1.1"
 
     try:
         if openapi_version.startswith("3.0"):
             # Use OpenAPI 3.0 models
-            openapi_30 = OpenAPI_30.model_validate(openapi_dict)
+            openapi_30 = OpenAPI_30.model_validate(spec_for_validation)
             logger.debug(
                 f"Successfully parsed OpenAPI 3.0 schema version: {openapi_30.openapi}"
             )
@@ -84,7 +104,7 @@ def parse_openapi_to_http_routes(openapi_dict: dict[str, Any]) -> list[HTTPRoute
             return parser.parse()
         else:
             # Default to OpenAPI 3.1 models
-            openapi_31 = OpenAPI.model_validate(openapi_dict)
+            openapi_31 = OpenAPI.model_validate(spec_for_validation)
             logger.debug(
                 f"Successfully parsed OpenAPI 3.1 schema version: {openapi_31.openapi}"
             )

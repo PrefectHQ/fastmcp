@@ -524,3 +524,26 @@ class TestParameterExamples:
         # 3. Parameter-level example overrides schema-level example and examples
         assert props["overrideSchemaExamples"]["example"] == "PARAM_EXAMPLE"
         assert "examples" not in props["overrideSchemaExamples"]
+
+
+class TestOpenAPIVersionTolerance:
+    """Newer patch versions should parse with the closest supported model."""
+
+    @pytest.mark.parametrize("version", ["3.1.2", "3.2.0", "3.2.1"])
+    def test_parse_newer_patch_versions(self, version):
+        spec = {
+            "openapi": version,
+            "info": {"title": "Example", "version": "1.0.0"},
+            "paths": {
+                "/ping": {
+                    "get": {
+                        "operationId": "ping",
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+        }
+
+        routes = parse_openapi_to_http_routes(spec)
+        assert len(routes) == 1
+        assert routes[0].openapi_version == version
