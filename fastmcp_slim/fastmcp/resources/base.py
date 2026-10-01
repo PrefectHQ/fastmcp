@@ -27,6 +27,7 @@ from pydantic import (
 from pydantic.json_schema import SkipJsonSchema
 from typing_extensions import Self
 
+from fastmcp.server.caching import CacheScope
 from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.components import FastMCPComponent
 
@@ -151,20 +152,32 @@ class ResourceResult(pydantic.BaseModel):
 
     contents: list[ResourceContent]
     meta: dict[str, Any] | None = None
+    ttl_ms: int | None = Field(default=None, ge=0)
+    cache_scope: CacheScope | None = None
 
     def __init__(
         self,
         contents: str | bytes | list[ResourceContent],
         meta: dict[str, Any] | None = None,
+        *,
+        ttl_ms: int | None = None,
+        cache_scope: CacheScope | None = None,
     ):
         """Create ResourceResult.
 
         Args:
             contents: String, bytes, or list of ResourceContent objects.
             meta: Optional metadata about the resource result.
+            ttl_ms: Optional cache time-to-live in milliseconds.
+            cache_scope: Optional cache scope (`'public'` or `'private'`).
         """
         normalized = self._normalize_contents(contents)
-        super().__init__(contents=normalized, meta=meta)
+        super().__init__(
+            contents=normalized,
+            meta=meta,
+            ttl_ms=ttl_ms,
+            cache_scope=cache_scope,
+        )
 
     @staticmethod
     def _normalize_contents(
@@ -204,9 +217,17 @@ class ResourceResult(pydantic.BaseModel):
             MCP ReadResourceResult with converted contents
         """
         mcp_contents = [item.to_mcp_resource_contents(uri) for item in self.contents]
+        kwargs: dict[str, Any] = {
+            "contents": mcp_contents,
+            "_meta": self.meta,
+        }
+        if self.ttl_ms is not None:
+            kwargs["ttl_ms"] = self.ttl_ms
+        if self.cache_scope is not None:
+            kwargs["cache_scope"] = self.cache_scope
+
         return mcp_types.ReadResourceResult(
-            contents=mcp_contents,
-            _meta=self.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
+            **kwargs,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
         )
 
 
