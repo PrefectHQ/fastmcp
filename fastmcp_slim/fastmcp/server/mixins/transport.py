@@ -315,10 +315,7 @@ class TransportMixin:
             if host_origin_protection is not None
             else fastmcp.settings.http_host_origin_protection
         )
-        if (
-            resolved_host_origin_protection is False
-            and not _is_loopback_host(host)
-        ):
+        if resolved_host_origin_protection is False and not _is_loopback_host(host):
             logger.warning(
                 "Host/Origin protection is disabled and server is bound to "
                 "%s. This exposes the server to DNS-rebinding attacks. "
