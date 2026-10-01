@@ -2294,8 +2294,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                                     upstream_token_set = reloaded
                     except TokenVerificationError:
                         raise
-                    except Exception:
-                        pass
+                    except Exception as reload_error:
+                        logger.debug(
+                            "Re-read of upstream token after refresh failure also failed: %s",
+                            reload_error,
+                        )
 
             if not validated:
                 logger.debug("Upstream token validation failed")

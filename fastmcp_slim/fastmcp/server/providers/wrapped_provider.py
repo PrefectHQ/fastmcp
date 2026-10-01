@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from fastmcp.prompts.base import Prompt
     from fastmcp.resources.base import Resource
     from fastmcp.resources.template import ResourceTemplate
+    from fastmcp.server.extensions import ServerExtension
     from fastmcp.server.transforms import Transform
     from fastmcp.tools.base import Tool
     from fastmcp.utilities.components import FastMCPComponent
@@ -45,6 +46,10 @@ class _WrappedProvider(Provider):
         # Add the transform to this provider's transform list
         # It will be applied via the normal transform chain
         self._transforms.append(transform)
+
+    def required_extensions(self) -> Sequence[ServerExtension]:
+        """Preserve bundled extensions through transforms and namespaces."""
+        return self._inner.required_extensions()
 
     def __repr__(self) -> str:
         return f"_WrappedProvider({self._inner!r}, transforms={self._transforms!r})"

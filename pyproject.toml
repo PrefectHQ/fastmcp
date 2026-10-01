@@ -192,6 +192,19 @@ ignore = [
     "PERF203",
     "PLR0913",
     "SIM102",
+    # flake8-bandit rules with a high false-positive rate in this codebase:
+    # `assert` is idiomatic Python (S101); subprocess calls here already use
+    # arg lists, not shell strings (S603); and "password"/"token"-named
+    # parameters and defaults are routinely non-secret in an OAuth/JWT
+    # framework (S105-S107). S606/S607 (bare command name, e.g. "uv") are a
+    # style preference, not a vulnerability, for our CLI's subprocess use.
+    "S101",
+    "S105",
+    "S106",
+    "S107",
+    "S603",
+    "S606",
+    "S607",
 ]
 extend-select = [
     "B",
@@ -209,6 +222,7 @@ extend-select = [
     "PLE",
     "RSE",
     "RUF",
+    "S",
     "SIM",
     "SLOT",
     "T20",
@@ -240,6 +254,7 @@ known-first-party = ["fastmcp", "fastmcp_remote"]
     "PLE",
     "RSE",
     "RUF",
+    "S",
     "SIM",
     "SLOT",
     "T20",
