@@ -725,6 +725,53 @@ class TestCacheableToolResult:
         assert cached_tool_result.is_error is True
 
 
+class TestCacheableResourceResult:
+    def test_wrap_and_unwrap_preserves_hints(self):
+        resource_result = ResourceResult("hello", ttl_ms=5000, cache_scope="public")
+        cached = CacheableResourceResult.wrap(resource_result).unwrap()
+        assert cached.ttl_ms == 5000
+        assert cached.cache_scope == "public"
+
+    def test_old_serialized_entry_without_new_fields_deserializes(self):
+        old_json = {
+            "contents": [
+                {
+                    "content": "hello",
+                    "mime_type": "text/plain",
+                    "meta": None,
+                    "is_binary": False,
+                }
+            ],
+            "meta": None,
+        }
+        entry = CacheableResourceResult.model_validate(old_json)
+        assert entry.ttl_ms is None
+        assert entry.cache_scope is None
+        unwrapped = entry.unwrap()
+        assert unwrapped.ttl_ms is None
+        assert unwrapped.cache_scope is None
+
+    async def test_middleware_cached_second_read_preserves_ttl_zero(self):
+        mcp = FastMCP("CachingTestServer", cache_ttl=3600)
+        mcp.add_middleware(ResponseCachingMiddleware(cache_storage=MemoryStore()))
+
+        calls = 0
+
+        @mcp.resource("data://dynamic-stale")
+        def dynamic_stale() -> ResourceResult:
+            nonlocal calls
+            calls += 1
+            return ResourceResult(f"read-{calls}", ttl_ms=0)
+
+        async with Client(mcp, mode="auto") as client:
+            first = await client.session.read_resource("data://dynamic-stale")
+            second = await client.session.read_resource("data://dynamic-stale")
+
+        assert calls == 1  # second read was served by the middleware cache
+        assert first.ttl_ms == 0
+        assert second.ttl_ms == 0
+
+
 class TestErrorResultsAreNotCached:
     """Regression tests for issue #4395: an error result was cached for the full
     TTL, so a transient failure permanently shadowed the tool until it expired."""

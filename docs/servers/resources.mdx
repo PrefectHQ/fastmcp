@@ -200,6 +200,12 @@ return ResourceResult(b"\x00\x01\x02")         # binary content
 <ParamField body="meta" type="dict[str, Any] | None">
   Result-level metadata, included in the MCP response's `_meta` field.
 </ParamField>
+<ParamField body="ttl_ms" type="int | None">
+  Optional per-read cache time-to-live in milliseconds (`ttl_ms`). Overrides any server-wide `cache_ttl`. Setting `ttl_ms=0` indicates the response is immediately stale and must not be reused. Works even if the server has no `cache_ttl` configured.
+</ParamField>
+<ParamField body="cache_scope" type='"public" | "private" | None'>
+  Optional per-read cache scope (`"public"` or `"private"`). Dictates whether a cached response may be shared across authorization contexts (`"public"`) or only within the same context (`"private"`).
+</ParamField>
 </Card>
 
 <Card title="ResourceContent">

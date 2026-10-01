@@ -20,6 +20,7 @@ import pytest
 from mcp_types.methods import CACHEABLE_METHODS
 
 from fastmcp import Client, FastMCP
+from fastmcp.resources import ResourceResult
 from fastmcp.server.caching import build_cache_hints
 
 
@@ -217,3 +218,113 @@ class TestEndToEndInterop:
 
         assert result.ttl_ms == 120000
         assert result.cache_scope == "public"
+
+
+class TestPerReadResourceCacheHints:
+    """Per-read cache hints returned via ResourceResult."""
+
+    async def test_resource_read_override_ttl_zero(self):
+        """Resource returning ttl_ms=0 overrides server cache_ttl=3600."""
+        mcp = FastMCP("x", cache_ttl=3600)
+
+        @mcp.resource("data://stale")
+        def stale_resource() -> ResourceResult:
+            return ResourceResult("stale", ttl_ms=0)
+
+        @mcp.resource("data://normal")
+        def normal_resource() -> str:
+            return "normal"
+
+        async with Client(mcp, mode="auto") as client:
+            listing = await client.session.list_resources()
+            stale_read = await client.session.read_resource("data://stale")
+            normal_read = await client.session.read_resource("data://normal")
+
+        assert listing.ttl_ms == 3600000
+        assert normal_read.ttl_ms == 3600000
+        assert stale_read.ttl_ms == 0
+
+    async def test_resource_template_per_read_hint_and_scope_override(self):
+        """Resource template returning per-read hint overrides server scope."""
+        mcp = FastMCP("x", cache_ttl=60, cache_scope="private")
+
+        @mcp.resource("data://{key}")
+        def get_data(key: str) -> ResourceResult:
+            if key == "public_item":
+                return ResourceResult("public", ttl_ms=5000, cache_scope="public")
+            return ResourceResult("private", ttl_ms=1000)
+
+        async with Client(mcp, mode="auto") as client:
+            public_read = await client.session.read_resource("data://public_item")
+            private_read = await client.session.read_resource("data://private_item")
+
+        assert public_read.ttl_ms == 5000
+        assert public_read.cache_scope == "public"
+        assert private_read.ttl_ms == 1000
+        assert private_read.cache_scope == "private"
+
+    async def test_per_read_hint_without_server_cache_ttl(self):
+        """Server has NO cache_ttl, but resource returns a per-read hint."""
+        mcp = FastMCP("x")
+
+        @mcp.resource("data://hinted")
+        def hinted_resource() -> ResourceResult:
+            return ResourceResult("hinted", ttl_ms=10000, cache_scope="public")
+
+        async with Client(mcp, mode="auto") as client:
+            read = await client.session.read_resource("data://hinted")
+
+        assert read.ttl_ms == 10000
+        assert read.cache_scope == "public"
+
+    async def test_per_read_hint_wire_override_behavior(self):
+        """Unset per-read hints receive server-wide fallback; explicit hints (including ttl_ms=0) reach the wire."""
+        mcp = FastMCP("x", cache_ttl=60, cache_scope="private")
+
+        @mcp.resource("data://default")
+        def default_res() -> ResourceResult:
+            return ResourceResult("default")
+
+        @mcp.resource("data://custom")
+        def custom_res() -> ResourceResult:
+            return ResourceResult("custom", ttl_ms=0, cache_scope="public")
+
+        async with Client(mcp, mode="auto") as client:
+            default_read = await client.session.read_resource("data://default")
+            custom_read = await client.session.read_resource("data://custom")
+
+        # default_res used server hint (cache_ttl=60 -> 60000ms, cache_scope="private")
+        assert default_read.ttl_ms == 60000
+        assert default_read.cache_scope == "private"
+
+        # custom_res explicitly overrode with ttl_ms=0 and cache_scope="public"
+        assert custom_read.ttl_ms == 0
+        assert custom_read.cache_scope == "public"
+
+    async def test_per_read_ttl_ms_only_receives_default_private_scope(self):
+        """Handler sets only ttl_ms=0 on a server with no cache_ttl. Scope falls back to the wire model's default ('private')."""
+        mcp = FastMCP("x")
+
+        @mcp.resource("data://stale-only-ttl")
+        def stale_res() -> ResourceResult:
+            return ResourceResult("stale", ttl_ms=0)
+
+        async with Client(mcp, mode="auto") as client:
+            read = await client.session.read_resource("data://stale-only-ttl")
+
+        assert read.ttl_ms == 0
+        assert read.cache_scope == "private"
+
+    async def test_legacy_protocol_client_hinted_resource_succeeds(self):
+        """A legacy-protocol client reading a hinted resource still succeeds."""
+        mcp = FastMCP("x", cache_ttl=60)
+
+        @mcp.resource("data://hinted")
+        def hinted_resource() -> ResourceResult:
+            return ResourceResult("hinted", ttl_ms=5000, cache_scope="public")
+
+        async with Client(mcp, mode="legacy") as client:
+            read = await client.read_resource("data://hinted")
+
+        assert len(read) == 1
+        assert read[0].text == "hinted"

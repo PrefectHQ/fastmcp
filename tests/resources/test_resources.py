@@ -272,6 +272,61 @@ class TestResourceResult:
         for item in mcp_result.contents:
             assert str(item.uri) == "resource://multi"
 
+    def test_default_cache_hints_are_none(self):
+        """Unset ttl_ms and cache_scope are None and not in model_fields_set."""
+        result = ResourceResult("test")
+        assert result.ttl_ms is None
+        assert result.cache_scope is None
+        mcp_result = result.to_mcp_result("resource://test")
+        assert "ttl_ms" not in mcp_result.model_fields_set
+        assert "cache_scope" not in mcp_result.model_fields_set
+
+    def test_ttl_ms_zero_reaches_wire_model_fields_set(self):
+        """ttl_ms=0 is in model_fields_set and equals 0."""
+        result = ResourceResult("test", ttl_ms=0)
+        assert result.ttl_ms == 0
+        mcp_result = result.to_mcp_result("resource://test")
+        assert "ttl_ms" in mcp_result.model_fields_set
+        assert mcp_result.ttl_ms == 0
+        assert "cache_scope" not in mcp_result.model_fields_set
+
+    def test_ttl_ms_and_cache_scope_reach_wire(self):
+        """Explicit ttl_ms and cache_scope reach ReadResourceResult."""
+        result = ResourceResult("test", ttl_ms=5000, cache_scope="public")
+        assert result.ttl_ms == 5000
+        assert result.cache_scope == "public"
+        mcp_result = result.to_mcp_result("resource://test")
+        assert "ttl_ms" in mcp_result.model_fields_set
+        assert mcp_result.ttl_ms == 5000
+        assert "cache_scope" in mcp_result.model_fields_set
+        assert mcp_result.cache_scope == "public"
+
+    def test_negative_ttl_ms_raises_validation_error(self):
+        """Negative ttl_ms raises ValidationError."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ResourceResult("test", ttl_ms=-1)
+
+    def test_invalid_cache_scope_raises_validation_error(self):
+        """Invalid cache_scope raises ValidationError."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ResourceResult("test", cache_scope="invalid")  # type: ignore
+
+    def test_input_required_resource_result_carries_no_hint(self):
+        """InputRequiredResourceResult carries no cache hints."""
+        from mcp_types import InputRequiredResult
+
+        from fastmcp.resources.base import InputRequiredResourceResult
+
+        result = InputRequiredResourceResult(
+            InputRequiredResult(request_state="state-1")
+        )
+        assert result.ttl_ms is None
+        assert result.cache_scope is None
+
 
 class TestResourceConvertResult:
     """Test Resource.convert_result() method."""
