@@ -27,7 +27,7 @@ from fastmcp.utilities.async_utils import (
     is_coroutine_function,
 )
 from fastmcp.utilities.components import _convert_set_default_none
-from fastmcp.utilities.json_schema import compress_schema
+from fastmcp.utilities.json_schema import _METADATA_KEYS, compress_schema
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.types import (
     FastMCPBaseModel,
@@ -38,6 +38,19 @@ from fastmcp.utilities.types import (
 )
 
 logger = get_logger(__name__)
+
+# Metadata preserved when replacing a property's JSON Schema type.
+_PROPERTY_PRESERVE_KEYS = _METADATA_KEYS | frozenset(
+    {"default", "examples", "example"}
+)
+
+
+def _strip_structural_schema_keys(schema: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in schema.items() if k in _PROPERTY_PRESERVE_KEYS}
+
+
+def _schema_has_structural_keys(schema: dict[str, Any]) -> bool:
+    return any(key not in _PROPERTY_PRESERVE_KEYS for key in schema)
 
 
 # Context variable to store current transformed tool
@@ -564,7 +577,11 @@ class TransformedTool(Tool):
                 # ArgTransform takes precedence over function signature
                 # Start with function schema as base, then override with transformed schema
                 final_schema = cls._merge_schema_with_precedence(
-                    parsed_fn.input_schema, schema
+                    parsed_fn.input_schema,
+                    schema,
+                    structural_override_properties=cls._arg_transform_type_override_names(
+                        transform_args
+                    ),
                 )
             else:
                 # With **kwargs, function can access all transformed params
@@ -573,7 +590,11 @@ class TransformedTool(Tool):
 
                 # Start with function schema as base, then override with transformed schema
                 final_schema = cls._merge_schema_with_precedence(
-                    parsed_fn.input_schema, schema
+                    parsed_fn.input_schema,
+                    schema,
+                    structural_override_properties=cls._arg_transform_type_override_names(
+                        transform_args
+                    ),
                 )
 
         # Additional validation: check for naming conflicts after transformation
@@ -844,8 +865,8 @@ class TransformedTool(Tool):
             # nested inside this property while $ref values still point to
             # "#/$defs/..." at the root, leaving the references dangling.
             extracted_defs = type_schema.pop("$defs", {})
-            # Update the schema with the type information from TypeAdapter
-            new_schema.update(type_schema)
+            preserved = _strip_structural_schema_keys(new_schema)
+            new_schema = {**type_schema, **preserved}
 
         # Handle examples transformation
         if transform.examples is not NotSet:
@@ -854,14 +875,35 @@ class TransformedTool(Tool):
         return new_name, new_schema, is_required, extracted_defs
 
     @staticmethod
+    def _arg_transform_type_override_names(
+        transform_args: dict[str, ArgTransform] | None,
+    ) -> frozenset[str]:
+        if not transform_args:
+            return frozenset()
+        names: set[str] = set()
+        for old_name, transform in transform_args.items():
+            if transform.hide or transform.type is NotSet:
+                continue
+            if transform.name is not NotSet and transform.name is not None:
+                names.add(transform.name)
+            else:
+                names.add(old_name)
+        return frozenset(names)
+
+    @staticmethod
     def _merge_schema_with_precedence(
-        base_schema: dict[str, Any], override_schema: dict[str, Any]
+        base_schema: dict[str, Any],
+        override_schema: dict[str, Any],
+        *,
+        structural_override_properties: frozenset[str] | None = None,
     ) -> dict[str, Any]:
         """Merge two schemas, with the override schema taking precedence.
 
         Args:
             base_schema: Base schema to start with
             override_schema: Schema that takes precedence for overlapping properties
+            structural_override_properties: Property names whose structural schema
+                comes from the override (e.g. ArgTransform(type=...) on the parent).
 
         Returns:
             Merged schema with override taking precedence
@@ -871,13 +913,19 @@ class TransformedTool(Tool):
 
         override_props = override_schema.get("properties", {})
         override_required = set(override_schema.get("required", []))
+        structural_override_properties = structural_override_properties or frozenset()
 
         # Override properties
         for param_name, param_schema in override_props.items():
             if param_name in merged_props:
-                # Merge the schemas, with override taking precedence
                 base_param = merged_props[param_name].copy()
-                base_param.update(param_schema)
+                if param_name in structural_override_properties:
+                    base_param = param_schema.copy()
+                elif _schema_has_structural_keys(base_param):
+                    param_schema = _strip_structural_schema_keys(param_schema)
+                    base_param.update(param_schema)
+                else:
+                    base_param.update(param_schema)
                 merged_props[param_name] = base_param
             else:
                 merged_props[param_name] = param_schema.copy()
