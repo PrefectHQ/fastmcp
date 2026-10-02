@@ -164,6 +164,7 @@ __all__ = [
     "fastmcp_request_ctx",
     "get_access_token",
     "get_context",
+    "get_di_marker_parameters",
     "get_http_headers",
     "get_http_request",
     "get_server",
@@ -503,6 +504,67 @@ def _clear_signature_caches(fn: Callable[..., Any]) -> None:
         _parameter_cache.pop(fn.__func__, None)
 
 
+# --- Third-party DI markers ---
+
+
+#: dependency-injector's marker classes, when it is installed. Its markers
+#: predate the ``__IS_MARKER__`` protocol attribute (added in 4.49), so they
+#: are recognized by isinstance as well. Resolved lazily to keep the import
+#: off FastMCP's own startup path.
+_DI_MARKER_CLASSES: tuple[type, ...] | None = None
+
+
+def _di_marker_classes() -> tuple[type, ...]:
+    """Return dependency-injector's marker classes, or () when not installed."""
+    global _DI_MARKER_CLASSES
+    if _DI_MARKER_CLASSES is None:
+        try:
+            from dependency_injector.wiring import Closing, Provide, Provider
+
+            # Under TYPE_CHECKING dependency-injector types these names as
+            # marker instances; at runtime they are the marker classes.
+            _DI_MARKER_CLASSES = cast("tuple[type, ...]", (Provide, Provider, Closing))
+        except ImportError:
+            _DI_MARKER_CLASSES = ()
+    return _DI_MARKER_CLASSES
+
+
+@lru_cache(maxsize=5000)
+def get_di_marker_parameters(fn: Callable[..., Any]) -> dict[str, Any]:
+    """Find parameters defaulted to a third-party DI framework's marker.
+
+    Frameworks such as dependency-injector mark injected parameters with a
+    marker default (``Provide[...]``, ``Provider[...]``, ``Closing[...]``)
+    that their own wiring — ``@inject`` plus ``Container.wire()`` — resolves
+    at call time. FastMCP treats those parameters like ``Dependency``
+    defaults for schema and argument-filtering purposes: they never appear
+    in a payload schema and a caller can never supply a value for them.
+    Their values, though, are resolved by the owning framework, not by
+    FastMCP: calls simply omit the parameter so the framework's decorator
+    sees its marker default and injects.
+
+    Detection recognizes dependency-injector's marker classes when the
+    framework is installed, plus any marker exposing the protocol attribute
+    such frameworks publish (``__IS_MARKER__ = True`` on the class), so
+    markers are recognized without otherwise depending on the framework.
+    """
+    try:
+        sig = inspect.signature(fn)
+    except (ValueError, TypeError):
+        return {}
+
+    markers: dict[str, Any] = {}
+    for name, parameter in sig.parameters.items():
+        default = parameter.default
+        if isinstance(default, Dependency):
+            continue
+        if getattr(type(default), "__IS_MARKER__", False) is True or isinstance(
+            default, _di_marker_classes()
+        ):
+            markers[name] = default
+    return markers
+
+
 def get_context() -> Context:
     """Get the current FastMCP Context instance directly."""
     from fastmcp.server.context import _current_context
@@ -734,6 +796,8 @@ def without_injected_parameters(
     Handles:
     - Legacy Context injection (always works)
     - Depends() injection (always works - uses docket or vendored DI engine)
+    - Third-party DI markers (excluded from the schema; resolved by the
+      owning framework's wiring, e.g. dependency-injector's @inject)
 
     Args:
         fn: Original function with Context and/or dependencies
@@ -756,6 +820,11 @@ def without_injected_parameters(
         exclude.add(context_kwarg)
     if dependency_params:
         exclude.update(dependency_params.keys())
+    # Third-party DI markers (e.g. dependency-injector's Provide[...]) are
+    # injected by their own framework's wiring: exclude them from the schema
+    # and leave their default in place so the wiring resolves it when the
+    # call omits the parameter.
+    exclude.update(get_di_marker_parameters(fn))
 
     if not exclude:
         return fn
@@ -922,9 +991,12 @@ async def resolve_dependencies(
     """
     # Filter out dependency parameters from user arguments to prevent override
     # This is a security measure - external callers should never be able to
-    # provide values for injected parameters
+    # provide values for injected parameters. Third-party DI marker parameters
+    # are filtered too: FastMCP never supplies their value, so the owning
+    # framework's wiring resolves them.
     dependency_params = get_dependency_parameters(fn)
-    user_args = {k: v for k, v in arguments.items() if k not in dependency_params}
+    injected_params = dependency_params.keys() | get_di_marker_parameters(fn).keys()
+    user_args = {k: v for k, v in arguments.items() if k not in injected_params}
 
     async with _resolve_fastmcp_dependencies(fn, user_args) as resolved_kwargs:
         yield resolved_kwargs

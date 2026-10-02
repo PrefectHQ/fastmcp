@@ -14,18 +14,18 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
+exclude-newer = "2026-09-26T19:34:45.026399Z"
 exclude-newer-span = "P1W"
 
 [options.exclude-newer-package]
-fastmcp = false
-fastmcp-remote = false
-fastmcp-slim = false
-mcp = false
 mcp-types = false
 prefab-ui = false
 pydocket = false
 uncalled-for = false
+fastmcp = false
+mcp = false
+fastmcp-remote = false
+fastmcp-slim = false
 
 [manifest]
 members = [
@@ -44,7 +44,7 @@ resolution-markers = [
     "python_full_version < '3.11' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "caio" },
+    { name = "caio", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/67/e2/d7cb819de8df6b5c1968a2756c3cb4122d4fa2b8fc768b53b7c9e5edb646/aiofile-3.9.0.tar.gz", hash = "sha256:e5ad718bb148b265b6df1b3752c4d1d83024b93da9bd599df74b9d9ffcf7919b", size = 17943, upload-time = "2024-10-08T10:39:35.846Z" }
 wheels = [
@@ -65,7 +65,7 @@ resolution-markers = [
     "(python_full_version >= '3.11' and python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32') or (python_full_version == '3.11.*' and sys_platform == 'emscripten')",
 ]
 dependencies = [
-    { name = "caio" },
+    { name = "caio", marker = "python_full_version >= '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/48/41/2fea7e193e061ce54eacc3b7bc0e6a99e4fcff43c78cf0a76dd781ed8334/aiofile-3.11.1.tar.gz", hash = "sha256:1f91912c6643d2a4e49ca4ae3514f0bf3867ce948a36d99a6411b8f4755f4cf9", size = 19342, upload-time = "2026-05-16T08:18:33.538Z" }
 wheels = [
@@ -747,6 +747,28 @@ wheels = [
 ]
 
 [[package]]
+name = "dependency-injector"
+version = "4.49.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d1/84/5e05c2997a196155b86446d48b9e5b2a055087c574746389fdc3c530f5b5/dependency_injector-4.49.1.tar.gz", hash = "sha256:b4614fa3731ffec00a381aebc1d17317b0a3a407aa679f164a3ea03c347de691", size = 1171204, upload-time = "2026-06-18T17:51:48.221Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c0/1e/9f3abdf0ac42cac1c319b210aa060669ea9d29f06caf00c27fe72fa5335c/dependency_injector-4.49.1-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:b1b71d6f500c001230a53e5bee01ea01c6d3bb2089f64ecc841b42672924a19a", size = 1771519, upload-time = "2026-06-18T17:50:58.476Z" },
+    { url = "https://files.pythonhosted.org/packages/68/20/fc1812f20ec75af2d4b5e391e93f15621af3102da46142e26177eb506b32/dependency_injector-4.49.1-cp310-abi3-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:10e481880b307a6a438c1cc7b0a1fa8754247239ef5a2e8fe82bd8a1e76e7682", size = 1854593, upload-time = "2026-06-18T17:51:02.069Z" },
+    { url = "https://files.pythonhosted.org/packages/32/ab/b1e1826aacc37d07ba0101230de7b5cbbb5ac6364b78ca3957f0a90d6a51/dependency_injector-4.49.1-cp310-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:e05da5bc73a3e026f962a223672002934c0f415064b6e2c3db0b255e46c7b521", size = 1767354, upload-time = "2026-06-18T17:51:03.715Z" },
+    { url = "https://files.pythonhosted.org/packages/3e/ab/1d873876e9adb612f8fba1e801820bf5a69cd7d864e01dca81651edd40f6/dependency_injector-4.49.1-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:5760390d295af0b605aacd02bb8ac2e9fe206f9c4fbe7770d0843a6cbfb9c2cd", size = 1748758, upload-time = "2026-06-18T17:51:05.287Z" },
+    { url = "https://files.pythonhosted.org/packages/ee/ef/d715f4cd2e947fddc4c8763be1c4099793caf38aa1a099b6d621ecfeb768/dependency_injector-4.49.1-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:ba7e94e4323219c93dac35aabba7efa4e91c9afeac044b1d50bdc66a00a07238", size = 1845636, upload-time = "2026-06-18T17:51:07.023Z" },
+    { url = "https://files.pythonhosted.org/packages/e7/32/03d1e5e0c6b79eaabf2ed4155302df05832e54789cc9f670cc62af20897b/dependency_injector-4.49.1-cp310-abi3-win32.whl", hash = "sha256:5a6e3a0df8cff636da3d7212473e30dff897c5bdbca2dd3049b5363012a495fa", size = 1548655, upload-time = "2026-06-18T17:51:08.721Z" },
+    { url = "https://files.pythonhosted.org/packages/93/51/ce3ca96314f93f44358523cb8cdf81c8c1e002b4e097141e460bc598c87f/dependency_injector-4.49.1-cp310-abi3-win_amd64.whl", hash = "sha256:153f6b8d1db35d1fc9b001e41564a47ab2a7708038fecefadf3afada8ec7f814", size = 1676934, upload-time = "2026-06-18T17:51:10.465Z" },
+    { url = "https://files.pythonhosted.org/packages/cd/d0/175cc74c5b66be348a89086c221f9766f563164ef50d41c9dbd056df3241/dependency_injector-4.49.1-pp311-pypy311_pp73-macosx_11_0_arm64.whl", hash = "sha256:4fd20dd61d5cf3c98919a2ea6f647e8154e0b2d69ec729695ffa105c106f720a", size = 1746494, upload-time = "2026-06-18T17:51:40.23Z" },
+    { url = "https://files.pythonhosted.org/packages/3c/be/13b61e6c54ccdf937c76369f83c459597c0a65161efb20734d33f5b198e4/dependency_injector-4.49.1-pp311-pypy311_pp73-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:e1d8e5141dba1f942265029e385e26543ff9207ee158b411daeb75684dd4e8e6", size = 1823860, upload-time = "2026-06-18T17:51:42.433Z" },
+    { url = "https://files.pythonhosted.org/packages/8d/1f/70a5107fda9ba772e5427f4a0a87c8a80e51e0dc6a10d2c2efc6cd8640ce/dependency_injector-4.49.1-pp311-pypy311_pp73-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:3c11aa23a425864443742b2487e2bbb9a0b64686aa5794982314a7cabee61a91", size = 1743046, upload-time = "2026-06-18T17:51:44.351Z" },
+    { url = "https://files.pythonhosted.org/packages/96/e6/7e9cea8ad23df40bffef671175c741c9c231da524fd855677cbd2657929c/dependency_injector-4.49.1-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:e4e5aaa3bf6d6b8fc74b487ff8df3881c6efe1689a8576a45d5be76c932f6ecd", size = 1653579, upload-time = "2026-06-18T17:51:46.372Z" },
+]
+
+[[package]]
 name = "dirty-equals"
 version = "0.11"
 source = { registry = "https://pypi.org/simple" }
@@ -889,6 +911,7 @@ tasks = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "dependency-injector" },
     { name = "dirty-equals" },
     { name = "fastapi" },
     { name = "fastmcp", extra = ["anthropic", "apps", "azure", "code-mode", "gemini", "jev", "openai", "tasks"] },
@@ -934,6 +957,7 @@ provides-extras = ["anthropic", "apps", "azure", "code-mode", "gemini", "jev", "
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "dependency-injector", specifier = ">=4.32" },
     { name = "dirty-equals", specifier = ">=0.9.0" },
     { name = "fastapi", specifier = ">=0.115.12" },
     { name = "fastmcp", extras = ["anthropic", "apps", "azure", "code-mode", "gemini", "jev", "openai", "tasks"], editable = "." },
@@ -1267,8 +1291,8 @@ name = "httpcore2"
 version = "2.12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "h11" },
-    { name = "truststore" },
+    { name = "h11", marker = "python_full_version != '3.12.*' or sys_platform != 'emscripten'" },
+    { name = "truststore", marker = "python_full_version != '3.12.*' or sys_platform != 'emscripten'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/be/ad/f4f0e57345f1870f3e8cb624e058d7eca6e5a27d33bcc3311d9b618734cd/httpcore2-2.12.0.tar.gz", hash = "sha256:9293522bba0aa7c4c8e9e3f040c16575bd8868e155a77fa30c7a9085a5eae648", size = 67548, upload-time = "2026-08-18T13:22:08.211Z" }
 wheels = [
@@ -1330,7 +1354,7 @@ name = "importlib-metadata"
 version = "9.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "zipp" },
+    { name = "zipp", marker = "(python_full_version < '3.13' and sys_platform != 'emscripten') or (python_full_version < '3.12' and sys_platform == 'emscripten')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a9/01/15bb152d77b21318514a96f43af312635eb2500c96b55398d020c93d86ea/importlib_metadata-9.0.0.tar.gz", hash = "sha256:a4f57ab599e6a2e3016d7595cfd72eb4661a5106e787a95bcc90c7105b831efc", size = 56405, upload-time = "2026-03-20T06:42:56.999Z" }
 wheels = [
@@ -1377,17 +1401,17 @@ resolution-markers = [
     "python_full_version < '3.11' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32'" },
-    { name = "decorator" },
-    { name = "exceptiongroup" },
-    { name = "jedi" },
-    { name = "matplotlib-inline" },
-    { name = "pexpect", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
-    { name = "prompt-toolkit" },
-    { name = "pygments" },
-    { name = "stack-data" },
-    { name = "traitlets" },
-    { name = "typing-extensions" },
+    { name = "colorama", marker = "python_full_version < '3.11' and sys_platform == 'win32'" },
+    { name = "decorator", marker = "python_full_version < '3.11'" },
+    { name = "exceptiongroup", marker = "python_full_version < '3.11'" },
+    { name = "jedi", marker = "python_full_version < '3.11'" },
+    { name = "matplotlib-inline", marker = "python_full_version < '3.11'" },
+    { name = "pexpect", marker = "python_full_version < '3.11' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "prompt-toolkit", marker = "python_full_version < '3.11'" },
+    { name = "pygments", marker = "python_full_version < '3.11'" },
+    { name = "stack-data", marker = "python_full_version < '3.11'" },
+    { name = "traitlets", marker = "python_full_version < '3.11'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/40/18/f8598d287006885e7136451fdea0755af4ebcbfe342836f24deefaed1164/ipython-8.39.0.tar.gz", hash = "sha256:4110ae96012c379b8b6db898a07e186c40a2a1ef5d57a7fa83166047d9da7624", size = 5513971, upload-time = "2026-03-27T10:02:13.94Z" }
 wheels = [
@@ -1408,18 +1432,18 @@ resolution-markers = [
     "(python_full_version >= '3.11' and python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32') or (python_full_version == '3.11.*' and sys_platform == 'emscripten')",
 ]
 dependencies = [
-    { name = "colorama", marker = "sys_platform == 'win32'" },
-    { name = "decorator" },
-    { name = "ipython-pygments-lexers" },
-    { name = "jedi" },
-    { name = "matplotlib-inline" },
-    { name = "pexpect", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
-    { name = "prompt-toolkit" },
-    { name = "psutil", marker = "sys_platform != 'cygwin' and sys_platform != 'emscripten'" },
-    { name = "pygments" },
-    { name = "stack-data" },
-    { name = "traitlets" },
-    { name = "typing-extensions", marker = "python_full_version < '3.12'" },
+    { name = "colorama", marker = "python_full_version >= '3.11' and sys_platform == 'win32'" },
+    { name = "decorator", marker = "python_full_version >= '3.11'" },
+    { name = "ipython-pygments-lexers", marker = "python_full_version >= '3.11'" },
+    { name = "jedi", marker = "python_full_version >= '3.11'" },
+    { name = "matplotlib-inline", marker = "python_full_version >= '3.11'" },
+    { name = "pexpect", marker = "python_full_version >= '3.11' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "prompt-toolkit", marker = "python_full_version >= '3.11'" },
+    { name = "psutil", marker = "python_full_version >= '3.11' and sys_platform != 'cygwin' and sys_platform != 'emscripten'" },
+    { name = "pygments", marker = "python_full_version >= '3.11'" },
+    { name = "stack-data", marker = "python_full_version >= '3.11'" },
+    { name = "traitlets", marker = "python_full_version >= '3.11'" },
+    { name = "typing-extensions", marker = "python_full_version == '3.11.*'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/53/59/165d3b4d75cc34add3122c4417ecb229085140ac573103c223cd01dde96f/ipython-9.15.0.tar.gz", hash = "sha256:da2819ce2aa83135257df830660b1176d986c3d2876db24df01974fa955b2756", size = 4442580, upload-time = "2026-06-26T11:03:35.913Z" }
 wheels = [
@@ -1431,7 +1455,7 @@ name = "ipython-pygments-lexers"
 version = "1.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pygments" },
+    { name = "pygments", marker = "python_full_version >= '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/ef/4c/5dd1d8af08107f88c7f741ead7a40854b8ac24ddf9ae850afbcf698aa552/ipython_pygments_lexers-1.1.1.tar.gz", hash = "sha256:09c0138009e56b6854f9535736f4171d855c8c08a563a0dcd8022f78355c7e81", size = 8393, upload-time = "2025-01-17T11:24:34.505Z" }
 wheels = [
@@ -2028,7 +2052,7 @@ name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ptyprocess" },
+    { name = "ptyprocess", marker = "(python_full_version != '3.12.*' and sys_platform == 'emscripten') or (sys_platform != 'emscripten' and sys_platform != 'win32')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450, upload-time = "2023-11-25T09:07:26.339Z" }
 wheels = [
@@ -3321,8 +3345,8 @@ name = "secretstorage"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cryptography" },
-    { name = "jeepney" },
+    { name = "cryptography", marker = "(python_full_version != '3.12.*' and sys_platform == 'emscripten') or (sys_platform != 'emscripten' and sys_platform != 'win32')" },
+    { name = "jeepney", marker = "(python_full_version != '3.12.*' and sys_platform == 'emscripten') or (sys_platform != 'emscripten' and sys_platform != 'win32')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1c/03/e834bcd866f2f8a49a85eaff47340affa3bfa391ee9912a952a1faa68c7b/secretstorage-3.5.0.tar.gz", hash = "sha256:f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be", size = 19884, upload-time = "2025-11-23T19:02:53.191Z" }
 wheels = [
@@ -3392,8 +3416,8 @@ name = "taskgroup"
 version = "0.2.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "exceptiongroup" },
-    { name = "typing-extensions" },
+    { name = "exceptiongroup", marker = "python_full_version < '3.11'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/f0/8d/e218e0160cc1b692e6e0e5ba34e8865dbb171efeb5fc9a704544b3020605/taskgroup-0.2.2.tar.gz", hash = "sha256:078483ac3e78f2e3f973e2edbf6941374fbea81b9c5d0a96f51d297717f4752d", size = 11504, upload-time = "2025-01-03T09:24:13.761Z" }
 wheels = [
