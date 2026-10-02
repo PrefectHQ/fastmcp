@@ -37,6 +37,11 @@ def test_http_session_idle_timeout_can_be_disabled():
     assert Settings(http_session_idle_timeout=None).http_session_idle_timeout is None
 
 
+def test_http_session_idle_timeout_env_var_null_disables(monkeypatch):
+    monkeypatch.setenv("FASTMCP_HTTP_SESSION_IDLE_TIMEOUT", "null")
+    assert Settings().http_session_idle_timeout is None
+
+
 @pytest.mark.parametrize("value", [0, -1, "invalid"])
 def test_http_session_idle_timeout_rejects_invalid_values(value):
     with pytest.raises(ValidationError):

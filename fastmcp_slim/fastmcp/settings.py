@@ -297,6 +297,13 @@ class Settings(BaseSettings):
         ),
     ] = "auto"
 
+    @field_validator("http_session_idle_timeout", mode="before")
+    @classmethod
+    def parse_null_session_idle_timeout(cls, v):
+        if isinstance(v, str) and v.lower() == "null":
+            return None
+        return v
+
     mounted_components_raise_on_load_error: Annotated[
         bool,
         Field(

@@ -410,7 +410,7 @@ class TransportMixin:
                 session may remain idle before it is terminated. When None,
                 falls back to the `http_session_idle_timeout` setting.
                 "auto" uses the MCP SDK's default. To disable the timeout,
-                set `fastmcp.settings.http_session_idle_timeout = None`.
+                set `FASTMCP_HTTP_SESSION_IDLE_TIMEOUT=null`.
 
         Returns:
             A Starlette application configured with the specified transport
