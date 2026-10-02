@@ -40,9 +40,7 @@ from fastmcp.utilities.types import (
 logger = get_logger(__name__)
 
 # Metadata preserved when replacing a property's JSON Schema type.
-_PROPERTY_PRESERVE_KEYS = _METADATA_KEYS | frozenset(
-    {"default", "examples", "example"}
-)
+_PROPERTY_PRESERVE_KEYS = _METADATA_KEYS | frozenset({"default", "examples", "example"})
 
 
 def _strip_structural_schema_keys(schema: dict[str, Any]) -> dict[str, Any]:

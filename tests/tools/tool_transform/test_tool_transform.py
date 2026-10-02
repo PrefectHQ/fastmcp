@@ -388,9 +388,7 @@ async def test_arg_transform_type_replaces_parent_type_keywords():
     def parent(x: str) -> str:
         return x
 
-    tool = Tool.from_tool(
-        parent, transform_args={"x": ArgTransform(type=int | None)}
-    )
+    tool = Tool.from_tool(parent, transform_args={"x": ArgTransform(type=int | None)})
 
     prop = tool.parameters["properties"]["x"]
     validator = jsonschema.Draft202012Validator(tool.parameters)
@@ -409,7 +407,7 @@ async def test_transform_fn_type_replaces_forwarded_parent_schema():
     def parent(x: str) -> str:
         return x
 
-    async def child(x: int | None) -> str:
+    async def child(x: int | None) -> ToolResult:
         return await forward(x=str(x))
 
     tool = Tool.from_tool(parent, transform_fn=child, name="g")
