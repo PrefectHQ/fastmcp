@@ -23,6 +23,8 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Typing :: Typed",
 ]
 
@@ -77,8 +79,8 @@ exclude-newer = "1 week"
 # first-party packages, whose fresh releases we install deliberately, the
 # MCP SDK, where a new major is the only version satisfying our floor and so
 # has nothing older to fall back to, and uncalled-for, the DI engine whose
-# releases we adopt deliberately.
-exclude-newer-package = { fastmcp = false, fastmcp-slim = false, fastmcp-remote = false, prefab-ui = false, mcp = false, mcp-types = false, uncalled-for = false, pydocket = false }
+# releases we adopt deliberately, and beartype, whose 3.15 fix is a prerelease.
+exclude-newer-package = { fastmcp = false, fastmcp-slim = false, fastmcp-remote = false, prefab-ui = false, mcp = false, mcp-types = false, uncalled-for = false, pydocket = false, beartype = false }
 
 [dependency-groups]
 dev = [
@@ -192,6 +194,19 @@ ignore = [
     "PERF203",
     "PLR0913",
     "SIM102",
+    # flake8-bandit rules with a high false-positive rate in this codebase:
+    # `assert` is idiomatic Python (S101); subprocess calls here already use
+    # arg lists, not shell strings (S603); and "password"/"token"-named
+    # parameters and defaults are routinely non-secret in an OAuth/JWT
+    # framework (S105-S107). S606/S607 (bare command name, e.g. "uv") are a
+    # style preference, not a vulnerability, for our CLI's subprocess use.
+    "S101",
+    "S105",
+    "S106",
+    "S107",
+    "S603",
+    "S606",
+    "S607",
 ]
 extend-select = [
     "B",
@@ -209,6 +224,7 @@ extend-select = [
     "PLE",
     "RSE",
     "RUF",
+    "S",
     "SIM",
     "SLOT",
     "T20",
@@ -240,6 +256,7 @@ known-first-party = ["fastmcp", "fastmcp_remote"]
     "PLE",
     "RSE",
     "RUF",
+    "S",
     "SIM",
     "SLOT",
     "T20",

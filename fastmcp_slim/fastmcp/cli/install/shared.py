@@ -79,7 +79,7 @@ async def process_common_args(
             sys.exit(1)
 
         try:
-            with open(config_path) as f:
+            with open(config_path, encoding="utf-8") as f:
                 data = json.load(f)
 
             # Check if it's an MCPConfig (has mcpServers key)

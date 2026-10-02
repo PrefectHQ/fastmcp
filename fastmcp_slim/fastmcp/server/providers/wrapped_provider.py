@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from fastmcp.prompts.base import Prompt
     from fastmcp.resources.base import Resource
     from fastmcp.resources.template import ResourceTemplate
+    from fastmcp.server.extensions import ServerExtension
     from fastmcp.server.transforms import Transform
     from fastmcp.tools.base import Tool
     from fastmcp.utilities.components import FastMCPComponent
@@ -45,6 +46,10 @@ class _WrappedProvider(Provider):
         # Add the transform to this provider's transform list
         # It will be applied via the normal transform chain
         self._transforms.append(transform)
+
+    def required_extensions(self) -> Sequence[ServerExtension]:
+        """Preserve bundled extensions through transforms and namespaces."""
+        return self._inner.required_extensions()
 
     def __repr__(self) -> str:
         return f"_WrappedProvider({self._inner!r}, transforms={self._transforms!r})"
@@ -103,37 +108,12 @@ class _WrappedProvider(Provider):
 
     async def get_tasks(self) -> Sequence[FastMCPComponent]:
         """Delegate to inner's get_tasks and apply wrapper's transforms."""
-        # Import here to avoid circular imports
-        from fastmcp.prompts.base import Prompt
-        from fastmcp.resources.base import Resource
-        from fastmcp.resources.template import ResourceTemplate
-        from fastmcp.tools.base import Tool
-
         # Get tasks from inner (already has inner's transforms)
         components = list(await self._inner.get_tasks())
 
-        # Apply this wrapper's transforms to the components
-        # We need to apply transforms per component type
-        tools = [c for c in components if isinstance(c, Tool)]
-        resources = [c for c in components if isinstance(c, Resource)]
-        templates = [c for c in components if isinstance(c, ResourceTemplate)]
-        prompts = [c for c in components if isinstance(c, Prompt)]
-
-        # Apply this wrapper's transforms sequentially
-        for transform in self.transforms:
-            tools = await transform.list_tools(tools)
-            resources = await transform.list_resources(resources)
-            templates = await transform.list_resource_templates(templates)
-            prompts = await transform.list_prompts(prompts)
-
         return [
             c
-            for c in [
-                *tools,
-                *resources,
-                *templates,
-                *prompts,
-            ]
+            for c in await self._apply_task_transforms(components)
             if c.task_config.supports_tasks()
         ]
 

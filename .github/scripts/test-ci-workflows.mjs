@@ -108,7 +108,7 @@ for (const filename of [
   "docs/script.js",
   "docs/snippets/example.py",
   "new-package/README.md",
-  "CLAUDE.md",
+  "AGENTS.md",
 ]) {
   test(`full coverage with mixed changes: ${filename}`, async () => {
     assert.equal(
@@ -192,7 +192,10 @@ test("required matrix checks retain names even when editorial steps skip", () =>
   assert.deepEqual(matrix.strategy.matrix, {
     os: ["ubuntu-latest"],
     "python-version": ["3.10"],
-    include: [{ os: "ubuntu-latest", "python-version": "3.13" }],
+    include: [
+      { os: "ubuntu-latest", "python-version": "3.13" },
+      { os: "ubuntu-latest", "python-version": "3.14" },
+    ],
   });
   assert.equal(matrix.if, "${{ !cancelled() }}");
   assert.equal(matrix.steps[0].uses, "actions/checkout@v7");
@@ -253,6 +256,10 @@ test("upgrade coverage remains nightly and manually dispatchable", () => {
     schedule: [{ cron: "0 2 * * *" }],
     workflow_dispatch: "",
   });
+  assert.deepEqual(
+    workflows["run-upgrade-checks"].jobs.run_tests.strategy.matrix.include,
+    workflow.jobs.run_tests.strategy.matrix.include,
+  );
   assert.ok(workflows["run-upgrade-checks"].jobs.notify);
   assert.ok(workflows["run-upgrade-checks"].jobs["close-on-success"]);
 });

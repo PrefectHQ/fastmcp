@@ -44,7 +44,7 @@ class Deployment(BaseModel):
     host: str | None = Field(
         default=None,
         description="Host to bind to when using HTTP transport",
-        examples=["127.0.0.1", "0.0.0.0", "localhost"],
+        examples=["127.0.0.1", "0.0.0.0", "localhost"],  # noqa: S104 - schema example values, not a bind default
     )
 
     port: int | None = Field(
