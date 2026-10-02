@@ -34,7 +34,7 @@ Excludes __init__.py files (they're for package structure, not components).
 - List of .py file paths, sorted for deterministic order.
 
 
-### `import_module_from_file` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/filesystem_discovery.py#L140" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `import_module_from_file` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/filesystem_discovery.py#L142" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 import_module_from_file(file_path: Path, provider_root: Path | None = None) -> ModuleType
@@ -62,7 +62,7 @@ discovery from walking above this boundary into ancestor packages.
 - `ImportError`: If the module cannot be imported.
 
 
-### `extract_components` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/filesystem_discovery.py#L285" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `extract_components` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/filesystem_discovery.py#L290" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 extract_components(module: ModuleType) -> list[FastMCPComponent]
@@ -82,7 +82,7 @@ or functions decorated with @tool/@resource/@prompt that have __fastmcp__ metada
 - List of component objects (Tool, Resource, ResourceTemplate, Prompt).
 
 
-### `discover_and_import` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/filesystem_discovery.py#L404" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `discover_and_import` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/filesystem_discovery.py#L409" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 discover_and_import(root: Path) -> DiscoveryResult

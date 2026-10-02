@@ -26,6 +26,7 @@ from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.versions import VersionSpec
 
 if TYPE_CHECKING:
+    from fastmcp.server.extensions import ServerExtension
     from fastmcp.server.server import FastMCP
 
 
@@ -83,14 +84,19 @@ class FastMCPProviderTool(Tool):
         `InputRequiredToolResult`, which forwards through this delegation to the
         parent's wire handler unchanged.
         """
+        from fastmcp.server.extensions import _delegate_extension_interceptors
+
         # Pass exact version so child executes the correct version
         version = VersionSpec(eq=self.version) if self.version else None
 
-        with delegate_span(
-            self._original_name or "",
-            "FastMCPProvider",
-            self._original_name or "",
-            method="tools/call",
+        with (
+            _delegate_extension_interceptors(self._server),
+            delegate_span(
+                self._original_name or "",
+                "FastMCPProvider",
+                self._original_name or "",
+                method="tools/call",
+            ),
         ):
             return await self._server.call_tool(
                 self._original_name,
@@ -104,12 +110,15 @@ class FastMCPProviderTool(Tool):
         This is called when the tool is used within a TransformedTool
         forwarding function or other contexts.
         """
+        from fastmcp.server.extensions import _delegate_extension_interceptors
+
         # Pass exact version so child executes the correct version
         version = VersionSpec(eq=self.version) if self.version else None
 
-        return await self._server.call_tool(
-            self._original_name, arguments, version=version
-        )
+        with _delegate_extension_interceptors(self._server):
+            return await self._server.call_tool(
+                self._original_name, arguments, version=version
+            )
 
     def get_span_attributes(self) -> dict[str, Any]:
         return super().get_span_attributes() | {
@@ -404,6 +413,10 @@ class FastMCPProvider(Provider):
         """
         super().__init__()
         self.server = server
+
+    def required_extensions(self) -> Sequence[ServerExtension]:
+        """Expose the mounted server's bundled and auto-registerable extensions."""
+        return self.server.required_extensions()
 
     # -------------------------------------------------------------------------
     # Tool methods
