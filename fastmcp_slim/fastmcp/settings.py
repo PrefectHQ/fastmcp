@@ -299,8 +299,8 @@ class Settings(BaseSettings):
 
     @field_validator("http_session_idle_timeout", mode="before")
     @classmethod
-    def parse_null_session_idle_timeout(cls, v):
-        if isinstance(v, str) and v.lower() == "null":
+    def parse_disabled_session_idle_timeout(cls, v):
+        if isinstance(v, str) and v.lower() == "none":
             return None
         return v
 

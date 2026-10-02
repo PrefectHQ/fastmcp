@@ -37,8 +37,8 @@ def test_http_session_idle_timeout_can_be_disabled():
     assert Settings(http_session_idle_timeout=None).http_session_idle_timeout is None
 
 
-def test_http_session_idle_timeout_env_var_null_disables(monkeypatch):
-    monkeypatch.setenv("FASTMCP_HTTP_SESSION_IDLE_TIMEOUT", "null")
+def test_http_session_idle_timeout_env_var_none_disables(monkeypatch):
+    monkeypatch.setenv("FASTMCP_HTTP_SESSION_IDLE_TIMEOUT", "none")
     assert Settings().http_session_idle_timeout is None
 
 
