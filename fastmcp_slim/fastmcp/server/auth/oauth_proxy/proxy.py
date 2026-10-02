@@ -2631,6 +2631,77 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
     # IdP Callback Forwarding
     # -------------------------------------------------------------------------
 
+    def _callback_transaction_id(self, request: Request) -> str | None:
+        """Return the transaction ID for an upstream callback.
+
+        Override when the upstream's ``state`` is not the transaction ID, for
+        example when an upstream client library generates its own state.
+        """
+        return request.query_params.get("state")
+
+    async def _exchange_upstream_code(
+        self, request: Request, transaction: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Exchange an upstream callback for the upstream token response.
+
+        Called after the transaction and consent binding are verified. The
+        returned dict is stored with the client's authorization code and later
+        passed to ``_extract_upstream_claims`` and the token verifier. Override
+        for upstreams whose token exchange is not a standard code grant.
+        """
+        idp_code = request.query_params.get("code")
+        txn_id = transaction.get("txn_id")
+        idp_redirect_uri = f"{str(self.base_url).rstrip('/')}{self._redirect_path}"
+        logger.debug(
+            f"Exchanging IdP code for tokens with redirect_uri: {idp_redirect_uri}"
+        )
+
+        token_params: dict[str, Any] = {
+            "code": idp_code,
+            "redirect_uri": idp_redirect_uri,
+        }
+
+        proxy_code_verifier = transaction.get("proxy_code_verifier")
+        if proxy_code_verifier:
+            token_params["code_verifier"] = proxy_code_verifier
+            logger.debug(
+                "Including proxy code_verifier in token exchange for transaction %s",
+                txn_id,
+            )
+
+        exchange_scopes = self._prepare_scopes_for_token_exchange(
+            transaction.get("scopes") or []
+        )
+        if exchange_scopes:
+            token_params["scope"] = " ".join(exchange_scopes)
+
+        if self._extra_token_params:
+            token_params.update(self._extra_token_params)
+            logger.debug(
+                "Adding extra token parameters for transaction %s: %s",
+                txn_id,
+                list(self._extra_token_params.keys()),
+            )
+
+        async with self._upstream_oauth_client() as oauth_client:
+            # url is passed by keyword: the _create_upstream_oauth_client
+            # override point is duck-typed, and alternative clients may
+            # declare it keyword-only (the refresh_token sites already
+            # call by keyword).
+            idp_tokens: dict[str, Any] = await oauth_client.fetch_token(
+                url=self._upstream_token_endpoint, **token_params
+            )
+
+        logger.debug(
+            f"Successfully exchanged IdP code for tokens (transaction: {txn_id}, PKCE: {bool(proxy_code_verifier)})"
+        )
+        logger.debug(
+            "IdP token response: expires_in=%s, has_refresh_token=%s",
+            idp_tokens.get("expires_in"),
+            "refresh_token" in idp_tokens,
+        )
+        return idp_tokens
+
     async def _handle_idp_callback(
         self, request: Request
     ) -> HTMLResponse | RedirectResponse:
@@ -2644,7 +2715,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         """
         try:
             idp_code = request.query_params.get("code")
-            txn_id = request.query_params.get("state")
+            txn_id = self._callback_transaction_id(request)
             error = request.query_params.get("error")
 
             if not idp_code and not error:
@@ -2761,63 +2832,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             transaction = transaction_model.model_dump()
 
             try:
-                idp_redirect_uri = (
-                    f"{str(self.base_url).rstrip('/')}{self._redirect_path}"
-                )
-                logger.debug(
-                    f"Exchanging IdP code for tokens with redirect_uri: {idp_redirect_uri}"
-                )
-
-                # Build token exchange parameters
-                token_params: dict[str, Any] = {
-                    "code": idp_code,
-                    "redirect_uri": idp_redirect_uri,
-                }
-
-                # Include proxy's code_verifier if we forwarded PKCE
-                proxy_code_verifier = transaction.get("proxy_code_verifier")
-                if proxy_code_verifier:
-                    token_params["code_verifier"] = proxy_code_verifier
-                    logger.debug(
-                        "Including proxy code_verifier in token exchange for transaction %s",
-                        txn_id,
-                    )
-
-                # Allow providers to specify scope for token exchange
-                exchange_scopes = self._prepare_scopes_for_token_exchange(
-                    transaction.get("scopes") or []
-                )
-                if exchange_scopes:
-                    token_params["scope"] = " ".join(exchange_scopes)
-
-                # Add any extra token parameters configured for this proxy
-                if self._extra_token_params:
-                    token_params.update(self._extra_token_params)
-                    logger.debug(
-                        "Adding extra token parameters for transaction %s: %s",
-                        txn_id,
-                        list(self._extra_token_params.keys()),
-                    )
-
-                # Exchange IdP code for tokens (server-side)
-                async with self._upstream_oauth_client() as oauth_client:
-                    # url is passed by keyword: the _create_upstream_oauth_client
-                    # override point is duck-typed, and alternative clients may
-                    # declare it keyword-only (the refresh_token sites already
-                    # call by keyword).
-                    idp_tokens: dict[str, Any] = await oauth_client.fetch_token(
-                        url=self._upstream_token_endpoint, **token_params
-                    )
-
-                logger.debug(
-                    f"Successfully exchanged IdP code for tokens (transaction: {txn_id}, PKCE: {bool(proxy_code_verifier)})"
-                )
-                logger.debug(
-                    "IdP token response: expires_in=%s, has_refresh_token=%s",
-                    idp_tokens.get("expires_in"),
-                    "refresh_token" in idp_tokens,
-                )
-
+                idp_tokens = await self._exchange_upstream_code(request, transaction)
             except Exception as e:
                 logger.error("IdP token exchange failed: %s", e)
                 html_content = create_error_html(
