@@ -61,8 +61,8 @@ def _make_resolver(app_name: str | None = None) -> Any:
     ``<hash>_<local_name>`` instead of ``<app_name>___<local_name>``.
 
     The dispatcher recognizes the hashed form and routes it via
-    ``get_tool_by_hash`` which walks the provider tree recursively —
-    same pattern as ``get_app_tool``.
+    ``get_tool_by_hash``, which applies the same transforms, visibility, and
+    auth as a lookup by name.
     """
     from fastmcp.server.providers.addressing import (
         hashed_backend_name,

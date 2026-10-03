@@ -55,7 +55,7 @@ FastMCP passes a `tool_resolver` callback to `to_json()`. Whenever the tree cont
 
 After `to_json()` produces the tree, FastMCP injects `_meta.fastmcp.app` with the app's name (if the tool belongs to a `FastMCPApp`). This tag rides along inside `structuredContent` all the way to the renderer.
 
-When the renderer calls a backend tool, it includes `_meta.fastmcp.app` in the `CallTool` request. The server sees this tag and routes the call through a special path that bypasses transforms (below).
+Backend tool references in the tree are serialized as `<hash>_<local_name>`, where the hash is derived from the app name and the tool's registered name. The server routes those names as described below.
 
 ### ToolResult assembly
 
@@ -65,19 +65,17 @@ The final tool result has two parts: `content` (a list of `TextContent` blocks f
 
 Normal tool calls go through the provider chain, which applies transforms (namespace prefixes, visibility filters) before resolving by name. App UI calls need a different path.
 
-### The `get_app_tool` bypass
+### Hashed backend tool names
 
-Backend tools are typically hidden from the model (`visibility=["app"]`). Visibility transforms would filter them out of normal resolution. And namespace transforms might rename them — `save_contact` becomes `contacts_save_contact` — while the renderer still uses the original name.
+Backend tools are typically hidden from the model (`visibility=["app"]`), and namespace transforms might rename them — `save_contact` becomes `contacts_save_contact` — while the renderer still uses the name it was serialized with.
 
-`get_app_tool` solves both problems. When the server sees `_meta.fastmcp.app` on an incoming `CallTool` request, it calls `get_app_tool(app_name, tool_name)` instead of the normal `get_tool(name)`. This walks the provider tree directly, skipping transforms. It finds the tool by its original registered name and verifies that its `meta["fastmcp"]["app"]` matches the expected app.
+The renderer calls a backend tool by its hashed name, `<hash>_<local_name>`. FastMCP first tries normal resolution; if no tool matches and the name has that shape, it calls `get_tool_by_hash(hash, local_name)`. The lookup finds the tool by its stored hash, then carries it up through every transform between the tool and the caller, so a namespaced app's backend tools stay reachable under the same hashed name.
 
-That's why `CallTool("save_contact")` keeps working when the server is mounted under a namespace. The renderer sends the original name plus the app identity; the server uses `get_app_tool` to find it without transforms in the way.
-
-Authorization still applies. `get_app_tool` bypasses transforms but runs auth checks against the tool's `auth` config before executing.
+Transforms, visibility, and authorization all apply. A tool that a transform hides, a disabled tool (on the server, a provider, a mounted server, or the current session), and a tool the caller is not authorized for all answer `Unknown tool` under the hashed name. A custom transform's `get_tool` must decide from the requested name and version alone: during a hashed lookup, the `call_next` it receives answers only for the tool already found.
 
 ### Provider delegation
 
-`get_app_tool` is defined on the `Provider` base class and overridden by aggregate and wrapped providers. Aggregate providers fan out the lookup across child providers in parallel. Wrapped providers (like `FastMCPProvider`, which wraps a nested `FastMCP` server) delegate to the inner server's `get_app_tool`. Backend tools are reachable through any depth of composition.
+`get_tool_by_hash` is defined on the `Provider` base class. It calls `_get_tool_by_hash` to find the tool beneath the provider's own transforms and then applies those transforms, the same split as `get_tool` and `_get_tool`. Aggregate providers fan out the lookup across child providers in parallel, and each child applies its own transforms. Wrapped providers (like `FastMCPProvider`, which wraps a nested `FastMCP` server) delegate to the inner server's hashed lookup, which applies that server's transforms, visibility, and auth. Backend tools are reachable through any depth of composition.
 
 ## The renderer
 
