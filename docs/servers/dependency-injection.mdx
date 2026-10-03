@@ -490,4 +490,40 @@ async def show_account(
 
 A binding that is a `Dependency`, such as `CallArgument(...)` or another `Depends(...)`, resolves first and the factory receives its value. Any other value passes through as it is. A binding replaces the default of the factory's own parameter, which is then never resolved. Two dependencies on the same factory share one cached result only when their bindings match. See the [Docket dependency documentation](https://docket.lol/en/latest/dependency-injection/) for more detail on call arguments and bindings.
 
+### Third-Party DI Frameworks
+
+<VersionBadge version="4.1.0" />
+
+If your app already uses a DI framework such as [dependency-injector](https://python-dependency-injector.ets-labs.com/), its wiring markers work in tool signatures. A parameter whose default is a marker like `Provide[...]` is treated as an injected parameter: it never appears in the tool's payload schema and a client can never supply a value for it. FastMCP does not resolve the value itself — it simply omits the parameter when calling, so the framework's own wiring (here `@inject` plus `Container.wire()`) provides it:
+
+```python
+from dependency_injector import containers, providers
+from dependency_injector.wiring import Provide, inject
+
+from fastmcp import FastMCP
+
+mcp = FastMCP("Weather")
+
+
+class Container(containers.DeclarativeContainer):
+    config = providers.Configuration()
+
+
+container = Container()
+container.config.from_dict({"api_key": "secret-key"})
+
+
+@inject
+def lookup_city(
+    city: str, api_key: str = Provide["config.api_key"]
+) -> str:
+    return f"Looking up {city} with {api_key}"
+
+
+container.wire(modules=[__name__])
+mcp.tool(lookup_city)
+```
+
+Clients see only `city` as a parameter; `api_key` is resolved from the container on each call. dependency-injector's markers are recognized whenever the framework is installed; markers from other frameworks are recognized through the same protocol it exposes (`__IS_MARKER__ = True` on the marker's class).
+
 For advanced dependency patterns—like `TaskArgument()` for accessing task parameters, or custom `Dependency` subclasses—see the [Docket dependency documentation](https://docket.lol/en/latest/dependency-injection/).

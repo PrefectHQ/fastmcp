@@ -87,6 +87,7 @@ dev = [
     "fastmcp[anthropic,apps,azure,code-mode,gemini,jev,openai,tasks]",
     "fastapi>=0.115.12",
     "fastmcp-remote",
+    "dependency-injector>=4.32",
     "opentelemetry-sdk>=1.20.0",
     "inline-snapshot[dirty-equals]>=0.27.2",
     "ipython>=8.12.3",

@@ -1230,3 +1230,190 @@ class TestSharedDependencies:
         assert result_b.content[0].text == "value"
         # App-scoped: resolved once and reused across requests.
         assert call_count == 1
+
+
+class _StubMarker:
+    """Mirrors the marker protocol third-party DI frameworks expose.
+
+    dependency-injector's ``Provide[...]``/``Provider[...]`` markers set
+    ``__IS_MARKER__ = True`` on their class; FastMCP duck-types on that
+    attribute, so a stub keeps these tests independent of the framework.
+    """
+
+    __IS_MARKER__ = True
+
+    def __init__(self, value: str) -> None:
+        self.value = value
+
+    def __str__(self) -> str:
+        return self.value
+
+    def __repr__(self) -> str:
+        return f"_StubMarker({self.value!r})"
+
+
+class TestThirdPartyDIMarkers:
+    """Third-party DI markers are injected, not payload, parameters."""
+
+    def test_get_di_marker_parameters_detects_marker_defaults(self):
+        """Marker-defaulted parameters are detected; others are not."""
+
+        from fastmcp.server.dependencies import get_di_marker_parameters
+
+        def fn(
+            plain: str,
+            marked: str = _StubMarker("x"),  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
+            dep: str = Depends(lambda: "y"),  # type: ignore[assignment]
+        ) -> str:
+            return plain
+
+        markers = get_di_marker_parameters(fn)
+        assert set(markers) == {"marked"}
+        assert markers["marked"].value == "x"
+
+    async def test_stub_marker_excluded_from_schema_and_call(self, mcp: FastMCP):
+        """A marker parameter never reaches the schema and is never passed by
+        FastMCP: the call omits it so the owning framework's default machinery
+        (e.g. dependency-injector's @inject wiring) resolves it."""
+
+        marker = _StubMarker("from-framework")
+
+        @mcp.tool
+        def make_greeting(
+            name: str,
+            api_key: str = marker,  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
+        ) -> str:
+            # FastMCP omits api_key, so the framework default (the marker)
+            # flows through; its __str__ exposes what the function received.
+            return f"{name}:{api_key}"
+
+        tool = await mcp.get_tool("make_greeting")
+        assert tool is not None
+        assert set(tool.parameters.get("properties", {})) == {"name"}
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("make_greeting", {"name": "alice"})
+            assert result.content[0].text == "alice:from-framework"
+
+    async def test_stub_marker_cannot_be_supplied_by_caller(self, mcp: FastMCP):
+        """A caller cannot override a marker parameter: it is not part of the
+        payload schema, so argument validation rejects it."""
+
+        from fastmcp.exceptions import ToolError
+
+        @mcp.tool
+        def make_greeting(
+            name: str,
+            api_key: str = _StubMarker("x"),  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
+        ) -> str:
+            return f"{name}:{api_key}"
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="api_key"):
+                await client.call_tool(
+                    "make_greeting", {"name": "alice", "api_key": "evil"}
+                )
+
+    async def test_stub_marker_alongside_context_and_depends(self, mcp: FastMCP):
+        """Marker parameters coexist with Context and Depends() injection."""
+
+        def get_config() -> dict[str, str]:
+            return {"env": "prod"}
+
+        @mcp.tool
+        async def report(
+            name: str,
+            ctx: Context,
+            config: dict[str, str] = Depends(get_config),
+            api_key: str = _StubMarker("from-framework"),  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
+        ) -> str:
+            assert ctx is not None
+            return f"{name}:{config['env']}:{api_key}"
+
+        tool = await mcp.get_tool("report")
+        assert tool is not None
+        assert set(tool.parameters.get("properties", {})) == {"name"}
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("report", {"name": "alice"})
+            assert result.content[0].text == "alice:prod:from-framework"
+
+    @staticmethod
+    def _build_wired_dependency_injector_module():
+        """Build a synthetic module of @inject tools wired to a container.
+
+        dependency-injector resolves Provide[...] markers per call through the
+        container wired to the module a function lives in, so the tools are
+        defined inside a throwaway module to scope the wiring to the test.
+        """
+
+        import types
+
+        pytest.importorskip("dependency_injector")
+        from dependency_injector import containers, providers
+
+        class Container(containers.DeclarativeContainer):
+            config = providers.Configuration()
+
+        container = Container()
+        container.config.from_dict({"api_key": "sekret"})
+
+        module = types.ModuleType("_fastmcp_di_marker_wiring_test")
+        exec(
+            """
+from dependency_injector.wiring import Provide, inject
+
+@inject
+def make_greeting(name: str, api_key: str = Provide["config.api_key"]) -> str:
+    return f"{name}:{api_key}"
+
+@inject
+async def make_greeting_async(name: str, api_key: str = Provide["config.api_key"]) -> str:
+    return f"{name}:{api_key}"
+""",
+            module.__dict__,
+        )
+        container.wire(modules=[module])
+        return module.make_greeting, module.make_greeting_async
+
+    async def test_dependency_injector_marker_not_in_payload_schema(self, mcp: FastMCP):
+        """A Provide[...] default stays out of the tool's payload schema
+        (issue #5346)."""
+
+        make_greeting, _ = self._build_wired_dependency_injector_module()
+        mcp.tool(make_greeting)
+
+        tool = await mcp.get_tool("make_greeting")
+        assert tool is not None
+        assert set(tool.parameters.get("properties", {})) == {"name"}
+
+    async def test_dependency_injector_marker_resolved_by_wiring(self, mcp: FastMCP):
+        """FastMCP omits marker parameters when calling, so dependency-injector's
+        wiring resolves them from the container."""
+
+        make_greeting, make_greeting_async = (
+            self._build_wired_dependency_injector_module()
+        )
+        mcp.tool(make_greeting)
+        mcp.tool(make_greeting_async)
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("make_greeting", {"name": "alice"})
+            assert result.content[0].text == "alice:sekret"
+
+            result = await client.call_tool("make_greeting_async", {"name": "bob"})
+            assert result.content[0].text == "bob:sekret"
+
+    async def test_dependency_injector_marker_cannot_be_overridden(self, mcp: FastMCP):
+        """A caller-supplied value for a marker parameter is rejected."""
+
+        from fastmcp.exceptions import ToolError
+
+        make_greeting, _ = self._build_wired_dependency_injector_module()
+        mcp.tool(make_greeting)
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="api_key"):
+                await client.call_tool(
+                    "make_greeting", {"name": "alice", "api_key": "evil"}
+                )
