@@ -502,6 +502,22 @@ class TestPromptArgumentDescriptions:
                     not in arg.description
                 )
 
+    def test_string_parameters_no_enhancement_with_postponed_annotations(self):
+        """String annotations, as `from __future__ import annotations` leaves them."""
+
+        def greet(name: "str", count: "int") -> str:
+            return name * count
+
+        prompt = Prompt.from_function(greet)
+
+        assert prompt.arguments is not None
+        arguments = {arg.name: arg for arg in prompt.arguments}
+        assert arguments["name"].description is None
+        assert arguments["count"].description == (
+            'Provide a value matching the following JSON schema: {"type":"integer"}. '
+            "Encode non-string values as JSON."
+        )
+
     def test_docstring_populates_argument_descriptions(self):
         """Google-style docstrings should populate PromptArgument descriptions."""
 
