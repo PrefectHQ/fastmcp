@@ -462,6 +462,7 @@ CMD_SHIM = (
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Runs a real .cmd file")
+@pytest.mark.timeout(30)
 def test_native_windows_cmd_wrapper_receives_literal_arguments(
     installer: Installer, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
