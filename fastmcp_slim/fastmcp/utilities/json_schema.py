@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Sequence
+from contextlib import suppress
 from typing import Any
+from urllib.parse import unquote
 
 
 def replace_refs(*args: Any, **kwargs: Any) -> Any:
@@ -45,51 +48,110 @@ def _copy_schema(schema: dict[str, Any]) -> dict[str, Any]:
     return root
 
 
-def _defs_have_cycles(defs: dict[str, Any]) -> bool:
-    """Check whether any definitions in ``$defs`` form a reference cycle.
+# Inlining a `$ref` copies its target, so an acyclic reference graph can expand
+# to many times its own size. `dereference_refs` only inlines when the result
+# stays within these limits; larger graphs keep their references.
+_MAX_INLINED_NODES = 100_000
+_MAX_INLINED_DEPTH = 128
+_MAX_INLINED_TEXT = 5_000_000
 
-    A cycle means a definition directly or transitively references itself
-    (e.g. Node → children → Node, or A → B → A).  ``jsonref.replace_refs``
-    silently produces Python-level object cycles for these, which Pydantic's
-    serializer rejects.
+
+class _CannotInline(Exception):
+    """A schema's local references can't be inlined within the limits."""
+
+
+def _resolve_local_ref(schema: dict[str, Any], ref: str) -> Any:
+    """Resolve a local `$ref` (`#...`) against *schema* the way `jsonref` does."""
+    fragment = ref[1:]
+    parts = unquote(fragment.lstrip("/")).split("/") if fragment else []
+    node: Any = schema
+    for part in parts:
+        key: str | int = part.replace("~1", "/").replace("~0", "~")
+        if isinstance(node, Sequence):
+            with suppress(ValueError):
+                key = int(key)
+        try:
+            node = node[key]
+        except (LookupError, TypeError) as e:
+            raise _CannotInline(f"Unresolvable reference: {ref}") from e
+    return node
+
+
+def _can_inline_refs(schema: dict[str, Any]) -> bool:
+    """Check whether every local `$ref` in *schema* can be inlined within limits.
+
+    The walk follows each local reference to its target, as `jsonref` does,
+    and measures the node count and depth of the inlined result without
+    building it. Each container is measured once and the result reused
+    wherever it is referenced, so the walk is linear in the size of *schema*.
+    Reaching a container again while it is still being measured means the
+    references form a cycle.
+
+    The measurement covers the whole schema, including unused `$defs` entries
+    and keywords next to `$ref`, because `dereference_refs` processes both.
     """
-    if not defs:
+    # (nodes, height) of each measured container, by id.
+    sizes: dict[int, tuple[int, int]] = {}
+    in_progress: set[int] = set()
+
+    def measure(node: dict[str, Any] | list[Any], depth: int) -> tuple[int, int]:
+        if depth > _MAX_INLINED_DEPTH:
+            raise _CannotInline("Inlined schema is too deep")
+        identity = id(node)
+        if identity in sizes:
+            nodes, height = sizes[identity]
+        elif identity in in_progress:
+            raise _CannotInline("References form a cycle")
+        else:
+            in_progress.add(identity)
+            children = list(node.values()) if isinstance(node, dict) else node
+            if isinstance(node, dict):
+                ref = node.get("$ref")
+                if isinstance(ref, str) and ref.startswith("#"):
+                    children = [*children, _resolve_local_ref(schema, ref)]
+            nodes, height = 1, 0
+            for child in children:
+                if isinstance(child, dict | list):
+                    child_nodes, child_height = measure(child, depth + 1)
+                    nodes += child_nodes
+                    height = max(height, child_height + 1)
+                else:
+                    nodes += 1
+                if nodes > _MAX_INLINED_NODES:
+                    raise _CannotInline("Inlined schema is too large")
+            in_progress.remove(identity)
+            sizes[identity] = nodes, height
+        if depth + height > _MAX_INLINED_DEPTH:
+            raise _CannotInline("Inlined schema is too deep")
+        return nodes, height
+
+    try:
+        measure(schema, 0)
+    except (_CannotInline, RecursionError):
         return False
+    return True
 
-    # Build adjacency: def_name -> set of def_names it references.
-    edges: dict[str, set[str]] = defaultdict(set)
 
-    def _collect_refs(obj: Any, source: str) -> None:
-        if isinstance(obj, dict):
-            ref = obj.get("$ref")
-            if isinstance(ref, str) and ref.startswith("#/$defs/"):
-                edges[source].add(ref.split("/")[-1])
-            for v in obj.values():
-                _collect_refs(v, source)
-        elif isinstance(obj, list):
-            for item in obj:
-                _collect_refs(item, source)
+def _text_within_limit(schema: dict[str, Any]) -> bool:
+    """Check the total length of every key and string in *schema*.
 
-    for name, definition in defs.items():
-        _collect_refs(definition, name)
-
-    # DFS cycle detection.
-    UNVISITED, IN_STACK, DONE = 0, 1, 2
-    state: dict[str, int] = defaultdict(int)
-
-    def _has_cycle(node: str) -> bool:
-        state[node] = IN_STACK
-        for neighbor in edges.get(node, ()):
-            if neighbor not in defs:
-                continue
-            if state[neighbor] == IN_STACK:
-                return True
-            if state[neighbor] == UNVISITED and _has_cycle(neighbor):
-                return True
-        state[node] = DONE
-        return False
-
-    return any(state[name] == UNVISITED and _has_cycle(name) for name in defs)
+    Inlining shares string objects rather than copying them, so repeated
+    text costs little to build but still adds to the serialized size.
+    """
+    total = 0
+    stack: list[Any] = [schema]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            total += sum(len(key) for key in node if isinstance(key, str))
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+        elif isinstance(node, str):
+            total += len(node)
+        if total > _MAX_INLINED_TEXT:
+            return False
+    return True
 
 
 def _strip_remote_refs(obj: Any) -> Any:
@@ -192,9 +254,9 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
     This is necessary because some MCP clients (e.g., VS Code Copilot) don't
     properly handle $ref in tool input schemas.
 
-    For self-referencing/circular schemas where full dereferencing is not possible,
-    this function falls back to resolving only the root-level $ref while preserving
-    $defs for nested references.
+    For circular schemas, and for schemas whose inlined form would be very large
+    or deeply nested, this function falls back to resolving only the root-level
+    $ref while preserving $defs for nested references.
 
     Only local ``$ref`` values (those starting with ``#``) are resolved.
     Remote URIs (``http://``, ``file://``, etc.) are stripped before
@@ -219,11 +281,11 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
     # Strip any remote $ref values before processing to prevent SSRF / LFI.
     schema = _strip_remote_refs(schema)
 
-    # Circular $defs can't be fully inlined — jsonref.replace_refs produces
-    # Python dicts with object-identity cycles that Pydantic's model_dump
-    # rejects with "Circular reference detected (id repeated)".
-    # Detect cycles up front and fall back to root-only resolution.
-    if _defs_have_cycles(schema.get("$defs", {})):
+    # Check before inlining anything. Circular references can't be inlined:
+    # jsonref.replace_refs produces Python dicts with object-identity cycles
+    # that Pydantic's model_dump rejects. Acyclic graphs can still expand far
+    # beyond their own size, so oversized results are refused as well.
+    if not _can_inline_refs(schema):
         return resolve_root_ref(schema)
 
     # Most schema operations do not dereference. Keep jsonref (and its requests
@@ -238,8 +300,7 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
 
         # Merge sibling keywords that were lost during dereferencing
         # Pydantic puts description, default, examples as siblings to $ref
-        defs = schema.get("$defs", {})
-        merged = _merge_ref_siblings(schema, dereferenced, defs)
+        merged = _merge_ref_siblings(schema, dereferenced, schema)
         # Type assertion: top-level schema is always a dict
         assert isinstance(merged, dict)
         dereferenced = merged
@@ -255,9 +316,11 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
         # mapping redundant.
         dereferenced = _strip_discriminator(dereferenced)
 
+        if not _text_within_limit(dereferenced):
+            return resolve_root_ref(schema)
         return dereferenced
 
-    except (JsonRefError, RecursionError):
+    except (JsonRefError, RecursionError, _CannotInline):
         # Self-referencing/circular schemas can't be fully dereferenced.
         # RecursionError covers circular $ref using JSON Pointer paths
         # (e.g. "#/properties/nodes/items") that bypass $defs-based cycle
@@ -269,7 +332,7 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
 def _merge_ref_siblings(
     original: Any,
     dereferenced: Any,
-    defs: dict[str, Any],
+    schema: dict[str, Any],
     visited: set[str] | None = None,
 ) -> Any:
     """Merge sibling keywords from original $ref nodes into dereferenced schema.
@@ -281,8 +344,8 @@ def _merge_ref_siblings(
     Args:
         original: The original schema with $ref and potential siblings
         dereferenced: The schema after jsonref processing
-        defs: The $defs from the original schema, for looking up referenced definitions
-        visited: Set of definition names already being processed (prevents cycles)
+        schema: The original root schema, for looking up referenced definitions
+        visited: Set of references already being processed (prevents cycles)
 
     Returns:
         The dereferenced schema with sibling keywords restored
@@ -296,15 +359,19 @@ def _merge_ref_siblings(
             ref = original["$ref"]
             siblings = {k: v for k, v in original.items() if k not in ("$ref", "$defs")}
 
-            # Look up the referenced definition to process its nested siblings
-            if isinstance(ref, str) and ref.startswith("#/$defs/"):
-                def_name = ref.split("/")[-1]
-                # Prevent infinite recursion on circular references
-                if def_name in defs and def_name not in visited:
-                    # Recursively process the definition's content for nested siblings
-                    dereferenced = _merge_ref_siblings(
-                        defs[def_name], dereferenced, defs, visited | {def_name}
-                    )
+            # Process the definition jsonref inlined here for its nested siblings.
+            # Prevent infinite recursion on circular references.
+            if (
+                isinstance(ref, str)
+                and ref.startswith("#/$defs/")
+                and ref not in visited
+            ):
+                dereferenced = _merge_ref_siblings(
+                    _resolve_local_ref(schema, ref),
+                    dereferenced,
+                    schema,
+                    visited | {ref},
+                )
 
             if siblings:
                 # Merge local siblings, which take precedence
@@ -317,7 +384,7 @@ def _merge_ref_siblings(
         result = {}
         for key, value in dereferenced.items():
             if key in original:
-                result[key] = _merge_ref_siblings(original[key], value, defs, visited)
+                result[key] = _merge_ref_siblings(original[key], value, schema, visited)
             else:
                 result[key] = value
         return result
@@ -326,7 +393,7 @@ def _merge_ref_siblings(
         # Process list items in parallel
         min_len = min(len(original), len(dereferenced))
         return [
-            _merge_ref_siblings(o, d, defs, visited)
+            _merge_ref_siblings(o, d, schema, visited)
             for o, d in zip(original[:min_len], dereferenced[:min_len], strict=False)
         ] + dereferenced[min_len:]
 
