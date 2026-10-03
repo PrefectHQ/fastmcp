@@ -180,6 +180,7 @@ class WorkOSProvider(OAuthProxy):
         fallback_refresh_token_expiry_seconds: int | None = None,
         fastmcp_access_token_expiry_seconds: int | None = None,
         token_expiry_threshold_seconds: int = 0,
+        refresh_token_grace_period_seconds: int = 0,
         extra_authorize_params: dict[str, str] | None = None,
         http_client: httpx2.AsyncClient | None = None,
         enable_cimd: bool = True,
@@ -232,6 +233,9 @@ class WorkOSProvider(OAuthProxy):
             token_expiry_threshold_seconds: Number of seconds before actual expiry to consider
                 a token as expired (default 0). Prevents race conditions where a token
                 passes the expiry check but expires before the next operation completes.
+            refresh_token_grace_period_seconds: Seconds in which an identical
+                retry of a rotated client refresh token returns the original response.
+                Defaults to 0 (disabled); values must be between 0 and 60.
             http_client: Optional httpx2.AsyncClient for connection pooling in token verification.
                 When provided, the client is reused across verify_token calls and the caller
                 is responsible for its lifecycle. When None (default), a fresh client is created per call.
@@ -278,6 +282,7 @@ class WorkOSProvider(OAuthProxy):
             fallback_refresh_token_expiry_seconds=fallback_refresh_token_expiry_seconds,
             fastmcp_access_token_expiry_seconds=fastmcp_access_token_expiry_seconds,
             token_expiry_threshold_seconds=token_expiry_threshold_seconds,
+            refresh_token_grace_period_seconds=refresh_token_grace_period_seconds,
             extra_authorize_params=extra_authorize_params,
             valid_scopes=valid_scopes_final,
             enable_cimd=enable_cimd,
