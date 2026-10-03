@@ -109,7 +109,7 @@ from fastmcp.server.auth.oauth_proxy.models import (
     _hash_token,
 )
 from fastmcp.server.auth.oauth_proxy.ui import create_error_html
-from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client
+from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client, OAuthError
 from fastmcp.server.auth.redirect_validation import (
     build_client_redirect,
     is_redirect_uri_allowed_for_application_type,
@@ -1825,9 +1825,17 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     **self._extra_token_params,
                 )
             logger.debug("Successfully refreshed upstream token")
-        except Exception as e:
+        except OAuthError as e:
             logger.error("Upstream token refresh failed: %s", e)
-            raise TokenError("invalid_grant", f"Upstream refresh failed: {e}") from e
+            if e.error == "temporarily_unavailable":
+                raise TokenError(
+                    "temporarily_unavailable",
+                    "Upstream token refresh temporarily unavailable",
+                ) from e
+            raise TokenError("invalid_grant", "Invalid refresh token") from e
+        except Exception:
+            logger.error("Unexpected error during upstream token refresh")
+            raise
 
         # A refresh response with a non-positive lifetime is equally unusable.
         # Reject it before mutating stored upstream state or rotating JTI mappings.
