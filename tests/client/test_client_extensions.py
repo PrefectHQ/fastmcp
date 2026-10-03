@@ -294,3 +294,38 @@ class TestClaimedResultResolution:
         block = resolved.content[0]
         assert isinstance(block, TextContent)
         assert block.text == "resolved:from-server"
+
+
+class TestClaimContextTimeout:
+    @pytest.mark.parametrize(
+        ("client_timeout", "call_timeout", "expected"),
+        [(None, None, None), (7, None, 7.0), (7, 3, 3.0), (None, 3, 3.0)],
+    )
+    async def test_resolver_receives_effective_timeout(
+        self, client_timeout, call_timeout, expected
+    ):
+        """A `None` per-call timeout falls back to the client timeout."""
+        seen: list[float | None] = []
+
+        async def _record(result: ClaimedResult, ctx: ClaimContext) -> CallToolResult:
+            seen.append(ctx.read_timeout_seconds)
+            return CallToolResult(content=[])
+
+        class _Recording(_DemoExtension):
+            def claims(self):
+                return (
+                    ResultClaim(
+                        result_type=CLAIMED_TYPE, model=ClaimedResult, resolve=_record
+                    ),
+                )
+
+        client = Client(
+            _claiming_server(),
+            extensions=[_Recording()],
+            mode=LATEST_MODERN_VERSION,
+            timeout=client_timeout,
+        )
+        async with client:
+            await client.call_tool_mcp("claimed_tool", {}, timeout=call_timeout)
+
+        assert seen == [expected]

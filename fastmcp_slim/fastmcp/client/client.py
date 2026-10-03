@@ -1376,7 +1376,12 @@ class Client(
         through the session — and returns the ordinary `CallToolResult` it
         produces. Mirrors the SDK Client's resolution path, including the
         output-schema revalidation the direct path performs.
+
+        A `None` per-call timeout falls back to the client timeout, as
+        `ClientSession.send_request` does; resolvers read `None` as unbounded.
         """
+        if read_timeout_seconds is None:
+            read_timeout_seconds = self._session_kwargs.get("read_timeout_seconds")
         claim = self._claim_by_model[type(result)]
         final = await claim.resolve(
             result,
