@@ -41,6 +41,29 @@ class ElicitationJsonSchema(GenerateJsonSchema):
     Optionally adds enumNames for better UI display when available.
     """
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        # Enum definitions shared by several fields, keyed by their core ref
+        self._enum_definitions: dict[str, core_schema.EnumSchema] = {}
+
+    def definitions_schema(
+        self, schema: core_schema.DefinitionsSchema
+    ) -> JsonSchemaValue:
+        """Record shared enum definitions so references to them can be inlined."""
+        for definition in schema["definitions"]:
+            if definition["type"] == "enum":
+                self._enum_definitions[definition["ref"]] = definition
+        return super().definitions_schema(schema)
+
+    def definition_ref_schema(
+        self, schema: core_schema.DefinitionReferenceSchema
+    ) -> JsonSchemaValue:
+        """Inline references to shared enums; enum definitions are never emitted."""
+        enum_definition = self._enum_definitions.get(schema["schema_ref"])
+        if enum_definition is not None:
+            return self.enum_schema(enum_definition)
+        return super().definition_ref_schema(schema)
+
     def generate_inner(self, schema: core_schema.CoreSchema) -> JsonSchemaValue:  # type: ignore[override]  # ty:ignore[invalid-method-override]
         """Override to prevent ref generation for enums and handle list schemas."""
         # For enum schemas, bypass the ref mechanism entirely
