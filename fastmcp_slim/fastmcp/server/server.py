@@ -649,6 +649,7 @@ class FastMCP(
                 - Resources become "protocol://namespace/path"
                 - Prompts become "namespace_promptname"
         """
+        self._validate_provider_extensions(provider)
         self._register_provider_extensions(provider)
         super().add_provider(provider, namespace=namespace)
 

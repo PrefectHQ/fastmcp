@@ -1,5 +1,6 @@
 """One Fire TV connection, opened on first use and reopened when the TV drops off."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -48,30 +49,33 @@ class FireTVConnection:
     def __init__(self, settings: FireTVSettings) -> None:
         self._settings = settings
         self._client: FireTVClient | None = None
+        self._lock = asyncio.Lock()
 
     async def get(self) -> FireTVClient:
-        host = self._settings.fire_tv_host
-        if self._client is None:
-            try:
-                self._client = await setup_android_tv(
-                    host=host,
-                    port=self._settings.fire_tv_port,
-                    adbkey=str(self._settings.fire_tv_adb_key or ""),
-                    adb_server_ip=self._settings.fire_tv_adb_server_ip or "",
-                    adb_server_port=self._settings.fire_tv_adb_server_port,
-                    device_class="firetv",
-                )
-            except Exception as e:
-                raise ToolError(f"Fire TV at {host} is not reachable") from e
-        if not self._client.available:
-            await self._client.adb_connect(log_errors=False)
-        if not self._client.available:
-            raise ToolError(f"Fire TV at {host} is not reachable; is it asleep?")
-        return self._client
+        async with self._lock:
+            host = self._settings.fire_tv_host
+            if self._client is None:
+                try:
+                    self._client = await setup_android_tv(
+                        host=host,
+                        port=self._settings.fire_tv_port,
+                        adbkey=str(self._settings.fire_tv_adb_key or ""),
+                        adb_server_ip=self._settings.fire_tv_adb_server_ip or "",
+                        adb_server_port=self._settings.fire_tv_adb_server_port,
+                        device_class="firetv",
+                    )
+                except Exception as e:
+                    raise ToolError(f"Fire TV at {host} is not reachable") from e
+            if not self._client.available:
+                await self._client.adb_connect(log_errors=False)
+            if not self._client.available:
+                raise ToolError(f"Fire TV at {host} is not reachable; is it asleep?")
+            return self._client
 
     async def close(self) -> None:
-        if self._client is not None:
-            await self._client.adb_close()
+        async with self._lock:
+            if self._client is not None:
+                await self._client.adb_close()
 
 
 @lifespan

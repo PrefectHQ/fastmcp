@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import weakref
 from collections.abc import AsyncIterator
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager, nullcontext
 from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
@@ -103,14 +103,17 @@ class LifespanMixin:
             self._register_provider_extensions(provider)
         self._extensions_started = True
         try:
-            if _lifespan_root_active.get() or not self._extensions:
+            if _lifespan_root_active.get():
                 yield
                 return
 
-            async with AsyncExitStack() as stack:
-                for extension in self._extensions.values():
-                    await stack.enter_async_context(extension.lifespan())
-                yield
+            # Each root tracks the complete provider tree, even when mounted
+            # children reuse a resource lifespan started by another root.
+            with self._extension_runtime(frozenset(self._extensions), root=self):
+                async with AsyncExitStack() as stack:
+                    for extension in self._extensions.values():
+                        await stack.enter_async_context(extension.lifespan())
+                    yield
         finally:
             self._extensions_started = False
 
@@ -185,7 +188,16 @@ class LifespanMixin:
 
         if not should_enter_lifespan:
             try:
-                yield
+                # A server can also start standalone after a mounted entry
+                # owns its resource lifespan. Track that independent runtime
+                # even though its setup is reused.
+                runtime = (
+                    nullcontext()
+                    if _lifespan_root_active.get()
+                    else self._extension_runtime(frozenset(self._extensions), root=self)
+                )
+                with runtime:
+                    yield
             finally:
                 async with self._lifespan_lock:
                     self._lifespan_ref_count -= 1

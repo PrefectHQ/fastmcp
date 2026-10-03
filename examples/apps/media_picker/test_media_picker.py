@@ -64,6 +64,7 @@ def oembed(monkeypatch: pytest.MonkeyPatch) -> list[str]:
         ("https://www.youtube.com/@BobbyBroccoli", None),
         ("https://youtube.com.evil.test/watch?v=jkAw87ZIwQA", None),
         ("https://archive.org/details/apollo", None),
+        ("https://[bad", None),
     ],
 )
 def test_youtube_video_id(url: str, expected: str | None) -> None:
@@ -90,6 +91,21 @@ async def test_links_are_verified_with_youtube(oembed: list[str]) -> None:
     assert candidates[0]["url"] == "https://www.youtube.com/watch?v=jkAw87ZIwQA"
     assert (unsupported, unverified) == (1, 1)
     assert len(oembed) == 4
+
+
+async def test_malformed_link_does_not_discard_valid_candidates(
+    oembed: list[str],
+) -> None:
+    candidates, unsupported, unverified = await verify_links(
+        [
+            MediaLink(url="https://[bad"),
+            MediaLink(url="https://youtu.be/jkAw87ZIwQA"),
+        ]
+    )
+
+    assert [candidate["source_id"] for candidate in candidates] == ["jkAw87ZIwQA"]
+    assert (unsupported, unverified) == (1, 0)
+    assert oembed == ["https://www.youtube.com/watch?v=jkAw87ZIwQA"]
 
 
 async def test_actions_are_idempotent_and_reject_malformed_ids() -> None:

@@ -10,8 +10,8 @@ executed.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Iterator, Sequence
+from contextlib import asynccontextmanager, contextmanager
 from typing import TYPE_CHECKING, Any
 
 from pydantic import AnyUrl
@@ -417,6 +417,13 @@ class FastMCPProvider(Provider):
     def required_extensions(self) -> Sequence[ServerExtension]:
         """Expose the mounted server's bundled and auto-registerable extensions."""
         return self.server.required_extensions()
+
+    @contextmanager
+    def _extension_runtime(
+        self, available: frozenset[str], *, root: FastMCP | None
+    ) -> Iterator[None]:
+        with self.server._extension_runtime(available, root=root):
+            yield
 
     # -------------------------------------------------------------------------
     # Tool methods

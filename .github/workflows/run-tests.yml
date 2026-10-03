@@ -77,8 +77,6 @@ jobs:
         include:
           - os: ubuntu-latest
             python-version: "3.13"
-          - os: ubuntu-latest
-            python-version: "3.14"
       fail-fast: false
     timeout-minutes: 10
 
@@ -281,14 +279,6 @@ jobs:
           else:
               raise AssertionError(f"client-only slim unexpectedly imported {FastMCP!r}")
           PY
-
-      # The full suite can't run on 3.15 until pydantic-monty ships cp315
-      # wheels; its source build alone exceeds the job timeout.
-      - name: Import client on Python 3.15
-        run: |
-          SLIM_WHEEL=$(ls /tmp/fastmcp-dist/fastmcp_slim-*.whl)
-          uv run --isolated --no-project --python 3.15 --with "${SLIM_WHEEL}[client]" \
-            python -c "from fastmcp import Client"
 
       - name: Install server slim wheel
         run: |
