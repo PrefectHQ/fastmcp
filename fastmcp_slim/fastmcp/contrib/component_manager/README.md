@@ -9,7 +9,7 @@ The **Component Manager** provides a unified API for enabling and disabling tool
 - Enable/disable **tools**, **resources**, and **prompts** via HTTP endpoints.
 - Supports **local** and **mounted (server)** components.
 - Customizable **API root path**.
-- Optional **Auth scopes** for secured access.
+- Uses the server's **authentication**, with optional extra **auth scopes**.
 - Fully integrates with FastMCP with minimal configuration.
 
 ---
@@ -31,6 +31,8 @@ from fastmcp.contrib.component_manager import set_up_component_manager
 mcp = FastMCP(name="Component Manager", instructions="This is a test server with component manager.")
 set_up_component_manager(server=mcp)
 ```
+
+The routes use the same authentication as the server's MCP endpoint. This server has no `auth`, so its MCP endpoint and the management routes are both open to anyone who can reach the server. Configure `auth` on any server that is reachable by untrusted clients.
 
 ---
 
@@ -90,14 +92,24 @@ To mount the API under a different path:
 set_up_component_manager(server=mcp, path="/admin")
 ```
 
-### Securing Endpoints with Auth Scopes
+### Authentication and Scopes
 
-If your server uses authentication:
+When the server has `auth` configured, every management route requires a valid token, with the same scopes as the MCP endpoint. You do not need extra configuration:
 
 ```python
 mcp = FastMCP(name="Component Manager", instructions="This is a test server with component manager.", auth=auth)
+set_up_component_manager(server=mcp)
+```
+
+To require more scopes for the management routes than for the MCP endpoint, pass `required_scopes`. A token must have these scopes in addition to the scopes the server's auth provider requires. An empty list requires authentication without extra scopes:
+
+```python
 set_up_component_manager(server=mcp, required_scopes=["write", "read"])
 ```
+
+`required_scopes` requires an auth provider. If the server has no `auth`, `set_up_component_manager()` raises a `ValueError`.
+
+The auth provider is resolved for each request from the server whose HTTP app serves it. A mounted server's routes therefore use the parent server's auth provider, and a provider assigned after `set_up_component_manager()` still applies.
 
 ---
 
@@ -114,7 +126,7 @@ curl -X POST \
 
 ## 🧱 Working with Mounted Servers
 
-You can also combine different configurations when working with mounted servers — for example, using different scopes:
+A mounted server's routes are served by the parent's HTTP app and use the parent's auth provider. You can give each server a different set of extra scopes:
 
 ```python
 mcp = FastMCP(name="Component Manager", instructions="This is a test server with component manager.", auth=auth)
@@ -147,6 +159,7 @@ curl -X POST \
 ## ⚙️ How It Works
 
 - `set_up_component_manager()` registers HTTP routes for tools, resources, and prompts.
+- Each request is checked against the auth provider of the server that serves it, plus any `required_scopes`.
 - Each endpoint calls `server.enable()` or `server.disable()` with the component name.
 - Returns a success message in JSON.
 
