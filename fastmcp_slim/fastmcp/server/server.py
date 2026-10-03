@@ -241,6 +241,8 @@ def _get_auth_context() -> tuple[bool, Any]:
 
     is_stdio = _current_transport.get() == "stdio"
     if is_stdio:
+        # STDIO trusts the local execution environment; component authorization
+        # provides no access restriction on this transport.
         return (True, None)
     from fastmcp.server.dependencies import get_access_token
 
