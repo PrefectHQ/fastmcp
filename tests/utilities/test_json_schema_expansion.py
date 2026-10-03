@@ -1,5 +1,6 @@
 """Limits on how far `dereference_refs` expands shared references."""
 
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -54,6 +55,52 @@ def test_graph_within_limits_is_inlined(defs_key: str, pointer: str) -> None:
     assert value == {"type": "string"}
 
 
+def pointer_through_ref_schema(depth: int) -> dict[str, Any]:
+    """Pointers pass through a `$ref` node: jsonref reads `D{i}["x"]`, not `P{i}["x"]`."""
+    defs: dict[str, Any] = {"D0": {"x": [0]}, "P0": {"$ref": "#/$defs/D0", "x": 0}}
+    for i in range(1, depth + 1):
+        defs[f"D{i}"] = {"x": [{"$ref": f"#/$defs/P{i - 1}/x"}] * 3}
+        defs[f"P{i}"] = {"$ref": f"#/$defs/D{i}", "x": 0}
+    pointer = f"#/$defs/P{depth}/x"
+    return {
+        "type": "object",
+        "properties": {"v": {"items": {"$ref": pointer}}},
+        "$defs": defs,
+    }
+
+
+def pointer_with_tab_schema(depth: int) -> dict[str, Any]:
+    """URL parsing drops the tab, so jsonref reads `D{i}`, not the `D\\t{i}` key."""
+    defs: dict[str, Any] = {"D0": [0]}
+    for i in range(1, depth + 1):
+        defs[f"D{i}"] = [{"$ref": f"#/$defs/D\t{i - 1}"}] * 3
+        defs[f"D\t{i - 1}"] = 0
+    return {
+        "type": "object",
+        "properties": {"v": {"items": {"$ref": f"#/$defs/D{depth}"}}},
+        "$defs": defs,
+    }
+
+
+@pytest.mark.parametrize("build", [pointer_through_ref_schema, pointer_with_tab_schema])
+def test_graph_too_large_after_jsonref_resolution_keeps_references(
+    build: Callable[[int], dict[str, Any]],
+) -> None:
+    schema = build(11)
+    assert dereference_refs(schema) == schema
+
+
+@pytest.mark.parametrize("build", [pointer_through_ref_schema, pointer_with_tab_schema])
+def test_graph_within_limits_after_jsonref_resolution_is_inlined(
+    build: Callable[[int], dict[str, Any]],
+) -> None:
+    value = dereference_refs(build(3))["properties"]["v"]["items"]
+    for _ in range(3):
+        assert len(value) == 3
+        value = value[0]
+    assert value == [0]
+
+
 def test_unused_definitions_count_toward_the_limit() -> None:
     schema = fanout_schema(9)
     schema["properties"] = {}
@@ -96,7 +143,7 @@ def test_reference_chain_too_deep_to_inline_keeps_references() -> None:
     assert dereference_refs(schema) == schema
 
 
-def test_root_reference_is_still_resolved_when_graph_is_too_large() -> None:
+def test_compact_form_still_resolves_the_root_reference() -> None:
     schema = fanout_schema(9)
     defs = schema.pop("$defs")
     defs["Root"] = schema
