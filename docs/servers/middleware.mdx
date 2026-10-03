@@ -746,6 +746,47 @@ class ResponseEnricher(Middleware):
 
 For more complex tool transformations, consider [Transforms](/servers/transforms/transforms) instead.
 
+### Inspecting Tool Text Results
+
+Use `on_call_tool` to inspect text returned by a tool after it runs. A `ToolResult` can contain several content block types, so check for `TextContent` and preserve other blocks unchanged:
+
+```python
+from collections.abc import Awaitable, Callable
+
+from fastmcp.exceptions import ToolError
+from fastmcp.server.middleware import Middleware, MiddlewareContext
+from fastmcp.tools import ToolResult
+from mcp.types import TextContent
+
+
+class TextInspectionMiddleware(Middleware):
+    def __init__(self, inspect_text: Callable[[str], Awaitable[str]]) -> None:
+        self.inspect_text = inspect_text
+
+    async def on_call_tool(self, context: MiddlewareContext, call_next):
+        result = await call_next(context)
+        if not isinstance(result, ToolResult):
+            return result
+
+        inspected_content = []
+        for block in result.content:
+            if not isinstance(block, TextContent):
+                inspected_content.append(block)
+                continue
+
+            try:
+                text = await self.inspect_text(block.text)
+            except Exception as exc:
+                raise ToolError("Tool text inspection failed") from exc
+            inspected_content.append(block.model_copy(update={"text": text}))
+
+        return result.model_copy(update={"content": inspected_content})
+```
+
+This example replaces each text block with the inspector's returned text and passes image or other non-text blocks through unchanged. For a security or policy check, fail the tool call when inspection fails, as above, rather than returning unchecked text. If inspection is advisory, catch the error deliberately, report it through logging or response metadata, and return the original text; do not silently treat a failed check as a successful one.
+
+Server middleware sees only tool calls and results handled by this server. It cannot inspect or control the client's model, the model's conversation, or tools that run on the client.
+
 ### Filtering Lists
 
 List operations return FastMCP objects that you can filter before they reach the client. When filtering list results, also block execution in the corresponding operation hook to maintain consistency:
