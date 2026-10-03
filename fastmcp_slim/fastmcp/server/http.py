@@ -536,6 +536,7 @@ def create_sse_app(
     )
     # Store the FastMCP server instance on the Starlette app state
     app.state.fastmcp_server = server
+    app.state.fastmcp_auth = auth
     app.state.path = sse_path
     app.state.transport_type = "sse"
 
@@ -715,6 +716,7 @@ def create_streamable_http_app(
     )
     # Store the FastMCP server instance on the Starlette app state
     app.state.fastmcp_server = server
+    app.state.fastmcp_auth = auth
     app.state.path = streamable_http_path
     app.state.transport_type = "streamable-http"
 
