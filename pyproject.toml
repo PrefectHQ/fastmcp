@@ -23,8 +23,6 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
-    "Programming Language :: Python :: 3.15",
     "Typing :: Typed",
 ]
 
@@ -79,8 +77,8 @@ exclude-newer = "1 week"
 # first-party packages, whose fresh releases we install deliberately, the
 # MCP SDK, where a new major is the only version satisfying our floor and so
 # has nothing older to fall back to, and uncalled-for, the DI engine whose
-# releases we adopt deliberately, and beartype, whose 3.15 fix is a prerelease.
-exclude-newer-package = { fastmcp = false, fastmcp-slim = false, fastmcp-remote = false, prefab-ui = false, mcp = false, mcp-types = false, uncalled-for = false, pydocket = false, beartype = false }
+# releases we adopt deliberately.
+exclude-newer-package = { fastmcp = false, fastmcp-slim = false, fastmcp-remote = false, prefab-ui = false, mcp = false, mcp-types = false, uncalled-for = false, pydocket = false }
 
 [dependency-groups]
 dev = [

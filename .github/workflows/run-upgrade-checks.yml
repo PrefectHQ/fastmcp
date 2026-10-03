@@ -43,8 +43,6 @@ jobs:
         include:
           - os: ubuntu-latest
             python-version: "3.13"
-          - os: ubuntu-latest
-            python-version: "3.14"
       fail-fast: false
     timeout-minutes: 10
 
