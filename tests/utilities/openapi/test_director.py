@@ -1549,3 +1549,50 @@ class TestCookieParameters:
         assert "version=3" in cookie
         # Booleans use OpenAPI convention (true/false, not True/False)
         assert "debug=true" in cookie
+
+    @pytest.mark.parametrize("explode", [None, False, True])
+    def test_cookie_collection_values_use_form_serialization(self, director, explode):
+        """Cookie arrays and objects use a single form-style string value."""
+        route = HTTPRoute(
+            path="/things",
+            method="GET",
+            operation_id="list_things",
+            parameters=[
+                ParameterInfo(
+                    name="session_tags",
+                    location="cookie",
+                    required=False,
+                    schema={"type": "array", "items": {"type": "string"}},
+                    explode=explode,
+                ),
+                ParameterInfo(
+                    name="prefs",
+                    location="cookie",
+                    required=False,
+                    schema={
+                        "type": "object",
+                        "additionalProperties": {"type": "string"},
+                    },
+                    explode=explode,
+                ),
+            ],
+            parameter_map={
+                "session_tags": {
+                    "location": "cookie",
+                    "openapi_name": "session_tags",
+                },
+                "prefs": {"location": "cookie", "openapi_name": "prefs"},
+            },
+        )
+
+        request = director.build(
+            route,
+            {
+                "session_tags": ["a", "b"],
+                "prefs": {"theme": "dark", "density": "compact"},
+            },
+        )
+
+        assert request.headers["cookie"] == (
+            "session_tags=a,b; prefs=theme,dark,density,compact"
+        )
