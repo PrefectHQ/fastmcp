@@ -5,7 +5,7 @@ for validation with Pydantic. It supports:
 
 - Basic types (string, number, integer, boolean, null)
 - Complex types (arrays, objects)
-- Format constraints (date-time, email, uri)
+- Format constraints (date-time, date, time, duration, uuid, path, email, uri)
 - Numeric constraints (minimum, maximum, multipleOf)
 - String constraints (minLength, maxLength, pattern)
 - Array constraints (minItems, maxItems, uniqueItems)
@@ -61,8 +61,9 @@ import warnings
 from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import MISSING, field, make_dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from functools import lru_cache
+from pathlib import Path
 from typing import (
     Annotated,
     Any,
@@ -71,6 +72,7 @@ from typing import (
     Union,
     cast,
 )
+from uuid import UUID
 
 from pydantic import (
     AnyUrl,
@@ -122,6 +124,11 @@ _UnsatisfiableType = Annotated[Any, BeforeValidator(_reject_all)]
 
 FORMAT_TYPES: dict[str, Any] = {
     "date-time": datetime,
+    "date": date,
+    "time": time,
+    "duration": timedelta,
+    "uuid": UUID,
+    "path": Path,
     "email": EmailStr,
     "uri": AnyUrl,
     "json": Json,
@@ -394,8 +401,21 @@ def _create_array_type(
     resolving_refs: frozenset[str],
 ) -> type | Annotated[Any, ...]:
     """Create list/set type with optional constraints."""
+    prefix_items = schema.get("prefixItems")
     items = schema.get("items", {})
-    if isinstance(items, list):
+    if isinstance(prefix_items, list) and schema.get("minItems") == len(
+        prefix_items
+    ) == schema.get("maxItems"):
+        # A positional schema (JSON Schema 2020-12) whose length is pinned to
+        # the number of positions is an exact tuple — this is the shape a
+        # fixed-length tuple annotation serializes to. Hydrate every position
+        # from its own schema so positional items keep their types instead of
+        # degrading to untyped objects.
+        positional_types = tuple(
+            _schema_to_type(s, schemas, resolving_refs) for s in prefix_items
+        )
+        base = tuple[positional_types]  # type: ignore[valid-type]  # ty:ignore[invalid-type-form]
+    elif isinstance(items, list):
         # Handle positional item schemas
         item_types = [_schema_to_type(s, schemas, resolving_refs) for s in items]
         combined = Union[tuple(item_types)]  # noqa: UP007
