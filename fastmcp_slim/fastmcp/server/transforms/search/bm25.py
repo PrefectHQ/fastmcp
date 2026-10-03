@@ -89,7 +89,7 @@ class BM25SearchTransform(BaseSearchTransform):
     """Search transform using BM25 Okapi relevance ranking.
 
     Maintains an in-memory index that is lazily rebuilt when the tool
-    catalog changes (detected via a hash of tool names).
+    catalog's searchable text changes.
     """
 
     def __init__(
@@ -109,7 +109,7 @@ class BM25SearchTransform(BaseSearchTransform):
             search_result_serializer=search_result_serializer,
         )
         self._index = _BM25Index()
-        self._indexed_tools: Sequence[Tool] = ()
+        self._indexed_names: list[str] = []
         self._last_hash: str = ""
 
     def _make_search_tool(self) -> Tool:
@@ -136,11 +136,13 @@ class BM25SearchTransform(BaseSearchTransform):
             documents = [_extract_searchable_text(t) for t in tools]
             new_index = _BM25Index(self._index.k1, self._index.b)
             new_index.build(documents)
-            self._index, self._indexed_tools, self._last_hash = (
+            self._index, self._indexed_names, self._last_hash = (
                 new_index,
-                tools,
+                [t.name for t in tools],
                 current_hash,
             )
 
         indices = self._index.query(query, self._max_results)
-        return [self._indexed_tools[i] for i in indices]
+        # The catalog is deduplicated by name; resolve the current version's schema.
+        tools_by_name = {t.name: t for t in tools}
+        return [tools_by_name[self._indexed_names[i]] for i in indices]
