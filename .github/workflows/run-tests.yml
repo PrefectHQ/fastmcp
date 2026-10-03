@@ -76,7 +76,13 @@ jobs:
         python-version: ["3.10"]
         include:
           - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: ubuntu-latest
             python-version: "3.13"
+          - os: ubuntu-latest
+            python-version: "3.14"
       fail-fast: false
     timeout-minutes: 10
 
@@ -107,7 +113,11 @@ jobs:
 
   run_windows_tests:
     if: github.event_name != 'pull_request'
-    name: "Tests: Python 3.10 on windows-latest"
+    name: "Tests: Python ${{ matrix.python-version }} on windows-latest"
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.14"]
+      fail-fast: false
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
@@ -115,7 +125,7 @@ jobs:
       - name: Setup uv
         uses: ./.github/actions/setup-uv
         with:
-          python-version: "3.10"
+          python-version: ${{ matrix.python-version }}
           resolution: locked
       - name: Run unit tests
         uses: ./.github/actions/run-pytest

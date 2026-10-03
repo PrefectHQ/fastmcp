@@ -192,7 +192,12 @@ test("required matrix checks retain names even when editorial steps skip", () =>
   assert.deepEqual(matrix.strategy.matrix, {
     os: ["ubuntu-latest"],
     "python-version": ["3.10"],
-    include: [{ os: "ubuntu-latest", "python-version": "3.13" }],
+    include: [
+      { os: "ubuntu-latest", "python-version": "3.11" },
+      { os: "ubuntu-latest", "python-version": "3.12" },
+      { os: "ubuntu-latest", "python-version": "3.13" },
+      { os: "ubuntu-latest", "python-version": "3.14" },
+    ],
   });
   assert.equal(matrix.if, "${{ !cancelled() }}");
   assert.equal(matrix.steps[0].uses, "actions/checkout@v7");
@@ -220,14 +225,20 @@ test("required matrix checks retain names even when editorial steps skip", () =>
     );
   }
 });
-test("Windows retains its check name but runs only outside PRs", () => {
+test("Windows covers the oldest and newest runtimes outside PRs", () => {
   const windows = workflow.jobs.run_windows_tests;
-  assert.equal(windows.name, "Tests: Python 3.10 on windows-latest");
+  assert.equal(
+    windows.name,
+    "Tests: Python ${{ matrix.python-version }} on windows-latest",
+  );
+  assert.deepEqual(windows.strategy.matrix, {
+    "python-version": ["3.10", "3.14"],
+  });
   assert.equal(windows.if, "github.event_name != 'pull_request'");
   assert.equal(windows["runs-on"], "windows-latest");
   assert.equal(windows.needs, undefined);
   assert.deepEqual(windows.steps[1].with, {
-    "python-version": "3.10",
+    "python-version": "${{ matrix.python-version }}",
     resolution: "locked",
   });
   assert.equal(windows.steps[2].uses, "./.github/actions/run-pytest");
@@ -252,6 +263,14 @@ test("upgrade coverage remains nightly and manually dispatchable", () => {
   assert.deepEqual(workflows["run-upgrade-checks"].on, {
     schedule: [{ cron: "0 2 * * *" }],
     workflow_dispatch: "",
+  });
+  assert.deepEqual(workflows["run-upgrade-checks"].jobs.run_tests.strategy.matrix, {
+    os: ["ubuntu-latest", "windows-latest"],
+    "python-version": ["3.10"],
+    include: [
+      ...workflow.jobs.run_tests.strategy.matrix.include,
+      { os: "windows-latest", "python-version": "3.14" },
+    ],
   });
   assert.ok(workflows["run-upgrade-checks"].jobs.notify);
   assert.ok(workflows["run-upgrade-checks"].jobs["close-on-success"]);
