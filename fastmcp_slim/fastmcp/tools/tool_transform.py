@@ -620,6 +620,7 @@ class TransformedTool(Tool):
             transform_args=transform_args,
             auth=tool.auth,
         )
+        transformed_tool._result_transforms = tool._result_transforms
 
         return transformed_tool
 
