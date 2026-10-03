@@ -512,7 +512,7 @@ mcp.add_middleware(RateLimitingMiddleware(
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `max_requests_per_second` | `float` | `10.0` | Sustained request rate |
-| `burst_capacity` | `int` | `20` | Maximum burst size |
+| `burst_capacity` | `int` | twice the rate, at least 1 for a positive rate | Maximum burst size; `1` allows no bursts beyond the steady rate |
 | `get_client_id` | `Callable` | `None` | Custom client identification |
 
 For sliding window rate limiting:

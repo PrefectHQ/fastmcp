@@ -789,7 +789,7 @@ FastMCP's OAuth proxy defends against confused deputy attacks with two layers of
 
 **Consent screen.** Before any authorization happens, you see a consent page showing the client's details, redirect URI, and requested scopes. This gives you the opportunity to review and deny suspicious requests. By default (`require_authorization_consent=True`), the page is shown on every flow, which is the strongest protection. Setting `require_authorization_consent="remember"` approves previously-approved `(client_id, redirect_uri)` pairs silently on return visits, trading some protection for UX (see below). The consent mechanism is implemented with CSRF tokens and cryptographically signed cookies to prevent tampering.
 
-![](/assets/images/oauth-proxy-consent-screen.png)
+![Consent page listing the client name, redirect URI, and requested scopes with approve and deny buttons](/assets/images/oauth-proxy-consent-screen.png)
 
 The consent page automatically displays your server's name, icon, and website URL, if available. These visual identifiers help users confirm they're authorizing the correct server.
 

@@ -237,6 +237,12 @@ def _union_enum_values(variants: Any) -> list[Any] | None:
     return values or None
 
 
+def _dump(value: Any) -> str:
+    """JSON for a schema value, which may hold non-JSON objects such as the
+    `datetime.date` that YAML produces for an unquoted `2024-01-01`."""
+    return json.dumps(value, default=str)
+
+
 def _render_param(name: str, field: Any, *, required: bool) -> str:
     """One compact line per parameter: type, enum values, default.
 
@@ -252,9 +258,9 @@ def _render_param(name: str, field: Any, *, required: bool) -> str:
         if enum is None and "anyOf" in field:
             enum = _union_enum_values(field["anyOf"])
         if isinstance(enum, list) and 0 < len(enum) <= 8:
-            qualifiers.append("one of " + "/".join(json.dumps(v) for v in enum))
+            qualifiers.append("one of " + "/".join(_dump(v) for v in enum))
         if field.get("default") is not None:
-            qualifiers.append(f"default {json.dumps(field['default'])}")
+            qualifiers.append(f"default {_dump(field['default'])}")
     if required:
         qualifiers.append("required")
 

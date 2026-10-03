@@ -193,7 +193,7 @@ async def resolve_hostname(hostname: str, port: int = 443) -> list[str]:
                 hostname, port, socket.AF_UNSPEC, socket.SOCK_STREAM
             ),
         )
-        ips = list({info[4][0] for info in infos})
+        ips = list(dict.fromkeys(info[4][0] for info in infos))
         if not ips:
             raise SSRFError(f"DNS resolution returned no addresses for {hostname}")
         return ips  # ty: ignore[invalid-return-type]

@@ -251,7 +251,7 @@ class TestGoogleScopeNormalization:
         assert "profile" in GOOGLE_SCOPE_ALIASES
 
 
-# Regex patterns for URL matching (tokeninfo uses query params)
+# Regex patterns for Google OAuth endpoints
 _TOKENINFO_RE = re.compile(r"https://oauth2\.googleapis\.com/tokeninfo")
 _USERINFO_RE = re.compile(r"https://www\.googleapis\.com/oauth2/v2/userinfo")
 
@@ -478,8 +478,8 @@ class TestGoogleTokenVerifier:
 
         assert result is None
 
-    async def test_uses_query_param_not_bearer_header(self, httpx_mock: HTTPXMock):
-        """verify_token sends the token as a query parameter to tokeninfo, not a Bearer header."""
+    async def test_uses_bearer_header_not_query_param(self, httpx_mock: HTTPXMock):
+        """verify_token keeps the access token out of the tokeninfo URL."""
         httpx_mock.add_response(
             url=_TOKENINFO_RE,
             json={
@@ -499,8 +499,8 @@ class TestGoogleTokenVerifier:
 
         requests = httpx_mock.get_requests()
         tokeninfo_req = requests[0]
-        assert "access_token=my-access-token" in str(tokeninfo_req.url)
-        assert "Authorization" not in tokeninfo_req.headers
+        assert "my-access-token" not in str(tokeninfo_req.url)
+        assert tokeninfo_req.headers["Authorization"] == "Bearer my-access-token"
 
     async def test_calls_tokeninfo_endpoint(self, httpx_mock: HTTPXMock):
         """verify_token calls the tokeninfo endpoint, not the userinfo endpoint, for verification."""

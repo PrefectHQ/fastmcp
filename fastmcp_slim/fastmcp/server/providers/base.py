@@ -28,10 +28,10 @@ Example:
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Iterator, Sequence
+from contextlib import asynccontextmanager, contextmanager
 from functools import partial
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
 from typing_extensions import Self
 
@@ -44,6 +44,8 @@ if TYPE_CHECKING:
     from fastmcp.prompts.base import Prompt
     from fastmcp.resources.base import Resource
     from fastmcp.resources.template import ResourceTemplate
+    from fastmcp.server.extensions import ServerExtension
+    from fastmcp.server.server import FastMCP
     from fastmcp.server.transforms import (
         GetPromptNext,
         GetResourceNext,
@@ -52,6 +54,18 @@ if TYPE_CHECKING:
         Transform,
     )
     from fastmcp.tools.base import Tool
+
+
+_C = TypeVar("_C", bound=FastMCPComponent)
+
+
+def _listed(before: Sequence[_C], after: Sequence[_C]) -> Sequence[_C]:
+    return after
+
+
+def _keep_hidden(before: Sequence[_C], after: Sequence[_C]) -> Sequence[_C]:
+    listed = {c.key for c in after}
+    return [*after, *(c for c in before if c.key not in listed)]
 
 
 class Provider:
@@ -74,6 +88,28 @@ class Provider:
 
     def __init__(self) -> None:
         self._transforms: list[Transform] = []
+
+    def required_extensions(self) -> Sequence[ServerExtension]:
+        """Extensions bundled with this provider.
+
+        FastMCP automatically registers a separate instance of each extension
+        on the receiving server. Bundled extensions must opt in with
+        `auto_register = True`. An explicitly registered extension with the
+        same identifier takes precedence, regardless of registration order.
+        Composite providers should include their children's extensions.
+        """
+        return ()
+
+    @contextmanager
+    def _extension_runtime(
+        self, available: frozenset[str], *, root: FastMCP | None
+    ) -> Iterator[None]:
+        """Track a serving root independently of resource lifespan ownership.
+
+        Composite providers forward this scope to their children so live
+        composition can validate every runtime that will expose new components.
+        """
+        yield
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}()"
@@ -512,29 +548,48 @@ class Provider:
                 self._list_prompts,
             )
         )
-        tools = cast("Sequence[Tool]", results[0])
-        resources = cast("Sequence[Resource]", results[1])
-        templates = cast("Sequence[ResourceTemplate]", results[2])
-        prompts = cast("Sequence[Prompt]", results[3])
-
-        # Apply provider's own transforms sequentially
-        # For tasks, we need the fully-transformed names
-        for transform in self.transforms:
-            tools = await transform.list_tools(tools)
-            resources = await transform.list_resources(resources)
-            templates = await transform.list_resource_templates(templates)
-            prompts = await transform.list_prompts(prompts)
-
+        components = [component for result in results for component in result]
         return [
             c
-            for c in [
-                *tools,
-                *resources,
-                *templates,
-                *prompts,
-            ]
+            for c in await self._apply_task_transforms(components)
             if c.task_config.supports_tasks()
         ]
+
+    async def _apply_task_transforms(
+        self, components: Sequence[FastMCPComponent]
+    ) -> list[FastMCPComponent]:
+        """Apply this provider's transforms to components bound for Docket.
+
+        Registration needs the names components are called by, so renaming
+        transforms apply. Catalog transforms (search, CodeMode) only replace
+        what is *listed*: the components they hide stay callable, so they are
+        kept alongside whatever the catalog transform returns.
+        """
+        from fastmcp.prompts.base import Prompt
+        from fastmcp.resources.base import Resource
+        from fastmcp.resources.template import ResourceTemplate
+        from fastmcp.server.transforms.catalog import CatalogTransform
+        from fastmcp.tools.base import Tool
+
+        tools: Sequence[Tool] = [c for c in components if isinstance(c, Tool)]
+        resources: Sequence[Resource] = [
+            c for c in components if isinstance(c, Resource)
+        ]
+        templates: Sequence[ResourceTemplate] = [
+            c for c in components if isinstance(c, ResourceTemplate)
+        ]
+        prompts: Sequence[Prompt] = [c for c in components if isinstance(c, Prompt)]
+
+        for transform in self.transforms:
+            keep = _keep_hidden if isinstance(transform, CatalogTransform) else _listed
+            tools = keep(tools, await transform.list_tools(tools))
+            resources = keep(resources, await transform.list_resources(resources))
+            templates = keep(
+                templates, await transform.list_resource_templates(templates)
+            )
+            prompts = keep(prompts, await transform.list_prompts(prompts))
+
+        return [*tools, *resources, *templates, *prompts]
 
     # -------------------------------------------------------------------------
     # Lifecycle methods

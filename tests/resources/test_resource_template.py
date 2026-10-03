@@ -1,8 +1,10 @@
 import functools
+from typing import Annotated
 from urllib.parse import quote
 
 import pytest
-from pydantic import BaseModel
+from mcp.types import TextResourceContents
+from pydantic import BaseModel, Field
 
 from fastmcp import Client, Context, FastMCP
 from fastmcp.resources import ResourceTemplate
@@ -12,6 +14,7 @@ from fastmcp.resources.template import (
     expand_uri_template,
     match_uri_template,
 )
+from fastmcp.server import create_proxy
 
 
 class TestResourceTemplate:
@@ -778,6 +781,123 @@ class TestMalformedURITemplates:
         assert match is not None
         assert match.group("user_id") == "alice"
 
+    def test_template_keeps_its_own_pattern(self, monkeypatch):
+        """Reads walk every template, so each keeps its compiled pattern for as
+        long as it lives, independent of any shared cache."""
+        from fastmcp.resources import template as template_module
+
+        def weather(city: str) -> str:
+            return city
+
+        template = ResourceTemplate.from_function(
+            weather, uri_template="own-pattern://forecast/{city}"
+        )
+        assert template.matches("own-pattern://forecast/oslo") == {"city": "oslo"}
+
+        builds = 0
+        literal_pattern = template_module._literal_pattern
+
+        def counting(text: str) -> str:
+            nonlocal builds
+            builds += 1
+            return literal_pattern(text)
+
+        monkeypatch.setattr(template_module, "_literal_pattern", counting)
+        template_module.build_regex.cache_clear()
+        for _ in range(10):
+            assert template.matches("own-pattern://forecast/bergen") == {
+                "city": "bergen"
+            }
+        assert builds == 0
+
+    def test_template_pattern_follows_a_changed_uri_template(self):
+        def weather(city: str) -> str:
+            return city
+
+        template = ResourceTemplate.from_function(
+            weather, uri_template="before://{city}"
+        )
+        assert template.matches("before://oslo") == {"city": "oslo"}
+        renamed = template.model_copy(update={"uri_template": "after://{city}"})
+        assert renamed.matches("before://oslo") is None
+        assert renamed.matches("after://oslo") == {"city": "oslo"}
+
+    def test_mounted_template_wrapper_shares_the_source_pattern(self, monkeypatch):
+        """A mount wraps every template on every list, so a wrapper must not
+        compile the pattern again."""
+        from fastmcp.resources import template as template_module
+        from fastmcp.server.providers.fastmcp_provider import (
+            FastMCPProviderResourceTemplate,
+        )
+
+        def weather(city: str) -> str:
+            return city
+
+        source = ResourceTemplate.from_function(
+            weather, uri_template="mounted://forecast/{city}"
+        )
+        source.matches("mounted://forecast/oslo")
+
+        builds = 0
+        literal_pattern = template_module._literal_pattern
+
+        def counting(text: str) -> str:
+            nonlocal builds
+            builds += 1
+            return literal_pattern(text)
+
+        monkeypatch.setattr(template_module, "_literal_pattern", counting)
+        template_module.build_regex.cache_clear()
+        for _ in range(3):
+            wrapped = FastMCPProviderResourceTemplate.wrap(None, source)
+            assert wrapped.matches("mounted://forecast/bergen") == {"city": "bergen"}
+        assert builds == 0
+
+    def test_copy_can_override_list_query_params(self):
+        def search(tags: list[str] | None = None) -> str:
+            return ",".join(tags or [])
+
+        template = ResourceTemplate.from_function(
+            search, uri_template="items://all{?tags}"
+        )
+        assert template.matches("items://all?tags=a,b") == {"tags": ["a", "b"]}
+        scalar = template.model_copy(update={"_list_query_params": frozenset()})
+        assert scalar.matches("items://all?tags=a,b") == {"tags": "a,b"}
+
+    def test_shared_pattern_cache_is_bounded(self):
+        """Template strings can come from a proxied server, so the shared cache
+        must not grow with every template a remote ever sends."""
+        from fastmcp.resources import template as template_module
+
+        for i in range(5000):
+            match_uri_template("remote://none", f"remote-{i}://{{x}}")
+        assert template_module.build_regex.cache_info().currsize <= 4096
+
+    def test_matching_reuses_the_compiled_template_pattern(self, monkeypatch):
+        """Reads try every template in turn, so a template's pattern is built
+        once, not on every match attempt."""
+        from fastmcp.resources import template as template_module
+
+        builds = 0
+        literal_pattern = template_module._literal_pattern
+
+        def counting(text: str) -> str:
+            nonlocal builds
+            builds += 1
+            return literal_pattern(text)
+
+        monkeypatch.setattr(template_module, "_literal_pattern", counting)
+        uri_template = "cache-probe://reports/café/{year}"
+        assert match_uri_template("cache-probe://other/2024", uri_template) is None
+        first_build = builds
+        assert first_build > 0
+        for _ in range(50):
+            assert match_uri_template("cache-probe://other/2024", uri_template) is None
+        assert match_uri_template(
+            "cache-probe://reports/caf%C3%A9/2024", uri_template
+        ) == {"year": "2024"}
+        assert builds == first_build
+
     def test_build_regex_returns_none_for_duplicate_group_names(self):
         assert build_regex("test://{a}/{a}/path") is None
 
@@ -868,6 +988,186 @@ class TestMalformedURITemplates:
         )
         assert result is not None
         assert result == {"id": "42", "format": "", "verbose": "true"}
+
+    def test_exploded_query_param_collects_repeated_values(self):
+        """Regression for #4378: `{?tags*}` collects every repetition."""
+        result = match_uri_template(
+            "items://books?tags=alpha&tags=beta", "items://{category}{?tags*}"
+        )
+        assert result == {"category": "books", "tags": ["alpha", "beta"]}
+
+    def test_exploded_query_param_with_single_value_is_a_list(self):
+        """A single value still arrives as a list, so the type is stable."""
+        result = match_uri_template(
+            "items://books?tags=alpha", "items://{category}{?tags*}"
+        )
+        assert result == {"category": "books", "tags": ["alpha"]}
+
+    def test_non_exploded_query_param_stays_scalar(self):
+        """Without the explode modifier the param is a scalar — first value wins."""
+        result = match_uri_template(
+            "items://books?tag=alpha&tag=beta", "items://{category}{?tag}"
+        )
+        assert result == {"category": "books", "tag": "alpha"}
+
+    async def test_exploded_query_param_reaches_the_function(self):
+        """End-to-end: repeated values arrive as a list[str] argument."""
+
+        def search(category: str, tags: list[str] | None = None) -> dict:
+            return {"category": category, "tags": tags}
+
+        template = ResourceTemplate.from_function(
+            fn=search, uri_template="items://{category}{?tags*}"
+        )
+
+        assert await template.read({"category": "books", "tags": ["a", "b"]}) == {
+            "category": "books",
+            "tags": ["a", "b"],
+        }
+
+    async def test_list_query_param_without_explode_is_comma_separated(self):
+        """RFC 6570 3.2.8: `{?tags}` on a list is `?tags=a,b`, one comma-joined value.
+
+        4.0.5 registered this shape, so rejecting it breaks servers at startup.
+        """
+
+        def search(category: str, tags: list[str] | None = None) -> dict:
+            return {"category": category, "tags": tags}
+
+        template = ResourceTemplate.from_function(
+            fn=search, uri_template="items://{category}{?tags}"
+        )
+
+        params = template.matches("items://books?tags=a,b")
+        assert params == {"category": "books", "tags": ["a", "b"]}
+        assert await template.read(params) == {"category": "books", "tags": ["a", "b"]}
+
+    @pytest.fixture
+    def postponed_search(self):
+        """A function whose annotations are strings, as under PEP 563.
+
+        Defined by exec so the future import applies to it and not to this
+        whole test module.
+        """
+        namespace: dict[str, object] = {}
+        exec(
+            "from __future__ import annotations\n"
+            "def search(category: str, tags: list[str] | None = None) -> dict:\n"
+            "    return {'category': category, 'tags': tags}\n",
+            namespace,
+        )
+        return namespace["search"]
+
+    def test_postponed_annotations_still_split_commas(self, postponed_search):
+        """Under `from __future__ import annotations` the raw signature gives the
+        string `"list[str] | None"`, so hints must be resolved to see the list."""
+        template = ResourceTemplate.from_function(
+            fn=postponed_search, uri_template="items://{category}{?tags}"
+        )
+        assert template.matches("items://books?tags=a,b") == {
+            "category": "books",
+            "tags": ["a", "b"],
+        }
+
+    async def test_postponed_annotations_accept_explode(self, postponed_search):
+        """The explode form registers and collects one or many values."""
+        template = ResourceTemplate.from_function(
+            fn=postponed_search, uri_template="items://{category}{?tags*}"
+        )
+
+        one = match_uri_template("items://books?tags=a", "items://{category}{?tags*}")
+        assert one is not None
+        assert one == {"category": "books", "tags": ["a"]}
+        assert await template.read(one) == {"category": "books", "tags": ["a"]}
+
+        many = match_uri_template(
+            "items://books?tags=a&tags=b", "items://{category}{?tags*}"
+        )
+        assert many is not None
+        assert many == {"category": "books", "tags": ["a", "b"]}
+        assert await template.read(many) == {"category": "books", "tags": ["a", "b"]}
+
+    def test_annotated_list_query_param_splits_commas(self):
+        """`Annotated[...]` must be unwrapped before the list check."""
+
+        def search(
+            category: str,
+            tags: Annotated[list[str] | None, Field(description="tags")] = None,
+        ) -> dict:
+            return {"category": category, "tags": tags}
+
+        template = ResourceTemplate.from_function(
+            fn=search, uri_template="items://{category}{?tags}"
+        )
+        assert template.matches("items://books?tags=a,b") == {
+            "category": "books",
+            "tags": ["a", "b"],
+        }
+
+    async def test_union_with_scalar_query_param_does_not_require_explode(self):
+        """A scalar union branch preserves the existing plain-query contract."""
+
+        def search(
+            category: str, tags: str | list[str] | None = None
+        ) -> dict[str, object]:
+            return {"category": category, "tags": tags}
+
+        template = ResourceTemplate.from_function(
+            fn=search, uri_template="items://{category}{?tags}"
+        )
+        params = match_uri_template(
+            "items://books?tags=alpha&tags=beta",
+            "items://{category}{?tags}",
+        )
+
+        assert params == {"category": "books", "tags": "alpha"}
+        assert await template.read(params) == {
+            "category": "books",
+            "tags": "alpha",
+        }
+
+    async def test_union_with_list_query_param_accepts_explode(self):
+        """A mixed union can opt into repeated values with explode."""
+
+        def search(
+            category: str, tags: str | list[str] | None = None
+        ) -> dict[str, object]:
+            return {"category": category, "tags": tags}
+
+        template = ResourceTemplate.from_function(
+            fn=search, uri_template="items://{category}{?tags*}"
+        )
+        params = match_uri_template(
+            "items://books?tags=alpha&tags=beta",
+            "items://{category}{?tags*}",
+        )
+
+        assert params == {"category": "books", "tags": ["alpha", "beta"]}
+        assert await template.read(params) == {
+            "category": "books",
+            "tags": ["alpha", "beta"],
+        }
+
+    def test_scalar_query_param_rejects_explode(self):
+        """Explode always produces a list, so a scalar-only parameter is invalid."""
+
+        def search(category: str, tag: str = "") -> dict[str, str]:
+            return {"category": category, "tag": tag}
+
+        with pytest.raises(ValueError, match="must accept a list"):
+            ResourceTemplate.from_function(
+                fn=search, uri_template="items://{category}{?tag*}"
+            )
+
+    def test_non_list_collection_query_params_are_unrestricted(self):
+        """Only `list` round-trips through expansion, so only `list` is checked."""
+
+        def search(category: str, tags: set[str] | None = None) -> dict:
+            return {"category": category, "tags": tags}
+
+        ResourceTemplate.from_function(
+            fn=search, uri_template="items://{category}{?tags}"
+        )
 
     def test_from_function_rejects_hyphen_underscore_collision(self):
         """Two raw param names that normalize to the same key are rejected."""
@@ -989,6 +1289,8 @@ class TestMatchExpandRoundTrip:
             ("test://{path*}", "test://single"),
             ("test://pre/{rest*}", "test://pre/x/y/z"),
             ("test://{x}/{path*}", "test://foo/a/b/c"),
+            ("test://{x}{?tags*}", "test://foo?tags=a"),
+            ("test://{x}{?tags*}", "test://foo?tags=a&tags=b"),
         ],
     )
     def test_expand_then_match_is_identity(self, template: str, uri: str):
@@ -996,6 +1298,33 @@ class TestMatchExpandRoundTrip:
         params = match_uri_template(uri, template)
         assert params is not None
         assert expand_uri_template(template, params) == uri
+
+    def test_plain_query_param_does_not_repeat_a_sequence_value(self):
+        """The template decides repeatability, not the runtime value's type.
+
+        A list handed to a plain `{?tags}` must stay one value: expanding it as
+        a repeated key produced a URI that matched back to only its first
+        element, contradicting the scalar contract `{?tags}` documents.
+        """
+        uri = expand_uri_template("test://x{?tags}", {"tags": ["a", "b"]})
+        assert uri == "test://x?tags=a,b"
+
+        params = match_uri_template(uri, "test://x{?tags}", list_params={"tags"})
+        assert params == {"tags": ["a", "b"]}
+        assert expand_uri_template("test://x{?tags}", params) == uri
+
+    def test_query_values_encode_reserved_characters(self):
+        """RFC 6570 query expansion permits only unreserved value characters."""
+        template = "test://x{?tags*}"
+        params = {"tags": ["", "a b", "a+b", "a&b", "a/b", "café"]}
+
+        uri = expand_uri_template(template, params)
+
+        assert uri == (
+            "test://x?tags=&tags=a%20b&tags=a%2Bb&tags=a%26b&tags=a%2Fb&tags=caf%C3%A9"
+        )
+        assert match_uri_template(uri, template) == params
+        assert expand_uri_template("test://x{?q}", {"q": "a/b"}) == "test://x?q=a%2Fb"
 
     @pytest.mark.parametrize(
         "template, params",
@@ -1140,3 +1469,193 @@ class TestInternalMetaNotLeaked:
             result = await client.read_resource("data://tagged/1")
 
         assert result[0].meta == {"team": "infra"}
+
+
+class TestLiteralEncoding:
+    """RFC 6570 section 3.1: literal template text is percent-encoded."""
+
+    @pytest.mark.parametrize(
+        "uri_template, expected",
+        [
+            # A literal the URI grammar does not allow is UTF-8 percent-encoded.
+            ("file:///docs/café/{name}", "file:///docs/caf%C3%A9/a.txt"),
+            ("file:///my docs/{name}", "file:///my%20docs/a.txt"),
+            # Reserved and unreserved characters are structural, so they stay.
+            ("file:///a-b_c~d.e/{name}", "file:///a-b_c~d.e/a.txt"),
+            # An already-encoded literal is not encoded twice.
+            ("file:///docs/caf%C3%A9/{name}", "file:///docs/caf%C3%A9/a.txt"),
+        ],
+    )
+    def test_expand_encodes_literals(self, uri_template: str, expected: str):
+        assert expand_uri_template(uri_template, {"name": "a.txt"}) == expected
+
+    @pytest.mark.parametrize(
+        "uri_template, uri",
+        [
+            ("file:///docs/café/{name}", "file:///docs/caf%C3%A9/a.txt"),
+            ("file:///my docs/{name}", "file:///my%20docs/a.txt"),
+        ],
+    )
+    def test_match_accepts_the_encoded_form(self, uri_template: str, uri: str):
+        """An AnyUrl percent-encodes the URI, so that is the form matching sees."""
+        assert match_uri_template(uri, uri_template) == {"name": "a.txt"}
+
+    def test_expand_match_roundtrip(self):
+        uri_template = "file:///docs/café/{name}"
+        expanded = expand_uri_template(uri_template, {"name": "a.txt"})
+        assert match_uri_template(expanded, uri_template) == {"name": "a.txt"}
+
+    async def test_template_with_non_ascii_literal_is_readable(self):
+        """Regression: the template was listed but every read returned Not Found."""
+        mcp = FastMCP("test")
+
+        @mcp.resource("file:///docs/café/{name}")
+        def doc(name: str) -> str:
+            return f"contents of {name}"
+
+        async with Client(mcp) as client:
+            templates = await client.list_resource_templates()
+            assert templates[0].uri_template == "file:///docs/café/{name}"
+
+            result = await client.read_resource("file:///docs/caf%C3%A9/a.txt")
+
+        assert result[0].text == "contents of a.txt"  # type: ignore[union-attr]
+
+
+class TestLiteralMatchingAcceptsRawAndEncodedForms:
+    """AnyUrl leaves some literal characters as written, and in-process reads skip it."""
+
+    @pytest.mark.parametrize(
+        "uri_template, uri",
+        [
+            ("data://pair/{a}|{b}", "data://pair/one|two"),
+            ("data://pct/100%/{a}", "data://pct/100%/one"),
+            ("data://caret/v^{a}", "data://caret/v^one"),
+            ("note:my notes/{a}", "note:my notes/one"),
+            ("data://docs/café/{a}", "data://docs/café/one"),
+        ],
+    )
+    async def test_read_through_client_and_in_process(
+        self, uri_template: str, uri: str
+    ):
+        mcp = FastMCP("test")
+
+        @mcp.resource(uri_template)
+        def read(a: str, b: str = "") -> str:
+            return f"{a}{b}"
+
+        async with Client(mcp) as client:
+            [contents] = await client.read_resource(uri)
+            assert isinstance(contents, TextResourceContents)
+            assert contents.text.startswith("one")
+
+        result = await mcp.read_resource(uri)
+        content = result.contents[0].content
+        assert isinstance(content, str) and content.startswith("one")
+
+    @pytest.mark.parametrize(
+        "uri",
+        ["data://docs/na%C3%AFve/one", "data://docs/na%c3%afve/one"],
+    )
+    def test_encoded_literal_matches_in_either_hex_case(self, uri: str):
+        assert match_uri_template(uri, "data://docs/naïve/{a}") == {"a": "one"}
+
+
+class TestNonExplodedListQueryParams:
+    """RFC 6570 3.2.8: a non-exploded `{?name}` list is one comma-joined value.
+
+    Separating commas are literal; a comma inside an item arrives as `%2C`.
+    """
+
+    @pytest.mark.parametrize(
+        "uri, expected",
+        [
+            ("items://books?tags=a,b", ["a", "b"]),
+            ("items://books?tags=a", ["a"]),
+            ("items://books?tags=a%2Cb,c", ["a,b", "c"]),
+            ("items://books?tags=caf%C3%A9,x%20y", ["café", "x y"]),
+            ("items://books?tags=", []),
+        ],
+    )
+    def test_match_splits_on_literal_commas(self, uri: str, expected: list[str]):
+        result = match_uri_template(
+            uri, "items://{category}{?tags}", list_params={"tags"}
+        )
+        assert result == {"category": "books", "tags": expected}
+
+    def test_match_without_list_params_keeps_scalar_values(self):
+        """A plain `{?q}` string keeps its commas, as on 4.0.5."""
+        assert match_uri_template("items://books?q=a,b", "items://{category}{?q}") == {
+            "category": "books",
+            "q": "a,b",
+        }
+
+    @pytest.mark.parametrize(
+        "tags, expected",
+        [
+            (["a", "b"], "items://books?tags=a,b"),
+            (["a,b", "c"], "items://books?tags=a%2Cb,c"),
+            ([], "items://books"),
+        ],
+    )
+    def test_expand_joins_list_with_literal_commas(self, tags, expected):
+        template = "items://{category}{?tags}"
+        uri = expand_uri_template(template, {"category": "books", "tags": tags})
+        assert uri == expected
+        if tags:
+            assert match_uri_template(uri, template, list_params={"tags"}) == {
+                "category": "books",
+                "tags": tags,
+            }
+
+    async def test_read_through_client(self):
+        mcp = FastMCP("test")
+
+        @mcp.resource("items://{category}{?tags,ids}")
+        def search(
+            category: str,
+            tags: list[str] = Field(default_factory=list),
+            ids: list[int] | None = None,
+        ) -> str:
+            return f"{category} {tags} {ids}"
+
+        async with Client(mcp) as client:
+            reads = {
+                "items://books": "books [] None",
+                "items://books?tags=a,b": "books ['a', 'b'] None",
+                "items://books?tags=a%2Cb&ids=1,2": "books ['a,b'] [1, 2]",
+            }
+            for uri, expected in reads.items():
+                [contents] = await client.read_resource(uri)
+                assert isinstance(contents, TextResourceContents)
+                assert contents.text == expected
+
+    @pytest.mark.parametrize("layer", ["mounted", "proxy"])
+    @pytest.mark.parametrize(
+        "query, expected",
+        [
+            ("?tags=a,b", "['a', 'b']"),
+            ("?tags=a%2Cb,c", "['a,b', 'c']"),
+            ("", "[]"),
+        ],
+    )
+    async def test_list_survives_mounts_and_proxies(self, layer, query, expected):
+        """Forwarding layers must pass the query through, not decode and re-encode it."""
+        child = FastMCP("child")
+
+        @child.resource("items://{category}{?tags}")
+        def search(category: str, tags: list[str] = Field(default_factory=list)) -> str:
+            return str(tags)
+
+        if layer == "mounted":
+            server = FastMCP("parent")
+            server.mount(child, namespace="ns")
+            uri = f"items://ns/books{query}"
+        else:
+            server = create_proxy(child)
+            uri = f"items://books{query}"
+
+        async with Client(server) as client:
+            [contents] = await client.read_resource(uri)
+            assert isinstance(contents, TextResourceContents)
+            assert contents.text == expected

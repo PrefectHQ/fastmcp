@@ -4,6 +4,8 @@ import asyncio
 import time
 from pathlib import Path
 
+import pytest
+
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.server.providers import FileSystemProvider
@@ -16,6 +18,61 @@ class TestFileSystemProvider:
         """Provider should work with empty directory."""
         provider = FileSystemProvider(tmp_path)
         assert repr(provider).startswith("FileSystemProvider")
+        assert provider.failed_files == {}
+
+    def test_provider_exposes_failed_files(self, tmp_path: Path):
+        """Provider should expose import failures from the initial load."""
+        broken_file = tmp_path / "broken.py"
+        broken_file.write_text("raise RuntimeError('broken import')")
+
+        provider = FileSystemProvider(tmp_path)
+
+        assert set(provider.failed_files) == {broken_file}
+        assert "broken import" in provider.failed_files[broken_file]
+
+        # The public value is a snapshot, not the provider's mutable state.
+        failures = provider.failed_files
+        assert isinstance(failures, dict)
+        failures.clear()
+        assert set(provider.failed_files) == {broken_file}
+
+    def test_provider_exposes_registration_failures(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Provider should expose registration failures alongside import failures."""
+        tool_file = tmp_path / "tool.py"
+        tool_file.write_text(
+            """\
+from fastmcp.tools import tool
+
+@tool
+def my_tool() -> str:
+    return "tool"
+"""
+        )
+
+        def fail_registration(self: FileSystemProvider, component: object) -> None:
+            raise RuntimeError("registration failed")
+
+        monkeypatch.setattr(
+            FileSystemProvider, "_register_component", fail_registration
+        )
+
+        provider = FileSystemProvider(tmp_path)
+
+        assert provider.failed_files == {tool_file: "RuntimeError: registration failed"}
+
+    async def test_failed_files_refresh_on_reload(self, tmp_path: Path):
+        """Reload mode should expose the latest load failures."""
+        broken_file = tmp_path / "broken.py"
+        broken_file.write_text("raise RuntimeError('broken import')")
+        provider = FileSystemProvider(tmp_path, reload=True)
+
+        assert set(provider.failed_files) == {broken_file}
+
+        broken_file.unlink()
+        assert await provider.list_tools() == []
+        assert provider.failed_files == {}
 
     def test_provider_discovers_tools(self, tmp_path: Path):
         """Provider should discover @tool decorated functions."""

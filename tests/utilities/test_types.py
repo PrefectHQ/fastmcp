@@ -163,6 +163,23 @@ class TestImage:
         image = Image(data=b"test", format="jpeg")
         assert image._mime_type == "image/jpeg"
 
+    @pytest.mark.parametrize(
+        "fmt,mime_type",
+        [
+            ("jpg", "image/jpeg"),
+            ("JPG", "image/jpeg"),
+            ("svg", "image/svg+xml"),
+            ("tif", "image/tiff"),
+            ("png", "image/png"),
+            ("avif", "image/avif"),
+        ],
+    )
+    def test_mime_type_from_format(self, fmt, mime_type):
+        """Format aliases map to the same MIME type as the matching file extension."""
+        image = Image(data=b"test", format=fmt)
+        assert image._mime_type == mime_type
+        assert image.to_image_content().mime_type == mime_type
+
     def test_missing_data_and_path_raises_error(self):
         """Test that error is raised when neither path nor data is provided."""
         with pytest.raises(ValueError, match="Either path or data must be provided"):
@@ -491,6 +508,25 @@ class TestFile:
 
         assert resource.resource.mime_type == "application/pdf"
         assert str(resource.resource.uri) == "file:///report.pdf"
+
+    @pytest.mark.parametrize(
+        ("name", "expected_uri"),
+        [
+            ("report#draft.pdf", "file:///report%23draft.pdf"),
+            ("report?draft.pdf", "file:///report%3Fdraft.pdf"),
+            ("report%20draft.pdf", "file:///report%2520draft.pdf"),
+            ("report#draft", "file:///report%23draft.pdf"),
+            ("report draft.pdf", "file:///report%20draft.pdf"),
+            ("résumé.pdf", "file:///r%C3%A9sum%C3%A9.pdf"),
+            ("reports/report.pdf", "file:///reports/report.pdf"),
+        ],
+    )
+    def test_to_resource_content_encodes_name(self, name: str, expected_uri: str):
+        file = File(data=b"report data", format="pdf", name=name)
+
+        resource = file.to_resource_content()
+
+        assert resource.resource.uri == expected_uri
 
     def test_to_resource_content_with_text_data(self):
         """Test conversion to ResourceContent with text data (TextResourceContents)."""

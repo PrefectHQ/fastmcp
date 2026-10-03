@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 from unittest.mock import patch
 
+import anyio
 import pytest
 from pydantic import ConfigDict
 
@@ -418,3 +419,20 @@ async def test_failed_entry_leaves_group_reenterable():
     async with group:
         result = await group.call_tool("good_echo", {"value": "recovered"})
         assert result.data == "good: recovered"
+
+
+async def test_exit_under_cancelled_scope_disconnects_members():
+    """A group exited by a cancelled scope must release its hold and disconnect
+    its members, as Client does."""
+    servers = {name: FastMCP(name) for name in ("a", "b")}
+    group = ClientGroup({name: Client(server) for name, server in servers.items()})
+
+    with anyio.move_on_after(0.2):
+        async with group:
+            await anyio.sleep(10)
+
+    with anyio.fail_after(3):
+        while any(client.is_connected() for client in group.clients.values()):
+            await anyio.sleep(0.01)
+    assert group._nesting_counter == 0
+    assert group._exit_stack is None

@@ -9,7 +9,11 @@ This implementation is based on:
     OAuth 2.0 Authorization Server Metadata - https://datatracker.ietf.org/doc/html/rfc8414
 """
 
+from collections import OrderedDict
 from collections.abc import Sequence
+from copy import deepcopy
+from threading import Lock
+from time import monotonic
 from typing import Any, Literal
 
 import httpx2
@@ -31,6 +35,24 @@ logger = get_logger(__name__)
 #: unreachable issuer metadata endpoint. Pass ``timeout_seconds=None`` to fall
 #: back to the HTTP client's own default timeout instead.
 DEFAULT_OIDC_DISCOVERY_TIMEOUT_SECONDS = 10
+
+#: Maximum age, in seconds, of a successfully validated OIDC discovery document.
+_OIDC_DISCOVERY_CACHE_TTL_SECONDS = 300
+
+#: Maximum number of distinct discovery configurations cached per process.
+_OIDC_DISCOVERY_CACHE_MAX_SIZE = 128
+
+_OIDCDiscoveryCacheKey = tuple[type[BaseModel], str, bool | None, int | None]
+_OIDCDiscoveryCacheValue = tuple[float, dict[str, Any]]
+_oidc_configuration_cache: OrderedDict[
+    _OIDCDiscoveryCacheKey, _OIDCDiscoveryCacheValue
+] = OrderedDict()
+_oidc_configuration_cache_lock = Lock()
+
+
+def _clear_oidc_configuration_cache() -> None:
+    with _oidc_configuration_cache_lock:
+        _oidc_configuration_cache.clear()
 
 
 class OIDCConfiguration(BaseModel):
@@ -153,11 +175,37 @@ class OIDCConfiguration(BaseModel):
     ) -> Self:
         """Get the OIDC configuration for the specified config URL.
 
+        Successful discovery responses are cached briefly to avoid repeatedly hitting
+        the issuer for identical provider construction. Cached data is copied and
+        revalidated for every caller so mutable model instances are never shared.
+
         Args:
             config_url: The OIDC config URL
             strict: The strict flag for the configuration
             timeout_seconds: HTTP request timeout in seconds
         """
+        cache_key: _OIDCDiscoveryCacheKey = (
+            cls,
+            str(config_url),
+            strict,
+            timeout_seconds,
+        )
+        now = monotonic()
+        cached_data: dict[str, Any] | None = None
+
+        with _oidc_configuration_cache_lock:
+            cached = _oidc_configuration_cache.get(cache_key)
+            if cached is not None:
+                expires_at, cached_snapshot = cached
+                if expires_at > now:
+                    _oidc_configuration_cache.move_to_end(cache_key)
+                    cached_data = deepcopy(cached_snapshot)
+                else:
+                    del _oidc_configuration_cache[cache_key]
+
+        if cached_data is not None:
+            return cls.model_validate(cached_data)
+
         get_kwargs: dict[str, Any] = {}
         if timeout_seconds is not None:
             get_kwargs["timeout"] = timeout_seconds
@@ -170,12 +218,22 @@ class OIDCConfiguration(BaseModel):
             if strict is not None:
                 config_data["strict"] = strict
 
-            return cls.model_validate(config_data)
+            config = cls.model_validate(config_data)
         except Exception:
             logger.exception(
                 f"Unable to get OIDC configuration for config url: {config_url}"
             )
             raise
+
+        cached_snapshot = config.model_dump(mode="json")
+        expires_at = monotonic() + _OIDC_DISCOVERY_CACHE_TTL_SECONDS
+        with _oidc_configuration_cache_lock:
+            _oidc_configuration_cache[cache_key] = (expires_at, cached_snapshot)
+            _oidc_configuration_cache.move_to_end(cache_key)
+            while len(_oidc_configuration_cache) > _OIDC_DISCOVERY_CACHE_MAX_SIZE:
+                _oidc_configuration_cache.popitem(last=False)
+
+        return config
 
 
 class OIDCProxy(OAuthProxy):

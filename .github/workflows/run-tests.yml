@@ -72,11 +72,17 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest]
         python-version: ["3.10"]
         include:
           - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: ubuntu-latest
             python-version: "3.13"
+          - os: ubuntu-latest
+            python-version: "3.14"
       fail-fast: false
     timeout-minutes: 10
 
@@ -104,6 +110,34 @@ jobs:
       - name: Run documentation tests
         if: needs.changes.outputs.run-tests == 'false' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
         run: uv run pytest tests/docs -n 0
+
+  run_windows_tests:
+    # Expand the matrix on PRs to preserve required check names.
+    # Skip the steps instead of the job so matrix expressions are resolved.
+    if: ${{ !cancelled() }}
+    name: "Tests: Python ${{ matrix.python-version }} on windows-latest"
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.14"]
+      fail-fast: false
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup uv
+        if: github.event_name != 'pull_request'
+        uses: ./.github/actions/setup-uv
+        with:
+          python-version: ${{ matrix.python-version }}
+          resolution: locked
+      - name: Run unit tests
+        if: github.event_name != 'pull_request'
+        uses: ./.github/actions/run-pytest
+      - name: Run serial subprocess tests
+        if: github.event_name != 'pull_request'
+        uses: ./.github/actions/run-pytest
+        with:
+          test-type: client_process
 
   run_tests_lowest_direct:
     needs: changes

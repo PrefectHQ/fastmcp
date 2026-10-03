@@ -76,6 +76,8 @@ from fastmcp.resources.template import ResourceTemplate
 from fastmcp.server.auth import AuthCheck, AuthContext, AuthProvider, run_auth_checks
 from fastmcp.server.caching import build_cache_hints
 from fastmcp.server.completions import CompletionHandler
+from fastmcp.server.dependencies import _dispatching_tool_call
+from fastmcp.server.extensions import _extension_tool_call_scope
 from fastmcp.server.lifespan import Lifespan
 from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
@@ -85,6 +87,7 @@ from fastmcp.server.middleware.middleware import (
     mark_interior_dispatched,
 )
 from fastmcp.server.mixins import LifespanMixin, MCPOperationsMixin, TransportMixin
+from fastmcp.server.mixins.extensions import ExtensionsMixin
 from fastmcp.server.providers import LocalProvider, Provider
 from fastmcp.server.providers.aggregate import AggregateProvider
 from fastmcp.server.telemetry import server_span
@@ -302,6 +305,7 @@ class StateValue(FastMCPBaseModel):
 
 class FastMCP(
     AggregateProvider,
+    ExtensionsMixin,
     LifespanMixin,
     MCPOperationsMixin,
     TransportMixin,
@@ -360,12 +364,6 @@ class FastMCP(
         self._local_provider: LocalProvider = LocalProvider(
             on_duplicate=self._on_duplicate
         )
-
-        # Add providers using AggregateProvider's add_provider
-        # LocalProvider is always first (no namespace)
-        self.add_provider(self._local_provider)
-        for p in providers or []:
-            self.add_provider(p)
 
         for t in transforms or []:
             self.add_transform(t)
@@ -498,6 +496,16 @@ class FastMCP(
         # server (capability advertisement), the tool-call path (interception),
         # and the lifespan manager (extension lifespans).
         self._extensions: dict[str, ServerExtension] = {}
+        self._auto_extensions: set[str] = set()
+        self._extension_methods: dict[str, tuple[str, ...]] = {}
+        self._extension_conflicts: set[str] = set()
+        self._extensions_started = False
+
+        # Add providers using AggregateProvider's add_provider
+        # LocalProvider is always first (no namespace)
+        self.add_provider(self._local_provider)
+        for p in providers or []:
+            self.add_provider(p)
 
         if dereference_schemas:
             from fastmcp.server.middleware.dereference import (
@@ -623,77 +631,9 @@ class FastMCP(
     def add_middleware(self, middleware: Middleware) -> None:
         self.middleware.append(middleware)
 
-    def add_extension(self, extension: ServerExtension) -> None:
-        """Register a server extension (SEP-2133).
-
-        An extension contributes a negotiated capability, additive request
-        methods, a `tools/call` interceptor, and an optional lifespan — each
-        with access to FastMCP-level constructs (the component registry,
-        `Context`, auth scope). Its capability is advertised only while it is
-        registered.
-
-        The extension is bound to this server (so its handlers and interceptor
-        can reach it), its method bindings are wired onto the low-level server,
-        and it is recorded for capability advertisement, interception, and
-        lifespan entry. Registering two extensions with the same identifier is
-        an error, as is registering after the server's lifespan has started —
-        the extension's lifespan could no longer run, leaving it silently
-        half-active.
-
-        Extensions are served by the server they are registered on. A mounted
-        child's extensions do not propagate to the root: the root serves the
-        wire, so only root-registered extensions advertise capabilities and
-        answer methods (matching the lifespan, which also defers to the root).
-        Register extensions on the server you run.
-        """
-        from fastmcp.server.extensions import (
-            build_method_handler,
-            validate_extension_identifier,
-        )
-
-        validate_extension_identifier(
-            extension.identifier, owner=type(extension).__name__
-        )
-        if extension.identifier in self._extensions:
-            raise ValueError(
-                f"An extension with identifier {extension.identifier!r} is "
-                "already registered."
-            )
-        if self._lifespan_result_set:
-            raise RuntimeError(
-                f"Cannot register extension {extension.identifier!r}: the "
-                "server's lifespan has already started, so the extension's "
-                "lifespan would never run. Register extensions before serving."
-            )
-
-        extension._bind(self)
-        for binding in extension.methods():
-            self._mcp_server.add_request_handler(
-                binding.method,
-                binding.params_type,
-                build_method_handler(binding),
-            )
-        self._extensions[extension.identifier] = extension
-
-    def _compose_tool_call_interceptors(
-        self, call_next: CallNext[Any, Any]
-    ) -> CallNext[Any, Any]:
-        """Nest every extension's `tools/call` interceptor around ``call_next``.
-
-        Composes at the innermost point of the tool-call dispatch — after the
-        FastMCP middleware chain, before the tool body — so each interceptor is
-        the last gate before execution. First-registered extension is outermost.
-        A server with no extensions returns ``call_next`` unchanged, so there is
-        zero behaviour change.
-        """
-        from fastmcp.server.extensions import wrap_tool_call_interceptor
-
-        chain = call_next
-        for extension in reversed(list(self._extensions.values())):
-            chain = cast(
-                "CallNext[Any, Any]", wrap_tool_call_interceptor(extension, chain)
-            )
-        return chain
+    def required_extensions(self) -> Sequence[ServerExtension]:
+        """Bundled extensions and auto-registerable registrations for composition."""
+        return self._required_extensions()
 
     def add_provider(self, provider: Provider, *, namespace: str = "") -> None:
         """Add a provider for dynamic tools, resources, and prompts.
@@ -709,6 +649,8 @@ class FastMCP(
                 - Resources become "protocol://namespace/path"
                 - Prompts become "namespace_promptname"
         """
+        self._validate_provider_extensions(provider)
+        self._register_provider_extensions(provider)
         super().add_provider(provider, namespace=namespace)
 
     def _rewrite_prefab_uris(self, tools: list[Tool]) -> list[Tool]:
@@ -808,7 +750,7 @@ class FastMCP(
     # are inherited from AggregateProvider which handles aggregation and namespacing
 
     async def get_tasks(self) -> Sequence[FastMCPComponent]:
-        """Get task-eligible components with all transforms applied.
+        """Get task-eligible components with server-level transforms applied.
 
         Overrides AggregateProvider.get_tasks() to apply server-level transforms
         after aggregation. AggregateProvider handles provider-level namespacing.
@@ -816,24 +758,10 @@ class FastMCP(
         # Get tasks from AggregateProvider (handles aggregation and namespacing)
         components = list(await super().get_tasks())
 
-        # Separate by component type for server-level transform application
-        tools = [c for c in components if isinstance(c, Tool)]
-        resources = [c for c in components if isinstance(c, Resource)]
-        templates = [c for c in components if isinstance(c, ResourceTemplate)]
-        prompts = [c for c in components if isinstance(c, Prompt)]
-
-        # Apply server-level transforms sequentially
-        for transform in self.transforms:
-            tools = await transform.list_tools(tools)
-            resources = await transform.list_resources(resources)
-            templates = await transform.list_resource_templates(templates)
-            prompts = await transform.list_prompts(prompts)
-
         return [
-            *tools,
-            *resources,
-            *templates,
-            *prompts,
+            c
+            for c in await self._apply_task_transforms(components)
+            if c.task_config.supports_tasks()
         ]
 
     def add_transform(self, transform: Transform) -> None:
@@ -1460,17 +1388,18 @@ class FastMCP(
                 # the whole thing (so it observes every call), and the
                 # interceptors sit between it and the tool body (so each is the
                 # last gate before execution).
-                dispatched = await self._dispatch_component_middleware(
-                    context=mw_context,
-                    call_next=self._compose_tool_call_interceptors(
-                        lambda context: self.call_tool(
-                            context.message.name,
-                            context.message.arguments or {},
-                            version=version,
-                            run_middleware=False,
-                        )
-                    ),
-                )
+                with _dispatching_tool_call(), _extension_tool_call_scope(self):
+                    dispatched = await self._dispatch_component_middleware(
+                        context=mw_context,
+                        call_next=self._compose_tool_call_interceptors(
+                            lambda context: self.call_tool(
+                                context.message.name,
+                                context.message.arguments or {},
+                                version=version,
+                                run_middleware=False,
+                            )
+                        ),
+                    )
                 # Above the chain, so a Prefab payload is re-addressed however
                 # it was produced — middleware can answer a call itself, and
                 # such a result never reaches the core path below.

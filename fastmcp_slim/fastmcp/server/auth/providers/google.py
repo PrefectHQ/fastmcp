@@ -58,7 +58,7 @@ class GoogleTokenVerifier(TokenVerifier):
     """Token verifier for Google OAuth tokens.
 
     Google OAuth tokens are opaque (not JWTs), so we verify them by calling
-    Google's tokeninfo endpoint with the access token as a query parameter.
+    Google's tokeninfo endpoint with the access token as a bearer credential.
     This returns the OAuth app ID (``aud``), granted scopes, and expiry time.
     User profile data (name, picture, etc.) is fetched separately from the
     v2 userinfo endpoint when the token is valid.
@@ -100,7 +100,7 @@ class GoogleTokenVerifier(TokenVerifier):
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify a Google OAuth token using the tokeninfo endpoint.
 
-        Calls ``https://oauth2.googleapis.com/tokeninfo?access_token=TOKEN``
+        Calls ``https://oauth2.googleapis.com/tokeninfo`` with bearer authorization
         to validate the token and retrieve the OAuth app ID (``aud``), granted
         scopes, and expiry time.  On success, fetches user profile data from
         the v2 userinfo endpoint to populate name, picture, and locale claims.
@@ -115,8 +115,10 @@ class GoogleTokenVerifier(TokenVerifier):
                 # Returns aud (OAuth app ID), scope (space-separated), expires_in, sub, email.
                 response = await client.get(
                     "https://oauth2.googleapis.com/tokeninfo",
-                    params={"access_token": token},
-                    headers={"User-Agent": "FastMCP-Google-OAuth"},
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "User-Agent": "FastMCP-Google-OAuth",
+                    },
                 )
 
                 if response.status_code != 200:

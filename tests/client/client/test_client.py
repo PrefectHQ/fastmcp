@@ -9,7 +9,7 @@ import anyio
 import pytest
 from mcp import ClientSession, MCPError
 from mcp_types import TextContent
-from pydantic import AnyUrl
+from pydantic import AnyUrl, BaseModel
 
 import fastmcp
 from fastmcp.client import Client
@@ -18,6 +18,7 @@ from fastmcp.client.transports import (
     FastMCPTransport,
 )
 from fastmcp.server.server import FastMCP
+from fastmcp.tools import ToolResult
 from tests.conftest import user_meta
 
 
@@ -868,6 +869,50 @@ async def test_client_does_not_unwrap_dict_result():
         assert user_meta(result.meta) is None
 
 
+async def test_client_decodes_empty_structured_content():
+    """An empty object is a valid structured result, not a missing one (issue #5287)."""
+    server = FastMCP()
+
+    class Empty(BaseModel):
+        pass
+
+    @server.tool
+    def empty_dict() -> dict[str, str]:
+        return {}
+
+    @server.tool
+    def empty_model() -> Empty:
+        return Empty()
+
+    client = Client(transport=FastMCPTransport(server))
+    async with client:
+        dict_result = await client.call_tool("empty_dict", {})
+        assert dict_result.structured_content == {}
+        assert dict_result.data == {}
+        assert type(dict_result.data) is dict
+
+        model_result = await client.call_tool("empty_model", {})
+        assert model_result.structured_content == {}
+        assert model_result.data == {}
+        assert type(model_result.data) is dict
+
+
+@pytest.mark.parametrize("structured_content", [{}, {"value": "present"}, None])
+async def test_client_structured_content_without_output_schema(structured_content):
+    server = FastMCP()
+
+    @server.tool(output_schema=None)
+    def raw_result() -> ToolResult:
+        return ToolResult(content=[], structured_content=structured_content)
+
+    async with Client(server) as client:
+        result = await client.call_tool("raw_result")
+
+    assert result.structured_content == structured_content
+    assert result.data == structured_content
+    assert type(result.data) is type(structured_content)
+
+
 async def test_client_list_dict_return_type():
     """list[dict] return type should produce list of dicts, not Root() objects (issue #3867)."""
     server = FastMCP()
@@ -902,3 +947,183 @@ def test_client_new_preserves_internal_task_extension(fastmcp_server):
     assert clone is not client
     assert ClientCreateTaskResult in clone._claim_by_model
     assert clone._claim_by_model is not client._claim_by_model
+
+
+class _ReconnectGateTransport(ClientTransport):
+    """Connects at once the first time; every later connect waits for `gate`."""
+
+    def __init__(self, inner: ClientTransport) -> None:
+        self._inner = inner
+        self.gate = anyio.Event()
+        self.connects = 0
+        self.reconnect_started = anyio.Event()
+
+    @contextlib.asynccontextmanager
+    async def connect_session(
+        self, **session_kwargs: Any
+    ) -> AsyncIterator[ClientSession]:
+        self.connects += 1
+        if self.connects > 1:
+            self.reconnect_started.set()
+            await self.gate.wait()
+        async with self._inner.connect_session(**session_kwargs) as session:
+            yield session
+
+    async def close(self) -> None:
+        await self._inner.close()
+
+
+class TestExitUnderCancelledScope:
+    """An `async with client` exited by a cancelled anyio scope must release its
+    hold on the session. It used to skip the release, leaving the client connected
+    for good: every later exit saw a stale nesting count and never disconnected."""
+
+    @pytest.fixture
+    def server(self) -> FastMCP:
+        mcp = FastMCP("slow")
+
+        @mcp.tool
+        async def slow() -> str:
+            await anyio.sleep(10)
+            return "done"
+
+        @mcp.tool
+        def fast() -> str:
+            return "fast"
+
+        return mcp
+
+    @staticmethod
+    def assert_disconnected(client: Client) -> None:
+        assert client._session_state.nesting_counter == 0
+        assert client._session_state.session_task is None
+        assert not client.is_connected()
+
+    @classmethod
+    async def assert_eventually_disconnected(cls, client: Client) -> None:
+        """A cancelled exit returns at once and stops the session in its own task."""
+        with anyio.fail_after(3):
+            while client._session_state.session_task is not None:
+                await anyio.sleep(0.01)
+        cls.assert_disconnected(client)
+
+    async def test_move_on_after_stops_the_session(self, server: FastMCP):
+        client = Client(server)
+        with anyio.move_on_after(0.2) as scope:
+            async with client:
+                await client.call_tool("slow", {})
+        assert scope.cancelled_caught
+        await self.assert_eventually_disconnected(client)
+
+    async def test_fail_after_still_raises(self, server: FastMCP):
+        client = Client(server)
+        with pytest.raises(TimeoutError):
+            with anyio.fail_after(0.2):
+                async with client:
+                    await client.call_tool("slow", {})
+        await self.assert_eventually_disconnected(client)
+
+    async def test_inner_exit_keeps_the_outer_context(self, server: FastMCP):
+        client = Client(server)
+        async with client:
+            with anyio.move_on_after(0.2):
+                async with client:
+                    await client.call_tool("slow", {})
+            assert client._session_state.nesting_counter == 1
+            assert (await client.call_tool("fast", {})).data == "fast"
+        self.assert_disconnected(client)
+
+    async def test_later_contexts_disconnect_normally(self, server: FastMCP):
+        client = Client(server)
+        with anyio.move_on_after(0.2):
+            async with client:
+                await client.call_tool("slow", {})
+        async with client:
+            assert (await client.call_tool("fast", {})).data == "fast"
+        self.assert_disconnected(client)
+
+    async def test_nested_exit_in_a_task_cancelled_by_its_awaiter(
+        self, server: FastMCP
+    ):
+        """LangChain runs each tool call in its own task and awaits it, so a deadline
+        on the caller reaches the call as a native cancellation, which can repeat
+        while the call's `async with client` is unwinding."""
+        client = Client(server)
+
+        async def tool_call() -> None:
+            async with client:
+                await client.call_tool("slow", {})
+
+        async with client:
+            with anyio.move_on_after(0.2):
+                await asyncio.create_task(tool_call())
+            assert client._session_state.nesting_counter == 1
+            assert (await client.call_tool("fast", {})).data == "fast"
+        self.assert_disconnected(client)
+
+    async def test_timed_out_exit_is_not_held_by_another_tasks_connect(
+        self, server: FastMCP
+    ):
+        """The exiting context must not wait on the session lock: another task can
+        hold it through a reconnect that is slow or never finishes."""
+        transport = _ReconnectGateTransport(FastMCPTransport(server))
+        client = Client(transport)
+        a_inside = anyio.Event()
+        a_returned = anyio.Event()
+        b_release = anyio.Event()
+
+        async def a() -> None:
+            with anyio.move_on_after(0.3):
+                async with client:
+                    a_inside.set()
+                    await anyio.sleep(10)
+            a_returned.set()
+
+        async def b() -> None:
+            await a_inside.wait()
+            await client.close()
+            async with client:
+                await b_release.wait()
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(a)
+            tg.start_soon(b)
+            await transport.reconnect_started.wait()
+            with anyio.fail_after(2):
+                await a_returned.wait()
+            transport.gate.set()
+            b_release.set()
+        self.assert_disconnected(client)
+
+    async def test_natively_cancelled_only_context_stops_the_session(
+        self, server: FastMCP
+    ):
+        """A native cancellation, repeated by the awaiter's scope, must not stop the
+        last exit from stopping the session."""
+        client = Client(server)
+
+        async def tool_call() -> None:
+            async with client:
+                await client.call_tool("slow", {})
+
+        with anyio.move_on_after(0.2):
+            await asyncio.create_task(tool_call())
+        await self.assert_eventually_disconnected(client)
+
+    async def test_close_racing_a_new_context_leaves_that_context_connected(
+        self, server: FastMCP
+    ):
+        """close() stops the session it finds before a context entered after it
+        can reuse that session, as on 4.0.5."""
+        client = Client(server)
+        await client._connect()
+        close = asyncio.create_task(client.close())
+
+        async def enter_and_call() -> str:
+            async with client:
+                await anyio.sleep(0.05)
+                return (await client.call_tool("fast", {})).data
+
+        assert await asyncio.create_task(enter_and_call()) == "fast"
+        await close
+        self.assert_disconnected(client)

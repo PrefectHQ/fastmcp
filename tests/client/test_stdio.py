@@ -6,6 +6,7 @@ import time
 import weakref
 from pathlib import Path
 
+import anyio
 import psutil
 import pytest
 from mcp.shared.exceptions import MCPError
@@ -123,6 +124,42 @@ async def recover_proxy_pid(proxy, old_pid: int, **kwargs) -> int:
         return int(result.content[0].text)
 
     return await _recover_new_pid(call, old_pid, **kwargs)
+
+
+class TestPartialConstruction:
+    """A transport whose construction raised must still be collectable.
+
+    Subclasses validate the command before calling `super().__init__`, so an
+    object whose construction raised never got a `_stop_event`. `__del__` used to
+    dereference it anyway, and CPython reported an unraisable AttributeError that
+    buried the error the caller was meant to see.
+    """
+
+    def test_del_tolerates_a_transport_that_never_finished_init(self):
+        """The exact shape a failed subclass __init__ leaves behind."""
+        transport = object.__new__(PythonStdioTransport)
+        assert not hasattr(transport, "_stop_event")
+
+        transport.__del__()  # must not raise
+
+    def test_failed_subclass_construction_is_collectable(self, tmp_path):
+        not_python = tmp_path / "server.txt"
+        not_python.write_text("not a python script", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="Not a Python script"):
+            PythonStdioTransport(script_path=not_python)
+
+        gc_collect_harder()
+
+    def test_failed_subclass_construction_does_not_fabricate_an_event(self, tmp_path):
+        """The guard must skip the event, not invent one to set."""
+        missing = tmp_path / "nope.py"
+        with pytest.raises(FileNotFoundError, match="Script not found"):
+            PythonStdioTransport(script_path=missing)
+
+        transport = object.__new__(PythonStdioTransport)
+        transport.__del__()
+        assert not hasattr(transport, "_stop_event")
 
 
 class TestDisconnect:
@@ -290,6 +327,44 @@ class TestKeepAlive:
             del client
 
         await test_server()
+
+        await wait_for_process_exit(pid)
+
+    async def test_client_abandoned_by_cancellation_does_not_wedge_transport(
+        self, stdio_script
+    ):
+        """A Client exited by a cancelled scope, once garbage-collected, must not
+        leave the transport unusable for the next Client, and must stop its
+        subprocess rather than leak its session."""
+        transport = PythonStdioTransport(stdio_script, keep_alive=False)
+        abandoned = Client(transport)
+        pid = None
+
+        with anyio.move_on_after(0.5):
+            async with abandoned:
+                pid = (await abandoned.call_tool("pid")).data
+                await anyio.sleep(10)
+        assert pid is not None
+        with anyio.fail_after(3):
+            while abandoned.is_connected():
+                await anyio.sleep(0.01)
+        del abandoned
+        gc_collect_harder()
+        await wait_for_process_exit(pid)
+
+        with anyio.fail_after(3):
+            async with Client(transport) as client:
+                assert (await client.call_tool("pid")).data
+
+    async def test_cancelled_scope_still_stops_unshared_subprocess(self, stdio_script):
+        transport = PythonStdioTransport(stdio_script, keep_alive=False)
+        pid: int | None = None
+
+        with anyio.CancelScope() as scope:
+            async with transport.connect_session() as session:
+                result = await session.call_tool("pid", {})
+                pid = int(result.content[0].text)  # ty: ignore[unresolved-attribute]
+                scope.cancel()
 
         await wait_for_process_exit(pid)
 
