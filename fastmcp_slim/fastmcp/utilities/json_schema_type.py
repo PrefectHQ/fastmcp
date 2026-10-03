@@ -55,6 +55,7 @@ from __future__ import annotations
 import hashlib
 import json
 import keyword
+import math
 import re
 import sys
 import warnings
@@ -411,14 +412,48 @@ def _json_values_equal(left: Any, right: Any) -> bool:
     return left == right
 
 
+def _json_value_key(value: Any) -> tuple[Any, ...]:
+    """Build a hashable, type-tagged key for standard JSON values."""
+    value_type = type(value)
+    if value is None:
+        return ("null",)
+    if value_type is bool:
+        return ("boolean", value)
+    if value_type is int or value_type is float:
+        if value_type is float and not math.isfinite(value):
+            raise TypeError("Not a standard JSON number")
+        # Equal ints/floats already share a hash, without rounding large ints.
+        return ("number", value)
+    if value_type is str:
+        return ("string", value)
+    if value_type is list:
+        return ("array", tuple(_json_value_key(item) for item in value))
+    if value_type is dict and all(type(key) is str for key in value):
+        return (
+            "object",
+            frozenset((key, _json_value_key(item)) for key, item in value.items()),
+        )
+    raise TypeError("Not a standard JSON value")
+
+
 def _validate_unique_items(value: Any) -> Any:
     """Reject duplicate JSON array items while preserving list semantics."""
     if not isinstance(value, (list, tuple)):
         return value
 
-    for index, item in enumerate(value):
-        if any(_json_values_equal(item, previous) for previous in value[:index]):
-            raise ValueError("Array items must be unique")
+    try:
+        seen: set[tuple[Any, ...]] = set()
+        for item in value:
+            key = _json_value_key(item)
+            if key in seen:
+                raise ValueError("Array items must be unique")
+            seen.add(key)
+    except (TypeError, RecursionError):
+        # Preserve existing comparisons for non-JSON Python values, including
+        # equality between those values and standard JSON values.
+        for index, item in enumerate(value):
+            if any(_json_values_equal(item, previous) for previous in value[:index]):
+                raise ValueError("Array items must be unique") from None
 
     return value
 
