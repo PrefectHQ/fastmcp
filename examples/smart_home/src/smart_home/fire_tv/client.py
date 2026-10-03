@@ -13,6 +13,8 @@ from fastmcp.dependencies import CurrentContext
 from fastmcp.exceptions import ToolError
 from fastmcp.server.lifespan import lifespan
 
+PROBE_COMMAND = "true"
+
 
 class FireTVClient(Protocol):
     available: bool
@@ -63,11 +65,23 @@ class FireTVConnection:
                 )
             except Exception as e:
                 raise ToolError(f"Fire TV at {host} is not reachable") from e
+        if self._client.available and not await self._responds(self._client):
+            await self._client.adb_close()
         if not self._client.available:
             await self._client.adb_connect(log_errors=False)
         if not self._client.available:
             raise ToolError(f"Fire TV at {host} is not reachable; is it asleep?")
         return self._client
+
+    @staticmethod
+    async def _responds(client: FireTVClient) -> bool:
+        # androidtv keeps reporting `available` after the TV resets the socket,
+        # so only a round trip shows the link is live.
+        try:
+            await client.adb_shell(PROBE_COMMAND)
+        except Exception:
+            return False
+        return True
 
     async def close(self) -> None:
         if self._client is not None:

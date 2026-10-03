@@ -16,6 +16,8 @@ class FakeFireTV:
         ]
         self.commands: list[tuple[str, str | None]] = []
         self.closed = False
+        self.dropped = False
+        self.connects = 0
 
     async def update(
         self, get_running_apps: bool = True, lazy: bool = True
@@ -25,17 +27,29 @@ class FakeFireTV:
         return "idle", "com.amazon.tv.launcher", ["com.amazon.tv.launcher"], None
 
     async def home(self) -> None:
+        if self.dropped:
+            raise ConnectionResetError(104, "Connection reset by peer")
         self.commands.append(("home", None))
 
     async def launch_app(self, app: str) -> None:
         self.commands.append(("launch_app", app))
 
     async def adb_shell(self, command: str) -> str | None:
-        self.commands.append(("adb_shell", command))
+        if self.dropped:
+            raise ConnectionResetError(104, "Connection reset by peer")
+        if command != fire_tv_client.PROBE_COMMAND:
+            self.commands.append(("adb_shell", command))
         return None
+
+    async def adb_connect(self, log_errors: bool = True) -> bool:
+        self.connects += 1
+        self.dropped = False
+        self.available = True
+        return True
 
     async def adb_close(self) -> None:
         self.closed = True
+        self.available = False
 
 
 @pytest.fixture
@@ -199,3 +213,17 @@ async def test_sleeping_tv_does_not_block_startup_and_reconnects(monkeypatch):
 
     assert connects == [False]
     assert device.closed is True
+
+
+async def test_connection_dropped_by_tv_is_reopened(configured_fire_tv):
+    """The TV can reset the socket while the library still reports it open."""
+    device, _ = configured_fire_tv
+    async with Client(fire_tv_mcp) as client:
+        await client.call_tool("press_home")
+        device.dropped = True
+
+        receipt = (await client.call_tool("press_home")).data
+        assert receipt.accepted is True
+
+    assert device.connects == 1
+    assert device.commands == [("home", None), ("home", None)]
