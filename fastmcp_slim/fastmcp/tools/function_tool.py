@@ -414,10 +414,14 @@ class FunctionTool(Tool):
         try:
             if self.timeout is not None:
                 try:
-                    with anyio.fail_after(self.timeout):
+                    with anyio.fail_after(self.timeout) as scope:
                         result = await self._execute(
                             type_adapter, exec_is_async, arguments, strict=strict
                         )
+                        # Worker threads shield cancellation until they finish.
+                        # Reject their result if execution outlasted the deadline.
+                        if anyio.current_time() >= scope.deadline:
+                            raise TimeoutError
                 except TimeoutError:
                     logger.warning(
                         f"Tool '{self.name}' timed out after {self.timeout}s. "
