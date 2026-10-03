@@ -99,14 +99,116 @@ class TestTransformToolOutputSchema:
 
     async def test_transform_explicit_schema_runtime(self, base_string_tool):
         """Test runtime behavior with explicit output schema."""
-        custom_schema = {"type": "string", "minLength": 1}
-        new_tool = Tool.from_tool(base_string_tool, output_schema=custom_schema)
+        new_tool = Tool.from_tool(base_string_tool)
+        # from_tool rejects non-object schemas, so set one directly to cover
+        # the runtime path where they disable structured content
+        new_tool.output_schema = {"type": "string", "minLength": 1}
 
         result = await new_tool.run({"x": 10})
         # Non-object explicit schemas disable structured content
         assert result.structured_content is None
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "Result: 10"
+
+    async def test_transform_non_object_schema_preserves_error_result(
+        self, base_string_tool
+    ):
+        """The non-object rebuild keeps is_error and meta from the
+        transform_fn's ToolResult."""
+
+        async def custom_fn(x: int) -> ToolResult:
+            return ToolResult(
+                content=[TextContent(type="text", text=f"failed: {x}")],
+                is_error=True,
+                meta={"reason": "boom"},
+            )
+
+        new_tool = Tool.from_tool(base_string_tool, transform_fn=custom_fn)
+        new_tool.output_schema = {"type": "string"}
+
+        result = await new_tool.run({"x": 1})
+
+        assert result.structured_content is None
+        assert result.is_error is True
+        assert result.meta == {"reason": "boom"}
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "failed: 1"
+
+    async def test_transform_fn_result_kept_for_properties_only_schema(
+        self, base_string_tool
+    ):
+        """A transform_fn's ToolResult is returned unchanged when the explicit
+        output schema is an object without a top-level "type": "object" key
+        (properties-only), matching _is_object_schema classification."""
+
+        async def custom_fn(x: int) -> ToolResult:
+            return ToolResult(
+                content=[TextContent(type="text", text=f"Result: {x}")],
+                structured_content={"value": x},
+                is_error=True,
+                meta={"reason": "boom"},
+            )
+
+        new_tool = Tool.from_tool(
+            base_string_tool,
+            transform_fn=custom_fn,
+            output_schema={"properties": {"value": {"type": "integer"}}},
+        )
+
+        result = await new_tool.run({"x": 5})
+
+        assert result.structured_content == {"value": 5}
+        assert result.is_error is True
+        assert result.meta == {"reason": "boom"}
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "Result: 5"
+
+    async def test_transform_fn_result_kept_for_root_ref_schema(self, base_string_tool):
+        """A transform_fn's ToolResult is returned unchanged when the explicit
+        output schema is an object via a root-level $ref, matching
+        _is_object_schema classification."""
+
+        async def custom_fn(x: int) -> ToolResult:
+            return ToolResult(
+                content=[TextContent(type="text", text=f"Result: {x}")],
+                structured_content={"value": x},
+            )
+
+        new_tool = Tool.from_tool(
+            base_string_tool,
+            transform_fn=custom_fn,
+            output_schema={
+                "$defs": {
+                    "Output": {
+                        "type": "object",
+                        "properties": {"value": {"type": "integer"}},
+                    }
+                },
+                "$ref": "#/$defs/Output",
+            },
+        )
+
+        result = await new_tool.run({"x": 5})
+
+        assert result.structured_content == {"value": 5}
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "Result: 5"
+
+    def test_transform_rejects_non_object_output_schema(self, base_string_tool):
+        """Test that providing a non-object output schema raises a ValueError,
+        matching Tool.from_function."""
+
+        non_object_schemas = [
+            {"type": "string"},
+            {"type": "integer", "minimum": 0},
+            {"type": "array", "items": {"type": "string"}},
+        ]
+
+        for schema in non_object_schemas:
+            with pytest.raises(
+                ValueError, match="Output schemas must represent object types"
+            ):
+                Tool.from_tool(base_string_tool, output_schema=schema)
 
     def test_transform_with_custom_function_inferred_schema(self, base_dict_tool):
         """Test that custom function's output schema is inferred."""
@@ -160,7 +262,10 @@ class TestTransformToolOutputSchema:
         async def custom_fn(x: int) -> dict[str, str]:
             return {"custom": "value"}
 
-        explicit_schema = {"type": "array", "items": {"type": "number"}}
+        explicit_schema = {
+            "type": "object",
+            "properties": {"custom": {"type": "number"}},
+        }
         new_tool = Tool.from_tool(
             base_string_tool, transform_fn=custom_fn, output_schema=explicit_schema
         )
@@ -210,7 +315,7 @@ class TestTransformToolOutputSchema:
         )
 
         # Third transformation with explicit override
-        custom_schema = {"type": "number"}
+        custom_schema = {"type": "object", "properties": {"value": {"type": "number"}}}
         tool3 = Tool.from_tool(tool2, output_schema=custom_schema)
         assert tool3.output_schema == custom_schema
         assert tool3.output_schema != tool2.output_schema
