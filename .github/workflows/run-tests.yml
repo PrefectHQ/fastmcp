@@ -112,7 +112,9 @@ jobs:
         run: uv run pytest tests/docs -n 0
 
   run_windows_tests:
-    if: github.event_name != 'pull_request'
+    # Expand the matrix on PRs to preserve required check names.
+    # Skip the steps instead of the job so matrix expressions are resolved.
+    if: ${{ !cancelled() }}
     name: "Tests: Python ${{ matrix.python-version }} on windows-latest"
     strategy:
       matrix:
@@ -123,13 +125,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Setup uv
+        if: github.event_name != 'pull_request'
         uses: ./.github/actions/setup-uv
         with:
           python-version: ${{ matrix.python-version }}
           resolution: locked
       - name: Run unit tests
+        if: github.event_name != 'pull_request'
         uses: ./.github/actions/run-pytest
       - name: Run serial subprocess tests
+        if: github.event_name != 'pull_request'
         uses: ./.github/actions/run-pytest
         with:
           test-type: client_process

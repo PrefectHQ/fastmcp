@@ -225,7 +225,7 @@ test("required matrix checks retain names even when editorial steps skip", () =>
     );
   }
 });
-test("Windows covers the oldest and newest runtimes outside PRs", () => {
+test("Windows retains matrix check names while skipping PR test steps", () => {
   const windows = workflow.jobs.run_windows_tests;
   assert.equal(
     windows.name,
@@ -234,7 +234,7 @@ test("Windows covers the oldest and newest runtimes outside PRs", () => {
   assert.deepEqual(windows.strategy.matrix, {
     "python-version": ["3.10", "3.14"],
   });
-  assert.equal(windows.if, "github.event_name != 'pull_request'");
+  assert.equal(windows.if, "${{ !cancelled() }}");
   assert.equal(windows["runs-on"], "windows-latest");
   assert.equal(windows.needs, undefined);
   assert.deepEqual(windows.steps[1].with, {
@@ -244,7 +244,10 @@ test("Windows covers the oldest and newest runtimes outside PRs", () => {
   assert.equal(windows.steps[2].uses, "./.github/actions/run-pytest");
   assert.equal(windows.steps[3].uses, "./.github/actions/run-pytest");
   assert.equal(windows.steps[3].with["test-type"], "client_process");
-  assert.ok(windows.steps.every((step) => step.if === undefined));
+  assert.equal(windows.steps[0].if, undefined);
+  assert.ok(
+    windows.steps.slice(1).every((step) => step.if === "github.event_name != 'pull_request'"),
+  );
 });
 test("PR cancellation cannot supersede main or manual runs", () => {
   for (const name of ["run-tests", "run-static"]) {
