@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from platformdirs import user_data_dir
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import (
     BaseSettings,
     SettingsConfigDict,
@@ -70,6 +70,8 @@ class Settings(BaseSettings):
         setattr(settings, attr, value)
 
     home: Path = Path(user_data_dir("fastmcp", appauthor=False))
+
+    oauth_encryption_key: SecretStr | None = None
 
     test_mode: bool = False
 
