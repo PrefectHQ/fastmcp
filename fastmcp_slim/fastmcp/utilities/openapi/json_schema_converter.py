@@ -315,7 +315,7 @@ def _filter_properties_by_access(
     result["properties"] = filtered_properties
 
     # Clean up required array if properties were removed
-    if "required" in result and filtered_properties:
+    if "required" in result:
         result["required"] = [
             prop for prop in result["required"] if prop in filtered_properties
         ]
