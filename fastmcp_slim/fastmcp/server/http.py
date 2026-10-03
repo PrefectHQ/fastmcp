@@ -27,6 +27,7 @@ from starlette.types import ASGIApp, Lifespan, Receive, Scope, Send
 
 from fastmcp.server.auth import AuthProvider
 from fastmcp.server.auth.middleware import RequireAuthMiddleware
+from fastmcp.server.auth.scope_challenge import ScopeChallengeMiddleware
 from fastmcp.server.session_scoped_event_store import SessionScopedEventStore
 from fastmcp.utilities.logging import get_logger
 
@@ -621,7 +622,7 @@ def create_streamable_http_app(
             Route(
                 streamable_http_path,
                 endpoint=RequireAuthMiddleware(
-                    streamable_http_app,
+                    ScopeChallengeMiddleware(streamable_http_app, server),
                     auth.required_scopes,
                     resource_metadata_url,
                     auth.challenge_scopes,
