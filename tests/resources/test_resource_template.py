@@ -14,6 +14,7 @@ from fastmcp.resources.template import (
     expand_uri_template,
     match_uri_template,
 )
+from fastmcp.resources.types import BinaryResource, TextResource
 from fastmcp.server import create_proxy
 
 
@@ -1452,6 +1453,25 @@ class TestInternalMetaNotLeaked:
 
         async with Client(mcp) as client:
             result = await client.read_resource(read_uri)
+
+        assert result[0].meta is None
+
+    @pytest.mark.parametrize(
+        "resource",
+        [
+            TextResource(uri="data://text", name="text", text="value"),
+            BinaryResource(uri="data://binary", name="binary", data=b"value"),
+        ],
+    )
+    async def test_visibility_marker_stripped_from_static_resource_meta(
+        self, resource: TextResource | BinaryResource
+    ):
+        mcp = FastMCP()
+        mcp.add_resource(resource)
+        mcp.enable(names={str(resource.uri)})
+
+        async with Client(mcp) as client:
+            result = await client.read_resource(str(resource.uri))
 
         assert result[0].meta is None
 
