@@ -243,6 +243,94 @@ class TestRequestDirector:
         assert body_data["title"] == "Required Title"
         assert "description" not in body_data  # Should not include None description
 
+    @pytest.fixture
+    def nullable_route(self):
+        """PATCH route whose body properties are declared nullable (#4924)."""
+        return HTTPRoute(
+            path="/notes/{note_id}",
+            method="PATCH",
+            operation_id="patch_note",
+            parameters=[
+                ParameterInfo(
+                    name="note_id",
+                    location="path",
+                    required=True,
+                    schema={"type": "string"},
+                ),
+                ParameterInfo(
+                    name="dry_run",
+                    location="query",
+                    required=False,
+                    schema={"type": ["boolean", "null"]},
+                ),
+            ],
+            request_body=RequestBodyInfo(
+                required=True,
+                content_schema={
+                    "application/json": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": ["string", "null"]},
+                            "body": {"type": ["string", "null"]},
+                            "pinned": {"type": "boolean"},
+                            "by": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                        },
+                    }
+                },
+            ),
+            parameter_map={
+                "note_id": {"location": "path", "openapi_name": "note_id"},
+                "dry_run": {"location": "query", "openapi_name": "dry_run"},
+                "title": {"location": "body", "openapi_name": "title"},
+                "body": {"location": "body", "openapi_name": "body"},
+                "pinned": {"location": "body", "openapi_name": "pinned"},
+                "by": {"location": "body", "openapi_name": "by"},
+            },
+        )
+
+    def test_explicit_null_clears_a_nullable_body_property(
+        self, director, nullable_route
+    ):
+        """`null` reaches the wire for a nullable property, unlike omitting it (#4924)."""
+        cleared = director.build(
+            nullable_route, {"note_id": "n1", "title": None}, "https://api.example.com"
+        )
+        omitted = director.build(
+            nullable_route, {"note_id": "n1"}, "https://api.example.com"
+        )
+
+        assert json.loads(cleared.content) == {"title": None}
+        # Omitting the property must not become an explicit null.
+        assert omitted.content in (b"", None) or json.loads(omitted.content) == {}
+
+    def test_explicit_null_is_still_skipped_for_non_nullable_and_non_body(
+        self, director, nullable_route
+    ):
+        """Only nullable body properties treat None as a value to send."""
+        request = director.build(
+            nullable_route,
+            {
+                "note_id": "n1",
+                "pinned": None,  # not declared nullable
+                "dry_run": None,  # nullable, but a query parameter
+                "title": "kept",
+            },
+            "https://api.example.com",
+        )
+
+        assert json.loads(request.content) == {"title": "kept"}
+        assert "dry_run" not in str(request.url)
+
+    def test_explicit_null_is_sent_for_an_anyof_nullable_property(
+        self, director, nullable_route
+    ):
+        """`anyOf: [..., null]` counts as nullable, not just `type: [..., "null"]`."""
+        request = director.build(
+            nullable_route, {"note_id": "n1", "by": None}, "https://api.example.com"
+        )
+
+        assert json.loads(request.content) == {"by": None}
+
     def test_build_request_fallback_mapping(self, director):
         """Test fallback parameter mapping when parameter_map is not available."""
         # Create route without parameter_map

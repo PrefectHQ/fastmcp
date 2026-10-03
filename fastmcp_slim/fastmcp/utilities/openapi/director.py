@@ -41,6 +41,70 @@ def _uses_default_multipart_encoding(encoding: dict[str, Any]) -> bool:
     )
 
 
+def _permits_null(schema: Any) -> bool:
+    """Whether a property schema admits an explicit JSON null.
+
+    Covers the usual spellings: `type: "null"` (as a branch of a union),
+    `type: [..., "null"]`, and `anyOf`/`oneOf` with a null branch.
+    """
+    if not isinstance(schema, dict):
+        return False
+    declared = schema.get("type")
+    if declared == "null":
+        return True
+    if isinstance(declared, list) and "null" in declared:
+        return True
+    for keyword in ("anyOf", "oneOf"):
+        branches = schema.get(keyword)
+        if not isinstance(branches, list):
+            continue
+        for branch in branches:
+            if _permits_null(branch):
+                return True
+    return False
+
+
+def _nullable_body_properties(route: HTTPRoute) -> set[str]:
+    """Body properties that the request schema declares nullable.
+
+    Only these accept `null` as a value the caller meant to send, so only these
+    survive the "skip None" filter in `_unflatten_arguments`.
+    """
+    content_schema = route.request_body.content_schema if route.request_body else None
+    if not content_schema:
+        return set()
+
+    schemas: list[Any] = []
+    for media_type, schema in content_schema.items():
+        if media_type == "application/json" or str(media_type).endswith("+json"):
+            schemas.append(schema)
+    if not schemas:
+        return set()
+
+    nullable: set[str] = set()
+    for schema in schemas:
+        properties = schema.get("properties") if isinstance(schema, dict) else None
+        if isinstance(properties, dict):
+            nullable.update(
+                name for name, prop in properties.items() if _permits_null(prop)
+            )
+    return nullable
+
+
+def _is_clearable_null(
+    parameter_map: dict[str, Any],
+    arg_name: str,
+    nullable_body_props: set[str],
+) -> bool:
+    """Whether a `None` argument is an intentional `null` for a body property."""
+    mapping = parameter_map.get(arg_name)
+    return (
+        mapping is not None
+        and mapping.get("location") == "body"
+        and arg_name in nullable_body_props
+    )
+
+
 class RequestDirector:
     """Builds httpx2.Request objects from HTTPRoute and arguments using openapi-core."""
 
@@ -213,12 +277,18 @@ class RequestDirector:
         header_params = {}
         cookie_params = {}
         body_props = {}
+        nullable_body_props = _nullable_body_properties(route)
 
         # Use parameter map to route arguments to correct locations
         if hasattr(route, "parameter_map") and route.parameter_map:
             for arg_name, value in flat_args.items():
                 if value is None:
-                    continue  # Skip None values for optional parameters
+                    # An explicit null is meaningful for a nullable body property:
+                    # it is how PATCH clears a field, as opposed to omitting it.
+                    if not _is_clearable_null(
+                        route.parameter_map, arg_name, nullable_body_props
+                    ):
+                        continue  # Skip None values for optional parameters
 
                 if arg_name not in route.parameter_map:
                     logger.warning(
@@ -255,7 +325,10 @@ class RequestDirector:
 
             # Map arguments to locations
             for arg_name, value in flat_args.items():
-                if value is None:
+                if value is None and not (
+                    param_locations.get(arg_name) is None
+                    and arg_name in nullable_body_props
+                ):
                     continue
 
                 # Check if it's a suffixed parameter (e.g., id__path)
