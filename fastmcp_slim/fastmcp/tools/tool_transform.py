@@ -580,6 +580,9 @@ class TransformedTool(Tool):
                     structural_override_properties=cls._arg_transform_type_override_names(
                         transform_args
                     ),
+                    explicit_required_properties=cls._arg_transform_explicit_required_names(
+                        transform_args
+                    ),
                 )
             else:
                 # With **kwargs, function can access all transformed params
@@ -591,6 +594,9 @@ class TransformedTool(Tool):
                     parsed_fn.input_schema,
                     schema,
                     structural_override_properties=cls._arg_transform_type_override_names(
+                        transform_args
+                    ),
+                    explicit_required_properties=cls._arg_transform_explicit_required_names(
                         transform_args
                     ),
                 )
@@ -889,11 +895,28 @@ class TransformedTool(Tool):
         return frozenset(names)
 
     @staticmethod
+    def _arg_transform_explicit_required_names(
+        transform_args: dict[str, ArgTransform] | None,
+    ) -> frozenset[str]:
+        if not transform_args:
+            return frozenset()
+        names: set[str] = set()
+        for old_name, transform in transform_args.items():
+            if transform.hide or transform.required is NotSet or not transform.required:
+                continue
+            if transform.name is not NotSet and transform.name is not None:
+                names.add(transform.name)
+            else:
+                names.add(old_name)
+        return frozenset(names)
+
+    @staticmethod
     def _merge_schema_with_precedence(
         base_schema: dict[str, Any],
         override_schema: dict[str, Any],
         *,
         structural_override_properties: frozenset[str] | None = None,
+        explicit_required_properties: frozenset[str] | None = None,
     ) -> dict[str, Any]:
         """Merge two schemas, with the override schema taking precedence.
 
@@ -912,13 +935,30 @@ class TransformedTool(Tool):
         override_props = override_schema.get("properties", {})
         override_required = set(override_schema.get("required", []))
         structural_override_properties = structural_override_properties or frozenset()
+        explicit_required_properties = explicit_required_properties or frozenset()
 
         # Override properties
         for param_name, param_schema in override_props.items():
             if param_name in merged_props:
                 base_param = merged_props[param_name].copy()
                 if param_name in structural_override_properties:
-                    base_param = param_schema.copy()
+                    structural = {
+                        key: value
+                        for key, value in param_schema.items()
+                        if key not in _PROPERTY_PRESERVE_KEYS
+                    }
+                    preserved_override = _strip_structural_schema_keys(param_schema)
+                    preserved_base = _strip_structural_schema_keys(base_param)
+                    base_param = {**structural, **preserved_override}
+                    for key, value in preserved_base.items():
+                        if key in preserved_override:
+                            continue
+                        if (
+                            key == "default"
+                            and param_name in explicit_required_properties
+                        ):
+                            continue
+                        base_param[key] = value
                 elif _schema_has_structural_keys(base_param):
                     param_schema = _strip_structural_schema_keys(param_schema)
                     base_param.update(param_schema)

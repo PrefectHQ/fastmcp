@@ -424,6 +424,32 @@ async def test_transform_fn_type_replaces_forwarded_parent_schema():
         assert result.data == "5"
 
 
+async def test_arg_transform_type_keeps_transform_fn_default():
+    """ArgTransform(type=...) must not drop defaults declared on transform_fn."""
+
+    @Tool.from_function
+    def parent(x: str) -> str:
+        return x
+
+    async def child(x: int | None = 7) -> ToolResult:
+        return await forward(x=str(x) if x is not None else "")
+
+    tool = Tool.from_tool(
+        parent,
+        transform_fn=child,
+        name="with_default",
+        transform_args={"x": ArgTransform(type=int | None)},
+    )
+
+    prop = tool.parameters["properties"]["x"]
+    assert prop.get("default") == 7
+    assert "x" not in tool.parameters.get("required", [])
+
+    validator = jsonschema.Draft202012Validator(tool.parameters)
+    assert validator.is_valid({})
+    assert validator.is_valid({"x": 5})
+
+
 async def test_forward_with_argument_mapping(add_tool):
     async def custom_fn(new_x: int, **kwargs) -> str:
         result = await forward(new_x=new_x, **kwargs)
