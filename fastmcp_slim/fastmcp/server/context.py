@@ -167,7 +167,7 @@ class Context:
         request_id = ctx.request_id
         client_id = ctx.client_id
 
-        # Manage state across the session (persists across requests)
+        # Share state within this request (and across stateful legacy sessions)
         await ctx.set_state("key", "value")
         value = await ctx.get_state("key")
 
@@ -178,14 +178,12 @@ class Context:
     ```
 
     State Management:
-    Context provides session-scoped state that persists across requests within
-    the same MCP session. State is automatically keyed by session, ensuring
-    isolation between different clients.
-
-    State set during `on_initialize` middleware will persist to subsequent tool
-    calls when using the same session object (STDIO, SSE, single-server HTTP).
-    For distributed/serverless HTTP deployments where different machines handle
-    the init and tool calls, state is isolated by the mcp-session-id header.
+    Context state is keyed by the current connection. On stateful legacy,
+    handshake-era connections, serializable state persists across requests in
+    that session. Modern sessionless connections and stateless HTTP transports
+    create a connection per request, so context state does not persist to later
+    calls. Use [Session State](/servers/sessions) when state must outlive a
+    request across protocol eras.
 
     The context parameter name can be anything as long as it's annotated with Context.
     The context is optional - tools that don't need it can omit the parameter.
@@ -707,15 +705,17 @@ class Context:
 
     @property
     def session_id(self) -> str:
-        """Get the MCP session ID for ALL transports.
+        """Get the identifier for the current MCP connection.
 
-        Returns the session ID that can be used as a key for session-based
-        data storage (e.g., Redis) to share data between tool calls within
-        the same client session.
+        On stateful legacy, handshake-era connections, this identifier is stable
+        for the MCP session. Modern sessionless connections and stateless HTTP
+        transports create a fresh identifier for each request, so it must not be
+        used to share data between calls. Use [Session State](/servers/sessions)
+        for cross-request state.
 
         Returns:
-            The session ID for StreamableHTTP transports, or a generated ID
-            for other transports.
+            The negotiated session ID when available, otherwise an identifier
+            generated for the current connection or request.
 
         Raises:
             RuntimeError if no session is available.
@@ -723,10 +723,8 @@ class Context:
         Example:
             ```python
             @server.tool
-            def store_data(data: dict, ctx: Context) -> str:
-                session_id = ctx.session_id
-                redis_client.set(f"session:{session_id}:data", json.dumps(data))
-                return f"Data stored for session {session_id}"
+            def connection_info(ctx: Context) -> dict[str, str]:
+                return {"connection_id": ctx.session_id}
             ```
         """
         from uuid import uuid4
@@ -739,9 +737,8 @@ class Context:
             session = self._session
         else:
             # Background task: no live session, but the submitting request's
-            # stable session id was captured in the task snapshot. Use it so
-            # session-scoped state (session_id / get_state / set_state) keeps
-            # working in a worker, keyed to the same client that submitted.
+            # state prefix was captured in the task snapshot. Use it so state
+            # access in the worker remains tied to the submitting request.
             from fastmcp.server.dependencies import _background_task_session_id
 
             task_session_id = _background_task_session_id.get()
@@ -752,14 +749,13 @@ class Context:
                 "This typically means you're outside a request context."
             )
 
-        # In SDK v2 the ServerSession is constructed fresh per request, so the
-        # stable per-client identity lives on the underlying Connection, which
-        # persists for the whole client session. Cache the state prefix on the
-        # connection (its `session_id` for HTTP, its `state` dict otherwise) so
-        # session-scoped state survives across tool calls.
+        # Cache the state prefix on the SDK Connection. A Connection spans a
+        # stateful legacy session, but modern sessionless protocols and stateless
+        # HTTP transports create one per request, so this cache intentionally
+        # follows the protocol's lifetime.
         connection = getattr(session, "_connection", None)
 
-        # Check for a cached prefix on the stable connection (or the session, as
+        # Check for a cached prefix on the current connection (or the session, as
         # a fallback for on_initialize where only a raw session is available).
         if connection is not None:
             cached = connection.state.get("_fastmcp_state_prefix")
@@ -783,7 +779,7 @@ class Context:
         if session_id is None:
             session_id = str(uuid4())
 
-        # Cache on the stable connection (falling back to the session).
+        # Cache on the current connection (falling back to the session).
         if connection is not None:
             connection.state["_fastmcp_state_prefix"] = session_id
         else:
@@ -1104,7 +1100,7 @@ class Context:
             raise ValueError(f"Unexpected elicitation action: {result.action}")
 
     def _make_state_key(self, key: str) -> str:
-        """Create session-prefixed key for state storage."""
+        """Create a connection-prefixed key for state storage."""
         return f"{self.session_id}:{key}"
 
     async def set_state(
@@ -1112,9 +1108,12 @@ class Context:
     ) -> None:
         """Set a value in the state store.
 
-        By default, values are stored in the session-scoped state store and
-        persist across requests within the same MCP session. Values must be
-        JSON-serializable (dicts, lists, strings, numbers, etc.).
+        By default, values are stored under the current connection identifier.
+        They persist across requests on stateful legacy, handshake-era sessions,
+        but are request-scoped on modern sessionless connections and stateless
+        HTTP transports. Use [Session State](/servers/sessions) for cross-request
+        state that works across protocol eras. Values must be JSON-serializable
+        (dicts, lists, strings, numbers, etc.).
 
         For non-serializable values (e.g., HTTP clients, database connections),
         pass ``serializable=False``. These values are stored in a request-scoped
@@ -1165,7 +1164,10 @@ class Context:
         """Get a value from the state store.
 
         Checks request-scoped state first (set with ``serializable=False``),
-        then falls back to the session-scoped state store.
+        then falls back to state stored under the current connection identifier.
+        On modern sessionless connections and stateless HTTP transports, that
+        state is request-scoped; on stateful legacy connections, it remains
+        available for the session.
 
         Returns None if the key is not found.
         """
@@ -1178,7 +1180,7 @@ class Context:
     async def delete_state(self, key: str) -> None:
         """Delete a value from the state store.
 
-        Removes from both request-scoped and session-scoped stores.
+        Removes from both request-local and connection-scoped stores.
         """
         prefixed_key = self._make_state_key(key)
         self._request_state.pop(prefixed_key, None)
