@@ -66,7 +66,9 @@ class _ToolBodyError(Exception):
 
 
 @lru_cache(maxsize=5000)
-def _wrap_body_errors(fn: Callable[..., Any]) -> Callable[..., Any]:
+def _wrap_body_errors(
+    fn: Callable[..., Any], *, materialize_generators: bool = False
+) -> Callable[..., Any]:
     """Wrap ``fn`` so a ``pydantic.ValidationError`` raised by its body is
     re-raised as ``_ToolBodyError``.
 
@@ -74,12 +76,26 @@ def _wrap_body_errors(fn: Callable[..., Any]) -> Callable[..., Any]:
     ``TypeAdapter`` validates arguments identically — only body execution is
     affected. Argument validation happens before the wrapper is called, so it
     keeps raising a bare ``pydantic.ValidationError``.
+
+    When ``materialize_generators`` is set, an async generator's items are
+    consumed during this same call. A generator's body runs during iteration,
+    not when the generator object is created, so consuming here — inside the
+    dependency scope that owns the call — keeps context-manager dependencies
+    open until the body has finished (#5400).
     """
     if is_coroutine_function(fn):
 
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             try:
                 return await fn(*args, **kwargs)
+            except PydanticValidationError as e:
+                raise _ToolBodyError from e
+
+    elif materialize_generators and inspect.isasyncgenfunction(fn):
+
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            try:
+                return [item async for item in fn(*args, **kwargs)]
             except PydanticValidationError as e:
                 raise _ToolBodyError from e
     else:
@@ -378,8 +394,12 @@ class FunctionTool(Tool):
         """
         from fastmcp.server.dependencies import without_injected_parameters
 
+        # An async generator's body runs during iteration, not at the call that
+        # creates it. Consume it inside the original invocation so dependency
+        # context managers stay open until the body has finished (#5400).
+        body_fn = _wrap_body_errors(self.fn, materialize_generators=True)
         wrapper_fn = without_injected_parameters(
-            self.fn, run_in_thread=self.run_in_thread
+            body_fn, run_in_thread=self.run_in_thread
         )
         # Tag pydantic errors raised by the body so they can be distinguished
         # from argument-validation errors (which pydantic raises first). See #4128.
