@@ -286,8 +286,11 @@ class AggregateProvider(Provider):
                 return r
         return None
 
-    async def get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
+    async def _get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
         """Query all child providers for a tool matching a hash.
+
+        Each child applies its own transforms, so a child that hides the tool
+        does not answer.
 
         The hash identifies a tool by app name and registered name, with no
         mount-point component, so composing one app into two branches yields

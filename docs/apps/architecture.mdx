@@ -95,17 +95,17 @@ Give each copy its own app name. Two tenants running the same product want `Fast
 
 ### The hashed lookup fallback
 
-The identity-addressed form `<hash>_<local_name>` remains callable. FastMCP first tries normal tool resolution; if no tool matches and the name has that shape, it calls `get_tool_by_hash(hash, local_name)`, which walks the provider tree directly, skipping transforms.
+The identity-addressed form `<hash>_<local_name>` remains callable. FastMCP first tries normal tool resolution; if no tool matches and the name has that shape, it calls `get_tool_by_hash(hash, local_name)`. The lookup finds the tool by identity, then carries it up through every transform between the tool and the caller.
+
+A hashed name reaches a tool only if its listed name also reaches it. Each transform renames the tool as it would in the listing, and each transform's own name lookup must still return it. A transform that hides the tool, a disabled tool (whether disabled on the server, on a provider, in a mounted server, or for the current session), and a tool the caller is not authorized for all answer `Unknown tool` under the hashed name, exactly as they do under the listed name. Tool search and code mode replace the listing but still resolve tools by name, so app tools behind them stay reachable.
 
 When one identity is claimed by more than one tool — which happens when the same app is composed into two branches — the call is refused rather than resolved, since picking either one would silently route into the wrong branch.
-
-Authorization still applies. The hashed path skips name and visibility transforms, but auth checks still run against the tool's `auth` config before execution.
 
 Hashed tool names provide stable routing identities, not secrets or access controls. Knowing a hashed name grants no additional authorization, and hiding it from a model's tool list does not restrict access.
 
 ### Provider delegation
 
-`get_tool_by_hash` is defined on the `Provider` base class and overridden by aggregate and wrapped providers. Aggregate providers fan out the lookup across child providers in parallel. Wrapped providers (like `FastMCPProvider`, which wraps a nested `FastMCP` server) delegate to the inner server's hashed lookup. Backend tools are reachable through any depth of composition.
+`get_tool_by_hash` is defined on the `Provider` base class. It calls `_get_tool_by_hash` to find the tool beneath the provider's own transforms and then applies those transforms, the same split as `get_tool` and `_get_tool`. Aggregate providers override `_get_tool_by_hash` to fan out the lookup across child providers in parallel, and each child applies its own transforms. Wrapped providers (like `FastMCPProvider`, which wraps a nested `FastMCP` server) delegate to the inner server's hashed lookup, which applies that server's transforms, visibility, and auth. Backend tools are reachable through any depth of composition.
 
 ## The renderer
 

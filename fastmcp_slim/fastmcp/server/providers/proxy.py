@@ -951,7 +951,7 @@ class ProxyProvider(Provider):
             return None
         return max(matching, key=version_sort_key)
 
-    async def get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
+    async def _get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
         """Resolve an identity against the remote listing.
 
         The base implementation looks the tool up by its registered name,

@@ -2,12 +2,16 @@ from pathlib import Path
 
 import pytest
 
+from fastmcp import Client, FastMCP, FastMCPApp
 from fastmcp.client.auth import OAuth
 from fastmcp.client.transports import SSETransport, StreamableHttpTransport
+from fastmcp.exceptions import ToolError
+from fastmcp.server.providers.addressing import hashed_backend_name
 from fastmcp.tools import FunctionTool
 from fastmcp.utilities.versions import VersionSpec
 from fastmcp_remote.cli import (
     IgnoreTools,
+    build_proxy,
     build_transport,
     parse_args,
     parse_header,
@@ -252,3 +256,76 @@ async def test_ignore_tools_transform_filters_matching_names():
 
     assert await transform.list_tools([tool]) == []
     assert await transform.get_tool("delete_user", call_next) is None
+
+
+def remote_with_declared_identity(calls: list[str]) -> FastMCP:
+    """A remote whose tool declares an identity of its own choosing."""
+    remote = FastMCP("remote")
+
+    @remote.tool(
+        meta={"fastmcp": {"tool_hash": "aaaaaaaaaaaa"}, "ui": {"visibility": ["app"]}}
+    )
+    def delete_records(marker: str) -> str:
+        calls.append(marker)
+        return f"ran {marker}"
+
+    return remote
+
+
+@pytest.mark.parametrize("pattern", ["delete_records", "delete*", "*"])
+async def test_ignored_tool_is_not_callable_by_hashed_name(pattern: str):
+    calls: list[str] = []
+    proxy = build_proxy(Client(remote_with_declared_identity(calls)), [pattern])
+
+    async with Client(proxy) as client:
+        assert "delete_records" not in [t.name for t in await client.list_tools()]
+        with pytest.raises(ToolError, match="Unknown tool"):
+            await client.call_tool("delete_records", {"marker": "by-name"})
+        with pytest.raises(ToolError, match="Unknown tool"):
+            await client.call_tool("aaaaaaaaaaaa_delete_records", {"marker": "by-hash"})
+
+    assert calls == []
+
+
+async def test_ignored_tool_under_a_remote_namespace_is_not_callable_by_hashed_name():
+    calls: list[str] = []
+    app = FastMCPApp("contacts")
+
+    @app.tool()
+    def save(name: str) -> str:
+        calls.append(name)
+        return f"saved {name}"
+
+    remote = FastMCP("remote")
+    remote.add_provider(app, namespace="crm")
+    proxy = build_proxy(Client(remote), ["crm_*"])
+
+    async with Client(proxy) as client:
+        with pytest.raises(ToolError, match="Unknown tool"):
+            await client.call_tool(
+                hashed_backend_name("contacts", "save"), {"name": "alice"}
+            )
+
+    assert calls == []
+
+
+async def test_tool_not_ignored_stays_callable_by_hashed_name():
+    calls: list[str] = []
+    app = FastMCPApp("contacts")
+
+    @app.tool()
+    def save(name: str) -> str:
+        calls.append(name)
+        return f"saved {name}"
+
+    remote = FastMCP("remote")
+    remote.add_provider(app)
+    proxy = build_proxy(Client(remote), ["delete*"])
+
+    async with Client(proxy) as client:
+        result = await client.call_tool(
+            hashed_backend_name("contacts", "save"), {"name": "alice"}
+        )
+
+    assert result.data == "saved alice"
+    assert calls == ["alice"]
