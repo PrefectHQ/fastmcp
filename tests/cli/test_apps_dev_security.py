@@ -87,14 +87,14 @@ class TestHostHeader:
     @pytest.mark.parametrize(
         "host",
         [
-            "attacker.example:8080",
-            "127.0.0.1.attacker.example:8080",
-            "localhost.attacker.example:8080",
+            "other.example:8080",
+            "127.0.0.1.other.example:8080",
+            "localhost.other.example:8080",
             "127.0.0.1:9999",
             "127.0.0.1",
             "[::1]:9999",
             "2130706433:8080",
-            "127.0.0.1:8080@attacker.example:8080",
+            "127.0.0.1:8080@other.example:8080",
             "127.0.0.1:8080/path",
             "[invalid]:8080",
         ],
@@ -134,7 +134,7 @@ class TestHostHeader:
         [
             ("192.0.2.2:8080", 303),
             ("127.0.0.1:8080", 303),
-            ("attacker.example:8080", 400),
+            ("other.example:8080", 400),
         ],
     )
     def test_wildcard_bind_accepts_literal_addresses(self, host: str, status: int):
@@ -148,7 +148,7 @@ class TestOrigin:
     @pytest.mark.parametrize(
         "headers",
         [
-            {"Origin": "http://attacker.example"},
+            {"Origin": "http://other.example"},
             {"Origin": "http://127.0.0.1:9999"},
             {"Origin": "null"},
             {"Sec-Fetch-Site": "cross-site"},
@@ -196,16 +196,16 @@ class TestOrigin:
 
 class TestServerContent:
     def test_picker_error_is_escaped(self, monkeypatch: pytest.MonkeyPatch):
-        payload = "<img src=x onerror=alert(document.domain)>"
+        markup = '<b class="tool">name</b>'
         monkeypatch.setattr(
-            apps_dev, "_list_tools", AsyncMock(side_effect=ValueError(payload))
+            apps_dev, "_list_tools", AsyncMock(side_effect=ValueError(markup))
         )
 
         response = build_client(session=True).get("/picker-app")
 
         assert response.status_code == 200
-        assert payload not in response.text
-        assert html.escape(payload) in response.text
+        assert markup not in response.text
+        assert html.escape(markup) in response.text
 
     def test_ui_resource_is_sandboxed_when_opened_directly(
         self, monkeypatch: pytest.MonkeyPatch
