@@ -553,7 +553,7 @@ def create_streamable_http_app(
     debug: bool = False,
     routes: list[BaseRoute] | None = None,
     middleware: list[Middleware] | None = None,
-    host_origin_protection: HostOriginProtection = False,
+    host_origin_protection: HostOriginProtection = "auto",
     allowed_hosts: Sequence[str] | None = None,
     allowed_origins: Sequence[str] | None = None,
     session_idle_timeout: float | None = None,
@@ -574,9 +574,9 @@ def create_streamable_http_app(
         routes: Optional list of custom routes
         middleware: Optional list of middleware
         host_origin_protection: Whether to validate Host and Origin headers
-            before requests reach the MCP endpoint. Defaults to False for
-            compatibility. "auto" protects localhost-bound servers and explicit
-            host/origin allowlists.
+            before requests reach the MCP endpoint. Defaults to "auto"
+            which protects localhost-bound servers and explicit
+            host/origin allowlists. Use False to disable entirely.
         allowed_hosts: Additional hostnames that may appear in the Host header.
         allowed_origins: Additional browser origins trusted by the request guard.
             Configure CORS separately when browser JavaScript must read
