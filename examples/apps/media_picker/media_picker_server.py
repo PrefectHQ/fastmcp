@@ -79,8 +79,11 @@ _saved: dict[str, MediaCandidate] = {}
 
 def youtube_video_id(url: str) -> str | None:
     """Extract a video ID from the common YouTube URL shapes."""
-    parsed = urlparse(url.strip())
-    host = (parsed.hostname or "").lower()
+    try:
+        parsed = urlparse(url.strip())
+        host = (parsed.hostname or "").lower()
+    except ValueError:
+        return None
     for prefix in ("www.", "m.", "music."):
         host = host.removeprefix(prefix)
     parts = [part for part in parsed.path.split("/") if part]
