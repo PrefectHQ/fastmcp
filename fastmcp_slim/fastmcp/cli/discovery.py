@@ -191,12 +191,18 @@ def _scan_claude_code(start_dir: Path) -> list[DiscoveredServer]:
                 )
             )
 
-    # Project-scoped servers matching start_dir
-    resolved_dir = str(start_dir.resolve())
+    # Project-scoped servers matching start_dir. Claude Code keys
+    # ``projects`` by a raw path string and on Windows often writes
+    # forward slashes (and a different drive-letter case) than
+    # ``Path.resolve()``, so compare resolved paths instead of strings.
+    resolved_dir = start_dir.resolve()
     projects = data.get("projects", {})
     if isinstance(projects, dict):
-        project_data = projects.get(resolved_dir, {})
-        if isinstance(project_data, dict):
+        for project_path, project_data in projects.items():
+            if not isinstance(project_path, str) or not isinstance(project_data, dict):
+                continue
+            if not _is_same_project_dir(project_path, resolved_dir):
+                continue
             if project_servers := project_data.get("mcpServers"):
                 if isinstance(project_servers, dict):
                     results.extend(
@@ -208,6 +214,14 @@ def _scan_claude_code(start_dir: Path) -> list[DiscoveredServer]:
                     )
 
     return results
+
+
+def _is_same_project_dir(stored: str, resolved_start: Path) -> bool:
+    """Return whether a Claude Code ``projects`` key names *resolved_start*."""
+    try:
+        return Path(stored).expanduser().resolve() == resolved_start
+    except OSError:
+        return False
 
 
 def _scan_cursor_workspace(start_dir: Path) -> list[DiscoveredServer]:

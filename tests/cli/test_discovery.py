@@ -322,6 +322,25 @@ class TestScanClaudeCode:
         assert len(servers) == 1
         assert servers[0].name == "api"
 
+    def test_project_servers_match_posix_path_key(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Claude Code on Windows stores project keys with forward slashes."""
+        monkeypatch.setattr("fastmcp.cli.discovery.Path.home", lambda: tmp_path)
+        project_dir = tmp_path / "my-project"
+        project_dir.mkdir()
+        config_path = tmp_path / ".claude.json"
+        _write_config(
+            config_path,
+            _claude_code_config(
+                project_path=project_dir.resolve().as_posix(),
+                project_servers={"api": {"url": "http://localhost:8000/mcp"}},
+            ),
+        )
+        servers = _scan_claude_code(project_dir)
+        assert len(servers) == 1
+        assert servers[0].name == "api"
+
     def test_global_and_project_combined(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
