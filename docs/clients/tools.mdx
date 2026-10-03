@@ -118,6 +118,8 @@ async with client:
 </ResponseField>
 </Card>
 
+The client treats the server's output schema as data. Schema titles become sanitized Python class names, and a property whose name Python or Pydantic reserves, such as `model_config` or `__annotations__`, is stored under a generated field name with the original name as its alias. When `.data` is a Pydantic model, `model_dump(by_alias=True)` returns those properties under their original names. Output schemas that are too deeply nested or too large to convert are not converted.
+
 Structured content without an output schema is returned as a dictionary in `.data`, including an empty object (`{}`). When structured content is absent or deserialization fails, `.data` is `None`. Fall back to content blocks in that case:
 
 ```python
