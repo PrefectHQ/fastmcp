@@ -4,7 +4,7 @@ import pytest
 from mcp_types import ToolAnnotations
 from pydantic import Field
 
-from fastmcp import Client, FastMCP
+from fastmcp import Client, Context, FastMCP
 from fastmcp.tools.base import Tool
 
 
@@ -168,7 +168,26 @@ class TestParameterTitles:
 
         tool = Tool.from_function(search)
 
-        assert tool.parameters["properties"]["limit"]["title"] == "Max Results"
+        assert tool.parameters["properties"]["limit"] == {
+            "anyOf": [{"type": "integer"}, {"type": "null"}],
+            "default": None,
+            "title": "Max Results",
+        }
+
+    def test_title_on_optional_parameter_is_kept_with_context(self):
+        def search(
+            ctx: Context,
+            limit: Annotated[int | None, Field(title="Max Results")] = None,
+        ) -> str:
+            return "ok"
+
+        tool = Tool.from_function(search)
+
+        assert tool.parameters["properties"]["limit"] == {
+            "anyOf": [{"type": "integer"}, {"type": "null"}],
+            "default": None,
+            "title": "Max Results",
+        }
 
     def test_derived_titles_are_still_pruned(self):
         def get_bill(

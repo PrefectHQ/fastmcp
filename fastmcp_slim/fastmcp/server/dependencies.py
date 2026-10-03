@@ -46,7 +46,11 @@ from fastmcp.utilities.async_utils import (
     is_coroutine_function,
 )
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import find_kwarg_by_type, is_class_member_of_type
+from fastmcp.utilities.types import (
+    find_kwarg_by_type,
+    get_function_type_hints,
+    is_class_member_of_type,
+)
 
 if TYPE_CHECKING:
     from fastmcp.server.context import Context
@@ -789,7 +793,7 @@ def without_injected_parameters(
     # this module (dependencies.py) and is read-only, so some Pydantic versions
     # can't resolve names like Annotated or Literal from string annotations.
     try:
-        resolved_hints = get_type_hints(fn, include_extras=True)
+        resolved_hints = get_function_type_hints(fn)
     except Exception:
         resolved_hints = getattr(fn, "__annotations__", {})
 
