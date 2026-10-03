@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import datetime
 from collections.abc import AsyncIterator
 from typing import Any, cast
 
@@ -911,6 +912,29 @@ async def test_client_structured_content_without_output_schema(structured_conten
     assert result.structured_content == structured_content
     assert result.data == structured_content
     assert type(result.data) is type(structured_content)
+
+
+@pytest.mark.parametrize("list_first", [False, True])
+async def test_client_hydrates_data_for_tool_beyond_first_list_page(list_first: bool):
+    """A tool's output schema is found even when it is not on the first page."""
+    server = FastMCP(list_page_size=1)
+
+    @server.tool
+    def first() -> int:
+        return 1
+
+    @server.tool
+    def when() -> datetime.datetime:
+        return datetime.datetime(2026, 1, 1, 12, 0)
+
+    async with Client(server) as client:
+        if list_first:
+            await client.list_tools()
+        result = await client.call_tool("when")
+
+    assert result.structured_content == {"result": "2026-01-01T12:00:00"}
+    assert result.data == datetime.datetime(2026, 1, 1, 12, 0)
+    assert type(result.data) is datetime.datetime
 
 
 async def test_client_list_dict_return_type():
