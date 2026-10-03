@@ -1,4 +1,4 @@
-"""OpenAPI tools send only the arguments their operation declares."""
+"""OpenAPI components send only declared arguments and keep configured headers."""
 
 import copy
 import json
@@ -9,7 +9,9 @@ import pytest
 from jsonschema_path import SchemaPath
 
 from fastmcp import Client, FastMCP
+from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.exceptions import ToolError
+from fastmcp.server.providers.openapi.routing import MCPType, RouteMap
 from fastmcp.utilities.openapi import director, parser
 from fastmcp.utilities.openapi.director import RequestDirector
 from fastmcp.utilities.openapi.models import (
@@ -17,9 +19,14 @@ from fastmcp.utilities.openapi.models import (
     ParameterInfo,
     RequestBodyInfo,
 )
+from fastmcp.utilities.tests import run_server_async
 
 BASE_URL = "https://api.example.com"
-CONFIGURED_HEADERS = {"Authorization": "Bearer configured", "X-Roles": "readonly"}
+CONFIGURED_HEADERS = {
+    "Authorization": "Bearer configured",
+    "X-Api-Key": "configured-key",
+    "X-Roles": "readonly",
+}
 
 UNDECLARED_ARGUMENTS = [
     pytest.param({"Authorization__header": "Bearer other"}, id="authorization"),
@@ -47,27 +54,32 @@ def _spec(path: str, method: str, operation: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def _call_tool(
-    spec: dict[str, Any],
-    arguments: dict[str, Any],
-    requests: list[httpx.Request],
-) -> None:
+def _upstream_client(requests: list[httpx.Request]) -> httpx.AsyncClient:
     def capture(request: httpx.Request) -> httpx.Response:
         requests.append(request)
         return httpx.Response(200, json={"ok": True})
 
-    async with httpx.AsyncClient(
+    return httpx.AsyncClient(
         base_url=BASE_URL,
         headers=CONFIGURED_HEADERS,
         transport=httpx.MockTransport(capture),
-    ) as http_client:
+    )
+
+
+async def _call_tool(
+    spec: dict[str, Any], arguments: dict[str, Any]
+) -> list[httpx.Request]:
+    requests: list[httpx.Request] = []
+    async with _upstream_client(requests) as http_client:
         server = FastMCP.from_openapi(openapi_spec=spec, client=http_client)
         async with Client(server) as client:
             await client.call_tool("operation", arguments)
+    return requests
 
 
 def _assert_configured_request(request: httpx.Request) -> None:
     assert request.headers["Authorization"] == "Bearer configured"
+    assert request.headers["X-Api-Key"] == "configured-key"
     assert request.headers["X-Roles"] == "readonly"
     assert request.headers["Host"] == "api.example.com"
     assert "Cookie" not in request.headers
@@ -80,10 +92,7 @@ async def test_operation_without_parameters_drops_undeclared_arguments(
 ) -> None:
     spec = _spec("/health", method, {})
 
-    requests: list[httpx.Request] = []
-    await _call_tool(spec, arguments, requests)
-
-    [request] = requests
+    [request] = await _call_tool(spec, arguments)
 
     _assert_configured_request(request)
     assert str(request.url) == f"{BASE_URL}/health"
@@ -100,14 +109,10 @@ async def test_failed_schema_precalculation_drops_undeclared_arguments(
     limit = {"name": "limit", "in": "query", "schema": {"type": "integer"}}
     spec = _spec("/items", "get", {"parameters": [limit]})
 
-    requests: list[httpx.Request] = []
-    await _call_tool(
+    [request] = await _call_tool(
         spec,
         {"limit": 5, "Authorization__header": "Bearer other", "extra": "value"},
-        requests,
     )
-
-    [request] = requests
 
     _assert_configured_request(request)
     assert dict(request.url.params) == {"limit": "5"}
@@ -126,12 +131,62 @@ async def test_unbuildable_parameter_map_sends_no_request(
     spec = _spec("/items", "get", {"parameters": [limit]})
 
     requests: list[httpx.Request] = []
-    with pytest.raises(ToolError, match="schema pre-calculation failed"):
-        await _call_tool(
-            spec, {"limit": 5, "Authorization__header": "Bearer other"}, requests
-        )
+    async with _upstream_client(requests) as http_client:
+        server = FastMCP.from_openapi(openapi_spec=spec, client=http_client)
+        async with Client(server) as client:
+            with pytest.raises(ToolError, match="schema pre-calculation failed"):
+                await client.call_tool(
+                    "operation", {"limit": 5, "Authorization__header": "Bearer other"}
+                )
 
     assert requests == []
+
+
+@pytest.mark.parametrize(
+    "component",
+    ["tool", "resource", "resource_template"],
+)
+async def test_forwarded_request_headers_keep_configured_headers(
+    component: str,
+) -> None:
+    ok = {"200": {"description": "OK"}}
+    item_id = {"name": "item_id", "in": "path", "required": True, "schema": {}}
+    spec = {
+        "openapi": "3.1.0",
+        "info": {"title": "Test API", "version": "1.0"},
+        "paths": {
+            "/actions": {"post": {"operationId": "act", "responses": ok}},
+            "/status": {"get": {"operationId": "status", "responses": ok}},
+            "/items/{item_id}": {
+                "get": {"operationId": "item", "parameters": [item_id], "responses": ok}
+            },
+        },
+    }
+    route_maps = [
+        RouteMap(pattern=r"\{", mcp_type=MCPType.RESOURCE_TEMPLATE),
+        RouteMap(methods=["GET"], mcp_type=MCPType.RESOURCE),
+    ]
+    requests: list[httpx.Request] = []
+
+    async with _upstream_client(requests) as http_client:
+        server = FastMCP.from_openapi(
+            openapi_spec=spec, client=http_client, route_maps=route_maps
+        )
+        async with run_server_async(server) as url:
+            transport = StreamableHttpTransport(
+                url, headers={"X-Api-Key": "client-key", "X-Client-Tag": "forwarded"}
+            )
+            async with Client(transport) as client:
+                if component == "tool":
+                    await client.call_tool("act", {})
+                elif component == "resource":
+                    await client.read_resource("resource://status")
+                else:
+                    await client.read_resource("resource://item/7")
+
+    [request] = requests
+    _assert_configured_request(request)
+    assert request.headers["X-Client-Tag"] == "forwarded"
 
 
 def test_manual_route_uses_canonical_parameter_names() -> None:

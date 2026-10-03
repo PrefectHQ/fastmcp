@@ -303,7 +303,9 @@ class OpenAPIResource(Resource):
             )
             mcp_headers = get_http_headers()
             if mcp_headers:
-                request.headers.update(mcp_headers)
+                for key, value in mcp_headers.items():
+                    if key not in request.headers:
+                        request.headers[key] = value
 
             response = await self._client.send(request)
             response.raise_for_status()
