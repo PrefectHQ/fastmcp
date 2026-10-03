@@ -225,7 +225,7 @@ test("required matrix checks retain names even when editorial steps skip", () =>
     );
   }
 });
-test("Windows retains matrix check names while skipping PR test steps", () => {
+test("Windows runs code PRs and retains check names for editorial PRs", () => {
   const windows = workflow.jobs.run_windows_tests;
   assert.equal(
     windows.name,
@@ -236,7 +236,7 @@ test("Windows retains matrix check names while skipping PR test steps", () => {
   });
   assert.equal(windows.if, "${{ !cancelled() }}");
   assert.equal(windows["runs-on"], "windows-latest");
-  assert.equal(windows.needs, undefined);
+  assert.equal(windows.needs, "changes");
   assert.deepEqual(windows.steps[1].with, {
     "python-version": "${{ matrix.python-version }}",
     resolution: "locked",
@@ -246,7 +246,7 @@ test("Windows retains matrix check names while skipping PR test steps", () => {
   assert.equal(windows.steps[3].with["test-type"], "client_process");
   assert.equal(windows.steps[0].if, undefined);
   assert.ok(
-    windows.steps.slice(1).every((step) => step.if === "github.event_name != 'pull_request'"),
+    windows.steps.slice(1).every((step) => step.if === "needs.changes.outputs.run-tests != 'false'"),
   );
 });
 test("PR cancellation cannot supersede main or manual runs", () => {
