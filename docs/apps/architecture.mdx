@@ -99,6 +99,8 @@ The identity-addressed form `<hash>_<local_name>` remains callable. FastMCP firs
 
 A hashed name reaches a tool only if its listed name also reaches it. Each transform renames the tool as it would in the listing, and each transform's own name lookup must still return it. A transform that hides the tool, a disabled tool (whether disabled on the server, on a provider, in a mounted server, or for the current session), and a tool the caller is not authorized for all answer `Unknown tool` under the hashed name, exactly as they do under the listed name. Tool search and code mode replace the listing but still resolve tools by name, so app tools behind them stay reachable.
 
+This relies on one contract for custom transforms: a transform's `get_tool` decides from the requested name and version alone. During a hashed lookup, the `call_next` it receives answers only for the tool already found.
+
 When one identity is claimed by more than one tool — which happens when the same app is composed into two branches — the call is refused rather than resolved, since picking either one would silently route into the wrong branch.
 
 Hashed tool names provide stable routing identities, not secrets or access controls. Knowing a hashed name grants no additional authorization, and hiding it from a model's tool list does not restrict access.

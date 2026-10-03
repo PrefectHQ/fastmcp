@@ -35,7 +35,10 @@ from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
 from typing_extensions import Self
 
-from fastmcp.server.providers.addressing import tool_identity
+from fastmcp.server.providers.addressing import (
+    is_app_tool_with_identity,
+    tool_identity,
+)
 from fastmcp.server.transforms.visibility import Visibility
 from fastmcp.utilities.async_utils import gather
 from fastmcp.utilities.components import FastMCPComponent
@@ -283,7 +286,7 @@ class Provider:
         override this to search by identity instead.
         """
         tool = await self._get_tool(tool_name)
-        if tool is not None and _is_app_tool_with_identity(tool, tool_hash):
+        if tool is not None and is_app_tool_with_identity(tool, tool_hash):
             return tool
         return None
 
@@ -730,14 +733,6 @@ class Provider:
         return self
 
 
-def _is_app_tool_with_identity(tool: Tool, tool_hash: str) -> bool:
-    """Whether a tool carries this identity hash and is callable by apps."""
-    meta = tool.meta or {}
-    ui_meta = meta.get("ui")
-    visibility = ui_meta.get("visibility", []) if isinstance(ui_meta, dict) else []
-    return tool_identity(tool) == tool_hash and "app" in visibility
-
-
 async def _tool_through_transform(transform: Transform, tool: Tool) -> Tool | None:
     """Carry a tool found beneath a transform up through it.
 
@@ -747,6 +742,12 @@ async def _tool_through_transform(transform: Transform, tool: Tool) -> Tool | No
     does not list the tool, such as a catalog transform that replaces the
     listing, is asked for the tool's unchanged name, which is what a name
     lookup through it would use.
+
+    This relies on the transform contract: a transform's `get_tool()` decides
+    from the requested name (and version) alone. The `call_next` it receives
+    here answers only for the tool already found, so a transform whose
+    decision depends on what other tools `call_next` would return is not
+    supported.
     """
     identity = tool_identity(tool)
     listed = {
