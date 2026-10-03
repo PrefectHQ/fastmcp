@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import math
 from collections.abc import Callable
 from typing import (
     TYPE_CHECKING,
@@ -30,6 +31,7 @@ from pydantic import (
 )
 from pydantic.json_schema import SkipJsonSchema
 
+from fastmcp.exceptions import ToolError
 from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.logging import get_logger
@@ -59,6 +61,25 @@ logger = get_logger(__name__)
 _JSONABLE_ADAPTER = get_cached_typeadapter(Any)
 
 
+class _NonFiniteFloatError(ValueError):
+    pass
+
+
+def _find_nonfinite_float(data: Any) -> float | None:
+    if isinstance(data, float) and not math.isfinite(data):
+        return data
+    if isinstance(data, dict):
+        values = data.values()
+    elif isinstance(data, list | tuple | set | frozenset):
+        values = data
+    else:
+        return None
+    for value in values:
+        if (nonfinite := _find_nonfinite_float(value)) is not None:
+            return nonfinite
+    return None
+
+
 def _default_title(name: str) -> str:
     """Derive a display title from a tool name.
 
@@ -85,10 +106,13 @@ def _serialize_to_jsonable(data: Any, annotation: Any = Any) -> Any:
         adapter = _JSONABLE_ADAPTER
     else:
         try:
-            return get_cached_typeadapter(annotation).dump_python(data, mode="json")
+            adapter = get_cached_typeadapter(annotation)
         except PydanticSchemaGenerationError:
             adapter = _JSONABLE_ADAPTER
 
+    python_value = adapter.dump_python(data, mode="python")
+    if (nonfinite := _find_nonfinite_float(python_value)) is not None:
+        raise _NonFiniteFloatError(repr(nonfinite))
     return adapter.dump_python(data, mode="json")
 
 
@@ -410,6 +434,10 @@ class Tool(FastMCPComponent):
 
         try:
             structured = _serialize_to_jsonable(raw_value, self.return_type)
+        except _NonFiniteFloatError as e:
+            raise ToolError(
+                f"Tool result contains a non-finite float value: {e}"
+            ) from e
         except (pydantic_core.PydanticSerializationError, UnicodeDecodeError):
             return ToolResult(content=content)
 
