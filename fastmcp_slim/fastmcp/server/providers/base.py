@@ -28,8 +28,8 @@ Example:
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Iterator, Sequence
+from contextlib import asynccontextmanager, contextmanager
 from functools import partial
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     from fastmcp.resources.base import Resource
     from fastmcp.resources.template import ResourceTemplate
     from fastmcp.server.extensions import ServerExtension
+    from fastmcp.server.server import FastMCP
     from fastmcp.server.transforms import (
         GetPromptNext,
         GetResourceNext,
@@ -98,6 +99,17 @@ class Provider:
         Composite providers should include their children's extensions.
         """
         return ()
+
+    @contextmanager
+    def _extension_runtime(
+        self, available: frozenset[str], *, root: FastMCP | None
+    ) -> Iterator[None]:
+        """Track a serving root independently of resource lifespan ownership.
+
+        Composite providers forward this scope to their children so live
+        composition can validate every runtime that will expose new components.
+        """
+        yield
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}()"

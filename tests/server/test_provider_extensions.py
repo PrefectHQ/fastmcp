@@ -586,7 +586,7 @@ async def test_mounted_child_lifespan_cannot_introduce_a_new_root_extension():
     child = FastMCP("child", lifespan=lifespan)
     root = FastMCP("root")
     root.mount(child)
-    with pytest.raises(RuntimeError, match="root server 'root' has already started"):
+    with pytest.raises(RuntimeError, match="unavailable in a running server"):
         async with root._lifespan_manager():
             pass
     assert child._extensions == {}

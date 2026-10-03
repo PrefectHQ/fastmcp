@@ -70,14 +70,28 @@ class ExtensionsMixin:
             "Registered extension %r explicitly on server %r.", identifier, self.name
         )
 
-    def _install_extension(self: FastMCP, extension: ServerExtension) -> None:
+    def _install_extension(
+        self: FastMCP, extension: ServerExtension, *, from_provider: bool = False
+    ) -> None:
         """Wire a registration, removing methods belonging to its predecessor."""
         from fastmcp.server.dependencies import get_server
         from fastmcp.server.mixins.lifespan import _lifespan_root_active
 
         identifier = extension.identifier
         validate_extension_identifier(identifier, owner=type(extension).__name__)
-        if self._extensions_started or self._lifespan_result_set:
+        supported_by_roots = (
+            from_provider
+            and bool(self._extension_scopes)
+            and all(
+                scope.root is not None
+                and scope.root is not self
+                and identifier in scope.available
+                for scope in self._extension_scopes
+            )
+        )
+        if (
+            self._extensions_started or self._lifespan_result_set
+        ) and not supported_by_roots:
             raise RuntimeError(
                 f"Cannot register extension {identifier!r}: the server's lifespan "
                 "has already started. Register extensions before serving."
@@ -194,7 +208,7 @@ class ExtensionsMixin:
                     )
                     self._extension_conflicts.add(identifier)
                 continue
-            self._install_extension(clone)
+            self._install_extension(clone, from_provider=True)
             self._auto_extensions.add(identifier)
             logger.debug(
                 "Registered extension %r from %r on server %r automatically.",

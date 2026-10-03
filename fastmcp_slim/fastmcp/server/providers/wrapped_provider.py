@@ -6,8 +6,8 @@ with an additional transform. Created by `Provider.wrap_transform()`.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Iterator, Sequence
+from contextlib import asynccontextmanager, contextmanager
 from typing import TYPE_CHECKING
 
 from fastmcp.server.providers.base import Provider
@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from fastmcp.resources.base import Resource
     from fastmcp.resources.template import ResourceTemplate
     from fastmcp.server.extensions import ServerExtension
+    from fastmcp.server.server import FastMCP
     from fastmcp.server.transforms import Transform
     from fastmcp.tools.base import Tool
     from fastmcp.utilities.components import FastMCPComponent
@@ -50,6 +51,13 @@ class _WrappedProvider(Provider):
     def required_extensions(self) -> Sequence[ServerExtension]:
         """Preserve bundled extensions through transforms and namespaces."""
         return self._inner.required_extensions()
+
+    @contextmanager
+    def _extension_runtime(
+        self, available: frozenset[str], *, root: FastMCP | None
+    ) -> Iterator[None]:
+        with self._inner._extension_runtime(available, root=root):
+            yield
 
     def __repr__(self) -> str:
         return f"_WrappedProvider({self._inner!r}, transforms={self._transforms!r})"
