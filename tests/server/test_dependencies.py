@@ -1,5 +1,7 @@
 """Tests for Docket-style dependency injection in FastMCP."""
 
+import io
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, contextmanager
 
 import pytest
@@ -385,6 +387,30 @@ async def test_async_tool_context_manager_stays_open(mcp: FastMCP):
     result = await mcp.call_tool("query_data", {"query": "test"})
     assert result.structured_content is not None
     assert result.structured_content["result"] == "open=True"
+
+
+async def test_async_generator_tool_context_manager_stays_open(mcp: FastMCP):
+    """Test that dependencies stay open while an async generator tool is consumed."""
+    stream = io.StringIO("payload")
+
+    @asynccontextmanager
+    async def open_stream():
+        try:
+            yield stream
+        finally:
+            stream.close()
+
+    @mcp.tool()
+    async def read_stream(
+        stream: io.StringIO = Depends(open_stream),
+    ) -> AsyncIterator[str]:
+        yield stream.read()
+
+    result = await mcp.call_tool("read_stream", {})
+    content = result.content[0]
+    assert isinstance(content, TextContent)
+    assert content.text == '["payload"]'
+    assert stream.closed
 
 
 async def test_async_resource_context_manager_stays_open(mcp: FastMCP):
