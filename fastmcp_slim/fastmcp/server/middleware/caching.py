@@ -32,6 +32,7 @@ from fastmcp.resources.base import (
     ResourceContent,
     ResourceResult,
 )
+from fastmcp.server.caching import CacheScope
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.base import InputRequiredToolResult, Tool, ToolResult
@@ -98,6 +99,8 @@ class CacheableResourceResult(FastMCPBaseModel):
 
     contents: list[CacheableResourceContent]
     meta: dict[str, Any] | None = None
+    ttl_ms: int | None = None
+    cache_scope: CacheScope | None = None
 
     def get_size(self) -> int:
         return len(self.model_dump_json())
@@ -119,6 +122,8 @@ class CacheableResourceResult(FastMCPBaseModel):
                 for item in value.contents
             ],
             meta=value.meta,
+            ttl_ms=value.ttl_ms,
+            cache_scope=value.cache_scope,
         )
 
     def unwrap(self) -> ResourceResult:
@@ -134,6 +139,8 @@ class CacheableResourceResult(FastMCPBaseModel):
                 for item in self.contents
             ],
             meta=self.meta,
+            ttl_ms=self.ttl_ms,
+            cache_scope=self.cache_scope,
         )
 
 
