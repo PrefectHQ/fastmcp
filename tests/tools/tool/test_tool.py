@@ -1,4 +1,6 @@
+import functools
 from datetime import timedelta
+from typing import Annotated
 
 import pytest
 from dirty_equals import HasName
@@ -8,9 +10,11 @@ from mcp_types import (
     ImageContent,
     ToolExecution,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from fastmcp import Client, FastMCP
 from fastmcp.tools.base import Tool, ToolResult
+from fastmcp.tools.function_tool import FunctionTool, ToolMeta
 from fastmcp.utilities.types import Audio, File, Image
 
 
@@ -636,3 +640,255 @@ class TestToolExecutionField:
         mcp_tool = tool.to_mcp_tool()
         assert mcp_tool.execution is not None
         assert mcp_tool.execution.task_support == "forbidden"
+
+
+class TestPartialTools:
+    """Tools built from functools.partial should use the wrapped function metadata."""
+
+    def test_partial_uses_wrapped_function_name_and_description(self):
+        def multiply(x: int, y: int) -> int:
+            """Multiply two numbers."""
+            return x * y
+
+        tool = Tool.from_function(functools.partial(multiply, y=2))
+        assert tool.name == "multiply"
+        assert tool.description == "Multiply two numbers."
+        # Bound kwargs appear as optional params with defaults; unbound stay required.
+        assert tool.parameters["properties"]["x"] == {"type": "integer"}
+        assert tool.parameters["required"] == ["x"]
+
+    async def test_nested_partial_combines_metadata_and_binding(self):
+        def greet(greeting: str, name: str) -> str:
+            """Greet a person."""
+            return f"{greeting}, {name}!"
+
+        nested = functools.partial(functools.partial(greet, "Hello"), name="world")
+        # functools.partial flattens nested partials on supported Python versions.
+        assert nested.func is greet
+
+        tool = Tool.from_function(nested)
+        assert tool.name == "greet"
+        assert tool.description == "Greet a person."
+        result = await tool.run({})
+        assert result.structured_content == {"result": "Hello, world!"}
+
+    async def test_multiple_partial_tools_do_not_collide(self):
+        def multiply(x: int, y: int) -> int:
+            """Multiply two numbers."""
+            return x * y
+
+        def greet(name: str) -> str:
+            """Greet a person."""
+            return f"Hello, {name}!"
+
+        mcp = FastMCP()
+        mcp.add_tool(functools.partial(multiply, y=2))
+        mcp.add_tool(functools.partial(greet))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            multiply_result = await client.call_tool("multiply", {"x": 3})
+            greet_result = await client.call_tool("greet", {"name": "Ada"})
+
+        by_name = {t.name: t for t in tools}
+        assert set(by_name) == {"multiply", "greet"}
+        assert by_name["multiply"].description == "Multiply two numbers."
+        assert by_name["greet"].description == "Greet a person."
+        assert multiply_result.structured_content == {"result": 6}
+        assert greet_result.structured_content == {"result": "Hello, Ada!"}
+
+    async def test_custom_partial_metadata_and_keyword_binding_are_preserved(self):
+        def multiply(x: int, y: int) -> int:
+            """Multiply two numbers."""
+            return x * y
+
+        double = functools.partial(multiply, y=2)
+        setattr(double, "__name__", "double")
+        setattr(double, "__doc__", "Double the input.")
+
+        triple = functools.partial(multiply, y=3)
+        setattr(triple, "__name__", "triple")
+        setattr(triple, "__doc__", "Triple the input.")
+
+        mcp = FastMCP()
+        mcp.add_tool(double)
+        mcp.add_tool(triple)
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            double_result = await client.call_tool("double", {"x": 3})
+            override_result = await client.call_tool("double", {"x": 3, "y": 5})
+            triple_result = await client.call_tool("triple", {"x": 3})
+
+        by_name = {tool.name: tool for tool in tools}
+        assert set(by_name) == {"double", "triple"}
+        assert by_name["double"].description == "Double the input."
+        assert by_name["triple"].description == "Triple the input."
+        assert by_name["double"].input_schema["required"] == ["x"]
+        assert by_name["double"].input_schema["properties"]["y"]["default"] == 2
+        assert double_result.structured_content == {"result": 6}
+        assert override_result.structured_content == {"result": 15}
+        assert triple_result.structured_content == {"result": 9}
+
+    async def test_fastmcp_metadata_overrides_partial_metadata(self):
+        def multiply(x: int, y: int) -> int:
+            """Multiply two numbers."""
+            return x * y
+
+        partial_fn = functools.partial(multiply, y=2)
+        setattr(partial_fn, "__name__", "partial_name")
+        setattr(partial_fn, "__doc__", "Partial description.")
+        direct_tool = Tool.from_function(
+            partial_fn, name="direct_override", description=""
+        )
+        assert direct_tool.name == "direct_override"
+        assert direct_tool.description == ""
+
+        metadata_tool = FunctionTool.from_function(
+            partial_fn,
+            metadata=ToolMeta(name="meta_override", description=""),
+        )
+        assert metadata_tool.name == "meta_override"
+        assert metadata_tool.description == ""
+
+        mcp = FastMCP()
+        mcp.add_tool(direct_tool)
+        mcp.add_tool(metadata_tool)
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            direct_result = await client.call_tool("direct_override", {"x": 3})
+            metadata_result = await client.call_tool("meta_override", {"x": 3})
+
+        by_name = {tool.name: tool for tool in tools}
+        assert set(by_name) == {"direct_override", "meta_override"}
+        assert by_name["direct_override"].description == ""
+        assert by_name["meta_override"].description == ""
+        assert direct_result.structured_content == {"result": 6}
+        assert metadata_result.structured_content == {"result": 6}
+
+    async def test_positional_partial_binding_exposes_only_unbound_parameters(self):
+        def multiply(x: int, y: int) -> int:
+            """Multiply two numbers."""
+            return x * y
+
+        tool = Tool.from_function(functools.partial(multiply, 2), name="double")
+
+        assert tool.parameters["properties"] == {"y": {"type": "integer"}}
+        assert tool.parameters["required"] == ["y"]
+        result = await tool.run({"y": 3})
+        assert result.structured_content == {"result": 6}
+
+    async def test_async_partial_has_output_schema_and_executes(self):
+        async def multiply(x: int, y: int) -> int:
+            """Multiply two numbers asynchronously."""
+            return x * y
+
+        mcp = FastMCP()
+        mcp.add_tool(functools.partial(multiply, y=2))
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            result = await client.call_tool("multiply", {"x": 3})
+
+        assert tools[0].output_schema is not None
+        assert tools[0].output_schema["properties"]["result"] == {"type": "integer"}
+        assert result.structured_content == {"result": 6}
+
+    def test_partial_parameter_docs_and_annotated_schema_description(self):
+        def describe(
+            value: Annotated[int, Field(description="Schema value description")],
+            label: str,
+        ) -> str:
+            """Describe values.
+
+            Args:
+                value: Docstring value description.
+                label: Docstring label description.
+            """
+            return f"{label}: {value}"
+
+        tool = Tool.from_function(functools.partial(describe))
+
+        properties = tool.parameters["properties"]
+        assert properties["value"]["description"] == "Schema value description"
+        assert properties["label"]["description"] == "Docstring label description."
+
+    def test_partial_docstring_parameter_docs_override_wrapped_docs(self):
+        def describe(value: int) -> str:
+            """Describe a value.
+
+            Args:
+                value: Wrapped parameter description.
+            """
+            return str(value)
+
+        fn = functools.partial(describe)
+        setattr(
+            fn,
+            "__doc__",
+            "Describe a value differently.\n\nArgs:\n    value: Partial parameter description.",
+        )
+
+        tool = Tool.from_function(fn)
+
+        assert tool.description == "Describe a value differently."
+        assert (
+            tool.parameters["properties"]["value"]["description"]
+            == "Partial parameter description."
+        )
+
+    def test_callable_instance_uses_call_parameter_docs(self):
+        class Offset:
+            """Callable offset.
+
+            Args:
+                amount: Amount stored by the constructor.
+            """
+
+            def __init__(self, amount: int) -> None:
+                self.offset = amount
+
+            def __call__(self, amount: int) -> int:
+                """Add an amount to the stored offset.
+
+                Args:
+                    amount: Amount supplied to each call.
+                """
+                return self.offset + amount
+
+        tool = Tool.from_function(Offset(10))
+
+        assert tool.description == "Callable offset."
+        assert (
+            tool.parameters["properties"]["amount"]["description"]
+            == "Amount supplied to each call."
+        )
+
+    @pytest.mark.parametrize("doc", [None, ""])
+    def test_explicit_none_or_empty_partial_doc_suppresses_wrapped_doc(self, doc):
+        def documented(value: int) -> int:
+            """Wrapped description."""
+            return value
+
+        fn = functools.partial(documented)
+        setattr(fn, "__doc__", doc)
+
+        assert Tool.from_function(fn).description is None
+
+    def test_partial_without_instance_doc_falls_back_to_wrapped_doc(self):
+        def documented(value: int) -> int:
+            """Wrapped description."""
+            return value
+
+        tool = Tool.from_function(functools.partial(documented))
+
+        assert tool.description == "Wrapped description."
+
+    def test_partial_without_wrapped_doc_does_not_expose_generic_partial_doc(self):
+        def undocumented(value: int) -> int:
+            return value
+
+        tool = Tool.from_function(functools.partial(undocumented))
+
+        assert tool.description is None
