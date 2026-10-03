@@ -433,3 +433,42 @@ class TestSerializeByAlias:
 
         assert result.structured_content == {"_id": "123"}
         assert set(tools["get_biofile"].output_schema["properties"]) == {"_id"}  # type: ignore[index]
+
+
+class TestUnserializableReturnValue:
+    """An unserializable return value must not become a silent success (#5030)."""
+
+    def _make_server(self) -> FastMCP:
+        import threading
+
+        mcp = FastMCP()
+
+        @mcp.tool
+        def with_schema() -> dict:
+            return {"host": "db1", "lock": threading.Lock()}
+
+        @mcp.tool
+        def without_schema():
+            return {"host": "db1", "lock": threading.Lock()}
+
+        return mcp
+
+    async def test_output_schema_raises_tool_error(self):
+        """With an output schema, serialization failure is an error result,
+        not a success carrying the value's repr with no structured content."""
+        async with Client(self._make_server()) as client:
+            result = await client.call_tool("with_schema", {}, raise_on_error=False)
+
+        assert result.is_error
+        assert "Could not serialize" in result.content[0].text  # type: ignore[union-attr]
+        assert "with_schema" in result.content[0].text  # type: ignore[union-attr]
+
+    async def test_no_output_schema_keeps_content_fallback(self):
+        """Without an output schema there is no structured-content contract,
+        so the content-only fallback stays."""
+        async with Client(self._make_server()) as client:
+            result = await client.call_tool("without_schema", {})
+
+        assert not result.is_error
+        assert result.structured_content is None
+        assert "db1" in result.content[0].text  # type: ignore[union-attr]
