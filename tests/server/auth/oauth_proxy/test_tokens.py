@@ -247,7 +247,11 @@ class TestOAuthProxyTokenEndpointAuth:
             response = await proxy._handle_idp_callback(mock_request)
 
         assert response.status_code == 302
-        mock_client.fetch_token.assert_awaited_once()
+        mock_client.fetch_token.assert_awaited_once_with(
+            url="https://oauth.example.com/token",
+            code="idp-code",
+            redirect_uri="https://proxy.example.com/auth/callback",
+        )
         mock_client.aclose.assert_awaited_once()
 
     async def test_callback_redirect_includes_proxy_issuer(self, jwt_verifier):
