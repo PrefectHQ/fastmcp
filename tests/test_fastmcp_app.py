@@ -11,7 +11,7 @@ Covers:
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from prefab_ui.app import ResolvedTool
@@ -546,6 +546,30 @@ class TestCallToolAppRouting:
                 await server.call_tool(hashed_backend_name("test", "secret"), {})
         finally:
             _current_transport.reset(token)
+
+    async def test_hashed_name_dispatch_skips_display_name_resolution(self):
+        """A hashed-name call resolves via get_tool_by_hash without going
+        through get_tool, so it never pays the versioned-fallback scan."""
+        from fastmcp.server.providers.addressing import hashed_backend_name
+
+        app = FastMCPApp("contacts")
+
+        @app.tool()
+        def save(name: str) -> str:
+            return f"saved {name}"
+
+        server = FastMCP("Platform")
+        server.add_provider(app)
+
+        with patch.object(
+            server, "get_tool", new=AsyncMock(wraps=server.get_tool)
+        ) as get_tool_spy:
+            result = await server.call_tool(
+                hashed_backend_name("contacts", "save"), {"name": "alice"}
+            )
+
+        assert result.content[0].text == "saved alice"  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        get_tool_spy.assert_not_called()
 
     async def test_two_apps_same_tool_name_routed_by_address(self):
         """Two FastMCPApps each with a `save` tool live at distinct
