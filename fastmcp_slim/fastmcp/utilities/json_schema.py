@@ -56,7 +56,14 @@ class _CannotInline(Exception):
 
 
 def _resolve_local_ref(schema: dict[str, Any], ref: str) -> Any:
-    """Resolve a local `$ref` (`#...`) against *schema* the way `jsonref` does."""
+    """Resolve a local `$ref` (`#...`) by walking its JSON pointer through *schema*.
+
+    This uses the same pointer syntax as `jsonref` but walks the raw schema:
+    it doesn't follow pointers through other `$ref` nodes or normalize the
+    reference as a URL. It can therefore pick a different target than
+    `jsonref` for unusual pointers, so `dereference_refs` measures the
+    result `jsonref` actually built as well.
+    """
     fragment = ref[1:]
     parts = unquote(fragment.lstrip("/")).split("/") if fragment else []
     node: Any = schema
@@ -72,18 +79,20 @@ def _resolve_local_ref(schema: dict[str, Any], ref: str) -> Any:
     return node
 
 
-def _can_inline_refs(schema: dict[str, Any]) -> bool:
-    """Check whether every local `$ref` in *schema* can be inlined within limits.
+def _within_inline_limits(root: dict[str, Any], *, follow_refs: bool) -> bool:
+    """Check the node count and depth of *root* once fully expanded.
 
-    The walk follows each local reference to its target, as `jsonref` does,
-    and measures the node count and depth of the inlined result without
-    building it. Each container is measured once and the result reused
-    wherever it is referenced, so the walk is linear in the size of *schema*.
-    Reaching a container again while it is still being measured means the
-    references form a cycle.
+    Containers that appear in several places are measured once and the result
+    reused, so the walk is linear in the number of distinct containers.
+    Reaching a container again while it is still being measured means there
+    is a cycle, which can't be expanded.
 
-    The measurement covers the whole schema, including unused `$defs` entries
-    and keywords next to `$ref`, because `dereference_refs` processes both.
+    With *follow_refs*, each local `$ref` also counts the target found by
+    `_resolve_local_ref`, which measures what inlining *root* would produce
+    without building it. The measurement covers the whole schema, including
+    unused `$defs` entries and keywords next to `$ref`, because
+    `dereference_refs` processes both. Without *follow_refs*, `$ref` values
+    are plain data, which measures a structure that is already inlined.
     """
     # (nodes, height) of each measured container, by id.
     sizes: dict[int, tuple[int, int]] = {}
@@ -100,10 +109,10 @@ def _can_inline_refs(schema: dict[str, Any]) -> bool:
         else:
             in_progress.add(identity)
             children = list(node.values()) if isinstance(node, dict) else node
-            if isinstance(node, dict):
+            if follow_refs and isinstance(node, dict):
                 ref = node.get("$ref")
                 if isinstance(ref, str) and ref.startswith("#"):
-                    children = [*children, _resolve_local_ref(schema, ref)]
+                    children = [*children, _resolve_local_ref(root, ref)]
             nodes, height = 1, 0
             for child in children:
                 if isinstance(child, dict | list):
@@ -121,7 +130,7 @@ def _can_inline_refs(schema: dict[str, Any]) -> bool:
         return nodes, height
 
     try:
-        measure(schema, 0)
+        measure(root, 0)
     except (_CannotInline, RecursionError):
         return False
     return True
@@ -280,7 +289,7 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
     # jsonref.replace_refs produces Python dicts with object-identity cycles
     # that Pydantic's model_dump rejects. Acyclic graphs can still expand far
     # beyond their own size, so oversized results are refused as well.
-    if not _can_inline_refs(schema):
+    if not _within_inline_limits(schema, follow_refs=True):
         return resolve_root_ref(schema)
 
     try:
@@ -299,6 +308,12 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
         # Remove $defs since all references have been resolved
         if "$defs" in dereferenced:
             dereferenced = {k: v for k, v in dereferenced.items() if k != "$defs"}
+
+        # jsonref can resolve some pointers to different targets than the
+        # check above, so measure what it built (shared containers, not yet
+        # copied) before the discriminator pass copies the whole tree.
+        if not _within_inline_limits(dereferenced, follow_refs=False):
+            return resolve_root_ref(schema)
 
         # Strip `discriminator` keys — they contain `mapping` values that
         # point at `#/$defs/...` entries we just removed.  `discriminator`
