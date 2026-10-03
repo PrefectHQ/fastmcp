@@ -16,8 +16,10 @@ uv run pytest -n auto                # Run full test suite
 In addition, you must pass static checks. This is generally done as a pre-commit hook with `prek` but you can run it manually with:
 
 ```bash
-uv run prek run --all-files          # Ruff + Prettier + ty
+uv run prek run --all-files          # Ruff + Prettier + ty + gitleaks
 ```
+
+The gitleaks hook needs the `gitleaks` binary on `PATH` (`brew install gitleaks`, or see [gitleaks releases](https://github.com/gitleaks/gitleaks/releases)) — it isn't a `uv`-managed dependency, so `uv sync` alone won't provide it.
 
 **Tests must pass and lint/typing must be clean before committing.**
 
