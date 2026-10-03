@@ -23,7 +23,7 @@ Works with both [Interactive Tools](/apps/prefab) and [custom HTML apps](/apps/l
 fastmcp dev apps server.py
 ```
 
-The dev UI opens at `http://localhost:8080`. Your MCP server runs on port 8000 with auto-reload enabled by default — save a file and the server restarts automatically.
+The dev UI opens in your browser on port 8080. The terminal prints its startup URL, which carries a private token: opening it starts a browser session and redirects to the picker. To use another browser, open the printed URL there. Each run prints a new URL. Your MCP server runs on port 8000 with auto-reload enabled by default — save a file and the server restarts automatically.
 
 ## How it works
 
@@ -34,6 +34,14 @@ The **picker page** connects to your MCP server, finds all tools with UI metadat
 When you submit a form, the dev server **calls your tool** via the MCP protocol and opens the result in a new tab. The result page loads the tool's UI resource (the Prefab renderer or your custom HTML) inside an AppBridge — the same protocol that real MCP hosts use.
 
 A **reverse proxy** on `/mcp` forwards requests from the browser to your MCP server, avoiding CORS issues that would otherwise block the iframe-based renderer from talking to a different port.
+
+## Browser session
+
+The dev UI answers only requests from the browser session that the startup URL started. Keep the URL private: anyone who opens it can call your tools and read the inspector log. The dev UI also rejects requests that come from other origins or that name a different host, and the MCP server it starts validates Host and Origin headers unless you set `FASTMCP_HTTP_HOST_ORIGIN_PROTECTION` yourself.
+
+Tool UI resources, both the Prefab renderer and custom HTML, run in a sandboxed iframe with an opaque origin. They talk to the dev UI only through AppBridge, which lets them call your server's tools and read its resources. They cannot reach the dev UI's page, its inspector log, or browser storage such as `localStorage`, and links they ask the host to open must use `http` or `https`. The generated picker is part of the dev UI and runs on its origin.
+
+Keep the default loopback interface for local development. If you use `--host` to expose the servers on your network, HTTP does not encrypt the session, and the MCP server needs its own authentication for remote clients. With `--host 0.0.0.0`, the dev UI accepts requests addressed to `localhost` or to an IP address and opens at `127.0.0.1`. Pass a specific host to reach the dev UI by hostname.
 
 ## MCP inspector
 

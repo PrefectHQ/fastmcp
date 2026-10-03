@@ -1043,8 +1043,15 @@ class TestRunDevApps:
             import_map_tag="",
             message_log=_MessageLog(),
             log_panel=False,
+            session_token="test-dev-session",
         )
-        client = TestClient(starlette_app, raise_server_exceptions=False)
+        client = TestClient(
+            starlette_app,
+            base_url="http://127.0.0.1:8080",
+            raise_server_exceptions=False,
+        )
+
+        client.get("/?token=test-dev-session")
 
         payload = "</title><script>alert(1)</script><img src=x onerror=alert(2)>"
         response = client.get("/launch", params={"tool": payload, "args": "{}"})
@@ -1065,8 +1072,15 @@ class TestRunDevApps:
             import_map_tag="",
             message_log=_MessageLog(),
             log_panel=False,
+            session_token="test-dev-session",
         )
-        client = TestClient(starlette_app, raise_server_exceptions=False)
+        client = TestClient(
+            starlette_app,
+            base_url="http://127.0.0.1:8080",
+            raise_server_exceptions=False,
+        )
+
+        client.get("/?token=test-dev-session")
 
         payload = {"name": "</script><script>alert(1)</script>&"}
         response = client.get(
@@ -1089,9 +1103,15 @@ class TestRunDevApps:
             import_map_tag="",
             message_log=_MessageLog(),
             log_panel=False,
+            session_token="test-dev-session",
         )
-        client = TestClient(starlette_app, raise_server_exceptions=False)
+        client = TestClient(
+            starlette_app,
+            base_url="http://127.0.0.1:8080",
+            raise_server_exceptions=False,
+        )
 
+        client.get("/?token=test-dev-session")
         response = client.post(
             "/api/launch",
             json={
@@ -1109,8 +1129,9 @@ class TestRunDevApps:
     @pytest.mark.parametrize(
         "host, expected_host",
         [
-            ("0.0.0.0", "0.0.0.0"),
+            ("0.0.0.0", "127.0.0.1"),
             ("127.0.0.1", "127.0.0.1"),
+            ("192.0.2.2", "192.0.2.2"),
         ],
     )
     async def test_run_dev_apps_with_host(self, host, expected_host):
@@ -1160,6 +1181,8 @@ class TestRunDevApps:
 
         webbrowser_open_first_arg = mock_webbrowser_open.call_args[0][0]
         assert expected_host in webbrowser_open_first_arg
+
+        assert mock_uvicorn.Config.call_args.kwargs["host"] == host
 
     @pytest.mark.parametrize(
         "log_panel, expected_log_panel",
@@ -1247,9 +1270,14 @@ class TestRunDevApps:
                 import_map_tag="",
                 message_log=mock_message_log,
                 log_panel=log_panel,
+                session_token="test-dev-session",
             )
-            client = TestClient(starlette_app, raise_server_exceptions=False)
-            client.get("/")
+            client = TestClient(
+                starlette_app,
+                base_url="http://127.0.0.1:8080",
+                raise_server_exceptions=False,
+            )
+            client.get("/?token=test-dev-session")
 
         if log_panel:
             mock_inject.assert_called_once()
