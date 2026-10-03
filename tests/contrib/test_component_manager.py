@@ -9,6 +9,7 @@ from starlette.testclient import TestClient
 from fastmcp import FastMCP
 from fastmcp.contrib.component_manager import set_up_component_manager
 from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
+from fastmcp.server.http import create_sse_app, create_streamable_http_app
 
 
 class TestComponentManagementRoutes:
@@ -662,7 +663,9 @@ async def _is_enabled(mcp: FastMCP, kind: ComponentKind, key: str) -> bool:
     return any(p.name == key for p in await mcp.list_prompts())
 
 
-def _jwt_auth(key_pair: RSAKeyPair, required_scopes: list[str] | None = None):
+def _jwt_auth(
+    key_pair: RSAKeyPair, required_scopes: list[str] | None = None
+) -> JWTVerifier:
     return JWTVerifier(
         public_key=key_pair.public_key,
         issuer=ISSUER,
@@ -676,6 +679,18 @@ def _bearer(key_pair: RSAKeyPair, scopes: list[str]) -> dict[str, str]:
         subject="dev-user", issuer=ISSUER, audience=AUDIENCE, scopes=scopes
     )
     return {"Authorization": "Bearer " + token}
+
+
+def _server_with_disabled_tool(
+    name: str,
+    auth: JWTVerifier | None = None,
+    required_scopes: list[str] | None = None,
+) -> FastMCP:
+    mcp = FastMCP(name, auth=auth)
+    _add_components(mcp)
+    set_up_component_manager(server=mcp, required_scopes=required_scopes)
+    mcp.disable(names={"test_tool"}, components={"tool"})
+    return mcp
 
 
 class TestComponentManagerServerAuth:
@@ -726,113 +741,214 @@ class TestComponentManagerServerAuth:
         assert response.status_code == status.HTTP_200_OK
         assert await _is_enabled(mcp, kind, key) == (action == "enable")
 
-    async def test_inherits_server_required_scopes(self, rsa_key_pair: RSAKeyPair):
-        mcp = FastMCP("AuthServer", auth=_jwt_auth(rsa_key_pair, ["mcp:read"]))
-        _add_components(mcp)
-        set_up_component_manager(server=mcp)
-        mcp.disable(names={"test_tool"}, components={"tool"})
-        client = TestClient(mcp.http_app())
+    async def test_token_missing_server_scope_rejected(self, rsa_key_pair: RSAKeyPair):
+        mcp = _server_with_disabled_tool(
+            "AuthServer", auth=_jwt_auth(rsa_key_pair, ["mcp:read"])
+        )
 
-        missing_scope = client.post(
+        response = TestClient(mcp.http_app()).post(
             "/tools/test_tool/enable", headers=_bearer(rsa_key_pair, scopes=[])
         )
-        assert missing_scope.status_code == status.HTTP_401_UNAUTHORIZED
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert not await _is_enabled(mcp, "tool", "test_tool")
 
-        allowed = client.post(
+    async def test_token_with_server_scope_allowed(self, rsa_key_pair: RSAKeyPair):
+        mcp = _server_with_disabled_tool(
+            "AuthServer", auth=_jwt_auth(rsa_key_pair, ["mcp:read"])
+        )
+
+        response = TestClient(mcp.http_app()).post(
             "/tools/test_tool/enable",
             headers=_bearer(rsa_key_pair, scopes=["mcp:read"]),
         )
-        assert allowed.status_code == status.HTTP_200_OK
+
+        assert response.status_code == status.HTTP_200_OK
         assert await _is_enabled(mcp, "tool", "test_tool")
-
-    async def test_mounted_server_routes_use_parent_auth(
-        self, rsa_key_pair: RSAKeyPair
-    ):
-        parent = FastMCP("Parent", auth=_jwt_auth(rsa_key_pair))
-        child = FastMCP("Child")
-        _add_components(child)
-        set_up_component_manager(server=child)
-        parent.mount(child)
-        child.disable(names={"test_tool"}, components={"tool"})
-        client = TestClient(parent.http_app())
-
-        anonymous = client.post("/tools/test_tool/enable")
-        assert anonymous.status_code == status.HTTP_401_UNAUTHORIZED
-        assert not await _is_enabled(child, "tool", "test_tool")
-
-        authenticated = client.post(
-            "/tools/test_tool/enable", headers=_bearer(rsa_key_pair, scopes=[])
-        )
-        assert authenticated.status_code == status.HTTP_200_OK
-        assert await _is_enabled(child, "tool", "test_tool")
 
     async def test_auth_assigned_after_setup_is_enforced(
         self, rsa_key_pair: RSAKeyPair
     ):
-        mcp = FastMCP("LateAuthServer")
-        _add_components(mcp)
-        set_up_component_manager(server=mcp)
+        mcp = _server_with_disabled_tool("LateAuthServer")
         mcp.auth = _jwt_auth(rsa_key_pair)
-        mcp.disable(names={"test_tool"}, components={"tool"})
 
         response = TestClient(mcp.http_app()).post("/tools/test_tool/enable")
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert not await _is_enabled(mcp, "tool", "test_tool")
 
+    async def test_streamable_http_app_auth_argument_is_enforced(
+        self, rsa_key_pair: RSAKeyPair
+    ):
+        mcp = _server_with_disabled_tool("FactoryAuthServer")
+        app = create_streamable_http_app(
+            server=mcp, streamable_http_path="/mcp", auth=_jwt_auth(rsa_key_pair)
+        )
+
+        response = TestClient(app).post("/tools/test_tool/enable")
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert not await _is_enabled(mcp, "tool", "test_tool")
+
+    async def test_sse_app_auth_argument_is_enforced(self, rsa_key_pair: RSAKeyPair):
+        mcp = _server_with_disabled_tool("FactoryAuthServer")
+        app = create_sse_app(
+            server=mcp,
+            message_path="/messages/",
+            sse_path="/sse",
+            auth=_jwt_auth(rsa_key_pair),
+        )
+
+        response = TestClient(app).post("/tools/test_tool/enable")
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert not await _is_enabled(mcp, "tool", "test_tool")
+
+
+class TestComponentManagerMountedServer:
+    """A mounted server's routes use the parent server's auth provider."""
+
+    async def test_anonymous_request_rejected(self, rsa_key_pair: RSAKeyPair):
+        parent = FastMCP("Parent", auth=_jwt_auth(rsa_key_pair))
+        child = _server_with_disabled_tool("Child")
+        parent.mount(child)
+
+        response = TestClient(parent.http_app()).post("/tools/test_tool/enable")
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert not await _is_enabled(child, "tool", "test_tool")
+
+    async def test_parent_authenticated_request_allowed(self, rsa_key_pair: RSAKeyPair):
+        parent = FastMCP("Parent", auth=_jwt_auth(rsa_key_pair))
+        child = _server_with_disabled_tool("Child")
+        parent.mount(child)
+
+        response = TestClient(parent.http_app()).post(
+            "/tools/test_tool/enable", headers=_bearer(rsa_key_pair, scopes=[])
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert await _is_enabled(child, "tool", "test_tool")
+
+    @pytest.mark.parametrize(
+        ("token_scopes", "expected_status"),
+        [
+            pytest.param([], status.HTTP_403_FORBIDDEN, id="missing-scope"),
+            pytest.param(["admin"], status.HTTP_200_OK, id="has-scope"),
+        ],
+    )
+    async def test_child_scopes_checked_with_parent_auth(
+        self,
+        rsa_key_pair: RSAKeyPair,
+        token_scopes: list[str],
+        expected_status: int,
+    ):
+        parent = FastMCP("Parent", auth=_jwt_auth(rsa_key_pair))
+        child = _server_with_disabled_tool("Child", required_scopes=["admin"])
+        parent.mount(child)
+
+        response = TestClient(parent.http_app()).post(
+            "/tools/test_tool/enable",
+            headers=_bearer(rsa_key_pair, scopes=token_scopes),
+        )
+
+        assert response.status_code == expected_status
+        assert await _is_enabled(child, "tool", "test_tool") == (
+            expected_status == status.HTTP_200_OK
+        )
+
 
 class TestComponentManagerExplicitScopes:
     """An explicit `required_scopes` list adds to the server's required scopes."""
 
-    async def test_explicit_scopes_add_to_server_scopes(self, rsa_key_pair: RSAKeyPair):
-        mcp = FastMCP("AuthServer", auth=_jwt_auth(rsa_key_pair, ["mcp:read"]))
-        _add_components(mcp)
-        set_up_component_manager(server=mcp, required_scopes=["admin"])
-        mcp.disable(names={"test_tool"}, components={"tool"})
-        client = TestClient(mcp.http_app())
+    async def test_token_with_only_server_scopes_rejected(
+        self, rsa_key_pair: RSAKeyPair
+    ):
+        mcp = _server_with_disabled_tool(
+            "AuthServer",
+            auth=_jwt_auth(rsa_key_pair, ["mcp:read"]),
+            required_scopes=["admin"],
+        )
 
-        server_scope_only = client.post(
+        response = TestClient(mcp.http_app()).post(
             "/tools/test_tool/enable",
             headers=_bearer(rsa_key_pair, scopes=["mcp:read"]),
         )
-        assert server_scope_only.status_code == status.HTTP_403_FORBIDDEN
-        admin_scope_only = client.post(
-            "/tools/test_tool/enable", headers=_bearer(rsa_key_pair, scopes=["admin"])
-        )
-        assert admin_scope_only.status_code == status.HTTP_401_UNAUTHORIZED
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
         assert not await _is_enabled(mcp, "tool", "test_tool")
 
-        both = client.post(
+    async def test_token_with_only_extra_scopes_rejected(
+        self, rsa_key_pair: RSAKeyPair
+    ):
+        mcp = _server_with_disabled_tool(
+            "AuthServer",
+            auth=_jwt_auth(rsa_key_pair, ["mcp:read"]),
+            required_scopes=["admin"],
+        )
+
+        response = TestClient(mcp.http_app()).post(
+            "/tools/test_tool/enable", headers=_bearer(rsa_key_pair, scopes=["admin"])
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert not await _is_enabled(mcp, "tool", "test_tool")
+
+    async def test_token_with_server_and_extra_scopes_allowed(
+        self, rsa_key_pair: RSAKeyPair
+    ):
+        mcp = _server_with_disabled_tool(
+            "AuthServer",
+            auth=_jwt_auth(rsa_key_pair, ["mcp:read"]),
+            required_scopes=["admin"],
+        )
+
+        response = TestClient(mcp.http_app()).post(
             "/tools/test_tool/enable",
             headers=_bearer(rsa_key_pair, scopes=["mcp:read", "admin"]),
         )
-        assert both.status_code == status.HTTP_200_OK
+
+        assert response.status_code == status.HTTP_200_OK
         assert await _is_enabled(mcp, "tool", "test_tool")
 
-    async def test_empty_scopes_require_authentication(self, rsa_key_pair: RSAKeyPair):
-        mcp = FastMCP("AuthServer", auth=_jwt_auth(rsa_key_pair))
-        _add_components(mcp)
-        set_up_component_manager(server=mcp, required_scopes=[])
-        mcp.disable(names={"test_tool"}, components={"tool"})
-        client = TestClient(mcp.http_app())
+    async def test_empty_scopes_reject_anonymous_request(
+        self, rsa_key_pair: RSAKeyPair
+    ):
+        mcp = _server_with_disabled_tool(
+            "AuthServer", auth=_jwt_auth(rsa_key_pair), required_scopes=[]
+        )
 
-        anonymous = client.post("/tools/test_tool/enable")
-        assert anonymous.status_code == status.HTTP_401_UNAUTHORIZED
+        response = TestClient(mcp.http_app()).post("/tools/test_tool/enable")
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert not await _is_enabled(mcp, "tool", "test_tool")
 
-        authenticated = client.post(
+    async def test_empty_scopes_allow_authenticated_request(
+        self, rsa_key_pair: RSAKeyPair
+    ):
+        mcp = _server_with_disabled_tool(
+            "AuthServer", auth=_jwt_auth(rsa_key_pair), required_scopes=[]
+        )
+
+        response = TestClient(mcp.http_app()).post(
             "/tools/test_tool/enable", headers=_bearer(rsa_key_pair, scopes=[])
         )
-        assert authenticated.status_code == status.HTTP_200_OK
+
+        assert response.status_code == status.HTTP_200_OK
         assert await _is_enabled(mcp, "tool", "test_tool")
 
     @pytest.mark.parametrize("required_scopes", [["admin"], []])
-    def test_scopes_without_server_auth_raise(self, required_scopes: list[str]):
-        mcp = FastMCP("NoAuthServer")
+    async def test_scopes_without_server_auth_reject_requests(
+        self, required_scopes: list[str]
+    ):
+        mcp = _server_with_disabled_tool(
+            "NoAuthServer", required_scopes=required_scopes
+        )
 
-        with pytest.raises(ValueError, match="required_scopes"):
-            set_up_component_manager(server=mcp, required_scopes=required_scopes)
+        response = TestClient(mcp.http_app()).post("/tools/test_tool/enable")
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert not await _is_enabled(mcp, "tool", "test_tool")
 
     async def test_later_custom_route_is_not_shadowed(self, rsa_key_pair: RSAKeyPair):
         mcp = FastMCP("AuthServer", auth=_jwt_auth(rsa_key_pair))

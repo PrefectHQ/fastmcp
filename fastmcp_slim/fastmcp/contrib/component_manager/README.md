@@ -107,9 +107,7 @@ To require more scopes for the management routes than for the MCP endpoint, pass
 set_up_component_manager(server=mcp, required_scopes=["write", "read"])
 ```
 
-`required_scopes` requires an auth provider. If the server has no `auth`, `set_up_component_manager()` raises a `ValueError`.
-
-The auth provider is resolved for each request from the server whose HTTP app serves it. A mounted server's routes therefore use the parent server's auth provider, and a provider assigned after `set_up_component_manager()` still applies.
+The auth provider is resolved for each request from the HTTP app that serves the routes. A mounted server's routes therefore use the parent server's auth provider, and a provider assigned after `set_up_component_manager()` still applies. If the serving app has no auth provider, routes with `required_scopes` reject every request with `401 Unauthorized`.
 
 ---
 

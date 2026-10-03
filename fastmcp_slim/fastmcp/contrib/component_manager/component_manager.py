@@ -34,11 +34,9 @@ def set_up_component_manager(
         required_scopes: Scopes a token must have to use these routes, in
             addition to the scopes the server's auth provider requires. An
             empty list requires authentication without extra scopes. Omit it
-            to require exactly what the MCP endpoint requires.
-
-    Raises:
-        ValueError: `required_scopes` is given but `server` has no auth
-            provider.
+            to require exactly what the MCP endpoint requires. If the serving
+            server has no auth provider, routes with `required_scopes` reject
+            every request with 401.
 
     Routes created:
         POST /tools/{name}/enable[?version=v1]
@@ -48,12 +46,6 @@ def set_up_component_manager(
         POST /prompts/{name}/enable[?version=v1]
         POST /prompts/{name}/disable[?version=v1]
     """
-    if required_scopes is not None and server.auth is None:
-        raise ValueError(
-            "set_up_component_manager() was given required_scopes, but the "
-            "server has no auth provider. Configure `auth` on the server "
-            "before setting up the component manager."
-        )
     routes = _build_routes(server, path, required_scopes)
     server._additional_http_routes.extend(routes)
 
@@ -87,12 +79,17 @@ class _ComponentManagerAuth:
 
 
 def _serving_auth(scope: Scope, server: FastMCP) -> AuthProvider | None:
-    """Return the auth provider of the FastMCP server serving this request."""
+    """Return the auth provider of the FastMCP HTTP app serving this request.
+
+    FastMCP's HTTP app factories store the provider they were built with on
+    the app state. Routes served by any other app use `server.auth`.
+    """
     app = scope.get("app")
-    if isinstance(app, Starlette):
-        serving = getattr(app.state, "fastmcp_server", None)
-        if isinstance(serving, FastMCP):
-            return serving.auth
+    if isinstance(app, Starlette) and isinstance(
+        getattr(app.state, "fastmcp_server", None), FastMCP
+    ):
+        auth = getattr(app.state, "fastmcp_auth", None)
+        return auth if isinstance(auth, AuthProvider) else None
     return server.auth
 
 
