@@ -30,7 +30,7 @@ from mcp_types import ToolAnnotations
 from fastmcp.server.dependencies import get_context
 from fastmcp.server.transforms import GetToolNext, Transform
 from fastmcp.tools.base import Tool
-from fastmcp.utilities.versions import VersionSpec
+from fastmcp.utilities.versions import VersionSpec, dedupe_with_versions
 
 _DEFAULT_ANNOTATIONS = ToolAnnotations(read_only_hint=True)
 
@@ -104,8 +104,12 @@ class ResourcesAsTools(Transform):
             placeholders like {name}.
             """
             ctx = get_context()
-            resources = await ctx.fastmcp.list_resources()
-            templates = await ctx.fastmcp.list_resource_templates()
+            resources = dedupe_with_versions(
+                await ctx.fastmcp.list_resources(), lambda r: str(r.uri)
+            )
+            templates = dedupe_with_versions(
+                await ctx.fastmcp.list_resource_templates(), lambda t: t.uri_template
+            )
 
             result: list[dict[str, Any]] = []
 
