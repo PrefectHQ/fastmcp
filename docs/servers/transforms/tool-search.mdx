@@ -179,7 +179,7 @@ mcp.add_transform(RegexSearchTransform(
 # list_tools returns: help, status, search_tools, call_tool
 ```
 
-Pinned tools appear directly in `list_tools` so the LLM can call them without searching. They're excluded from search results to avoid duplication.
+Pinned tools appear directly in `list_tools` so the LLM can call them without searching. They're excluded from search results to avoid duplication, and the `call_tool` proxy refuses them: a pinned tool is called by its own name, so a host that approves tools one at a time sees it under its own annotations.
 
 ### Custom Tool Names
 
@@ -196,7 +196,39 @@ mcp.add_transform(RegexSearchTransform(
 
 The `call_tool` proxy forwards calls to the real tool. When a client calls `call_tool(name="search_database", arguments={...})`, the proxy resolves `search_database` through the server's normal tool pipeline — including transforms and middleware — and executes it.
 
-The proxy rejects attempts to call the synthetic tools themselves. `call_tool(name="call_tool")` raises an error rather than recursing.
+The proxy rejects attempts to call the synthetic tools themselves. `call_tool(name="call_tool")` raises an error rather than recursing. It also rejects pinned tools, so the proxy reaches exactly the tools search can return.
+
+The proxy's [annotations](/servers/tools#mcp-annotations) summarize those tools, taking the least permissive value of each hint. If every searchable tool is marked `readOnlyHint: true`, so is the proxy, and a host that auto-approves read-only tools can approve it too. One unannotated tool is enough to make the proxy a destructive write, because unset hints take the MCP defaults.
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.transforms.search import BM25SearchTransform
+
+mcp = FastMCP("Records")
+
+@mcp.tool(annotations={"readOnlyHint": True})
+def get_record(record_id: str) -> dict:
+    """Fetch a record by ID."""
+    ...
+
+@mcp.tool(annotations={"readOnlyHint": True})
+def list_records(limit: int = 10) -> list[dict]:
+    """List recent records."""
+    ...
+
+@mcp.tool(annotations={"destructiveHint": True})
+def delete_record(record_id: str) -> bool:
+    """Delete a record. Irreversible."""
+    ...
+
+# delete_record is listed with its own annotations;
+# call_tool is read-only because it can reach only the two read tools
+mcp.add_transform(BM25SearchTransform(always_visible=["delete_record"]))
+```
+
+The proxy's annotations and its pinned-tool check are computed from the tools the search transform sees. Add the search transform after any transform that renames or adds tools, such as `Namespace`, `ToolTransform`, or `PromptsAsTools`; a transform added later changes names and tools the proxy can't account for.
+
+Those tools include ones that are disabled or restricted by auth, so a disabled write tool still makes the proxy a write. The hints can be stricter than what a caller can reach, never looser. To keep a disabled tool out of the proxy's hints, pin it with `always_visible`; a disabled tool is still left out of the listing.
 
 <Note>
 Tools discovered through search can also be called directly via `client.call_tool("search_database", {...})` without going through the proxy. The proxy exists for LLMs that only know about the tools returned by `list_tools` and need a way to invoke discovered tools through a tool they can see.

@@ -32,6 +32,9 @@ from abc import abstractmethod
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Annotated, Any
 
+from mcp_types import ToolAnnotations
+
+from fastmcp.apps.config import is_model_visible
 from fastmcp.exceptions import NotFoundError
 from fastmcp.server.context import Context
 from fastmcp.server.transforms import GetToolNext
@@ -283,6 +286,25 @@ def serialize_tools_for_output_markdown(tools: Sequence[Tool]) -> str:
     return "\n\n".join(blocks)
 
 
+def _proxy_annotations(tools: Sequence[Tool]) -> ToolAnnotations:
+    """Hints for a proxy that can run any of ``tools``: the least permissive.
+
+    Unset hints take the MCP defaults (not read-only, destructive, not
+    idempotent, open world), so an unannotated tool is assumed to write.
+    """
+    hints = [t.annotations or ToolAnnotations() for t in tools]
+    open_world = any(h.open_world_hint is not False for h in hints)
+    if all(h.read_only_hint is True for h in hints):
+        return ToolAnnotations(read_only_hint=True, open_world_hint=open_world)
+    writes = [h for h in hints if h.read_only_hint is not True]
+    return ToolAnnotations(
+        read_only_hint=False,
+        destructive_hint=any(h.destructive_hint is not False for h in writes),
+        idempotent_hint=all(h.idempotent_hint is True for h in writes),
+        open_world_hint=open_world,
+    )
+
+
 class BaseSearchTransform(CatalogTransform):
     """Replace the tool listing with a search interface.
 
@@ -331,7 +353,15 @@ class BaseSearchTransform(CatalogTransform):
     async def transform_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         """Replace the catalog with pinned + synthetic search/call tools."""
         pinned = [t for t in tools if t.name in self._always_visible]
-        return [*pinned, self._make_search_tool(), self._make_call_tool()]
+        reachable = [
+            t
+            for t in tools
+            if t.name not in self._always_visible and is_model_visible(t)
+        ]
+        call_tool = self._make_call_tool().model_copy(
+            update={"annotations": _proxy_annotations(reachable)}
+        )
+        return [*pinned, self._make_search_tool(), call_tool]
 
     async def get_tool(
         self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
@@ -378,6 +408,13 @@ class BaseSearchTransform(CatalogTransform):
                 tool.name == name for tool in await transform.get_tool_catalog(ctx)
             ):
                 raise NotFoundError(f"Unknown tool: {name!r}")
+            # Pinned tools are listed on their own, where a host can gate
+            # each one; the proxy's annotations don't account for them.
+            if name in transform._always_visible:
+                raise ValueError(
+                    f"'{name}' is listed directly; call it directly rather than "
+                    f"through {transform._call_tool_name}"
+                )
             return await ctx.fastmcp.call_tool(name, arguments)
 
         return Tool.from_function(fn=call_tool, name=self._call_tool_name)
