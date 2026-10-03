@@ -405,6 +405,7 @@ def search_database(
 
 Field provides several validation and documentation features:
 - `description`: Human-readable explanation of the parameter (shown to LLMs)
+- `title`: Short display label for the parameter, for clients that build forms from the schema. FastMCP omits the titles Pydantic derives from parameter names, so a title appears only when it differs from that derived label (`Field(title="Account")` on `account` adds nothing and is omitted).
 - `ge`/`gt`/`le`/`lt`: Greater/less than (or equal) constraints
 - `min_length`/`max_length`: String or collection length constraints
 - `pattern`: Regex pattern for string validation

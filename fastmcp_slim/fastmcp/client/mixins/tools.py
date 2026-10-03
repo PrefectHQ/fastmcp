@@ -371,7 +371,7 @@ async def _parse_call_tool_result(
         else:
             msg = f"Tool '{name}' returned an error"
         raise ToolError(msg)
-    elif result.structured_content and not result.is_error:
+    elif result.structured_content is not None and not result.is_error:
         try:
             raw_fastmcp_meta = (result.meta or {}).get("fastmcp")
             fastmcp_meta = (

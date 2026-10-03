@@ -10,9 +10,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import pytest
+from fastmcp_tasks.client import call_tool_task
 
-from fastmcp import Client, FastMCP
+from fastmcp import Client, Context, FastMCP
+from fastmcp.exceptions import ToolError
 from fastmcp.experimental.transforms.code_mode import CodeMode
+from fastmcp.server.middleware import Middleware
 from fastmcp.server.transforms import Namespace
 from fastmcp.server.transforms.catalog import CatalogTransform
 from fastmcp.server.transforms.search import BM25SearchTransform, RegexSearchTransform
@@ -110,3 +113,115 @@ async def test_task_tool_added_by_catalog_transform_is_registered():
         "slow_thing",
         "synthetic_slow",
     ]
+
+
+class TestNestedCallsRunInForeground:
+    """A client's tasks opt-in covers the tool it called, not tools that tool calls."""
+
+    async def test_search_proxy_returns_task_tool_result(self):
+        mcp = make_server()
+        mcp.add_transform(BM25SearchTransform())
+
+        async with Client(mcp) as client:
+            result = await client.call_tool(
+                "call_tool", {"name": "slow_thing", "arguments": {"n": 2}}
+            )
+
+        assert result.structured_content == {"n": 2}
+
+    async def test_code_mode_returns_task_tool_result(self):
+        mcp = make_server()
+        mcp.add_transform(CodeMode())
+
+        async with Client(mcp) as client:
+            result = await client.call_tool(
+                "execute",
+                {"code": "return await call_tool('slow_thing', {'n': 4})"},
+            )
+
+        assert "4" in result.content[0].text
+
+    async def test_tool_calling_task_tool_gets_its_result(self):
+        mcp = make_server()
+
+        @mcp.tool
+        async def outer(ctx: Context) -> dict:
+            result = await ctx.fastmcp.call_tool("slow_thing", {"n": 5})
+            return result.structured_content or {}
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("outer", {})
+
+        assert result.structured_content == {"n": 5}
+
+    async def test_required_task_tool_refuses_nested_call(self):
+        mcp = make_server()
+
+        @mcp.tool(task=TaskConfig(mode="required"))
+        async def must_task(n: int) -> dict:
+            return {"n": n}
+
+        mcp.add_transform(BM25SearchTransform())
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="only runs as a background task"):
+                await client.call_tool(
+                    "call_tool", {"name": "must_task", "arguments": {"n": 1}}
+                )
+
+    async def test_resource_and_prompt_get_task_tool_result(self):
+        mcp = make_server()
+
+        @mcp.resource("data://thing")
+        async def thing(ctx: Context) -> dict:
+            result = await ctx.fastmcp.call_tool("slow_thing", {"n": 6})
+            return result.structured_content or {}
+
+        @mcp.prompt
+        async def ask(ctx: Context) -> str:
+            result = await ctx.fastmcp.call_tool("slow_thing", {"n": 7})
+            return str(result.structured_content)
+
+        async with Client(mcp) as client:
+            resource = await client.read_resource("data://thing")
+            prompt = await client.get_prompt("ask")
+
+        assert "6" in resource[0].text
+        assert "7" in prompt.messages[0].content.text
+
+    async def test_in_process_client_inside_tool_can_still_task(self):
+        other = make_server()
+        front = FastMCP("front")
+
+        @front.tool
+        async def relay() -> str:
+            async with Client(other) as inner:
+                task = await call_tool_task(inner, "slow_thing", {"n": 8})
+                return task.task_id
+
+        async with Client(front) as client:
+            result = await client.call_tool("relay", {})
+
+        assert result.data
+
+    async def test_middleware_calling_a_tool_keeps_the_client_opt_in(self):
+        mcp = make_server()
+
+        @mcp.tool
+        async def policy() -> str:
+            return "ok"
+
+        class CheckPolicyFirst(Middleware):
+            async def on_call_tool(self, context, call_next):
+                if context.message.name != "policy":
+                    assert context.fastmcp_context is not None
+                    await context.fastmcp_context.fastmcp.call_tool("policy", {})
+                return await call_next(context)
+
+        mcp.add_middleware(CheckPolicyFirst())
+
+        async with Client(mcp) as client:
+            task = await call_tool_task(client, "slow_thing", {"n": 9})
+            result = await task.result()
+
+        assert result.structured_content == {"n": 9}

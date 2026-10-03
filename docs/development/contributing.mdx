@@ -1,198 +1,97 @@
 ---
 title: "Contributing"
-description: "Development workflow for FastMCP contributors"
+description: "Choose a contribution, set up FastMCP, and prepare it for review"
 icon: code-pull-request
 ---
 
-Contributing to FastMCP means joining a community that values clean, maintainable code and thoughtful API design. All contributions are valued - from fixing typos in documentation to implementing major features.
+A concise issue with a reproducible problem is often the most useful contribution. This guide covers which changes FastMCP accepts, how contributions enter review, and how to develop and validate a change.
 
-## Design Principles
+Report vulnerabilities privately through the [security policy](https://github.com/PrefectHQ/fastmcp/blob/main/SECURITY.md). Community participation follows the [Code of Conduct](https://github.com/PrefectHQ/fastmcp/blob/main/CODE_OF_CONDUCT.md).
 
-Every contribution should advance these principles:
+## Choose a contribution
 
-- 🚀 **Fast** — High-level interfaces mean less code and faster development
-- 🍀 **Simple** — Minimal boilerplate; the obvious way should be the right way
-- 🐍 **Pythonic** — Feels natural to Python developers; no surprising patterns
-- 🔍 **Complete** — Everything needed for production: auth, testing, deployment, observability
+A useful bug report states the problem, includes a minimal reproducible example, and explains the expected behavior. Search existing issues and pull requests first, including closed PRs: the contribution gate may have closed a proposal while it waits for assignment.
 
-PRs are evaluated against these principles. Code that makes FastMCP slower, harder to reason about, less Pythonic, or less complete will be rejected.
+Simple, scoped bug fixes, documentation improvements, and authentication providers are welcome. Enhancements need a maintainer-approved design in an issue before implementation. Third-party integrations generally belong in a separate package. For a proposed in-repository community module, read [Contrib Modules](/patterns/contrib) and discuss its maintenance model first.
 
-## Issues
+FastMCP prioritizes readable Python, clear APIs, and fixes at the source of a problem. A working implementation can still be unsuitable if it changes an intentional contract or adds a workaround that the framework must maintain indefinitely.
 
-### Issue First, Code Second
+### Issues and assignment
 
-**Every pull request requires a corresponding issue - no exceptions.** This requirement creates a collaborative space where approach, scope, and alignment are established before code is written. Issues serve as design documents where maintainers and contributors discuss implementation strategy, identify potential conflicts with existing patterns, and ensure proposed changes advance FastMCP's vision.
+External PRs must link an issue with an auto-close keyword such as `Fixes #123`. The author must also be assigned to that issue, unless it carries the `prs welcome` label. You can open a linked PR before assignment; it waits with a failing gate check while maintainers evaluate it. A PR without a valid issue link is closed.
 
-**FastMCP is an opinionated framework, not a kitchen sink.** The maintainers have strong beliefs about what FastMCP should and shouldn't do. Just because something takes N lines of code and you want it in fewer lines doesn't mean FastMCP should take on the maintenance burden or endorse that pattern. This is judged at the maintainers' discretion.
+Assignment commits maintainers to reviewing a contribution, not to merging it. Assigning an author reruns the gate and can reopen their previously closed PR. Update that PR rather than opening a duplicate. The issue reporter has first claim on implementing the fix; an open issue does not by itself mean a maintainer has accepted a proposed solution.
 
-Use issues to understand scope BEFORE opening PRs. The issue discussion determines whether a feature belongs in core, contrib, or not at all.
+Do not post comments just to claim an issue or ask to be assigned. A concise report, a scoped linked PR, or a substantive design discussion gives maintainers something concrete to evaluate. The gate exempts maintainers and trusted contributors. Draft PRs are checked when marked ready for review.
 
-### Writing Good Issues
+### Working with an agent
 
-FastMCP is an extremely highly-trafficked repository maintained by a very small team. Issues that appear to transfer burden to maintainers without any effort to validate the problem will be closed. Please help the maintainers help you by always providing a minimal reproducible example and clearly describing the problem.
+AI assistance is welcome under the same standards as other contributions. You remain responsible for understanding the change, verifying its behavior, and responding to review. Avoid generated boilerplate that obscures the problem or substitutes speculation for a reproduction.
 
-**LLM-generated issues will be closed immediately.** Issues that contain paragraphs of unnecessary explanation, verbose problem descriptions, or obvious LLM authorship patterns obfuscate the actual problem and transfer burden to maintainers.
+Have your agent read [AGENTS.md](https://github.com/PrefectHQ/fastmcp/blob/main/AGENTS.md). It contains the required checks, repository conventions, and a table routing tasks to the [repository skills](https://github.com/PrefectHQ/fastmcp/tree/main/.agents/skills). Use the testing and review procedures on your own change before submitting it. Skills live in `.agents/skills/`, with discovery links in `.claude/skills/`.
 
-Write clear, concise issues that:
-- State the problem directly
-- Provide a minimal reproducible example
-- Skip unnecessary background or context
-- Take responsibility for clear communication
+## Set up the repository
 
-Issues may be labeled "Invalid" simply due to confusion caused by verbosity or not adhering to the guidelines outlined here.
-
-## Pull Requests
-
-PRs that deviate from FastMCP's core principles will be rejected regardless of implementation quality. **PRs are NOT for iterating on ideas** - they should only be opened for ideas that already have a bias toward acceptance based on issue discussion.
-
-
-### Development Environment
-
-#### Installation
-
-To contribute to FastMCP, you'll need to set up a development environment with all necessary tools and dependencies.
+Use Python 3.10 or newer and [uv](https://docs.astral.sh/uv/). Fork the repository for an external contribution, clone your fork, then install the workspace dependencies and commit hooks:
 
 ```bash
-# Clone the repository
-git clone https://github.com/PrefectHQ/fastmcp.git
+git clone https://github.com/YOUR-USERNAME/fastmcp.git
 cd fastmcp
-
-# Install all dependencies including dev tools
 uv sync
-
-# Install prek hooks
 uv run prek install
 ```
 
-In addition, some development commands require [just](https://github.com/casey/just) to be installed.
+The workspace contains several distributions. Most framework code lives in `fastmcp_slim/fastmcp/`; `fastmcp_tasks/` and `fastmcp_remote/` hold the task and remote packages. Tests live under `tests/`, and the documentation source lives under `docs/`. Extend the tests nearest the behavior you change.
 
-Prek hooks will run automatically on every commit to catch issues before they reach CI. If you see failures, fix them before committing - never commit broken code expecting to fix it later.
+Target `main` for current development. Fixes specifically for older supported lines target their maintenance branch, such as `release/3.x` or `release/2.x`.
 
-### Development Standards
+## Implement and verify
 
-#### Scope
+Establish what the public API promises before writing a regression test. A test that fails on existing code only demonstrates a difference; docs, protocol requirements, history, and maintainer decisions establish whether that difference is a bug. If the intended behavior is unclear, settle that question in the issue.
 
-Large pull requests create review bottlenecks and quality risks. Unless you're fixing a discrete bug or making an incredibly well-scoped change, keep PRs small and focused. 
+Keep the change scoped to one problem and fix the causal code path. Avoid speculative explanations, sweeping unrelated changes, and generated boilerplate; maintainers may close contributions that do not meet these requirements. Trace the callers and adjacent behavior that share it. In particular, preserve supported explicit overrides when changing a default. Use full type annotations, specific exceptions, and the surrounding code's conventions.
 
-A PR that changes 50 lines across 3 files can be thoroughly reviewed in minutes. A PR that changes 500 lines across 20 files requires hours of careful analysis and often hides subtle issues.
+For a bug fix, run the regression on unchanged code and confirm it fails for the reported reason, then run it with the fix. Assert the actual result and relevant types. Exercise neighboring supported behavior as well. The [Testing Guide](/development/tests) covers fixtures, protocol tests, HTTP helpers, and subprocess tests.
 
-Breaking large features into smaller PRs:
-- Creates better review experiences
-- Makes git history clear
-- Simplifies debugging with bisect
-- Reduces merge conflicts
-- Gets your code merged faster
-
-#### Code Quality
-
-FastMCP values clarity over cleverness. Every line you write will be maintained by someone else - possibly years from now, possibly without context about your decisions.
-
-**PRs can be rejected for two opposing reasons:**
-1. **Insufficient quality** - Code that doesn't meet our standards for clarity, maintainability, or idiomaticity
-2. **Overengineering** - Code that is overbearing, unnecessarily complex, or tries to be too clever
-
-The focus is on idiomatic, high-quality Python. FastMCP uses patterns like `NotSet` type as an alternative to `None` in certain situations - follow existing patterns.
-
-#### Required Practices
-
-**Full type annotations** on all functions and methods. They catch bugs before runtime and serve as inline documentation.
-
-**Async/await patterns** for all I/O operations. Even if your specific use case doesn't need concurrency, consistency means users can compose features without worrying about blocking operations.
-
-**Descriptive names** make code self-documenting. `auth_token` is clear; `tok` requires mental translation.
-
-**Specific exception types** make error handling predictable. Catching `ValueError` tells readers exactly what error you expect. Never use bare `except` clauses.
-
-#### Anti-Patterns to Avoid
-
-**Complex one-liners** are hard to debug and modify. Break operations into clear steps.
-
-**Mutable default arguments** cause subtle bugs. Use `None` as the default and create the mutable object inside the function.
-
-**Breaking established patterns** confuses readers. If you must deviate, discuss in the issue first.
-
-### Prek Checks
+Before committing, run these commands in order, followed by the static checks:
 
 ```bash
-# Runs automatically on commit, or manually:
+uv sync
+uv run pytest -n auto
 uv run prek run --all-files
 ```
 
-This runs three critical tools:
-- **Ruff**: Linting and formatting
-- **Prettier**: Code formatting
-- **ty**: Static type checking
+Prek runs lint, formatting, typing, and other repository checks; pytest is separate. Hooks also run on commit. Fix failures before committing, and use a new commit rather than amending to repair a failed hook.
 
-Pytest runs separately as a distinct workflow step after prek checks pass. CI will reject PRs that fail these checks. Always run them locally first.
+## Update documentation
 
-### Testing
+Document new capabilities and changes to public behavior alongside the implementation. Explain the use case before the code, include imports, and keep examples runnable. Add new pages to `docs/docs.json` so they appear in navigation. When a setting changes, update `docs/more/settings.mdx`.
 
-Tests are documentation that shows how features work. Good tests give reviewers confidence and help future maintainers understand intent.
+Edit source docstrings for API-reference changes. Do not manually edit `docs/python-sdk/`, `docs/public/schemas/`, or the generated MCP server configuration schema; automation maintains those outputs. The `docs/v2/` and `docs/v3/` trees are frozen version snapshots, apart from maintenance release changelog entries.
 
-```bash
-# Run specific test directory
-uv run pytest tests/server/ -v
-
-# Run all tests before submitting PR
-uv run pytest -n auto
-```
-
-Every new feature needs tests. See the [Testing Guide](/development/tests) for patterns and requirements.
-
-### Documentation
-
-A feature doesn't exist unless it's documented. Note that FastMCP's hosted documentation always tracks the main branch - users who want historical documentation can clone the repo, checkout a specific tag, and host it themselves.
+Check documentation links and examples from the repository root:
 
 ```bash
-# Preview documentation locally
-just docs
+just docs-broken-links
+uv run pytest tests/docs -n 0
 ```
 
-Documentation requirements:
-- **Explain concepts in prose first** - Code without context is just syntax
-- **Complete, runnable examples** - Every code block should be copy-pasteable
-- **Register in docs.json** - Makes pages appear in navigation
-- **Version badges** - Mark when features were added using `<VersionBadge />`
+[just](https://github.com/casey/just) provides convenience commands. Without it, run `npx --yes mint@latest broken-links` from `docs/`. Preview rendering with `just docs`, or run `npx --yes mint@latest dev` from that directory. The docs tests check Python syntax and FastMCP imports; execute changed examples too, since those checks do not prove behavior.
 
-#### SDK Documentation
+The live site serves `published-docs`, so merging a docs change into `main` does not publish it immediately. See [Releases](/development/releases#creating-releases) for the publication workflow.
 
-FastMCP's SDK documentation is auto-generated from the source code docstrings and type annotations. It is automatically updated on every merge to main by a GitHub Actions workflow, so users are *not* responsible for keeping the documentation up to date. However, to generate it proactively, you can use the following command:
+## Submit and follow through
 
-```bash
-just api-ref-all
-```
+Write a short PR description explaining the problem and the resulting behavior, with a focused example when it helps. Include the issue link and explain any compatibility decision. Keep "Allow edits by maintainers" enabled when available so maintainers can finish small adjustments without replacing your contribution.
 
-### Submitting Your PR
+Review the entire diff, not just your latest commit. A useful review checks the intended contract, root cause, supported behavior, tests, and documentation. Green CI is evidence that checks passed; it does not decide whether a behavior change belongs in FastMCP.
 
-#### Before Submitting
+Read review-bot comments and maintainer replies, evaluate concrete findings, and respond to requested changes. A new push needs checks against that revision. Stay involved until the PR is resolved; assignment is a commitment to follow through.
 
-1. **Run all checks**: `uv run prek run --all-files && uv run pytest -n auto`
-2. **Keep scope small**: One feature or fix per PR
-3. **Write clear description**: Your PR description becomes permanent documentation
-4. **Update docs**: Include documentation for API changes
+## Maintenance and automation
 
-#### PR Description
+The [maintenance status page](https://github.com/PrefectHQ/fastmcp/blob/status/STATUS.md) reports automation health and the contributor queue twice a day. Check its timestamp before treating a status as current. The accompanying `status.json` uses the `fastmcp-maintenance/1` schema; `idle` means there was nothing to do, while `degraded` means a run failed.
 
-Write PR descriptions that explain:
-- What problem you're solving
-- Why you chose this approach  
-- Any trade-offs or alternatives considered
-- Migration path for breaking changes
+Automation labels and deduplicates issues, enforces the contribution gate, explains CI failures, and checks new dependency releases nightly. Duplicate issues and reports still missing a reproduction after seven days without an author reply close automatically. Maintainers can request work with `/marvin`. A separate triage agent may open draft fixes for unclaimed issues; it does not assign contributors, comment, mark drafts ready, or merge.
 
-Focus on the "why" - the code shows the "what". Keep it concise but complete.
-
-#### What We Look For
-
-**Framework Philosophy**: FastMCP is NOT trying to do all things or provide all shortcuts. Features are rejected when they don't align with the framework's vision, even if perfectly implemented. The burden of proof is on the PR to demonstrate value.
-
-**Code Quality**: We verify code follows existing patterns. Consistency reduces cognitive load. When every module works similarly, developers understand new code quickly.
-
-**Test Coverage**: Not every line needs testing, but every behavior does. Tests document intent and protect against regressions.
-
-**Breaking Changes**: May be acceptable in minor versions but must be clearly documented. See the [versioning policy](/development/releases#versioning-policy).
-
-## Special Modules
-
-**`contrib`**: Community-maintained patterns and utilities. Original authors maintain their contributions. Not representative of the core framework.
-
-**`experimental`**: Maintainer-developed features that may preview future functionality. Can break or be deleted at any time without notice. Pin your FastMCP version when using these features.
+Maintainers decide assignments, merge readiness, changes to supported behavior or APIs, releases, and security-report classification. Release publishing and docs deployment run automatically after the corresponding maintainer actions; see [Releases](/development/releases#creating-releases).

@@ -4,10 +4,11 @@ import base64
 import inspect
 import mimetypes
 import os
+import sys
 from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
-from types import EllipsisType, UnionType
+from types import EllipsisType, SimpleNamespace, UnionType
 from typing import (
     Annotated,
     Any,
@@ -47,6 +48,29 @@ class FastMCPBaseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+def get_function_type_hints(fn: Callable[..., Any]) -> dict[str, Any]:
+    """Resolve a function's type hints, keeping `Annotated` metadata.
+
+    Before Python 3.11, `typing.get_type_hints` wraps the hint of every
+    parameter that defaults to `None` in `Optional[...]`. For
+    `Annotated[int | None, Field(title="Limit")] = None` that produces
+    `Optional[Annotated[...]]`, which buries the `Field` metadata in a nested
+    union branch of the JSON schema. Hints are resolved here without that
+    wrapping, so every supported Python version yields the same schema.
+    """
+    if sys.version_info >= (3, 11) or getattr(fn, "__annotations__", None) is None:
+        return get_type_hints(fn, include_extras=True)
+
+    # get_type_hints only adds the Optional wrapper for defaults it reads from
+    # `__code__`, so resolve the annotations through a proxy that has none.
+    namespace_fn = inspect.unwrap(fn)
+    proxy = SimpleNamespace(
+        __annotations__=fn.__annotations__,
+        __globals__=getattr(namespace_fn, "__globals__", {}),
+    )
+    return get_type_hints(proxy, include_extras=True)
+
+
 @lru_cache(maxsize=5000)
 def get_cached_typeadapter(cls: T) -> TypeAdapter[T]:
     """
@@ -61,7 +85,7 @@ def get_cached_typeadapter(cls: T) -> TypeAdapter[T]:
         if hasattr(cls, "__annotations__") and cls.__annotations__:
             try:
                 # Resolve forward references first
-                resolved_hints = get_type_hints(cls, include_extras=True)
+                resolved_hints = get_function_type_hints(cls)
             except Exception:
                 # If forward reference resolution fails, use original annotations
                 resolved_hints = cls.__annotations__
@@ -269,8 +293,14 @@ class Image:
 
     def _get_mime_type(self) -> str:
         """Get MIME type from format or guess from file extension."""
+        mapping = {
+            "jpg": "image/jpeg",
+            "svg": "image/svg+xml",
+            "tif": "image/tiff",
+        }
+
         if self._format:
-            return f"image/{self._format.lower()}"
+            return mapping.get(self._format.lower(), f"image/{self._format.lower()}")
 
         if self.path:
             # Workaround for WEBP in Py3.10

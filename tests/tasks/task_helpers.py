@@ -41,7 +41,7 @@ from mcp.server.session import ServerSession
 from mcp_types import CLIENT_CAPABILITIES_META_KEY
 
 from fastmcp.server.auth import AccessToken
-from fastmcp.server.dependencies import bind_request_context
+from fastmcp.server.dependencies import _serving_client_tool_call, bind_request_context
 from fastmcp.server.server import FastMCP
 from fastmcp.utilities.tasks import TASKS_EXTENSION_ID
 
@@ -98,7 +98,7 @@ def _opted_in_request(
         method="tools/call",
         params=params,
     )
-    with bind_request_context(srctx):
+    with bind_request_context(srctx), _serving_client_tool_call():
         yield
 
 
@@ -133,7 +133,7 @@ async def call_tool_without_optin(
     access_token: AccessToken | None = None,
 ):
     """Run a `tools/call` with no tasks opt-in (synchronous unless mode=required)."""
-    with auth_scope(access_token):
+    with auth_scope(access_token), _serving_client_tool_call():
         return await server.call_tool(name, arguments or {})
 
 

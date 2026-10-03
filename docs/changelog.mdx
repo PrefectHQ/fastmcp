@@ -5,6 +5,26 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v4.0.10" description="2026-09-25">
+
+**[v4.0.10: Inside Job](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.10)**
+
+Task-enabled tools now work behind search transforms and CodeMode: they're registered with the task backend even when hidden, and a tool, resource, or prompt that calls one through `ctx.fastmcp.call_tool()` (including the search `call_tool` proxy and CodeMode's `execute`) now gets its result instead of an empty task receipt.
+
+### Fixes 🐞
+* fix(stdio): tolerate a transport whose construction failed in `__del__` by [@kbkb628](https://github.com/kbkb628) in [#5256](https://github.com/PrefectHQ/fastmcp/pull/5256)
+* tasks: register task tools hidden by search and CodeMode by [@zzstoatzz](https://github.com/zzstoatzz) in [#5262](https://github.com/PrefectHQ/fastmcp/pull/5262)
+* tasks: run tools called from another tool in the foreground by [@zzstoatzz](https://github.com/zzstoatzz) in [#5275](https://github.com/PrefectHQ/fastmcp/pull/5275)
+### Docs 📚
+* Add Bluesky to docs footer by [@zzstoatzz](https://github.com/zzstoatzz) in [#5274](https://github.com/PrefectHQ/fastmcp/pull/5274)
+
+## New Contributors
+* @kbkb628 made their first contribution in [#5256](https://github.com/PrefectHQ/fastmcp/pull/5256)
+
+**Full Changelog**: [v4.0.9...v4.0.10](https://github.com/PrefectHQ/fastmcp/compare/v4.0.9...v4.0.10)
+
+</Update>
+
 <Update label="v4.0.9" description="2026-09-24">
 
 **[v4.0.9: Cache and Release](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.9)**

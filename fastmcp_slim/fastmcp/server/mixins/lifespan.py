@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import weakref
 from collections.abc import AsyncIterator
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager, nullcontext
 from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
@@ -97,14 +97,25 @@ class LifespanMixin:
         Extensions are entered in registration order; the ``AsyncExitStack``
         exits them in reverse on teardown.
         """
-        if _lifespan_root_active.get() or not self._extensions:
-            yield
-            return
+        # Mounts and aggregates remain live during setup. Reconcile once more
+        # after the user lifespan, before any extension lifespan is entered.
+        for provider in self.providers:
+            self._register_provider_extensions(provider)
+        self._extensions_started = True
+        try:
+            if _lifespan_root_active.get():
+                yield
+                return
 
-        async with AsyncExitStack() as stack:
-            for extension in self._extensions.values():
-                await stack.enter_async_context(extension.lifespan())
-            yield
+            # Each root tracks the complete provider tree, even when mounted
+            # children reuse a resource lifespan started by another root.
+            with self._extension_runtime(frozenset(self._extensions), root=self):
+                async with AsyncExitStack() as stack:
+                    for extension in self._extensions.values():
+                        await stack.enter_async_context(extension.lifespan())
+                    yield
+        finally:
+            self._extensions_started = False
 
     async def _validate_task_extension_registered(self: FastMCP) -> None:
         """Fail loudly if a task-enabled tool has no tasks extension registered.
@@ -177,7 +188,16 @@ class LifespanMixin:
 
         if not should_enter_lifespan:
             try:
-                yield
+                # A server can also start standalone after a mounted entry
+                # owns its resource lifespan. Track that independent runtime
+                # even though its setup is reused.
+                runtime = (
+                    nullcontext()
+                    if _lifespan_root_active.get()
+                    else self._extension_runtime(frozenset(self._extensions), root=self)
+                )
+                with runtime:
+                    yield
             finally:
                 async with self._lifespan_lock:
                     self._lifespan_ref_count -= 1
@@ -199,8 +219,11 @@ class LifespanMixin:
             self._lifespan_result = user_lifespan_result
             self._lifespan_result_set = True
 
-            # Start lifespans for all providers
+            # Start lifespans for all providers. An earlier provider's lifespan
+            # can add bundled providers to a later one, so reconcile against
+            # each provider immediately before it starts.
             for provider in self.providers:
+                self._register_provider_extensions(provider)
                 await stack.enter_async_context(provider.lifespan())
 
             await self._validate_task_extension_registered()

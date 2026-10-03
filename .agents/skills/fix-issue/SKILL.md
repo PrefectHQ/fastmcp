@@ -5,7 +5,7 @@ description: Carry a selected FastMCP bug from reproduction through a scoped fix
 
 # Fix a selected issue
 
-Read AGENTS.md and CONTRIBUTING.md. Read the issue's full discussion, relevant history, and associated PRs in all states. Evaluate existing contributions before writing a competing fix; use [review-issue](../review-issue/SKILL.md) when assignment is the next decision. Preserve contributor authorship when carrying existing work forward.
+Read AGENTS.md and the contribution policy in [the development guide](../../../docs/development/contributing.mdx). Read the issue's full discussion, relevant history, and associated PRs in all states. Evaluate existing contributions before writing a competing fix; use [review-issue](../review-issue/SKILL.md) when assignment is the next decision. Preserve contributor authorship when carrying existing work forward.
 
 ## Establish the contract
 
@@ -15,7 +15,7 @@ Trace the public request to the failing operation. Confirm supported behavior is
 
 Use [python-tests](../python-tests/SKILL.md). Reproduce the failure on unchanged code, confirm it fails for the right reason, then make the smallest causal fix. Test explicit overrides and neighboring supported paths that share the changed branch. Avoid expanding the fix to unrelated standards gaps.
 
-Self-review the full change with [code-review](../code-review/SKILL.md), including docs and dependency bounds. Separate necessary compatibility changes from accidental regressions and say whether a breaking change remains. Do not infer compatibility from passing tests.
+Self-review the full change with [review-pr](../review-pr/SKILL.md), including docs and dependency bounds. Separate necessary compatibility changes from accidental regressions and say whether a breaking change remains. Do not infer compatibility from passing tests.
 
 Run the repository's required dependency sync, full tests, and static checks before committing. Honor branch and attribution conventions. If a required check fails, investigate and report evidence rather than hiding the failure.
 
