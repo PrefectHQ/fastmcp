@@ -405,12 +405,20 @@ class File:
 
     def _get_mime_type(self) -> str:
         """Get MIME type from format or guess from file extension."""
+        mapping = {
+            "plain": "text/plain",
+            "txt": "text/plain",
+            "text": "text/plain",
+            "csv": "text/csv",
+            "html": "text/html",
+            "md": "text/markdown",
+            "markdown": "text/markdown",
+        }
+
         if self._format:
-            fmt = self._format.lower()
-            # Map common text formats to text/plain
-            if fmt in {"plain", "txt", "text"}:
-                return "text/plain"
-            return f"application/{fmt}"
+            return mapping.get(
+                self._format.lower(), f"application/{self._format.lower()}"
+            )
 
         if self.path:
             mime_type, _ = mimetypes.guess_type(self.path)
