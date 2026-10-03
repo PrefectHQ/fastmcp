@@ -1,16 +1,19 @@
 """
 HTTP routes for enabling/disabling components in FastMCP.
 
-Provides REST endpoints for controlling component enabled state with optional
-authentication scopes.
+Provides REST endpoints for controlling component enabled state. The routes
+use the authentication of the server whose HTTP app serves them.
 """
 
-from mcp.server.auth.middleware.bearer_auth import RequireAuthMiddleware
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from starlette.routing import Mount, Route
+from starlette.routing import Route
+from starlette.types import ASGIApp, Receive, Scope, Send
 
+from fastmcp.server.auth import AuthProvider
+from fastmcp.server.auth.middleware import RequireAuthMiddleware
 from fastmcp.server.server import FastMCP
 
 
@@ -19,11 +22,23 @@ def set_up_component_manager(
 ) -> None:
     """Set up HTTP routes for enabling/disabling tools, resources, and prompts.
 
+    The routes require the same authentication as the MCP endpoint of the
+    server whose HTTP app serves them. For a mounted server, that is the
+    parent server's auth provider. If the serving server has no auth provider
+    and `required_scopes` is omitted, the routes are unauthenticated, like the
+    MCP endpoint itself.
+
     Args:
         server: The FastMCP server instance.
         path: Base path for component management routes.
-        required_scopes: Optional list of scopes required for these routes.
-            Applies only if authentication is enabled.
+        required_scopes: Scopes a token must have to use these routes, in
+            addition to the scopes the server's auth provider requires. An
+            empty list requires authentication without extra scopes. Omit it
+            to require exactly what the MCP endpoint requires.
+
+    Raises:
+        ValueError: `required_scopes` is given but `server` has no auth
+            provider.
 
     Routes created:
         POST /tools/{name}/enable[?version=v1]
@@ -33,58 +48,86 @@ def set_up_component_manager(
         POST /prompts/{name}/enable[?version=v1]
         POST /prompts/{name}/disable[?version=v1]
     """
-    if required_scopes is None:
-        # No auth - include path prefix in routes
-        routes = _build_routes(server, path)
-        server._additional_http_routes.extend(routes)
-    else:
-        # With auth - Mount handles path prefix, routes shouldn't have it
-        routes = _build_routes(server, "/")
-        mount = Mount(
-            path if path != "/" else "",
-            app=RequireAuthMiddleware(Starlette(routes=routes), required_scopes),
+    if required_scopes is not None and server.auth is None:
+        raise ValueError(
+            "set_up_component_manager() was given required_scopes, but the "
+            "server has no auth provider. Configure `auth` on the server "
+            "before setting up the component manager."
         )
-        server._additional_http_routes.append(mount)
+    routes = _build_routes(server, path, required_scopes)
+    server._additional_http_routes.extend(routes)
 
 
-def _build_routes(server: FastMCP, base_path: str) -> list[Route]:
+class _ComponentManagerAuth:
+    """Apply the serving server's authentication to a management route.
+
+    The auth provider is resolved for each request from the HTTP app that
+    serves it, so routes forwarded from a mounted server use the parent's
+    provider, and a provider assigned after setup still applies.
+    """
+
+    def __init__(
+        self, app: ASGIApp, server: FastMCP, required_scopes: list[str] | None
+    ) -> None:
+        self.app = app
+        self.server = server
+        self.required_scopes = required_scopes
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        auth = _serving_auth(scope, self.server)
+        if auth is None and self.required_scopes is None:
+            await self.app(scope, receive, send)
+            return
+
+        scopes = list(auth.required_scopes) if auth is not None else []
+        for scope_name in self.required_scopes or []:
+            if scope_name not in scopes:
+                scopes.append(scope_name)
+        challenge_scopes = (
+            auth.get_challenge_scopes(scopes) if auth is not None else None
+        )
+        guarded = RequireAuthMiddleware(
+            self.app, scopes, challenge_scopes=challenge_scopes
+        )
+        await guarded(scope, receive, send)
+
+
+def _serving_auth(scope: Scope, server: FastMCP) -> AuthProvider | None:
+    """Return the auth provider of the FastMCP server serving this request."""
+    app = scope.get("app")
+    if isinstance(app, Starlette):
+        serving = getattr(app.state, "fastmcp_server", None)
+        if isinstance(serving, FastMCP):
+            return serving.auth
+    return server.auth
+
+
+def _build_routes(
+    server: FastMCP, base_path: str, required_scopes: list[str] | None
+) -> list[Route]:
     """Build all component management routes."""
     prefix = base_path.rstrip("/") if base_path != "/" else ""
+    middleware = [
+        Middleware(
+            _ComponentManagerAuth, server=server, required_scopes=required_scopes
+        )
+    ]
+
+    def route(route_path: str, component_type: str, action: str) -> Route:
+        return Route(
+            f"{prefix}{route_path}",
+            endpoint=_make_endpoint(server, component_type, action),
+            methods=["POST"],
+            middleware=middleware,
+        )
 
     return [
-        # Tools
-        Route(
-            f"{prefix}/tools/{{name}}/enable",
-            endpoint=_make_endpoint(server, "tool", "enable"),
-            methods=["POST"],
-        ),
-        Route(
-            f"{prefix}/tools/{{name}}/disable",
-            endpoint=_make_endpoint(server, "tool", "disable"),
-            methods=["POST"],
-        ),
-        # Resources
-        Route(
-            f"{prefix}/resources/{{uri:path}}/enable",
-            endpoint=_make_endpoint(server, "resource", "enable"),
-            methods=["POST"],
-        ),
-        Route(
-            f"{prefix}/resources/{{uri:path}}/disable",
-            endpoint=_make_endpoint(server, "resource", "disable"),
-            methods=["POST"],
-        ),
-        # Prompts
-        Route(
-            f"{prefix}/prompts/{{name}}/enable",
-            endpoint=_make_endpoint(server, "prompt", "enable"),
-            methods=["POST"],
-        ),
-        Route(
-            f"{prefix}/prompts/{{name}}/disable",
-            endpoint=_make_endpoint(server, "prompt", "disable"),
-            methods=["POST"],
-        ),
+        route("/tools/{name}/enable", "tool", "enable"),
+        route("/tools/{name}/disable", "tool", "disable"),
+        route("/resources/{uri:path}/enable", "resource", "enable"),
+        route("/resources/{uri:path}/disable", "resource", "disable"),
+        route("/prompts/{name}/enable", "prompt", "enable"),
+        route("/prompts/{name}/disable", "prompt", "disable"),
     ]
 
 
