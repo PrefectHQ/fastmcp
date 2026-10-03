@@ -399,6 +399,8 @@ mcp = FastMCP.from_openapi(
 
 ## Request Parameter Handling
 
+Each tool argument maps to a parameter or request body that the operation declares. FastMCP ignores arguments that the operation does not declare, so they never reach the HTTP request. This includes operations that take no parameters. A header or cookie configured on the HTTP client, such as `Authorization`, changes only when the operation declares a parameter with that name and location.
+
 FastMCP intelligently handles different types of parameters in OpenAPI requests:
 
 ### Query Parameters

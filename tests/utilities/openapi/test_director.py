@@ -271,7 +271,7 @@ class TestRequestDirector:
         assert "123" in str(request.url)
 
     def test_build_request_suffixed_parameters(self, director):
-        """Test handling of suffixed parameters in fallback mode."""
+        """A route without a precomputed map uses the canonical suffixed names."""
         route = HTTPRoute(
             path="/users/{id}",
             method="POST",
@@ -289,25 +289,29 @@ class TestRequestDirector:
                 content_schema={
                     "application/json": {
                         "type": "object",
-                        "properties": {"name": {"type": "string"}},
+                        "properties": {
+                            "id": {"type": "string"},
+                            "name": {"type": "string"},
+                        },
                     }
                 },
             ),
         )
 
-        # Use suffixed parameter names
+        # The path parameter collides with a body property, so it is suffixed
         flat_args = {
             "id__path": 123,
+            "id": "body-id",
             "name": "John Doe",
         }
 
         request = director.build(route, flat_args, "https://api.example.com")
 
         assert request.method == "POST"
-        assert "123" in str(request.url)
+        assert request.url.path == "/users/123"
 
         body_data = json.loads(request.content)
-        assert body_data["name"] == "John Doe"
+        assert body_data == {"id": "body-id", "name": "John Doe"}
 
     def test_url_building(self, director, basic_route):
         """Test URL building with different base URLs."""
