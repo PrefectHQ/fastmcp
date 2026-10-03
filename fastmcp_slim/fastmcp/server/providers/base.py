@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 from typing_extensions import Self
 
+from fastmcp.server.providers.addressing import tool_identity
 from fastmcp.server.transforms.visibility import Visibility
 from fastmcp.utilities.async_utils import gather
 from fastmcp.utilities.components import FastMCPComponent
@@ -211,26 +212,43 @@ class Provider:
         return None
 
     async def get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
-        """Look up an app-visible tool by its deterministic hash.
+        """Get an app-visible tool by its identity hash, with all transforms applied.
 
-        Same recursive-walk semantics as ``get_app_tool`` but matches on
-        ``meta["fastmcp"]["_tool_hash"]`` instead of the app name tag.
-        Used by the dispatcher when receiving hashed backend-tool calls.
+        The identity hash survives renaming, so the tool is found beneath the
+        transforms by `_get_tool_by_hash()` and then carried up through each
+        transform in order. A transform that would not return the tool from a
+        name lookup hides it here too, and a transform that renames it renames
+        it here too, so the result is the tool `get_tool()` returns under the
+        name this provider exposes it as.
+
+        Note: Like `get_tool()`, this does NOT filter disabled components. The
+        Server (FastMCP) performs enabled filtering after all transforms.
+
+        Args:
+            tool_hash: The identity hash from a `<hash>_<local_name>` name.
+            tool_name: The local tool name from the same name.
+
+        Returns:
+            The tool if found and not hidden (may be marked disabled), else None.
+        """
+        tool = await self._get_tool_by_hash(tool_hash, tool_name)
+        for transform in self.transforms:
+            if tool is None:
+                return None
+            tool = await _tool_through_transform(transform, tool)
+        return tool
+
+    async def _get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
+        """Look up an app-visible tool by its identity hash, before transforms.
+
+        Matches on ``meta["fastmcp"]["_tool_hash"]`` and requires ``"app"`` in
+        the tool's visibility. The default looks the tool up by its local name
+        via `_get_tool()`. Providers whose tools can be renamed beneath them
+        override this to search by identity instead.
         """
         tool = await self._get_tool(tool_name)
-        if tool is not None:
-            meta = tool.meta or {}
-            fastmcp_meta = meta.get("fastmcp")
-            ui_meta = meta.get("ui")
-            visibility = (
-                ui_meta.get("visibility", []) if isinstance(ui_meta, dict) else []
-            )
-            if (
-                isinstance(fastmcp_meta, dict)
-                and fastmcp_meta.get("_tool_hash") == tool_hash
-                and "app" in visibility
-            ):
-                return tool
+        if tool is not None and _is_app_tool_with_identity(tool, tool_hash):
+            return tool
         return None
 
     async def list_resources(self) -> Sequence[Resource]:
@@ -648,3 +666,49 @@ class Provider:
             )
         )
         return self
+
+
+def _is_app_tool_with_identity(tool: Tool, tool_hash: str) -> bool:
+    """Whether a tool carries this identity hash and is callable by apps."""
+    meta = tool.meta or {}
+    ui_meta = meta.get("ui")
+    visibility = ui_meta.get("visibility", []) if isinstance(ui_meta, dict) else []
+    return tool_identity(tool) == tool_hash and "app" in visibility
+
+
+async def _tool_through_transform(transform: Transform, tool: Tool) -> Tool | None:
+    """Carry a tool found beneath a transform up through it.
+
+    Returns what the transform's `get_tool()` returns for the name the tool
+    has above the transform, or None when that lookup does not lead back to
+    this tool. The name comes from the transform's listing. A transform that
+    does not list the tool, such as a catalog transform that replaces the
+    listing, is asked for the tool's unchanged name, which is what a name
+    lookup through it would use.
+    """
+    identity = tool_identity(tool)
+    listed = {
+        t.name
+        for t in await transform.list_tools([tool])
+        if tool_identity(t) == identity
+    }
+    if len(listed) > 1:
+        return None
+    name = listed.pop() if listed else tool.name
+
+    async def beneath(
+        requested: str, *, version: VersionSpec | None = None
+    ) -> Tool | None:
+        if requested != tool.name:
+            return None
+        if version is not None and not version.matches(tool.version):
+            return None
+        return tool
+
+    version = VersionSpec(eq=tool.version) if tool.version else None
+    resolved = await transform.get_tool(
+        name, cast("GetToolNext", beneath), version=version
+    )
+    if resolved is None or tool_identity(resolved) != identity:
+        return None
+    return resolved

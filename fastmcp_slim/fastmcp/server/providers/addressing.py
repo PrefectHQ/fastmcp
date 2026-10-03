@@ -21,6 +21,10 @@ needed.
 from __future__ import annotations
 
 import hashlib
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from fastmcp.tools.base import Tool
 
 #: Length of the hex hash prefix used in URIs and backend-tool names.
 HASH_LENGTH = 12
@@ -33,6 +37,18 @@ def hash_tool(app_name: str, tool_name: str) -> str:
     """
     payload = f"{app_name}\x00{tool_name}".encode()
     return hashlib.sha256(payload).hexdigest()[:HASH_LENGTH]
+
+
+def tool_identity(tool: Tool) -> str | None:
+    """Read a tool's stored identity hash, if it carries one."""
+    meta = tool.meta
+    if not meta:
+        return None
+    fastmcp_meta = meta.get("fastmcp")
+    if not isinstance(fastmcp_meta, dict):
+        return None
+    identity = fastmcp_meta.get("_tool_hash")
+    return identity if isinstance(identity, str) else None
 
 
 def hashed_backend_name(app_name: str, tool_name: str) -> str:

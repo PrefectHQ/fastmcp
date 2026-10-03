@@ -220,8 +220,12 @@ class AggregateProvider(Provider):
                 return r
         return None
 
-    async def get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
-        """Query all child providers for a tool matching a hash."""
+    async def _get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
+        """Query all child providers for a tool matching a hash.
+
+        Each child applies its own transforms, so a child that hides the tool
+        does not answer.
+        """
         results = await gather(
             *[p.get_tool_by_hash(tool_hash, tool_name) for p in self.providers],
             return_exceptions=True,
