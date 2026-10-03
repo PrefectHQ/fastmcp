@@ -236,8 +236,14 @@ async def run_server_async(
         )
     )
 
-    # Wait for server lifespan to be ready
-    await server._started.wait()
+    # Wait for server lifespan to be ready, unless the server task ends first:
+    # a server that fails to start will never set `_started`.
+    started = asyncio.create_task(server._started.wait())
+    await asyncio.wait({started, server_task}, return_when=asyncio.FIRST_COMPLETED)
+    if not started.done():
+        started.cancel()
+        await server_task
+        raise RuntimeError("Server exited before it finished starting")
 
     # The lifespan completing does not guarantee uvicorn has bound the port yet, so
     # poll until the socket accepts a connection rather than guessing at a sleep.
