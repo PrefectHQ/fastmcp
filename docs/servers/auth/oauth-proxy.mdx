@@ -555,6 +555,26 @@ Extending the lifetime only works when the upstream provider issues a refresh to
 
 The proxy issues its own refresh tokens that map to upstream refresh tokens. When a client uses a FastMCP refresh token, the proxy refreshes the upstream token and issues a new FastMCP access token.
 
+By default, rotation enforces one-time use: retrying a consumed refresh token returns `invalid_grant`. Distributed clients sometimes submit the same refresh concurrently or retry after losing a successful response. You can opt into a short idempotency window with `refresh_token_grace_period_seconds`:
+
+```python
+from fastmcp.server.auth import OAuthProxy
+
+auth = OAuthProxy(
+    upstream_authorization_endpoint="https://provider.com/oauth/authorize",
+    upstream_token_endpoint="https://provider.com/oauth/token",
+    upstream_client_id="your-client-id",
+    upstream_client_secret="your-client-secret",
+    token_verifier=token_verifier,
+    base_url="https://your-server.com",
+    refresh_token_grace_period_seconds=30,
+)
+```
+
+During this window, an identical retry receives the exact response produced by the original rotation; it does not refresh upstream again or create another refresh-token descendant. A predecessor can only be replayed while its immediate successor remains active. Once that successor is consumed, revoked, or expired, older responses cannot be recovered.
+
+The setting defaults to `0` and accepts at most 60 seconds. A nonzero value deliberately trades some replay detection for resilience to lost responses: anyone holding the consumed bearer token during the window can obtain its successor. Use the shortest interval your clients require. The parameter is available on every provider built on the OAuth proxy.
+
 ### PKCE Forwarding
 
 The OAuth proxy automatically handles PKCE (Proof Key for Code Exchange) when working with providers that support or require it. The proxy generates its own PKCE parameters to send upstream while separately validating the client's PKCE, ensuring end-to-end security at both layers.
