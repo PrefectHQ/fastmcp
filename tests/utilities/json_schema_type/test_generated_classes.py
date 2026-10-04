@@ -522,6 +522,17 @@ class TestConversionLimits:
         with pytest.raises(ValueError, match="too deeply nested"):
             json_schema_to_type(flat_chain_schema(400))
 
+    def test_very_deeply_nested_schema_stops_with_value_error(self):
+        schema: dict[str, Any] = {"type": "string"}
+        for _ in range(5000):
+            schema = {"type": "array", "items": schema}
+
+        with pytest.raises(ValueError, match="too deeply nested"):
+            json_schema_to_type(schema)
+
+        with pytest.raises(ValueError, match="too deeply nested"):
+            json_schema_to_type_adapter(schema)
+
     def test_repeated_type_lists_are_rejected(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(
             json_schema_type, "_MAX_CONVERSION_STEPS", 200, raising=False
@@ -630,6 +641,27 @@ class TestClassCache:
         )
 
         assert len(json_schema_type._classes) == 0
+
+    def test_adapters_are_cached_by_normalized_schema(self):
+        boolean_key: dict[Any, Any] = {
+            "type": "object",
+            "properties": {True: {"type": "integer"}},
+        }
+        string_key: dict[Any, Any] = {
+            "type": "object",
+            "properties": {"true": {"type": "integer"}},
+        }
+        capitalized_key: dict[Any, Any] = {
+            "type": "object",
+            "properties": {"True": {"type": "integer"}},
+        }
+
+        assert json_schema_to_type_adapter(string_key).validate_python({"true": 1})
+        adapter = json_schema_to_type_adapter(boolean_key)
+
+        assert adapter.validate_python({"True": 1})
+        assert adapter is json_schema_to_type_adapter(capitalized_key)
+        assert adapter is not json_schema_to_type_adapter(string_key)
 
     def test_evicted_classes_are_released(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(json_schema_type._classes, "max_entries", 2)
