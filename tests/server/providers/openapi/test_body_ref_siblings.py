@@ -183,3 +183,55 @@ async def test_ref_without_siblings_exposes_referenced_fields():
     assert set(schema["properties"]) == {"name"}
     assert schema["required"] == ["name"]
     assert body == {"name": "n"}
+
+
+PET_COMPONENTS = {
+    "Pet": {
+        "type": "object",
+        "required": ["petType"],
+        "properties": {"petType": {"type": "string"}},
+        "oneOf": [
+            {"$ref": "#/components/schemas/Cat"},
+            {"$ref": "#/components/schemas/Dog"},
+        ],
+        "discriminator": {
+            "propertyName": "petType",
+            "mapping": {
+                "cat": "#/components/schemas/Cat",
+                "dog": "#/components/schemas/Dog",
+            },
+        },
+    },
+    "Cat": {
+        "type": "object",
+        "properties": {"meowVolume": {"type": "integer"}},
+    },
+    "Dog": {
+        "type": "object",
+        "properties": {"barkVolume": {"type": "integer"}},
+    },
+}
+
+PET_BODY = {
+    "$ref": "#/components/schemas/Pet",
+    "properties": {"owner": {"type": "string"}},
+}
+
+
+async def test_ref_with_discriminator_advertises_subtype_fields():
+    spec = build_spec(PET_BODY, PET_COMPONENTS)
+    schema, _ = await call_make_thing(spec, {"petType": "cat"})
+    assert set(schema["properties"]) == {
+        "petType",
+        "owner",
+        "meowVolume",
+        "barkVolume",
+    }
+
+
+async def test_ref_with_discriminator_sends_subtype_fields():
+    spec = build_spec(PET_BODY, PET_COMPONENTS)
+    _, body = await call_make_thing(
+        spec, {"petType": "cat", "owner": "sam", "meowVolume": 3}
+    )
+    assert body == {"petType": "cat", "owner": "sam", "meowVolume": 3}

@@ -447,6 +447,10 @@ def _combine_schemas_and_map_params(
                 # Merge required fields
                 if "required" in sub_schema:
                     merged_required.extend(sub_schema["required"])
+                # The referenced schema's discriminator is kept so its subtypes
+                # are flattened below; the sibling schema comes last and wins.
+                if not has_all_of and isinstance(sub_schema.get("discriminator"), dict):
+                    body_schema["discriminator"] = sub_schema["discriminator"]
 
             # Update body_schema with merged properties
             body_schema["properties"] = merged_props
