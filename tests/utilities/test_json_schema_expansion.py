@@ -157,6 +157,17 @@ def test_large_schema_still_resolves_root_reference() -> None:
     assert result == {**schema, "$defs": defs}
 
 
+@pytest.mark.parametrize(("defs_key", "pointer"), POINTER_FORMS)
+def test_large_schema_resolves_root_reference_in_every_pointer_form(
+    defs_key: str, pointer: str
+) -> None:
+    schema = nested_union_schema(9, defs_key=defs_key, pointer=pointer)
+    defs = schema.pop(defs_key)
+    defs["Root"] = schema
+    result = dereference_refs({"$ref": pointer.format("Root"), defs_key: defs})
+    assert result == {**schema, defs_key: defs}
+
+
 def test_sibling_keywords_come_from_the_referenced_definition() -> None:
     schema = {
         "type": "object",
