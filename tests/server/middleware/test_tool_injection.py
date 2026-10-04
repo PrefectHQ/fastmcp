@@ -466,3 +466,47 @@ class TestInjectedToolAuthorization:
 
         assert by_name.data == "injected saved alice"
         assert by_hash.data == "app saved alice"
+
+    async def test_shadowed_registered_tool_is_not_listed(self):
+        """Listing and calling agree when an injected tool shadows a registered one."""
+        server = make_auth_server(
+            ToolInjectionMiddleware(
+                [
+                    Tool.from_function(
+                        admin_report, name="report", auth=require_scopes("admin")
+                    )
+                ]
+            )
+        )
+        server.add_tool(unscoped_tool(public_report, "report"))
+
+        async with run_server_async(server) as url:
+            async with Client(url, auth="read-token") as client:
+                read_tools = await client.list_tools()
+                read_result = await client.call_tool("report", {}, raise_on_error=False)
+            async with Client(url, auth="admin-token") as client:
+                admin_tools = await client.list_tools()
+                admin_result = await client.call_tool("report", {})
+
+        assert read_tools == []
+        assert read_result.is_error
+        assert [tool.name for tool in admin_tools] == ["report"]
+        assert admin_result.data == "ADMIN_REPORT_MARKER"
+
+    async def test_injected_task_tool_runs_as_task(self):
+        async def square(n: int) -> int:
+            return n * n
+
+        server = FastMCP(
+            "TaskServer",
+            middleware=[
+                ToolInjectionMiddleware([Tool.from_function(square, task=True)])
+            ],
+        )
+
+        async with Client(server) as client:
+            task = await client.call_tool("square", {"n": 7}, task=True)
+            assert not task.returned_immediately
+            result = await task.result()
+
+        assert result.data == 49
