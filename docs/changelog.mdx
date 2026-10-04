@@ -5,6 +5,76 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v4.0.11" description="2026-10-04">
+
+**[v4.0.11: Fort Knocks](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.11)**
+
+This release contains important security and bug fixes. All users are encouraged to upgrade. Thanks to our 10 contributors, including 6 first-time contributors.
+
+### Enhancements ✨
+* agents: make AGENTS.md the entry point and tighten repo skills by [@zzstoatzz](https://github.com/zzstoatzz) in [#5278](https://github.com/PrefectHQ/fastmcp/pull/5278)
+* ci: publish maintenance status and add MAINTAINING.md by [@zzstoatzz](https://github.com/zzstoatzz) in [#5284](https://github.com/PrefectHQ/fastmcp/pull/5284)
+* rate_limiting: deprecate a burst_capacity below 1 by [@zzstoatzz](https://github.com/zzstoatzz) and [@sclfcz](https://github.com/sclfcz) in [#5296](https://github.com/PrefectHQ/fastmcp/pull/5296)
+* agents: consolidate PR review guidance by [@zzstoatzz](https://github.com/zzstoatzz) in [#5297](https://github.com/PrefectHQ/fastmcp/pull/5297)
+* status: unify dashboard and terminal issue ranking by [@zzstoatzz](https://github.com/zzstoatzz) in [#5300](https://github.com/PrefectHQ/fastmcp/pull/5300)
+* Enable ruff flake8-bandit (S) rules on the library by [@strawgate](https://github.com/strawgate) in [#5356](https://github.com/PrefectHQ/fastmcp/pull/5356)
+* Bundle extensions with providers by [@jlowin](https://github.com/jlowin) in [#5360](https://github.com/PrefectHQ/fastmcp/pull/5360)
+* Expand supported Python CI coverage by [@jlowin](https://github.com/jlowin) in [#5391](https://github.com/PrefectHQ/fastmcp/pull/5391)
+* docs: credit issue authors in maintainer implementations by [@jlowin](https://github.com/jlowin) in [#5410](https://github.com/PrefectHQ/fastmcp/pull/5410)
+* enhancement: scan release notes for shared contributor credit by [@jlowin](https://github.com/jlowin) in [#5433](https://github.com/PrefectHQ/fastmcp/pull/5433)
+### Security 🔒
+* Pass client CLI arguments literally to Windows .cmd wrappers by [@jlowin](https://github.com/jlowin) and [@strawgate](https://github.com/strawgate) in [#5419](https://github.com/PrefectHQ/fastmcp/pull/5419)
+* Build client schema types with create_model and bounded caches by [@jlowin](https://github.com/jlowin) and [@strawgate](https://github.com/strawgate) in [#5413](https://github.com/PrefectHQ/fastmcp/pull/5413)
+* Bound schema nesting before client type conversion by [@jlowin](https://github.com/jlowin) and [@strawgate](https://github.com/strawgate) in [#5434](https://github.com/PrefectHQ/fastmcp/pull/5434)
+* OpenAPI components send only declared arguments and keep configured headers by [@jlowin](https://github.com/jlowin) and [@strawgate](https://github.com/strawgate) in [#5423](https://github.com/PrefectHQ/fastmcp/pull/5423)
+* Use the server's auth provider for component manager routes by [@jlowin](https://github.com/jlowin) and [@strawgate](https://github.com/strawgate) in [#5425](https://github.com/PrefectHQ/fastmcp/pull/5425)
+* Apply Host/Origin protection settings to the SSE transport by [@jlowin](https://github.com/jlowin) in [#5427](https://github.com/PrefectHQ/fastmcp/pull/5427)
+* Require a startup-URL session for the fastmcp dev apps preview by [@jlowin](https://github.com/jlowin) and [@strawgate](https://github.com/strawgate) in [#5417](https://github.com/PrefectHQ/fastmcp/pull/5417)
+* Apply transforms, enabled state, and auth to hashed tool lookups by [@jlowin](https://github.com/jlowin) and [@strawgate](https://github.com/strawgate) in [#5415](https://github.com/PrefectHQ/fastmcp/pull/5415)
+* Key cached schema adapters by the normalized schema by [@jlowin](https://github.com/jlowin) in [#5436](https://github.com/PrefectHQ/fastmcp/pull/5436)
+* Resolve injected tools through the server's tool lookup by [@jlowin](https://github.com/jlowin) in [#5431](https://github.com/PrefectHQ/fastmcp/pull/5431)
+* Keep $ref pointers when inlining would produce an oversized schema by [@jlowin](https://github.com/jlowin) and [@strawgate](https://github.com/strawgate) in [#5421](https://github.com/PrefectHQ/fastmcp/pull/5421)
+### Fixes 🐞
+* rate_limiting: default burst capacity to at least 1 by [@zzstoatzz](https://github.com/zzstoatzz) and [@Patrick-SCH03](https://github.com/Patrick-SCH03) in [#5293](https://github.com/PrefectHQ/fastmcp/pull/5293)
+* types: map Image jpg/svg/tif formats to canonical MIME types by [@zzstoatzz](https://github.com/zzstoatzz) and [@Patrick-SCH03](https://github.com/Patrick-SCH03) in [#5294](https://github.com/PrefectHQ/fastmcp/pull/5294)
+* client: decode empty structured content into CallToolResult.data by [@zzstoatzz](https://github.com/zzstoatzz) and [@Patrick-SCH03](https://github.com/Patrick-SCH03) in [#5291](https://github.com/PrefectHQ/fastmcp/pull/5291)
+* fix: use portable issue ranking cache filenames by [@zzstoatzz](https://github.com/zzstoatzz) in [#5314](https://github.com/PrefectHQ/fastmcp/pull/5314)
+* fix: validate cached version timestamp types by [@Harsh23Kashyap](https://github.com/Harsh23Kashyap) in [#5351](https://github.com/PrefectHQ/fastmcp/pull/5351)
+* cli: read MCP and fastmcp.json config files as utf-8 by [@zzstoatzz](https://github.com/zzstoatzz) and [@asasemahmed](https://github.com/asasemahmed) in [#5345](https://github.com/PrefectHQ/fastmcp/pull/5345)
+* Support Python 3.15 by [@Kludex](https://github.com/Kludex) in [#5374](https://github.com/PrefectHQ/fastmcp/pull/5374)
+* Revert "Support Python 3.15" by [@jlowin](https://github.com/jlowin) in [#5389](https://github.com/PrefectHQ/fastmcp/pull/5389)
+* examples: handle malformed media links and concurrent Fire TV setup by [@jlowin](https://github.com/jlowin) in [#5390](https://github.com/PrefectHQ/fastmcp/pull/5390)
+* Fix mounted extension runtime tracking by [@jlowin](https://github.com/jlowin) in [#5392](https://github.com/PrefectHQ/fastmcp/pull/5392)
+* Fall back to pure Python YAML loader in schema tests by [@jlowin](https://github.com/jlowin) in [#5395](https://github.com/PrefectHQ/fastmcp/pull/5395)
+* tools: keep explicit Field(title=...) on parameters in the input schema by [@zzstoatzz](https://github.com/zzstoatzz) and [@TJReinert](https://github.com/TJReinert) in [#5388](https://github.com/PrefectHQ/fastmcp/pull/5388)
+* Run Windows tests on code pull requests by [@jlowin](https://github.com/jlowin) in [#5408](https://github.com/PrefectHQ/fastmcp/pull/5408)
+* Avoid repeated traversal of shared tool schema definitions by [@jlowin](https://github.com/jlowin) in [#5412](https://github.com/PrefectHQ/fastmcp/pull/5412)
+* Keep referenced body fields when a request body schema adds sibling properties by [@jlowin](https://github.com/jlowin) in [#5440](https://github.com/PrefectHQ/fastmcp/pull/5440)
+* Require pydocket 0.26.0 so a cancelled task cannot stop the worker by [@jlowin](https://github.com/jlowin) in [#5444](https://github.com/PrefectHQ/fastmcp/pull/5444)
+### Docs 📚
+* docs: consolidate developer and maintainer guidance by [@zzstoatzz](https://github.com/zzstoatzz) in [#5298](https://github.com/PrefectHQ/fastmcp/pull/5298)
+* examples: add interactive media picker MCP app by [@zzstoatzz](https://github.com/zzstoatzz) in [#5281](https://github.com/PrefectHQ/fastmcp/pull/5281)
+* docs: route SDK v1 users to the correct upgrade guide by [@aritejhg](https://github.com/aritejhg) in [#5372](https://github.com/PrefectHQ/fastmcp/pull/5372)
+* Clarify app visibility and configurable security guarantees by [@jlowin](https://github.com/jlowin) in [#5409](https://github.com/PrefectHQ/fastmcp/pull/5409)
+* Clarify declared header parameters in the OpenAPI docs by [@jlowin](https://github.com/jlowin) and [@strawgate](https://github.com/strawgate) in [#5437](https://github.com/PrefectHQ/fastmcp/pull/5437)
+* docs: add v4.0.11 changelog entries by [@jlowin](https://github.com/jlowin) in [#5446](https://github.com/PrefectHQ/fastmcp/pull/5446)
+### Dependencies 📦
+* chore(deps): bump the uv group across 2 directories with 2 updates by @dependabot[bot] in https://github.com/PrefectHQ/fastmcp/pull/5361
+### Other Changes 🦾
+* chore(deps): Update astral-sh/setup-uv action to v10.2.0 by @prefect-renovate[bot] in https://github.com/PrefectHQ/fastmcp/pull/5347
+
+## New Contributors
+* @Harsh23Kashyap made their first contribution in [#5351](https://github.com/PrefectHQ/fastmcp/pull/5351)
+* @aritejhg made their first contribution in [#5372](https://github.com/PrefectHQ/fastmcp/pull/5372)
+* @Patrick-SCH03 made their first contribution in [#5291](https://github.com/PrefectHQ/fastmcp/pull/5291)
+* @sclfcz made their first contribution in [#5296](https://github.com/PrefectHQ/fastmcp/pull/5296)
+* @asasemahmed made their first contribution in [#5345](https://github.com/PrefectHQ/fastmcp/pull/5345)
+* @TJReinert made their first contribution in [#5388](https://github.com/PrefectHQ/fastmcp/pull/5388)
+
+**Full Changelog**: [v4.0.10...v4.0.11](https://github.com/PrefectHQ/fastmcp/compare/v4.0.10...v4.0.11)
+
+</Update>
+
 <Update label="v4.0.10" description="2026-09-25">
 
 **[v4.0.10: Inside Job](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.0.10)**

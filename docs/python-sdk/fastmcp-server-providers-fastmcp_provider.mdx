@@ -186,7 +186,7 @@ required_extensions(self) -> Sequence[ServerExtension]
 Expose the mounted server's bundled and auto-registerable extensions.
 
 
-#### `get_app_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py#L449" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_app_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py#L456" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_app_tool(self, app_name: str, tool_name: str) -> Tool | None
@@ -195,16 +195,7 @@ get_app_tool(self, app_name: str, tool_name: str) -> Tool | None
 Delegate to nested server's get_app_tool, wrapping for middleware.
 
 
-#### `get_tool_by_hash` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py#L460" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None
-```
-
-Delegate to nested server's get_tool_by_hash, wrapping for middleware.
-
-
-#### `get_tasks` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py#L559" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tasks` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py#L572" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_tasks(self) -> Sequence[FastMCPComponent]
@@ -218,7 +209,7 @@ server's transforms applied, then applies this provider's transforms
 for correct registration keys.
 
 
-#### `lifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py#L581" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `lifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/providers/fastmcp_provider.py#L594" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 lifespan(self) -> AsyncIterator[None]

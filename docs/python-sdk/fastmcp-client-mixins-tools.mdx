@@ -10,7 +10,7 @@ Tool-related methods for FastMCP Client.
 
 ## Classes
 
-### `ClientToolsMixin` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/tools.py#L29" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ClientToolsMixin` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/tools.py#L28" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Mixin providing tool-related methods for Client.
@@ -18,7 +18,7 @@ Mixin providing tool-related methods for Client.
 
 **Methods:**
 
-#### `list_tools_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/tools.py#L34" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_tools_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/tools.py#L33" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_tools_mcp(self: Client) -> mcp_types.ListToolsResult
@@ -42,7 +42,7 @@ containing the list of tools and any additional metadata.
 - `MCPError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `list_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/tools.py#L90" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/tools.py#L89" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_tools(self: Client, max_pages: int = AUTO_PAGINATION_MAX_PAGES) -> list[mcp_types.Tool]
@@ -70,7 +70,7 @@ skip the cache.
 - `MCPError`: If the request results in a TimeoutError | JSONRPCError
 
 
-#### `call_tool_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/tools.py#L146" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `call_tool_mcp` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/tools.py#L145" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 call_tool_mcp(self: Client, name: str, arguments: dict[str, Any], progress_handler: ProgressHandler | None = None, timeout: datetime.timedelta | float | int | None = None, meta: dict[str, Any] | None = None) -> mcp_types.CallToolResult
@@ -100,7 +100,7 @@ containing the tool result and any additional metadata.
 - `MCPError`: If the tool call requests results in a TimeoutError | JSONRPCError
 
 
-#### `call_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/tools.py#L281" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `call_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/client/mixins/tools.py#L280" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 call_tool(self: Client, name: str, arguments: dict[str, Any] | None = None) -> CallToolResult
