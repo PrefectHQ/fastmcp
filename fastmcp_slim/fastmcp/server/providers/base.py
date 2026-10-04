@@ -31,6 +31,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from functools import partial
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
@@ -215,11 +216,14 @@ class Provider:
 
         async def base(n: str, *, version: VersionSpec | None = None) -> Tool | None:
             found = hashed_lookup_target(self)
-            if found is not None and n == found.name:
-                if version is not None and not version.matches(found.version):
-                    return None
+            if found is None or n != found.name:
+                return await self._get_tool(n, version)
+            if version is None or version.matches(found.version):
                 return found
-            return await self._get_tool(n, version)
+            other = await self._get_tool(n, version)
+            if other is not None and tool_identity(other) == tool_identity(found):
+                return other
+            return None
 
         chain: GetToolNext = cast("GetToolNext", base)
         for transform in self.transforms:
@@ -267,7 +271,11 @@ class Provider:
         found tool for its own name and looks up every other name as usual,
         so transforms and `get_tool()` overrides decide exactly as they would
         for a name call, while a different tool sharing the name cannot take
-        the found tool's place.
+        the found tool's place. A version constraint the found tool does not
+        meet is looked up as usual and accepted only for the same identity.
+        A nested lookup of that same name on this provider while the hashed
+        lookup runs resolves to the found tool; tasks started during the
+        lookup resolve names as usual once it finishes.
 
         Note: Like `get_tool()`, this does NOT filter disabled components. The
         Server (FastMCP) performs enabled filtering after all transforms.
@@ -286,10 +294,12 @@ class Provider:
         if name is None:
             return None
 
-        token = _hashed_lookup.set((self, found))
+        state = _HashedLookup(provider=self, tool=found)
+        token = _hashed_lookup.set(state)
         try:
             tool = await self.get_tool(name)
         finally:
+            state.active = False
             _hashed_lookup.reset(token)
 
         if tool is None or tool_identity(tool) != tool_hash:
@@ -752,7 +762,21 @@ class Provider:
         return self
 
 
-_hashed_lookup: ContextVar[tuple[Provider, Tool] | None] = ContextVar(
+@dataclass
+class _HashedLookup:
+    """A running `get_tool_by_hash()` on one provider.
+
+    Tasks started during the lookup copy the context that holds this object,
+    so `active` is cleared when the lookup ends rather than relying on the
+    context variable being reset in every copy.
+    """
+
+    provider: Provider
+    tool: Tool
+    active: bool = True
+
+
+_hashed_lookup: ContextVar[_HashedLookup | None] = ContextVar(
     "_hashed_lookup", default=None
 )
 
@@ -760,9 +784,9 @@ _hashed_lookup: ContextVar[tuple[Provider, Tool] | None] = ContextVar(
 def hashed_lookup_target(provider: Provider) -> Tool | None:
     """The tool a running `get_tool_by_hash()` on `provider` found, if any."""
     current = _hashed_lookup.get()
-    if current is None or current[0] is not provider:
+    if current is None or not current.active or current.provider is not provider:
         return None
-    return current[1]
+    return current.tool
 
 
 async def _listed_name(transforms: Sequence[Transform], tool: Tool) -> str | None:

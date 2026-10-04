@@ -9,15 +9,16 @@ disables stays unreachable under its hashed name too.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable, Sequence
 
 import pytest
 
 from fastmcp import Client, Context, FastMCP, FastMCPApp
 from fastmcp.exceptions import ToolError
-from fastmcp.server.providers.addressing import hashed_backend_name
+from fastmcp.server.providers.addressing import hashed_backend_name, tool_identity
 from fastmcp.server.providers.proxy import ProxyClient, ProxyProvider
-from fastmcp.server.transforms import GetToolNext, Transform
+from fastmcp.server.transforms import GetToolNext, Transform, VersionFilter
 from fastmcp.server.transforms.tool_transform import ToolTransform
 from fastmcp.tools.base import Tool
 from fastmcp.tools.tool_transform import ToolTransformConfig
@@ -303,7 +304,7 @@ async def test_transform_sees_other_tools_during_hashed_lookup(
     assert calls == ([] if under_maintenance else ["alice"])
 
 
-async def test_hashed_name_falls_back_past_a_disabled_highest_version():
+def versioned_contacts_app() -> FastMCPApp:
     app = FastMCPApp("contacts")
     for version in ("1.0", "2.0"):
 
@@ -317,7 +318,11 @@ async def test_hashed_name_falls_back_past_a_disabled_highest_version():
                 meta={"ui": {"visibility": ["app", "model"]}},
             )
         )
-    server = server_with(app)
+    return app
+
+
+async def test_hashed_name_falls_back_past_a_disabled_highest_version():
+    server = server_with(versioned_contacts_app())
     server.disable(version=VersionSpec(eq="2.0"))
 
     async with Client(server) as client:
@@ -326,3 +331,55 @@ async def test_hashed_name_falls_back_past_a_disabled_highest_version():
 
     assert by_name.data == "v1.0 saved alice"
     assert by_hash.data == "v1.0 saved alice"
+
+
+async def test_hashed_name_respects_a_version_filter():
+    server = server_with(versioned_contacts_app())
+    server.add_transform(VersionFilter(version_lt="2"))
+
+    async with Client(server) as client:
+        by_name = await client.call_tool("save", {"name": "alice"})
+        by_hash = await client.call_tool(SAVE, {"name": "alice"})
+
+    assert by_name.data == "v1.0 saved alice"
+    assert by_hash.data == "v1.0 saved alice"
+
+
+class SpawnLaterLookup(Transform):
+    """Starts a task that looks up `save` by name once released."""
+
+    def __init__(self, server: FastMCP) -> None:
+        self.server = server
+        self.release = asyncio.Event()
+        self.probes: list[asyncio.Task[Tool | None]] = []
+
+    async def get_tool(
+        self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
+    ) -> Tool | None:
+        if name == "save" and not self.probes:
+            self.probes.append(asyncio.create_task(self._lookup_later()))
+        return await call_next(name, version=version)
+
+    async def _lookup_later(self) -> Tool | None:
+        await self.release.wait()
+        return await self.server.get_tool("save")
+
+
+async def test_task_started_during_hashed_lookup_resolves_names_normally():
+    server = server_with(contacts_app([]))
+
+    @server.tool(name="save")
+    def plain_save(name: str) -> str:
+        return f"plain {name}"
+
+    spawner = SpawnLaterLookup(server)
+    server.add_transform(spawner)
+
+    async with Client(server) as client:
+        await client.call_tool(SAVE, {"name": "alice"})
+        spawner.release.set()
+        (probe,) = spawner.probes
+        later = await probe
+
+    assert later is not None
+    assert tool_identity(later) is None
