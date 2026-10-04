@@ -677,7 +677,7 @@ def _convert_schema(
             return type(None)
         elif len(types) == 1:
             if has_null:
-                return types[0] | None  # type: ignore
+                return Union[types[0], type(None)]  # type: ignore # noqa: UP007
             else:
                 return types[0]
         else:
@@ -701,7 +701,7 @@ def _convert_schema(
         types = [t for t in types if t is not type(None)]
         if has_null:
             if len(types) == 1:
-                return types[0] | None  # type: ignore
+                return Union[types[0], type(None)]  # type: ignore # noqa: UP007
             else:
                 return Union[(*types, type(None))]  # type: ignore
         return Union[tuple(types)]  # type: ignore # noqa: UP007
