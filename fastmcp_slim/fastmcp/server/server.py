@@ -68,8 +68,12 @@ from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.mixins import LifespanMixin, MCPOperationsMixin, TransportMixin
 from fastmcp.server.providers import LocalProvider, Provider
-from fastmcp.server.providers.addressing import parse_hashed_backend_name
+from fastmcp.server.providers.addressing import (
+    parse_hashed_backend_name,
+    tool_identity,
+)
 from fastmcp.server.providers.aggregate import AggregateProvider
+from fastmcp.server.providers.base import hashed_lookup_target
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.server.telemetry import server_span
 from fastmcp.server.transforms import (
@@ -753,8 +757,16 @@ class FastMCP(
             return None
 
         # Apply session transforms to single item
+        # Backend tools are reached by their hashed name, so a hashed lookup
+        # does not exclude them.
+        hashed = hashed_lookup_target(self) is not None
+
         tools = await apply_session_transforms([tool])
-        if tools and is_enabled(tools[0]) and not _is_backend_tool(tools[0]):
+        if (
+            tools
+            and is_enabled(tools[0])
+            and (hashed or not _is_backend_tool(tools[0]))
+        ):
             return tools[0]
 
         # The highest version is disabled (or app-only). If an explicit version
@@ -764,8 +776,18 @@ class FastMCP(
             return None
 
         all_tools = [t for t in await super().list_tools() if t.name == name]
+        # During a hashed lookup, only versions of the identity being looked
+        # up qualify; another tool listed under the same name does not.
+        found = hashed_lookup_target(self)
+        if found is not None:
+            identity = tool_identity(found)
+            all_tools = [t for t in all_tools if tool_identity(t) == identity]
         all_tools = list(await apply_session_transforms(all_tools))
-        enabled = [t for t in all_tools if is_enabled(t) and not _is_backend_tool(t)]
+        enabled = [
+            t
+            for t in all_tools
+            if is_enabled(t) and (hashed or not _is_backend_tool(t))
+        ]
 
         skip_auth, token = _get_auth_context()
         authorized: list[Tool] = []
@@ -786,9 +808,11 @@ class FastMCP(
     async def get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
         """Get an app-visible tool by its identity hash, filtering as `get_tool` does.
 
-        Overrides Provider.get_tool_by_hash() to apply session transforms,
-        enabled filtering, and auth checks after the provider and server
-        transforms, the same checks `get_tool` applies to a name lookup.
+        The lookup runs through `get_tool()`, so session transforms, enabled
+        filtering, and the fallback past a disabled highest version apply
+        exactly as for a name lookup, limited to versions of this identity.
+        Overrides Provider.get_tool_by_hash() to add the auth check that a
+        name lookup performs in `_get_tool()`.
 
         Args:
             tool_hash: The identity hash from a `<hash>_<local_name>` name.
@@ -800,11 +824,6 @@ class FastMCP(
         tool = await super().get_tool_by_hash(tool_hash, tool_name)
         if tool is None:
             return None
-
-        tools = await apply_session_transforms([tool])
-        if not tools or not is_enabled(tools[0]):
-            return None
-        tool = tools[0]
 
         skip_auth, token = _get_auth_context()
         if not skip_auth and tool.auth is not None:

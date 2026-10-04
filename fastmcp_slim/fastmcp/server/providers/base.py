@@ -30,6 +30,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from functools import partial
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -177,6 +178,11 @@ class Provider:
         """
 
         async def base(n: str, *, version: VersionSpec | None = None) -> Tool | None:
+            found = hashed_lookup_target(self)
+            if found is not None and n == found.name:
+                if version is not None and not version.matches(found.version):
+                    return None
+                return found
             return await self._get_tool(n, version)
 
         chain: GetToolNext = cast("GetToolNext", base)
@@ -215,14 +221,17 @@ class Provider:
         return None
 
     async def get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
-        """Get an app-visible tool by its identity hash, with all transforms applied.
+        """Get an app-visible tool by its identity hash, through `get_tool()`.
 
-        The identity hash survives renaming, so the tool is found beneath the
-        transforms by `_get_tool_by_hash()` and then carried up through each
-        transform in order. A transform that would not return the tool from a
-        name lookup hides it here too, and a transform that renames it renames
-        it here too, so the result is the tool `get_tool()` returns under the
-        name this provider exposes it as.
+        The identity hash survives renaming, so `_get_tool_by_hash()` finds
+        the tool beneath this provider's transforms. Its name above the
+        transforms comes from their listing, and the tool is then looked up
+        under that name with `get_tool()`, the same public lookup a name call
+        uses. While that lookup runs, the bottom of the chain answers the
+        found tool for its own name and looks up every other name as usual,
+        so transforms and `get_tool()` overrides decide exactly as they would
+        for a name call, while a different tool sharing the name cannot take
+        the found tool's place.
 
         Note: Like `get_tool()`, this does NOT filter disabled components. The
         Server (FastMCP) performs enabled filtering after all transforms.
@@ -234,11 +243,21 @@ class Provider:
         Returns:
             The tool if found and not hidden (may be marked disabled), else None.
         """
-        tool = await self._get_tool_by_hash(tool_hash, tool_name)
-        for transform in self.transforms:
-            if tool is None:
-                return None
-            tool = await _tool_through_transform(transform, tool)
+        found = await self._get_tool_by_hash(tool_hash, tool_name)
+        if found is None:
+            return None
+        name = await _listed_name(self.transforms, found)
+        if name is None:
+            return None
+
+        token = _hashed_lookup.set((self, found))
+        try:
+            tool = await self.get_tool(name)
+        finally:
+            _hashed_lookup.reset(token)
+
+        if tool is None or tool_identity(tool) != tool_hash:
+            return None
         return tool
 
     async def _get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
@@ -671,45 +690,38 @@ class Provider:
         return self
 
 
-async def _tool_through_transform(transform: Transform, tool: Tool) -> Tool | None:
-    """Carry a tool found beneath a transform up through it.
+_hashed_lookup: ContextVar[tuple[Provider, Tool] | None] = ContextVar(
+    "_hashed_lookup", default=None
+)
 
-    Returns what the transform's `get_tool()` returns for the name the tool
-    has above the transform, or None when that lookup does not lead back to
-    this tool. The name comes from the transform's listing. A transform that
+
+def hashed_lookup_target(provider: Provider) -> Tool | None:
+    """The tool a running `get_tool_by_hash()` on `provider` found, if any."""
+    current = _hashed_lookup.get()
+    if current is None or current[0] is not provider:
+        return None
+    return current[1]
+
+
+async def _listed_name(transforms: Sequence[Transform], tool: Tool) -> str | None:
+    """The name `tool` is listed under after passing through `transforms`.
+
+    Each transform's listing gives the tool's name above it. A transform that
     does not list the tool, such as a catalog transform that replaces the
-    listing, is asked for the tool's unchanged name, which is what a name
-    lookup through it would use.
-
-    This relies on the transform contract: a transform's `get_tool()` decides
-    from the requested name (and version) alone. The `call_next` it receives
-    here answers only for the tool already found, so a transform whose
-    decision depends on what other tools `call_next` would return is not
-    supported.
+    listing, leaves the name unchanged, which is the name a lookup through it
+    would use. Returns None if a transform lists the identity under more
+    than one name.
     """
     identity = tool_identity(tool)
-    listed = {
-        t.name
-        for t in await transform.list_tools([tool])
-        if tool_identity(t) == identity
-    }
-    if len(listed) > 1:
-        return None
-    name = listed.pop() if listed else tool.name
-
-    async def beneath(
-        requested: str, *, version: VersionSpec | None = None
-    ) -> Tool | None:
-        if requested != tool.name:
+    current = tool
+    for transform in transforms:
+        listed = [
+            t
+            for t in await transform.list_tools([current])
+            if tool_identity(t) == identity
+        ]
+        if len({t.name for t in listed}) > 1:
             return None
-        if version is not None and not version.matches(tool.version):
-            return None
-        return tool
-
-    version = VersionSpec(eq=tool.version) if tool.version else None
-    resolved = await transform.get_tool(
-        name, cast("GetToolNext", beneath), version=version
-    )
-    if resolved is None or tool_identity(resolved) != identity:
-        return None
-    return resolved
+        if listed:
+            current = listed[0]
+    return current.name

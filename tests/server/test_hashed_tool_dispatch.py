@@ -229,3 +229,90 @@ async def test_reachable_tool_stays_reachable_by_hashed_name(
 
     assert result.data == "saved alice"
     assert calls == ["alice"]
+
+
+class DenyingApp(FastMCPApp):
+    """An app provider whose public lookup refuses `save`."""
+
+    async def get_tool(
+        self, name: str, version: VersionSpec | None = None
+    ) -> Tool | None:
+        if name == "save":
+            return None
+        return await super().get_tool(name, version)
+
+
+class MaintenanceLock(Transform):
+    """Refuses `save` while a `maintenance_marker` tool exists beneath it."""
+
+    async def get_tool(
+        self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
+    ) -> Tool | None:
+        if name == "save" and await call_next("maintenance_marker") is not None:
+            return None
+        return await call_next(name, version=version)
+
+
+async def test_provider_public_lookup_applies_to_hashed_name():
+    calls: list[str] = []
+    app = DenyingApp("contacts")
+
+    @app.tool()
+    def save(name: str) -> str:
+        calls.append(name)
+        return f"saved {name}"
+
+    async with Client(server_with(app)) as client:
+        with pytest.raises(ToolError, match="Unknown tool"):
+            await client.call_tool(SAVE, {"name": "alice"})
+
+    assert calls == []
+
+
+@pytest.mark.parametrize("under_maintenance", [True, False])
+async def test_transform_sees_other_tools_during_hashed_lookup(
+    under_maintenance: bool,
+):
+    calls: list[str] = []
+    server = server_with(contacts_app(calls))
+    if under_maintenance:
+
+        @server.tool
+        def maintenance_marker() -> str:
+            return "down"
+
+    server.add_transform(MaintenanceLock())
+
+    async with Client(server) as client:
+        if under_maintenance:
+            with pytest.raises(ToolError, match="Unknown tool"):
+                await client.call_tool(SAVE, {"name": "alice"})
+        else:
+            await client.call_tool(SAVE, {"name": "alice"})
+
+    assert calls == ([] if under_maintenance else ["alice"])
+
+
+async def test_hashed_name_falls_back_past_a_disabled_highest_version():
+    app = FastMCPApp("contacts")
+    for version in ("1.0", "2.0"):
+
+        def save(name: str, _version: str = version) -> str:
+            return f"v{_version} saved {name}"
+
+        app.add_tool(
+            Tool.from_function(
+                save,
+                version=version,
+                meta={"ui": {"visibility": ["app", "model"]}},
+            )
+        )
+    server = server_with(app)
+    server.disable(version=VersionSpec(eq="2.0"))
+
+    async with Client(server) as client:
+        by_name = await client.call_tool("save", {"name": "alice"})
+        by_hash = await client.call_tool(SAVE, {"name": "alice"})
+
+    assert by_name.data == "v1.0 saved alice"
+    assert by_hash.data == "v1.0 saved alice"
