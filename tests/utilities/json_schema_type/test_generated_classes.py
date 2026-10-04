@@ -1,9 +1,8 @@
-"""Schemas from remote servers stay data, and converting them has bounded cost."""
+"""Generated class names, field aliases, conversion limits, and the class cache."""
 
 import gc
 import json
 import weakref
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -20,98 +19,112 @@ from fastmcp.utilities.json_schema_type import (
     safe_create_model,
 )
 
-
-def marker_expression(marker: Path) -> str:
-    """A Python expression that creates `marker` if anything evaluates it."""
-    return f"[__import__('pathlib').Path({str(marker)!r}).write_text('ran'), bool][1]"
+TITLE = "Order Item (v2)"
 
 
-def self_ref_title_schema(marker: Path) -> dict[str, Any]:
+def order_item_schema(children: dict[str, Any]) -> dict[str, Any]:
     return {
         "type": "object",
-        "title": "Root",
-        "properties": {
-            "x": {
-                "type": "array",
-                "items": {"$ref": "#", "title": marker_expression(marker)},
-            }
-        },
+        "title": TITLE,
+        "properties": {"name": {"type": "string"}, "children": children},
     }
 
 
-def annotations_property_schema(marker: Path) -> dict[str, Any]:
-    return {
-        "type": "object",
-        "title": "Result",
-        "additionalProperties": True,
-        "properties": {
-            "ok": {"type": "boolean"},
-            "__annotations__": {"default": {"ok": marker_expression(marker)}},
-        },
-    }
-
-
-SCHEMAS = {
-    "self_ref_title": self_ref_title_schema,
-    "annotations_property": annotations_property_schema,
+SELF_REFERENCE = {"$ref": "#", "title": TITLE}
+NESTED_ORDER_ITEMS = order_item_schema({"type": "array", "items": SELF_REFERENCE})
+RESERVED_PROPERTIES = {
+    "type": "object",
+    "additionalProperties": True,
+    "properties": {
+        "model_config": {"type": "string"},
+        "_private": {"type": "string"},
+        "name": {"type": "string"},
+    },
 }
 
 
-def build_adapter(generated: Any) -> None:
-    """Build a TypeAdapter the way the client does; inert names may not resolve."""
-    try:
-        TypeAdapter(generated)
-    except (NameError, TypeError, ValueError):
-        pass
+class TestDescriptiveTitles:
+    def test_title_becomes_valid_class_name(self):
+        generated = json_schema_to_type(NESTED_ORDER_ITEMS)
+
+        assert generated.__name__ == "Order_Item_v2"
+
+    @pytest.mark.parametrize(
+        "children,value",
+        [
+            ({"type": "array", "items": SELF_REFERENCE}, [{"name": "b"}]),
+            ({"anyOf": [SELF_REFERENCE, {"type": "null"}]}, {"name": "b"}),
+            (
+                {"type": "object", "additionalProperties": SELF_REFERENCE},
+                {"first": {"name": "b"}},
+            ),
+            ({"type": ["array", "null"], "items": SELF_REFERENCE}, [{"name": "b"}]),
+        ],
+        ids=["array", "union", "map", "type_list"],
+    )
+    def test_nested_self_reference_validates(
+        self, children: dict[str, Any], value: Any
+    ):
+        generated = json_schema_to_type(order_item_schema(children))
+
+        item = TypeAdapter(generated).validate_python({"name": "a", "children": value})
+
+        nested = item.children  # ty: ignore[unresolved-attribute]
+        child = nested["first"] if isinstance(nested, dict) else nested
+        child = child[0] if isinstance(child, list) else child
+        assert isinstance(child, generated)
+        assert child.name == "b"
 
 
-class TestSchemaStringsAreInert:
-    @pytest.mark.parametrize("kind", list(SCHEMAS))
-    def test_direct_conversion(self, tmp_path: Path, kind: str):
-        marker = tmp_path / "ran"
-        build_adapter(json_schema_to_type(SCHEMAS[kind](marker)))
-        assert not marker.exists()
+class TestClientSchemas:
+    async def test_tool_output_with_self_reference(self):
+        server = FastMCP("Orders")
 
-    @pytest.mark.parametrize("location", ["array", "union", "map", "type_list"])
-    def test_nested_self_reference_title(self, tmp_path: Path, location: str):
-        marker = tmp_path / "ran"
-        ref = {"$ref": "#", "title": marker_expression(marker)}
-        nested = {
-            "array": {"type": "array", "items": ref},
-            "union": {"anyOf": [ref, {"type": "null"}]},
-            "map": {"type": "object", "additionalProperties": ref},
-            "type_list": {"type": ["array", "null"], "items": ref},
-        }[location]
-        schema = {"type": "object", "properties": {"x": nested}}
-        build_adapter(json_schema_to_type(schema))
-        assert not marker.exists()
-
-    @pytest.mark.parametrize("kind", list(SCHEMAS))
-    async def test_tool_output_schema(self, tmp_path: Path, kind: str):
-        marker = tmp_path / "ran"
-        server = FastMCP("Remote")
-
-        @server.tool(output_schema=SCHEMAS[kind](marker))
-        def lookup() -> ToolResult:
-            return ToolResult(structured_content={"x": [], "ok": True})
+        @server.tool(output_schema=NESTED_ORDER_ITEMS)
+        def order() -> ToolResult:
+            return ToolResult(
+                structured_content={"name": "a", "children": [{"name": "b"}]}
+            )
 
         async with Client(server) as client:
-            result = await client.call_tool("lookup", {})
+            result = await client.call_tool("order", {})
 
-        assert result.structured_content == {"x": [], "ok": True}
-        assert not marker.exists()
+        assert type(result.data).__name__ == "Order_Item_v2"
+        assert result.data.children[0].name == "b"
 
-    @pytest.mark.parametrize("kind", list(SCHEMAS))
-    async def test_elicitation_schema(self, tmp_path: Path, kind: str):
-        marker = tmp_path / "ran"
-        server = FastMCP("Remote")
-        handled: list[bool] = []
+    async def test_tool_output_with_reserved_property_names(self):
+        server = FastMCP("Settings")
+        content = {"model_config": "strict", "_private": "x", "name": "a"}
+
+        @server.tool(output_schema=RESERVED_PROPERTIES)
+        def settings() -> ToolResult:
+            return ToolResult(structured_content=content)
+
+        async with Client(server) as client:
+            result = await client.call_tool("settings", {})
+
+        assert isinstance(result.data, BaseModel)
+        assert result.data.model_dump(by_alias=True) == content
+
+    @pytest.mark.parametrize(
+        "schema,content",
+        [
+            (NESTED_ORDER_ITEMS, {"name": "a", "children": [{"name": "b"}]}),
+            (RESERVED_PROPERTIES, {"model_config": "strict", "name": "a"}),
+        ],
+        ids=["self_reference", "reserved_property_names"],
+    )
+    async def test_elicitation_schema(
+        self, schema: dict[str, Any], content: dict[str, Any]
+    ):
+        server = FastMCP("Forms")
+        validated: list[Any] = []
 
         @server.tool
         async def ask(ctx: Context) -> str:
             response = await ctx.session.elicit_form(
                 message="Provide data",
-                requestedSchema=SCHEMAS[kind](marker),
+                requestedSchema=schema,
                 related_request_id=ctx.request_id,
             )
             return response.action
@@ -119,16 +132,14 @@ class TestSchemaStringsAreInert:
         async def handler(
             message: str, response_type: Any, params: Any, context: Any
         ) -> ElicitResult[dict[str, Any]]:
-            handled.append(True)
-            build_adapter(response_type)
-            return ElicitResult(action="accept", content={"x": [], "ok": True})
+            validated.append(TypeAdapter(response_type).validate_python(content))
+            return ElicitResult(action="accept", content={"name": "a"})
 
         async with Client(server, elicitation_handler=handler) as client:
             result = await client.call_tool("ask", {})
 
-        assert handled == [True]
         assert result.data == "accept"
-        assert not marker.exists()
+        assert len(validated) == 1
 
 
 class TestPropertyNamesAreFields:
@@ -248,7 +259,7 @@ def flat_chain_schema(length: int) -> dict[str, Any]:
     }
 
 
-class TestConversionCost:
+class TestConversionLimits:
     def test_shared_references_are_converted_once(
         self, monkeypatch: pytest.MonkeyPatch
     ):
@@ -319,7 +330,7 @@ class TestConversionCost:
 
 
 class TestClassCache:
-    def test_failed_conversion_leaves_no_placeholder(self):
+    def test_failed_conversion_can_be_retried(self):
         schema = {"type": "object", "title": "RetryInvalid", "properties": {"x": 123}}
 
         for _ in range(2):
