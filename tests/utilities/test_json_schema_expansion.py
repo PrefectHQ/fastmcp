@@ -168,6 +168,18 @@ def test_large_schema_resolves_root_reference_in_every_pointer_form(
     assert result == {**schema, defs_key: defs}
 
 
+@pytest.mark.parametrize("aliases", [1, 2, 3])
+def test_large_schema_resolves_root_reference_through_aliases(aliases: int) -> None:
+    schema = nested_union_schema(9)
+    defs = schema.pop("$defs")
+    defs["Actual"] = schema
+    names = [f"Alias{i}" for i in range(aliases)] + ["Actual"]
+    for name, target in zip(names, names[1:], strict=False):
+        defs[name] = {"$ref": f"#/$defs/{target}"}
+    result = dereference_refs({"$ref": f"#/$defs/{names[0]}", "$defs": defs})
+    assert result == {**schema, "$defs": defs}
+
+
 def test_sibling_keywords_come_from_the_referenced_definition() -> None:
     schema = {
         "type": "object",

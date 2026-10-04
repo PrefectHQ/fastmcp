@@ -49,6 +49,7 @@ def _copy_schema(schema: dict[str, Any]) -> dict[str, Any]:
 _MAX_INLINED_NODES = 100_000
 _MAX_INLINED_DEPTH = 128
 _MAX_INLINED_TEXT = 5_000_000
+_MAX_ROOT_REF_HOPS = 32
 
 
 class _CannotInline(Exception):
@@ -440,15 +441,11 @@ def resolve_root_ref(schema: dict[str, Any]) -> dict[str, Any]:
     # Only resolve a local $ref at the root when there is no explicit type.
     # The pointer is walked the same way `dereference_refs` measures it, so
     # every supported form (`#/$defs/Name`, `#/definitions/Name`, escaped or
-    # percent-encoded segments) resolves to the same target.
+    # percent-encoded segments) resolves to the same target. A definition
+    # that is itself only a `$ref` is an alias, so the chain is followed
+    # until a definition with its own content (or a type) is reached.
     ref = schema.get("$ref")
     if "type" in schema or not isinstance(ref, str) or not ref.startswith("#"):
-        return schema
-    try:
-        target = _resolve_local_ref(schema, ref)
-    except _CannotInline:
-        return schema
-    if not isinstance(target, dict) or target is schema:
         return schema
 
     # Preserve root-level sibling metadata from the original schema.
@@ -456,10 +453,36 @@ def resolve_root_ref(schema: dict[str, Any]) -> dict[str, Any]:
     # default, or examples next to the root $ref. Those fields still
     # describe the root schema even when we can only resolve that
     # root reference for circular schemas. Siblings include `$defs` (or
-    # `definitions`), which stay for nested references.
-    resolved = dict(target)
-    resolved.update({key: value for key, value in schema.items() if key != "$ref"})
-    return resolved
+    # `definitions`), which stay for nested references. Keywords on each
+    # alias are kept too, with the outer schema taking precedence.
+    resolved = {key: value for key, value in schema.items() if key != "$ref"}
+    visited: set[str] = set()
+    for _ in range(_MAX_ROOT_REF_HOPS):
+        if ref in visited:
+            return schema
+        visited.add(ref)
+        try:
+            target = _resolve_local_ref(schema, ref)
+        except _CannotInline:
+            return schema
+        if not isinstance(target, dict) or target is schema:
+            return schema
+
+        next_ref = target.get("$ref")
+        is_alias = (
+            "type" not in target
+            and isinstance(next_ref, str)
+            and next_ref.startswith("#")
+        )
+        if is_alias:
+            kept = {key: value for key, value in target.items() if key != "$ref"}
+        else:
+            kept = target
+        resolved = {**kept, **resolved}
+        if not is_alias:
+            return resolved
+        ref = next_ref
+    return schema
 
 
 def _prune_param(schema: dict[str, Any], param: str) -> dict[str, Any]:
