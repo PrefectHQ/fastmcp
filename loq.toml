@@ -24,7 +24,7 @@ max_lines = 2098
 
 [[rules]]
 path = "fastmcp_slim/fastmcp/cli/apps_dev.py"
-max_lines = 1814
+max_lines = 1934
 
 [[rules]]
 path = "fastmcp_slim/fastmcp/cli/cli.py"
@@ -69,3 +69,7 @@ max_lines = 1154
 [[rules]]
 path = "fastmcp_slim/fastmcp/utilities/json_schema_type.py"
 max_lines = 1019
+
+[[rules]]
+path = "tests/cli/test_run.py"
+max_lines = 1291
