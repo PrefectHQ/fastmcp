@@ -89,6 +89,68 @@ class TestSession:
         assert response.status_code == 403
         assert "set-cookie" not in response.headers
 
+    @pytest.mark.parametrize(
+        "token",
+        [
+            TOKEN.upper(),
+            TOKEN[:-1],
+            TOKEN + "x",
+            f" {TOKEN}",
+            f"{TOKEN} ",
+            "名前",
+            "wrong",
+            "",
+        ],
+        ids=[
+            "uppercase",
+            "truncated",
+            "extended",
+            "leading_space",
+            "trailing_space",
+            "non_ascii",
+            "wrong",
+            "empty",
+        ],
+    )
+    def test_startup_token_must_match_exactly(self, token: str):
+        client = build_client()
+
+        response = client.get("/", params={"token": token})
+
+        assert response.status_code == 403
+        assert "set-cookie" not in response.headers
+        assert client.get("/").status_code == 403
+
+    @pytest.mark.parametrize(
+        "method,path",
+        [("get", "/picker-app"), ("get", "/api/logs"), ("post", "/api/launch")],
+    )
+    def test_startup_token_only_starts_a_session_from_the_root_page(
+        self, method: str, path: str
+    ):
+        client = build_client()
+
+        response = client.request(method, path, params={"token": TOKEN})
+
+        assert response.status_code == 403
+        assert "set-cookie" not in response.headers
+
+    @pytest.mark.parametrize(
+        "cookie",
+        [
+            f"{COOKIE}=wrong",
+            f"{COOKIE}=",
+            f"{COOKIE}={TOKEN}",
+            "fastmcp_dev_session_9999=anything",
+            "fastmcp_dev_session=anything",
+        ],
+        ids=["wrong", "empty", "startup_token", "other_port", "no_port"],
+    )
+    def test_other_cookie_values_are_not_a_session(self, cookie: str):
+        response = build_client().get("/", headers={"Cookie": cookie})
+
+        assert response.status_code == 403
+
     def test_websocket_connections_are_closed(self):
         with pytest.raises(WebSocketDisconnect) as exc_info:
             with build_client(session=True).websocket_connect("/mcp"):
@@ -115,6 +177,129 @@ class TestHostHeader:
 
         assert response.status_code == 400
         assert "set-cookie" not in response.headers
+
+    @pytest.mark.parametrize(
+        "host",
+        [
+            "other.example:8080",
+            "127.0.0.1.other.example:8080",
+            "localhost.other.example:8080",
+            "127.0.0.1:9999",
+            "127.0.0.1",
+            "127.0.0.1:",
+            "127.0.0.1:99999",
+            "127.0.0.1:http",
+            "[::1]:9999",
+            "[::1]",
+            "127.0.0.1:8080@other.example:8080",
+            "other.example:8080@127.0.0.1:8080",
+            "127.0.0.1:8080/path",
+            "127.0.0.1:8080?name=value",
+            "127.0.0.1:8080#fragment",
+            "[invalid]:8080",
+            "2130706433:8080",
+            "127.1:8080",
+            "0x7f.0.0.1:8080",
+            "[::ffff:127.0.0.1]:8080",
+            "localhost.:8080",
+            "127.0.0.1.:8080",
+            "localhost:8080:8080",
+            "127.0.0.1:8080:8080",
+        ],
+    )
+    def test_malformed_or_mismatched_host_values_are_rejected(self, host: str):
+        response = build_client().get(
+            "/", params={"token": TOKEN}, headers={"Host": host}
+        )
+
+        assert response.status_code == 400
+        assert "set-cookie" not in response.headers
+
+    @pytest.mark.parametrize("host", ["LOCALHOST:8080", "Localhost:8080"])
+    def test_host_names_are_case_insensitive(self, host: str):
+        response = build_client().get(
+            "/", params={"token": TOKEN}, headers={"Host": host}, follow_redirects=False
+        )
+
+        assert response.status_code == 303
+
+    def test_bound_host_name_is_case_insensitive(self):
+        response = build_client(host="Dev.Example").get(
+            "/",
+            params={"token": TOKEN},
+            headers={"Host": "DEV.example:8080"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+
+    @pytest.mark.parametrize(
+        "second_host", ["127.0.0.1:8080", "other.example:8080"], ids=["same", "other"]
+    )
+    def test_multiple_host_headers_are_rejected(self, second_host: str):
+        response = build_client().get(
+            "/",
+            params={"token": TOKEN},
+            headers=[("Host", "127.0.0.1:8080"), ("Host", second_host)],
+        )
+
+        assert response.status_code == 400
+        assert "set-cookie" not in response.headers
+
+    @pytest.mark.parametrize(
+        "host",
+        [
+            "other.example:8080",
+            "localhost.other.example:8080",
+            "192.0.2.2:9999",
+            "192.0.2.2",
+            "192.0.2.20:8080",
+            "192.0.2.2.other.example:8080",
+            "192.0.2.2:8080@other.example:8080",
+            "localhost:8080",
+            "[::1]:8080",
+        ],
+    )
+    def test_specific_bind_rejects_other_host_values(self, host: str):
+        response = build_client(host="192.0.2.2").get(
+            "/", params={"token": TOKEN}, headers={"Host": host}
+        )
+
+        assert response.status_code == 400
+        assert "set-cookie" not in response.headers
+
+    @pytest.mark.parametrize(
+        "host",
+        [
+            "other.example:8080",
+            "localhost.other.example:8080",
+            "192.0.2.2:9999",
+            "192.0.2.2",
+            "2130706433:8080",
+            "127.1:8080",
+            "0x7f.0.0.1:8080",
+            "localhost.:8080",
+            "192.0.2.2:8080@other.example:8080",
+            "192.0.2.2:8080/path",
+        ],
+    )
+    def test_wildcard_bind_rejects_non_literal_and_malformed_hosts(self, host: str):
+        response = build_client(host="0.0.0.0").get(
+            "/", params={"token": TOKEN}, headers={"Host": host}
+        )
+
+        assert response.status_code == 400
+        assert "set-cookie" not in response.headers
+
+    @pytest.mark.parametrize(
+        "host", ["localhost:8080", "[::1]:8080", "[2001:db8::1]:8080"]
+    )
+    def test_wildcard_bind_accepts_loopback_names_and_ipv6_literals(self, host: str):
+        response = build_client(host="::").get(
+            "/", params={"token": TOKEN}, headers={"Host": host}, follow_redirects=False
+        )
+
+        assert response.status_code == 303
 
     def test_default_http_port_accepts_host_without_port(self):
         app = apps_dev._make_dev_app(
@@ -204,6 +389,60 @@ class TestOrigin:
         client = build_client(session=True)
 
         response = client.post("/api/logs/clear", content="{}", headers=headers)
+
+        assert response.status_code == 403
+
+    @pytest.mark.parametrize(
+        "headers",
+        [
+            {"Origin": "http://other.example"},
+            {"Origin": "http://127.0.0.1:9999"},
+            {"Origin": "http://localhost:8080"},
+            {"Origin": "http://127.0.0.1"},
+            {"Origin": "https://127.0.0.1:8080"},
+            {"Origin": "HTTP://127.0.0.1:8080"},
+            {"Origin": "http://127.0.0.1:8080/"},
+            {"Origin": "http://127.0.0.1:8080@other.example"},
+            {"Origin": "http://other.example@127.0.0.1:8080"},
+            {"Origin": "http://127.0.0.1.other.example:8080"},
+            {"Origin": ""},
+            {"Origin": "null"},
+            {"Origin": "http://127.0.0.1:8080", "Sec-Fetch-Site": "cross-site"},
+            {"Origin": "http://127.0.0.1:8080", "Sec-Fetch-Site": "same-site"},
+            {"Sec-Fetch-Site": "cross-site"},
+            {"Sec-Fetch-Site": "same-site"},
+            {"Sec-Fetch-Site": "Cross-Site"},
+            {"Sec-Fetch-Site": ""},
+            {"Sec-Fetch-Site": "same-origin, cross-site"},
+        ],
+    )
+    @pytest.mark.parametrize(
+        "method,path",
+        [
+            ("get", "/"),
+            ("get", "/picker-app"),
+            ("get", "/api/logs"),
+            ("post", "/api/launch"),
+            ("post", "/api/logs/clear"),
+            ("post", "/mcp"),
+        ],
+    )
+    def test_cross_origin_requests_are_rejected_on_every_route(
+        self, method: str, path: str, headers: dict[str, str]
+    ):
+        response = build_client(session=True).request(method, path, headers=headers)
+
+        assert response.status_code == 403
+
+    def test_referer_does_not_replace_the_origin_check(self):
+        response = build_client(session=True).post(
+            "/api/launch",
+            json={"tool": "ping", "value": "x"},
+            headers={
+                "Origin": "http://other.example",
+                "Referer": "http://127.0.0.1:8080/",
+            },
+        )
 
         assert response.status_code == 403
 
