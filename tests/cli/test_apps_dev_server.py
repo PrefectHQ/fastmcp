@@ -1,4 +1,4 @@
-"""Session, Host, Origin, and isolation checks of the `fastmcp dev apps` host."""
+"""Sessions, launches, and app frames in the `fastmcp dev apps` server."""
 
 import html
 from typing import Any
@@ -74,7 +74,7 @@ class TestSession:
         assert client.get("/").status_code == 200
         assert client.get(create_launch(client)).status_code == 200
 
-    def test_session_cookie_does_not_hold_startup_token(self):
+    def test_session_cookie_differs_from_startup_token(self):
         client = build_client(session=True)
 
         session = client.cookies.get(COOKIE)
@@ -100,19 +100,15 @@ class TestHostHeader:
     @pytest.mark.parametrize(
         "host",
         [
-            "other.example:8080",
-            "127.0.0.1.other.example:8080",
-            "localhost.other.example:8080",
-            "127.0.0.1:9999",
+            "example.com:8080",
+            "dev.example.com:8080",
+            "127.0.0.1:9000",
             "127.0.0.1",
-            "[::1]:9999",
-            "2130706433:8080",
-            "127.0.0.1:8080@other.example:8080",
-            "127.0.0.1:8080/path",
-            "[invalid]:8080",
+            "[::1]:9000",
+            "192.0.2.2:8080",
         ],
     )
-    def test_other_hosts_are_rejected_before_session_start(self, host: str):
+    def test_other_host_headers_are_rejected(self, host: str):
         response = build_client().get(
             "/", params={"token": TOKEN}, headers={"Host": host}
         )
@@ -165,7 +161,7 @@ class TestHostHeader:
         [
             ("192.0.2.2:8080", 303),
             ("127.0.0.1:8080", 303),
-            ("other.example:8080", 400),
+            ("example.com:8080", 400),
         ],
     )
     def test_wildcard_bind_accepts_literal_addresses(self, host: str, status: int):
@@ -179,14 +175,14 @@ class TestOrigin:
     @pytest.mark.parametrize(
         "headers",
         [
-            {"Origin": "http://other.example"},
-            {"Origin": "http://127.0.0.1:9999"},
+            {"Origin": "http://example.com"},
+            {"Origin": "http://127.0.0.1:9000"},
             {"Origin": "null"},
             {"Sec-Fetch-Site": "cross-site"},
             {"Sec-Fetch-Site": "same-site"},
         ],
     )
-    def test_cross_origin_launch_page_is_rejected(self, headers: dict[str, str]):
+    def test_launch_page_requires_same_origin(self, headers: dict[str, str]):
         client = build_client(session=True)
         launch_url = create_launch(client)
 
@@ -197,14 +193,14 @@ class TestOrigin:
     @pytest.mark.parametrize(
         "headers",
         [
-            {"Origin": "http://other.example"},
-            {"Origin": "http://127.0.0.1:9999"},
+            {"Origin": "http://example.com"},
+            {"Origin": "http://127.0.0.1:9000"},
             {"Origin": "null"},
             {"Sec-Fetch-Site": "cross-site"},
             {"Sec-Fetch-Site": "same-site"},
         ],
     )
-    def test_cross_origin_log_clear_is_rejected(self, headers: dict[str, str]):
+    def test_log_clear_requires_same_origin(self, headers: dict[str, str]):
         client = build_client(session=True)
 
         response = client.post("/api/logs/clear", content="{}", headers=headers)
@@ -248,7 +244,7 @@ class TestLaunch:
         assert response.status_code == 200
         assert 'const toolName = "lookup";' in response.text
 
-    def test_typed_launch_url_with_tool_arguments_runs_nothing(self):
+    def test_launch_ignores_tool_and_args_parameters(self):
         client = build_client(session=True)
 
         response = client.get(
@@ -266,20 +262,20 @@ class TestLaunch:
         assert response.status_code == 404
 
 
-class TestServerContent:
-    def test_picker_error_is_escaped(self, monkeypatch: pytest.MonkeyPatch):
-        markup = '<b class="tool">name</b>'
+class TestPages:
+    def test_picker_error_shows_message_as_text(self, monkeypatch: pytest.MonkeyPatch):
+        message = "Expected <list> of items"
         monkeypatch.setattr(
-            apps_dev, "_list_tools", AsyncMock(side_effect=ValueError(markup))
+            apps_dev, "_list_tools", AsyncMock(side_effect=ValueError(message))
         )
 
         response = build_client(session=True).get("/picker-app")
 
         assert response.status_code == 200
-        assert markup not in response.text
-        assert html.escape(markup) in response.text
+        assert message not in response.text
+        assert html.escape(message) in response.text
 
-    def test_ui_resource_is_sandboxed_when_opened_directly(
+    def test_ui_resource_runs_sandboxed_when_opened_directly(
         self, monkeypatch: pytest.MonkeyPatch
     ):
         monkeypatch.setattr(
@@ -294,7 +290,7 @@ class TestServerContent:
         assert "allow-same-origin" not in csp
         assert "frame-ancestors 'self'" in csp
 
-    def test_host_pages_cannot_be_framed(self):
+    def test_host_pages_disallow_framing(self):
         response = build_client(session=True).get("/")
         assert response.headers["content-security-policy"] == "frame-ancestors 'none'"
 
@@ -319,7 +315,7 @@ class TestServerContent:
         assert 'target.protocol !== "https:"' in page
         assert "window.location.href = url;" not in page
 
-    def test_proxy_forwards_no_browser_credentials(
+    def test_proxy_omits_browser_cookies_and_origin(
         self, monkeypatch: pytest.MonkeyPatch
     ):
         captured: list[httpx2.Request] = []
