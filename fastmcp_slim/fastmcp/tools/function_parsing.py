@@ -335,9 +335,21 @@ class ParsedFunction:
         wrapper_fn = without_injected_parameters(fn)
 
         input_type_adapter = get_cached_typeadapter(wrapper_fn)
-        input_schema = input_type_adapter.json_schema()
+        raw_input_schema = input_type_adapter.json_schema()
 
-        input_schema = compress_schema(input_schema, prune_titles=True)
+        input_schema = compress_schema(raw_input_schema, prune_titles=True)
+
+        # Pruning drops every title, since Pydantic derives one from each
+        # parameter name. Restore the ones the author wrote with
+        # Field(title=...): those are display labels a client can't rederive.
+        properties = input_schema.get("properties", {})
+        title_from_name = GenerateJsonSchema().get_title_from_name
+        for param_name, raw_property in raw_input_schema.get("properties", {}).items():
+            if param_name not in properties or not isinstance(raw_property, dict):
+                continue
+            title = raw_property.get("title")
+            if isinstance(title, str) and title != title_from_name(param_name):
+                properties[param_name]["title"] = title
 
         # Inject parameter descriptions from the docstring into the schema.
         # Explicit annotations (Field(description=...), Annotated[x, "..."])

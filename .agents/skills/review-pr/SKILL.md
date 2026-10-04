@@ -36,6 +36,10 @@ Read review threads and author replies, not just summary verdicts. Codex can upd
 
 Preserve draft status unless the user authorizes changing it. Approval, publication, and merging remain subject to AGENTS.md and existing authorization. Immediately before an authorized merge, recheck the title, body, labels, head, checks, and branch protections; obey all draft and DNM stops.
 
+For maintainer implementations of community issues, check [Contributor credit](../../../docs/development/contributing.mdx#contributor-credit) as part of readiness: the issue author's verified co-author trailer must be in the implementation commit and PR description. Missing attribution is unfinished PR preparation. In review-only work, report the omission rather than editing the PR.
+
+Preserve attribution through whichever merge strategy is chosen. For a squash merge, write the exact final commit body to a temporary file, including the issue link and all human co-author trailers from the PR description and commits. Inspect it and pass it explicitly with `gh pr merge <number> --squash --body-file /tmp/merge-body.md --match-head-commit <reviewed-head>`, adding any already-authorized merge flags. Do not rely on GitHub's default squash message. For merge or rebase, verify the attributed commits will be retained. After merging, inspect the landed commit(s) and confirm the co-authors are present. These steps do not authorize a merge or prescribe its strategy.
+
 ## Verdict template
 
 Keep the report proportional to the change, with these facts explicit:

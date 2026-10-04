@@ -147,7 +147,7 @@ export FASTMCP_HTTP_ALLOWED_HOSTS='["mcp.example.com"]'
 export FASTMCP_HTTP_ALLOWED_ORIGINS='["https://app.example.com"]'
 ```
 
-Use `host_origin_protection="auto"` to protect localhost-bound direct servers while allowing ASGI, serverless, and reverse-proxy deployments to keep their existing Host handling unless they configure explicit trust rules. Use `host_origin_protection=False` to keep the request guard disabled.
+Use `host_origin_protection="auto"` to protect localhost-bound direct servers while allowing ASGI, serverless, and reverse-proxy deployments to keep their existing Host handling unless they configure explicit trust rules. The default `host_origin_protection=False` disables the request guard: FastMCP then provides no Host/Origin validation or DNS-rebinding protection for this endpoint. This reduces protection compared with `True`; if you rely on a reverse proxy for these checks, you must configure and enforce them there. Authentication and CORS serve separate purposes and do not replace Host/Origin validation.
 
 ### Gateway Routing Headers
 

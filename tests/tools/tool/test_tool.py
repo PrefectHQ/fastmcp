@@ -1,4 +1,5 @@
 from datetime import timedelta
+from typing import Annotated
 
 import pytest
 from dirty_equals import HasName
@@ -8,7 +9,7 @@ from mcp_types import (
     ImageContent,
     ToolExecution,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from fastmcp.tools.base import Tool, ToolResult
 from fastmcp.utilities.types import Audio, File, Image
@@ -269,6 +270,27 @@ class TestToolFromFunction:
                 },
             }
         )
+
+    def test_field_metadata_on_none_default_parameter(self):
+        """Annotated metadata stays on the property itself, not a nested branch.
+
+        Python 3.10's `get_type_hints` wraps `None`-defaulted hints in
+        `Optional[...]`, which used to push the description into an inner
+        `anyOf` there.
+        """
+
+        def search(
+            limit: Annotated[int | None, Field(description="How many.")] = None,
+        ) -> str:
+            return "ok"
+
+        tool = Tool.from_function(search)
+
+        assert tool.parameters["properties"]["limit"] == {
+            "anyOf": [{"type": "integer"}, {"type": "null"}],
+            "default": None,
+            "description": "How many.",
+        }
 
     def test_non_callable_fn(self):
         with pytest.raises(TypeError, match="not a callable object"):

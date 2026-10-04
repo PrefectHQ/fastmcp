@@ -14,7 +14,16 @@ from fastmcp.utilities import json_schema_type
 
 @pytest.fixture(autouse=True)
 def isolated_class_cache(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(json_schema_type, "_classes", {})
+    monkeypatch.setattr(
+        json_schema_type,
+        "_classes",
+        json_schema_type._LRUCache(max_entries=5000, max_weight=4_000_000),
+    )
+    monkeypatch.setattr(
+        json_schema_type,
+        "_adapters",
+        json_schema_type._LRUCache(max_entries=1000, max_weight=4_000_000),
+    )
 
 
 def make_schema(value_type: str, model: bool) -> dict[str, Any]:

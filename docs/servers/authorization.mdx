@@ -14,7 +14,7 @@ Authorization controls what authenticated users can do with your FastMCP server.
 The authorization model centers on a simple concept: callable functions that receive context about the current request and return `True` to allow access or `False` to deny it. Multiple checks combine with AND logic, meaning all checks must pass for access to be granted.
 
 <Note>
-Authorization relies on OAuth tokens which are only available with HTTP transports (SSE, Streamable HTTP). In STDIO mode, there's no OAuth mechanism, so `get_access_token()` returns `None` and all auth checks are skipped.
+Authorization relies on OAuth tokens which are only available with HTTP transports (SSE, Streamable HTTP). In STDIO mode, there's no OAuth mechanism, so `get_access_token()` returns `None` and all auth checks are skipped. STDIO access is controlled by the local execution environment; component auth checks do not restrict the process connected over STDIO.
 </Note>
 
 <Note>

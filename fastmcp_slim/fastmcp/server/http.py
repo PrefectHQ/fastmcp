@@ -495,7 +495,8 @@ def create_sse_app(
             )
         )
     else:
-        # No auth required
+        # auth=None removes bearer-token enforcement. A gateway's authentication
+        # is outside FastMCP's guarantees and must prevent direct unauthenticated access.
         async def sse_endpoint(request: Request) -> Response:
             return await handle_sse(request.scope, request.receive, request._send)
 
@@ -630,7 +631,8 @@ def create_streamable_http_app(
             )
         )
     else:
-        # No auth required
+        # auth=None removes bearer-token enforcement. A gateway's authentication
+        # is outside FastMCP's guarantees and must prevent direct unauthenticated access.
         http_methods = ["POST", "DELETE"] if stateless_http else None
         server_routes.append(
             Route(
@@ -649,6 +651,8 @@ def create_streamable_http_app(
     if host_origin_protection not in (True, False, "auto"):
         raise ValueError("host_origin_protection must be True, False, or 'auto'.")
 
+    # False removes FastMCP's Host/Origin guard. The SDK guard is also disabled
+    # below, so DNS-rebinding protection then depends on the deployment.
     if host_origin_protection is not False:
         server_middleware.insert(
             0,
