@@ -206,6 +206,8 @@ class CIMDFetcher:
 
     # Maximum response size (bytes)
     MAX_RESPONSE_SIZE = 5120  # 5KB
+    # Maximum number of distinct client documents retained in the process cache
+    MAX_CACHE_SIZE = 1_000
     # Default cache TTL (seconds)
     DEFAULT_CACHE_TTL_SECONDS = 3600
 
@@ -220,6 +222,20 @@ class CIMDFetcher:
         """
         self.timeout = timeout
         self._cache: dict[str, _CIMDCacheEntry] = {}
+
+    def _store_cache_entry(
+        self,
+        client_id_url: str,
+        entry: _CIMDCacheEntry,
+    ) -> None:
+        """Store a document in the bounded process-local cache."""
+        self._cache[client_id_url] = entry
+        while len(self._cache) > self.MAX_CACHE_SIZE:
+            del self._cache[next(iter(self._cache))]
+
+    def _remove_cache_entry(self, client_id_url: str) -> None:
+        """Remove a document from the process-local cache."""
+        self._cache.pop(client_id_url, None)
 
     def _parse_cache_policy(
         self, headers: Mapping[str, str], now: float
@@ -370,16 +386,19 @@ class CIMDFetcher:
                 )
 
             if not policy.no_store:
-                self._cache[client_id_url] = _CIMDCacheEntry(
-                    doc=cached.doc,
-                    etag=policy.etag or cached.etag,
-                    last_modified=policy.last_modified or cached.last_modified,
-                    expires_at=policy.expires_at,
-                    freshness_lifetime=policy.freshness_lifetime,
-                    must_revalidate=policy.must_revalidate,
+                self._store_cache_entry(
+                    client_id_url,
+                    _CIMDCacheEntry(
+                        doc=cached.doc,
+                        etag=policy.etag or cached.etag,
+                        last_modified=policy.last_modified or cached.last_modified,
+                        expires_at=policy.expires_at,
+                        freshness_lifetime=policy.freshness_lifetime,
+                        must_revalidate=policy.must_revalidate,
+                    ),
                 )
             else:
-                self._cache.pop(client_id_url, None)
+                self._remove_cache_entry(client_id_url)
             return cached.doc
 
         now = time.time()
@@ -418,16 +437,19 @@ class CIMDFetcher:
         )
 
         if not policy.no_store:
-            self._cache[client_id_url] = _CIMDCacheEntry(
-                doc=doc,
-                etag=policy.etag,
-                last_modified=policy.last_modified,
-                expires_at=policy.expires_at,
-                freshness_lifetime=policy.freshness_lifetime,
-                must_revalidate=policy.must_revalidate,
+            self._store_cache_entry(
+                client_id_url,
+                _CIMDCacheEntry(
+                    doc=doc,
+                    etag=policy.etag,
+                    last_modified=policy.last_modified,
+                    expires_at=policy.expires_at,
+                    freshness_lifetime=policy.freshness_lifetime,
+                    must_revalidate=policy.must_revalidate,
+                ),
             )
         else:
-            self._cache.pop(client_id_url, None)
+            self._remove_cache_entry(client_id_url)
 
         return doc
 
@@ -608,20 +630,20 @@ class CIMDAssertionValidator:
             # Expired in cache, can be reused (clean it up)
             del self._jti_cache[jti]
 
-        # Add to cache with expiration time
-        # Use the assertion's exp claim so it stays cached until it would expire anyway
-        self._jti_cache[jti] = exp
-
         # Emergency size limit (shouldn't hit with proper TTL cleanup)
-        if len(self._jti_cache) > self._jti_cache_max_size:
+        if len(self._jti_cache) >= self._jti_cache_max_size:
             self._cleanup_expired_jtis()
             # If still over limit after cleanup, reject to prevent DoS
-            if len(self._jti_cache) > self._jti_cache_max_size:
+            if len(self._jti_cache) >= self._jti_cache_max_size:
                 self.logger.warning(
                     "JTI cache at max capacity (%d), possible attack",
                     self._jti_cache_max_size,
                 )
                 raise ValueError("Server overloaded, please retry")
+
+        # Add to cache with expiration time
+        # Use the assertion's exp claim so it stays cached until it would expire anyway
+        self._jti_cache[jti] = exp
 
         self.logger.debug(
             "JWT assertion validated successfully for client %s", client_id
