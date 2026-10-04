@@ -786,12 +786,19 @@ class FastMCP(
         # Get tasks from AggregateProvider (handles aggregation and namespacing)
         components = list(await super().get_tasks())
 
+        # An injected tool owns its name, as in `list_tools()` and
+        # `get_tool()`: tools with that name are not registered, so the
+        # injected tool is the only one that runs as a background task.
+        injected = self._injected_tools()
+        claimed = {tool.name for tool in injected}
+
         return [
-            *[t for t in self._injected_tools() if t.task_config.supports_tasks()],
+            *[t for t in injected if t.task_config.supports_tasks()],
             *[
                 c
                 for c in await self._apply_task_transforms(components)
                 if c.task_config.supports_tasks()
+                and not (isinstance(c, Tool) and c.name in claimed)
             ],
         ]
 
