@@ -292,13 +292,13 @@ TOKENS = {
 
 
 def admin_report() -> str:
-    """Return a marker only an admin should see."""
-    return "ADMIN_REPORT_MARKER"
+    """Return the admin report."""
+    return "Quarterly totals"
 
 
 def public_report() -> str:
-    """Return a marker anyone may see."""
-    return "PUBLIC_REPORT_MARKER"
+    """Return the public report."""
+    return "Public summary"
 
 
 def make_auth_server(*middleware: Middleware) -> FastMCP:
@@ -354,7 +354,7 @@ class TestInjectedToolAuthorization:
             result = await client.call_tool("admin_report", {})
 
         assert "admin_report" in [tool.name for tool in tools]
-        assert result.data == "ADMIN_REPORT_MARKER"
+        assert result.data == "Quarterly totals"
 
     async def test_tool_auth_on_injected_tool_matches_registered_tool(self):
         """An injected tool and a registered tool with the same auth agree."""
@@ -383,7 +383,7 @@ class TestInjectedToolAuthorization:
             result = await client.call_tool("public_report", {})
 
         assert [tool.name for tool in tools] == ["public_report"]
-        assert result.data == "PUBLIC_REPORT_MARKER"
+        assert result.data == "Public summary"
 
     @pytest.mark.parametrize("injection_first", [True, False])
     async def test_auth_middleware_denies_injected_tool(self, injection_first: bool):
@@ -400,7 +400,7 @@ class TestInjectedToolAuthorization:
 
         assert tools == []
         assert result.is_error
-        assert "ADMIN_REPORT_MARKER" not in str(result.content)
+        assert "Quarterly totals" not in str(result.content)
 
     @pytest.mark.parametrize("injection_first", [True, False])
     async def test_auth_middleware_allows_injected_tool(self, injection_first: bool):
@@ -416,7 +416,7 @@ class TestInjectedToolAuthorization:
             result = await client.call_tool("admin_report", {})
 
         assert [tool.name for tool in tools] == ["admin_report"]
-        assert result.data == "ADMIN_REPORT_MARKER"
+        assert result.data == "Quarterly totals"
 
     async def test_injected_tool_on_mounted_server_follows_tool_auth(self):
         child = FastMCP(
@@ -439,7 +439,7 @@ class TestInjectedToolAuthorization:
         assert read_tools == []
         assert read_result.is_error
         assert [tool.name for tool in admin_tools] == ["child_admin_report"]
-        assert admin_result.data == "ADMIN_REPORT_MARKER"
+        assert admin_result.data == "Quarterly totals"
 
     async def test_hashed_call_reaches_app_tool_sharing_injected_name(self):
         """An injected tool owns its display name, not an app tool's hashed name."""
@@ -491,7 +491,7 @@ class TestInjectedToolAuthorization:
         assert read_tools == []
         assert read_result.is_error
         assert [tool.name for tool in admin_tools] == ["report"]
-        assert admin_result.data == "ADMIN_REPORT_MARKER"
+        assert admin_result.data == "Quarterly totals"
 
     async def test_injected_task_tool_runs_as_task(self):
         async def square(n: int) -> int:
