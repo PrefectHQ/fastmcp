@@ -137,10 +137,11 @@ def _within_inline_limits(root: dict[str, Any], *, follow_refs: bool) -> bool:
 
 
 def _text_within_limit(schema: dict[str, Any]) -> bool:
-    """Check the total length of every key and string in *schema*.
+    """Check the total length of every key and scalar value in *schema*.
 
-    Inlining shares string objects rather than copying them, so repeated
-    text costs little to build but still adds to the serialized size.
+    Inlining shares scalar objects rather than copying them, so a repeated
+    long string or large number costs little to build but still adds to the
+    serialized size. Numbers count at least their decimal digits and sign.
     """
     total = 0
     stack: list[Any] = [schema]
@@ -153,6 +154,13 @@ def _text_within_limit(schema: dict[str, Any]) -> bool:
             stack.extend(node)
         elif isinstance(node, str):
             total += len(node)
+        elif isinstance(node, bool) or node is None:
+            total += 5
+        elif isinstance(node, int):
+            # A bound on the decimal digits that avoids converting huge ints.
+            total += node.bit_length() // 3 + 2
+        elif isinstance(node, float):
+            total += len(repr(node))
         if total > _MAX_INLINED_TEXT:
             return False
     return True

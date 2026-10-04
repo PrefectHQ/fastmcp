@@ -116,6 +116,15 @@ def test_repeated_long_strings_count_toward_the_limit() -> None:
     assert dereference_refs(schema) == schema
 
 
+def test_repeated_large_numbers_count_toward_the_text_limit() -> None:
+    schema = {
+        "type": "object",
+        "properties": {f"p{i}": {"$ref": "#/$defs/Leaf"} for i in range(150)},
+        "$defs": {"Leaf": {"type": "integer", "examples": [10**4000] * 10}},
+    }
+    assert dereference_refs(schema) == schema
+
+
 def test_discriminator_tags_count_toward_the_text_limit() -> None:
     schema = {
         "type": "object",
