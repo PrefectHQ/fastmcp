@@ -33,8 +33,8 @@ one gets a follow-up patch, never a re-tag.
 
    **Review the scan's attribution candidates.** The helper batch-fetches metadata
    only for PRs in the generated notes. It suggests shared credit for human authors
-   of the final merged commit and for issue reporters whose issues are closed by
-   a maintainer PR, even when their co-author trailer is missing. Human co-authors
+   of the PR commits and final merged commit, plus issue reporters whose issues
+   are closed by a maintainer PR, even when their co-author trailer is missing. Human co-authors
    are included even when the PR has no linked issue. It excludes known
    agent identities and bots; a GitHub `User` identity alone does not prove someone
    is human. Maintainer permission checks are reused across PRs.

@@ -30,6 +30,7 @@ def pr_metadata(
             ],
             "pageInfo": {"hasNextPage": False},
         },
+        "commits": {"nodes": [], "pageInfo": {"hasNextPage": False}},
         "mergeCommit": {
             "authors": {
                 "nodes": [
@@ -204,7 +205,12 @@ def test_summary_counts_unique_humans_and_flags_first_time_candidates() -> None:
         {"credit": ["maintainer", "reporter"]},
         {"credit": ["Maintainer", "reporter", "helper"]},
     ]
-    result = summarize_credit(notes, candidates)
+    prs = {
+        1: pr_metadata(1, reporters=("reporter",)),
+        2: pr_metadata(2, coauthors=("helper", "claude")),
+        3: pr_metadata(3, author="dependabot[bot]"),
+    }
+    result = summarize_credit(notes, candidates, prs)
     assert result["contributors"] == ["helper", "maintainer", "reporter"]
     assert result["total_contributors"] == 3
     assert result["generated_first_time_contributors"] == ["maintainer"]
@@ -239,4 +245,57 @@ def test_existing_maintainer_credit_is_preserved(
         "by @maintainer in", "by @maintainer and @othermaintainer in"
     )
     assert scan_notes(notes) == []
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("merge_strategy", ["merge", "rebase", "squash"])
+def test_credits_authors_from_earlier_pr_commits(
+    monkeypatch: pytest.MonkeyPatch, merge_strategy: str
+) -> None:
+    pr = pr_metadata(1)
+    earlier = pr_metadata(1, author="helper", coauthors=("reporter", "claude"))
+    pr["commits"]["nodes"] = [{"commit": earlier["mergeCommit"]}]
+    if merge_strategy == "squash":
+        pr["mergeCommit"] = pr_metadata(1, coauthors=("helper", "reporter"))[
+            "mergeCommit"
+        ]
+    calls = mock_github(monkeypatch, [pr])
+    result = scan_notes(entry(1))
+    assert "commits(first:100)" in calls[0][-1]
+    assert result[0]["credit"] == ["maintainer", "helper", "reporter"]
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_truncated_pr_commit_metadata_fails_visibly(
+    monkeypatch: pytest.MonkeyPatch, nested: bool
+) -> None:
+    pr = pr_metadata(1)
+    earlier = pr_metadata(1, author="helper")
+    pr["commits"]["nodes"] = [{"commit": earlier["mergeCommit"]}]
+    connection = earlier["mergeCommit"]["authors"] if nested else pr["commits"]
+    connection["pageInfo"]["hasNextPage"] = True
+    mock_github(monkeypatch, [pr])
+    with pytest.raises(ValueError, match="truncated"):
+        fetch_prs([1])
+
+
+@pytest.mark.parametrize("login", ["dependabot", "prefect-renovate"])
+def test_plain_app_handles_are_excluded_from_all_counts(
+    monkeypatch: pytest.MonkeyPatch, login: str
+) -> None:
+    pr = pr_metadata(1, author=f"{login}[bot]")
+    pr["author"] = actor(f"{login}[bot]", "Bot")
+    pr["mergeCommit"]["authors"]["nodes"][0]["user"] = pr["author"]
+    notes = (
+        entry(1, login)
+        + f"* @{login} made their first contribution in https://github.com/PrefectHQ/fastmcp/pull/1\n"
+    )
+    calls = mock_github(monkeypatch, [pr])
+    prs = fetch_prs([1])
+    candidates = scan_notes(notes, prs)
+    result = summarize_credit(notes, candidates, prs)
+    assert result["contributors"] == []
+    assert result["total_contributors"] == 0
+    assert result["generated_first_time_count"] == 0
+    assert result["first_time_review"] == []
     assert len(calls) == 1

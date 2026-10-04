@@ -67,6 +67,13 @@ def fetch_prs(numbers: list[int]) -> dict[int, dict[str, Any]]:
                     nodes {{ number url author {{ login __typename }} }}
                     pageInfo {{ hasNextPage }}
                 }}
+                commits(first:100) {{
+                    nodes {{ commit {{ authors(first:100) {{
+                        nodes {{ name email user {{ login __typename }} }}
+                        pageInfo {{ hasNextPage }}
+                    }} }} }}
+                    pageInfo {{ hasNextPage }}
+                }}
                 mergeCommit {{ authors(first:100) {{
                     nodes {{ name email user {{ login __typename }} }}
                     pageInfo {{ hasNextPage }}
@@ -86,6 +93,8 @@ def fetch_prs(numbers: list[int]) -> dict[int, dict[str, Any]]:
                 for connection in (
                     pr["closingIssuesReferences"],
                     pr["mergeCommit"]["authors"],
+                    pr["commits"],
+                    *(node["commit"]["authors"] for node in pr["commits"]["nodes"]),
                 )
             ):
                 raise ValueError(
@@ -95,7 +104,7 @@ def fetch_prs(numbers: list[int]) -> dict[int, dict[str, Any]]:
     return prs
 
 
-def scan_notes(notes: str) -> list[dict[str, Any]]:
+def release_prs(notes: str) -> dict[int, dict[str, Any]]:
     entries = list(PR_ENTRY.finditer(notes))
     # Fail visibly if the generated format changes; a silent empty scan loses credit.
     linked = set(
@@ -106,7 +115,42 @@ def scan_notes(notes: str) -> list[dict[str, Any]]:
         raise ValueError(
             f"Cannot parse release entries for PRs: {sorted(linked - parsed)}"
         )
-    prs = fetch_prs(sorted(int(number) for number in parsed))
+    return fetch_prs(sorted(int(number) for number in parsed))
+
+
+def commit_authors(pr: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        author
+        for node in pr["commits"]["nodes"]
+        for author in node["commit"]["authors"]["nodes"]
+    ] + pr["mergeCommit"]["authors"]["nodes"]
+
+
+def note_actors(prs: dict[int, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Keep GitHub actor types, including plain-handle aliases for app bots."""
+    actors = {}
+    for pr in prs.values():
+        sources = [pr["author"]]
+        sources.extend(
+            issue["author"] for issue in pr["closingIssuesReferences"]["nodes"]
+        )
+        sources.extend(author.get("user") for author in commit_authors(pr))
+        for actor in sources:
+            if actor:
+                key = actor["login"].lower()
+                actors[key] = actor
+                if key.endswith("[bot]"):
+                    actors[key.removesuffix("[bot]")] = actor
+    return actors
+
+
+def scan_notes(
+    notes: str, prs: dict[int, dict[str, Any]] | None = None
+) -> list[dict[str, Any]]:
+    if prs is None:
+        prs = release_prs(notes)
+    actors = note_actors(prs)
+    entries = list(PR_ENTRY.finditer(notes))
     permissions: dict[str, bool] = {}
 
     def is_maintainer(login: str) -> bool:
@@ -122,12 +166,12 @@ def scan_notes(notes: str) -> list[dict[str, Any]]:
     for entry in entries:
         number = int(entry["number"])
         pr = prs[number]
-        authors = pr["mergeCommit"]["authors"]["nodes"]
+        authors = commit_authors(pr)
         humans = [author for author in authors if not is_agent_author(author)]
         original_credit = {
             mention.lstrip("@").lower(): mention.lstrip("@")
             for mention in re.findall(HANDLE, entry["authors"])
-            if is_human({"login": mention.lstrip("@")})
+            if is_human(actors.get(mention.lstrip("@").lower()))
         }
         credited = dict(original_credit)
         if is_human(pr["author"]):
@@ -157,7 +201,9 @@ def scan_notes(notes: str) -> list[dict[str, Any]]:
                     if reporter.lower() not in credited and not is_maintainer(reporter):
                         credited[reporter.lower()] = reporter
                         missing_reporters.append(reporter)
-        unmapped = [author["name"] for author in humans if not author.get("user")]
+        unmapped = list(
+            dict.fromkeys(author["name"] for author in humans if not author.get("user"))
+        )
         if (
             set(credited) == set(original_credit)
             and not missing_reporters
@@ -199,21 +245,25 @@ def main() -> None:
     parser.add_argument("notes", type=Path)
     args = parser.parse_args()
     notes = args.notes.read_text()
-    candidates = scan_notes(notes)
-    print(json.dumps(summarize_credit(notes, candidates), indent=2))
+    prs = release_prs(notes)
+    candidates = scan_notes(notes, prs)
+    print(json.dumps(summarize_credit(notes, candidates, prs), indent=2))
 
 
-def summarize_credit(notes: str, candidates: list[dict[str, Any]]) -> dict[str, Any]:
+def summarize_credit(
+    notes: str, candidates: list[dict[str, Any]], prs: dict[int, dict[str, Any]]
+) -> dict[str, Any]:
     """Count unique human contributors and identify first-time history checks.
 
     GitHub's first-time candidates and supplemental contributors need a history
     check, including prior co-authorship, before finalizing that list and its count.
     """
+    actors = note_actors(prs)
     original: dict[str, str] = {}
     for entry in PR_ENTRY.finditer(notes):
         for mention in re.findall(HANDLE, entry["authors"]):
             login = mention.lstrip("@")
-            if is_human({"login": login}):
+            if is_human(actors.get(login.lower())):
                 original[login.lower()] = login
     credited = dict(original)
     for candidate in candidates:
@@ -224,7 +274,7 @@ def summarize_credit(notes: str, candidates: list[dict[str, Any]]) -> dict[str, 
         rf"^\* ({HANDLE}) made their first contribution in ", notes, re.M
     ):
         login = login.lstrip("@")
-        if is_human({"login": login}):
+        if is_human(actors.get(login.lower())):
             first_time[login.lower()] = login
     return {
         "candidates": candidates,
