@@ -120,6 +120,24 @@ class TestHostHeader:
         assert response.status_code == 400
         assert "set-cookie" not in response.headers
 
+    def test_default_http_port_accepts_host_without_port(self):
+        app = apps_dev._make_dev_app(
+            "http://127.0.0.1:1/mcp",
+            "",
+            "",
+            apps_dev._MessageLog(),
+            False,
+            port=80,
+            session_token=TOKEN,
+        )
+        client = TestClient(app, base_url="http://127.0.0.1")
+
+        startup = client.get("/", params={"token": TOKEN}, follow_redirects=False)
+        page = client.get("/", headers={"Origin": "http://127.0.0.1"})
+
+        assert startup.status_code == 303
+        assert page.status_code == 200
+
     @pytest.mark.parametrize("host", ["127.0.0.1:8080", "localhost:8080", "[::1]:8080"])
     def test_loopback_names_are_accepted(self, host: str):
         response = build_client().get(
