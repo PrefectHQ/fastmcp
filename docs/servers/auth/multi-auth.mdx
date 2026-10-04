@@ -93,7 +93,7 @@ Without a server, no OAuth routes or metadata are served. This is appropriate fo
 
 ## Source Names
 
-Each source has a stable identity for sessions, background tasks, and continued requests. Use an ordered mapping to give verifiers explicit names; pass `server_source_id` to name the delegated auth server. These names follow the source across restarts and changes to verification order. MultiAuth qualifies the returned token's `client_id` with this source identity. Its `original_client_id` field contains the identifier returned by the verifier; bearer token bytes, claims, subject, and scopes stay the same.
+Each source has a stable identity for sessions, background tasks, and continued requests. Use an ordered mapping to give verifiers explicit names; pass `server_source_id` to name the delegated auth server. These names follow the source across restarts and changes to verification order. MultiAuth qualifies the returned token's `client_id` with this source identity and the verified issuer and subject, when present. Its `original_client_id` field contains the identifier returned by the verifier; bearer token bytes, claims, subject, and scopes stay the same.
 
 ```python
 from fastmcp.server.auth import MultiAuth

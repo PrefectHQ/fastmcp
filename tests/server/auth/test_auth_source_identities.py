@@ -28,7 +28,7 @@ from starlette.testclient import TestClient
 from fastmcp import Context, FastMCP
 from fastmcp.server.auth import AccessToken, MultiAuth, TokenVerifier
 from fastmcp.server.auth.providers.introspection import IntrospectionTokenVerifier
-from fastmcp.server.auth.providers.jwt import JWTVerifier
+from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.sessions import UserSession, current_principal
 from fastmcp.utilities.tests import asgi_server
@@ -65,8 +65,8 @@ async def test_named_sources_preserve_raw_fields_and_source_token() -> None:
     assert a is not first.result
     assert first.result.client_id == "shared"
     assert first.result.original_client_id == "supplied"
-    assert json.loads(a.client_id) == ["company", "shared"]
-    assert json.loads(b.client_id) == ["partner", "shared"]
+    assert json.loads(a.client_id) == ["company", "shared", "same", "reader"]
+    assert json.loads(b.client_id) == ["partner", "shared", "same", "reader"]
     assert a.original_client_id == b.original_client_id == "shared"
     assert principal_components(a) != principal_components(b)
     assert a.claims == first.result.claims
@@ -88,9 +88,11 @@ async def test_nested_sources_keep_the_inner_namespace() -> None:
     outer = MultiAuth(server=inner, server_source_id="interactive")
     result = await outer.verify_token("one")
     assert result is not None
-    outer_name, inner_id = json.loads(result.client_id)
+    outer_name, inner_id, issuer, subject = json.loads(result.client_id)
+    assert subject == "reader"
+    assert issuer == "same"
     assert outer_name == "interactive"
-    assert json.loads(inner_id) == ["company", "shared"]
+    assert json.loads(inner_id) == ["company", "shared", "same", "reader"]
     assert result.original_client_id == "shared"
 
 
@@ -423,3 +425,45 @@ async def test_source_token_subclass_fields_survive_qualification() -> None:
     assert verifier.result.client_id == "client"
     assert verifier.result.original_client_id is None
     assert token.original_client_id == "client"
+
+
+async def test_configured_issuer_list_keeps_task_ownership_distinct(
+    rsa_key_pair: RSAKeyPair,
+) -> None:
+    issuers = ["https://company.example", "https://partner.example"]
+    verifier = JWTVerifier(public_key=rsa_key_pair.public_key, issuer=issuers)
+    auth = MultiAuth(verifiers=verifier)
+    scopes = []
+    for issuer in issuers:
+        bearer = rsa_key_pair.create_token(
+            issuer=issuer, subject="reader", additional_claims={"client_id": "shared"}
+        )
+        token = await auth.verify_token(bearer)
+        assert token is not None
+        assert token.original_client_id == "shared"
+        assert token.claims["iss"] == issuer
+        marker = auth_context_var.set(AuthenticatedUser(token))
+        try:
+            scopes.append(get_task_scope())
+        finally:
+            auth_context_var.reset(marker)
+    assert scopes[0] != scopes[1]
+
+
+async def test_explicit_subjects_keep_task_ownership_distinct() -> None:
+    verifier = StoredVerifier("one")
+    verifier.result.claims = {"iss": "same"}
+    auth = MultiAuth(verifiers={"company": verifier})
+    scopes = []
+    for subject in ("alice", "bob"):
+        verifier.result.subject = subject
+        token = await auth.verify_token("one")
+        assert token is not None
+        assert token.subject == subject
+        assert "sub" not in token.claims
+        marker = auth_context_var.set(AuthenticatedUser(token))
+        try:
+            scopes.append(get_task_scope())
+        finally:
+            auth_context_var.reset(marker)
+    assert scopes[0] != scopes[1]

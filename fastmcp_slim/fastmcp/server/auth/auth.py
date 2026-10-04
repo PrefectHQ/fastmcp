@@ -28,6 +28,7 @@ from mcp.server.auth.provider import (
     OAuthAuthorizationServerProvider,
     RefreshToken,
     TokenError,
+    principal_components,
 )
 from mcp.server.auth.provider import (
     TokenVerifier as TokenVerifierProtocol,
@@ -843,7 +844,8 @@ class MultiAuth(AuthProvider):
                         else result.client_id
                     )
                     qualified_client_id = json.dumps(
-                        [source_id, result.client_id], separators=(",", ":")
+                        [source_id, *principal_components(result)],
+                        separators=(",", ":"),
                     )
                     return result.model_copy(
                         update={
