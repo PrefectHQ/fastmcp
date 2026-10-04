@@ -108,7 +108,7 @@ def _replace_ref_with_defs(
                     f"FastMCP only supports local schema references starting with '#/'. "
                     f"Please include all schema definitions within the OpenAPI document."
                 )
-    elif properties := schema.get("properties"):
+    if properties := schema.get("properties"):
         if "$ref" in properties:
             schema["properties"] = _replace_ref_with_defs(properties)
         else:
@@ -116,7 +116,7 @@ def _replace_ref_with_defs(
                 prop_name: _replace_ref_with_defs(prop_schema)
                 for prop_name, prop_schema in properties.items()
             }
-    elif item_schema := schema.get("items"):
+    if item_schema := schema.get("items"):
         schema["items"] = _replace_ref_with_defs(item_schema)
     if "prefixItems" in schema:
         schema["prefixItems"] = [
@@ -424,8 +424,8 @@ def _combine_schemas_and_map_params(
             body_schema["description"] = route.request_body.description
 
         # Handle allOf at the top level by merging all schemas. A $ref that
-        # sits beside its own properties is merged the same way, with the
-        # sibling properties taking precedence over the referenced ones.
+        # sits beside its own properties is merged the same way; there, a
+        # property defined by both sides must satisfy both definitions.
         has_all_of = isinstance(body_schema.get("allOf"), list)
         has_ref_with_properties = "$ref" in body_schema and isinstance(
             body_schema.get("properties"), dict
@@ -436,8 +436,14 @@ def _combine_schemas_and_map_params(
 
             for sub_schema in _allof_members(body_schema, route.request_schemas):
                 # Merge properties
-                if "properties" in sub_schema:
-                    merged_props.update(sub_schema["properties"])
+                for prop_name, prop_schema in sub_schema.get("properties", {}).items():
+                    if (
+                        not has_all_of
+                        and prop_name in merged_props
+                        and merged_props[prop_name] != prop_schema
+                    ):
+                        prop_schema = {"allOf": [merged_props[prop_name], prop_schema]}
+                    merged_props[prop_name] = prop_schema
                 # Merge required fields
                 if "required" in sub_schema:
                     merged_required.extend(sub_schema["required"])

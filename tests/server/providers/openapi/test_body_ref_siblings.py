@@ -94,17 +94,47 @@ async def test_ref_with_sibling_properties_merges_required():
     assert sorted(schema["required"]) == ["local", "name"]
 
 
-async def test_sibling_property_wins_over_referenced_property():
+async def test_overlapping_property_applies_both_schemas():
     spec = build_spec(
         {
             "$ref": "#/components/schemas/Base",
-            "properties": {"name": {"type": "integer"}},
+            "properties": {"name": {"type": "string", "minLength": 2}},
         },
         {"Base": BASE},
     )
-    schema, body = await call_make_thing(spec, {"name": 3})
-    assert schema["properties"]["name"]["type"] == "integer"
-    assert body == {"name": 3}
+    schema, body = await call_make_thing(spec, {"name": "nn"})
+    assert schema["properties"]["name"] == {
+        "allOf": [{"type": "string"}, {"type": "string", "minLength": 2}]
+    }
+    assert body == {"name": "nn"}
+
+
+async def test_identical_overlapping_property_stays_flat():
+    spec = build_spec(
+        {
+            "$ref": "#/components/schemas/Base",
+            "properties": {"name": {"type": "string"}},
+        },
+        {"Base": BASE},
+    )
+    schema, _ = await call_make_thing(spec, {"name": "n"})
+    assert schema["properties"]["name"] == {"type": "string"}
+
+
+async def test_reference_inside_sibling_property_is_resolved():
+    spec = build_spec(
+        {
+            "$ref": "#/components/schemas/Base",
+            "properties": {"child": {"$ref": "#/components/schemas/Child"}},
+        },
+        {
+            "Base": BASE,
+            "Child": {"type": "object", "properties": {"id": {"type": "integer"}}},
+        },
+    )
+    schema, body = await call_make_thing(spec, {"name": "n", "child": {"id": 1}})
+    assert schema["properties"]["child"]["properties"] == {"id": {"type": "integer"}}
+    assert body == {"name": "n", "child": {"id": 1}}
 
 
 async def test_ref_chain_with_sibling_properties_sends_all_fields():
