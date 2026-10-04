@@ -1,6 +1,7 @@
 from typing import Literal
 
 import pytest
+from pydantic import AnyHttpUrl
 from starlette import status
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse
@@ -8,6 +9,7 @@ from starlette.testclient import TestClient
 
 from fastmcp import FastMCP
 from fastmcp.contrib.component_manager import set_up_component_manager
+from fastmcp.server.auth import RemoteAuthProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
 from fastmcp.server.http import create_sse_app, create_streamable_http_app
 
@@ -960,3 +962,50 @@ class TestComponentManagerExplicitScopes:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.text == "ok"
+
+
+class TestComponentManagerChallenge:
+    """Challenges match the MCP endpoint's challenges."""
+
+    @pytest.mark.parametrize(
+        ("base_url", "resource_base_url"),
+        [
+            ("https://api.example.com", None),
+            ("https://auth-host.example.com", "https://api.example.com"),
+        ],
+    )
+    async def test_challenge_includes_resource_metadata(
+        self, rsa_key_pair: RSAKeyPair, base_url: str, resource_base_url: str | None
+    ):
+        auth = RemoteAuthProvider(
+            token_verifier=_jwt_auth(rsa_key_pair),
+            authorization_servers=[AnyHttpUrl("https://auth.example.com")],
+            base_url=base_url,
+            resource_base_url=resource_base_url,
+        )
+        mcp = _server_with_disabled_tool("OAuthServer")
+        mcp.auth = auth
+        client = TestClient(mcp.http_app(path="/mcp"))
+
+        mcp_response = client.post("/mcp")
+        response = client.post("/tools/test_tool/enable")
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert (
+            'resource_metadata="https://api.example.com/.well-known/oauth-protected-resource/mcp"'
+            in response.headers["www-authenticate"]
+        )
+        assert (
+            response.headers["www-authenticate"]
+            == mcp_response.headers["www-authenticate"]
+        )
+
+    async def test_challenge_without_base_url_has_no_resource_metadata(
+        self, rsa_key_pair: RSAKeyPair
+    ):
+        mcp = _server_with_disabled_tool("VerifierServer", auth=_jwt_auth(rsa_key_pair))
+
+        response = TestClient(mcp.http_app(path="/mcp")).post("/tools/test_tool/enable")
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert "resource_metadata" not in response.headers["www-authenticate"]
