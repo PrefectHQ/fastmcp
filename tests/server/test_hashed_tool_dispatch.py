@@ -435,6 +435,18 @@ def admin_tag_added_by_server_transform(calls: list[str]) -> FastMCP:
     return server
 
 
+def admin_tag_removed_by_provider_transform(calls: list[str]) -> FastMCP:
+    app = admin_contacts_app(calls, {"admin"})
+    app.add_transform(ToolTransform({"save": ToolTransformConfig(tags={"public"})}))
+    return server_with(app)
+
+
+def admin_tag_added_by_provider_transform(calls: list[str]) -> FastMCP:
+    app = admin_contacts_app(calls, {"public"})
+    app.add_transform(ToolTransform({"save": ToolTransformConfig(tags={"admin"})}))
+    return server_with(app)
+
+
 def admin_tag_removed_in_mounted_server(calls: list[str]) -> FastMCP:
     child = server_with(admin_contacts_app(calls, {"admin"}))
     child.add_transform(ToolTransform({"save": ToolTransformConfig(tags={"public"})}))
@@ -482,6 +494,8 @@ def scoped_tool_with_auth_removed_in_mounted_server(calls: list[str]) -> FastMCP
     [
         (admin_tag_removed_by_server_transform, "save", False),
         (admin_tag_added_by_server_transform, "save", True),
+        (admin_tag_removed_by_provider_transform, "save", True),
+        (admin_tag_added_by_provider_transform, "save", False),
         (admin_tag_removed_in_mounted_server, "child_save", False),
         (admin_tag_removed_and_renamed, "store", False),
         (scoped_tool_with_auth_removed_by_server_transform, "save", False),
@@ -506,6 +520,73 @@ async def test_hashed_lookup_checks_authorization_of_the_same_tool_as_the_listed
     assert await calls_made_through(SAVE) == expected
 
 
+def renamed_with_meta_by_server_transform(calls: list[str]) -> FastMCP:
+    server = server_with(contacts_app(calls))
+    server.add_transform(
+        ToolTransform({"save": ToolTransformConfig(name="store", meta={"team": "crm"})})
+    )
+    return server
+
+
+def renamed_with_meta_by_provider_transform(calls: list[str]) -> FastMCP:
+    app = contacts_app(calls)
+    app.add_transform(
+        ToolTransform({"save": ToolTransformConfig(name="store", meta={"team": "crm"})})
+    )
+    return server_with(app)
+
+
+def renamed_with_meta_in_mounted_server(calls: list[str]) -> FastMCP:
+    child = renamed_with_meta_by_server_transform(calls)
+    server = FastMCP("Platform")
+    server.mount(child, namespace="child")
+    return server
+
+
+def renamed_with_meta_twice(calls: list[str]) -> FastMCP:
+    server = renamed_with_meta_by_server_transform(calls)
+    server.add_transform(
+        ToolTransform({"store": ToolTransformConfig(name="keep", meta={"team": "ops"})})
+    )
+    return server
+
+
+def renamed_with_meta_above_a_mounted_server(calls: list[str]) -> FastMCP:
+    server = renamed_with_meta_in_mounted_server(calls)
+    server.add_transform(
+        ToolTransform(
+            {"child_store": ToolTransformConfig(name="keep", meta={"team": "ops"})}
+        )
+    )
+    return server
+
+
+@pytest.mark.parametrize(
+    "build, listed_name",
+    [
+        (renamed_with_meta_by_server_transform, "store"),
+        (renamed_with_meta_by_provider_transform, "store"),
+        (renamed_with_meta_in_mounted_server, "child_store"),
+        (renamed_with_meta_twice, "keep"),
+        (renamed_with_meta_above_a_mounted_server, "keep"),
+    ],
+)
+async def test_hashed_name_resolves_tools_renamed_with_meta_at_every_level(
+    build: Callable[[list[str]], FastMCP], listed_name: str
+):
+    calls: list[str] = []
+    server = build(calls)
+
+    async with Client(server) as client:
+        by_name = await client.call_tool(listed_name, {"name": "alice"})
+        by_hash = await client.call_tool(SAVE, {"name": "alice"})
+
+    assert by_name.data == "saved alice"
+    assert by_hash.data == "saved alice"
+    assert calls == ["alice", "alice"]
+
+
+@pytest.mark.parametrize("on_provider", [False, True])
 @pytest.mark.parametrize(
     "meta",
     [
@@ -515,13 +596,16 @@ async def test_hashed_lookup_checks_authorization_of_the_same_tool_as_the_listed
     ],
 )
 async def test_hashed_name_resolves_tools_renamed_with_replaced_meta(
-    meta: dict[str, str] | None,
+    meta: dict[str, str] | None, on_provider: bool
 ):
     calls: list[str] = []
-    server = server_with(contacts_app(calls))
-    server.add_transform(
-        ToolTransform({"save": ToolTransformConfig(name="store", meta=meta)})
-    )
+    app = contacts_app(calls)
+    server = server_with(app)
+    transform = ToolTransform({"save": ToolTransformConfig(name="store", meta=meta)})
+    if on_provider:
+        app.add_transform(transform)
+    else:
+        server.add_transform(transform)
 
     async with Client(server) as client:
         by_name = await client.call_tool("store", {"name": "alice"})
