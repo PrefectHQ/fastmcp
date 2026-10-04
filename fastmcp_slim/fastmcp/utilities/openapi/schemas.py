@@ -423,8 +423,14 @@ def _combine_schemas_and_map_params(
         if route.request_body.description and not body_schema.get("description"):
             body_schema["description"] = route.request_body.description
 
-        # Handle allOf at the top level by merging all schemas
-        if "allOf" in body_schema and isinstance(body_schema["allOf"], list):
+        # Handle allOf at the top level by merging all schemas. A $ref that
+        # sits beside its own properties is merged the same way, with the
+        # sibling properties taking precedence over the referenced ones.
+        has_all_of = isinstance(body_schema.get("allOf"), list)
+        has_ref_with_properties = "$ref" in body_schema and isinstance(
+            body_schema.get("properties"), dict
+        )
+        if has_all_of or has_ref_with_properties:
             merged_props = {}
             merged_required = []
 
@@ -440,8 +446,9 @@ def _combine_schemas_and_map_params(
             body_schema["properties"] = merged_props
             if merged_required:
                 body_schema["required"] = list(dict.fromkeys(merged_required))
-            # Remove the allOf since we've merged it
+            # Remove the allOf and $ref since we've merged them
             body_schema.pop("allOf", None)
+            body_schema.pop("$ref", None)
 
         # Merge discriminated subtype fields in as optional. The discriminator
         # itself is dropped: its mapping points at definitions that are pruned
