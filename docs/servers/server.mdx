@@ -199,7 +199,7 @@ These parameters tune how the server processes requests and communicates with cl
 </ParamField>
 
 <ParamField body="dereference_schemas" type="bool" default="True">
-  Automatically dereference `$ref` pointers in JSON schemas generated from complex Pydantic models. Most clients require flat schemas without `$ref`, so this should usually stay enabled. Recursive schemas, and schemas whose inlined form would be very large or deeply nested, keep their `$defs` and nested `$ref` pointers; only a root-level `$ref` is resolved.
+  Automatically dereference `$ref` pointers in JSON schemas generated from complex Pydantic models. Most clients require flat schemas without `$ref`, so this should usually stay enabled. Schemas whose inlined form would be very large keep their `$defs`, with only a root-level `$ref` resolved, as recursive schemas already do.
 </ParamField>
 
 <ParamField body="cache_ttl" type="int | None" default="None">
