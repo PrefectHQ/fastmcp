@@ -98,6 +98,48 @@ def test_list_schema_is_inlined(build: Callable[[int], dict[str, Any]]) -> None:
     assert value == [0]
 
 
+def alias_pointer_schema() -> dict[str, Any]:
+    """`#/$defs/Alias/properties/value` passes through `Alias`, a reference to `Actual`."""
+    return {
+        "type": "object",
+        "properties": {"v": {"$ref": "#/$defs/Alias/properties/value"}},
+        "$defs": {
+            "Alias": {"$ref": "#/$defs/Actual"},
+            "Actual": {
+                "type": "object",
+                "properties": {"value": {"type": "string"}},
+            },
+        },
+    }
+
+
+def test_pointer_through_alias_definition_is_inlined() -> None:
+    result = dereference_refs(alias_pointer_schema())
+    assert result["properties"]["v"] == {"type": "string"}
+    assert "$defs" not in result
+
+
+def test_pointer_through_chain_of_aliases_is_inlined() -> None:
+    schema = alias_pointer_schema()
+    schema["$defs"]["Alias"] = {"$ref": "#/$defs/Alias2"}
+    schema["$defs"]["Alias2"] = {"$ref": "#/$defs/Actual"}
+    result = dereference_refs(schema)
+    assert result["properties"]["v"] == {"type": "string"}
+
+
+def test_pointer_through_cyclic_aliases_keeps_defs() -> None:
+    schema = alias_pointer_schema()
+    schema["$defs"]["Alias"] = {"$ref": "#/$defs/Alias2"}
+    schema["$defs"]["Alias2"] = {"$ref": "#/$defs/Alias"}
+    assert dereference_refs(schema) == schema
+
+
+def test_pointer_through_unresolvable_alias_keeps_defs() -> None:
+    schema = alias_pointer_schema()
+    schema["$defs"]["Alias"] = {"$ref": "#/$defs/Missing"}
+    assert dereference_refs(schema) == schema
+
+
 def test_large_unused_definitions_keep_defs() -> None:
     schema = nested_union_schema(9)
     schema["properties"] = {}
