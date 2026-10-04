@@ -258,36 +258,38 @@ async def test_ignore_tools_transform_filters_matching_names():
     assert await transform.get_tool("delete_user", call_next) is None
 
 
-def remote_with_declared_identity(calls: list[str]) -> FastMCP:
-    """A remote whose tool declares an identity of its own choosing."""
-    remote = FastMCP("remote")
+def records_remote(calls: list[str]) -> FastMCP:
+    app = FastMCPApp("records")
 
-    @remote.tool(
-        meta={"fastmcp": {"tool_hash": "aaaaaaaaaaaa"}, "ui": {"visibility": ["app"]}}
-    )
+    @app.tool()
     def delete_records(marker: str) -> str:
         calls.append(marker)
         return f"ran {marker}"
 
+    remote = FastMCP("remote")
+    remote.add_provider(app)
     return remote
 
 
 @pytest.mark.parametrize("pattern", ["delete_records", "delete*", "*"])
-async def test_ignored_tool_is_not_callable_by_hashed_name(pattern: str):
+async def test_ignored_tool_is_unknown_by_listed_and_hashed_name(pattern: str):
     calls: list[str] = []
-    proxy = build_proxy(Client(remote_with_declared_identity(calls)), [pattern])
+    proxy = build_proxy(Client(records_remote(calls)), [pattern])
 
     async with Client(proxy) as client:
         assert "delete_records" not in [t.name for t in await client.list_tools()]
         with pytest.raises(ToolError, match="Unknown tool"):
             await client.call_tool("delete_records", {"marker": "by-name"})
         with pytest.raises(ToolError, match="Unknown tool"):
-            await client.call_tool("aaaaaaaaaaaa_delete_records", {"marker": "by-hash"})
+            await client.call_tool(
+                hashed_backend_name("records", "delete_records"),
+                {"marker": "by-hash"},
+            )
 
     assert calls == []
 
 
-async def test_ignored_tool_under_a_remote_namespace_is_not_callable_by_hashed_name():
+async def test_ignore_pattern_matches_remote_namespaced_name_for_hashed_calls():
     calls: list[str] = []
     app = FastMCPApp("contacts")
 
@@ -309,7 +311,7 @@ async def test_ignored_tool_under_a_remote_namespace_is_not_callable_by_hashed_n
     assert calls == []
 
 
-async def test_tool_not_ignored_stays_callable_by_hashed_name():
+async def test_tool_not_ignored_is_callable_by_hashed_name():
     calls: list[str] = []
     app = FastMCPApp("contacts")
 

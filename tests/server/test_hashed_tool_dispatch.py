@@ -1,10 +1,9 @@
-"""Hashed tool names reach only tools that are reachable by name.
+"""Hashed tool names follow the same lookup rules as listed names.
 
 A FastMCPApp backend tool is also callable by its identity-addressed name,
-`<hash>_<local_name>`. That address must lead to the same tool, with the same
-transforms, visibility, and auth applied, as calling the tool by the name the
-server exposes it under. A tool that a transform hides or that visibility
-disables stays unreachable under its hashed name too.
+`<hash>_<local_name>`. Calling a tool that way resolves the same tool, with
+the same transforms, enabled state, auth, and version fallback, as calling it
+by the name the server lists it under.
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ import pytest
 
 from fastmcp import Client, Context, FastMCP, FastMCPApp
 from fastmcp.exceptions import ToolError
-from fastmcp.server.providers.addressing import hashed_backend_name, tool_identity
+from fastmcp.server.providers.addressing import hashed_backend_name
 from fastmcp.server.providers.proxy import ProxyClient, ProxyProvider
 from fastmcp.server.transforms import GetToolNext, Transform, VersionFilter
 from fastmcp.server.transforms.tool_transform import ToolTransform
@@ -27,8 +26,8 @@ from fastmcp.utilities.versions import VersionSpec
 SAVE = hashed_backend_name("contacts", "save")
 
 
-class HideTools(Transform):
-    """Removes the named tools from both listing and lookup."""
+class FilterTools(Transform):
+    """Drops the named tools from both listing and lookup."""
 
     def __init__(self, *names: str) -> None:
         self.names = set(names)
@@ -86,38 +85,38 @@ def server_with(app: FastMCPApp) -> FastMCP:
     return server
 
 
-def hidden_by_server_transform(calls: list[str]) -> FastMCP:
+def filtered_by_server_transform(calls: list[str]) -> FastMCP:
     server = server_with(contacts_app(calls))
-    server.add_transform(HideTools("save"))
+    server.add_transform(FilterTools("save"))
     return server
 
 
-def hidden_by_provider_transform(calls: list[str]) -> FastMCP:
+def filtered_by_provider_transform(calls: list[str]) -> FastMCP:
     app = contacts_app(calls)
-    app.add_transform(HideTools("save"))
+    app.add_transform(FilterTools("save"))
     return server_with(app)
 
 
-def hidden_under_its_namespaced_name(calls: list[str]) -> FastMCP:
+def filtered_under_its_namespaced_name(calls: list[str]) -> FastMCP:
     server = FastMCP("Platform")
     server.add_provider(contacts_app(calls), namespace="crm")
-    server.add_transform(HideTools("crm_save"))
+    server.add_transform(FilterTools("crm_save"))
     return server
 
 
-def hidden_by_mounted_server_transform(calls: list[str]) -> FastMCP:
+def filtered_by_mounted_server_transform(calls: list[str]) -> FastMCP:
     child = server_with(contacts_app(calls))
-    child.add_transform(HideTools("save"))
+    child.add_transform(FilterTools("save"))
     server = FastMCP("Platform")
     server.mount(child, namespace="child")
     return server
 
 
-def hidden_by_gateway_transform_over_a_proxy(calls: list[str]) -> FastMCP:
+def filtered_by_gateway_transform_over_a_proxy(calls: list[str]) -> FastMCP:
     backend = server_with(contacts_app(calls))
     gateway = FastMCP("Gateway")
     gateway.add_provider(ProxyProvider(lambda: ProxyClient(backend)))
-    gateway.add_transform(HideTools("save"))
+    gateway.add_transform(FilterTools("save"))
     return gateway
 
 
@@ -156,11 +155,11 @@ def disabled_in_a_mounted_server(calls: list[str]) -> FastMCP:
 @pytest.mark.parametrize(
     "build",
     [
-        hidden_by_server_transform,
-        hidden_by_provider_transform,
-        hidden_under_its_namespaced_name,
-        hidden_by_mounted_server_transform,
-        hidden_by_gateway_transform_over_a_proxy,
+        filtered_by_server_transform,
+        filtered_by_provider_transform,
+        filtered_under_its_namespaced_name,
+        filtered_by_mounted_server_transform,
+        filtered_by_gateway_transform_over_a_proxy,
         refused_by_lookup_only_transform,
         disabled_by_name,
         disabled_by_tag,
@@ -168,7 +167,7 @@ def disabled_in_a_mounted_server(calls: list[str]) -> FastMCP:
         disabled_in_a_mounted_server,
     ],
 )
-async def test_unreachable_tool_is_unreachable_by_hashed_name(
+async def test_hashed_name_is_unknown_when_listed_name_is_unknown(
     build: Callable[[list[str]], FastMCP],
 ):
     calls: list[str] = []
@@ -215,9 +214,9 @@ def renamed_by_mount(calls: list[str]) -> FastMCP:
     return server
 
 
-def beside_an_unrelated_hiding_transform(calls: list[str]) -> FastMCP:
+def beside_an_unrelated_filter(calls: list[str]) -> FastMCP:
     server = server_with(contacts_app(calls))
-    server.add_transform(HideTools("unrelated"))
+    server.add_transform(FilterTools("unrelated"))
     return server
 
 
@@ -226,10 +225,10 @@ def beside_an_unrelated_hiding_transform(calls: list[str]) -> FastMCP:
     [
         renamed_by_tool_transform,
         renamed_by_mount,
-        beside_an_unrelated_hiding_transform,
+        beside_an_unrelated_filter,
     ],
 )
-async def test_reachable_tool_stays_reachable_by_hashed_name(
+async def test_hashed_name_resolves_renamed_tools(
     build: Callable[[list[str]], FastMCP],
 ):
     calls: list[str] = []
@@ -242,8 +241,8 @@ async def test_reachable_tool_stays_reachable_by_hashed_name(
     assert calls == ["alice"]
 
 
-class DenyingApp(FastMCPApp):
-    """An app provider whose public lookup refuses `save`."""
+class SaveDisabledApp(FastMCPApp):
+    """An app provider whose `get_tool` override declines `save`."""
 
     async def get_tool(
         self, name: str, version: VersionSpec | None = None
@@ -264,9 +263,9 @@ class MaintenanceLock(Transform):
         return await call_next(name, version=version)
 
 
-async def test_provider_public_lookup_applies_to_hashed_name():
+async def test_provider_get_tool_override_applies_to_hashed_name():
     calls: list[str] = []
-    app = DenyingApp("contacts")
+    app = SaveDisabledApp("contacts")
 
     @app.tool()
     def save(name: str) -> str:
@@ -370,6 +369,7 @@ async def test_task_started_during_hashed_lookup_resolves_names_normally():
 
     @server.tool(name="save")
     def plain_save(name: str) -> str:
+        """Save without an app."""
         return f"plain {name}"
 
     spawner = SpawnLaterLookup(server)
@@ -382,4 +382,4 @@ async def test_task_started_during_hashed_lookup_resolves_names_normally():
         later = await probe
 
     assert later is not None
-    assert tool_identity(later) is None
+    assert later.description == "Save without an app."
