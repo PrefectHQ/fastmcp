@@ -820,12 +820,16 @@ async def _listed_name(
     current = tool
     for transform in transforms:
         catalog = await transform.list_tools(catalog)
-        listed = [t for t in catalog if tool_identity(t) == identity]
+        listed = [
+            t
+            for t in catalog
+            if tool_identity(t) == identity and t.version == tool.version
+        ]
         if not listed:
             listed = [
                 t
                 for t in await transform.list_tools([current])
-                if tool_identity(t) == identity
+                if tool_identity(t) == identity and t.version == tool.version
             ]
         if len({t.name for t in listed}) > 1:
             return None
