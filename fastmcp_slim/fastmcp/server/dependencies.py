@@ -416,9 +416,9 @@ def get_http_headers(
     Never raises an exception, even if there is no active HTTP request (in which case
     an empty dict is returned).
 
-    By default, strips problematic headers like `content-length` and `authorization`
-    that cause issues if forwarded to downstream services. If `include_all` is True,
-    all headers are returned.
+    By default, strips problematic headers like `content-length`, and credential
+    headers like `authorization` and `cookie`, that cause issues if forwarded to
+    downstream services. If `include_all` is True, all headers are returned.
 
     The `include` parameter allows specific headers to be included even if they would
     normally be excluded. This is useful for proxy transports that need to forward
@@ -439,6 +439,7 @@ def get_http_headers(
             "expect",
             "accept",
             "authorization",
+            "cookie",
             # Proxy-related headers
             "proxy-authenticate",
             "proxy-authorization",
@@ -1067,7 +1068,10 @@ class _CurrentHeaders(Dependency[dict[str, str]]):
     """Async context manager for HTTP Headers dependency."""
 
     async def __aenter__(self) -> dict[str, str]:
-        return get_http_headers(include={"authorization"})
+        # Credential headers are denied by default because most callers forward
+        # what they get. This dependency only exposes the current request to the
+        # handler, so it opts them back in.
+        return get_http_headers(include={"authorization", "cookie"})
 
     async def __aexit__(
         self,
@@ -1082,9 +1086,9 @@ def CurrentHeaders() -> dict[str, str]:
     """Get the current HTTP request headers.
 
     This dependency provides access to the HTTP headers for the current request,
-    including the authorization header. Returns an empty dictionary when no HTTP
-    request is available, making it safe to use in code that might run over any
-    transport.
+    including the `authorization` and `cookie` headers, which `get_http_headers()`
+    withholds by default. Returns an empty dictionary when no HTTP request is
+    available, making it safe to use in code that might run over any transport.
 
     Returns:
         A dependency that resolves to a dictionary of header name -> value

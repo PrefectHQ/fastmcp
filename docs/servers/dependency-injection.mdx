@@ -200,7 +200,17 @@ def get_user_agent() -> str:
     return headers.get("user-agent", "Unknown")
 ```
 
-By default, problematic headers like `host` and `content-length` are excluded. Use `get_http_headers(include_all=True)` to include all headers.
+By default, problematic headers like `host` and `content-length` are excluded, along with the credential headers `authorization` and `cookie`. Credentials are withheld because most callers forward whatever they receive, and a session cookie scoped to your MCP host should not reach a separate backend origin.
+
+To read a credential header, ask for it by name:
+
+```python
+from fastmcp.server.dependencies import get_http_headers
+
+headers = get_http_headers(include={"cookie"})
+```
+
+`CurrentHeaders()` already includes both credential headers, since it exposes the current request to your handler rather than forwarding it. Use `get_http_headers(include_all=True)` to include every header.
 
 ### Access Token
 
