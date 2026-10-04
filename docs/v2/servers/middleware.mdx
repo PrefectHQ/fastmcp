@@ -524,6 +524,8 @@ my_tool = Tool.from_function(fn=my_tool_fn, name="my_tool")
 mcp.add_middleware(ToolInjectionMiddleware(tools=[my_tool]))
 ```
 
+Injected tools are listed and called alongside the server's own tools, and they follow the same rules. A tool's `auth` check and every middleware in the chain, including `AuthMiddleware`, apply to an injected tool as they do to a registered one, wherever the injection middleware sits in the chain. Injected tools use their own task configuration. They are matched by name only, so a requested version is ignored, and an injected tool takes precedence over a registered tool with the same name. If several injection middleware provide the same name, the one added first takes precedence. Server and session visibility settings do not apply to injected tools.
+
 ### Prompt Tool Middleware
 
 Prompt tool middleware is a compatibility middleware for clients that are unable to list or get prompts. It provides two tools: `list_prompts` and `get_prompt` which allow clients to list and get prompts respectively using only tool calls.
