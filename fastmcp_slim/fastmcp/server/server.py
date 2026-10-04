@@ -893,6 +893,10 @@ class FastMCP(
         # Component auth - return None if unauthorized (consistent with list filtering)
         return tool if await _tool_auth_allows(tool) else None
 
+    async def _check_hashed_target(self, tool: Tool) -> Tool | None:
+        """Check auth on the found tool, as `_get_tool()` does for a name."""
+        return tool if await _tool_auth_allows(tool) else None
+
     async def get_tool(
         self, name: str, version: VersionSpec | None = None
     ) -> Tool | None:
@@ -956,27 +960,6 @@ class FastMCP(
         if not authorized:
             return None
         return max(authorized, key=version_sort_key)
-
-    async def get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
-        """Get an app-visible tool by its identity hash, filtering as `get_tool` does.
-
-        The lookup runs through `get_tool()`, so session transforms, enabled
-        filtering, and the fallback past a disabled highest version apply
-        exactly as for a name lookup, limited to versions of this identity.
-        Overrides Provider.get_tool_by_hash() to add the auth check that a
-        name lookup performs in `_get_tool()`.
-
-        Args:
-            tool_hash: The identity hash from a `<hash>_<local_name>` name.
-            tool_name: The local tool name from the same name.
-
-        Returns:
-            The tool if found, enabled, and authorized, None otherwise.
-        """
-        tool = await super().get_tool_by_hash(tool_hash, tool_name)
-        if tool is None:
-            return None
-        return tool if await _tool_auth_allows(tool) else None
 
     async def list_resources(
         self, *, run_middleware: bool = True

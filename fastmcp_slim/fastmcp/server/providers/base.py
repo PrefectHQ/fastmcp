@@ -219,7 +219,7 @@ class Provider:
             if found is None or n != found.name:
                 return await self._get_tool(n, version)
             if version is None or version.matches(found.version):
-                return found
+                return await self._check_hashed_target(found)
             other = await self._get_tool(n, version)
             if other is not None and tool_identity(other) == tool_identity(found):
                 return other
@@ -304,6 +304,18 @@ class Provider:
 
         if tool is None or tool_identity(tool) != tool_hash:
             return None
+        return tool
+
+    async def _check_hashed_target(self, tool: Tool) -> Tool | None:
+        """Apply this provider's own checks to the tool a hashed lookup found.
+
+        During `get_tool_by_hash()` the bottom of the `get_tool()` chain
+        answers the found tool in place of `_get_tool()`. A provider whose
+        `_get_tool()` checks the tool it returns, as the server does for auth,
+        overrides this to make the same check, so the found tool is checked
+        before any transform runs, as a name lookup checks it. The default
+        accepts the tool.
+        """
         return tool
 
     async def _get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
