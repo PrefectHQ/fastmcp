@@ -54,6 +54,7 @@ def mock_github(
     monkeypatch: pytest.MonkeyPatch,
     prs: list[dict[str, Any]],
     permission: str = "write",
+    maintainers: tuple[str, ...] = ("maintainer",),
 ) -> list[list[str]]:
     calls: list[list[str]] = []
 
@@ -64,7 +65,10 @@ def mock_github(
                 {"data": {"repository": {f"p{pr['number']}": pr for pr in prs}}}
             )
         assert command[2].endswith("/permission")
-        return json.dumps({"permission": permission})
+        login = command[2].split("/")[-2]
+        return json.dumps(
+            {"permission": permission if login in maintainers else "read"}
+        )
 
     monkeypatch.setattr(
         "scripts.release_contributor_credit.subprocess.check_output", respond
@@ -89,7 +93,7 @@ def test_batch_credits_missing_reporters_and_reuses_maintainer_permission(
     ]
     assert result[0]["missing_reporter_coauthors"] == ["reporter"]
     assert "by @maintainer and @reporter in" in result[0]["suggested_entry"]
-    assert len(calls) == 2  # One batched metadata query and one permission lookup.
+    assert len(calls) == 3  # Metadata and one permission lookup per distinct account.
 
 
 def test_human_coauthors_survive_agent_filter_without_an_issue(
@@ -103,7 +107,7 @@ def test_human_coauthors_survive_agent_filter_without_an_issue(
     result = scan_notes(entry(1))
     assert result[0]["credit"] == ["maintainer", "helper"]
     assert result[0]["unmapped_commit_authors"] == []
-    assert len(calls) == 1
+    assert len(calls) == 2
 
 
 def test_external_pr_does_not_automatically_credit_distinct_issue_author(
@@ -206,3 +210,33 @@ def test_summary_counts_unique_humans_and_flags_first_time_candidates() -> None:
     assert result["generated_first_time_contributors"] == ["maintainer"]
     assert result["generated_first_time_count"] == 1
     assert result["first_time_review"] == ["helper", "maintainer", "reporter"]
+
+
+def test_maintainer_report_and_coauthor_need_no_supplemental_credit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mock_github(
+        monkeypatch,
+        [
+            pr_metadata(
+                1, coauthors=("othermaintainer",), reporters=("othermaintainer",)
+            )
+        ],
+        maintainers=("maintainer", "othermaintainer"),
+    )
+    assert scan_notes(entry(1)) == []
+
+
+def test_existing_maintainer_credit_is_preserved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = mock_github(
+        monkeypatch,
+        [pr_metadata(1, coauthors=("othermaintainer",))],
+        maintainers=("maintainer", "othermaintainer"),
+    )
+    notes = entry(1).replace(
+        "by @maintainer in", "by @maintainer and @othermaintainer in"
+    )
+    assert scan_notes(notes) == []
+    assert len(calls) == 1

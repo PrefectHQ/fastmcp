@@ -39,6 +39,11 @@ one gets a follow-up patch, never a re-tag.
    agent identities and bots; a GitHub `User` identity alone does not prove someone
    is human. Maintainer permission checks are reused across PRs.
 
+   Supplemental attribution is for community contributors. Keep the PR author's
+   credit and any credit already present, but do not add other maintainers or
+   investigate their first-time status. Routine maintainer backports need no fresh
+   attribution audit and no request for guidance. Preserve existing community credit.
+
    Apply the suggested entries to `/tmp/generated-notes.md`, for example
    `Fix issue #123 by @jlowin and @reporter in <PR URL>`. Check the flagged exceptions:
    unknown commit identities, missing reporter co-authorship, and issue closures

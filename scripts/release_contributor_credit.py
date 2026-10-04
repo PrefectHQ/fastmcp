@@ -108,20 +108,36 @@ def scan_notes(notes: str) -> list[dict[str, Any]]:
         )
     prs = fetch_prs(sorted(int(number) for number in parsed))
     permissions: dict[str, bool] = {}
+
+    def is_maintainer(login: str) -> bool:
+        key = login.lower()
+        if key not in permissions:
+            permission = api(f"repos/{REPO}/collaborators/{login}/permission")[
+                "permission"
+            ]
+            permissions[key] = permission in {"admin", "maintain", "write"}
+        return permissions[key]
+
     candidates = []
     for entry in entries:
         number = int(entry["number"])
         pr = prs[number]
         authors = pr["mergeCommit"]["authors"]["nodes"]
         humans = [author for author in authors if not is_agent_author(author)]
-        credited: dict[str, str] = {}
+        original_credit = {
+            mention.lstrip("@").lower(): mention.lstrip("@")
+            for mention in re.findall(HANDLE, entry["authors"])
+            if is_human({"login": mention.lstrip("@")})
+        }
+        credited = dict(original_credit)
         if is_human(pr["author"]):
             login = pr["author"]["login"]
             credited[login.lower()] = login
         for author in humans:
             if is_human(author.get("user")):
                 login = author["user"]["login"]
-                credited[login.lower()] = login
+                if login.lower() not in credited and not is_maintainer(login):
+                    credited[login.lower()] = login
         issues = [
             issue
             for issue in pr["closingIssuesReferences"]["nodes"]
@@ -135,24 +151,18 @@ def scan_notes(notes: str) -> list[dict[str, Any]]:
         ]
         if extra_reporters and pr["author"]:
             login = pr["author"]["login"]
-            if login not in permissions:
-                permission = api(f"repos/{REPO}/collaborators/{login}/permission")[
-                    "permission"
-                ]
-                permissions[login] = permission in {"admin", "maintain", "write"}
-            if permissions[login]:
+            if is_maintainer(login):
                 for issue in extra_reporters:
                     reporter = issue["author"]["login"]
-                    if reporter.lower() not in credited:
+                    if reporter.lower() not in credited and not is_maintainer(reporter):
                         credited[reporter.lower()] = reporter
                         missing_reporters.append(reporter)
         unmapped = [author["name"] for author in humans if not author.get("user")]
-        original_credit = {
-            mention.lstrip("@").lower()
-            for mention in re.findall(HANDLE, entry["authors"])
-            if is_human({"login": mention.lstrip("@")})
-        }
-        if set(credited) == original_credit and not missing_reporters and not unmapped:
+        if (
+            set(credited) == set(original_credit)
+            and not missing_reporters
+            and not unmapped
+        ):
             continue
         handles = [f"@{login}" for login in credited.values()]
         shared = (
