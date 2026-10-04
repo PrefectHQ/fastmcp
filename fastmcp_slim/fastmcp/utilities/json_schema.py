@@ -56,19 +56,36 @@ class _CannotInline(Exception):
     """A schema's local references can't be inlined within the limits."""
 
 
-def _resolve_local_ref(schema: dict[str, Any], ref: str) -> Any:
+def _resolve_local_ref(
+    schema: dict[str, Any], ref: str, _hops: list[int] | None = None
+) -> Any:
     """Resolve a local `$ref` (`#...`) by walking its JSON pointer through *schema*.
 
-    This uses the same pointer syntax as `jsonref` but walks the raw schema:
-    it doesn't follow pointers through other `$ref` nodes or normalize the
-    reference as a URL. It can therefore pick a different target than
-    `jsonref` for unusual pointers, so `dereference_refs` measures the
-    result `jsonref` actually built as well.
+    This uses the same pointer syntax as `jsonref` but doesn't normalize the
+    reference as a URL, so it can pick a different target than `jsonref` for
+    unusual pointers. `dereference_refs` therefore measures the result
+    `jsonref` actually built as well.
+
+    Like `jsonref`, a pointer that reaches a node that is itself a local
+    `$ref` continues through that reference's target, so
+    `#/$defs/Alias/properties/x` resolves when `Alias` refers to another
+    definition. The number of such references followed during one lookup is
+    limited, which also stops reference cycles. The root itself is never
+    followed, so a root-level `$ref` doesn't redirect its own pointers.
     """
+    hops = _hops if _hops is not None else [0]
     fragment = ref[1:]
     parts = unquote(fragment.lstrip("/")).split("/") if fragment else []
     node: Any = schema
     for part in parts:
+        while node is not schema and isinstance(node, dict) and "$ref" in node:
+            inner = node["$ref"]
+            if not isinstance(inner, str) or not inner.startswith("#"):
+                break
+            hops[0] += 1
+            if hops[0] > _MAX_ROOT_REF_HOPS:
+                raise _CannotInline(f"Too many references in pointer: {ref}")
+            node = _resolve_local_ref(schema, inner, hops)
         key: str | int = part.replace("~1", "/").replace("~0", "~")
         if isinstance(node, Sequence):
             with suppress(ValueError):
