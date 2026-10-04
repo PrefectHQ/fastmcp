@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from mcp.shared.path_security import PathEscapeError
+from mcp.shared.path_security import PathEscapeError, safe_join
 from mcp_types import TextResourceContents
 
 from fastmcp import Client, FastMCP
@@ -109,4 +109,31 @@ async def test_directory_links_within_root_remain_discoverable(tmp_path: Path) -
     assert {resource.name for resource in resources} == {
         "actual/SKILL.md",
         "actual/_manifest",
+    }
+
+
+async def test_directory_keeps_the_selected_target_when_a_link_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "skills"
+    root.mkdir()
+    selected = make_skill(root / "selected", "# Selected instructions")
+    other = make_skill(tmp_path / "other", "# Other instructions")
+    link = root / "linked"
+    link.symlink_to(selected, target_is_directory=True)
+
+    def select_path(base: Path, name: str) -> Path:
+        resolved = safe_join(base, name)
+        if name == "linked":
+            link.unlink()
+            link.symlink_to(other, target_is_directory=True)
+        return resolved
+
+    monkeypatch.setattr(
+        "fastmcp.server.providers.skills.directory_provider.safe_join", select_path
+    )
+    resources = await SkillsDirectoryProvider(root).list_resources()
+    assert {resource.name for resource in resources} == {
+        "selected/SKILL.md",
+        "selected/_manifest",
     }

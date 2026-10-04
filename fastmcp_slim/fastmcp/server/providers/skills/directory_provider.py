@@ -89,7 +89,7 @@ class SkillsDirectoryProvider(AggregateProvider):
 
             for skill_dir in root.iterdir():
                 try:
-                    safe_join(root, skill_dir.name)
+                    skill_dir = safe_join(root, skill_dir.name)
                 except PathEscapeError:
                     logger.warning(
                         f"Skipping skill directory outside {root}: {skill_dir.name}"
