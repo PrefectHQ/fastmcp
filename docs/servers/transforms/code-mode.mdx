@@ -290,6 +290,8 @@ mcp = FastMCP("Server", transforms=[code_mode])
 
 ## Sandbox Configuration
 
+The sandbox controls the Python environment used by the code submitted to `execute`. Calls to `call_tool()` dispatch registered tools through FastMCP in the current request context, with the same authorization checks as a normal tool call. Those tool functions run in the server environment and retain their configured access to files, networks, and other resources.
+
 ### Resource Limits
 
 The default `MontySandboxProvider` enforces execution limits — timeouts, memory caps, recursion depth, and more.
