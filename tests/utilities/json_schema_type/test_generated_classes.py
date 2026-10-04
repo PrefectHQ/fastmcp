@@ -2,6 +2,7 @@
 
 import gc
 import json
+import keyword
 import weakref
 from typing import Any
 
@@ -22,12 +23,44 @@ from fastmcp.utilities.json_schema_type import (
 TITLE = "Order Item (v2)"
 
 
-def order_item_schema(children: dict[str, Any]) -> dict[str, Any]:
+def order_item_schema(children: dict[str, Any], title: str = TITLE) -> dict[str, Any]:
     return {
         "type": "object",
-        "title": TITLE,
+        "title": title,
         "properties": {"name": {"type": "string"}, "children": children},
     }
+
+
+def nested_items_schema(title: str) -> dict[str, Any]:
+    self_reference = {"$ref": "#", "title": title}
+    return order_item_schema({"type": "array", "items": self_reference}, title)
+
+
+NESTED_ITEMS_VALUE = {"name": "a", "children": [{"name": "b"}]}
+
+AWKWARD_TITLES = {
+    "parenthesized_version": "Order Item (v2)",
+    "double_quotes": 'Item "A"',
+    "apostrophe": "it's an item",
+    "dot_and_slash": "a.b/c",
+    "keyword": "class",
+    "none_keyword": "None",
+    "leading_digit": "3d model",
+    "non_ascii": "名前",
+    "empty": "",
+    "very_long": "Item " * 60,
+    "newline_and_tab": "Item\nOne\tTwo",
+    "dunder": "__init__",
+    "call_syntax": "Item(1)",
+    "subscript_syntax": "list[str]",
+    "boolean_words": "a or b",
+    "conditional_words": "x if y else z",
+    "lambda_words": "lambda: 0",
+    "semicolon": "a; b",
+    "hash_sign": "item#1",
+    "trailing_backslash": "Item\\",
+    "only_punctuation": "!!!",
+}
 
 
 SELF_REFERENCE = {"$ref": "#", "title": TITLE}
@@ -48,6 +81,40 @@ class TestDescriptiveTitles:
         generated = json_schema_to_type(NESTED_ORDER_ITEMS)
 
         assert generated.__name__ == "Order_Item_v2"
+
+    @pytest.mark.parametrize("title", AWKWARD_TITLES.values(), ids=AWKWARD_TITLES)
+    def test_any_title_becomes_valid_class_name(self, title: str):
+        generated = json_schema_to_type(nested_items_schema(title))
+
+        assert generated.__name__.isidentifier()
+        assert not keyword.iskeyword(generated.__name__)
+
+    @pytest.mark.parametrize("title", AWKWARD_TITLES.values(), ids=AWKWARD_TITLES)
+    def test_any_title_supports_nested_self_reference(self, title: str):
+        generated = json_schema_to_type(nested_items_schema(title))
+
+        item = TypeAdapter(generated).validate_python(NESTED_ITEMS_VALUE)
+
+        child = item.children[0]  # ty: ignore[unresolved-attribute]
+        assert isinstance(child, generated)
+        assert child.name == "b"
+
+    @pytest.mark.parametrize(
+        "title,expected",
+        [
+            ("class", "class_"),
+            ("None", "None_"),
+            ("3d model", "field_3d_model"),
+            ("", "field"),
+            ("!!!", "field"),
+            ("list[str]", "list_str"),
+            ("Item(1)", "Item_1"),
+        ],
+    )
+    def test_title_class_names(self, title: str, expected: str):
+        generated = json_schema_to_type(nested_items_schema(title))
+
+        assert generated.__name__ == expected
 
     @pytest.mark.parametrize(
         "children,value",
@@ -91,6 +158,23 @@ class TestClientSchemas:
 
         assert type(result.data).__name__ == "Order_Item_v2"
         assert result.data.children[0].name == "b"
+
+    @pytest.mark.parametrize("title", AWKWARD_TITLES.values(), ids=AWKWARD_TITLES)
+    async def test_tool_output_with_any_title(self, title: str):
+        server = FastMCP("Orders")
+
+        @server.tool(output_schema=nested_items_schema(title))
+        def order() -> ToolResult:
+            return ToolResult(structured_content=NESTED_ITEMS_VALUE)
+
+        async with Client(server) as client:
+            result = await client.call_tool("order", {})
+
+        assert type(result.data).__name__.isidentifier()
+        assert not keyword.iskeyword(type(result.data).__name__)
+        child = result.data.children[0]
+        assert isinstance(child, type(result.data))
+        assert child.name == "b"
 
     async def test_tool_output_with_reserved_property_names(self):
         server = FastMCP("Settings")
@@ -141,6 +225,37 @@ class TestClientSchemas:
         assert result.data == "accept"
         assert len(validated) == 1
 
+    @pytest.mark.parametrize("title", AWKWARD_TITLES.values(), ids=AWKWARD_TITLES)
+    async def test_elicitation_schema_with_any_title(self, title: str):
+        server = FastMCP("Forms")
+        validated: list[Any] = []
+
+        @server.tool
+        async def ask(ctx: Context) -> str:
+            response = await ctx.session.elicit_form(
+                message="Provide data",
+                requested_schema=nested_items_schema(title),
+                related_request_id=ctx.request_id,
+            )
+            return response.action
+
+        async def handler(
+            message: str, response_type: Any, params: Any, context: Any
+        ) -> ElicitResult[dict[str, Any]]:
+            validated.append(
+                TypeAdapter(response_type).validate_python(NESTED_ITEMS_VALUE)
+            )
+            return ElicitResult(action="accept", content={"name": "a"})
+
+        async with Client(server, mode="legacy", elicitation_handler=handler) as client:
+            result = await client.call_tool("ask", {})
+
+        assert result.data == "accept"
+        assert len(validated) == 1
+        child = validated[0].children[0]
+        assert isinstance(child, type(validated[0]))
+        assert child.name == "b"
+
 
 class TestPropertyNamesAreFields:
     @pytest.mark.parametrize(
@@ -155,6 +270,17 @@ class TestPropertyNamesAreFields:
             "model_config",
             "model_dump",
             "model_fields",
+            "__class__",
+            "__dict__",
+            "__init__",
+            "__module__",
+            "__qualname__",
+            "__doc__",
+            "__eq__",
+            "model_post_init",
+            "model_validate",
+            "model_copy",
+            "_1",
         ],
     )
     def test_reserved_names_become_aliased_fields(self, name: str):
