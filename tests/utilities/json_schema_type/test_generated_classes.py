@@ -642,6 +642,27 @@ class TestClassCache:
 
         assert len(json_schema_type._classes) == 0
 
+    def test_adapters_are_cached_by_normalized_schema(self):
+        boolean_key: dict[Any, Any] = {
+            "type": "object",
+            "properties": {True: {"type": "integer"}},
+        }
+        string_key: dict[Any, Any] = {
+            "type": "object",
+            "properties": {"true": {"type": "integer"}},
+        }
+        capitalized_key: dict[Any, Any] = {
+            "type": "object",
+            "properties": {"True": {"type": "integer"}},
+        }
+
+        assert json_schema_to_type_adapter(string_key).validate_python({"true": 1})
+        adapter = json_schema_to_type_adapter(boolean_key)
+
+        assert adapter.validate_python({"True": 1})
+        assert adapter is json_schema_to_type_adapter(capitalized_key)
+        assert adapter is not json_schema_to_type_adapter(string_key)
+
     def test_evicted_classes_are_released(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(json_schema_type._classes, "max_entries", 2)
         monkeypatch.setattr(json_schema_type._adapters, "max_entries", 2)

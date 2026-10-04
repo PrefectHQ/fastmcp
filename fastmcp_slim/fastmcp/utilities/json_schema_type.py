@@ -338,8 +338,10 @@ def json_schema_to_type(
 
     # Normalise YAML-parsed types (datetime/date → str, non-str keys → str)
     # so that downstream json.dumps/hashing and default values work correctly.
-    schema = _normalize_yaml_types(schema)
+    return _convert_normalized(_normalize_yaml_types(schema), name)
 
+
+def _convert_normalized(schema: dict[str, Any], name: str | None) -> type:
     root_hash, root_size = _schema_digest(schema)
     token = _conversion.set(_Conversion(root_hash=root_hash, root_size=root_size))
     try:
@@ -360,11 +362,14 @@ def json_schema_to_type_adapter(schema: Mapping[str, Any] | bool) -> TypeAdapter
     Adapters are cached by schema content in a bounded cache, so the classes
     they hold are released when they are evicted.
     """
+    if isinstance(schema, bool):
+        return TypeAdapter(json_schema_to_type(schema))
     _check_nesting(schema)
+    schema = _normalize_yaml_types(schema)
     key, size = _schema_digest(schema)
     adapter = _adapters.get(key)
     if adapter is None:
-        adapter = TypeAdapter(json_schema_to_type(schema))
+        adapter = TypeAdapter(_convert_normalized(schema, None))
         _adapters.put(key, adapter, size)
     return adapter
 
