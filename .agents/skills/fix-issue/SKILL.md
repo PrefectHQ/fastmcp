@@ -23,4 +23,6 @@ Run the repository's required dependency sync, full tests, and static checks bef
 
 Within existing authorization, update the existing PR or open a focused one, using draft status when appropriate. Follow repository PR-body conventions and the user's `pr-body` skill when available. Describe the actual user-visible change and any migration, not the development diary.
 
+For a maintainer implementation of a community issue, apply [Contributor credit](../../../docs/development/contributing.mdx#contributor-credit) before committing and publishing. Read the issue author's GitHub profile to establish their account identity; prefer the GitHub-provided noreply address, and ask if identity is unclear. Add their `Co-authored-by: Name <email>` trailer to the implementation commit and at the end of the PR description, alongside existing contributor attribution. Reporting the problem is enough; do not require code or root-cause analysis. Honor opt-outs and do not credit bot accounts as human issue contributors.
+
 Start [review-pr](../review-pr/SKILL.md) monitoring after publication. CI completion and review completion are distinct. Resolve real findings and report material compatibility decisions; a green check does not settle them. Do not merge or mark ready without authorization.
