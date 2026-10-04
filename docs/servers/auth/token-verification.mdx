@@ -188,6 +188,21 @@ mcp = FastMCP(name="Protected API", auth=verifier)
 
 The verifier authenticates to the introspection endpoint using client credentials and queries it whenever a bearer token arrives. FastMCP checks whether the token is active and has sufficient scopes before allowing access.
 
+If your authorization server returns an `aud` field, set `audience` to select tokens for your API. You can provide one audience or a list of allowed audiences. The response must contain a matching string or an array of nonempty strings with at least one match; a missing or malformed `aud` is rejected when `audience` is configured.
+
+```python
+from fastmcp.server.auth.providers.introspection import IntrospectionTokenVerifier
+
+verifier = IntrospectionTokenVerifier(
+    introspection_url="https://auth.yourcompany.com/oauth/introspect",
+    client_id="mcp-resource-server",
+    client_secret="your-client-secret",
+    audience="mcp-production-api",
+)
+```
+
+The default, `audience=None`, leaves audience selection to your authorization server's introspection policy. The introspection `client_id` authenticates the request to that server; it does not set the expected token audience.
+
 Two standard client authentication methods are supported, both defined in RFC 6749:
 
 - **`client_secret_basic`** (default): Sends credentials via HTTP Basic Auth header
