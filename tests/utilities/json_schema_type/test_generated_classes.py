@@ -522,6 +522,17 @@ class TestConversionLimits:
         with pytest.raises(ValueError, match="too deeply nested"):
             json_schema_to_type(flat_chain_schema(400))
 
+    def test_very_deeply_nested_schema_stops_with_value_error(self):
+        schema: dict[str, Any] = {"type": "string"}
+        for _ in range(5000):
+            schema = {"type": "array", "items": schema}
+
+        with pytest.raises(ValueError, match="too deeply nested"):
+            json_schema_to_type(schema)
+
+        with pytest.raises(ValueError, match="too deeply nested"):
+            json_schema_to_type_adapter(schema)
+
     def test_repeated_type_lists_are_rejected(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(
             json_schema_type, "_MAX_CONVERSION_STEPS", 200, raising=False
