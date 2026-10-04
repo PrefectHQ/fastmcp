@@ -296,3 +296,50 @@ def test_manual_route_with_allof_body_sends_declared_properties() -> None:
     assert "note" not in request.headers
     assert route.request_body is not None
     assert route.request_body.content_schema == {"application/json": body_schema}
+
+
+def test_manual_route_with_allof_and_sibling_properties_sends_both() -> None:
+    route = HTTPRoute(
+        path="/things",
+        method="POST",
+        request_body=RequestBodyInfo(
+            content_schema={
+                "application/json": {
+                    "type": "object",
+                    "properties": {"local": {"type": "string"}},
+                    "required": ["local"],
+                    "allOf": [{"$ref": "#/components/schemas/Thing"}],
+                }
+            }
+        ),
+        request_schemas={
+            "Thing": {"type": "object", "properties": {"name": {"type": "string"}}}
+        },
+    )
+    request_director = RequestDirector(SchemaPath.from_dict({}))
+
+    request = request_director.build(
+        route, {"name": "thing", "local": "value"}, BASE_URL
+    )
+
+    assert json.loads(request.content) == {"name": "thing", "local": "value"}
+
+
+def test_manual_route_with_free_form_object_body_sends_the_object() -> None:
+    route = HTTPRoute(
+        path="/things",
+        method="POST",
+        request_body=RequestBodyInfo(
+            content_schema={
+                "application/json": {
+                    "type": "object",
+                    "additionalProperties": {"type": "string"},
+                }
+            }
+        ),
+    )
+    request_director = RequestDirector(SchemaPath.from_dict({}))
+
+    request = request_director.build(route, {"body": {"key": "value"}}, BASE_URL)
+
+    assert json.loads(request.content) == {"key": "value"}

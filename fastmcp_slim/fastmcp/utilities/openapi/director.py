@@ -95,6 +95,13 @@ def _prepare_parameter_map(
                     if isinstance(member, dict)
                     for expanded in _allof_members(member, route.request_schemas)
                 ]
+                own = {
+                    key: body_schema[key]
+                    for key in ("properties", "required")
+                    if key in body_schema
+                }
+                if own:
+                    body_schema["allOf"].append(own)
     prepared = route.model_copy(update={"request_body": request_body})
     _, parameter_map = _combine_schemas_and_map_params(prepared, convert_refs=False)
     for param in route.parameters:
@@ -255,6 +262,7 @@ class RequestDirector:
         cookie_params = {}
         body_props = {}
 
+        built_map = not route.parameter_map
         route, parameter_map = _prepare_parameter_map(route)
 
         for arg_name, value in flat_args.items():
@@ -298,9 +306,17 @@ class RequestDirector:
                 content_type = next(iter(route.request_body.content_schema))
                 body_schema = route.request_body.content_schema[content_type]
 
+                # A map built here for a free-form object body holds the whole
+                # body in a single argument.
+                is_whole_body = (
+                    built_map
+                    and len(body_props) == 1
+                    and not body_schema.get("properties")
+                )
                 if (
                     isinstance(body_schema, dict)
                     and body_schema.get("type") == "object"
+                    and not is_whole_body
                 ):
                     body = body_props
                 elif len(body_props) == 1:
