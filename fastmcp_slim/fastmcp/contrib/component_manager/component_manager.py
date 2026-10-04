@@ -5,6 +5,7 @@ Provides REST endpoints for controlling component enabled state. The routes
 use the authentication of the server whose HTTP app serves them.
 """
 
+from mcp.server.auth.routes import build_resource_metadata_url
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.requests import Request
@@ -66,7 +67,7 @@ class _ComponentManagerAuth:
         self.required_scopes = required_scopes
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        auth = _serving_auth(scope, self.server)
+        auth, mcp_path = _serving_auth(scope, self.server)
         if auth is None and self.required_scopes is None:
             await self.app(scope, receive, send)
             return
@@ -78,25 +79,43 @@ class _ComponentManagerAuth:
         challenge_scopes = (
             auth.get_challenge_scopes(scopes) if auth is not None else None
         )
+        resource_url = (
+            auth._get_resource_url(mcp_path)
+            if auth is not None and mcp_path is not None
+            else None
+        )
+        resource_metadata_url = (
+            build_resource_metadata_url(resource_url) if resource_url else None
+        )
         guarded = RequireAuthMiddleware(
-            self.app, scopes, challenge_scopes=challenge_scopes
+            self.app,
+            scopes,
+            resource_metadata_url=resource_metadata_url,
+            challenge_scopes=challenge_scopes,
         )
         await guarded(scope, receive, send)
 
 
-def _serving_auth(scope: Scope, server: FastMCP) -> AuthProvider | None:
-    """Return the auth provider of the FastMCP HTTP app serving this request.
+def _serving_auth(
+    scope: Scope, server: FastMCP
+) -> tuple[AuthProvider | None, str | None]:
+    """Return the auth provider and MCP path of the HTTP app serving this request.
 
-    FastMCP's HTTP app factories store the provider they were built with on
-    the app state. Routes served by any other app use `server.auth`.
+    FastMCP's HTTP app factories store the provider they were built with, and
+    the path of the MCP endpoint, on the app state. Routes served by any other
+    app use `server.auth` and have no known MCP path.
     """
     app = scope.get("app")
     if isinstance(app, Starlette) and isinstance(
         getattr(app.state, "fastmcp_server", None), FastMCP
     ):
         auth = getattr(app.state, "fastmcp_auth", None)
-        return auth if isinstance(auth, AuthProvider) else None
-    return server.auth
+        mcp_path = getattr(app.state, "path", None)
+        return (
+            auth if isinstance(auth, AuthProvider) else None,
+            mcp_path if isinstance(mcp_path, str) else None,
+        )
+    return server.auth, None
 
 
 def _build_routes(
