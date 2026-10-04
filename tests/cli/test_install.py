@@ -487,6 +487,8 @@ class TestServerNameValidation:
             'test"quoted',
             "test>file",
             "test<file",
+            "test\n",
+            "test\r\n",
         ],
     )
     def test_rejects_shell_metacharacters(self, name: str):
