@@ -330,6 +330,7 @@ def _combine_schemas_and_map_params(
             if merged_required:
                 body_schema["required"] = list(dict.fromkeys(merged_required))
             body_schema.pop("$ref", None)
+            body_schema.setdefault("type", "object")
 
         body_props = body_schema.get("properties", {})
 
