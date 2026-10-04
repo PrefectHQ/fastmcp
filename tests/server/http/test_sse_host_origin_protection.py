@@ -16,8 +16,8 @@ from fastmcp.server.http import HostOriginProtection, create_sse_app
 from fastmcp.utilities.http import find_available_port
 from fastmcp.utilities.tests import run_server_async, temporary_settings
 
-UNTRUSTED_HOST = {"host": "untrusted.example"}
-UNTRUSTED_ORIGIN = {"origin": "https://untrusted.example"}
+OTHER_HOST = {"host": "other.example"}
+OTHER_ORIGIN = {"origin": "https://other.example"}
 PING_REQUEST = {"jsonrpc": "2.0", "id": 1, "method": "ping"}
 
 GuardResult = Literal["host rejected", "origin rejected", "allowed"]
@@ -86,7 +86,7 @@ async def _get_status(url: str, headers: dict[str, str]) -> int:
 
 @asynccontextmanager
 async def _sse_session(url: str) -> AsyncGenerator[str, None]:
-    """Open a trusted SSE stream and yield the session's message endpoint URL."""
+    """Open an SSE stream and yield the session's message endpoint URL."""
     async with httpx.AsyncClient() as http:
         async with http.stream(
             "GET",
@@ -126,11 +126,11 @@ class TestSSEConnectionEndpoint:
     @pytest.mark.parametrize(
         ("headers", "expected_status"),
         [
-            (UNTRUSTED_HOST, 421),
-            (UNTRUSTED_ORIGIN, 403),
+            (OTHER_HOST, 421),
+            (OTHER_ORIGIN, 403),
         ],
     )
-    async def test_rejects_untrusted_request(
+    async def test_rejects_unlisted_host_or_origin(
         self,
         protected_url: str,
         headers: dict[str, str],
@@ -141,7 +141,7 @@ class TestSSEConnectionEndpoint:
     async def test_disabled_protection_opens_stream(self, unprotected_url: str):
         status = await _get_status(
             unprotected_url,
-            {**UNTRUSTED_HOST, **UNTRUSTED_ORIGIN},
+            {**OTHER_HOST, **OTHER_ORIGIN},
         )
 
         assert status == 200
@@ -151,11 +151,11 @@ class TestSSEMessageEndpoint:
     @pytest.mark.parametrize(
         ("headers", "expected_status"),
         [
-            (UNTRUSTED_HOST, 421),
-            (UNTRUSTED_ORIGIN, 403),
+            (OTHER_HOST, 421),
+            (OTHER_ORIGIN, 403),
         ],
     )
-    async def test_rejects_untrusted_request_for_open_session(
+    async def test_rejects_unlisted_host_or_origin_for_open_session(
         self,
         protected_url: str,
         headers: dict[str, str],
@@ -163,16 +163,16 @@ class TestSSEMessageEndpoint:
     ):
         async with _sse_session(protected_url) as message_url:
             status = await _post_status(message_url, headers)
-            trusted_status = await _post_status(message_url, {})
+            default_status = await _post_status(message_url, {})
 
         assert status == expected_status
-        assert trusted_status == 202
+        assert default_status == 202
 
     async def test_disabled_protection_accepts_message(self, unprotected_url: str):
         async with _sse_session(unprotected_url) as message_url:
             status = await _post_status(
                 message_url,
-                {**UNTRUSTED_HOST, **UNTRUSTED_ORIGIN},
+                {**OTHER_HOST, **OTHER_ORIGIN},
             )
 
         assert status == 202
@@ -184,8 +184,8 @@ class TestSSEProtectionMatchesStreamableHTTP:
     @pytest.mark.parametrize(
         ("protection", "allowed_hosts", "allowed_origins", "headers", "expected"),
         [
-            ("auto", None, None, UNTRUSTED_HOST, "host rejected"),
-            ("auto", None, None, UNTRUSTED_ORIGIN, "origin rejected"),
+            ("auto", None, None, OTHER_HOST, "host rejected"),
+            ("auto", None, None, OTHER_ORIGIN, "origin rejected"),
             ("auto", None, None, {"origin": "http://localhost:3000"}, "allowed"),
             (
                 "auto",
@@ -196,7 +196,7 @@ class TestSSEProtectionMatchesStreamableHTTP:
             ),
             (True, ["mcp.example.com"], None, {"host": "mcp.example.com"}, "allowed"),
             (True, None, None, {"host": "mcp.example.com"}, "host rejected"),
-            (False, None, None, {**UNTRUSTED_HOST, **UNTRUSTED_ORIGIN}, "allowed"),
+            (False, None, None, {**OTHER_HOST, **OTHER_ORIGIN}, "allowed"),
         ],
     )
     async def test_sse_and_streamable_http_agree(
@@ -232,7 +232,9 @@ class TestSSEProtectionConfiguration:
                 host_origin_protection=invalid_value,
             )
 
-    async def test_trusted_client_completes_tool_call(self, protected_url: str):
+    async def test_client_completes_tool_call_with_protection_enabled(
+        self, protected_url: str
+    ):
         async with Client(SSETransport(protected_url)) as client:
             result = await client.call_tool("greet", {"name": "World"})
 
@@ -245,10 +247,10 @@ class TestSSEProtectionConfiguration:
                 transport="sse",
                 path="/sse",
             ) as url:
-                untrusted_status = await _get_status(url, UNTRUSTED_HOST)
+                other_host_status = await _get_status(url, OTHER_HOST)
 
                 async with Client(SSETransport(url)) as client:
                     result = await client.call_tool("greet", {"name": "World"})
 
-        assert untrusted_status == 421
+        assert other_host_status == 421
         assert result.data == "Hello, World!"
