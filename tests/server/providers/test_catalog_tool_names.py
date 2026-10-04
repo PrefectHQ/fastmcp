@@ -13,7 +13,9 @@ class CatalogNames(Transform):
     async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
         if len(tools) < 2:
             return tools
-        return [tool.model_copy(update={"name": f"catalog_{tool.name}"}) for tool in tools]
+        return [
+            tool.model_copy(update={"name": f"catalog_{tool.name}"}) for tool in tools
+        ]
 
     async def get_tool(
         self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
