@@ -235,3 +235,28 @@ async def test_ref_with_discriminator_sends_subtype_fields():
         spec, {"petType": "cat", "owner": "sam", "meowVolume": 3}
     )
     assert body == {"petType": "cat", "owner": "sam", "meowVolume": 3}
+
+
+STRING_COMPONENTS = {"Code": {"type": "string", "minLength": 3}}
+
+
+async def test_ref_to_string_with_all_of_keeps_referenced_constraints():
+    body = {
+        "$ref": "#/components/schemas/Code",
+        "allOf": [{"description": "A code"}],
+    }
+    spec = build_spec(body, STRING_COMPONENTS)
+    schema, sent = await call_make_thing(spec, {"body": "abc"})
+    assert schema["properties"]["body"]["type"] == "string"
+    assert schema["properties"]["body"]["minLength"] == 3
+    assert sent == "abc"
+
+
+async def test_ref_to_object_with_all_of_still_merges():
+    body = {
+        "$ref": "#/components/schemas/Base",
+        "allOf": [{"properties": {"extra": {"type": "string"}}}],
+    }
+    spec = build_spec(body, {"Base": BASE})
+    schema, _ = await call_make_thing(spec, {"name": "n", "extra": "e"})
+    assert set(schema["properties"]) == {"name", "extra"}

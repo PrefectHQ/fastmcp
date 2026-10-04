@@ -248,7 +248,9 @@ def _allof_members(
                     members = _allof_members(
                         referenced_schema, schema_defs, resolving | {name}
                     )
-                    return members + ([siblings] if siblings else [])
+                    if siblings:
+                        members.extend(_allof_members(siblings, schema_defs, resolving))
+                    return members
                 break
 
     all_of = schema.get("allOf")
@@ -262,6 +264,16 @@ def _allof_members(
         return members + ([siblings] if siblings else [])
 
     return [schema]
+
+
+def _is_mergeable_object(schema: dict[str, Any]) -> bool:
+    """Whether flattening *schema* into ``properties``/``required`` loses nothing."""
+    return (
+        "$ref" not in schema
+        and schema.get("type", "object") == "object"
+        and "enum" not in schema
+        and "const" not in schema
+    )
 
 
 def _discriminator_target_name(target: str) -> str | None:
@@ -427,8 +439,16 @@ def _combine_schemas_and_map_params(
         # sits beside its own properties is merged the same way; there, a
         # property defined by both sides must satisfy both definitions.
         has_all_of = isinstance(body_schema.get("allOf"), list)
-        has_ref_with_properties = "$ref" in body_schema and isinstance(
-            body_schema.get("properties"), dict
+        ref_is_object = "$ref" not in body_schema or all(
+            _is_mergeable_object(member)
+            for member in _allof_members(
+                {"$ref": body_schema["$ref"]}, route.request_schemas
+            )
+        )
+        has_ref_with_properties = (
+            "$ref" in body_schema
+            and isinstance(body_schema.get("properties"), dict)
+            and ref_is_object
         )
         if has_all_of or has_ref_with_properties:
             merged_props = {}
@@ -456,9 +476,11 @@ def _combine_schemas_and_map_params(
             body_schema["properties"] = merged_props
             if merged_required:
                 body_schema["required"] = list(dict.fromkeys(merged_required))
-            # Remove the allOf and $ref since we've merged them
+            # The $ref is dropped only when the merge represents the whole
+            # referenced schema; otherwise it keeps carrying the target's type.
             body_schema.pop("allOf", None)
-            body_schema.pop("$ref", None)
+            if ref_is_object:
+                body_schema.pop("$ref", None)
 
         # Merge discriminated subtype fields in as optional. The discriminator
         # itself is dropped: its mapping points at definitions that are pruned
