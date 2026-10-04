@@ -107,7 +107,7 @@ Hashed tool names provide stable routing identities, not secrets or access contr
 
 ### Provider delegation
 
-`get_tool_by_hash` is defined on the `Provider` base class. It calls `_get_tool_by_hash` to find the tool beneath the provider's own transforms and then applies those transforms, the same split as `get_tool` and `_get_tool`. Aggregate providers override `_get_tool_by_hash` to fan out the lookup across child providers in parallel, and each child applies its own transforms. Wrapped providers (like `FastMCPProvider`, which wraps a nested `FastMCP` server) delegate to the inner server's hashed lookup, which applies that server's transforms, visibility, and auth. Backend tools are reachable through any depth of composition.
+`get_tool_by_hash` is defined on the `Provider` base class. It calls `_get_tool_by_hash` to find the tool beneath the provider's own transforms and then applies those transforms, the same split as `get_tool` and `_get_tool`. Aggregate providers override `_get_tool_by_hash` to fan out the lookup across child providers in parallel, and each child applies its own transforms. Wrapped providers (like `FastMCPProvider`, which wraps a nested `FastMCP` server) delegate to the inner server's hashed lookup, which applies that server's transforms, enabled and disabled state, and auth. Backend tools are reachable through any depth of composition.
 
 ## The renderer
 
