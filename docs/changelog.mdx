@@ -5,6 +5,32 @@ rss: true
 tag: NEW
 ---
 
+<Update label="v3.4.8" description="2026-10-04">
+
+**[v3.4.8: Long Arm of the Patch](https://github.com/PrefectHQ/fastmcp/releases/tag/v3.4.8)**
+
+This release contains important security and bug fixes. All users are encouraged to upgrade.
+
+### Security 🔒
+* [3.x] Apply Host/Origin protection settings to the SSE transport by [@jlowin](https://github.com/jlowin) in [#5428](https://github.com/PrefectHQ/fastmcp/pull/5428)
+* [3.x] Exclude Cookie from forwarded HTTP headers by [@jlowin](https://github.com/jlowin) in [#5429](https://github.com/PrefectHQ/fastmcp/pull/5429)
+* [3.x] Pass client CLI arguments literally to Windows .cmd wrappers by [@jlowin](https://github.com/jlowin) in [#5420](https://github.com/PrefectHQ/fastmcp/pull/5420)
+* [3.x] Use the server's auth provider for component manager routes by [@jlowin](https://github.com/jlowin) in [#5426](https://github.com/PrefectHQ/fastmcp/pull/5426)
+* [3.x] Bound CIMD cache growth by [@jlowin](https://github.com/jlowin) in [#5430](https://github.com/PrefectHQ/fastmcp/pull/5430)
+* [3.x] Include resource metadata in component manager auth challenges by [@jlowin](https://github.com/jlowin) in [#5435](https://github.com/PrefectHQ/fastmcp/pull/5435)
+* [3.x] Apply transforms, enabled state, and auth to hashed tool lookups by [@jlowin](https://github.com/jlowin) in [#5416](https://github.com/PrefectHQ/fastmcp/pull/5416)
+* [3.x] Build client schema types with create_model and bounded caches by [@jlowin](https://github.com/jlowin) in [#5414](https://github.com/PrefectHQ/fastmcp/pull/5414)
+* [3.x] Keep $ref pointers when inlining would produce an oversized schema by [@jlowin](https://github.com/jlowin) in [#5422](https://github.com/PrefectHQ/fastmcp/pull/5422)
+* [3.x] Resolve injected tools through the server's tool lookup by [@jlowin](https://github.com/jlowin) in [#5432](https://github.com/PrefectHQ/fastmcp/pull/5432)
+* [3.x] Require a startup-URL session for the fastmcp dev apps preview by [@jlowin](https://github.com/jlowin) in [#5418](https://github.com/PrefectHQ/fastmcp/pull/5418)
+* [3.x] Inline schemas whose pointers pass through alias definitions by [@jlowin](https://github.com/jlowin) in [#5439](https://github.com/PrefectHQ/fastmcp/pull/5439)
+* [3.x] OpenAPI components send only declared arguments and keep configured headers by [@jlowin](https://github.com/jlowin) in [#5424](https://github.com/PrefectHQ/fastmcp/pull/5424)
+
+
+**Full Changelog**: [v3.4.7...v3.4.8](https://github.com/PrefectHQ/fastmcp/compare/v3.4.7...v3.4.8)
+
+</Update>
+
 <Update label="v3.4.7" description="2026-08-10">
 
 **[v3.4.7: Know Your Audience](https://github.com/PrefectHQ/fastmcp/releases/tag/v3.4.7)**
