@@ -258,7 +258,7 @@ class TestCIMDFetcherHTTP:
         assert len(httpx_mock.get_requests()) == 1
 
     async def test_fetch_cache_evicts_oldest_document(self, fetcher: CIMDFetcher):
-        """Distinct client URLs cannot grow the document cache without bound."""
+        """The document cache holds at most MAX_CACHE_SIZE entries, oldest evicted first."""
         fetcher.MAX_CACHE_SIZE = 2
 
         async def fake_fetch(url: str, **kwargs) -> SSRFFetchResponse:

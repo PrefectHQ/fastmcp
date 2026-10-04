@@ -784,8 +784,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         provided to the DCR client during registration, not the upstream client ID.
 
         For unregistered clients, returns None (which will raise an error in the SDK).
-        CIMD clients (URL-based client IDs) are looked up through the bounded
-        in-process document cache rather than persisted in the DCR client store.
+        CIMD clients (URL-based client IDs) are resolved through the bounded
+        in-process document cache and are not stored in the DCR client store.
         """
         # Load from storage
         client = await self._client_store.get(key=client_id)
@@ -798,9 +798,10 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             if client.cimd_document is None:
                 return client
 
-        # Resolve URL-derived clients through the bounded CIMD cache. Older
-        # versions persisted them indefinitely, so remove those records only
-        # after a successful refresh and keep them as a fallback until then.
+        # CIMD clients are resolved through the bounded document cache and are
+        # not written to client storage. A record stored by an earlier release
+        # is used only as a fallback if a fresh resolution fails, and is removed
+        # after a successful one.
         if self._cimd_manager is not None and self._cimd_manager.is_cimd_client_id(
             client_id
         ):

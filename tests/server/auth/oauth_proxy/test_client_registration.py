@@ -123,7 +123,7 @@ class TestOAuthProxyClientRegistration:
         assert client is None
 
     async def test_cimd_client_is_not_persisted(self, oauth_proxy):
-        """URL-derived clients should not grow the persistent DCR registry."""
+        """CIMD clients are resolved through the document cache, not client storage."""
         client_id = "https://example.com/client.json"
         document = CIMDDocument(
             client_id=AnyHttpUrl(client_id),
@@ -144,7 +144,7 @@ class TestOAuthProxyClientRegistration:
         assert await oauth_proxy._client_store.get(key=client_id) is None
 
     async def test_legacy_persisted_cimd_client_is_removed(self, oauth_proxy):
-        """Previously persisted CIMD clients are migrated out of the DCR registry."""
+        """A stored CIMD client record is removed after a successful resolution."""
         client_id = "https://example.com/legacy-client.json"
         document = CIMDDocument(
             client_id=AnyHttpUrl(client_id),
@@ -168,7 +168,7 @@ class TestOAuthProxyClientRegistration:
     async def test_legacy_persisted_cimd_client_survives_failed_refresh(
         self, oauth_proxy
     ):
-        """Legacy clients remain usable until migration can succeed."""
+        """A stored CIMD client record is the fallback when resolution fails."""
         client_id = "https://example.com/legacy-client.json"
         document = CIMDDocument(
             client_id=AnyHttpUrl(client_id),

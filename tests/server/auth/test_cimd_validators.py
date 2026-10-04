@@ -305,7 +305,7 @@ class TestCIMDAssertionValidator:
     async def test_jti_cache_does_not_grow_past_capacity(
         self, validator, key_pair, cimd_doc_with_inline_jwks
     ):
-        """Rejected assertions do not remain in a full replay cache."""
+        """A full replay cache rejects new assertions without storing them."""
         client_id = "https://example.com/client.json"
         token_endpoint = "https://oauth.example.com/token"
         validator._jti_cache_max_size = 2
