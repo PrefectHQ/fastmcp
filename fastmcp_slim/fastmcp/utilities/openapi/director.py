@@ -50,8 +50,10 @@ def _prepare_parameter_map(
     Routes from the OpenAPI parser carry a precomputed map. Routes constructed
     directly may declare parameters or a request body without one; those get
     the map the parser would have built, computed on a copy so the caller's
-    route is left unchanged. An empty map for a route with no parameters and
-    no request body is already complete.
+    route is left unchanged. Those routes also accept `<name>__<location>`
+    for each declared parameter, naming the parameter at that location. An
+    empty map for a route with no parameters and no request body is already
+    complete.
     """
     if route.parameter_map or not (route.parameters or route.request_body):
         return route, route.parameter_map
@@ -61,6 +63,11 @@ def _prepare_parameter_map(
     )
     prepared = route.model_copy(update={"request_body": request_body})
     _, parameter_map = _combine_schemas_and_map_params(prepared, convert_refs=False)
+    for param in route.parameters:
+        parameter_map.setdefault(
+            f"{param.name}__{param.location}",
+            {"location": param.location, "openapi_name": param.name},
+        )
     return prepared, parameter_map
 
 

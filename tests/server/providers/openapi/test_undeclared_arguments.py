@@ -253,6 +253,35 @@ def test_manual_route_uses_canonical_parameter_names() -> None:
     assert request.content == b""
 
 
+def test_manual_route_accepts_location_suffix_for_declared_parameter() -> None:
+    route = HTTPRoute(
+        path="/users/{id}",
+        method="GET",
+        parameters=[
+            ParameterInfo(
+                name="id", location="path", required=True, schema={"type": "integer"}
+            )
+        ],
+    )
+    request_director = RequestDirector(SchemaPath.from_dict({}))
+
+    request = request_director.build(
+        route,
+        {
+            "id__path": 123,
+            "id__header": "header-value",
+            "id__query": "query-value",
+            "Authorization__header": "Bearer other",
+        },
+        BASE_URL,
+    )
+
+    assert str(request.url) == f"{BASE_URL}/users/123"
+    assert "id" not in request.headers
+    assert "Authorization" not in request.headers
+    assert request.content == b""
+
+
 def test_manual_route_with_allof_body_sends_declared_properties() -> None:
     content_schema = {
         "application/json": {"allOf": [{"$ref": "#/components/schemas/Thing"}]}
