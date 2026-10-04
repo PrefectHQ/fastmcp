@@ -430,6 +430,18 @@ def admin_tag_added_by_server_transform(calls: list[str]) -> FastMCP:
     return server
 
 
+def admin_tag_removed_by_provider_transform(calls: list[str]) -> FastMCP:
+    app = admin_contacts_app(calls, {"admin"})
+    app.add_transform(ToolTransform({"save": ToolTransformConfig(tags={"public"})}))
+    return server_with(app)
+
+
+def admin_tag_added_by_provider_transform(calls: list[str]) -> FastMCP:
+    app = admin_contacts_app(calls, {"public"})
+    app.add_transform(ToolTransform({"save": ToolTransformConfig(tags={"admin"})}))
+    return server_with(app)
+
+
 def admin_tag_removed_in_mounted_server(calls: list[str]) -> FastMCP:
     child = server_with(admin_contacts_app(calls, {"admin"}))
     child.add_transform(ToolTransform({"save": ToolTransformConfig(tags={"public"})}))
@@ -471,6 +483,8 @@ def scoped_tool_with_auth_removed_in_mounted_server(calls: list[str]) -> FastMCP
     [
         (admin_tag_removed_by_server_transform, "save", False),
         (admin_tag_added_by_server_transform, "save", True),
+        (admin_tag_removed_by_provider_transform, "save", True),
+        (admin_tag_added_by_provider_transform, "save", False),
         (admin_tag_removed_in_mounted_server, "child_save", False),
         (admin_tag_removed_and_renamed, "store", False),
         (scoped_tool_with_auth_removed_by_server_transform, "save", False),
