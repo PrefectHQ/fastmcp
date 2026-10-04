@@ -97,6 +97,24 @@ from typing_extensions import NotRequired, TypedDict
 __all__ = ["JSONSchema", "json_schema_to_type"]
 
 
+def _check_nesting(schema: Any) -> None:
+    """Raise `ValueError` if dicts and lists in the schema nest too deeply.
+
+    Normalizing and hashing a schema recurse once per level of nesting. This
+    check measures the depth without recursing, so a schema that is too deep
+    fails with the same error as one that exceeds the conversion depth limit.
+    """
+    stack: list[tuple[Any, int]] = [(schema, 1)]
+    while stack:
+        node, depth = stack.pop()
+        if depth > _MAX_NESTING:
+            raise ValueError("JSON schema is too deeply nested to convert")
+        if isinstance(node, dict):
+            stack.extend((child, depth + 1) for child in node.values())
+        elif isinstance(node, list):
+            stack.extend((child, depth + 1) for child in node)
+
+
 def _normalize_yaml_types(obj: Any) -> Any:
     """Convert YAML-parsed types back to JSON-native types.
 
@@ -198,6 +216,9 @@ _adapters: _LRUCache[TypeAdapter[Any]] = _LRUCache(
 # Limits on a single conversion. Depth counts nested schemas and `$ref` hops;
 # steps count every schema visited.
 _MAX_CONVERSION_DEPTH = 64
+# Nesting of dicts and lists in the input. Each nested schema takes at most two
+# levels (such as `properties` and then the property's schema).
+_MAX_NESTING = 4 * _MAX_CONVERSION_DEPTH
 _MAX_CONVERSION_STEPS = 50_000
 
 
@@ -315,6 +336,8 @@ def json_schema_to_type(
     if schema is False:
         return _UnsatisfiableType  # type: ignore[return-value]  # ty:ignore[invalid-return-type]
 
+    _check_nesting(schema)
+
     # Normalise YAML-parsed types (datetime/date → str, non-str keys → str)
     # so that downstream json.dumps/hashing and default values work correctly.
     schema = _normalize_yaml_types(schema)
@@ -339,6 +362,7 @@ def json_schema_to_type_adapter(schema: Mapping[str, Any] | bool) -> TypeAdapter
     Adapters are cached by schema content in a bounded cache, so the classes
     they hold are released when they are evicted.
     """
+    _check_nesting(schema)
     key, size = _schema_digest(schema)
     adapter = _adapters.get(key)
     if adapter is None:

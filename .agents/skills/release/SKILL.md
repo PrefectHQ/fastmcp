@@ -22,19 +22,51 @@ one gets a follow-up patch, never a re-tag.
    ```bash
    git fetch origin && git log v<prev>..origin/<branch> --format='%h %s'
    gh api -X POST repos/PrefectHQ/fastmcp/releases/generate-notes \
-     -f tag_name=v<new> -f target_commitish=<branch> -f previous_tag_name=v<prev> --jq .body
+     -f tag_name=v<new> -f target_commitish=<branch> -f previous_tag_name=v<prev> --jq .body \
+     > /tmp/generated-notes.md
+   uv run scripts/release_contributor_credit.py /tmp/generated-notes.md \
+     > /tmp/contributor-credit.json
    ```
 
    Read the two most recent releases for voice: `gh release list -L 5`, then
    `gh release view <tag>` on each.
 
-   **Verify contributor credit in the release preview.** Attribution is recorded
-   during PR preparation and verified at merge; do not repeat that audit for every
-   PR and issue. Use the existing release inventory and a batch read of merged
-   commit co-author metadata to supplement generated notes with credited reporters
-   alongside PR authors. Inspect an individual PR or issue only to resolve a
-   discrepancy. Check prior contribution history only for people being newly added
-   to `New Contributors`; earlier credited issue implementations count too.
+   **Review the scan's attribution candidates.** The helper batch-fetches metadata
+   only for PRs in the generated notes. It suggests shared credit for human authors
+   of the PR commits and final merged commit, plus issue reporters whose issues
+   are closed by a maintainer PR, even when their co-author trailer is missing. Human co-authors
+   are included even when the PR has no linked issue. It excludes known
+   agent identities and bots; a GitHub `User` identity alone does not prove someone
+   is human. Maintainer permission checks are reused across PRs.
+
+   Supplemental attribution is for community contributors. Keep the PR author's
+   credit and any credit already present, but do not add other maintainers or
+   investigate their first-time status. Routine maintainer backports need no fresh
+   attribution audit and no request for guidance. Preserve existing community credit.
+
+   Apply the suggested entries to `/tmp/generated-notes.md`, for example
+   `Fix issue #123 by @jlowin and @reporter in <PR URL>`. Check the flagged exceptions:
+   unknown commit identities, missing reporter co-authorship, and issue closures
+   that do not represent a contribution (such as administrative duplicate closure).
+   Inspect individual PRs or issues only to resolve these discrepancies, rather than
+   re-reading every PR. The helper is read-only; it does not change notes or decide
+   who is a new contributor. Check prior contribution history only for people
+   listed in `first_time_review`: added contributors and GitHub's first-time
+   candidates. Earlier co-authorship and credited issue implementations count too.
+   Add verified first-time contributors to `New Contributors` with the resolving
+   PR link, and keep returning contributors in the shared change entries.
+
+   **Update both contributor counts after attribution is complete.** Count distinct
+   human GitHub accounts across the release entries for the total contributor count,
+   and distinct accounts in the final `New Contributors` list for the first-time
+   count. Count each person once across multiple PRs or roles, and exclude agents
+   and bots. The helper's `total_contributors` is the proposed total; its
+   `generated_first_time_count` is only the original baseline, not the final count.
+   Resolve unknown identities and opt-outs before finalizing totals. Include the
+   final counts in the release introduction (for example, `Thanks to our 12
+   contributors, including 3 first-time contributors.`), and update any other
+   contributor totals in the notes to agree. These counts and shared attribution
+   must appear in both the GitHub release and the docs changelog.
    Follow [Contributor credit](../../../docs/development/contributing.mdx#contributor-credit),
    honor opt-outs, and deduplicate entries. Save the completed generated notes to
    `/tmp/generated-notes.md`.
