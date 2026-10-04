@@ -48,7 +48,7 @@ def linkify(body: str) -> str:
     body = re.sub(r"<!--.*?-->\n?", "", body, flags=re.S)
     body = body.replace("## What's Changed\n", "")
     body = re.sub(
-        r"by ((?:@[\w-]+(?:, | and )?)+) in https://github\.com/"
+        r"by ((?:@[\w-]+(?:, (?:and )?| and )?)+) in https://github\.com/"
         + re.escape(REPO)
         + r"/pull/(\d+)",
         lambda match: "by "
