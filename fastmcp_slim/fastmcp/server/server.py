@@ -68,7 +68,12 @@ from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.mixins import LifespanMixin, MCPOperationsMixin, TransportMixin
 from fastmcp.server.providers import LocalProvider, Provider
+from fastmcp.server.providers.addressing import (
+    parse_hashed_backend_name,
+    tool_identity,
+)
 from fastmcp.server.providers.aggregate import AggregateProvider
+from fastmcp.server.providers.base import hashed_lookup_target
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.server.telemetry import server_span
 from fastmcp.server.transforms import (
@@ -717,6 +722,10 @@ class FastMCP(
             return None
 
         # Component auth - return None if unauthorized (consistent with list filtering)
+        return await self._check_auth(tool)
+
+    async def _check_auth(self, tool: Tool) -> Tool | None:
+        """Return the tool if the current request may use it, else None."""
         skip_auth, token = _get_auth_context()
         if not skip_auth and tool.auth is not None:
             ctx = AuthContext(token=token, component=tool)
@@ -727,6 +736,10 @@ class FastMCP(
                 return None
 
         return tool
+
+    async def _check_hashed_target(self, tool: Tool) -> Tool | None:
+        """Check auth on the found tool, as `_get_tool()` does for a name."""
+        return await self._check_auth(tool)
 
     async def get_tool(
         self, name: str, version: VersionSpec | None = None
@@ -752,8 +765,16 @@ class FastMCP(
             return None
 
         # Apply session transforms to single item
+        # Backend tools are reached by their hashed name, so a hashed lookup
+        # does not exclude them.
+        hashed = hashed_lookup_target(self) is not None
+
         tools = await apply_session_transforms([tool])
-        if tools and is_enabled(tools[0]) and not _is_backend_tool(tools[0]):
+        if (
+            tools
+            and is_enabled(tools[0])
+            and (hashed or not _is_backend_tool(tools[0]))
+        ):
             return tools[0]
 
         # The highest version is disabled (or app-only). If an explicit version
@@ -763,8 +784,18 @@ class FastMCP(
             return None
 
         all_tools = [t for t in await super().list_tools() if t.name == name]
+        # During a hashed lookup, only versions of the identity being looked
+        # up qualify; another tool listed under the same name does not.
+        found = hashed_lookup_target(self)
+        if found is not None:
+            identity = tool_identity(found)
+            all_tools = [t for t in all_tools if tool_identity(t) == identity]
         all_tools = list(await apply_session_transforms(all_tools))
-        enabled = [t for t in all_tools if is_enabled(t) and not _is_backend_tool(t)]
+        enabled = [
+            t
+            for t in all_tools
+            if is_enabled(t) and (hashed or not _is_backend_tool(t))
+        ]
 
         skip_auth, token = _get_auth_context()
         authorized: list[Tool] = []
@@ -1233,18 +1264,13 @@ class FastMCP(
         # For mounted servers, the parent's provider sets fn_key to the
         # namespaced key before delegating, ensuring correct Docket routing.
 
-        from fastmcp.server.providers.addressing import (
-            parse_hashed_backend_name,
-        )
-
         # Two routing paths:
-        #   1. Hashed-name path — backend tools that opted into
-        #      app-callable visibility. Recognized by their
-        #      `<hash>_<local_name>` format and resolved via the
-        #      reverse-hash map. Address is known eagerly.
-        #   2. Display-name path — everything else. Goes through normal
-        #      `get_tool` aggregation/transforms. Address is determined
-        #      after resolution by walking the registry.
+        #   1. Display-name path — the name this server lists the tool
+        #      under, resolved through `get_tool`.
+        #   2. Hashed-name path — backend tools that opted into
+        #      app-callable visibility, addressed as `<hash>_<local_name>`
+        #      and resolved through `get_tool_by_hash`. It applies the same
+        #      transforms, visibility, and auth as the display-name path.
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
                 mw_context = MiddlewareContext[CallToolRequestParams](
@@ -1281,27 +1307,13 @@ class FastMCP(
                 # Try normal display-name resolution first.
                 tool: Tool | None = await self.get_tool(name, version=version)
 
-                # If that fails, try hashed-name dispatch. This walks
-                # the provider tree recursively (same pattern as the old
-                # get_app_tool) looking for a tool whose stored hash
-                # matches the parsed prefix.
+                # If that fails, try hashed-name dispatch, which finds the
+                # tool whose stored hash matches the parsed prefix.
                 if tool is None:
                     hashed = parse_hashed_backend_name(name)
                     if hashed is not None:
                         digest, local_name = hashed
                         tool = await self.get_tool_by_hash(digest, local_name)
-                        if tool is not None:
-                            # Auth still applies on the bypass path.
-                            skip_auth, token = _get_auth_context()
-                            if not skip_auth and tool.auth is not None:
-                                try:
-                                    auth_ctx = AuthContext(token=token, component=tool)
-                                    if not await run_auth_checks(tool.auth, auth_ctx):
-                                        raise NotFoundError(f"Unknown tool: {name!r}")
-                                except AuthorizationError:
-                                    raise NotFoundError(
-                                        f"Unknown tool: {name!r}"
-                                    ) from None
 
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {name!r}")

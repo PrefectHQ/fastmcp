@@ -569,8 +569,8 @@ def _prefab_to_json(app: Any, fastmcp_app_name: str | None = None) -> dict[str, 
 
     The resolver prefixes peer-tool references with a deterministic hash
     derived from the app name + tool name. The dispatcher recognizes that
-    format and routes calls via ``get_tool_by_hash`` which walks the
-    provider tree recursively — same pattern as the old ``get_app_tool``.
+    format and routes calls via ``get_tool_by_hash``, which applies the same
+    transforms, visibility, and auth as a lookup by name.
     """
     data = app.to_json(tool_resolver=_get_tool_resolver(fastmcp_app_name))
     return data

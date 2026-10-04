@@ -562,13 +562,24 @@ class FastMCPProvider(Provider):
         wrapped._original_name = hashed_backend_name(app_name, tool_name)
         return wrapped
 
-    async def get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
-        """Delegate to nested server's get_tool_by_hash, wrapping for middleware."""
+    async def _get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
+        """Delegate to nested server's get_tool_by_hash, wrapping for middleware.
+
+        The nested server applies its own transforms, enabled state, and auth.
+        The call is forwarded under the hashed name so the nested server
+        resolves the same tool again rather than whatever its listed name
+        reaches.
+        """
         raw_tool = await self.server.get_tool_by_hash(tool_hash, tool_name)
         if raw_tool is None:
             return None
         wrapped = FastMCPProviderTool.wrap(self.server, raw_tool)
         wrapped._original_name = f"{tool_hash}_{tool_name}"
+        # Wrapping keeps only the wire-safe meta, which drops the internal
+        # identity key. Restore it so layers above can match the identity.
+        meta = dict(wrapped.meta or {})
+        meta["fastmcp"] = {**meta.get("fastmcp", {}), "_tool_hash": tool_hash}
+        wrapped.meta = meta
         return wrapped
 
     # -------------------------------------------------------------------------
