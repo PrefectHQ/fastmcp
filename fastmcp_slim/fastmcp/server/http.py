@@ -337,6 +337,33 @@ class HostOriginGuardMiddleware:
         return _normalize_origin(origin) == request_origin
 
 
+def _host_origin_guard_middleware(
+    host_origin_protection: HostOriginProtection,
+    allowed_hosts: Sequence[str] | None,
+    allowed_origins: Sequence[str] | None,
+) -> Middleware | None:
+    """Build the Host/Origin guard for an HTTP transport app.
+
+    Returns None when `host_origin_protection` is False. `True` validates every
+    request; `"auto"` validates localhost-bound servers and requests covered by
+    explicit host/origin allowlists.
+    """
+    if host_origin_protection not in (True, False, "auto"):
+        raise ValueError("host_origin_protection must be True, False, or 'auto'.")
+
+    # False removes FastMCP's Host/Origin guard. The SDK guard is also disabled
+    # on every transport, so DNS-rebinding protection then depends on the deployment.
+    if host_origin_protection is False:
+        return None
+
+    return Middleware(
+        HostOriginGuardMiddleware,
+        allowed_hosts=allowed_hosts,
+        allowed_origins=allowed_origins,
+        mode="strict" if host_origin_protection is True else "auto",
+    )
+
+
 _current_http_request: ContextVar[Request | None] = ContextVar(
     "http_request",
     default=None,
@@ -419,6 +446,9 @@ def create_sse_app(
     debug: bool = False,
     routes: list[BaseRoute] | None = None,
     middleware: list[Middleware] | None = None,
+    host_origin_protection: HostOriginProtection = False,
+    allowed_hosts: Sequence[str] | None = None,
+    allowed_origins: Sequence[str] | None = None,
 ) -> StarletteWithLifespan:
     """Return an instance of the SSE server app.
 
@@ -430,6 +460,14 @@ def create_sse_app(
         debug: Whether to enable debug mode
         routes: Optional list of custom routes
         middleware: Optional list of middleware
+        host_origin_protection: Whether to validate Host and Origin headers
+            before requests reach the SSE connection and message endpoints.
+            Defaults to False for compatibility. "auto" protects
+            localhost-bound servers and explicit host/origin allowlists.
+        allowed_hosts: Additional hostnames that may appear in the Host header.
+        allowed_origins: Additional browser origins trusted by the request guard.
+            Configure CORS separately when browser JavaScript must read
+            cross-origin responses.
     Returns:
         A Starlette application with RequestContextMiddleware
     """
@@ -437,8 +475,20 @@ def create_sse_app(
     server_routes: list[BaseRoute] = []
     server_middleware: list[Middleware] = []
 
-    # Set up SSE transport
-    sse = SseServerTransport(message_path)
+    host_origin_guard = _host_origin_guard_middleware(
+        host_origin_protection,
+        allowed_hosts,
+        allowed_origins,
+    )
+
+    # FastMCP owns DNS-rebinding protection via HostOriginGuardMiddleware, as
+    # for streamable HTTP, so the SDK's own check stays disabled.
+    sse = SseServerTransport(
+        message_path,
+        security_settings=TransportSecuritySettings(
+            enable_dns_rebinding_protection=False
+        ),
+    )
 
     # Create handler for SSE connections
     async def handle_sse(scope: Scope, receive: Receive, send: Send) -> Response:
@@ -515,6 +565,8 @@ def create_sse_app(
     server_routes.extend(server._get_additional_http_routes())
 
     # Add middleware
+    if host_origin_guard is not None:
+        server_middleware.insert(0, host_origin_guard)
     if middleware:
         server_middleware.extend(middleware)
 
@@ -636,19 +688,13 @@ def create_streamable_http_app(
     server_routes.extend(server._get_additional_http_routes())
 
     # Add middleware
-    if host_origin_protection not in (True, False, "auto"):
-        raise ValueError("host_origin_protection must be True, False, or 'auto'.")
-
-    if host_origin_protection is not False:
-        server_middleware.insert(
-            0,
-            Middleware(
-                HostOriginGuardMiddleware,
-                allowed_hosts=allowed_hosts,
-                allowed_origins=allowed_origins,
-                mode="strict" if host_origin_protection is True else "auto",
-            ),
-        )
+    host_origin_guard = _host_origin_guard_middleware(
+        host_origin_protection,
+        allowed_hosts,
+        allowed_origins,
+    )
+    if host_origin_guard is not None:
+        server_middleware.insert(0, host_origin_guard)
     if middleware:
         server_middleware.extend(middleware)
 
