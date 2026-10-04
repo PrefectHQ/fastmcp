@@ -1,13 +1,23 @@
 import json
+from typing import Literal
 
 import pytest
 from mcp.types import TextContent, TextResourceContents
 from starlette.requests import Request
 
 from fastmcp.client import Client
-from fastmcp.client.transports import SSETransport, StreamableHttpTransport
-from fastmcp.server.dependencies import CurrentHeaders, CurrentRequest, get_http_request
-from fastmcp.server.server import FastMCP
+from fastmcp.client.transports import (
+    ClientTransport,
+    SSETransport,
+    StreamableHttpTransport,
+)
+from fastmcp.server.dependencies import (
+    CurrentHeaders,
+    CurrentRequest,
+    get_http_headers,
+    get_http_request,
+)
+from fastmcp.server.server import FastMCP, create_proxy
 from fastmcp.utilities.tests import run_server_async
 
 
@@ -167,6 +177,87 @@ async def test_get_http_headers_excludes_content_type(sse_server: str):
             # Custom headers should be included
             assert "x-custom-header" in headers
             assert headers["x-custom-header"] == "should-be-included"
+
+
+async def test_get_http_headers_excludes_cookie():
+    """get_http_headers() withholds Cookie unless the caller asks for it."""
+    server = FastMCP()
+
+    @server.tool
+    def default_headers() -> dict[str, str]:
+        return get_http_headers()
+
+    @server.tool
+    def opted_in_headers() -> dict[str, str]:
+        return get_http_headers(include={"cookie"})
+
+    async with run_server_async(server, transport="sse") as url:
+        async with Client(
+            transport=SSETransport(
+                url,
+                headers={"Cookie": "session=alice-marker", "X-Keep": "yes"},
+            )
+        ) as client:
+            default = (await client.call_tool("default_headers")).data
+            assert "cookie" not in default
+            assert default["x-keep"] == "yes"
+
+            opted_in = (await client.call_tool("opted_in_headers")).data
+            assert opted_in["cookie"] == "session=alice-marker"
+
+
+async def test_current_headers_exposes_cookie():
+    """CurrentHeaders() reads the current request, so credentials stay visible."""
+    server = FastMCP()
+
+    @server.tool
+    def read_request(headers: dict = CurrentHeaders()) -> dict[str, str]:
+        return headers
+
+    async with run_server_async(server, transport="sse") as url:
+        async with Client(
+            transport=SSETransport(
+                url,
+                headers={
+                    "Cookie": "session=alice-marker",
+                    "Authorization": "Bearer alice-token",
+                },
+            )
+        ) as client:
+            headers = (await client.call_tool("read_request")).data
+            assert headers["cookie"] == "session=alice-marker"
+            assert headers["authorization"] == "Bearer alice-token"
+
+
+@pytest.mark.parametrize("backend_transport", ["http", "sse"])
+async def test_proxy_forwards_authorization_but_not_cookie(
+    backend_transport: Literal["http", "sse"],
+):
+    """Proxy transports forward the caller's authorization, not its cookies."""
+    backend = fastmcp_server()
+    async with run_server_async(backend, transport=backend_transport) as backend_url:
+        upstream: ClientTransport
+        if backend_transport == "sse":
+            upstream = SSETransport(backend_url)
+        else:
+            upstream = StreamableHttpTransport(backend_url)
+        proxy = create_proxy(upstream)
+        async with run_server_async(proxy, transport="http") as proxy_url:
+            async with Client(
+                transport=StreamableHttpTransport(
+                    proxy_url,
+                    headers={
+                        "Cookie": "session=alice-marker",
+                        "Authorization": "Bearer alice-token",
+                        "X-Keep": "yes",
+                    },
+                )
+            ) as client:
+                result = await client.call_tool("get_headers_tool")
+
+    assert "cookie" not in result.data
+    assert result.data["authorization"] == "Bearer alice-token"
+    assert result.data["x-keep"] == "yes"
 
 
 async def test_background_task_can_read_snapshotted_request_headers():

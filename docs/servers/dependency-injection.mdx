@@ -200,7 +200,15 @@ def get_user_agent() -> str:
     return headers.get("user-agent", "Unknown")
 ```
 
-By default, problematic headers like `host` and `content-length` are excluded. Use `get_http_headers(include_all=True)` to include all headers.
+By default, `get_http_headers()` leaves out the `authorization` and `cookie` headers along with the other connection headers like `host` and `content-length`. To read one of them, pass its name with `include`:
+
+```python
+from fastmcp.server.dependencies import get_http_headers
+
+headers = get_http_headers(include={"cookie"})
+```
+
+`CurrentHeaders()` includes both `authorization` and `cookie`. Use `get_http_headers(include_all=True)` to return every header.
 
 ### Access Token
 
