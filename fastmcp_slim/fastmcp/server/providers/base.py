@@ -290,7 +290,11 @@ class Provider:
         found = await self._get_tool_by_hash(tool_hash, tool_name)
         if found is None:
             return None
-        name = await _listed_name(self.transforms, found)
+        name = (
+            await _listed_name(self.transforms, found, await self._list_tools())
+            if self.transforms
+            else found.name
+        )
         if name is None:
             return None
 
@@ -801,7 +805,9 @@ def hashed_lookup_target(provider: Provider) -> Tool | None:
     return current.tool
 
 
-async def _listed_name(transforms: Sequence[Transform], tool: Tool) -> str | None:
+async def _listed_name(
+    transforms: Sequence[Transform], tool: Tool, catalog: Sequence[Tool]
+) -> str | None:
     """The name `tool` is listed under after passing through `transforms`.
 
     Each transform's listing gives the tool's name above it. A transform that
@@ -813,11 +819,14 @@ async def _listed_name(transforms: Sequence[Transform], tool: Tool) -> str | Non
     identity = tool_identity(tool)
     current = tool
     for transform in transforms:
-        listed = [
-            t
-            for t in await transform.list_tools([current])
-            if tool_identity(t) == identity
-        ]
+        catalog = await transform.list_tools(catalog)
+        listed = [t for t in catalog if tool_identity(t) == identity]
+        if not listed:
+            listed = [
+                t
+                for t in await transform.list_tools([current])
+                if tool_identity(t) == identity
+            ]
         if len({t.name for t in listed}) > 1:
             return None
         if listed:
