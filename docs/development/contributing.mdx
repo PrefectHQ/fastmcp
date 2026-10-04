@@ -4,7 +4,9 @@ description: "Choose a contribution, set up FastMCP, and prepare it for review"
 icon: code-pull-request
 ---
 
-A concise issue with a reproducible problem is often the most useful contribution. This guide covers which changes FastMCP accepts, how contributions enter review, and how to develop and validate a change.
+Identifying a real problem is often the most valuable contribution you can make to FastMCP. Start with a clear issue: a reproducible bug or a concrete use case that current behavior does not support. That report is a contribution on its own, and maintainers can handle the implementation. If your issue leads to a merged change implemented by a maintainer, you receive [contributor credit](#contributor-credit) for that change.
+
+This guide covers which changes FastMCP accepts, how contributions enter review, and how to develop and validate a change.
 
 Report vulnerabilities privately through the [security policy](https://github.com/PrefectHQ/fastmcp/blob/main/SECURITY.md). Community participation follows the [Code of Conduct](https://github.com/PrefectHQ/fastmcp/blob/main/CODE_OF_CONDUCT.md).
 
@@ -23,6 +25,18 @@ External PRs must link an issue with an auto-close keyword such as `Fixes #123`.
 Assignment commits maintainers to reviewing a contribution, not to merging it. Assigning an author reruns the gate and can reopen their previously closed PR. Update that PR rather than opening a duplicate. The issue reporter has first claim on implementing the fix; an open issue does not by itself mean a maintainer has accepted a proposed solution.
 
 Do not post comments just to claim an issue or ask to be assigned. A concise report, a scoped linked PR, or a substantive design discussion gives maintainers something concrete to evaluate. The gate exempts maintainers and trusted contributors. Draft PRs are checked when marked ready for review.
+
+### Contributor credit
+
+This policy recognizes community contributions. Maintainers are generally exempt from supplemental credit checks: reporting, reviewing, or backporting another maintainer's change does not require adding them as a contributor. Routine backports preserve existing community attribution without repeating the credit review.
+
+If your issue leads to a merged change implemented by a maintainer, we credit you as a contributor to that change. This applies to bug reports, enhancement requests, and documentation issues. You do not need to write code, diagnose the root cause, or propose an implementation: identifying the problem or explaining the use case is a contribution.
+
+Credit includes co-authorship of the merged commit and attribution alongside the PR author in the release notes. If this is your first contribution to FastMCP, you are included under **New Contributors** in the release that first includes the change. Maintainers and agents working on their behalf handle this as part of preparing, merging, and releasing the PR. Opening an issue does not guarantee that it will be implemented.
+
+The PR author adds a `Co-authored-by` trailer to the implementation commit and the PR description, using an email associated with your GitHub account. Prefer your GitHub-provided noreply address; if your preferred identity is unclear, ask rather than guessing an email. Honor requests to omit attribution. Preserve attribution for anyone whose implementation work is carried forward, and credit each issue author whose report contributed to the change. Closing an unrelated or duplicate issue alone does not earn co-authorship.
+
+The merging maintainer preserves those trailers through the chosen merge strategy and verifies the landed commit. For a squash merge, explicitly include them in the final squash commit message. The release author carries that recorded attribution into the release notes and verifies the preview, investigating individual PRs or issues only when credit appears missing or inconsistent. The same completed notes feed the GitHub release and docs changelog. A thank-you in the PR description alone does not fulfill this policy.
 
 ### Working with an agent
 
