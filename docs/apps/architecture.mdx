@@ -95,9 +95,7 @@ Give each copy its own app name. Two tenants running the same product want `Fast
 
 ### The hashed lookup fallback
 
-The identity-addressed form `<hash>_<local_name>` remains callable. FastMCP first tries normal tool resolution; if no tool matches and the name has that shape, it calls `get_tool_by_hash(hash, local_name)`. The lookup finds the tool by identity, works out the name it is listed under, and then resolves that name through the same `get_tool` lookup a name call uses, at every layer of composition. During that lookup the found tool answers for its own name, so another tool that happens to share the name can't take its place, and every other name resolves normally.
-
-A hashed name reaches a tool only if its listed name also reaches it. A transform that hides the tool, a disabled tool (whether disabled on the server, on a provider, in a mounted server, or for the current session), and a tool the caller is not authorized for all answer `Unknown tool` under the hashed name, exactly as they do under the listed name. If the highest version is disabled, the hashed name falls back to the highest enabled version of the same tool, as a name call does. Tool search and code mode replace the listing but still resolve tools by name, so app tools behind them stay reachable.
+The identity-addressed form `<hash>_<local_name>` remains callable. FastMCP first tries normal tool resolution; if no tool matches and the name has that shape, it calls `get_tool_by_hash(hash, local_name)`, which resolves the tool through the same lookup as its listed name. Transforms, enabled state, and authorization apply to a hashed name exactly as they do to a name call.
 
 When one identity is claimed by more than one tool — which happens when the same app is composed into two branches — the call is refused rather than resolved, since picking either one would silently route into the wrong branch.
 
@@ -105,7 +103,7 @@ Hashed tool names provide stable routing identities, not secrets or access contr
 
 ### Provider delegation
 
-`get_tool_by_hash` is defined on the `Provider` base class. It calls `_get_tool_by_hash` to find the tool beneath the provider's own transforms, then resolves it through the provider's public `get_tool`, the same split as `get_tool` and `_get_tool`. Aggregate providers override `_get_tool_by_hash` to fan out the lookup across child providers in parallel, and each child applies its own transforms. Wrapped providers (like `FastMCPProvider`, which wraps a nested `FastMCP` server) delegate to the inner server's hashed lookup, which applies that server's transforms, enabled and disabled state, and auth. Backend tools are reachable through any depth of composition.
+`get_tool_by_hash` is defined on the `Provider` base class. Providers override `_get_tool_by_hash` to find a tool by its identity, and the base class resolves the result through the provider's public `get_tool`. Aggregate providers fan out the lookup across child providers in parallel. Wrapped providers (like `FastMCPProvider`, which wraps a nested `FastMCP` server) delegate to the inner server's hashed lookup. Backend tools are reachable through any depth of composition.
 
 ## The renderer
 
