@@ -67,7 +67,8 @@ class DevSessionMiddleware:
             return False
         if authority.netloc != value or authority.username or authority.password:
             return False
-        if port != self.port:
+        # Browsers leave the scheme's default port out of the Host header.
+        if (port if port is not None else 80) != self.port:
             return False
         hostname = authority.hostname or ""
         if self.host in _WILDCARD_HOSTS:
