@@ -891,6 +891,23 @@ class OAuthProvider(
             return self.client_registration_options.valid_scopes
         return self.required_scopes
 
+    def get_challenge_scopes(
+        self, required_scopes: list[str] | None = None
+    ) -> list[str]:
+        """Challenge for the scopes this server grants clients by default.
+
+        Clients that omit `scope` are registered with every supported scope, so
+        the server-wide challenge asks for the same set. Otherwise a client that
+        follows the challenge would receive a narrower grant than one that
+        doesn't.
+        """
+        effective_scopes = (
+            self.required_scopes if required_scopes is None else required_scopes
+        )
+        if effective_scopes == self.required_scopes:
+            return self.scopes_supported
+        return effective_scopes
+
     def get_routes(
         self,
         mcp_path: str | None = None,

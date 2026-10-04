@@ -777,7 +777,7 @@ class TestEnhancedRequireAuthMiddleware:
         assert 'scope="read"' in response.headers["www-authenticate"]
         assert "admin" not in response.headers["www-authenticate"]
 
-    def test_oauth_missing_auth_challenge_excludes_optional_scopes(self):
+    def test_oauth_missing_auth_challenge_includes_valid_scopes(self):
         app = self.create_oauth_app()
 
         with TestClient(app) as client:
@@ -785,21 +785,17 @@ class TestEnhancedRequireAuthMiddleware:
             metadata = client.get("/.well-known/oauth-protected-resource/mcp").json()
 
         assert response.status_code == 401
-        assert 'scope="openid"' in response.headers["www-authenticate"]
-        assert "email" not in response.headers["www-authenticate"]
-        assert "calendar" not in response.headers["www-authenticate"]
+        assert 'scope="openid email calendar"' in response.headers["www-authenticate"]
         assert metadata["scopes_supported"] == ["openid", "email", "calendar"]
 
-    def test_oauth_insufficient_scope_challenge_excludes_optional_scopes(self):
+    def test_oauth_insufficient_scope_challenge_includes_valid_scopes(self):
         app = self.create_oauth_app()
 
         with TestClient(app) as client:
             response = client.post("/mcp", headers={"Authorization": "Bearer narrow"})
 
         assert response.status_code == 403
-        assert 'scope="openid"' in response.headers["www-authenticate"]
-        assert "email" not in response.headers["www-authenticate"]
-        assert "calendar" not in response.headers["www-authenticate"]
+        assert 'scope="openid email calendar"' in response.headers["www-authenticate"]
 
     def test_invalid_token_enhanced_error_message(self, jwt_verifier):
         """Test that invalid_token errors have enhanced error messages."""

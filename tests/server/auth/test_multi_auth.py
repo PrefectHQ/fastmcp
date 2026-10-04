@@ -1,10 +1,12 @@
 import httpx2
 import pytest
+from key_value.aio.stores.memory import MemoryStore
 from pydantic import AnyHttpUrl
 
 from fastmcp import FastMCP
 from fastmcp.server.auth import MultiAuth, RemoteAuthProvider, TokenVerifier
 from fastmcp.server.auth.auth import AccessToken
+from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.azure import AzureJWTVerifier
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 
@@ -195,6 +197,28 @@ class TestMultiAuthInit:
 
         assert auth.scopes_supported == ["api://client-id/read"]
         assert auth.challenge_scopes == ["admin"]
+
+    def test_challenge_scopes_include_oauth_proxy_valid_scopes(self):
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://auth.example.com/authorize",
+            upstream_token_endpoint="https://auth.example.com/token",
+            upstream_client_id="client-id",
+            upstream_client_secret="client-secret",
+            token_verifier=StaticTokenVerifier(tokens={}, required_scopes=["openid"]),
+            base_url="https://api.example.com",
+            valid_scopes=["openid", "email", "calendar"],
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+        )
+
+        assert MultiAuth(server=proxy).challenge_scopes == [
+            "openid",
+            "email",
+            "calendar",
+        ]
+        assert MultiAuth(server=proxy, required_scopes=["admin"]).challenge_scopes == [
+            "admin"
+        ]
 
 
 class TestMultiAuthVerifyToken:
