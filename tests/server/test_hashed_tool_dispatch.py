@@ -15,6 +15,7 @@ import pytest
 
 from fastmcp import Client, Context, FastMCP, FastMCPApp
 from fastmcp.exceptions import ToolError
+from fastmcp.server.auth import require_scopes, restrict_tag
 from fastmcp.server.providers.addressing import hashed_backend_name
 from fastmcp.server.transforms import GetToolNext, Transform, VersionFilter
 from fastmcp.server.transforms.tool_transform import ToolTransform
@@ -387,3 +388,145 @@ async def test_app_only_tools_stay_unavailable_by_name_after_hashed_lookup():
         later = await probe
 
     assert later is None
+
+
+class StripAuth(Transform):
+    """Lists and resolves every tool as a copy that has no auth checks."""
+
+    async def list_tools(self, tools: Sequence[Tool]) -> Sequence[Tool]:
+        return [t.model_copy(update={"auth": None}) for t in tools]
+
+    async def get_tool(
+        self, name: str, call_next: GetToolNext, *, version: VersionSpec | None = None
+    ) -> Tool | None:
+        tool = await call_next(name, version=version)
+        if tool is None:
+            return None
+        return tool.model_copy(update={"auth": None})
+
+
+def admin_contacts_app(calls: list[str], tags: set[str]) -> FastMCPApp:
+    app = FastMCPApp("contacts")
+
+    def save(name: str) -> str:
+        calls.append(name)
+        return f"saved {name}"
+
+    app.add_tool(
+        Tool.from_function(
+            save,
+            tags=tags,
+            auth=restrict_tag("admin", scopes=["admin"]),
+            meta={"ui": {"visibility": ["app", "model"]}},
+        )
+    )
+    return app
+
+
+def admin_tag_removed_by_server_transform(calls: list[str]) -> FastMCP:
+    server = server_with(admin_contacts_app(calls, {"admin"}))
+    server.add_transform(ToolTransform({"save": ToolTransformConfig(tags={"public"})}))
+    return server
+
+
+def admin_tag_added_by_server_transform(calls: list[str]) -> FastMCP:
+    server = server_with(admin_contacts_app(calls, {"public"}))
+    server.add_transform(ToolTransform({"save": ToolTransformConfig(tags={"admin"})}))
+    return server
+
+
+def admin_tag_removed_in_mounted_server(calls: list[str]) -> FastMCP:
+    child = server_with(admin_contacts_app(calls, {"admin"}))
+    child.add_transform(ToolTransform({"save": ToolTransformConfig(tags={"public"})}))
+    server = FastMCP("Platform")
+    server.mount(child, namespace="child")
+    return server
+
+
+def admin_tag_removed_and_renamed(calls: list[str]) -> FastMCP:
+    server = server_with(admin_contacts_app(calls, {"admin"}))
+    server.add_transform(
+        ToolTransform({"save": ToolTransformConfig(name="store", tags={"public"})})
+    )
+    return server
+
+
+def scoped_tool_with_auth_removed_by_server_transform(calls: list[str]) -> FastMCP:
+    app = FastMCPApp("contacts")
+
+    def save(name: str) -> str:
+        calls.append(name)
+        return f"saved {name}"
+
+    app.add_tool(
+        Tool.from_function(
+            save,
+            auth=require_scopes("admin"),
+            meta={"ui": {"visibility": ["app", "model"]}},
+        )
+    )
+    server = server_with(app)
+    server.add_transform(StripAuth())
+    return server
+
+
+def scoped_tool_with_auth_removed_in_mounted_server(calls: list[str]) -> FastMCP:
+    child = scoped_tool_with_auth_removed_by_server_transform(calls)
+    server = FastMCP("Platform")
+    server.mount(child, namespace="child")
+    return server
+
+
+@pytest.mark.parametrize(
+    "build, listed_name, allowed",
+    [
+        (admin_tag_removed_by_server_transform, "save", False),
+        (admin_tag_added_by_server_transform, "save", True),
+        (admin_tag_removed_in_mounted_server, "child_save", False),
+        (admin_tag_removed_and_renamed, "store", False),
+        (scoped_tool_with_auth_removed_by_server_transform, "save", False),
+        (scoped_tool_with_auth_removed_in_mounted_server, "child_save", False),
+    ],
+)
+async def test_hashed_lookup_checks_authorization_of_the_same_tool_as_the_listed_name(
+    build: Callable[[list[str]], FastMCP], listed_name: str, allowed: bool
+):
+    async def calls_made_through(name: str) -> list[str]:
+        calls: list[str] = []
+        server = build(calls)
+        async with Client(server) as client:
+            try:
+                await client.call_tool(name, {"name": "alice"})
+            except ToolError as exc:
+                assert "Unknown tool" in str(exc)
+        return calls
+
+    expected = ["alice"] if allowed else []
+    assert await calls_made_through(listed_name) == expected
+    assert await calls_made_through(SAVE) == expected
+
+
+@pytest.mark.parametrize(
+    "meta",
+    [
+        {"team": "crm"},
+        {},
+        None,
+    ],
+)
+async def test_hashed_name_resolves_tools_renamed_with_replaced_meta(
+    meta: dict[str, str] | None,
+):
+    calls: list[str] = []
+    server = server_with(contacts_app(calls))
+    server.add_transform(
+        ToolTransform({"save": ToolTransformConfig(name="store", meta=meta)})
+    )
+
+    async with Client(server) as client:
+        by_name = await client.call_tool("store", {"name": "alice"})
+        by_hash = await client.call_tool(SAVE, {"name": "alice"})
+
+    assert by_name.data == "saved alice"
+    assert by_hash.data == "saved alice"
+    assert calls == ["alice", "alice"]

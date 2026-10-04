@@ -24,6 +24,8 @@ from __future__ import annotations
 import hashlib
 from typing import TYPE_CHECKING
 
+from fastmcp.tools.tool_transform import TransformedTool
+
 if TYPE_CHECKING:
     from fastmcp.tools.base import Tool
 
@@ -41,15 +43,22 @@ def hash_tool(app_name: str, tool_name: str) -> str:
 
 
 def tool_identity(tool: Tool) -> str | None:
-    """Read a tool's stored identity hash, if it carries one."""
+    """Read a tool's identity hash, if it or the tool it was transformed from carries one.
+
+    A transform that replaces a tool's meta drops the stored hash, so the
+    identity is read from the tool it was transformed from when the tool
+    itself carries none.
+    """
     meta = tool.meta
-    if not meta:
-        return None
-    fastmcp_meta = meta.get("fastmcp")
-    if not isinstance(fastmcp_meta, dict):
-        return None
-    identity = fastmcp_meta.get("_tool_hash")
-    return identity if isinstance(identity, str) else None
+    if meta:
+        fastmcp_meta = meta.get("fastmcp")
+        if isinstance(fastmcp_meta, dict):
+            identity = fastmcp_meta.get("_tool_hash")
+            if isinstance(identity, str):
+                return identity
+    if isinstance(tool, TransformedTool):
+        return tool_identity(tool.parent_tool)
+    return None
 
 
 def is_app_tool_with_identity(tool: Tool, tool_hash: str) -> bool:
