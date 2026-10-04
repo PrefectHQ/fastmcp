@@ -7,7 +7,7 @@ import pytest
 from inline_snapshot import snapshot
 from mcp_types import Tool as SDKTool
 
-from fastmcp import FastMCP
+from fastmcp import FastMCP, FastMCPApp
 from fastmcp.client import Client
 from fastmcp.client.client import CallToolResult
 from fastmcp.client.transports import FastMCPTransport
@@ -18,6 +18,7 @@ from fastmcp.server.middleware import AuthMiddleware, Middleware
 from fastmcp.server.middleware.tool_injection import (
     ToolInjectionMiddleware,
 )
+from fastmcp.server.providers.addressing import hashed_backend_name
 from fastmcp.tools.base import Tool
 from fastmcp.tools.function_tool import FunctionTool
 from fastmcp.utilities.tests import asgi_client
@@ -432,3 +433,54 @@ class TestInjectedToolAuthorization:
         assert read_result.is_error
         assert [tool.name for tool in admin_tools] == ["child_admin_report"]
         assert admin_result.data == "ADMIN_REPORT_MARKER"
+
+    async def test_shadowed_registered_tool_is_not_listed(self):
+        """Listing and calling agree when an injected tool shadows a registered one."""
+        server = make_auth_server(
+            ToolInjectionMiddleware(
+                [
+                    Tool.from_function(
+                        admin_report, name="report", auth=require_scopes("admin")
+                    )
+                ]
+            )
+        )
+        server.add_tool(unscoped_tool(public_report, "report"))
+
+        async with asgi_client(server, auth="read-token") as client:
+            read_tools = await client.list_tools()
+            read_result = await client.call_tool("report", {}, raise_on_error=False)
+        async with asgi_client(server, auth="admin-token") as client:
+            admin_tools = await client.list_tools()
+            admin_result = await client.call_tool("report", {})
+
+        assert read_tools == []
+        assert read_result.is_error
+        assert [tool.name for tool in admin_tools] == ["report"]
+        assert admin_result.data == "ADMIN_REPORT_MARKER"
+
+    async def test_hashed_call_reaches_app_tool_sharing_injected_name(self):
+        """An injected tool owns its display name, not an app tool's hashed name."""
+        app = FastMCPApp("contacts")
+
+        @app.tool()
+        def save(name: str) -> str:
+            return f"app saved {name}"
+
+        def injected_save(name: str) -> str:
+            return f"injected saved {name}"
+
+        server = FastMCP("Platform")
+        server.add_provider(app)
+        server.add_middleware(
+            ToolInjectionMiddleware([Tool.from_function(injected_save, name="save")])
+        )
+
+        async with Client(server) as client:
+            by_name = await client.call_tool("save", {"name": "alice"})
+            by_hash = await client.call_tool(
+                hashed_backend_name("contacts", "save"), {"name": "alice"}
+            )
+
+        assert by_name.data == "injected saved alice"
+        assert by_hash.data == "app saved alice"

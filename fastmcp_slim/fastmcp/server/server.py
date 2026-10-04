@@ -638,13 +638,17 @@ class FastMCP(
         self.middleware.append(middleware)
 
     def _injected_tools(self) -> list[Tool]:
-        """Tools added by `ToolInjectionMiddleware`, outermost middleware first."""
-        return [
-            tool
-            for middleware in self.middleware
-            if isinstance(middleware, ToolInjectionMiddleware)
-            for tool in middleware.injected_tools
-        ]
+        """Tools added by `ToolInjectionMiddleware`, one per name.
+
+        Each name maps to the tool `_get_injected_tool()` resolves for it: the
+        one from the outermost middleware that injects that name.
+        """
+        by_name: dict[str, Tool] = {}
+        for middleware in self.middleware:
+            if isinstance(middleware, ToolInjectionMiddleware):
+                for tool in middleware.injected_tools:
+                    by_name.setdefault(tool.name, tool)
+        return list(by_name.values())
 
     def _get_injected_tool(self, name: str) -> Tool | None:
         """The injected tool with this name from the outermost middleware that has one."""
@@ -783,9 +787,12 @@ class FastMCP(
         components = list(await super().get_tasks())
 
         return [
-            c
-            for c in await self._apply_task_transforms(components)
-            if c.task_config.supports_tasks()
+            *[t for t in self._injected_tools() if t.task_config.supports_tasks()],
+            *[
+                c
+                for c in await self._apply_task_transforms(components)
+                if c.task_config.supports_tasks()
+            ],
         ]
 
     def add_transform(self, transform: Transform) -> None:
@@ -848,21 +855,14 @@ class FastMCP(
                 tools = self._rewrite_prefab_uris(tools)
 
                 # Tools from ToolInjectionMiddleware are listed ahead of the
-                # providers' tools and authorized the same way.
-                tools = [*self._injected_tools(), *tools]
+                # providers' tools and authorized the same way. An injected
+                # tool owns its name, so provider tools with that name are not
+                # listed, matching what `get_tool()` resolves.
+                injected = self._injected_tools()
+                claimed = {tool.name for tool in injected}
+                tools = [*injected, *(t for t in tools if t.name not in claimed)]
 
-                skip_auth, token = _get_auth_context()
-                authorized: list[Tool] = []
-                for tool in tools:
-                    if not skip_auth and tool.auth is not None:
-                        ctx = AuthContext(token=token, component=tool)
-                        try:
-                            if not await run_auth_checks(tool.auth, ctx):
-                                continue
-                        except AuthorizationError:
-                            continue
-                    authorized.append(tool)
-                return authorized
+                return [tool for tool in tools if await _tool_auth_allows(tool)]
 
     async def _get_tool(
         self, name: str, version: VersionSpec | None = None
@@ -884,16 +884,7 @@ class FastMCP(
             return None
 
         # Component auth - return None if unauthorized (consistent with list filtering)
-        skip_auth, token = _get_auth_context()
-        if not skip_auth and tool.auth is not None:
-            ctx = AuthContext(token=token, component=tool)
-            try:
-                if not await run_auth_checks(tool.auth, ctx):
-                    return None
-            except AuthorizationError:
-                return None
-
-        return tool
+        return tool if await _tool_auth_allows(tool) else None
 
     async def get_tool(
         self, name: str, version: VersionSpec | None = None
@@ -908,8 +899,9 @@ class FastMCP(
         requested, falls back to the next-highest enabled version.
 
         A tool from `ToolInjectionMiddleware` takes precedence over a provider
-        tool with the same name. It is matched by name alone and is subject to
-        its own `auth` check, but not to transforms or visibility.
+        tool with the same name. It is matched by name alone, so a requested
+        version is ignored, and it is subject to its own `auth` check but not
+        to transforms or visibility.
 
         Args:
             name: The tool name.
@@ -952,17 +944,7 @@ class FastMCP(
         all_tools = list(await apply_session_transforms(all_tools))
         enabled = [t for t in all_tools if is_enabled(t)]
 
-        skip_auth, token = _get_auth_context()
-        authorized: list[Tool] = []
-        for t in enabled:
-            if not skip_auth and t.auth is not None:
-                ctx = AuthContext(token=token, component=t)
-                try:
-                    if not await run_auth_checks(t.auth, ctx):
-                        continue
-                except AuthorizationError:
-                    continue
-            authorized.append(t)
+        authorized = [t for t in enabled if await _tool_auth_allows(t)]
 
         if not authorized:
             return None
@@ -987,17 +969,7 @@ class FastMCP(
         tool = await super().get_tool_by_hash(tool_hash, tool_name)
         if tool is None:
             return None
-
-        skip_auth, token = _get_auth_context()
-        if not skip_auth and tool.auth is not None:
-            ctx = AuthContext(token=token, component=tool)
-            try:
-                if not await run_auth_checks(tool.auth, ctx):
-                    return None
-            except AuthorizationError:
-                return None
-
-        return tool
+        return tool if await _tool_auth_allows(tool) else None
 
     async def list_resources(
         self, *, run_middleware: bool = True

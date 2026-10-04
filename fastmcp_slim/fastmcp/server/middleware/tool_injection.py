@@ -20,9 +20,11 @@ class ToolInjectionMiddleware(Middleware):
     this middleware sits in the chain. Server and session visibility settings
     do not apply to injected tools.
 
+    Injected tools are matched by name alone; a requested version is ignored.
     An injected tool takes precedence over a registered tool with the same
-    name. When several injection middleware provide the same name, the one
-    added first takes precedence.
+    name, and the registered tool is no longer listed. When several injection
+    middleware provide the same name, the one added first takes precedence.
+    Injected tools follow their task configuration as registered tools do.
     """
 
     def __init__(self, tools: Sequence[Tool]):
@@ -34,8 +36,12 @@ class ToolInjectionMiddleware(Middleware):
 
     @property
     def injected_tools(self) -> Sequence[Tool]:
-        """The tools this middleware injects, in the order they were given."""
-        return self._tools_to_inject
+        """The tools this middleware injects, one per name.
+
+        If several given tools share a name, the last one is kept, matching
+        `get_injected_tool()`.
+        """
+        return list(self._tools_to_inject_by_name.values())
 
     def get_injected_tool(self, name: str) -> Tool | None:
         """Return the injected tool with this name, if there is one."""

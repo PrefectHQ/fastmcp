@@ -13,6 +13,8 @@ from fastmcp_tasks.models import CreateTaskResult
 from fastmcp import FastMCP
 from fastmcp.server.middleware.caching import ResponseCachingMiddleware
 from fastmcp.server.middleware.response_limiting import ResponseLimitingMiddleware
+from fastmcp.server.middleware.tool_injection import ToolInjectionMiddleware
+from fastmcp.tools.base import Tool
 from fastmcp_tasks import TasksExtension
 from tests.tasks.task_helpers import running_task_server, submit_task, wait_for_task
 
@@ -35,3 +37,22 @@ async def test_tasked_call_survives_result_inspecting_middleware():
     assert final.status == "completed"
     assert final.result is not None
     assert final.result["structuredContent"] == {"result": 81}
+
+
+async def square(n: int) -> int:
+    return n * n
+
+
+async def test_injected_task_tool_runs_as_task():
+    mcp = FastMCP("tasks-injected")
+    mcp.add_extension(TasksExtension())
+    mcp.add_middleware(ToolInjectionMiddleware([Tool.from_function(square, task=True)]))
+
+    async with running_task_server(mcp):
+        created = await submit_task(mcp, "square", {"n": 7})
+        assert isinstance(created, CreateTaskResult)
+        final = await wait_for_task(mcp, created.task_id)
+
+    assert final.status == "completed"
+    assert final.result is not None
+    assert final.result["structuredContent"] == {"result": 49}
