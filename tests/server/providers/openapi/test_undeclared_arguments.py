@@ -22,14 +22,24 @@ from fastmcp.utilities.openapi.models import (
 from fastmcp.utilities.tests import run_server_async
 
 BASE_URL = "https://api.example.com"
-CONFIGURED_HEADERS = {"X-Api-Key": "configured-key"}
+CONFIGURED_HEADERS = {
+    "Authorization": "Bearer configured",
+    "X-Api-Key": "configured-key",
+    "X-Roles": "readonly",
+}
 
 UNDECLARED_ARGUMENTS = [
-    pytest.param({"note__header": "hello"}, id="header"),
-    pytest.param({"X-Api-Key__header": "other-key"}, id="configured-header"),
-    pytest.param({"theme__cookie": "dark"}, id="cookie"),
-    pytest.param({"extra__query": "true"}, id="query"),
-    pytest.param({"debug": True}, id="body"),
+    pytest.param({"Authorization__header": "Bearer other"}, id="authorization-header"),
+    pytest.param({"X-Roles__header": "admin"}, id="custom-header"),
+    pytest.param({"Host__header": "other.invalid"}, id="host-header"),
+    pytest.param({"session__cookie": "other-session"}, id="cookie"),
+    pytest.param({"include_private__query": "true"}, id="query"),
+    pytest.param({"extra": {"nested": "value"}}, id="body"),
+    pytest.param({"X-Api-Key__header": "other-key"}, id="configured-api-key"),
+    pytest.param({"note__header": "hello"}, id="note-header"),
+    pytest.param({"theme__cookie": "dark"}, id="theme-cookie"),
+    pytest.param({"extra__query": "true"}, id="extra-query"),
+    pytest.param({"debug": True}, id="debug-body"),
 ]
 
 
@@ -73,7 +83,10 @@ async def _call_tool(
 
 
 def _assert_sent_as_configured(request: httpx.Request) -> None:
+    assert request.headers["Authorization"] == "Bearer configured"
     assert request.headers["X-Api-Key"] == "configured-key"
+    assert request.headers["X-Roles"] == "readonly"
+    assert request.headers["Host"] == "api.example.com"
     assert "Cookie" not in request.headers
     assert "note" not in request.headers
 
@@ -104,7 +117,12 @@ async def test_undeclared_arguments_are_ignored_after_schema_precalculation_fail
 
     [request] = await _call_tool(
         spec,
-        {"limit": 5, "note__header": "hello", "debug": True},
+        {
+            "limit": 5,
+            "Authorization__header": "Bearer other",
+            "note__header": "hello",
+            "debug": True,
+        },
     )
 
     _assert_sent_as_configured(request)
@@ -128,7 +146,9 @@ async def test_tool_call_fails_when_parameter_map_cannot_be_built(
         server = FastMCP.from_openapi(openapi_spec=spec, client=http_client)
         async with Client(server) as client:
             with pytest.raises(ToolError, match="schema pre-calculation failed"):
-                await client.call_tool("operation", {"limit": 5})
+                await client.call_tool(
+                    "operation", {"limit": 5, "Authorization__header": "Bearer other"}
+                )
 
     assert requests == []
 
@@ -200,6 +220,7 @@ def test_manual_route_uses_canonical_parameter_names() -> None:
             "id__path": "path-value",
             "id__query": "query-value",
             "id__header": "header-value",
+            "Authorization__header": "Bearer other",
             "note__header": "hello",
             "debug": True,
         },
@@ -209,6 +230,7 @@ def test_manual_route_uses_canonical_parameter_names() -> None:
     assert request.url.path == "/things/path-value"
     assert dict(request.url.params) == {"id": "query-value"}
     assert request.headers["id"] == "header-value"
+    assert "Authorization" not in request.headers
     assert "note" not in request.headers
     assert request.content == b""
 
@@ -231,12 +253,14 @@ def test_manual_route_accepts_location_suffix_for_declared_parameter() -> None:
             "id__path": 123,
             "id__header": "header-value",
             "id__query": "query-value",
+            "Authorization__header": "Bearer other",
         },
         BASE_URL,
     )
 
     assert str(request.url) == f"{BASE_URL}/users/123"
     assert "id" not in request.headers
+    assert "Authorization" not in request.headers
     assert request.content == b""
 
 
@@ -258,10 +282,17 @@ def test_manual_route_with_allof_body_sends_declared_properties() -> None:
     request_director = RequestDirector(SchemaPath.from_dict({}))
 
     request = request_director.build(
-        route, {"name": "thing", "note__header": "hello"}, BASE_URL
+        route,
+        {
+            "name": "thing",
+            "Authorization__header": "Bearer other",
+            "note__header": "hello",
+        },
+        BASE_URL,
     )
 
     assert json.loads(request.content) == {"name": "thing"}
+    assert "Authorization" not in request.headers
     assert "note" not in request.headers
     assert route.request_body is not None
     assert route.request_body.content_schema == {"application/json": body_schema}
