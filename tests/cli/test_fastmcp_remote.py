@@ -1,13 +1,19 @@
 from pathlib import Path
+from typing import Any
 
 import pytest
+from mcp.types import Tool as MCPTool
 
+from fastmcp import Client, FastMCP
 from fastmcp.client.auth import OAuth
 from fastmcp.client.transports import SSETransport, StreamableHttpTransport
+from fastmcp.exceptions import ToolError
+from fastmcp.server.providers.addressing import hash_tool, hashed_backend_name
 from fastmcp.tools import FunctionTool
 from fastmcp.utilities.versions import VersionSpec
 from fastmcp_remote.cli import (
     IgnoreTools,
+    build_proxy,
     build_transport,
     parse_args,
     parse_header,
@@ -252,3 +258,56 @@ async def test_ignore_tools_transform_filters_matching_names():
 
     assert await transform.list_tools([tool]) == []
     assert await transform.get_tool("delete_user", call_next) is None
+
+
+DELETE_RECORDS = hashed_backend_name("records", "delete_records")
+
+
+class AppToolWithIdentity(FunctionTool):
+    """Lists its full meta, including the app identity, as other MCP servers may."""
+
+    def to_mcp_tool(self, **overrides: Any) -> MCPTool:
+        return super().to_mcp_tool(**{"_meta": self.meta, **overrides})
+
+
+def records_remote(calls: list[str]) -> FastMCP:
+    def delete_records(marker: str) -> str:
+        calls.append(marker)
+        return f"ran {marker}"
+
+    remote = FastMCP("remote")
+    remote.add_tool(
+        AppToolWithIdentity.from_function(
+            delete_records,
+            meta={
+                "fastmcp": {"_tool_hash": hash_tool("records", "delete_records")},
+                "ui": {"visibility": ["app"]},
+            },
+        )
+    )
+    return remote
+
+
+@pytest.mark.parametrize("pattern", ["delete_records", "delete*", "*"])
+async def test_ignored_tool_is_unknown_by_listed_and_hashed_name(pattern: str):
+    calls: list[str] = []
+    proxy = build_proxy(Client(records_remote(calls)), [pattern])
+
+    async with Client(proxy) as client:
+        with pytest.raises(ToolError, match="Unknown tool"):
+            await client.call_tool("delete_records", {"marker": "by-name"})
+        with pytest.raises(ToolError, match="Unknown tool"):
+            await client.call_tool(DELETE_RECORDS, {"marker": "by-hash"})
+
+    assert calls == []
+
+
+async def test_tool_not_ignored_is_callable_by_hashed_name():
+    calls: list[str] = []
+    proxy = build_proxy(Client(records_remote(calls)), ["save*"])
+
+    async with Client(proxy) as client:
+        result = await client.call_tool(DELETE_RECORDS, {"marker": "by-hash"})
+
+    assert result.data == "ran by-hash"
+    assert calls == ["by-hash"]

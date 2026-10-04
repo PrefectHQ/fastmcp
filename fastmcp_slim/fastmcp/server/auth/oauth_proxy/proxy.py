@@ -784,7 +784,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         provided to the DCR client during registration, not the upstream client ID.
 
         For unregistered clients, returns None (which will raise an error in the SDK).
-        CIMD clients (URL-based client IDs) are looked up and cached automatically.
+        CIMD clients (URL-based client IDs) are resolved through the bounded
+        in-process document cache and are not stored in the DCR client store.
         """
         # Load from storage
         client = await self._client_store.get(key=client_id)
@@ -794,31 +795,23 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                 client.allowed_redirect_uri_patterns = (
                     self._allowed_client_redirect_uris
                 )
+            if client.cimd_document is None:
+                return client
 
-            # Refresh CIMD clients using HTTP cache-aware fetcher.
-            if self._cimd_manager is not None and client.cimd_document is not None:
-                try:
-                    refreshed = await self._cimd_manager.get_client(client_id)
-                    if refreshed is not None:
-                        await self._client_store.put(key=client_id, value=refreshed)
-                        return refreshed
-                except Exception as e:
-                    logger.debug(
-                        "CIMD refresh failed for %s, using cached client: %s",
-                        client_id,
-                        e,
-                    )
-
-            return client
-
-        # Client not in storage — try CIMD lookup for URL-based client IDs
+        # CIMD clients are resolved through the bounded document cache and are
+        # not written to client storage. A record stored by an earlier release
+        # is used only as a fallback if a fresh resolution fails, and is removed
+        # after a successful one.
         if self._cimd_manager is not None and self._cimd_manager.is_cimd_client_id(
             client_id
         ):
             cimd_client = await self._cimd_manager.get_client(client_id)
             if cimd_client is not None:
-                await self._client_store.put(key=client_id, value=cimd_client)
+                if client is not None:
+                    await self._client_store.delete(key=client_id)
                 return cimd_client
+            if client is not None:
+                return client
 
         # Some MCP clients (e.g. claude.ai) skip Dynamic Client Registration and
         # send the upstream OAuth App's client_id directly in the /authorize request.

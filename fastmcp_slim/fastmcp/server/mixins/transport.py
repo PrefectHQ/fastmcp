@@ -453,6 +453,21 @@ class TransportMixin:
                 auth=self.auth,
                 debug=fastmcp.settings.debug,
                 middleware=middleware,
+                host_origin_protection=(
+                    host_origin_protection
+                    if host_origin_protection is not None
+                    else fastmcp.settings.http_host_origin_protection
+                ),
+                allowed_hosts=(
+                    allowed_hosts
+                    if allowed_hosts is not None
+                    else fastmcp.settings.http_allowed_hosts
+                ),
+                allowed_origins=(
+                    allowed_origins
+                    if allowed_origins is not None
+                    else fastmcp.settings.http_allowed_origins
+                ),
             )
         else:
             raise ValueError(f"Unknown transport: {transport}")

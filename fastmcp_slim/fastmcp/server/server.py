@@ -68,7 +68,12 @@ from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.server.mixins import LifespanMixin, MCPOperationsMixin, TransportMixin
 from fastmcp.server.providers import LocalProvider, Provider
+from fastmcp.server.providers.addressing import (
+    parse_hashed_backend_name,
+    tool_identity,
+)
 from fastmcp.server.providers.aggregate import AggregateProvider
+from fastmcp.server.providers.base import hashed_lookup_target
 from fastmcp.server.tasks.config import TaskConfig, TaskMeta
 from fastmcp.server.telemetry import server_span
 from fastmcp.server.transforms import (
@@ -187,6 +192,18 @@ URI_PATTERN = re.compile(r"^([^:]+://)(.*?)$")
 LifespanCallable = Callable[
     ["FastMCP[LifespanResultT]"], AbstractAsyncContextManager[LifespanResultT]
 ]
+
+
+async def _tool_auth_allows(tool: Tool) -> bool:
+    """Whether the tool's own `auth` check admits the current request."""
+    skip_auth, token = _get_auth_context()
+    if skip_auth or tool.auth is None:
+        return True
+    ctx = AuthContext(token=token, component=tool)
+    try:
+        return await run_auth_checks(tool.auth, ctx)
+    except AuthorizationError:
+        return False
 
 
 def _get_auth_context() -> tuple[bool, Any]:
@@ -527,6 +544,34 @@ class FastMCP(
     def add_middleware(self, middleware: Middleware) -> None:
         self.middleware.append(middleware)
 
+    def _injected_tools(self) -> list[Tool]:
+        """Tools added by `ToolInjectionMiddleware`, one per name.
+
+        Each name maps to the tool `_get_injected_tool()` resolves for it: the
+        one from the outermost middleware that injects that name.
+        """
+        # Late import: tool_injection imports Context, which imports this module.
+        from fastmcp.server.middleware.tool_injection import ToolInjectionMiddleware
+
+        by_name: dict[str, Tool] = {}
+        for middleware in self.middleware:
+            if isinstance(middleware, ToolInjectionMiddleware):
+                for tool in middleware.injected_tools:
+                    by_name.setdefault(tool.name, tool)
+        return list(by_name.values())
+
+    def _get_injected_tool(self, name: str) -> Tool | None:
+        """The injected tool with this name from the outermost middleware that has one."""
+        # Late import: tool_injection imports Context, which imports this module.
+        from fastmcp.server.middleware.tool_injection import ToolInjectionMiddleware
+
+        for middleware in self.middleware:
+            if isinstance(middleware, ToolInjectionMiddleware):
+                tool = middleware.get_injected_tool(name)
+                if tool is not None:
+                    return tool
+        return None
+
     def add_provider(self, provider: Provider, *, namespace: str = "") -> None:
         """Add a provider for dynamic tools, resources, and prompts.
 
@@ -589,8 +634,15 @@ class FastMCP(
             templates = await transform.list_resource_templates(templates)
             prompts = await transform.list_prompts(prompts)
 
+        # An injected tool owns its name, as in `list_tools()` and
+        # `get_tool()`: tools with that name are not registered, so the
+        # injected tool is the only one that runs as a background task.
+        injected = self._injected_tools()
+        claimed = {tool.name for tool in injected}
+
         return [
-            *tools,
+            *[t for t in injected if t.task_config.supports_tasks()],
+            *[t for t in tools if t.name not in claimed],
             *resources,
             *templates,
             *prompts,
@@ -684,18 +736,15 @@ class FastMCP(
                 # Tool objects are not mutated.
                 tools = self._rewrite_prefab_uris(tools)
 
-                skip_auth, token = _get_auth_context()
-                authorized: list[Tool] = []
-                for tool in tools:
-                    if not skip_auth and tool.auth is not None:
-                        ctx = AuthContext(token=token, component=tool)
-                        try:
-                            if not await run_auth_checks(tool.auth, ctx):
-                                continue
-                        except AuthorizationError:
-                            continue
-                    authorized.append(tool)
-                return authorized
+                # Tools from ToolInjectionMiddleware are listed ahead of the
+                # providers' tools and authorized the same way. An injected
+                # tool owns its name, so provider tools with that name are not
+                # listed, matching what `get_tool()` resolves.
+                injected = self._injected_tools()
+                claimed = {tool.name for tool in injected}
+                tools = [*injected, *(t for t in tools if t.name not in claimed)]
+
+                return [tool for tool in tools if await _tool_auth_allows(tool)]
 
     async def _get_tool(
         self, name: str, version: VersionSpec | None = None
@@ -717,16 +766,11 @@ class FastMCP(
             return None
 
         # Component auth - return None if unauthorized (consistent with list filtering)
-        skip_auth, token = _get_auth_context()
-        if not skip_auth and tool.auth is not None:
-            ctx = AuthContext(token=token, component=tool)
-            try:
-                if not await run_auth_checks(tool.auth, ctx):
-                    return None
-            except AuthorizationError:
-                return None
+        return tool if await _tool_auth_allows(tool) else None
 
-        return tool
+    async def _check_hashed_target(self, tool: Tool) -> Tool | None:
+        """Check auth on the found tool, as `_get_tool()` does for a name."""
+        return tool if await _tool_auth_allows(tool) else None
 
     async def get_tool(
         self, name: str, version: VersionSpec | None = None
@@ -740,20 +784,42 @@ class FastMCP(
         When the highest version is disabled and no explicit version was
         requested, falls back to the next-highest enabled version.
 
+        A tool from `ToolInjectionMiddleware` takes precedence over a provider
+        tool with the same name. It is matched by name alone, so a requested
+        version is ignored, and it is subject to its own `auth` check but not
+        to transforms or visibility.
+
         Args:
             name: The tool name.
             version: Version filter (None returns highest version).
 
         Returns:
-            The tool if found and enabled, None otherwise.
+            The tool if found, enabled, and authorized, None otherwise.
         """
+        # A hashed lookup resolves one identity; injected tools have none.
+        injected = (
+            self._get_injected_tool(name)
+            if hashed_lookup_target(self) is None
+            else None
+        )
+        if injected is not None:
+            return injected if await _tool_auth_allows(injected) else None
+
         tool = await super().get_tool(name, version)
         if tool is None:
             return None
 
         # Apply session transforms to single item
+        # Backend tools are reached by their hashed name, so a hashed lookup
+        # does not exclude them.
+        hashed = hashed_lookup_target(self) is not None
+
         tools = await apply_session_transforms([tool])
-        if tools and is_enabled(tools[0]) and not _is_backend_tool(tools[0]):
+        if (
+            tools
+            and is_enabled(tools[0])
+            and (hashed or not _is_backend_tool(tools[0]))
+        ):
             return tools[0]
 
         # The highest version is disabled (or app-only). If an explicit version
@@ -763,20 +829,20 @@ class FastMCP(
             return None
 
         all_tools = [t for t in await super().list_tools() if t.name == name]
+        # During a hashed lookup, only versions of the identity being looked
+        # up qualify; another tool listed under the same name does not.
+        found = hashed_lookup_target(self)
+        if found is not None:
+            identity = tool_identity(found)
+            all_tools = [t for t in all_tools if tool_identity(t) == identity]
         all_tools = list(await apply_session_transforms(all_tools))
-        enabled = [t for t in all_tools if is_enabled(t) and not _is_backend_tool(t)]
+        enabled = [
+            t
+            for t in all_tools
+            if is_enabled(t) and (hashed or not _is_backend_tool(t))
+        ]
 
-        skip_auth, token = _get_auth_context()
-        authorized: list[Tool] = []
-        for t in enabled:
-            if not skip_auth and t.auth is not None:
-                ctx = AuthContext(token=token, component=t)
-                try:
-                    if not await run_auth_checks(t.auth, ctx):
-                        continue
-                except AuthorizationError:
-                    continue
-            authorized.append(t)
+        authorized = [t for t in enabled if await _tool_auth_allows(t)]
 
         if not authorized:
             return None
@@ -1233,18 +1299,13 @@ class FastMCP(
         # For mounted servers, the parent's provider sets fn_key to the
         # namespaced key before delegating, ensuring correct Docket routing.
 
-        from fastmcp.server.providers.addressing import (
-            parse_hashed_backend_name,
-        )
-
         # Two routing paths:
-        #   1. Hashed-name path — backend tools that opted into
-        #      app-callable visibility. Recognized by their
-        #      `<hash>_<local_name>` format and resolved via the
-        #      reverse-hash map. Address is known eagerly.
-        #   2. Display-name path — everything else. Goes through normal
-        #      `get_tool` aggregation/transforms. Address is determined
-        #      after resolution by walking the registry.
+        #   1. Display-name path — the name this server lists the tool
+        #      under, resolved through `get_tool`.
+        #   2. Hashed-name path — backend tools that opted into
+        #      app-callable visibility, addressed as `<hash>_<local_name>`
+        #      and resolved through `get_tool_by_hash`. It applies the same
+        #      transforms, visibility, and auth as the display-name path.
         async with fastmcp.server.context.Context(fastmcp=self) as ctx:
             if run_middleware:
                 mw_context = MiddlewareContext[CallToolRequestParams](
@@ -1281,27 +1342,13 @@ class FastMCP(
                 # Try normal display-name resolution first.
                 tool: Tool | None = await self.get_tool(name, version=version)
 
-                # If that fails, try hashed-name dispatch. This walks
-                # the provider tree recursively (same pattern as the old
-                # get_app_tool) looking for a tool whose stored hash
-                # matches the parsed prefix.
+                # If that fails, try hashed-name dispatch, which finds the
+                # tool whose stored hash matches the parsed prefix.
                 if tool is None:
                     hashed = parse_hashed_backend_name(name)
                     if hashed is not None:
                         digest, local_name = hashed
                         tool = await self.get_tool_by_hash(digest, local_name)
-                        if tool is not None:
-                            # Auth still applies on the bypass path.
-                            skip_auth, token = _get_auth_context()
-                            if not skip_auth and tool.auth is not None:
-                                try:
-                                    auth_ctx = AuthContext(token=token, component=tool)
-                                    if not await run_auth_checks(tool.auth, auth_ctx):
-                                        raise NotFoundError(f"Unknown tool: {name!r}")
-                                except AuthorizationError:
-                                    raise NotFoundError(
-                                        f"Unknown tool: {name!r}"
-                                    ) from None
 
                 if tool is None:
                     raise NotFoundError(f"Unknown tool: {name!r}")
