@@ -257,9 +257,8 @@ class RequestDirector:
                 content_type = next(iter(route.request_body.content_schema))
                 body_schema = route.request_body.content_schema[content_type]
 
-                if (
-                    isinstance(body_schema, dict)
-                    and body_schema.get("type") == "object"
+                if isinstance(body_schema, dict) and (
+                    body_schema.get("type") == "object" or body_schema.get("properties")
                 ):
                     body = body_props
                 elif len(body_props) == 1:

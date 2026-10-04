@@ -221,6 +221,31 @@ def _make_optional_parameter_nullable(schema: dict[str, Any]) -> dict[str, Any]:
     return schema
 
 
+def _ref_members(
+    schema: dict[str, Any],
+    schema_defs: dict[str, Any],
+    resolving: frozenset[str] = frozenset(),
+) -> list[dict[str, Any]]:
+    """Expand a local ``$ref`` into the schemas it stands for.
+
+    Returns the referenced schema's members (following chains of references)
+    followed by the keywords written beside the ``$ref``, so that later members
+    take precedence when their properties are merged.
+    """
+    ref = schema.get("$ref")
+    if isinstance(ref, str):
+        for prefix in ("#/$defs/", "#/components/schemas/"):
+            if ref.startswith(prefix):
+                name = ref.removeprefix(prefix)
+                referenced = schema_defs.get(name)
+                if isinstance(referenced, dict) and name not in resolving:
+                    siblings = {k: v for k, v in schema.items() if k != "$ref"}
+                    members = _ref_members(referenced, schema_defs, resolving | {name})
+                    return members + ([siblings] if siblings else [])
+                break
+    return [schema]
+
+
 def _combine_schemas_and_map_params(
     route: HTTPRoute,
     convert_refs: bool = True,
@@ -292,6 +317,19 @@ def _combine_schemas_and_map_params(
                 ]
             # Remove the allOf since we've merged it
             body_schema.pop("allOf", None)
+        elif "$ref" in body_schema and isinstance(body_schema.get("properties"), dict):
+            # A $ref written beside its own properties describes the referenced
+            # schema extended by those properties; siblings take precedence.
+            merged_props = {}
+            merged_required = []
+            for member in _ref_members(body_schema, route.request_schemas):
+                merged_props.update(member.get("properties", {}))
+                merged_required.extend(member.get("required", []))
+
+            body_schema["properties"] = merged_props
+            if merged_required:
+                body_schema["required"] = list(dict.fromkeys(merged_required))
+            body_schema.pop("$ref", None)
 
         body_props = body_schema.get("properties", {})
 
