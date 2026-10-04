@@ -28,6 +28,23 @@ one gets a follow-up patch, never a re-tag.
    Read the two most recent releases for voice: `gh release list -L 5`, then
    `gh release view <tag>` on each.
 
+   **Complete contributor attribution before presenting the preview.** Follow
+   [Contributor credit](../../../docs/development/contributing.mdx#contributor-credit).
+   For every included maintainer implementation of a community issue, inspect the
+   linked issue authors, PR description, and landed commit co-authors. Include the
+   credited issue authors alongside the PR author in that change's entry. Missing
+   merged-commit credit is a policy failure to surface to the maintainer, not a
+   reason to omit the reporter from the release notes.
+
+   Check prior merged PR authorship and landed commit authorship/co-authorship
+   before classifying someone as new; an earlier credited issue implementation
+   counts as a contribution too. Add first-time contributors to `New Contributors`
+   with a link to the resolving PR, and deduplicate against GitHub's generated list.
+   An issue alone, without a merged change, does not count. Honor attribution opt-outs
+   and do not treat bot accounts as new human contributors. If history is incomplete,
+   resolve it before calling someone new. Generated notes alone do not satisfy this
+   check. Save the completed generated notes to `/tmp/generated-notes.md`.
+
 2. **Propose titles.** Titles are `v<version>: <pun>`, pun on the release's main
    theme from the release preview. Check prior titles with
    `gh release list --repo PrefectHQ/fastmcp --limit 60` to avoid repeats and keep
@@ -41,11 +58,16 @@ one gets a follow-up patch, never a re-tag.
 3. **Write the notes file** outside the repository (a temp directory), intro only.
    The release title is the heading, so the file has none.
 
+   Also write `/tmp/release-notes.md` containing that intro followed by the completed
+   `/tmp/generated-notes.md`. This is the exact body to publish; use the same completed
+   generated notes for the docs entry. Do not regenerate plain GitHub notes at
+   publication and discard the added contributor credit.
+
 4. **Docs entries.** Branch `docs/changelog-<new>` from `origin/<branch>` and insert
    both blocks (the last argument is the branch the notes are generated against):
 
    ```bash
-   uv run .agents/skills/release/scripts/changelog_entry.py v<new> v<prev> "<pun>" /tmp/notes.md <branch>
+   uv run .agents/skills/release/scripts/changelog_entry.py v<new> v<prev> "<pun>" /tmp/notes.md <branch> --release-notes /tmp/generated-notes.md
    ```
 
    Validate, and repeat until it reports no errors; a parse error names the file
@@ -66,12 +88,19 @@ one gets a follow-up patch, never a re-tag.
    helper (it refuses to insert a label that already exists), and land that as a
    follow-up docs PR before tagging.
 
+   Refresh contributor attribution and both temporary notes files along with the
+   preview when new changes enter the release. The docs-only changelog PR can appear
+   in the GitHub notes without appearing in its own mirror, as described above.
+
    ```bash
    gh release create v<new> --target <branch> --title "v<new>: <pun>" \
-     --generate-notes --notes-start-tag v<prev> --notes-file /tmp/notes.md
+     --notes-file /tmp/release-notes.md
    ```
 
-   `v<prev>` is the last stable tag on that branch. The compare link at the bottom of the created release must read `v<prev>...v<new>`.
+   `v<prev>` is the last stable tag on that branch, passed as `previous_tag_name` in
+   the notes preview. The compare link at the bottom of the created release must
+   read `v<prev>...v<new>`. Verify the published contributor entries and
+   `New Contributors` list against the completed notes.
 
 6. **Watch the fan-out.** The slim run is keyed to the tag; the others are
    `workflow_run` events on the default branch, so select them by workflow name.
@@ -147,8 +176,9 @@ connections instead of raising.
   changed since the last commit it recorded, and it records commits it failed on
   or skipped. Only the `Deploy docs` run's verdict counts; its API-triggered
   deployment is what brings a page a skipped deploy left stale back in line.
-- Without `--notes-start-tag`, a prerelease tag becomes the changelog start and the
-  PR list is silently truncated.
+- Always pass the last stable tag as `previous_tag_name` when generating notes;
+  otherwise a prerelease tag can truncate the PR list. Publish the completed notes
+  with `--notes-file`, rather than replacing them with `--generate-notes`.
 - Maintenance releases publish packages and notes but never repoint `published-docs`;
   their changelog entries go on the maintenance branch under the matching major section.
 

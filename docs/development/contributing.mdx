@@ -24,6 +24,16 @@ Assignment commits maintainers to reviewing a contribution, not to merging it. A
 
 Do not post comments just to claim an issue or ask to be assigned. A concise report, a scoped linked PR, or a substantive design discussion gives maintainers something concrete to evaluate. The gate exempts maintainers and trusted contributors. Draft PRs are checked when marked ready for review.
 
+### Contributor credit
+
+If your issue leads to a merged change implemented by a maintainer, we credit you as a contributor to that change. This applies to bug reports, enhancement requests, and documentation issues. You do not need to write code, diagnose the root cause, or propose an implementation: identifying the problem or explaining the use case is a contribution.
+
+Credit includes co-authorship of the merged commit and attribution alongside the PR author in the release notes. If this is your first contribution to FastMCP, you are included under **New Contributors** in the release that first includes the change. Maintainers and agents working on their behalf handle this as part of preparing, merging, and releasing the PR. Opening an issue does not guarantee that it will be implemented.
+
+The PR author adds a `Co-authored-by` trailer to the implementation commit and the PR description, using an email associated with your GitHub account. Prefer your GitHub-provided noreply address; if your preferred identity is unclear, ask rather than guessing an email. Honor requests to omit attribution. Preserve attribution for anyone whose implementation work is carried forward, and credit each issue author whose report contributed to the change. Closing an unrelated or duplicate issue alone does not earn co-authorship.
+
+The merging maintainer preserves those trailers through the chosen merge strategy and verifies the landed commit. For a squash merge, explicitly include them in the final squash commit message. The release author checks commit attribution as well as PR authorship, supplements generated release notes, and uses the same completed notes for the GitHub release and docs changelog. A thank-you in the PR description alone does not fulfill this policy.
+
 ### Working with an agent
 
 AI assistance is welcome under the same standards as other contributions. You remain responsible for understanding the change, verifying its behavior, and responding to review. Avoid generated boilerplate that obscures the problem or substitutes speculation for a reproduction.

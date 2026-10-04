@@ -5,17 +5,18 @@ Usage:
     uv run .agents/skills/release/scripts/changelog_entry.py ... --print   # render only
 
 Reads the maintainer-approved notes file for the intro paragraph and pulls the
-PR list from GitHub's generate-notes API, so the docs entry matches what
-`gh release create --generate-notes` will append. Each block is inserted above
+PR list from GitHub's generate-notes API, or reads completed notes supplied with
+`--release-notes PATH`. Supply completed notes when supplementing contributor
+credit so the docs entry matches the GitHub release. Each block is inserted above
 the newest existing `<Update` in its file. Run from the repository root.
 """
 
 from __future__ import annotations
 
+import argparse
 import datetime as dt
 import re
 import subprocess
-import sys
 from pathlib import Path
 
 REPO = "PrefectHQ/fastmcp"
@@ -47,10 +48,12 @@ def linkify(body: str) -> str:
     body = re.sub(r"<!--.*?-->\n?", "", body, flags=re.S)
     body = body.replace("## What's Changed\n", "")
     body = re.sub(
-        r"by @([\w-]+) in https://github\.com/" + re.escape(REPO) + r"/pull/(\d+)",
-        r"by [@\1](https://github.com/\1) in [#\2](https://github.com/"
-        + REPO
-        + r"/pull/\2)",
+        r"by ((?:@[\w-]+(?:, | and )?)+) in https://github\.com/"
+        + re.escape(REPO)
+        + r"/pull/(\d+)",
+        lambda match: "by "
+        + re.sub(r"@([\w-]+)", r"[@\1](https://github.com/\1)", match[1])
+        + f" in [#{match[2]}](https://github.com/{REPO}/pull/{match[2]})",
         body,
     )
     body = re.sub(
@@ -103,18 +106,27 @@ def insert_above_newest(path: Path, block: str) -> None:
 
 
 def main() -> None:
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    render_only = "--print" in sys.argv
-    if len(args) < 4:
-        raise SystemExit(__doc__)
-    tag, previous, pun, notes_path = args[:4]
-    target = args[4] if len(args) > 4 else "main"
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("tag")
+    parser.add_argument("previous")
+    parser.add_argument("pun")
+    parser.add_argument("notes_path", type=Path)
+    parser.add_argument("target", nargs="?", default="main")
+    parser.add_argument("--print", dest="render_only", action="store_true")
+    parser.add_argument("--release-notes", type=Path)
+    args = parser.parse_args()
+    tag, previous, pun, target = args.tag, args.previous, args.pun, args.target
     version = tag.lstrip("v")
     today = dt.date.today()
     intro = " ".join(
-        line.strip() for line in open(notes_path).read().split("\n") if line.strip()
+        line.strip() for line in args.notes_path.read_text().split("\n") if line.strip()
     )
-    body = escape_mdx(linkify(generate_notes(tag, previous, target)))
+    release_notes = (
+        args.release_notes.read_text()
+        if args.release_notes is not None
+        else generate_notes(tag, previous, target)
+    )
+    body = escape_mdx(linkify(release_notes))
     url = f"https://github.com/{REPO}/releases/tag/{tag}"
 
     changelog = f'''<Update label="{tag}" description="{today.isoformat()}">
@@ -137,7 +149,7 @@ cta="Read the release notes"
 </Card>
 </Update>
 '''
-    if render_only:
+    if args.render_only:
         print(changelog)
         print(updates)
         return
