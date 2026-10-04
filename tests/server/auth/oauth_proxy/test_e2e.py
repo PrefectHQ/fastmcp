@@ -1,5 +1,10 @@
 """End-to-end tests for OAuth proxy using mock provider."""
 
+import base64
+import hashlib
+import json
+import re
+import secrets
 import time
 from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs, urlparse
@@ -9,12 +14,32 @@ from key_value.aio.stores.memory import MemoryStore
 from mcp.server.auth.provider import AuthorizationCode, AuthorizationParams
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
+from starlette.applications import Starlette
+from starlette.testclient import TestClient
 
 from fastmcp import FastMCP
 from fastmcp.server.auth.auth import RefreshToken
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.oauth_proxy.models import ClientCode
+from fastmcp.server.auth.ssrf import SSRFFetchResponse
 from tests.server.auth.oauth_proxy.conftest import MockTokenVerifier
+
+CIMD_CLIENT_ID = "https://client.example/oauth/metadata.json"
+CIMD_REDIRECT_URI = "http://localhost:12345/callback"
+
+
+async def _cimd_fetch(url: str, **kwargs: object) -> SSRFFetchResponse:
+    document = {
+        "client_id": url,
+        "client_name": "CIMD Test Client",
+        "redirect_uris": [CIMD_REDIRECT_URI],
+        "token_endpoint_auth_method": "none",
+    }
+    return SSRFFetchResponse(
+        content=json.dumps(document).encode(),
+        status_code=200,
+        headers={"cache-control": "max-age=3600"},
+    )
 
 
 class TestOAuthProxyE2E:
@@ -242,3 +267,106 @@ class TestOAuthProxyE2E:
         assert transaction.proxy_code_verifier is not None  # Proxy generated its own
         # Proxy code challenge is computed from verifier when needed
         assert len(transaction.proxy_code_verifier) > 0
+
+    async def test_cimd_client_completes_authorization_flow(self):
+        """A CIMD client completes consent, callback, and token exchange."""
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://idp.example/authorize",
+            upstream_token_endpoint="https://idp.example/token",
+            upstream_client_id="upstream-client",
+            upstream_client_secret="upstream-secret",
+            token_verifier=MockTokenVerifier(required_scopes=["read"]),
+            base_url="https://myserver.example",
+            jwt_signing_key="test-secret",
+            client_storage=MemoryStore(),
+        )
+        app = Starlette(routes=proxy.get_routes(mcp_path="/mcp"))
+
+        code_verifier = secrets.token_urlsafe(48)
+        code_challenge = (
+            base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest())
+            .rstrip(b"=")
+            .decode()
+        )
+        upstream_client = AsyncMock()
+        upstream_client.fetch_token = AsyncMock(
+            return_value={
+                "access_token": "upstream-access-token",
+                "refresh_token": "upstream-refresh-token",
+                "expires_in": 3600,
+                "token_type": "Bearer",
+            }
+        )
+
+        with (
+            patch(
+                "fastmcp.server.auth.cimd.ssrf_safe_fetch_response",
+                new=AsyncMock(side_effect=_cimd_fetch),
+            ),
+            patch.object(
+                proxy, "_create_upstream_oauth_client", return_value=upstream_client
+            ),
+            TestClient(app, base_url="https://myserver.example") as client,
+        ):
+            authorize = client.get(
+                "/authorize",
+                params={
+                    "response_type": "code",
+                    "client_id": CIMD_CLIENT_ID,
+                    "redirect_uri": CIMD_REDIRECT_URI,
+                    "code_challenge": code_challenge,
+                    "code_challenge_method": "S256",
+                    "state": "client-state",
+                    "scope": "read",
+                },
+                follow_redirects=False,
+            )
+            assert authorize.status_code == 302
+            txn_id = parse_qs(urlparse(authorize.headers["location"]).query)["txn_id"][
+                0
+            ]
+            assert await proxy._client_store.get(key=CIMD_CLIENT_ID) is None
+
+            consent = client.get(f"/consent?txn_id={txn_id}")
+            csrf_match = re.search(r'name="csrf_token"\s+value="([^"]+)"', consent.text)
+            assert csrf_match is not None
+            approval = client.post(
+                "/consent",
+                data={
+                    "action": "approve",
+                    "txn_id": txn_id,
+                    "csrf_token": csrf_match.group(1),
+                },
+                follow_redirects=False,
+            )
+            assert approval.status_code in (302, 303)
+            assert approval.headers["location"].startswith(
+                "https://idp.example/authorize"
+            )
+
+            callback = client.get(
+                "/auth/callback",
+                params={"code": "idp-code", "state": txn_id},
+                follow_redirects=False,
+            )
+            assert callback.status_code == 302
+            client_redirect = urlparse(callback.headers["location"])
+            assert client_redirect.geturl().startswith(CIMD_REDIRECT_URI)
+            client_query = parse_qs(client_redirect.query)
+            assert client_query["state"] == ["client-state"]
+
+            token = client.post(
+                "/token",
+                data={
+                    "grant_type": "authorization_code",
+                    "code": client_query["code"][0],
+                    "redirect_uri": CIMD_REDIRECT_URI,
+                    "client_id": CIMD_CLIENT_ID,
+                    "code_verifier": code_verifier,
+                },
+            )
+
+        assert token.status_code == 200, token.text
+        assert token.json()["access_token"]
+        upstream_client.fetch_token.assert_awaited_once()
+        assert await proxy._client_store.get(key=CIMD_CLIENT_ID) is None
