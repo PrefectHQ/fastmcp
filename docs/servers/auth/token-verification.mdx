@@ -78,6 +78,8 @@ mcp = FastMCP(name="Protected API", auth=verifier)
 
 This configuration creates a server that validates JWTs issued by `auth.yourcompany.com`. The verifier periodically fetches public keys from the JWKS endpoint and validates incoming tokens against those keys. Only tokens with the correct issuer and audience claims will be accepted.
 
+The verifier caches keys for one hour and shares a refresh among concurrent requests. `jwks_refresh_interval` sets the minimum time between refresh attempts, including failed attempts, and defaults to 30 seconds. A token with a newly rotated key ID may need to wait until that interval passes. Tokens using a known, fresh key continue to validate during the interval. Set `jwks_refresh_interval=0` to allow a refresh on every cache miss.
+
 The `issuer` parameter ensures tokens come from your trusted authentication system, while `audience` validation prevents tokens intended for other services from being accepted by your MCP server.
 
 `JWTVerifier` accepts RSA (`RS*` and `PS*`), ECDSA (`ES*`), and Edwards-curve (`Ed25519` and `Ed448`) signatures from JWKS endpoints. Set `algorithm` when your issuer does not use the default `RS256`:
