@@ -634,9 +634,15 @@ class FastMCP(
             templates = await transform.list_resource_templates(templates)
             prompts = await transform.list_prompts(prompts)
 
+        # An injected tool owns its name, as in `list_tools()` and
+        # `get_tool()`: tools with that name are not registered, so the
+        # injected tool is the only one that runs as a background task.
+        injected = self._injected_tools()
+        claimed = {tool.name for tool in injected}
+
         return [
-            *[t for t in self._injected_tools() if t.task_config.supports_tasks()],
-            *tools,
+            *[t for t in injected if t.task_config.supports_tasks()],
+            *[t for t in tools if t.name not in claimed],
             *resources,
             *templates,
             *prompts,

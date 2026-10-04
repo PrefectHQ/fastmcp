@@ -510,3 +510,180 @@ class TestInjectedToolAuthorization:
             result = await task.result()
 
         assert result.data == 49
+
+    async def test_background_task_runs_the_injected_tool_when_its_name_is_shared(
+        self,
+    ):
+        async def injected_report(n: int) -> str:
+            return f"injected {n}"
+
+        server = FastMCP(
+            "TaskServer",
+            middleware=[
+                ToolInjectionMiddleware(
+                    [Tool.from_function(injected_report, name="report", task=True)]
+                )
+            ],
+        )
+
+        @server.tool(task=True)
+        async def report(n: int) -> str:
+            return f"registered {n}"
+
+        async with Client(server) as client:
+            task = await client.call_tool("report", {"n": 3}, task=True)
+            assert not task.returned_immediately
+            result = await task.result()
+
+        assert result.data == "injected 3"
+
+    async def test_background_task_runs_the_injected_tool_when_signatures_differ(
+        self,
+    ):
+        async def injected_report(n: int) -> str:
+            return f"injected {n}"
+
+        server = FastMCP(
+            "TaskServer",
+            middleware=[
+                ToolInjectionMiddleware(
+                    [Tool.from_function(injected_report, name="report", task=True)]
+                )
+            ],
+        )
+
+        @server.tool(task=True)
+        async def report(label: str, flag: bool) -> str:
+            return f"registered {label} {flag}"
+
+        async with Client(server) as client:
+            task = await client.call_tool("report", {"n": 5}, task=True)
+            assert not task.returned_immediately
+            result = await task.result()
+
+        assert result.data == "injected 5"
+
+    async def test_background_task_runs_the_injected_tool_over_a_mounted_tool(self):
+        async def injected_report(n: int) -> str:
+            return f"injected {n}"
+
+        child = FastMCP("Child")
+
+        @child.tool(task=True)
+        async def report(n: int) -> str:
+            return f"mounted {n}"
+
+        @child.tool(task=True)
+        async def summary(n: int) -> str:
+            return f"summary {n}"
+
+        parent = FastMCP(
+            "Parent",
+            middleware=[
+                ToolInjectionMiddleware(
+                    [
+                        Tool.from_function(
+                            injected_report, name="child_report", task=True
+                        )
+                    ]
+                )
+            ],
+        )
+        parent.mount(child, namespace="child")
+
+        async with Client(parent) as client:
+            shadowed = await client.call_tool("child_report", {"n": 4}, task=True)
+            unshadowed = await client.call_tool("child_summary", {"n": 4}, task=True)
+            shadowed_result = await shadowed.result()
+            unshadowed_result = await unshadowed.result()
+
+        assert shadowed_result.data == "injected 4"
+        assert unshadowed_result.data == "summary 4"
+
+    async def test_task_discovery_lists_one_tool_for_a_shared_name(self):
+        async def injected_report(n: int) -> str:
+            return f"injected {n}"
+
+        injected = Tool.from_function(injected_report, name="report", task=True)
+        server = FastMCP("TaskServer", middleware=[ToolInjectionMiddleware([injected])])
+
+        @server.tool(task=True)
+        async def report(n: int) -> str:
+            return f"registered {n}"
+
+        @server.tool(task=True)
+        async def other(n: int) -> str:
+            return f"other {n}"
+
+        components = await server.get_tasks()
+
+        assert [c for c in components if c.name == "report"] == [injected]
+        assert {c.name for c in components} == {"report", "other"}
+
+    async def test_task_discovery_skips_a_mounted_tool_shadowed_by_an_injected_tool(
+        self,
+    ):
+        async def injected_report(n: int) -> str:
+            return f"injected {n}"
+
+        child = FastMCP("Child")
+
+        @child.tool(task=True)
+        async def report(n: int) -> str:
+            return f"mounted {n}"
+
+        @child.tool(task=True)
+        async def summary(n: int) -> str:
+            return f"summary {n}"
+
+        injected = Tool.from_function(injected_report, name="child_report", task=True)
+        parent = FastMCP("Parent", middleware=[ToolInjectionMiddleware([injected])])
+        parent.mount(child, namespace="child")
+
+        components = await parent.get_tasks()
+
+        assert [c for c in components if c.name == "child_report"] == [injected]
+        assert "child_summary" in {c.name for c in components}
+
+    async def test_task_discovery_skips_a_registered_tool_shadowed_by_a_synchronous_injected_tool(
+        self,
+    ):
+        async def injected_report(n: int) -> str:
+            return f"injected {n}"
+
+        injected = Tool.from_function(injected_report, name="report", task=False)
+        server = FastMCP("TaskServer", middleware=[ToolInjectionMiddleware([injected])])
+
+        @server.tool(task=True)
+        async def report(n: int) -> str:
+            return f"registered {n}"
+
+        components = await server.get_tasks()
+
+        assert [c for c in components if c.name == "report"] == []
+
+    async def test_background_tasks_run_for_tools_with_distinct_names(self):
+        async def injected_only(n: int) -> str:
+            return f"injected {n}"
+
+        server = FastMCP(
+            "TaskServer",
+            middleware=[
+                ToolInjectionMiddleware(
+                    [Tool.from_function(injected_only, name="injected_only", task=True)]
+                )
+            ],
+        )
+
+        @server.tool(task=True)
+        async def registered_only(n: int) -> str:
+            return f"registered {n}"
+
+        async with Client(server) as client:
+            first = await client.call_tool("injected_only", {"n": 1}, task=True)
+            second = await client.call_tool("registered_only", {"n": 2}, task=True)
+            first_result = await first.result()
+            second_result = await second.result()
+
+        assert first_result.data == "injected 1"
+        assert second_result.data == "registered 2"
