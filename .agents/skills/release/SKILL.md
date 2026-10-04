@@ -28,6 +28,17 @@ one gets a follow-up patch, never a re-tag.
    Read the two most recent releases for voice: `gh release list -L 5`, then
    `gh release view <tag>` on each.
 
+   **Verify contributor credit in the release preview.** Attribution is recorded
+   during PR preparation and verified at merge; do not repeat that audit for every
+   PR and issue. Use the existing release inventory and a batch read of merged
+   commit co-author metadata to supplement generated notes with credited reporters
+   alongside PR authors. Inspect an individual PR or issue only to resolve a
+   discrepancy. Check prior contribution history only for people being newly added
+   to `New Contributors`; earlier credited issue implementations count too.
+   Follow [Contributor credit](../../../docs/development/contributing.mdx#contributor-credit),
+   honor opt-outs, and deduplicate entries. Save the completed generated notes to
+   `/tmp/generated-notes.md`.
+
 2. **Propose titles.** Titles are `v<version>: <pun>`, pun on the release's main
    theme from the release preview. Check prior titles with
    `gh release list --repo PrefectHQ/fastmcp --limit 60` to avoid repeats and keep
@@ -41,11 +52,16 @@ one gets a follow-up patch, never a re-tag.
 3. **Write the notes file** outside the repository (a temp directory), intro only.
    The release title is the heading, so the file has none.
 
+   Also write `/tmp/release-notes.md` containing that intro followed by the completed
+   `/tmp/generated-notes.md`. This is the exact body to publish; use the same completed
+   generated notes for the docs entry. Do not regenerate plain GitHub notes at
+   publication and discard the added contributor credit.
+
 4. **Docs entries.** Branch `docs/changelog-<new>` from `origin/<branch>` and insert
    both blocks (the last argument is the branch the notes are generated against):
 
    ```bash
-   uv run .agents/skills/release/scripts/changelog_entry.py v<new> v<prev> "<pun>" /tmp/notes.md <branch>
+   uv run .agents/skills/release/scripts/changelog_entry.py v<new> v<prev> "<pun>" /tmp/notes.md <branch> --release-notes /tmp/generated-notes.md
    ```
 
    Validate, and repeat until it reports no errors; a parse error names the file
@@ -66,12 +82,19 @@ one gets a follow-up patch, never a re-tag.
    helper (it refuses to insert a label that already exists), and land that as a
    follow-up docs PR before tagging.
 
+   Refresh contributor attribution and both temporary notes files along with the
+   preview when new changes enter the release. The docs-only changelog PR can appear
+   in the GitHub notes without appearing in its own mirror, as described above.
+
    ```bash
    gh release create v<new> --target <branch> --title "v<new>: <pun>" \
-     --generate-notes --notes-start-tag v<prev> --notes-file /tmp/notes.md
+     --notes-file /tmp/release-notes.md
    ```
 
-   `v<prev>` is the last stable tag on that branch. The compare link at the bottom of the created release must read `v<prev>...v<new>`.
+   `v<prev>` is the last stable tag on that branch, passed as `previous_tag_name` in
+   the notes preview. The compare link at the bottom of the created release must
+   read `v<prev>...v<new>`. Verify the published contributor entries and
+   `New Contributors` list against the completed notes.
 
 6. **Watch the fan-out.** The slim run is keyed to the tag; the others are
    `workflow_run` events on the default branch, so select them by workflow name.
@@ -147,8 +170,9 @@ connections instead of raising.
   changed since the last commit it recorded, and it records commits it failed on
   or skipped. Only the `Deploy docs` run's verdict counts; its API-triggered
   deployment is what brings a page a skipped deploy left stale back in line.
-- Without `--notes-start-tag`, a prerelease tag becomes the changelog start and the
-  PR list is silently truncated.
+- Always pass the last stable tag as `previous_tag_name` when generating notes;
+  otherwise a prerelease tag can truncate the PR list. Publish the completed notes
+  with `--notes-file`, rather than replacing them with `--generate-notes`.
 - Maintenance releases publish packages and notes but never repoint `published-docs`;
   their changelog entries go on the maintenance branch under the matching major section.
 
