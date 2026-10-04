@@ -360,6 +360,94 @@ class TestPropertyNamesAreFields:
         }
 
 
+DICTIONARY_DEFAULT = {"name": "text", "count": "int"}
+ANNOTATIONS_PROPERTY = {
+    "type": "object",
+    "title": "Result",
+    "additionalProperties": True,
+    "properties": {
+        "ok": {"type": "boolean"},
+        "__annotations__": {"default": DICTIONARY_DEFAULT},
+    },
+}
+ANNOTATIONS_CONTENTS = {
+    "default_applied": {"ok": True},
+    "value_provided": {"ok": True, "__annotations__": {"name": "other"}},
+}
+ANNOTATIONS_EXPECTED = {
+    "default_applied": {"ok": True, "__annotations__": DICTIONARY_DEFAULT},
+    "value_provided": {"ok": True, "__annotations__": {"name": "other"}},
+}
+
+
+class TestDictionaryDefaults:
+    def test_dictionary_defaults_are_kept_as_field_data(self):
+        generated = json_schema_to_type(ANNOTATIONS_PROPERTY)
+
+        assert issubclass(generated, BaseModel)
+        instance = generated.model_validate({"ok": True})
+        assert instance.model_dump(by_alias=True) == {
+            "ok": True,
+            "__annotations__": DICTIONARY_DEFAULT,
+        }
+
+    def test_dictionary_defaults_leave_class_annotations_unchanged(self):
+        generated = json_schema_to_type(ANNOTATIONS_PROPERTY)
+
+        assert issubclass(generated, BaseModel)
+        assert set(generated.__annotations__) == set(generated.model_fields)
+        assert set(generated.__annotations__).isdisjoint(DICTIONARY_DEFAULT)
+
+    @pytest.mark.parametrize("case", ANNOTATIONS_CONTENTS)
+    async def test_dictionary_defaults_in_tool_results(self, case: str):
+        server = FastMCP("Remote")
+
+        @server.tool(output_schema=ANNOTATIONS_PROPERTY)
+        def lookup() -> ToolResult:
+            return ToolResult(structured_content=ANNOTATIONS_CONTENTS[case])
+
+        async with Client(server) as client:
+            result = await client.call_tool("lookup", {})
+
+        assert isinstance(result.data, BaseModel)
+        assert result.data.model_dump(by_alias=True) == ANNOTATIONS_EXPECTED[case]
+        assert set(type(result.data).__annotations__) == set(
+            type(result.data).model_fields
+        )
+
+    @pytest.mark.parametrize("case", ANNOTATIONS_CONTENTS)
+    async def test_dictionary_defaults_in_elicitation_schemas(self, case: str):
+        server = FastMCP("Forms")
+        validated: list[BaseModel] = []
+
+        @server.tool
+        async def ask(ctx: Context) -> str:
+            response = await ctx.session.elicit_form(
+                message="Provide data",
+                requestedSchema=ANNOTATIONS_PROPERTY,
+                related_request_id=ctx.request_id,
+            )
+            return response.action
+
+        async def handler(
+            message: str, response_type: Any, params: Any, context: Any
+        ) -> ElicitResult[dict[str, Any]]:
+            validated.append(
+                TypeAdapter(response_type).validate_python(ANNOTATIONS_CONTENTS[case])
+            )
+            return ElicitResult(action="accept", content={"ok": True})
+
+        async with Client(server, elicitation_handler=handler) as client:
+            result = await client.call_tool("ask", {})
+
+        assert result.data == "accept"
+        assert len(validated) == 1
+        assert validated[0].model_dump(by_alias=True) == ANNOTATIONS_EXPECTED[case]
+        assert set(type(validated[0]).__annotations__) == set(
+            type(validated[0]).model_fields
+        )
+
+
 def fanout_schema(depth: int, fanout: int) -> dict[str, Any]:
     defs: dict[str, Any] = {"L0": {"type": "string"}}
     for i in range(1, depth + 1):
@@ -382,6 +470,33 @@ def flat_chain_schema(length: int) -> dict[str, Any]:
         "title": "FlatChain",
         "properties": {"x": {"$ref": "#/$defs/L0"}},
         "$defs": defs,
+    }
+
+
+def wrapped_definition_schema(
+    title: str, *, additional_properties: bool, description_size: int = 3_000
+) -> dict[str, Any]:
+    wrapper: dict[str, Any] = {
+        "type": "object",
+        "title": "Wrapper",
+        "properties": {"child": {"$ref": "#/$defs/Large"}},
+        "required": ["child"],
+    }
+    if additional_properties:
+        wrapper["additionalProperties"] = True
+    return {
+        "type": "object",
+        "title": title,
+        "properties": {"wrapper": wrapper},
+        "required": ["wrapper"],
+        "$defs": {
+            "Large": {
+                "type": "object",
+                "title": "Large",
+                "description": "x" * description_size,
+                "properties": {"x": {"type": "string"}},
+            }
+        },
     }
 
 
@@ -556,3 +671,40 @@ class TestClassCache:
         integer_value = as_integer.validate_python({"nested": {"value": 3}})
         assert string_value.nested.value == "a"  # ty: ignore[unresolved-attribute]
         assert integer_value.nested.value == 3  # ty: ignore[unresolved-attribute]
+
+    def test_classes_from_one_conversion_are_charged_for_its_root_schema(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        schema = wrapped_definition_schema("Charged", additional_properties=True)
+        root_size = len(json.dumps(schema, sort_keys=True))
+        monkeypatch.setattr(json_schema_type._classes, "max_weight", root_size * 3 // 2)
+        json_schema_type._classes.clear()
+
+        json_schema_to_type(schema)
+
+        assert len(json_schema_type._classes) == 1
+
+    @pytest.mark.parametrize("additional_properties", [False, True])
+    def test_classes_referencing_a_large_definition_are_charged_for_it(
+        self, monkeypatch: pytest.MonkeyPatch, additional_properties: bool
+    ):
+        monkeypatch.setattr(json_schema_type._classes, "max_weight", 2_000)
+        monkeypatch.setattr(json_schema_type._adapters, "max_weight", 2_000)
+        json_schema_type._classes.clear()
+        json_schema_type._adapters.clear()
+        large_classes: list[weakref.ref[type]] = []
+
+        for i in range(4):
+            schema = wrapped_definition_schema(
+                f"Referencing{i}", additional_properties=additional_properties
+            )
+            value = json_schema_to_type_adapter(schema).validate_python(
+                {"wrapper": {"child": {"x": "a"}}}
+            )
+            large_classes.append(weakref.ref(type(value.wrapper.child)))
+            del value
+        gc.collect()
+
+        assert [ref() for ref in large_classes] == [None] * 4
+        assert len(json_schema_type._classes) == 0
+        assert len(json_schema_type._adapters) == 0

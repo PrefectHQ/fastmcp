@@ -138,9 +138,12 @@ _V = TypeVar("_V")
 class _LRUCache(Generic[_V]):
     """Least recently used cache bounded by entry count and total weight.
 
-    Each entry's weight is the serialized size of the schema it was built
-    from, so a few large schemas cannot hold unbounded memory. An entry
-    heavier than `max_weight` is not stored.
+    Each entry's weight is the serialized size of the whole schema the
+    conversion started from. A generated class refers to the classes of its
+    properties and keeps the schema it was built from, so it retains as much
+    as the root schema describes. Charging that size keeps the total memory
+    held by the cache within `max_weight`. An entry heavier than `max_weight`
+    is not stored.
     """
 
     def __init__(self, max_entries: int, max_weight: int) -> None:
@@ -180,7 +183,9 @@ class _LRUCache(Generic[_V]):
         return len(self._items)
 
 
-# Generated classes keyed by (schema hash + root schema hash, class name).
+# Generated classes keyed by (schema hash + root schema hash, class name). Each
+# class is weighted by the size of its root schema, so a conversion whose root
+# is larger than the weight limit adds nothing to the cache.
 _classes: _LRUCache[type] = _LRUCache(max_entries=5000, max_weight=4_000_000)
 # TypeAdapters for whole schemas, keyed by schema hash. They hold their
 # classes, so they are bounded the same way.
@@ -199,6 +204,7 @@ class _Conversion:
     """State for one `json_schema_to_type` call."""
 
     root_hash: str
+    root_size: int
     resolved_refs: dict[str, Any] = field(default_factory=dict)
     building: set[tuple[str, str]] = field(default_factory=set)
     depth: int = 0
@@ -311,7 +317,8 @@ def json_schema_to_type(
     # so that downstream json.dumps/hashing and default values work correctly.
     schema = _normalize_yaml_types(schema)
 
-    token = _conversion.set(_Conversion(root_hash=_hash_schema(schema)))
+    root_hash, root_size = _schema_digest(schema)
+    token = _conversion.set(_Conversion(root_hash=root_hash, root_size=root_size))
     try:
         # Always use the top-level schema for references
         if schema.get("type") == "object":
@@ -776,7 +783,7 @@ def _create_pydantic_model(
         raise ValueError("Name is required")
     sanitized_name = _sanitize_name(name)
     conversion = _conversion.get()
-    schema_hash, schema_size = _schema_digest(schema)
+    schema_hash = _hash_schema(schema)
     cache_key = (schema_hash + conversion.root_hash, sanitized_name)
 
     # Return existing class if already built
@@ -794,7 +801,7 @@ def _create_pydantic_model(
         )
     finally:
         conversion.building.discard(cache_key)
-    _classes.put(cache_key, cls, schema_size)
+    _classes.put(cache_key, cls, conversion.root_size)
     return cls
 
 
@@ -842,7 +849,7 @@ def _create_dataclass(
         raise ValueError("Name is required")
     sanitized_name = _sanitize_name(name)
     conversion = _conversion.get()
-    schema_hash, schema_size = _schema_digest(schema)
+    schema_hash = _hash_schema(schema)
     cache_key = (schema_hash + conversion.root_hash, sanitized_name)
 
     # Return existing class if already built
@@ -859,7 +866,7 @@ def _create_dataclass(
     finally:
         conversion.building.discard(cache_key)
     if isinstance(cls, type):
-        _classes.put(cache_key, cls, schema_size)
+        _classes.put(cache_key, cls, conversion.root_size)
     return cls
 
 
