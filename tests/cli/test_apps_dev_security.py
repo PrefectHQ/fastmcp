@@ -28,8 +28,13 @@ def build_client(*, host: str = "127.0.0.1", session: bool = False) -> TestClien
     )
     client = TestClient(app, base_url="http://127.0.0.1:8080")
     if session:
-        client.cookies.set(COOKIE, TOKEN)
+        client.get("/", params={"token": TOKEN})
     return client
+
+
+def create_launch(client: TestClient, tool: str = "ping") -> str:
+    response = client.post("/api/launch", json={"tool": tool, "value": "x"})
+    return response.json()
 
 
 class TestSession:
@@ -37,7 +42,7 @@ class TestSession:
         "method,path",
         [
             ("get", "/"),
-            ("get", "/launch?tool=x&args={}"),
+            ("get", "/launch?id=x"),
             ("get", "/picker-app"),
             ("get", "/ui-resource?uri=ui://app/view.html"),
             ("get", "/js/app-bridge.js"),
@@ -62,12 +67,20 @@ class TestSession:
         assert response.status_code == 303
         assert response.headers["location"] == "/"
         cookie = response.headers["set-cookie"]
-        assert cookie.startswith(f"{COOKIE}={TOKEN};")
+        assert cookie.startswith(f"{COOKIE}=")
         assert "HttpOnly" in cookie
         assert "SameSite=strict" in cookie
         assert response.headers["referrer-policy"] == "no-referrer"
         assert client.get("/").status_code == 200
-        assert client.get("/launch?tool=ping&args={}").status_code == 200
+        assert client.get(create_launch(client)).status_code == 200
+
+    def test_session_cookie_does_not_hold_startup_token(self):
+        client = build_client(session=True)
+
+        session = client.cookies.get(COOKIE)
+
+        assert session
+        assert TOKEN not in session
 
     @pytest.mark.parametrize("token", ["wrong", "", "é"])
     def test_wrong_startup_token_starts_no_session(self, token: str):
@@ -155,16 +168,30 @@ class TestOrigin:
             {"Sec-Fetch-Site": "same-site"},
         ],
     )
-    def test_cross_origin_requests_are_rejected_with_session(
-        self, headers: dict[str, str]
-    ):
+    def test_cross_origin_launch_page_is_rejected(self, headers: dict[str, str]):
+        client = build_client(session=True)
+        launch_url = create_launch(client)
+
+        response = client.get(launch_url, headers=headers)
+
+        assert response.status_code == 403
+
+    @pytest.mark.parametrize(
+        "headers",
+        [
+            {"Origin": "http://other.example"},
+            {"Origin": "http://127.0.0.1:9999"},
+            {"Origin": "null"},
+            {"Sec-Fetch-Site": "cross-site"},
+            {"Sec-Fetch-Site": "same-site"},
+        ],
+    )
+    def test_cross_origin_log_clear_is_rejected(self, headers: dict[str, str]):
         client = build_client(session=True)
 
-        launch = client.get("/launch?tool=x&args={}", headers=headers)
-        clear = client.post("/api/logs/clear", content="{}", headers=headers)
+        response = client.post("/api/logs/clear", content="{}", headers=headers)
 
-        assert launch.status_code == 403
-        assert clear.status_code == 403
+        assert response.status_code == 403
 
     @pytest.mark.parametrize(
         "headers",
@@ -181,7 +208,7 @@ class TestOrigin:
         )
 
         assert response.status_code == 200
-        assert response.json().startswith("/launch?tool=ping&")
+        assert response.json().startswith("/launch?id=")
 
     def test_log_endpoints_work_for_the_session(self):
         client = build_client(session=True)
@@ -192,6 +219,33 @@ class TestOrigin:
 
         assert "legitimate" in logged
         assert "legitimate" not in client.get("/api/logs").text
+
+
+class TestLaunch:
+    def test_launch_url_from_picker_opens_launch_page(self):
+        client = build_client(session=True)
+
+        response = client.get(create_launch(client, tool="lookup"))
+
+        assert response.status_code == 200
+        assert 'const toolName = "lookup";' in response.text
+
+    def test_typed_launch_url_with_tool_arguments_runs_nothing(self):
+        client = build_client(session=True)
+
+        response = client.get(
+            "/launch",
+            params={"tool": "ping", "args": '{"x": 1}'},
+            headers={"Sec-Fetch-Site": "none"},
+        )
+
+        assert response.status_code == 404
+        assert "toolName" not in response.text
+
+    def test_unknown_launch_id_is_rejected(self):
+        response = build_client(session=True).get("/launch", params={"id": "unknown"})
+
+        assert response.status_code == 404
 
 
 class TestServerContent:
@@ -227,11 +281,25 @@ class TestServerContent:
         assert response.headers["content-security-policy"] == "frame-ancestors 'none'"
 
     def test_launch_page_sandboxes_app_frame(self):
-        page = build_client(session=True).get("/launch?tool=ping&args={}").text
+        client = build_client(session=True)
+        page = client.get(create_launch(client)).text
 
         assert '<iframe id="app-frame" sandbox="allow-scripts allow-forms">' in page
         assert "new PostMessageTransport(iframe.contentWindow, null)" not in page
+        assert "contentDocument" not in page
+
+    def test_launch_page_opens_only_external_web_links(self):
+        client = build_client(session=True)
+        page = client.get(create_launch(client)).text
+
         assert 'target.protocol !== "https:"' in page
+        assert "target.origin === window.location.origin" in page
+
+    def test_picker_page_opens_only_web_links(self):
+        page = build_client(session=True).get("/").text
+
+        assert 'target.protocol !== "https:"' in page
+        assert "window.location.href = url;" not in page
 
     def test_proxy_forwards_no_browser_credentials(
         self, monkeypatch: pytest.MonkeyPatch
@@ -276,9 +344,16 @@ class TestServerContent:
 
 class TestPickerForm:
     @pytest.mark.parametrize(
-        "name", ["__base__", "__config__", "model_config", "_private"]
+        "name,field_name",
+        [
+            ("__base__", "field_base_"),
+            ("__config__", "field_config_"),
+            ("model_config", "field_model_config"),
+            ("_private", "field_private"),
+            ("plain", "plain"),
+        ],
     )
-    def test_form_submits_original_property_names(self, name: str):
+    def test_form_submits_original_property_names(self, name: str, field_name: str):
         schema = {
             "type": "object",
             "properties": {name: {"type": "string"}},
@@ -296,10 +371,11 @@ class TestPickerForm:
             ]
         )
 
+        assert list(model.model_fields) == [field_name]
         assert model.model_validate({name: "value"}).model_dump(by_alias=True) == {
             name: "value"
         }
-        assert f'"{name}":' in page
+        assert f'"{name}":"{{{{ {field_name} }}}}"' in page
 
 
 class TestSpawnedServer:

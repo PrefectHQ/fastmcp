@@ -374,9 +374,13 @@ _HOST_HTML_TEMPLATE = """\
       );
 
       bridge.onopenlink = async ({{ url }}) => {{
-        // Apps run in an isolated frame; only open web links on their behalf.
+        // Apps run in an isolated frame; only open external web links on
+        // their behalf, never pages of the dev UI itself.
         const target = new URL(url, window.location.href);
-        if (target.protocol !== "https:" && target.protocol !== "http:") {{
+        if (
+          (target.protocol !== "https:" && target.protocol !== "http:") ||
+          target.origin === window.location.origin
+        ) {{
           return {{ isError: true }};
         }}
         window.open(target.href, "_blank", "noopener,noreferrer");
@@ -391,8 +395,6 @@ _HOST_HTML_TEMPLATE = """\
         await bridge.sendToolResult(result);
         status.style.display = "none";
         iframe.style.display = "block";
-        // Prevent horizontal scrollbar when vertical scrollbar appears
-        try {{ iframe.contentDocument.documentElement.style.overflowX = "hidden"; }} catch(e) {{}}
       }};
 
       // Start listening before the iframe loads
@@ -1385,6 +1387,16 @@ async def _fetch_app_bridge_bundle(
 # ---------------------------------------------------------------------------
 
 
+# The picker is part of the dev UI; it opens the launch pages /api/launch returns.
+_PICKER_OPEN_LINK_JS = """bridge.onopenlink = async ({ url }) => {
+        const target = new URL(url, window.location.href);
+        if (target.protocol !== "https:" && target.protocol !== "http:") {
+          return { isError: true };
+        }
+        window.location.href = target.href;
+        return {};
+      };"""
+
 _UNFORWARDED_PROXY_HEADERS = frozenset(
     {"host", "content-length", "cookie", "origin", "referer"}
 )
@@ -1403,6 +1415,7 @@ def _make_dev_app(
 ) -> Starlette:
     """Build the authenticated Starlette development host."""
     token = session_token or secrets.token_urlsafe(32)
+    launches: dict[str, tuple[str, dict[str, Any]]] = {}
 
     async def picker(request: Request) -> HTMLResponse:
         """AppBridge host page — loads the picker app in an iframe and wires the bridge."""
@@ -1414,7 +1427,7 @@ def _make_dev_app(
             frame_display="block",
             mcp_sdk_version=_MCP_SDK_VERSION,
             iframe_src_json=json.dumps("/picker-app"),
-            on_open_link="bridge.onopenlink = async ({ url }) => { window.location.href = url; return {}; };",
+            on_open_link=_PICKER_OPEN_LINK_JS,
             on_initialized="bridge.oninitialized = async () => {};",
         )
         return (
@@ -1435,10 +1448,13 @@ def _make_dev_app(
         return HTMLResponse(page_html)
 
     async def launch(request: Request) -> HTMLResponse:
-        """Host page: GET /launch?tool=name&args={...}"""
-        tool = request.query_params.get("tool", "")
-        args_raw = request.query_params.get("args", "{}")
-        tool_args = json.loads(args_raw)
+        """Host page: GET /launch?id=... for a launch created by /api/launch."""
+        launch = launches.get(request.query_params.get("id", ""))
+        if launch is None:
+            return HTMLResponse(
+                "Unknown launch. Start tools from the dev UI picker.", status_code=404
+            )
+        tool, tool_args = launch
         host_html = _HOST_HTML_TEMPLATE.format(
             tool_name=html.escape(tool, quote=True),
             import_map_tag=import_map_tag,
@@ -1503,7 +1519,11 @@ def _make_dev_app(
                         except (json.JSONDecodeError, TypeError):
                             pass
                 tool_args[k] = v
-        url = "/launch?" + urlencode({"tool": tool, "args": json.dumps(tool_args)})
+        # Launch pages run tools, so their URLs name a stored launch instead
+        # of carrying the tool and arguments.
+        launch_id = secrets.token_urlsafe(16)
+        launches[launch_id] = (tool, tool_args)
+        url = "/launch?" + urlencode({"id": launch_id})
         return Response(
             content=json.dumps(url),
             media_type="application/json",
