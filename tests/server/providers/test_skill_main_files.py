@@ -137,3 +137,18 @@ async def test_directory_keeps_the_selected_target_when_a_link_changes(
         "selected/SKILL.md",
         "selected/_manifest",
     }
+
+
+async def test_directory_keeps_valid_skills_when_a_link_cannot_resolve(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "skills"
+    root.mkdir()
+    make_skill(root / "ordinary")
+    unresolved = root / "unresolved"
+    unresolved.symlink_to(unresolved, target_is_directory=True)
+    resources = await SkillsDirectoryProvider(root).list_resources()
+    assert {resource.name for resource in resources} == {
+        "ordinary/SKILL.md",
+        "ordinary/_manifest",
+    }
