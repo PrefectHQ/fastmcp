@@ -16,10 +16,9 @@ from fastmcp.client.progress import ProgressHandler
 from fastmcp.client.telemetry import client_span
 from fastmcp.exceptions import ToolError
 from fastmcp.telemetry import inject_trace_context
-from fastmcp.utilities.json_schema_type import json_schema_to_type
+from fastmcp.utilities.json_schema_type import json_schema_to_type_adapter
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.timeout import normalize_timeout_to_seconds
-from fastmcp.utilities.types import get_cached_typeadapter
 
 logger = get_logger(__name__)
 
@@ -371,7 +370,7 @@ async def _parse_call_tool_result(
         else:
             msg = f"Tool '{name}' returned an error"
         raise ToolError(msg)
-    elif result.structured_content and not result.is_error:
+    elif result.structured_content is not None and not result.is_error:
         try:
             raw_fastmcp_meta = (result.meta or {}).get("fastmcp")
             fastmcp_meta = (
@@ -405,8 +404,7 @@ async def _parse_call_tool_result(
                     output_schema = output_schema.get("properties", {}).get(
                         "result", output_schema
                     )
-                output_type = json_schema_to_type(output_schema)
-                type_adapter = get_cached_typeadapter(output_type)
+                type_adapter = json_schema_to_type_adapter(output_schema)
                 data = type_adapter.validate_python(structured_content)
             else:
                 data = structured_content

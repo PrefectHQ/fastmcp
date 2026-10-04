@@ -373,6 +373,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             valid_scopes: List of all the possible valid scopes for a client.
                 These are advertised to clients through the `/.well-known` endpoints. Defaults to `required_scopes` if not provided.
             forward_pkce: Whether to forward PKCE to upstream server (default True).
+                False removes protection against authorization-code interception
+                on the upstream exchange; client-to-proxy PKCE still applies.
                 Enable for providers that support/require PKCE (Google, Azure, AWS, etc.).
                 Disable only if upstream provider doesn't support PKCE.
             token_endpoint_auth_method: Token endpoint authentication method for upstream server.
@@ -402,12 +404,17 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                   suppress the warning as an operator acknowledgment that equivalent
                   consent and transaction-binding protections are enforced externally.
                   FastMCP does not provide or verify those external protections.
+                  Both False and "external" remove FastMCP's consent and browser
+                  binding checks, reducing security unless equivalent checks exist
+                  elsewhere; ordinary upstream consent is not equivalent.
                 - False: skip consent entirely. SECURITY WARNING: only set to
                   False for local development or testing environments.
             consent_csp_policy: Content Security Policy for the consent page.
                 If None (default), uses the built-in CSP policy with appropriate directives.
                 If empty string "", disables CSP entirely (no meta tag is rendered).
                 If a non-empty string, uses that as the CSP policy value.
+                Disabling or weakening CSP reduces browser content-injection
+                protections unless the deployment supplies an equivalent CSP header.
                 This allows organizations with their own CSP policies to override or disable
                 the built-in CSP directives.
             fallback_access_token_expiry_seconds: Expiry time to use when upstream provider
@@ -1207,7 +1214,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             ttl=15 * 60,  # Auto-expire after 15 minutes
         )
 
-        # If consent is disabled or handled externally, skip consent screen.
+        # False and "external" both remove FastMCP's consent and browser-binding
+        # protections against confused deputy attacks. "external" only suppresses
+        # the warning; FastMCP does not provide or verify external enforcement.
         # "remember" mode still routes through /consent so cookie lookup and
         # Sec-Fetch-Site gating can run.
         if self._require_authorization_consent in (False, "external"):
@@ -2289,8 +2298,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                                 )
                                 if validated:
                                     upstream_token_set = reloaded
-                    except Exception:
-                        pass
+                    except Exception as reload_error:
+                        logger.debug(
+                            "Re-read of upstream token after refresh failure also failed: %s",
+                            reload_error,
+                        )
 
             if not validated:
                 logger.debug("Upstream token validation failed")
@@ -2727,6 +2739,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             # IdP URL) won't have this cookie and will be rejected. "remember"
             # mode still issues consent tokens (on silent approval or HTML
             # approval), so both code paths need binding verification.
+            # False and "external" intentionally skip this security check, so
+            # those modes require equivalent protection outside FastMCP.
             if self._require_authorization_consent in (True, "remember"):
                 consent_token = transaction_model.consent_token
                 if not consent_token:

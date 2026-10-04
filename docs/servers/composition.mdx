@@ -158,6 +158,14 @@ def added_later() -> str:
     return "Added after mounting!"
 ```
 
+## Protocol Extensions
+
+<VersionBadge version="4.1.0" />
+
+When you mount a local FastMCP server, its [provider-bundled extensions](/servers/extensions#provider-extensions) follow the components to the parent. Extensions that opt into automatic registration give the parent the capabilities and request methods its clients need. Configure an extension explicitly on the parent to choose its settings for all mounted providers.
+
+Compose providers that need new extensions before the parent starts. Once extension lifespans have begun, additional providers can use extensions already registered on the root. The [startup rules](/servers/extensions#startup) also apply through nested mounts and aggregates.
+
 ## Tag Filtering
 
 <VersionBadge version="3.0.0" />

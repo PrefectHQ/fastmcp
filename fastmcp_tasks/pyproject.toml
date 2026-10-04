@@ -23,6 +23,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Typing :: Typed",
 ]
 
@@ -64,5 +65,10 @@ dependencies = [
     # was misread as a burner-redis 0.1.7 interpreter crash, which is why a
     # burner-redis pin and a platform-split floor used to live here
     # (prefectlabs/burner-redis#7 has the exoneration).
-    "pydocket>=0.24.1",
+    #
+    # pydocket 0.26.0 keeps the worker running when a task is cancelled before
+    # it starts. Earlier versions treated that cancellation as a shutdown
+    # request, so the worker stopped reading tasks and every later task stayed
+    # in `working` forever.
+    "pydocket>=0.26.0",
 ]

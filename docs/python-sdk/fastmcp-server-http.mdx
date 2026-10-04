@@ -7,13 +7,13 @@ sidebarTitle: http
 
 ## Functions
 
-### `set_http_request` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/http.py#L355" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `set_http_request` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/http.py#L382" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_http_request(request: Request) -> Generator[Request, None, None]
 ```
 
-### `create_base_app` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/http.py#L388" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `create_base_app` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/http.py#L415" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_base_app(routes: list[BaseRoute], middleware: list[Middleware], debug: bool = False, lifespan: Callable | None = None) -> StarletteWithLifespan
@@ -32,10 +32,10 @@ Create a base Starlette app with common middleware and routes.
 - A Starlette application
 
 
-### `create_sse_app` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/http.py#L416" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `create_sse_app` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/http.py#L443" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-create_sse_app(server: FastMCP[LifespanResultT], message_path: str, sse_path: str, auth: AuthProvider | None = None, debug: bool = False, routes: list[BaseRoute] | None = None, middleware: list[Middleware] | None = None) -> StarletteWithLifespan
+create_sse_app(server: FastMCP[LifespanResultT], message_path: str, sse_path: str, auth: AuthProvider | None = None, debug: bool = False, routes: list[BaseRoute] | None = None, middleware: list[Middleware] | None = None, host_origin_protection: HostOriginProtection = False, allowed_hosts: Sequence[str] | None = None, allowed_origins: Sequence[str] | None = None) -> StarletteWithLifespan
 ```
 
 
@@ -49,12 +49,20 @@ Return an instance of the SSE server app.
 - `debug`: Whether to enable debug mode
 - `routes`: Optional list of custom routes
 - `middleware`: Optional list of middleware
+- `host_origin_protection`: Whether to validate Host and Origin headers
+before requests reach the SSE connection and message endpoints.
+Defaults to False for compatibility. "auto" protects
+localhost-bound servers and explicit host/origin allowlists.
+- `allowed_hosts`: Additional hostnames that may appear in the Host header.
+- `allowed_origins`: Additional browser origins trusted by the request guard.
+Configure CORS separately when browser JavaScript must read
+cross-origin responses.
 
 Returns:
     A Starlette application with RequestContextMiddleware
 
 
-### `create_streamable_http_app` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/http.py#L545" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `create_streamable_http_app` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/http.py#L599" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_streamable_http_app(server: FastMCP[LifespanResultT], streamable_http_path: str, event_store: EventStore | None = None, retry_interval: int | None = None, auth: AuthProvider | None = None, json_response: bool = False, stateless_http: bool = False, debug: bool = False, routes: list[BaseRoute] | None = None, middleware: list[Middleware] | None = None, host_origin_protection: HostOriginProtection = False, allowed_hosts: Sequence[str] | None = None, allowed_origins: Sequence[str] | None = None, session_idle_timeout: float | None = None) -> StarletteWithLifespan
@@ -127,17 +135,17 @@ ASGI application wrapper for Streamable HTTP server transport.
 Validate Host and Origin headers before requests reach MCP sessions.
 
 
-### `StarletteWithLifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/http.py#L348" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `StarletteWithLifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/http.py#L375" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 **Methods:**
 
-#### `lifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/http.py#L350" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `lifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/http.py#L377" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 lifespan(self) -> Lifespan[Starlette]
 ```
 
-### `RequestContextMiddleware` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/http.py#L363" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `RequestContextMiddleware` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/http.py#L390" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Middleware that stores each request in a ContextVar and sets transport type.
