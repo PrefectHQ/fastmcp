@@ -1068,9 +1068,8 @@ class _CurrentHeaders(Dependency[dict[str, str]]):
     """Async context manager for HTTP Headers dependency."""
 
     async def __aenter__(self) -> dict[str, str]:
-        # Credential headers are denied by default because most callers forward
-        # what they get. This dependency only exposes the current request to the
-        # handler, so it opts them back in.
+        # get_http_headers() leaves out credential headers by default; this
+        # dependency exposes the full current request, so it includes them.
         return get_http_headers(include={"authorization", "cookie"})
 
     async def __aexit__(
