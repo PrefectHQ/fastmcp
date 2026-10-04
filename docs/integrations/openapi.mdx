@@ -428,6 +428,8 @@ Path parameters are typically required by REST APIs. FastMCP:
 - Validates that all required path parameters are provided
 - Raises clear errors for missing required parameters
 
+Path values must not contain `.` or `..` segments, including percent-encoded forms. Ordinary dotted names such as `report.json` are accepted.
+
 ```python
 # ✅ This works
 await client.call_tool("get_user", {"user_id": 123})
