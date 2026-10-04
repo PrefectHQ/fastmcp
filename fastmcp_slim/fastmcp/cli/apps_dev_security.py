@@ -38,8 +38,10 @@ _HOST_HEADERS = frozenset(
 class DevSessionMiddleware:
     """Require a browser session started from the private startup URL.
 
-    `GET /?token=...` with the process token sets an HttpOnly, SameSite=Strict
-    cookie and redirects to `/`. Every other request needs that cookie. Every
+    `GET /?token=...` with the startup token sets an HttpOnly, SameSite=Strict
+    cookie and redirects to `/`. Every other request needs that cookie. The
+    cookie holds a separate session secret: browsers send cookies to every
+    port on the host, and the startup token must not reach other services. Every
     request must also name this server in its Host header, and browser
     requests must come from this origin: cookies do not distinguish ports on
     the same host, so the Origin and Fetch Metadata headers are checked too.
@@ -50,6 +52,7 @@ class DevSessionMiddleware:
         self.host = host.lower()
         self.port = port
         self.token = token
+        self.session_secret = secrets.token_urlsafe(32)
         self.cookie_name = f"{SESSION_COOKIE}_{port}"
 
     def _valid_host(self, headers: Headers) -> bool:
@@ -88,8 +91,9 @@ class DevSessionMiddleware:
         fetch_site = request.headers.get("sec-fetch-site")
         return fetch_site is None or fetch_site in {"same-origin", "none"}
 
-    def _valid_token(self, value: str) -> bool:
-        return secrets.compare_digest(value.encode(), self.token.encode())
+    @staticmethod
+    def _matches(value: str, expected: str) -> bool:
+        return secrets.compare_digest(value.encode(), expected.encode())
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "websocket":
@@ -137,11 +141,11 @@ class DevSessionMiddleware:
 
         if path == "/" and request.method == "GET":
             startup_token = request.query_params.get("token")
-            if startup_token is not None and self._valid_token(startup_token):
+            if startup_token is not None and self._matches(startup_token, self.token):
                 response = RedirectResponse("/", status_code=303)
                 response.set_cookie(
                     self.cookie_name,
-                    self.token,
+                    self.session_secret,
                     httponly=True,
                     samesite="strict",
                     path="/",
@@ -150,7 +154,8 @@ class DevSessionMiddleware:
                 await response(scope, receive, send_with_host_headers)
                 return
 
-        if not self._valid_token(request.cookies.get(self.cookie_name, "")):
+        session = request.cookies.get(self.cookie_name, "")
+        if not self._matches(session, self.session_secret):
             response = PlainTextResponse(
                 "No dev session. Open the dev UI with the startup URL printed "
                 "by `fastmcp dev apps`.",

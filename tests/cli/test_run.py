@@ -1054,7 +1054,10 @@ class TestRunDevApps:
         client.get("/?token=test-dev-session")
 
         payload = "</title><script>alert(1)</script><img src=x onerror=alert(2)>"
-        response = client.get("/launch", params={"tool": payload, "args": "{}"})
+        launch_url = client.post(
+            "/api/launch", json={"tool": payload, "__json_args__": "{}"}
+        ).json()
+        response = client.get(launch_url)
 
         assert response.status_code == 200
         assert payload not in response.text
@@ -1083,10 +1086,11 @@ class TestRunDevApps:
         client.get("/?token=test-dev-session")
 
         payload = {"name": "</script><script>alert(1)</script>&"}
-        response = client.get(
-            "/launch",
-            params={"tool": "safe_tool", "args": json.dumps(payload)},
-        )
+        launch_url = client.post(
+            "/api/launch",
+            json={"tool": "safe_tool", "__json_args__": json.dumps(payload)},
+        ).json()
+        response = client.get(launch_url)
 
         assert response.status_code == 200
         assert json.dumps(payload) not in response.text
@@ -1095,8 +1099,8 @@ class TestRunDevApps:
             '\\u003c/script\\u003e\\u0026"'
         ) in response.text
 
-    def test_api_launch_encodes_generated_launch_url(self):
-        """Test /api/launch encodes query parameters in the returned URL."""
+    def test_api_launch_stores_launch_behind_generated_url(self):
+        """Test /api/launch returns a launch URL that names a stored launch."""
         starlette_app = _make_dev_app(
             mcp_url="http://127.0.0.1:8000/mcp",
             app_bridge_js="// js",
@@ -1123,8 +1127,10 @@ class TestRunDevApps:
         assert response.status_code == 200
         url = response.json()
         query = parse_qs(urlsplit(url).query)
-        assert query["tool"] == ["tool&name=<script>"]
-        assert json.loads(query["args"][0]) == {"value": "</script>"}
+        assert list(query) == ["id"]
+        page = client.get(url).text
+        assert "tool&amp;name=&lt;script&gt;" in page
+        assert '{"value": "\\u003c/script\\u003e"}' in page
 
     @pytest.mark.parametrize(
         "host, expected_host",
