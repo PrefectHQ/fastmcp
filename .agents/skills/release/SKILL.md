@@ -28,22 +28,16 @@ one gets a follow-up patch, never a re-tag.
    Read the two most recent releases for voice: `gh release list -L 5`, then
    `gh release view <tag>` on each.
 
-   **Complete contributor attribution before presenting the preview.** Follow
-   [Contributor credit](../../../docs/development/contributing.mdx#contributor-credit).
-   For every included maintainer implementation of a community issue, inspect the
-   linked issue authors, PR description, and landed commit co-authors. Include the
-   credited issue authors alongside the PR author in that change's entry. Missing
-   merged-commit credit is a policy failure to surface to the maintainer, not a
-   reason to omit the reporter from the release notes.
-
-   Check prior merged PR authorship and landed commit authorship/co-authorship
-   before classifying someone as new; an earlier credited issue implementation
-   counts as a contribution too. Add first-time contributors to `New Contributors`
-   with a link to the resolving PR, and deduplicate against GitHub's generated list.
-   An issue alone, without a merged change, does not count. Honor attribution opt-outs
-   and do not treat bot accounts as new human contributors. If history is incomplete,
-   resolve it before calling someone new. Generated notes alone do not satisfy this
-   check. Save the completed generated notes to `/tmp/generated-notes.md`.
+   **Verify contributor credit in the release preview.** Attribution is recorded
+   during PR preparation and verified at merge; do not repeat that audit for every
+   PR and issue. Use the existing release inventory and a batch read of merged
+   commit co-author metadata to supplement generated notes with credited reporters
+   alongside PR authors. Inspect an individual PR or issue only to resolve a
+   discrepancy. Check prior contribution history only for people being newly added
+   to `New Contributors`; earlier credited issue implementations count too.
+   Follow [Contributor credit](../../../docs/development/contributing.mdx#contributor-credit),
+   honor opt-outs, and deduplicate entries. Save the completed generated notes to
+   `/tmp/generated-notes.md`.
 
 2. **Propose titles.** Titles are `v<version>: <pun>`, pun on the release's main
    theme from the release preview. Check prior titles with
