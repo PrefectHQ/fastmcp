@@ -194,6 +194,18 @@ LifespanCallable = Callable[
 ]
 
 
+async def _tool_auth_allows(tool: Tool) -> bool:
+    """Whether the tool's own `auth` check admits the current request."""
+    skip_auth, token = _get_auth_context()
+    if skip_auth or tool.auth is None:
+        return True
+    ctx = AuthContext(token=token, component=tool)
+    try:
+        return await run_auth_checks(tool.auth, ctx)
+    except AuthorizationError:
+        return False
+
+
 def _get_auth_context() -> tuple[bool, Any]:
     """Get auth context for the current request.
 
@@ -532,6 +544,30 @@ class FastMCP(
     def add_middleware(self, middleware: Middleware) -> None:
         self.middleware.append(middleware)
 
+    def _injected_tools(self) -> list[Tool]:
+        """Tools added by `ToolInjectionMiddleware`, outermost middleware first."""
+        # Late import: tool_injection imports Context, which imports this module.
+        from fastmcp.server.middleware.tool_injection import ToolInjectionMiddleware
+
+        return [
+            tool
+            for middleware in self.middleware
+            if isinstance(middleware, ToolInjectionMiddleware)
+            for tool in middleware.injected_tools
+        ]
+
+    def _get_injected_tool(self, name: str) -> Tool | None:
+        """The injected tool with this name from the outermost middleware that has one."""
+        # Late import: tool_injection imports Context, which imports this module.
+        from fastmcp.server.middleware.tool_injection import ToolInjectionMiddleware
+
+        for middleware in self.middleware:
+            if isinstance(middleware, ToolInjectionMiddleware):
+                tool = middleware.get_injected_tool(name)
+                if tool is not None:
+                    return tool
+        return None
+
     def add_provider(self, provider: Provider, *, namespace: str = "") -> None:
         """Add a provider for dynamic tools, resources, and prompts.
 
@@ -689,6 +725,10 @@ class FastMCP(
                 # Tool objects are not mutated.
                 tools = self._rewrite_prefab_uris(tools)
 
+                # Tools from ToolInjectionMiddleware are listed ahead of the
+                # providers' tools and authorized the same way.
+                tools = [*self._injected_tools(), *tools]
+
                 skip_auth, token = _get_auth_context()
                 authorized: list[Tool] = []
                 for tool in tools:
@@ -745,13 +785,21 @@ class FastMCP(
         When the highest version is disabled and no explicit version was
         requested, falls back to the next-highest enabled version.
 
+        A tool from `ToolInjectionMiddleware` takes precedence over a provider
+        tool with the same name. It is matched by name alone and is subject to
+        its own `auth` check, but not to transforms or visibility.
+
         Args:
             name: The tool name.
             version: Version filter (None returns highest version).
 
         Returns:
-            The tool if found and enabled, None otherwise.
+            The tool if found, enabled, and authorized, None otherwise.
         """
+        injected = self._get_injected_tool(name)
+        if injected is not None:
+            return injected if await _tool_auth_allows(injected) else None
+
         tool = await super().get_tool(name, version)
         if tool is None:
             return None

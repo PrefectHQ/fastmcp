@@ -1,5 +1,7 @@
 """Tests for deprecated PromptToolMiddleware and ResourceToolMiddleware."""
 
+from collections.abc import Callable
+
 import pytest
 from inline_snapshot import snapshot
 from mcp.types import TextContent
@@ -9,10 +11,15 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.client import CallToolResult
 from fastmcp.client.transports import FastMCPTransport
+from fastmcp.server.auth import require_scopes
+from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
+from fastmcp.server.middleware import AuthMiddleware
 from fastmcp.server.middleware.tool_injection import (
     PromptToolMiddleware,
     ResourceToolMiddleware,
+    ToolInjectionMiddleware,
 )
+from fastmcp.utilities.tests import run_server_async
 
 
 class TestPromptToolMiddleware:
@@ -243,3 +250,49 @@ class TestResourceToolMiddleware:
                 "meta": None,
             }
         )
+
+
+TOKENS = {
+    "read-token": {"client_id": "reader", "scopes": ["read"]},
+    "admin-token": {"client_id": "administrator", "scopes": ["read", "admin"]},
+}
+
+
+class TestDeprecatedToolMiddlewareAuthorization:
+    """AuthMiddleware applies to the tools these middleware add."""
+
+    @pytest.mark.parametrize(
+        "middleware_cls, tool_name",
+        [
+            (PromptToolMiddleware, "list_prompts"),
+            (ResourceToolMiddleware, "list_resources"),
+        ],
+    )
+    @pytest.mark.parametrize("injection_first", [True, False])
+    @pytest.mark.parametrize(
+        "token, allowed",
+        [("read-token", False), ("admin-token", True)],
+    )
+    async def test_auth_middleware_applies_to_added_tools(
+        self,
+        middleware_cls: Callable[[], ToolInjectionMiddleware],
+        tool_name: str,
+        injection_first: bool,
+        token: str,
+        allowed: bool,
+    ):
+        injection = middleware_cls()
+        auth = AuthMiddleware(auth=require_scopes("admin"))
+        server = FastMCP(
+            "AuthServer",
+            auth=StaticTokenVerifier(TOKENS),
+            middleware=[injection, auth] if injection_first else [auth, injection],
+        )
+
+        async with run_server_async(server) as url:
+            async with Client(url, auth=token) as client:
+                tools = await client.list_tools()
+                result = await client.call_tool(tool_name, {}, raise_on_error=False)
+
+        assert (tool_name in [tool.name for tool in tools]) is allowed
+        assert result.is_error is not allowed
