@@ -174,7 +174,9 @@ class TestMultiAuthInit:
             required_scopes=["read"],
         )
 
-        auth = MultiAuth(verifiers=[first, second], required_scopes=["admin"])
+        auth = MultiAuth(
+            verifiers={"first": first, "second": second}, required_scopes=["admin"]
+        )
 
         assert auth.challenge_scopes == ["admin"]
 
@@ -218,7 +220,7 @@ class TestMultiAuthVerifyToken:
 
         result = await auth.verify_token("server_token")
         assert result is not None
-        assert result.client_id == "server-client"
+        assert result.original_client_id == "server-client"
 
     async def test_falls_back_to_verifiers(self):
         """When server rejects a token, verifiers are tried."""
@@ -238,7 +240,7 @@ class TestMultiAuthVerifyToken:
 
         result = await auth.verify_token("m2m_token")
         assert result is not None
-        assert result.client_id == "m2m-service"
+        assert result.original_client_id == "m2m-service"
 
     async def test_verifier_order_matters(self):
         """Verifiers are tried in order; first match wins."""
@@ -249,10 +251,10 @@ class TestMultiAuthVerifyToken:
             tokens={"shared_token": {"client_id": "second", "scopes": []}}
         )
 
-        auth = MultiAuth(verifiers=[v1, v2])
+        auth = MultiAuth(verifiers={"first": v1, "second": v2})
         result = await auth.verify_token("shared_token")
         assert result is not None
-        assert result.client_id == "first"
+        assert result.original_client_id == "first"
 
     async def test_no_match_returns_none(self):
         """When no server or verifier accepts the token, returns None."""
@@ -266,15 +268,15 @@ class TestMultiAuthVerifyToken:
         v1 = StaticTokenVerifier(tokens={"token_a": {"client_id": "a", "scopes": []}})
         v2 = StaticTokenVerifier(tokens={"token_b": {"client_id": "b", "scopes": []}})
 
-        auth = MultiAuth(verifiers=[v1, v2])
+        auth = MultiAuth(verifiers={"first": v1, "second": v2})
 
         result_a = await auth.verify_token("token_a")
         assert result_a is not None
-        assert result_a.client_id == "a"
+        assert result_a.original_client_id == "a"
 
         result_b = await auth.verify_token("token_b")
         assert result_b is not None
-        assert result_b.client_id == "b"
+        assert result_b.original_client_id == "b"
 
     async def test_raising_verifier_does_not_break_chain(self):
         """If a verifier raises, the chain continues to the next source."""
@@ -285,7 +287,7 @@ class TestMultiAuthVerifyToken:
 
         result = await auth.verify_token("valid")
         assert result is not None
-        assert result.client_id == "good-client"
+        assert result.original_client_id == "good-client"
 
     async def test_raising_server_does_not_break_chain(self):
         """If the server raises, verifiers are still tried."""
@@ -296,11 +298,13 @@ class TestMultiAuthVerifyToken:
 
         result = await auth.verify_token("valid")
         assert result is not None
-        assert result.client_id == "fallback"
+        assert result.original_client_id == "fallback"
 
     async def test_all_raising_returns_none(self):
         """If every source raises, verify_token returns None."""
-        auth = MultiAuth(verifiers=[RaisingVerifier(), RaisingVerifier()])
+        auth = MultiAuth(
+            verifiers={"first": RaisingVerifier(), "second": RaisingVerifier()}
+        )
         result = await auth.verify_token("anything")
         assert result is None
 
@@ -322,7 +326,7 @@ class TestMultiAuthVerifyToken:
         auth = MultiAuth(server=server, verifiers=[extra])
         result = await auth.verify_token("token")
         assert result is not None
-        assert result.client_id == "from-server"
+        assert result.original_client_id == "from-server"
 
 
 class TestMultiAuthRoutes:
@@ -403,7 +407,7 @@ class TestMultiAuthIntegration:
             }
         )
 
-        auth = MultiAuth(verifiers=[oauth_tokens, m2m_tokens])
+        auth = MultiAuth(verifiers={"interactive": oauth_tokens, "backend": m2m_tokens})
         mcp = FastMCP("test", auth=auth)
         app = mcp.http_app(path="/mcp")
 
@@ -634,7 +638,9 @@ class TestMultiAuthIntegration:
             }
         )
 
-        auth = MultiAuth(verifiers=[interactive_tokens, m2m_tokens])
+        auth = MultiAuth(
+            verifiers={"interactive": interactive_tokens, "backend": m2m_tokens}
+        )
         mcp = FastMCP("test", auth=auth)
         app = mcp.http_app(path="/mcp")
 
@@ -682,7 +688,7 @@ class TestMultiAuthSetMcpPath:
     def test_propagates_to_verifiers(self):
         v1 = StaticTokenVerifier(tokens={"t": {"client_id": "c", "scopes": []}})
         v2 = StaticTokenVerifier(tokens={"t2": {"client_id": "c2", "scopes": []}})
-        auth = MultiAuth(verifiers=[v1, v2])
+        auth = MultiAuth(verifiers={"first": v1, "second": v2})
         auth.set_mcp_path("/mcp")
         assert v1._mcp_path == "/mcp"
         assert v2._mcp_path == "/mcp"
