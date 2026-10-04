@@ -10,8 +10,8 @@ executed.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Iterator, Sequence
+from contextlib import asynccontextmanager, contextmanager
 from typing import TYPE_CHECKING, Any
 
 from pydantic import AnyUrl
@@ -26,6 +26,7 @@ from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.versions import VersionSpec
 
 if TYPE_CHECKING:
+    from fastmcp.server.extensions import ServerExtension
     from fastmcp.server.server import FastMCP
 
 
@@ -83,14 +84,19 @@ class FastMCPProviderTool(Tool):
         `InputRequiredToolResult`, which forwards through this delegation to the
         parent's wire handler unchanged.
         """
+        from fastmcp.server.extensions import _delegate_extension_interceptors
+
         # Pass exact version so child executes the correct version
         version = VersionSpec(eq=self.version) if self.version else None
 
-        with delegate_span(
-            self._original_name or "",
-            "FastMCPProvider",
-            self._original_name or "",
-            method="tools/call",
+        with (
+            _delegate_extension_interceptors(self._server),
+            delegate_span(
+                self._original_name or "",
+                "FastMCPProvider",
+                self._original_name or "",
+                method="tools/call",
+            ),
         ):
             return await self._server.call_tool(
                 self._original_name,
@@ -104,12 +110,15 @@ class FastMCPProviderTool(Tool):
         This is called when the tool is used within a TransformedTool
         forwarding function or other contexts.
         """
+        from fastmcp.server.extensions import _delegate_extension_interceptors
+
         # Pass exact version so child executes the correct version
         version = VersionSpec(eq=self.version) if self.version else None
 
-        return await self._server.call_tool(
-            self._original_name, arguments, version=version
-        )
+        with _delegate_extension_interceptors(self._server):
+            return await self._server.call_tool(
+                self._original_name, arguments, version=version
+            )
 
     def get_span_attributes(self) -> dict[str, Any]:
         return super().get_span_attributes() | {
@@ -405,6 +414,17 @@ class FastMCPProvider(Provider):
         super().__init__()
         self.server = server
 
+    def required_extensions(self) -> Sequence[ServerExtension]:
+        """Expose the mounted server's bundled and auto-registerable extensions."""
+        return self.server.required_extensions()
+
+    @contextmanager
+    def _extension_runtime(
+        self, available: frozenset[str], *, root: FastMCP | None
+    ) -> Iterator[None]:
+        with self.server._extension_runtime(available, root=root):
+            yield
+
     # -------------------------------------------------------------------------
     # Tool methods
     # -------------------------------------------------------------------------
@@ -444,8 +464,14 @@ class FastMCPProvider(Provider):
         wrapped._original_name = hashed_backend_name(app_name, tool_name)
         return wrapped
 
-    async def get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
-        """Delegate to nested server's get_tool_by_hash, wrapping for middleware."""
+    async def _get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
+        """Delegate to nested server's get_tool_by_hash, wrapping for middleware.
+
+        The nested server applies its own transforms, visibility, and auth.
+        The call is forwarded under the hashed name so the nested server
+        resolves the same tool again rather than whatever its listed name
+        reaches.
+        """
         raw_tool = await self.server.get_tool_by_hash(tool_hash, tool_name)
         if raw_tool is None:
             return None

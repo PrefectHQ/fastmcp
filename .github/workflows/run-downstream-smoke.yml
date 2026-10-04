@@ -67,7 +67,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.1.0
+        uses: astral-sh/setup-uv@v10.2.0
 
       - name: Build wheels
         id: build
@@ -142,7 +142,7 @@ jobs:
           path: dist
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.1.0
+        uses: astral-sh/setup-uv@v10.2.0
         with:
           python-version: "3.13"
           enable-cache: true
@@ -154,6 +154,7 @@ jobs:
         working-directory: pydantic-ai
         run: |
           echo "UV_RUN=uv run --all-extras --no-extra mcp-tasks --all-packages \
+            --exclude-newer-package pydocket=2026-10-03T00:00:00Z \
             --with fastmcp@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp-4*.whl) \
             --with fastmcp-slim@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp_slim-*.whl) \
             --with fastmcp-tasks@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp_tasks-*.whl)" >> "$GITHUB_ENV"
@@ -199,7 +200,7 @@ jobs:
           path: dist
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.1.0
+        uses: astral-sh/setup-uv@v10.2.0
         with:
           python-version: "3.13"
           enable-cache: true

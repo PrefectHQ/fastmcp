@@ -33,3 +33,11 @@ api-ref-clean:
 
 copy-context:
     uvx --with-editable fastmcp_slim --refresh-package copychat copychat@latest fastmcp_slim/fastmcp docs/ -x changelog.mdx -x python-sdk/ -v
+
+# Browse ranked maintainer attention in Textual
+issues *ARGS:
+    uv run scripts/rank_issues_tui.py {{ARGS}}
+
+# Print the same ranking or export it with --public --json
+issues-table *ARGS:
+    uv run scripts/rank_issues.py {{ARGS}}
