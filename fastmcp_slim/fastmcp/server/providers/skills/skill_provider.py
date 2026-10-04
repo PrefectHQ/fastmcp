@@ -54,7 +54,7 @@ class SkillResource(Resource):
         if self.is_manifest:
             return self._generate_manifest()
         else:
-            main_file_path = self.skill_info.path / self.skill_info.main_file
+            main_file_path = safe_join(self.skill_info.path, self.skill_info.main_file)
             return main_file_path.read_text(encoding="utf-8")
 
     def _generate_manifest(self) -> str:
@@ -225,10 +225,10 @@ class SkillProvider(Provider):
 
     def _load_skill(self) -> None:
         """Load and parse the skill directory."""
-        main_file = self._skill_path / self._main_file_name
-
         if not self._skill_path.exists():
             raise FileNotFoundError(f"Skill directory not found: {self._skill_path}")
+
+        main_file = safe_join(self._skill_path, self._main_file_name)
 
         if not main_file.exists():
             raise FileNotFoundError(
