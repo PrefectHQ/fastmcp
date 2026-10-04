@@ -11,6 +11,7 @@ from jsonschema_path import SchemaPath
 from fastmcp.utilities.logging import get_logger
 
 from .models import HTTPRoute, ParameterInfo
+from .schemas import _combine_schemas_and_map_params
 
 logger = get_logger(__name__)
 
@@ -24,6 +25,96 @@ def _query_scalar_to_str(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     return str(value)
+
+
+def _allof_members(
+    schema: dict[str, Any],
+    schema_defs: dict[str, Any],
+    resolving: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Expand local schema references while collecting `allOf` members."""
+    resolving = resolving or set()
+
+    ref = schema.get("$ref")
+    if isinstance(ref, str):
+        for prefix in ("#/$defs/", "#/components/schemas/"):
+            if ref.startswith(prefix):
+                name = ref.removeprefix(prefix)
+                referenced_schema = schema_defs.get(name)
+                if isinstance(referenced_schema, dict) and name not in resolving:
+                    siblings = {
+                        key: value for key, value in schema.items() if key != "$ref"
+                    }
+                    members = _allof_members(
+                        referenced_schema, schema_defs, resolving | {name}
+                    )
+                    return members + ([siblings] if siblings else [])
+                break
+
+    all_of = schema.get("allOf")
+    if isinstance(all_of, list):
+        members = []
+        for member in all_of:
+            if isinstance(member, dict):
+                members.extend(_allof_members(member, schema_defs, resolving))
+
+        siblings = {key: value for key, value in schema.items() if key != "allOf"}
+        return members + ([siblings] if siblings else [])
+
+    return [schema]
+
+
+def _prepare_parameter_map(
+    route: HTTPRoute,
+) -> tuple[HTTPRoute, dict[str, dict[str, str]]]:
+    """Return the route's parameter map, building it if the route lacks one.
+
+    Routes from the OpenAPI parser carry a precomputed map. Routes constructed
+    directly may declare parameters or a request body without one; those get
+    a map from the parser's map builder, computed on a copy so the caller's
+    route is left unchanged. Those routes also accept `<name>__<location>`
+    for each declared parameter, naming the parameter at that location. An
+    empty map for a route with no parameters and no request body is already
+    complete.
+    """
+    if route.parameter_map or not (route.parameters or route.request_body):
+        return route, route.parameter_map
+
+    request_body = (
+        route.request_body.model_copy(deep=True) if route.request_body else None
+    )
+    if request_body:
+        # The map builder merges only inline `allOf` members, so expand
+        # referenced members first to keep their properties.
+        for body_schema in request_body.content_schema.values():
+            ref = body_schema.get("$ref")
+            if isinstance(ref, str) and "properties" in body_schema:
+                # A `$ref` with sibling properties merges like an `allOf`
+                # member plus the siblings.
+                body_schema["allOf"] = [{"$ref": body_schema.pop("$ref")}]
+            all_of = body_schema.get("allOf")
+            if isinstance(all_of, list):
+                body_schema["allOf"] = [
+                    expanded
+                    for member in all_of
+                    if isinstance(member, dict)
+                    for expanded in _allof_members(member, route.request_schemas)
+                ]
+                own = {
+                    key: body_schema[key]
+                    for key in ("properties", "required")
+                    if key in body_schema
+                }
+                if own:
+                    body_schema["allOf"].append(own)
+    prepared = route.model_copy(update={"request_body": request_body})
+    _, parameter_map = _combine_schemas_and_map_params(prepared, convert_refs=False)
+    for param in route.parameters:
+        parameter_map.setdefault(
+            f"{param.name}__{param.location}",
+            {"location": param.location, "openapi_name": param.name},
+        )
+    return prepared, parameter_map
 
 
 class RequestDirector:
@@ -159,6 +250,10 @@ class RequestDirector:
         """
         Maps flat arguments back to their OpenAPI locations using the parameter map.
 
+        The parameter map is the only source of argument locations. Arguments
+        that are not in the map are dropped, so a route that declares no
+        parameters and no request body sends none.
+
         Args:
             route: HTTPRoute with parameter_map containing location mappings
             flat_args: Flat arguments from LLM call
@@ -172,78 +267,37 @@ class RequestDirector:
         cookie_params = {}
         body_props = {}
 
-        # Use parameter map to route arguments to correct locations
-        if hasattr(route, "parameter_map") and route.parameter_map:
-            for arg_name, value in flat_args.items():
-                if value is None:
-                    continue  # Skip None values for optional parameters
+        built_map = not route.parameter_map
+        route, parameter_map = _prepare_parameter_map(route)
 
-                if arg_name not in route.parameter_map:
-                    logger.warning(
-                        f"Argument '{arg_name}' not found in parameter map for {route.operation_id}"
-                    )
-                    continue
+        for arg_name, value in flat_args.items():
+            if value is None:
+                continue  # Skip None values for optional parameters
 
-                mapping = route.parameter_map[arg_name]
-                location = mapping["location"]
-                openapi_name = mapping["openapi_name"]
+            if arg_name not in parameter_map:
+                logger.warning(
+                    f"Argument '{arg_name}' not found in parameter map for {route.operation_id}"
+                )
+                continue
 
-                if location == "path":
-                    path_params[openapi_name] = value
-                elif location == "query":
-                    query_params[openapi_name] = value
-                elif location == "header":
-                    header_params[openapi_name] = value
-                elif location == "cookie":
-                    cookie_params[openapi_name] = value
-                elif location == "body":
-                    body_props[openapi_name] = value
-                else:
-                    logger.warning(
-                        f"Unknown parameter location '{location}' for {arg_name}"
-                    )
-        else:
-            # Fallback: try to map arguments based on parameter definitions
-            logger.debug("No parameter map available, using fallback mapping")
+            mapping = parameter_map[arg_name]
+            location = mapping["location"]
+            openapi_name = mapping["openapi_name"]
 
-            # Create a mapping from parameter names to their locations
-            param_locations = {}
-            for param in route.parameters:
-                param_locations[param.name] = param.location
-
-            # Map arguments to locations
-            for arg_name, value in flat_args.items():
-                if value is None:
-                    continue
-
-                # Check if it's a suffixed parameter (e.g., id__path)
-                if "__" in arg_name:
-                    base_name, location = arg_name.rsplit("__", 1)
-                    if location in ["path", "query", "header", "cookie"]:
-                        if location == "path":
-                            path_params[base_name] = value
-                        elif location == "query":
-                            query_params[base_name] = value
-                        elif location == "header":
-                            header_params[base_name] = value
-                        elif location == "cookie":
-                            cookie_params[base_name] = value
-                        continue
-
-                # Check if it's a known parameter
-                if arg_name in param_locations:
-                    location = param_locations[arg_name]
-                    if location == "path":
-                        path_params[arg_name] = value
-                    elif location == "query":
-                        query_params[arg_name] = value
-                    elif location == "header":
-                        header_params[arg_name] = value
-                    elif location == "cookie":
-                        cookie_params[arg_name] = value
-                else:
-                    # Assume it's a body property
-                    body_props[arg_name] = value
+            if location == "path":
+                path_params[openapi_name] = value
+            elif location == "query":
+                query_params[openapi_name] = value
+            elif location == "header":
+                header_params[openapi_name] = value
+            elif location == "cookie":
+                cookie_params[openapi_name] = value
+            elif location == "body":
+                body_props[openapi_name] = value
+            else:
+                logger.warning(
+                    f"Unknown parameter location '{location}' for {arg_name}"
+                )
 
         # Handle body construction
         body = None
@@ -257,9 +311,17 @@ class RequestDirector:
                 content_type = next(iter(route.request_body.content_schema))
                 body_schema = route.request_body.content_schema[content_type]
 
+                # A map built here for a free-form object body holds the whole
+                # body in a single argument.
+                is_whole_body = (
+                    built_map
+                    and len(body_props) == 1
+                    and not body_schema.get("properties")
+                )
                 if (
                     isinstance(body_schema, dict)
                     and body_schema.get("type") == "object"
+                    and not is_whole_body
                 ):
                     body = body_props
                 elif len(body_props) == 1:
