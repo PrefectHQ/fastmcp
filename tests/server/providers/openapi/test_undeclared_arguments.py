@@ -325,6 +325,31 @@ def test_manual_route_with_allof_and_sibling_properties_sends_both() -> None:
     assert json.loads(request.content) == {"name": "thing", "local": "value"}
 
 
+def test_manual_route_with_ref_and_sibling_properties_sends_both() -> None:
+    route = HTTPRoute(
+        path="/things",
+        method="POST",
+        request_body=RequestBodyInfo(
+            content_schema={
+                "application/json": {
+                    "$ref": "#/components/schemas/Thing",
+                    "properties": {"local": {"type": "string"}},
+                }
+            }
+        ),
+        request_schemas={
+            "Thing": {"type": "object", "properties": {"name": {"type": "string"}}}
+        },
+    )
+    request_director = RequestDirector(SchemaPath.from_dict({}))
+
+    request = request_director.build(
+        route, {"name": "thing", "local": "value", "extra": "x"}, BASE_URL
+    )
+
+    assert json.loads(request.content) == {"name": "thing", "local": "value"}
+
+
 def test_manual_route_with_free_form_object_body_sends_the_object() -> None:
     route = HTTPRoute(
         path="/things",

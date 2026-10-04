@@ -87,6 +87,11 @@ def _prepare_parameter_map(
         # The map builder merges only inline `allOf` members, so expand
         # referenced members first to keep their properties.
         for body_schema in request_body.content_schema.values():
+            ref = body_schema.get("$ref")
+            if isinstance(ref, str) and "properties" in body_schema:
+                # A `$ref` with sibling properties merges like an `allOf`
+                # member plus the siblings.
+                body_schema["allOf"] = [{"$ref": body_schema.pop("$ref")}]
             all_of = body_schema.get("allOf")
             if isinstance(all_of, list):
                 body_schema["allOf"] = [
