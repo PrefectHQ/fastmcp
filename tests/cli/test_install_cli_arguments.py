@@ -29,7 +29,7 @@ CMD_OPERATORS = frozenset("&|<>()")
 FAKE_CMD_ENVIRONMENT = {
     "cd": "C:\\work",
     "path": "C:\\Windows\\System32",
-    "x": "value",
+    "x": "EXPANDED",
 }
 
 LITERAL_ARGUMENTS = [
@@ -40,13 +40,19 @@ LITERAL_ARGUMENTS = [
     "https://example.com/pkg.whl?a=1&b=2#sha256=abc",
     "100%",
     "%PATH%",
-    "%PATH:Windows=Win%",
+    "%PATH:Windows=EXPANDED%",
     "%%",
+    "%x%",
     "%x%x%",
     "%cd:~,%",
     "!x!",
+    "!x!%x%!x!",
     "^caret^",
     "a|b",
+    "a&b",
+    "a<b",
+    "a>b",
+    "(a)",
     'say "hi"',
     '"',
     '""',
@@ -58,8 +64,19 @@ LITERAL_ARGUMENTS = [
     "API_URL=https://example.com/api?user=me&page=2",
     "SEARCH=cats|dogs",
     "PATTERN=^[a-z]+$",
+    "PATTERN=a^&b",
+    "PATTERN=a^^b",
     'GREETING=say "hi" & wave',
+    'NOTE=5" tall & wide',
+    'LABEL=a"&b"&c',
+    "LOG=run>out.txt",
+    "LOG=run 2>&1",
+    "FILTER=size<10",
+    "GROUP=(a&b)|(c&d)",
+    "PERCENT=%PATH% %x% 100%",
+    "BANG=!x! hello!",
     'CONFIG={"key": "value", "ratio": "50%"}',
+    'MIXED={"key": "value"} & literal % ! \' ` ; , =',
     "NOTE=it's done; ok, thanks = yes",
     "café ünïcode",
     "tab\tseparated",
@@ -192,8 +209,15 @@ class TestQuoteWindowsBatchArgument:
             ('a\\"b', '"a\\\\""b"'),
             ("C:\\dir\\", '"C:\\dir\\\\"'),
             ("100%", '"100%%cd:~,%"'),
+            ("%x%", '"%%cd:~,%x%%cd:~,%"'),
             ("!x!", '"!x!"'),
             ("a&b", '"a&b"'),
+            ("a|b", '"a|b"'),
+            ("a<b", '"a<b"'),
+            ("a>b", '"a>b"'),
+            ("a^b", '"a^b"'),
+            ("(a)", '"(a)"'),
+            ('5" tall & wide', '"5"" tall & wide"'),
         ],
     )
     def test_quoted_form(self, argument: str, expected: str):
@@ -305,7 +329,14 @@ class TestInstallerSubprocessBoundary:
             server_object="mcp",
             name="server",
             with_packages=["pandas>=2.0", 'foo; python_version<"3.12"'],
-            env_vars={"API_URL": "https://example.com/?a=1&b=2", "PERCENT": "%PATH%"},
+            env_vars={
+                "API_URL": "https://example.com/?a=1&b=2",
+                "LOG": "run>out.txt",
+                "NOTE": '5" tall & wide',
+                "PATTERN": "a^&b",
+                "PERCENT": "%PATH% %x%",
+                "BANG": "!x!",
+            },
         )
 
         run.assert_called_once()
@@ -315,7 +346,11 @@ class TestInstallerSubprocessBoundary:
         script, received = arguments_received_through_batch_file(command_line)
         assert script == wrapper
         assert "API_URL=https://example.com/?a=1&b=2" in received
-        assert "PERCENT=%PATH%" in received
+        assert "LOG=run>out.txt" in received
+        assert 'NOTE=5" tall & wide' in received
+        assert "PATTERN=a^&b" in received
+        assert "PERCENT=%PATH% %x%" in received
+        assert "BANG=!x!" in received
         assert "pandas>=2.0" in received
         assert 'foo; python_version<"3.12"' in received
 
@@ -353,17 +388,28 @@ class TestInstallerSubprocessBoundary:
             file=Path("server.py"),
             server_object=None,
             name="server",
-            env_vars={"API_URL": "https://example.com/?a=1&b=2 %PATH%"},
+            env_vars={
+                "API_URL": "https://example.com/?a=1&b=2 %PATH%",
+                "LOG": "run>out.txt",
+                "BANG": "!x! %x%",
+            },
         )
 
         argv = run.call_args.args[0]
         assert isinstance(argv, list)
         assert argv[0] == executable
         assert "API_URL=https://example.com/?a=1&b=2 %PATH%" in argv
+        assert "LOG=run>out.txt" in argv
+        assert "BANG=!x! %x%" in argv
         assert "executable" not in run.call_args.kwargs
 
+    @pytest.mark.parametrize("value", ["hello\nworld", "hello\rworld", "hello\r\n"])
     def test_batch_wrapper_rejects_line_break(
-        self, installer: Installer, run: Mock, monkeypatch: pytest.MonkeyPatch
+        self,
+        installer: Installer,
+        run: Mock,
+        monkeypatch: pytest.MonkeyPatch,
+        value: str,
     ):
         use_platform(
             monkeypatch, installer, "win32", f"{installer.executable_name}.cmd"
@@ -372,7 +418,7 @@ class TestInstallerSubprocessBoundary:
             file=Path("server.py"),
             server_object=None,
             name="server",
-            env_vars={"GREETING": "hello\nworld"},
+            env_vars={"GREETING": value},
         )
         run.assert_not_called()
 
@@ -392,22 +438,32 @@ class TestInstallerSubprocessBoundary:
         config.write_text(
             json.dumps(
                 {
-                    "source": {"path": "server.py", "entrypoint": "mcp"},
+                    "source": {"path": "server.py", "entrypoint": "mcp&app"},
                     "environment": {
-                        "dependencies": ["pandas>=2.0", 'tomli; python_version<"3.11"']
+                        "dependencies": [
+                            "pandas>=2.0,!=2.1",
+                            'tomli; python_version<"3.11"',
+                            "pkg @ https://example.com/pkg.whl?a=1&b=2",
+                        ]
                     },
                 }
             )
         )
         env_file = tmp_path / ".env"
-        env_file.write_text("API_URL='https://example.com/?a=1&b=2 100% !'\n")
+        env_file.write_text(
+            "API_URL='https://example.com/?a=1&b=2 100% !'\n"
+            "LOG='run>out.txt %PATH% %x% !x!'\n"
+        )
 
         await installer.command(str(config), server_name="server", env_file=env_file)
 
         _, received = arguments_received_through_batch_file(run.call_args.args[0])
         assert "API_URL=https://example.com/?a=1&b=2 100% !" in received
-        assert "pandas>=2.0" in received
+        assert "LOG=run>out.txt %PATH% %x% !x!" in received
+        assert "pandas>=2.0,!=2.1" in received
         assert 'tomli; python_version<"3.11"' in received
+        assert "pkg @ https://example.com/pkg.whl?a=1&b=2" in received
+        assert f"{(tmp_path / 'server.py').resolve()}:mcp&app" in received
 
 
 def test_run_cli_command_passes_argument_list(run: Mock):
@@ -481,15 +537,29 @@ def test_native_windows_cmd_wrapper_receives_literal_arguments(
     server = tmp_path / "project (1)" / "server.py"
     server.parent.mkdir()
     server.write_text("")
+    work_dir = tmp_path / "cwd"
+    work_dir.mkdir()
+    monkeypatch.chdir(work_dir)
+    monkeypatch.setenv("x", "EXPANDED")
 
     env_vars = {
         "API_URL": "https://example.com/api?user=me&page=2",
         "SEARCH": "cats|dogs",
         "PATTERN": "^[a-z]+$",
+        "ESCAPED": "a^&b",
         "GREETING": 'say "hi" & wave',
-        "PERCENT": "%PATH% 100%",
+        "NOTE": '5" tall & wide',
+        "LABEL": 'a"&b"&c',
+        "LOG": "run>out.txt",
+        "STDERR": "run 2>&1",
+        "FILTER": "size<10",
+        "GROUP": "(a&b)|(c&d)",
+        "PERCENT": "%PATH% %x% 100%",
+        "VARIABLE": "%x%",
+        "BANG": "!x!",
         "EXCLAIM": "hello!",
         "CONFIG": 'json={"key": "value"}',
+        "MIXED": '{"key": "value"} & literal % ! \' ` ; , =',
         "DATA_DIR": "C:\\data\\",
     }
     packages = [
@@ -531,3 +601,8 @@ def test_native_windows_cmd_wrapper_receives_literal_arguments(
 
     received = json.loads((wrapper_dir / "argv.json").read_text(encoding="utf-8"))
     assert received == expected
+
+    assert list(work_dir.iterdir()) == []
+    assert not (wrapper_dir / "out.txt").exists()
+    assert not (server.parent / "out.txt").exists()
+    assert not (tmp_path / "out.txt").exists()
