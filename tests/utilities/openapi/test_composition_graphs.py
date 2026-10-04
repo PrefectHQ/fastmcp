@@ -10,6 +10,16 @@ from fastmcp import Client, FastMCP
 from fastmcp.utilities.openapi.schemas import _allof_members
 
 
+def test_deep_composition_chain_retains_leaf_members():
+    leaf = {"type": "object", "properties": {"name": {"type": "string"}}}
+    definitions: dict[str, Any] = {"L0": leaf}
+    for level in range(1, 251):
+        definitions[f"L{level}"] = {
+            "allOf": [{"$ref": f"#/components/schemas/L{level - 1}"}]
+        }
+    assert _allof_members({"$ref": "#/components/schemas/L250"}, definitions) == [leaf]
+
+
 def test_shared_members_are_collected_once():
     leaf = {"type": "object", "properties": {"name": {"type": "string"}}}
     defs: dict[str, Any] = {"L0": leaf}

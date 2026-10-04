@@ -245,7 +245,7 @@ def _allof_members(
     def collect(
         node: dict[str, Any], refs: set[str]
     ) -> tuple[list[dict[str, Any]], frozenset[str], bool]:
-        nonlocal retained, visits
+        nonlocal retained, visits, merged
         visits += 1
         if visits > _MAX_COMPOSITION_MEMBERS:
             raise ValueError("Schema composition has too many visited members")
@@ -272,14 +272,6 @@ def _allof_members(
                 members.pop(key, None)
                 members[key] = item
 
-        def extend(child: dict[str, Any], child_refs: set[str]) -> None:
-            nonlocal contextual, merged
-            items, child_dependencies, child_contextual = collect(child, child_refs)
-            merged += len(child_dependencies)
-            append(items)
-            dependencies.update(child_dependencies)
-            contextual |= child_contextual
-
         ref = node.get("$ref")
         referenced = None
         name = ""
@@ -291,20 +283,29 @@ def _allof_members(
                     referenced = schema_defs.get(name) if name not in refs else None
                     contextual |= name in refs
                     break
+        children: list[tuple[dict[str, Any], set[str]]] = []
+        trailing: list[dict[str, Any]] = []
         if isinstance(referenced, dict):
-            extend(referenced, refs | {name})
+            children.append((referenced, refs | {name}))
             siblings = {key: value for key, value in node.items() if key != "$ref"}
             if siblings:
-                extend(siblings, refs)
+                children.append((siblings, refs))
         elif isinstance(node.get("allOf"), list):
-            for member in node["allOf"]:
-                if isinstance(member, dict):
-                    extend(member, refs)
+            children.extend(
+                (member, refs) for member in node["allOf"] if isinstance(member, dict)
+            )
             siblings = {key: value for key, value in node.items() if key != "allOf"}
             if siblings:
-                append([siblings])
+                trailing.append(siblings)
         else:
-            append([node])
+            trailing.append(node)
+        for child, child_refs in children:
+            items, child_dependencies, child_contextual = collect(child, child_refs)
+            merged += len(child_dependencies)
+            append(items)
+            dependencies.update(child_dependencies)
+            contextual |= child_contextual
+        append(trailing)
         active.remove(identity)
         result = list(members.values())
         dependency_names = frozenset(dependencies)
