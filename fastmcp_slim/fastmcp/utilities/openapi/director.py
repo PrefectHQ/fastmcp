@@ -27,6 +27,43 @@ def _query_scalar_to_str(value: Any) -> str:
     return str(value)
 
 
+def _allof_members(
+    schema: dict[str, Any],
+    schema_defs: dict[str, Any],
+    resolving: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Expand local schema references while collecting `allOf` members."""
+    resolving = resolving or set()
+
+    ref = schema.get("$ref")
+    if isinstance(ref, str):
+        for prefix in ("#/$defs/", "#/components/schemas/"):
+            if ref.startswith(prefix):
+                name = ref.removeprefix(prefix)
+                referenced_schema = schema_defs.get(name)
+                if isinstance(referenced_schema, dict) and name not in resolving:
+                    siblings = {
+                        key: value for key, value in schema.items() if key != "$ref"
+                    }
+                    members = _allof_members(
+                        referenced_schema, schema_defs, resolving | {name}
+                    )
+                    return members + ([siblings] if siblings else [])
+                break
+
+    all_of = schema.get("allOf")
+    if isinstance(all_of, list):
+        members = []
+        for member in all_of:
+            if isinstance(member, dict):
+                members.extend(_allof_members(member, schema_defs, resolving))
+
+        siblings = {key: value for key, value in schema.items() if key != "allOf"}
+        return members + ([siblings] if siblings else [])
+
+    return [schema]
+
+
 def _prepare_parameter_map(
     route: HTTPRoute,
 ) -> tuple[HTTPRoute, dict[str, dict[str, str]]]:
@@ -34,9 +71,11 @@ def _prepare_parameter_map(
 
     Routes from the OpenAPI parser carry a precomputed map. Routes constructed
     directly may declare parameters or a request body without one; those get
-    the map the parser would have built, computed on a copy so the caller's
-    route is left unchanged. An empty map for a route with no parameters and
-    no request body is already complete.
+    a map from the parser's map builder, computed on a copy so the caller's
+    route is left unchanged. Those routes also accept `<name>__<location>`
+    for each declared parameter, naming the parameter at that location. An
+    empty map for a route with no parameters and no request body is already
+    complete.
     """
     if route.parameter_map or not (route.parameters or route.request_body):
         return route, route.parameter_map
@@ -44,8 +83,25 @@ def _prepare_parameter_map(
     request_body = (
         route.request_body.model_copy(deep=True) if route.request_body else None
     )
+    if request_body:
+        # The map builder merges only inline `allOf` members, so expand
+        # referenced members first to keep their properties.
+        for body_schema in request_body.content_schema.values():
+            all_of = body_schema.get("allOf")
+            if isinstance(all_of, list):
+                body_schema["allOf"] = [
+                    expanded
+                    for member in all_of
+                    if isinstance(member, dict)
+                    for expanded in _allof_members(member, route.request_schemas)
+                ]
     prepared = route.model_copy(update={"request_body": request_body})
     _, parameter_map = _combine_schemas_and_map_params(prepared, convert_refs=False)
+    for param in route.parameters:
+        parameter_map.setdefault(
+            f"{param.name}__{param.location}",
+            {"location": param.location, "openapi_name": param.name},
+        )
     return prepared, parameter_map
 
 
