@@ -918,7 +918,12 @@ class FastMCP(
         Returns:
             The tool if found, enabled, and authorized, None otherwise.
         """
-        injected = self._get_injected_tool(name)
+        # A hashed lookup resolves one identity; injected tools have none.
+        injected = (
+            self._get_injected_tool(name)
+            if hashed_lookup_target(self) is None
+            else None
+        )
         if injected is not None:
             return injected if await _tool_auth_allows(injected) else None
 
