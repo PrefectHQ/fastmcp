@@ -3,7 +3,7 @@
 import io
 import json as _json
 from typing import Any, ClassVar
-from urllib.parse import quote, urljoin
+from urllib.parse import quote, unquote, urljoin
 
 import httpx
 from jsonschema_path import SchemaPath
@@ -14,6 +14,8 @@ from .models import HTTPRoute, ParameterInfo
 from .schemas import _combine_schemas_and_map_params
 
 logger = get_logger(__name__)
+
+_MAX_PATH_DECODINGS = 32
 
 
 def _query_scalar_to_str(value: Any) -> str:
@@ -426,6 +428,23 @@ class RequestDirector:
         for param_name, param_value in path_params.items():
             placeholder = f"{{{param_name}}}"
             if placeholder in url_path:
+                decoded = str(param_value)
+                for _ in range(_MAX_PATH_DECODINGS):
+                    if any(
+                        part in {".", ".."}
+                        for part in decoded.replace("\\", "/").split("/")
+                    ):
+                        raise ValueError(
+                            f"Path parameter '{param_name}' cannot contain dot segments"
+                        )
+                    expanded = unquote(decoded)
+                    if expanded == decoded:
+                        break
+                    decoded = expanded
+                else:
+                    raise ValueError(
+                        f"Path parameter '{param_name}' has too many encoding layers"
+                    )
                 safe_value = quote(str(param_value), safe="").replace(".", "%2E")
                 url_path = url_path.replace(placeholder, safe_value)
 
