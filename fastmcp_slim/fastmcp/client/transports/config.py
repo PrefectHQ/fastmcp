@@ -176,6 +176,7 @@ class MCPConfigTransport(ClientTransport):
                 stack,
                 requested_mode,
                 prepared_transports=prepared_transports,
+                transport_options=transport_options,
             )
 
             # `auto` is an aggregate negotiation: the composite can only expose
@@ -195,7 +196,11 @@ class MCPConfigTransport(ClientTransport):
                 stack = contextlib.AsyncExitStack()
                 await stack.__aenter__()
                 composite, _ = await self._build_composite(
-                    FastMCP, timeout, stack, "legacy"
+                    FastMCP,
+                    timeout,
+                    stack,
+                    "legacy",
+                    transport_options=transport_options,
                 )
                 self._resolved_legacy_only = True
             else:
@@ -218,6 +223,7 @@ class MCPConfigTransport(ClientTransport):
         stack: contextlib.AsyncExitStack,
         backend_mode: str,
         prepared_transports: dict[str, ClientTransport] | None = None,
+        transport_options: TransportOptions | None = None,
     ) -> tuple["FastMCP[Any]", list[str]]:
         """Connect configured backends and mount their proxies on one router."""
         composite = fastmcp_type(
@@ -256,6 +262,7 @@ class MCPConfigTransport(ClientTransport):
                     stack,
                     current_mode,
                     transport=transport,
+                    transport_options=transport_options,
                 )
             except Exception:  # Broad catch is intentional: failure modes
                 # are diverse (OSError, TimeoutError, RuntimeError, etc.) and
@@ -318,6 +325,7 @@ class MCPConfigTransport(ClientTransport):
         stack: contextlib.AsyncExitStack,
         backend_mode: str | None = None,
         transport: ClientTransport | None = None,
+        transport_options: TransportOptions | None = None,
     ) -> tuple[ClientTransport, Any, "FastMCP[Any]"]:
         """Create underlying transport, proxy client, and proxy server for a single backend.
 
@@ -352,6 +360,10 @@ class MCPConfigTransport(ClientTransport):
         client_kwargs: dict[str, Any] = {}
         if backend_mode is not None:
             client_kwargs["mode"] = backend_mode
+        if transport_options is not None:
+            client_kwargs["forward_incoming_headers"] = (
+                transport_options.forward_incoming_headers
+            )
         client = StatefulProxyClient(
             transport=transport, timeout=timeout, **client_kwargs
         )

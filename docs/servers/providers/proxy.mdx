@@ -133,6 +133,25 @@ async with Client(Path("backend_server.py")) as connected_client:
 Shared sessions may cause context mixing in concurrent scenarios. Use only in single-threaded situations or with explicit synchronization.
 </Warning>
 
+## HTTP Header Forwarding
+
+Proxies forward eligible incoming HTTP headers, including `Authorization` and custom headers, to HTTP and SSE backends by default. Headers configured on the backend transport take precedence. Cookies and connection-specific headers are excluded.
+
+When your backend uses its own configured headers or authentication, set `forward_incoming_headers=False` on its `ProxyClient`. The setting also applies to every backend in an MCP configuration.
+
+```python
+from fastmcp.client.transports import StreamableHttpTransport
+from fastmcp.server import create_proxy
+from fastmcp.server.providers.proxy import ProxyClient
+
+transport = StreamableHttpTransport(
+    "http://backend:8000/mcp",
+    headers={"x-api-key": "backend-api-key"},
+)
+backend = ProxyClient(transport, forward_incoming_headers=False)
+proxy = create_proxy(backend)
+```
+
 ## MCP Feature Forwarding
 
 <VersionBadge version="2.10.3" />

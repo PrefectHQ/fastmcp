@@ -96,7 +96,7 @@ class _ForwardingClientSession(ClientSession):
         return None
 
 
-# Settings every proxy-backend connection uses: relay results without policing
+# Default proxy-backend connection settings: relay results without policing
 # the backend's output schema, and forward eligible caller headers upstream
 # without inheriting frontend-owned MCP transport state.
 PROXY_TRANSPORT_OPTIONS = TransportOptions(
@@ -110,9 +110,8 @@ def _with_proxy_transport_options(
 ) -> TransportOptions:
     """Layer proxy-owned settings onto options supplied by another client layer."""
     return replace(
-        options or TransportOptions(),
+        options or PROXY_TRANSPORT_OPTIONS,
         session_class=PROXY_TRANSPORT_OPTIONS.session_class,
-        forward_incoming_headers=PROXY_TRANSPORT_OPTIONS.forward_incoming_headers,
     )
 
 
@@ -1670,6 +1669,10 @@ class ProxyClient(Client[ClientTransportT]):
     """A proxy client that forwards advanced interactions between a remote MCP server and the proxy's connected clients.
 
     Supports forwarding roots, sampling, elicitation, logging, and progress.
+    Eligible inbound HTTP headers are forwarded by default; set
+    `forward_incoming_headers=False` to use only the backend transport's
+    configured headers and authentication. Applies to HTTP and SSE backends,
+    including backends in an MCP configuration.
 
     The default forwarding handlers must resolve the *proxy's* request context so
     they relay server-initiated requests (roots/sampling/elicitation) back to the
@@ -1707,6 +1710,8 @@ class ProxyClient(Client[ClientTransportT]):
         | MCPConfig
         | dict[str, Any]
         | str,
+        *,
+        forward_incoming_headers: bool = True,
         **kwargs,
     ):
         if "name" not in kwargs:
@@ -1744,7 +1749,10 @@ class ProxyClient(Client[ClientTransportT]):
                 self._proxy_restoring_handler_keys.add(key)
         super().__init__(transport=transport, **kwargs)  # ty: ignore[no-matching-overload]
 
-        self._transport_options = _with_proxy_transport_options(self._transport_options)
+        self._transport_options = replace(
+            _with_proxy_transport_options(self._transport_options),
+            forward_incoming_headers=forward_incoming_headers,
+        )
 
     def _bind_restoring_handlers(self) -> None:
         if "roots" in self._proxy_restoring_handler_keys:
