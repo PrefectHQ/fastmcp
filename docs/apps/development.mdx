@@ -23,7 +23,7 @@ Works with both [Interactive Tools](/apps/prefab) and [custom HTML apps](/apps/l
 fastmcp dev apps server.py
 ```
 
-The dev UI opens in your browser on port 8080. The terminal prints its startup URL, which carries a private token: opening it starts a browser session and redirects to the picker. To use another browser, open the printed URL there. Each run prints a new URL. Your MCP server runs on port 8000 with auto-reload enabled by default — save a file and the server restarts automatically.
+The dev UI opens in your browser on port 8080 through a startup URL that the terminal prints. Each run prints a new URL; open it to use the dev UI in another browser or after closing the tab. Your MCP server runs on port 8000 with auto-reload enabled by default — save a file and the server restarts automatically.
 
 ## How it works
 
@@ -31,17 +31,9 @@ The dev server does three things:
 
 The **picker page** connects to your MCP server, finds all tools with UI metadata, and renders a form for each one. The forms are auto-generated from the tool's input schema — text fields, dropdowns, checkboxes, all wired up.
 
-When you submit a form, the dev server **calls your tool** via the MCP protocol and opens the result in a new tab. The result page loads the tool's UI resource (the Prefab renderer or your custom HTML) inside an AppBridge — the same protocol that real MCP hosts use.
+When you submit a form, the dev server **calls your tool** via the MCP protocol and opens the result in a new tab. Each result page comes from a picker launch and stays available, including on reload, until the dev server stops. The result page loads the tool's UI resource (the Prefab renderer or your custom HTML) inside an AppBridge — the same protocol that real MCP hosts use. The resource runs in a sandboxed iframe, so it can't use `localStorage`, open popups, or show `alert` and `confirm` dialogs.
 
 A **reverse proxy** on `/mcp` forwards requests from the browser to your MCP server, avoiding CORS issues that would otherwise block the iframe-based renderer from talking to a different port.
-
-## Browser session
-
-The dev UI answers only requests from the browser session that the startup URL started. Keep the URL private: anyone who opens it can call your tools and read the inspector log. The dev UI also rejects requests that come from other origins or that name a different host, and the MCP server it starts validates Host and Origin headers unless you set `FASTMCP_HTTP_HOST_ORIGIN_PROTECTION` yourself.
-
-Tool UI resources, both the Prefab renderer and custom HTML, run in a sandboxed iframe with an opaque origin. They talk to the dev UI only through AppBridge, which lets them call your server's tools and read its resources. They cannot reach the dev UI's page, its inspector log, or browser storage such as `localStorage`, and links they ask the host to open must be `http` or `https` URLs outside the dev UI. The generated picker is part of the dev UI and runs on its origin. Each launch page URL refers to a launch the picker created during the current run, so launch URLs cannot be written by hand or reused after a restart.
-
-Keep the default loopback interface for local development. If you use `--host` to expose the servers on your network, HTTP does not encrypt the session, and the MCP server needs its own authentication for remote clients. With `--host 0.0.0.0`, the dev UI accepts requests addressed to `localhost` or to an IP address and opens at `127.0.0.1`. Pass a specific host to reach the dev UI by hostname.
 
 ## MCP inspector
 
@@ -64,6 +56,8 @@ fastmcp dev apps server.py:mcp --mcp-port 9000 --dev-port 9090 --no-reload
 | Auto-Reload | `--reload` / `--no-reload` | On | Watch files and restart the server on changes |
 | Host | `--host` | `127.0.0.1` | Interface for both local servers to bind |
 | Log Panel | `--log-panel` / `--no-log-panel` | On | Show or hide the log panel in the dev UI |
+
+With `--host 0.0.0.0`, open the dev UI through `localhost` or an IP address. To reach it by hostname, pass that hostname to `--host`.
 
 ## Multiple tools
 
