@@ -1,6 +1,7 @@
 """Tests for tool injection middleware."""
 
 import math
+from collections.abc import Callable
 
 import pytest
 from inline_snapshot import snapshot
@@ -10,11 +11,16 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.client import CallToolResult
 from fastmcp.client.transports import FastMCPTransport
+from fastmcp.exceptions import ToolError
+from fastmcp.server.auth import require_scopes
+from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
+from fastmcp.server.middleware import AuthMiddleware, Middleware
 from fastmcp.server.middleware.tool_injection import (
     ToolInjectionMiddleware,
 )
 from fastmcp.tools.base import Tool
 from fastmcp.tools.function_tool import FunctionTool
+from fastmcp.utilities.tests import asgi_client
 
 
 def multiply_fn(a: int, b: int) -> int:
@@ -277,3 +283,152 @@ class TestToolInjectionMiddleware:
         assert result.structured_content is not None
         assert isinstance(result.structured_content, dict)
         assert result.structured_content["result"] == 7
+
+
+TOKENS = {
+    "read-token": {"client_id": "reader", "scopes": ["read"]},
+    "admin-token": {"client_id": "administrator", "scopes": ["read", "admin"]},
+}
+
+
+def admin_report() -> str:
+    """Return a marker only an admin should see."""
+    return "ADMIN_REPORT_MARKER"
+
+
+def public_report() -> str:
+    """Return a marker anyone may see."""
+    return "PUBLIC_REPORT_MARKER"
+
+
+def make_auth_server(*middleware: Middleware) -> FastMCP:
+    return FastMCP(
+        "AuthServer",
+        auth=StaticTokenVerifier(TOKENS),
+        middleware=list(middleware),
+    )
+
+
+def scoped_admin_tool() -> Tool:
+    return Tool.from_function(
+        admin_report,
+        name="admin_report",
+        auth=require_scopes("admin"),
+    )
+
+
+def unscoped_tool(fn: Callable[[], str], name: str) -> Tool:
+    return Tool.from_function(fn, name=name)
+
+
+class TestInjectedToolAuthorization:
+    """Injected tools follow the same authorization as registered tools."""
+
+    async def test_tool_auth_hides_injected_tool_without_scope(self):
+        server = make_auth_server(ToolInjectionMiddleware([scoped_admin_tool()]))
+
+        async with asgi_client(server, auth="read-token") as client:
+            tools = await client.list_tools()
+
+        assert "admin_report" not in [tool.name for tool in tools]
+
+    async def test_tool_auth_denies_injected_tool_call_without_scope(self):
+        server = make_auth_server(ToolInjectionMiddleware([scoped_admin_tool()]))
+
+        async with asgi_client(server, auth="read-token") as client:
+            with pytest.raises(ToolError, match="Unknown tool"):
+                await client.call_tool("admin_report", {})
+
+    async def test_tool_auth_allows_injected_tool_with_scope(self):
+        server = make_auth_server(ToolInjectionMiddleware([scoped_admin_tool()]))
+
+        async with asgi_client(server, auth="admin-token") as client:
+            tools = await client.list_tools()
+            result = await client.call_tool("admin_report", {})
+
+        assert "admin_report" in [tool.name for tool in tools]
+        assert result.data == "ADMIN_REPORT_MARKER"
+
+    async def test_tool_auth_on_injected_tool_matches_registered_tool(self):
+        """An injected tool and a registered tool with the same auth agree."""
+        registered = make_auth_server()
+        registered.add_tool(scoped_admin_tool())
+        injected = make_auth_server(ToolInjectionMiddleware([scoped_admin_tool()]))
+
+        outcomes: list[tuple[list[str], bool]] = []
+        for server in (registered, injected):
+            async with asgi_client(server, auth="read-token") as client:
+                names = [tool.name for tool in await client.list_tools()]
+                result = await client.call_tool(
+                    "admin_report", {}, raise_on_error=False
+                )
+            outcomes.append((names, result.is_error))
+
+        assert outcomes[0] == outcomes[1] == ([], True)
+
+    async def test_injected_tool_without_auth_is_available_to_any_token(self):
+        server = make_auth_server(
+            ToolInjectionMiddleware([unscoped_tool(public_report, "public_report")])
+        )
+
+        async with asgi_client(server, auth="read-token") as client:
+            tools = await client.list_tools()
+            result = await client.call_tool("public_report", {})
+
+        assert [tool.name for tool in tools] == ["public_report"]
+        assert result.data == "PUBLIC_REPORT_MARKER"
+
+    @pytest.mark.parametrize("injection_first", [True, False])
+    async def test_auth_middleware_denies_injected_tool(self, injection_first: bool):
+        injection = ToolInjectionMiddleware(
+            [unscoped_tool(admin_report, "admin_report")]
+        )
+        auth = AuthMiddleware(auth=require_scopes("admin"))
+        order = [injection, auth] if injection_first else [auth, injection]
+        server = make_auth_server(*order)
+
+        async with asgi_client(server, auth="read-token") as client:
+            tools = await client.list_tools()
+            result = await client.call_tool("admin_report", {}, raise_on_error=False)
+
+        assert tools == []
+        assert result.is_error
+        assert "ADMIN_REPORT_MARKER" not in str(result.content)
+
+    @pytest.mark.parametrize("injection_first", [True, False])
+    async def test_auth_middleware_allows_injected_tool(self, injection_first: bool):
+        injection = ToolInjectionMiddleware(
+            [unscoped_tool(admin_report, "admin_report")]
+        )
+        auth = AuthMiddleware(auth=require_scopes("admin"))
+        order = [injection, auth] if injection_first else [auth, injection]
+        server = make_auth_server(*order)
+
+        async with asgi_client(server, auth="admin-token") as client:
+            tools = await client.list_tools()
+            result = await client.call_tool("admin_report", {})
+
+        assert [tool.name for tool in tools] == ["admin_report"]
+        assert result.data == "ADMIN_REPORT_MARKER"
+
+    async def test_injected_tool_on_mounted_server_follows_tool_auth(self):
+        child = FastMCP(
+            "Child",
+            middleware=[ToolInjectionMiddleware([scoped_admin_tool()])],
+        )
+        parent = make_auth_server()
+        parent.mount(child, namespace="child")
+
+        async with asgi_client(parent, auth="read-token") as client:
+            read_tools = await client.list_tools()
+            read_result = await client.call_tool(
+                "child_admin_report", {}, raise_on_error=False
+            )
+        async with asgi_client(parent, auth="admin-token") as client:
+            admin_tools = await client.list_tools()
+            admin_result = await client.call_tool("child_admin_report", {})
+
+        assert read_tools == []
+        assert read_result.is_error
+        assert [tool.name for tool in admin_tools] == ["child_admin_report"]
+        assert admin_result.data == "ADMIN_REPORT_MARKER"
