@@ -260,3 +260,50 @@ async def test_ref_to_object_with_all_of_still_merges():
     spec = build_spec(body, {"Base": BASE})
     schema, _ = await call_make_thing(spec, {"name": "n", "extra": "e"})
     assert set(schema["properties"]) == {"name", "extra"}
+
+
+SIBLING_BODY = {
+    "$ref": "#/components/schemas/Base",
+    "properties": {"local": {"type": "string"}},
+}
+
+
+async def test_ref_to_one_of_target_keeps_the_ref():
+    base = {
+        **BASE,
+        "oneOf": [
+            {"required": ["a"], "properties": {"a": {"type": "string"}}},
+            {"required": ["b"], "properties": {"b": {"type": "string"}}},
+        ],
+    }
+    spec = build_spec(SIBLING_BODY, {"Base": base})
+    schema, _ = await call_make_thing(
+        spec, {"body": {"name": "n", "local": "l", "a": "x"}}
+    )
+    dumped = json.dumps(schema)
+    assert '"a"' in dumped
+    assert '"name"' in dumped
+
+
+async def test_ref_to_any_of_target_keeps_the_ref():
+    base = {
+        **BASE,
+        "anyOf": [{"required": ["a"]}, {"required": ["b"]}],
+    }
+    spec = build_spec(SIBLING_BODY, {"Base": base})
+    schema, _ = await call_make_thing(spec, {"body": {"name": "n", "local": "l"}})
+    assert "anyOf" in json.dumps(schema)
+
+
+async def test_ref_to_pattern_properties_target_keeps_the_ref():
+    base = {**BASE, "patternProperties": {"^x-": {"type": "string"}}}
+    spec = build_spec(SIBLING_BODY, {"Base": base})
+    schema, _ = await call_make_thing(spec, {"body": {"name": "n", "local": "l"}})
+    assert "patternProperties" in json.dumps(schema)
+
+
+async def test_ref_to_additional_properties_target_keeps_the_ref():
+    base = {**BASE, "additionalProperties": False}
+    spec = build_spec(SIBLING_BODY, {"Base": base})
+    schema, _ = await call_make_thing(spec, {"body": {"name": "n", "local": "l"}})
+    assert "additionalProperties" in json.dumps(schema)

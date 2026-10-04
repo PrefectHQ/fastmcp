@@ -12,7 +12,7 @@ from jsonschema_path import SchemaPath
 from fastmcp.utilities.logging import get_logger
 
 from .models import HTTPRoute, ParameterInfo
-from .schemas import _combine_schemas_and_map_params
+from .schemas import _combine_schemas_and_map_params, _ref_is_mergeable_object
 
 logger = get_logger(__name__)
 
@@ -292,7 +292,11 @@ class RequestDirector:
                 body_schema = route.request_body.content_schema[content_type]
 
                 # Only named properties are flattened into individual arguments.
-                if isinstance(body_schema, dict) and body_schema.get("properties"):
+                if (
+                    isinstance(body_schema, dict)
+                    and body_schema.get("properties")
+                    and _ref_is_mergeable_object(body_schema, route.request_schemas)
+                ):
                     body = body_props
                 elif len(body_props) == 1:
                     # Free-form objects, arrays, and primitives use a single

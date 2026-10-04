@@ -266,13 +266,57 @@ def _allof_members(
     return [schema]
 
 
+# Keywords the properties/required merge represents, or that only annotate.
+# A discriminator is carried through and expanded by
+# _flatten_discriminator_subtypes, which also accounts for its oneOf.
+_MERGEABLE_OBJECT_KEYWORDS = frozenset(
+    {
+        "type",
+        "properties",
+        "required",
+        "title",
+        "description",
+        "example",
+        "examples",
+        "deprecated",
+        "discriminator",
+        "oneOf",
+    }
+)
+
+
 def _is_mergeable_object(schema: dict[str, Any]) -> bool:
-    """Whether flattening *schema* into ``properties``/``required`` loses nothing."""
-    return (
-        "$ref" not in schema
-        and schema.get("type", "object") == "object"
-        and "enum" not in schema
-        and "const" not in schema
+    """Whether flattening *schema* into ``properties``/``required`` loses nothing.
+
+    Only keywords the merge fully represents are allowed; any other constraint
+    (``anyOf``, ``not``, ``patternProperties``, ``additionalProperties``, ...)
+    would vanish from the merged schema, so the ``$ref`` is kept instead. A
+    ``oneOf`` is representable only beside a discriminator mapping, whose
+    subtype fields are flattened in afterwards.
+    """
+    if schema.get("type", "object") != "object":
+        return False
+    if not set(schema) <= _MERGEABLE_OBJECT_KEYWORDS:
+        return False
+    if "oneOf" in schema:
+        discriminator = schema.get("discriminator")
+        return (
+            isinstance(discriminator, dict)
+            and isinstance(discriminator.get("propertyName"), str)
+            and isinstance(discriminator.get("mapping"), dict)
+        )
+    return True
+
+
+def _ref_is_mergeable_object(
+    schema: dict[str, Any], schema_defs: dict[str, Any]
+) -> bool:
+    """Whether *schema*'s ``$ref`` (if any) can be dropped by a property merge."""
+    if "$ref" not in schema:
+        return True
+    return all(
+        _is_mergeable_object(member)
+        for member in _allof_members({"$ref": schema["$ref"]}, schema_defs)
     )
 
 
@@ -439,12 +483,7 @@ def _combine_schemas_and_map_params(
         # sits beside its own properties is merged the same way; there, a
         # property defined by both sides must satisfy both definitions.
         has_all_of = isinstance(body_schema.get("allOf"), list)
-        ref_is_object = "$ref" not in body_schema or all(
-            _is_mergeable_object(member)
-            for member in _allof_members(
-                {"$ref": body_schema["$ref"]}, route.request_schemas
-            )
-        )
+        ref_is_object = _ref_is_mergeable_object(body_schema, route.request_schemas)
         has_ref_with_properties = (
             "$ref" in body_schema
             and isinstance(body_schema.get("properties"), dict)
@@ -482,6 +521,18 @@ def _combine_schemas_and_map_params(
             if ref_is_object:
                 body_schema.pop("$ref", None)
 
+        # A kept $ref is paired with its siblings through allOf: resolving a
+        # $ref that has siblings lets the siblings overwrite the target's keywords.
+        if not ref_is_object:
+            ref = body_schema.pop("$ref")
+            if not body_schema.get("properties"):
+                body_schema.pop("properties", None)
+            body_schema = (
+                {"allOf": [{"$ref": ref}, body_schema]}
+                if body_schema
+                else {"$ref": ref}
+            )
+
         # Merge discriminated subtype fields in as optional. The discriminator
         # itself is dropped: its mapping points at definitions that are pruned
         # from $defs once nothing references them, which would leave the
@@ -493,7 +544,9 @@ def _combine_schemas_and_map_params(
             body_schema["properties"] = flattened_props
             body_schema.pop("discriminator", None)
 
-        body_props = body_schema.get("properties", {})
+        # A kept $ref still carries constraints the properties cannot express,
+        # so the whole schema is exposed as one argument.
+        body_props = {} if not ref_is_object else body_schema.get("properties", {})
 
     # Detect collisions: parameters that exist in multiple non-body locations
     # or between body and path/query/header/cookie.
