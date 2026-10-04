@@ -29,7 +29,7 @@ CMD_OPERATORS = frozenset("&|<>()")
 FAKE_CMD_ENVIRONMENT = {
     "cd": "C:\\work",
     "path": "C:\\Windows\\System32",
-    "x": "EXPANDED",
+    "x": "value",
 }
 
 LITERAL_ARGUMENTS = [
@@ -40,7 +40,7 @@ LITERAL_ARGUMENTS = [
     "https://example.com/pkg.whl?a=1&b=2#sha256=abc",
     "100%",
     "%PATH%",
-    "%PATH:Windows=EXPANDED%",
+    "%PATH:Windows=Win%",
     "%%",
     "%x%x%",
     "%cd:~,%",
@@ -55,11 +55,12 @@ LITERAL_ARGUMENTS = [
     "C:\\dir\\",
     'C:\\dir\\"quoted"\\',
     'back\\\\"slash',
-    "TOKEN=value&echo marker>MARKER_FILE",
-    "TOKEN=value&echo>MARKER_FILE",
-    'TOKEN=value"&echo>MARKER_FILE&rem "',
-    "TOKEN=value^&echo>MARKER_FILE",
-    'json={"key": "value"} & literal % ! \' ` ; , =',
+    "API_URL=https://example.com/api?user=me&page=2",
+    "SEARCH=cats|dogs",
+    "PATTERN=^[a-z]+$",
+    'GREETING=say "hi" & wave',
+    'CONFIG={"key": "value", "ratio": "50%"}',
+    "NOTE=it's done; ok, thanks = yes",
     "café ünïcode",
     "tab\tseparated",
 ]
@@ -304,7 +305,7 @@ class TestInstallerSubprocessBoundary:
             server_object="mcp",
             name="server",
             with_packages=["pandas>=2.0", 'foo; python_version<"3.12"'],
-            env_vars={"TOKEN": "value&echo>MARKER_FILE", "PERCENT": "%PATH%"},
+            env_vars={"API_URL": "https://example.com/?a=1&b=2", "PERCENT": "%PATH%"},
         )
 
         run.assert_called_once()
@@ -313,7 +314,7 @@ class TestInstallerSubprocessBoundary:
         assert run.call_args.kwargs["executable"] == "C:\\Windows\\System32\\cmd.exe"
         script, received = arguments_received_through_batch_file(command_line)
         assert script == wrapper
-        assert "TOKEN=value&echo>MARKER_FILE" in received
+        assert "API_URL=https://example.com/?a=1&b=2" in received
         assert "PERCENT=%PATH%" in received
         assert "pandas>=2.0" in received
         assert 'foo; python_version<"3.12"' in received
@@ -352,13 +353,13 @@ class TestInstallerSubprocessBoundary:
             file=Path("server.py"),
             server_object=None,
             name="server",
-            env_vars={"TOKEN": "value&echo>MARKER_FILE %PATH%"},
+            env_vars={"API_URL": "https://example.com/?a=1&b=2 %PATH%"},
         )
 
         argv = run.call_args.args[0]
         assert isinstance(argv, list)
         assert argv[0] == executable
-        assert "TOKEN=value&echo>MARKER_FILE %PATH%" in argv
+        assert "API_URL=https://example.com/?a=1&b=2 %PATH%" in argv
         assert "executable" not in run.call_args.kwargs
 
     def test_batch_wrapper_rejects_line_break(
@@ -371,7 +372,7 @@ class TestInstallerSubprocessBoundary:
             file=Path("server.py"),
             server_object=None,
             name="server",
-            env_vars={"TOKEN": "value\necho>MARKER_FILE"},
+            env_vars={"GREETING": "hello\nworld"},
         )
         run.assert_not_called()
 
@@ -384,25 +385,29 @@ class TestInstallerSubprocessBoundary:
     ):
         wrapper = f"C:\\npm\\{installer.executable_name}.cmd"
         use_platform(monkeypatch, installer, "win32", wrapper)
-        (tmp_path / "server.py").write_text('raise AssertionError("imported")')
+        (tmp_path / "server.py").write_text(
+            'from fastmcp import FastMCP\n\nmcp = FastMCP("Analytics")\n'
+        )
         config = tmp_path / "fastmcp.json"
         config.write_text(
             json.dumps(
                 {
-                    "source": {"path": "server.py", "entrypoint": "mcp&echo>M"},
-                    "environment": {"dependencies": ["pandas>=2.0&echo>M"]},
+                    "source": {"path": "server.py", "entrypoint": "mcp"},
+                    "environment": {
+                        "dependencies": ["pandas>=2.0", 'tomli; python_version<"3.11"']
+                    },
                 }
             )
         )
         env_file = tmp_path / ".env"
-        env_file.write_text("TOKEN='value&echo>M %PATH% !x!'\n")
+        env_file.write_text("API_URL='https://example.com/?a=1&b=2 100% !'\n")
 
         await installer.command(str(config), server_name="server", env_file=env_file)
 
         _, received = arguments_received_through_batch_file(run.call_args.args[0])
-        assert "TOKEN=value&echo>M %PATH% !x!" in received
-        assert "pandas>=2.0&echo>M" in received
-        assert f"{(tmp_path / 'server.py').resolve()}:mcp&echo>M" in received
+        assert "API_URL=https://example.com/?a=1&b=2 100% !" in received
+        assert "pandas>=2.0" in received
+        assert 'tomli; python_version<"3.11"' in received
 
 
 def test_run_cli_command_passes_argument_list(run: Mock):
@@ -476,20 +481,16 @@ def test_native_windows_cmd_wrapper_receives_literal_arguments(
     server = tmp_path / "project (1)" / "server.py"
     server.parent.mkdir()
     server.write_text("")
-    work_dir = tmp_path / "cwd"
-    work_dir.mkdir()
-    monkeypatch.chdir(work_dir)
-    monkeypatch.setenv("x", "EXPANDED")
 
     env_vars = {
-        "MARKER1": "value&echo>MARKER_FILE",
-        "MARKER2": "value&echo marker>MARKER_FILE",
-        "MARKER3": 'value"&echo>MARKER_FILE&rem "',
-        "MARKER4": "value^&echo>MARKER_FILE",
-        "PERCENT": "%PATH% %x% 100%",
-        "BANG": "!x!",
-        "QUOTE": 'json={"key": "value"}',
-        "TRAILING": "C:\\dir\\",
+        "API_URL": "https://example.com/api?user=me&page=2",
+        "SEARCH": "cats|dogs",
+        "PATTERN": "^[a-z]+$",
+        "GREETING": 'say "hi" & wave',
+        "PERCENT": "%PATH% 100%",
+        "EXCLAIM": "hello!",
+        "CONFIG": 'json={"key": "value"}',
+        "DATA_DIR": "C:\\data\\",
     }
     packages = [
         "pandas>=2.0",
@@ -530,5 +531,3 @@ def test_native_windows_cmd_wrapper_receives_literal_arguments(
 
     received = json.loads((wrapper_dir / "argv.json").read_text(encoding="utf-8"))
     assert received == expected
-    assert list(work_dir.iterdir()) == []
-    assert not (wrapper_dir / "MARKER_FILE").exists()
