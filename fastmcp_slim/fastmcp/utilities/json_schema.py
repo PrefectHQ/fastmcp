@@ -446,34 +446,29 @@ def resolve_root_ref(schema: dict[str, Any]) -> dict[str, Any]:
         >>> resolved = resolve_root_ref(schema)
         >>> # Result: {"type": "object", "properties": {...}, "$defs": {...}}
     """
-    # Only resolve if we have $ref at root level with $defs but no explicit type
-    if "$ref" in schema and "$defs" in schema and "type" not in schema:
-        ref = schema["$ref"]
-        # Only handle local $defs references
-        if isinstance(ref, str) and ref.startswith("#/$defs/"):
-            def_name = ref.split("/")[-1]
-            defs = schema["$defs"]
-            if def_name in defs:
-                # Create a new schema by copying the referenced definition
-                resolved = dict(defs[def_name])
+    # Only resolve a local $ref at the root when there is no explicit type.
+    # The pointer is walked the same way `dereference_refs` measures it, so
+    # every supported form (`#/$defs/Name`, `#/definitions/Name`, escaped or
+    # percent-encoded segments) resolves to the same target.
+    ref = schema.get("$ref")
+    if "type" in schema or not isinstance(ref, str) or not ref.startswith("#"):
+        return schema
+    try:
+        target = _resolve_local_ref(schema, ref)
+    except _CannotInline:
+        return schema
+    if not isinstance(target, dict) or target is schema:
+        return schema
 
-                # Preserve root-level sibling metadata from the original schema.
-                # Pydantic may put user-facing fields such as title, description,
-                # default, or examples next to the root $ref. Those fields still
-                # describe the root schema even when we can only resolve that
-                # root reference for circular schemas.
-                resolved.update(
-                    {
-                        key: value
-                        for key, value in schema.items()
-                        if key not in {"$ref", "$defs"}
-                    }
-                )
-
-                # Preserve $defs for nested references (other fields may still use them)
-                resolved["$defs"] = defs
-                return resolved
-    return schema
+    # Preserve root-level sibling metadata from the original schema.
+    # Pydantic may put user-facing fields such as title, description,
+    # default, or examples next to the root $ref. Those fields still
+    # describe the root schema even when we can only resolve that
+    # root reference for circular schemas. Siblings include `$defs` (or
+    # `definitions`), which stay for nested references.
+    resolved = dict(target)
+    resolved.update({key: value for key, value in schema.items() if key != "$ref"})
+    return resolved
 
 
 def _prune_param(schema: dict[str, Any], param: str) -> dict[str, Any]:
