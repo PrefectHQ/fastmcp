@@ -104,7 +104,7 @@ partner = StaticTokenVerifier(tokens={"partner-token": {"client_id": "service", 
 auth = MultiAuth(verifiers={"company": company, "partner": partner})
 ```
 
-List and single-verifier forms remain available when their derived source identities are distinct. JWT verifiers derive identities from configured issuers and JWKS URLs; introspection verifiers use their endpoint, OAuth servers use their configured issuer, and other providers use their Python type. Explicit names are recommended when configuration or provider types may change.
+List and single-verifier forms remain available when their derived source identities are distinct. JWT verifiers derive identities from configured issuers and JWKS URLs; introspection verifiers use their endpoint, remote providers use their wrapped verifier, OAuth servers use their configured issuer, and other providers use their Python type. Explicit names are recommended when configuration or provider types may change.
 
 <Note>
 This changes `get_access_token().client_id` and ownership for existing `MultiAuth` sessions, tasks, and continued requests. Update authorization checks that compare the verifier's original client ID to read `get_access_token().original_client_id` instead. Recreate sessions and resubmit tasks after upgrading. Configurations with duplicate derived identities now need explicit names, including multiple static verifiers or custom verifiers of the same type. Changing a source name starts a new ownership scope.

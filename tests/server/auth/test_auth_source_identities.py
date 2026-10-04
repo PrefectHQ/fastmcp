@@ -26,7 +26,12 @@ from mcp_types import InputRequiredResult
 from starlette.testclient import TestClient
 
 from fastmcp import Context, FastMCP
-from fastmcp.server.auth import AccessToken, MultiAuth, TokenVerifier
+from fastmcp.server.auth import (
+    AccessToken,
+    MultiAuth,
+    RemoteAuthProvider,
+    TokenVerifier,
+)
 from fastmcp.server.auth.providers.introspection import IntrospectionTokenVerifier
 from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
 from fastmcp.server.dependencies import get_access_token
@@ -467,3 +472,32 @@ async def test_explicit_subjects_keep_task_ownership_distinct() -> None:
         finally:
             auth_context_var.reset(marker)
     assert scopes[0] != scopes[1]
+
+
+@pytest.mark.parametrize("kind", ["introspection", "jwt"])
+def test_remote_provider_identity_tracks_its_configured_verifier(kind: str) -> None:
+    def configured(endpoint: str, source_id: str | None = None) -> MultiAuth:
+        verifier = (
+            IntrospectionTokenVerifier(
+                introspection_url=endpoint,
+                client_id="application",
+                client_secret="synthetic",
+            )
+            if kind == "introspection"
+            else JWTVerifier(jwks_uri=endpoint)
+        )
+        server = RemoteAuthProvider(
+            token_verifier=verifier,
+            authorization_servers=[],
+            base_url="https://service.example",
+        )
+        return MultiAuth(server=server, server_source_id=source_id)
+
+    first = configured("https://company.example/verify")
+    rebuilt = configured("https://company.example/verify")
+    other = configured("https://partner.example/verify")
+    assert first._source_ids == rebuilt._source_ids
+    assert first._source_ids != other._source_ids
+    assert configured("https://company.example/verify", "company")._source_ids == [
+        "company"
+    ]

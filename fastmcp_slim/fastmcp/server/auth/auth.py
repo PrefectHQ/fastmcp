@@ -788,6 +788,10 @@ class MultiAuth(AuthProvider):
                 descriptor["jwks_uri"] = str(source.jwks_uri)
         elif isinstance(source, IntrospectionTokenVerifier):
             descriptor["introspection_url"] = source.introspection_url
+        elif isinstance(source, RemoteAuthProvider):
+            descriptor["token_verifier"] = MultiAuth._configured_source_id(
+                source.token_verifier
+            )
         elif isinstance(source, OAuthProvider):
             descriptor["issuer_url"] = str(source.issuer_url)
         if not descriptor:
