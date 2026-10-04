@@ -1,5 +1,8 @@
 """Schemas from remote servers stay data, and converting them has bounded cost."""
 
+import gc
+import json
+import weakref
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +14,11 @@ from fastmcp import Client, Context, FastMCP
 from fastmcp.client.elicitation import ElicitResult
 from fastmcp.tools import ToolResult
 from fastmcp.utilities import json_schema_type
-from fastmcp.utilities.json_schema_type import json_schema_to_type, safe_create_model
+from fastmcp.utilities.json_schema_type import (
+    json_schema_to_type,
+    json_schema_to_type_adapter,
+    safe_create_model,
+)
 
 
 def marker_expression(marker: Path) -> str:
@@ -328,7 +335,7 @@ class TestClassCache:
         assert len(json_schema_type._classes) == before
 
     def test_cache_is_bounded(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr(json_schema_type, "_MAX_CACHED_CLASSES", 3, raising=False)
+        monkeypatch.setattr(json_schema_type._classes, "max_entries", 3)
         json_schema_type._classes.clear()
 
         for i in range(5):
@@ -341,6 +348,56 @@ class TestClassCache:
             )
 
         assert len(json_schema_type._classes) == 3
+
+    def test_size_budget_evicts_large_schemas(self, monkeypatch: pytest.MonkeyPatch):
+        def schema(i: int) -> dict[str, Any]:
+            return {
+                "type": "object",
+                "title": f"Large{i}",
+                "description": "x" * 1000,
+                "properties": {"x": {"type": "string"}},
+            }
+
+        weight = len(json.dumps(schema(0), sort_keys=True))
+        monkeypatch.setattr(json_schema_type._classes, "max_weight", weight * 3 // 2)
+        json_schema_type._classes.clear()
+
+        json_schema_to_type(schema(0))
+        json_schema_to_type(schema(1))
+
+        assert len(json_schema_type._classes) == 1
+
+    def test_schema_over_size_budget_is_not_cached(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setattr(json_schema_type._classes, "max_weight", 10)
+        json_schema_type._classes.clear()
+
+        json_schema_to_type(
+            {"type": "object", "title": "Big", "properties": {"x": {"type": "string"}}}
+        )
+
+        assert len(json_schema_type._classes) == 0
+
+    def test_evicted_classes_are_released(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setattr(json_schema_type._classes, "max_entries", 2)
+        monkeypatch.setattr(json_schema_type._adapters, "max_entries", 2)
+        json_schema_type._classes.clear()
+        json_schema_type._adapters.clear()
+        refs: list[weakref.ref[type]] = []
+
+        for i in range(4):
+            schema = {
+                "type": "object",
+                "title": f"Released{i}",
+                "properties": {"x": {"type": "string"}},
+            }
+            value = json_schema_to_type_adapter(schema).validate_python({"x": "a"})
+            refs.append(weakref.ref(type(value)))
+            del value
+        gc.collect()
+
+        assert [ref() is not None for ref in refs] == [False, False, True, True]
 
     def test_nested_classes_depend_on_root_definitions(self):
         def schema(value_type: str) -> dict[str, Any]:

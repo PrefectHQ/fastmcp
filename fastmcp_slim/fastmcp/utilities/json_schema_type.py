@@ -60,7 +60,7 @@ import sys
 import threading
 import warnings
 from collections import OrderedDict
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Hashable, Mapping
 from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import MISSING, dataclass, field, make_dataclass
@@ -70,7 +70,9 @@ from typing import (
     Annotated,
     Any,
     ForwardRef,
+    Generic,
     Literal,
+    TypeVar,
     Union,
     cast,
 )
@@ -132,11 +134,61 @@ FORMAT_TYPES: dict[str, Any] = {
     "json": Json,
 }
 
+_V = TypeVar("_V")
+
+
+class _LRUCache(Generic[_V]):
+    """Least recently used cache bounded by entry count and total weight.
+
+    Each entry's weight is the serialized size of the schema it was built
+    from, so a few large schemas cannot hold unbounded memory. An entry
+    heavier than `max_weight` is not stored.
+    """
+
+    def __init__(self, max_entries: int, max_weight: int) -> None:
+        self.max_entries = max_entries
+        self.max_weight = max_weight
+        self._items: OrderedDict[Hashable, tuple[_V, int]] = OrderedDict()
+        self._weight = 0
+        self._lock = threading.Lock()
+
+    def get(self, key: Hashable) -> _V | None:
+        with self._lock:
+            item = self._items.get(key)
+            if item is None:
+                return None
+            self._items.move_to_end(key)
+            return item[0]
+
+    def put(self, key: Hashable, value: _V, weight: int) -> None:
+        with self._lock:
+            previous = self._items.pop(key, None)
+            if previous is not None:
+                self._weight -= previous[1]
+            if weight > self.max_weight:
+                return
+            self._items[key] = (value, weight)
+            self._weight += weight
+            while len(self._items) > self.max_entries or self._weight > self.max_weight:
+                _, (_, evicted_weight) = self._items.popitem(last=False)
+                self._weight -= evicted_weight
+
+    def clear(self) -> None:
+        with self._lock:
+            self._items.clear()
+            self._weight = 0
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+
 # Generated classes keyed by (schema hash + root schema hash, class name).
-# Least recently used entries are evicted beyond `_MAX_CACHED_CLASSES`.
-_classes: OrderedDict[tuple[str, str], type] = OrderedDict()
-_classes_lock = threading.Lock()
-_MAX_CACHED_CLASSES = 5000
+_classes: _LRUCache[type] = _LRUCache(max_entries=5000, max_weight=4_000_000)
+# TypeAdapters for whole schemas, keyed by schema hash. They hold their
+# classes, so they are bounded the same way.
+_adapters: _LRUCache[TypeAdapter[Any]] = _LRUCache(
+    max_entries=1000, max_weight=4_000_000
+)
 
 # Limits on a single conversion. Depth counts nested schemas and `$ref` hops;
 # steps count every schema visited.
@@ -156,22 +208,6 @@ class _Conversion:
 
 
 _conversion: ContextVar[_Conversion] = ContextVar("json_schema_conversion")
-
-
-def _cached_class(key: tuple[str, str]) -> type | None:
-    with _classes_lock:
-        cls = _classes.get(key)
-        if cls is not None:
-            _classes.move_to_end(key)
-        return cls
-
-
-def _cache_class(key: tuple[str, str], cls: type) -> None:
-    with _classes_lock:
-        _classes[key] = cls
-        _classes.move_to_end(key)
-        while len(_classes) > _MAX_CACHED_CLASSES:
-            _classes.popitem(last=False)
 
 
 class JSONSchema(TypedDict):
@@ -290,8 +326,27 @@ def json_schema_to_type(
         _conversion.reset(token)
 
 
+def json_schema_to_type_adapter(schema: Mapping[str, Any] | bool) -> TypeAdapter[Any]:
+    """Return a cached `TypeAdapter` for `json_schema_to_type(schema)`.
+
+    Adapters are cached by schema content in a bounded cache, so the classes
+    they hold are released when they are evicted.
+    """
+    key, size = _schema_digest(schema)
+    adapter = _adapters.get(key)
+    if adapter is None:
+        adapter = TypeAdapter(json_schema_to_type(schema))
+        _adapters.put(key, adapter, size)
+    return adapter
+
+
 def _hash_schema(schema: Mapping[str, Any]) -> str:
-    """Generate a deterministic hash for schema caching.
+    """Generate a deterministic hash for schema caching."""
+    return _schema_digest(schema)[0]
+
+
+def _schema_digest(schema: Mapping[str, Any] | bool) -> tuple[str, int]:
+    """Return a deterministic hash of the schema and its serialized size.
 
     Handles non-JSON-native types (datetime, date, bool keys) that can
     appear in schemas loaded from YAML, which auto-parses date strings.
@@ -303,7 +358,8 @@ def _hash_schema(schema: Mapping[str, Any]) -> str:
     except TypeError:
         # Mixed key types (bool + str) can't be sorted; fall back
         raw = json.dumps(schema, default=str)
-    return hashlib.sha256(raw.encode()).hexdigest()
+    encoded = raw.encode()
+    return hashlib.sha256(encoded).hexdigest(), len(encoded)
 
 
 def _resolve_ref(ref: str, schemas: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -760,10 +816,11 @@ def _create_pydantic_model(
         raise ValueError("Name is required")
     sanitized_name = _sanitize_name(name)
     conversion = _conversion.get()
-    cache_key = (_hash_schema(schema) + conversion.root_hash, sanitized_name)
+    schema_hash, schema_size = _schema_digest(schema)
+    cache_key = (schema_hash + conversion.root_hash, sanitized_name)
 
     # Return existing class if already built
-    existing = _cached_class(cache_key)
+    existing = _classes.get(cache_key)
     if existing is not None:
         return existing
     # A recursive reference to a class that is still being built
@@ -777,7 +834,7 @@ def _create_pydantic_model(
         )
     finally:
         conversion.building.discard(cache_key)
-    _cache_class(cache_key, cls)
+    _classes.put(cache_key, cls, schema_size)
     return cls
 
 
@@ -825,10 +882,11 @@ def _create_dataclass(
         raise ValueError("Name is required")
     sanitized_name = _sanitize_name(name)
     conversion = _conversion.get()
-    cache_key = (_hash_schema(schema) + conversion.root_hash, sanitized_name)
+    schema_hash, schema_size = _schema_digest(schema)
+    cache_key = (schema_hash + conversion.root_hash, sanitized_name)
 
     # Return existing class if already built
-    existing = _cached_class(cache_key)
+    existing = _classes.get(cache_key)
     if existing is not None:
         return existing
     # A recursive reference to a class that is still being built
@@ -841,7 +899,7 @@ def _create_dataclass(
     finally:
         conversion.building.discard(cache_key)
     if isinstance(cls, type):
-        _cache_class(cache_key, cls)
+        _classes.put(cache_key, cls, schema_size)
     return cls
 
 
