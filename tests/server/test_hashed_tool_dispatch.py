@@ -586,6 +586,7 @@ async def test_hashed_name_resolves_tools_renamed_with_meta_at_every_level(
     assert calls == ["alice", "alice"]
 
 
+@pytest.mark.parametrize("on_provider", [False, True])
 @pytest.mark.parametrize(
     "meta",
     [
@@ -595,13 +596,16 @@ async def test_hashed_name_resolves_tools_renamed_with_meta_at_every_level(
     ],
 )
 async def test_hashed_name_resolves_tools_renamed_with_replaced_meta(
-    meta: dict[str, str] | None,
+    meta: dict[str, str] | None, on_provider: bool
 ):
     calls: list[str] = []
-    server = server_with(contacts_app(calls))
-    server.add_transform(
-        ToolTransform({"save": ToolTransformConfig(name="store", meta=meta)})
-    )
+    app = contacts_app(calls)
+    server = server_with(app)
+    transform = ToolTransform({"save": ToolTransformConfig(name="store", meta=meta)})
+    if on_provider:
+        app.add_transform(transform)
+    else:
+        server.add_transform(transform)
 
     async with Client(server) as client:
         by_name = await client.call_tool("store", {"name": "alice"})
