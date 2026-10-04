@@ -400,9 +400,9 @@ mcp = FastMCP.from_openapi(
 
 ## Request Parameter Handling
 
-Each tool argument maps to a parameter or request body that the operation declares. FastMCP ignores arguments that the operation does not declare, so they never reach the HTTP request. This includes operations that take no parameters.
+Tool arguments map to the parameters and request body that the operation declares. FastMCP ignores any other arguments.
 
-When the MCP server runs over HTTP, FastMCP forwards headers from the incoming MCP request to the API, except credential and connection headers such as `Authorization` and `Host`. Tools, resources, and resource templates add a forwarded header only when the outgoing request does not already set it, so headers configured on the HTTP client, such as an API key, keep their values. A configured header changes only when the tool's operation declares a header parameter with the same name and the tool call supplies a value for it.
+Headers you configure on the HTTP client are sent as configured. When the MCP server runs over HTTP, FastMCP also forwards headers from the incoming MCP request, except credential and connection headers such as `Authorization` and `Host`. Forwarded headers only fill in headers that the outgoing request does not already set. This applies to tools, resources, and resource templates.
 
 FastMCP intelligently handles different types of parameters in OpenAPI requests:
 
