@@ -771,6 +771,7 @@ class MultiAuth(AuthProvider):
     @staticmethod
     def _configured_source_id(source: AuthProvider) -> str:
         """Identify a configured trust source independently of its credentials."""
+        from fastmcp.server.auth.oauth_proxy import OAuthProxy
         from fastmcp.server.auth.providers.introspection import (
             IntrospectionTokenVerifier,
         )
@@ -791,6 +792,15 @@ class MultiAuth(AuthProvider):
         elif isinstance(source, RemoteAuthProvider):
             descriptor["token_verifier"] = MultiAuth._configured_source_id(
                 source.token_verifier
+            )
+        elif isinstance(source, OAuthProxy):
+            descriptor["issuer_url"] = str(source.issuer_url)
+            descriptor["upstream_authorization_endpoint"] = (
+                source._upstream_authorization_endpoint
+            )
+            descriptor["upstream_token_endpoint"] = source._upstream_token_endpoint
+            descriptor["token_verifier"] = MultiAuth._configured_source_id(
+                source._token_validator
             )
         elif isinstance(source, OAuthProvider):
             descriptor["issuer_url"] = str(source.issuer_url)

@@ -32,6 +32,7 @@ from fastmcp.server.auth import (
     RemoteAuthProvider,
     TokenVerifier,
 )
+from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.introspection import IntrospectionTokenVerifier
 from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
 from fastmcp.server.dependencies import get_access_token
@@ -501,3 +502,25 @@ def test_remote_provider_identity_tracks_its_configured_verifier(kind: str) -> N
     assert configured("https://company.example/verify", "company")._source_ids == [
         "company"
     ]
+
+
+def test_proxy_source_identity_tracks_upstream_configuration() -> None:
+    def configured(
+        authority: str, secret: str = "synthetic", source_id: str | None = None
+    ) -> MultiAuth:
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint=f"https://{authority}/authorize",
+            upstream_token_endpoint=f"https://{authority}/token",
+            upstream_client_id="application",
+            upstream_client_secret=secret,
+            token_verifier=StoredVerifier("one"),
+            base_url="https://service.example",
+        )
+        return MultiAuth(server=proxy, server_source_id=source_id)
+
+    first = configured("company.example")
+    restarted = configured("company.example", "rotated")
+    other = configured("partner.example")
+    assert first._source_ids == restarted._source_ids
+    assert first._source_ids != other._source_ids
+    assert configured("company.example", source_id="company")._source_ids == ["company"]
