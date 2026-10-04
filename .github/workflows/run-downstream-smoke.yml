@@ -154,6 +154,7 @@ jobs:
         working-directory: pydantic-ai
         run: |
           echo "UV_RUN=uv run --all-extras --no-extra mcp-tasks --all-packages \
+            --exclude-newer-package pydocket=2026-10-03T00:00:00Z \
             --with fastmcp@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp-4*.whl) \
             --with fastmcp-slim@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp_slim-*.whl) \
             --with fastmcp-tasks@file://$(ls $GITHUB_WORKSPACE/dist/fastmcp_tasks-*.whl)" >> "$GITHUB_ENV"
