@@ -237,7 +237,7 @@ def _allof_members(
 ) -> list[dict[str, Any]]:
     """Collect local composition members, reusing shared definition results."""
     cached: dict[int, tuple[dict[str, Any], list[dict[str, Any]], frozenset[str]]] = {}
-    active: set[int] = set()
+    active: set[tuple[int, frozenset[str]]] = set()
     retained = 0
     visits = 0
     merged = 0
@@ -250,12 +250,13 @@ def _allof_members(
         if visits > _MAX_COMPOSITION_MEMBERS:
             raise ValueError("Schema composition has too many visited members")
         identity = id(node)
-        if identity in active:
+        context = (identity, frozenset(refs))
+        if context in active:
             return [node], frozenset(), True
         cached_entry = cached.get(identity)
         if cached_entry is not None and not refs.intersection(cached_entry[2]):
             return cached_entry[1], cached_entry[2], False
-        active.add(identity)
+        active.add(context)
         members: dict[int, dict[str, Any]] = {}
         dependencies: set[str] = set()
         contextual = False
@@ -306,7 +307,7 @@ def _allof_members(
             dependencies.update(child_dependencies)
             contextual |= child_contextual
         append(trailing)
-        active.remove(identity)
+        active.remove(context)
         result = list(members.values())
         dependency_names = frozenset(dependencies)
         retained += len(result) + len(dependency_names)

@@ -4,6 +4,7 @@ from typing import Any
 
 import httpx2
 import pytest
+import yaml
 
 import fastmcp.utilities.openapi.schemas as schemas
 from fastmcp import Client, FastMCP
@@ -156,3 +157,28 @@ def test_repeated_collections_share_the_merge_budget(monkeypatch):
     group = {"allOf": [{"properties": {str(i): {"type": "string"}}} for i in range(40)]}
     with pytest.raises(ValueError, match="too many merged members"):
         _allof_members({"allOf": [group] * 10}, {})
+
+
+def test_aliased_cyclic_members_keep_reference_order():
+    definitions = yaml.safe_load(
+        """
+A: &shared
+  allOf:
+    - properties:
+        name:
+          default: A
+    - $ref: '#/$defs/B'
+B:
+  allOf:
+    - properties:
+        name:
+          default: B
+    - $ref: '#/$defs/C'
+C: *shared
+"""
+    )
+    assert definitions["A"] is definitions["C"]
+    properties = {}
+    for member in _allof_members({"$ref": "#/$defs/A"}, definitions):
+        properties.update(member.get("properties", {}))
+    assert properties["name"]["default"] == "A"
