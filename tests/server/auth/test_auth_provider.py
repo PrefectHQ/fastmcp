@@ -3,6 +3,7 @@ import re
 import httpx2
 import pytest
 from pydantic import AnyHttpUrl
+from starlette.testclient import TestClient
 
 from fastmcp import FastMCP
 from fastmcp.server.auth import MultiAuth, RemoteAuthProvider, TokenVerifier
@@ -137,6 +138,114 @@ class TestAuthProviderBase:
         assert auth.get_challenge_scopes(["openid"]) == challenge_scopes
         assert auth.get_challenge_scopes(["admin"]) == ["admin"]
         assert auth.get_challenge_scopes([]) == []
+
+    @pytest.mark.parametrize("use_server", [False, True])
+    @pytest.mark.parametrize("required_scopes", [None, [], ["admin"]])
+    def test_multi_auth_scope_override_with_verified_tokens(
+        self, use_server: bool, required_scopes: list[str] | None
+    ) -> None:
+        verifier = StaticTokenVerifier(
+            tokens={
+                "valid": {"client_id": "client", "scopes": ["openid"]},
+                "under_scoped": {"client_id": "client", "scopes": []},
+            },
+            required_scopes=["openid"],
+        )
+        auth = (
+            MultiAuth(
+                server=RemoteAuthProvider(
+                    token_verifier=verifier,
+                    authorization_servers=[AnyHttpUrl("https://issuer.example.com")],
+                    base_url="https://api.example.com",
+                ),
+                required_scopes=required_scopes,
+            )
+            if use_server
+            else MultiAuth(verifiers=verifier, required_scopes=required_scopes)
+        )
+        assert verifier.required_scopes == ["openid"]
+        assert auth.required_scopes == (
+            required_scopes
+            if required_scopes is not None
+            else (["openid"] if use_server else [])
+        )
+        app = FastMCP("test", auth=auth).http_app(stateless_http=True)
+        with TestClient(app) as client:
+            for token, expected_status in [
+                ("valid", 403 if required_scopes == ["admin"] else 200),
+                ("under_scoped", 401),
+                ("unknown", 401),
+            ]:
+                response = client.post(
+                    "/mcp",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Accept": "application/json, text/event-stream",
+                    },
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "initialize",
+                        "params": {
+                            "protocolVersion": "2026-07-28",
+                            "capabilities": {},
+                            "clientInfo": {"name": "test", "version": "1"},
+                        },
+                    },
+                )
+                assert response.status_code == expected_status
+                if required_scopes == [] and expected_status == 401:
+                    assert 'scope="' not in response.headers["www-authenticate"]
+
+    @pytest.mark.parametrize(
+        ("verifier_scopes", "required_scopes", "expected_scopes"),
+        [
+            (["openid"], None, ["profile"]),
+            (["openid"], ["openid"], ["profile"]),
+            (["openid"], ["admin"], ["admin"]),
+            (["openid"], [], []),
+            ([], [], ["profile"]),
+        ],
+    )
+    def test_multi_auth_remote_challenge_scope_precedence(
+        self,
+        verifier_scopes: list[str],
+        required_scopes: list[str] | None,
+        expected_scopes: list[str],
+    ) -> None:
+        remote = RemoteAuthProvider(
+            token_verifier=OptionalScopeVerifier(required_scopes=verifier_scopes),
+            authorization_servers=[AnyHttpUrl("https://issuer.example.com")],
+            base_url="https://api.example.com",
+            challenge_scopes=["profile"],
+        )
+        auth = MultiAuth(server=remote, required_scopes=required_scopes)
+
+        assert auth.challenge_scopes == expected_scopes
+        assert auth.get_challenge_scopes(None) == expected_scopes
+
+    @pytest.mark.parametrize("required_scopes", [None, [], ["admin"]])
+    async def test_multiple_verifiers_do_not_choose_a_default_challenge(
+        self, required_scopes: list[str] | None
+    ) -> None:
+        first = OptionalScopeVerifier(required_scopes=["openid"])
+        second = LegacyTokenVerifier(required_scopes=["profile"])
+        assert first.challenge_scopes == ["openid", "email"]
+        assert second.challenge_scopes == ["profile"]
+        auth = MultiAuth(
+            verifiers={"first": first, "second": second},
+            required_scopes=required_scopes,
+        )
+        assert auth.challenge_scopes == (required_scopes or [])
+        app = FastMCP("test", auth=auth).http_app()
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app), base_url="https://api.example.com"
+        ) as client:
+            response = await client.get("/mcp")
+        assert response.status_code == 401
+        match = re.search(r'\bscope="([^"]*)"', response.headers["www-authenticate"])
+        scopes = set(match.group(1).split()) if match else set()
+        assert scopes == set(required_scopes or [])
 
     @pytest.fixture
     def basic_remote_provider(self):
