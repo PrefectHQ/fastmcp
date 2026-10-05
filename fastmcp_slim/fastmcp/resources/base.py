@@ -27,9 +27,9 @@ from pydantic import (
 from pydantic.json_schema import SkipJsonSchema
 from typing_extensions import Self
 
-from fastmcp.server.caching import CacheScope
 from fastmcp.utilities.authorization import AuthCheck
 from fastmcp.utilities.components import FastMCPComponent, public_result_meta
+from fastmcp.utilities.types import CacheScope
 
 
 class ResourceContent(pydantic.BaseModel):
@@ -168,7 +168,7 @@ class ResourceResult(pydantic.BaseModel):
         Args:
             contents: String, bytes, or list of ResourceContent objects.
             meta: Optional metadata about the resource result.
-            ttl_ms: Optional cache time-to-live in milliseconds.
+            ttl_ms: Optional per-read cache time-to-live in milliseconds. Setting ttl_ms=0 marks the result as immediately stale.
             cache_scope: Optional cache scope (`'public'` or `'private'`).
         """
         normalized = self._normalize_contents(contents)

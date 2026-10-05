@@ -238,7 +238,7 @@ def forecast(city: str) -> str:
 
 `cache_scope` controls whether a cached response may be shared across authorization contexts (`"public"`) or reused only within the one that produced it (`"private"`, the default when a TTL is set). A `cache_scope` without a `cache_ttl` does not enable caching and raises at construction.
 
-Individual resource reads can override the server-level `cache_ttl` (which is set in seconds) by returning a `ResourceResult` with explicit `ttl_ms` (in milliseconds) and `cache_scope` fields. A resource handler can set `ttl_ms=0` to mark a specific result as immediately stale so clients never reuse it, or provide a custom TTL even if the server has no global `cache_ttl` configured.
+Individual resource reads can override the server-level `cache_ttl` (which is set in seconds) by returning a `ResourceResult` with explicit `ttl_ms` (in milliseconds) and `cache_scope` fields. Omitted fields inherit the server default independently. A resource handler can set `ttl_ms=0` to mark a specific result as immediately stale, or provide a custom TTL even if the server has no global `cache_ttl` configured. These are client freshness hints and do not disable or affect server-side `ResponseCachingMiddleware`.
 
 ```python
 from fastmcp import FastMCP
@@ -248,7 +248,7 @@ mcp = FastMCP("DataServer", cache_ttl=3600)
 
 @mcp.resource("data://live-feed")
 def live_feed() -> ResourceResult:
-    # Override server cache_ttl=3600 with per-read ttl_ms=0 (no caching)
+    # Override server cache_ttl=3600 with per-read ttl_ms=0 (immediately stale)
     return ResourceResult("live data", ttl_ms=0)
 ```
 

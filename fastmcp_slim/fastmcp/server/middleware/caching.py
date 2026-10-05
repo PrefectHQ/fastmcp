@@ -32,12 +32,11 @@ from fastmcp.resources.base import (
     ResourceContent,
     ResourceResult,
 )
-from fastmcp.server.caching import CacheScope
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.base import InputRequiredToolResult, Tool, ToolResult
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import FastMCPBaseModel
+from fastmcp.utilities.types import CacheScope, FastMCPBaseModel
 
 logger: Logger = get_logger(name=__name__)
 

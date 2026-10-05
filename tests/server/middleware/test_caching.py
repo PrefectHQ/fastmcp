@@ -767,7 +767,7 @@ class TestCacheableResourceResult:
             first = await client.session.read_resource("data://dynamic-stale")
             second = await client.session.read_resource("data://dynamic-stale")
 
-        assert calls == 1  # second read was served by the middleware cache
+        assert calls == 1  # ttl_ms=0 does NOT bypass the server-side middleware cache
         assert first.ttl_ms == 0
         assert second.ttl_ms == 0
 

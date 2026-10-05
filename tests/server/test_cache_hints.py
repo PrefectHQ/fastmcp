@@ -246,13 +246,13 @@ class TestPerReadResourceCacheHints:
 
     async def test_resource_template_per_read_hint_and_scope_override(self):
         """Resource template returning per-read hint overrides server scope."""
-        mcp = FastMCP("x", cache_ttl=60, cache_scope="private")
+        mcp = FastMCP("x", cache_ttl=60, cache_scope="public")
 
         @mcp.resource("data://{key}")
         def get_data(key: str) -> ResourceResult:
             if key == "public_item":
                 return ResourceResult("public", ttl_ms=5000, cache_scope="public")
-            return ResourceResult("private", ttl_ms=1000)
+            return ResourceResult("private", ttl_ms=1000, cache_scope="private")
 
         async with Client(mcp, mode="auto") as client:
             public_read = await client.session.read_resource("data://public_item")
@@ -262,6 +262,28 @@ class TestPerReadResourceCacheHints:
         assert public_read.cache_scope == "public"
         assert private_read.ttl_ms == 1000
         assert private_read.cache_scope == "private"
+
+    async def test_omitted_fields_inherit_server_defaults_independently(self):
+        """Server has cache_ttl=60 and cache_scope='public'. Setting only ttl_ms inherits server cache_scope='public'; setting only cache_scope inherits server cache_ttl=60000ms."""
+        mcp = FastMCP("x", cache_ttl=60, cache_scope="public")
+
+        @mcp.resource("data://only-ttl")
+        def only_ttl() -> ResourceResult:
+            return ResourceResult("stale", ttl_ms=0)
+
+        @mcp.resource("data://only-scope")
+        def only_scope() -> ResourceResult:
+            return ResourceResult("private", cache_scope="private")
+
+        async with Client(mcp, mode="auto") as client:
+            read_ttl = await client.session.read_resource("data://only-ttl")
+            read_scope = await client.session.read_resource("data://only-scope")
+
+        assert read_ttl.ttl_ms == 0
+        assert read_ttl.cache_scope == "public"
+
+        assert read_scope.ttl_ms == 60000
+        assert read_scope.cache_scope == "private"
 
     async def test_per_read_hint_without_server_cache_ttl(self):
         """Server has NO cache_ttl, but resource returns a per-read hint."""

@@ -315,6 +315,11 @@ class TestResourceResult:
         with pytest.raises(ValidationError):
             ResourceResult("test", cache_scope="invalid")  # type: ignore
 
+    def test_positional_cache_params_raise_type_error(self):
+        """ResourceResult raises TypeError when ttl_ms or cache_scope are passed positionally."""
+        with pytest.raises(TypeError):
+            ResourceResult("x", {}, 5)  # type: ignore[call-arg]  # ty: ignore[too-many-positional-arguments]
+
     def test_input_required_resource_result_carries_no_hint(self):
         """InputRequiredResourceResult carries no cache hints."""
         from mcp_types import InputRequiredResult

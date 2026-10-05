@@ -15,14 +15,12 @@ the client: a hinted server is inert unless the client passes `cache=` and negot
 
 from __future__ import annotations
 
-from typing import Literal, get_args
+from typing import get_args
 
 from mcp.server.caching import CacheHint
 from mcp_types.methods import CacheableMethod
 
-CacheScope = Literal["public", "private"]
-"""Whether a cached result may be shared across authorization contexts
-(`"public"`) or reused only within the one that produced it (`"private"`)."""
+from fastmcp.utilities.types import CacheScope
 
 
 def build_cache_hints(
