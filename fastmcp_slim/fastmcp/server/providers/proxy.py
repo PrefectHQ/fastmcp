@@ -213,10 +213,7 @@ def _session_request_meta(
 
 async def _relay_read_resource(
     client: Client, uri: str, ctx: Context | None
-) -> (
-    list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents]
-    | mcp_types.InputRequiredResult
-):
+) -> mcp_types.ReadResourceResult | mcp_types.InputRequiredResult:
     """Read a backend resource, surfacing a guard ask rather than driving it.
 
     Mirrors `ProxyTool.run`: on a modern backend the low-level session is used
@@ -228,8 +225,8 @@ async def _relay_read_resource(
     """
     meta = _forwardable_request_meta(ctx)
     if client.protocol_version not in MODERN_PROTOCOL_VERSIONS:
-        return await client.read_resource(uri, meta=meta)
-    result = await client._await_with_session_monitoring(
+        return await client.read_resource_mcp(uri, meta=meta)
+    return await client._await_with_session_monitoring(
         client.session.read_resource(
             uri,
             meta=_session_request_meta(meta),
@@ -238,9 +235,6 @@ async def _relay_read_resource(
             allow_input_required=True,
         )
     )
-    if isinstance(result, mcp_types.InputRequiredResult):
-        return result
-    return list(result.contents)
 
 
 def _stash_proxy_request_context(client: Client, ctx: Context) -> None:
@@ -551,14 +545,14 @@ class ProxyResource(Resource):
                 result = await _relay_read_resource(client, backend_uri, ctx)
             if isinstance(result, mcp_types.InputRequiredResult):
                 return InputRequiredResourceResult(result)
-            if not result:
+            if not result.contents:
                 raise ResourceError(
                     f"Remote server returned empty content for {backend_uri}"
                 )
 
             # Process all items in the result list, not just the first one
             contents: list[ResourceContent] = []
-            for item in result:
+            for item in result.contents:
                 if isinstance(item, TextResourceContents):
                     contents.append(
                         ResourceContent(
@@ -578,7 +572,9 @@ class ProxyResource(Resource):
                 else:
                     raise ResourceError(f"Unsupported content type: {type(item)}")
 
-            return ResourceResult(contents=contents)
+            return ResourceResult(
+                contents=contents, meta=_forwardable_server_meta(result.meta) or None
+            )
 
     def get_span_attributes(self) -> dict[str, Any]:
         return super().get_span_attributes() | {
@@ -668,14 +664,14 @@ class ProxyTemplate(ResourceTemplate):
                 _cached_content=InputRequiredResourceResult(result),
             )
 
-        if not result:
+        if not result.contents:
             raise ResourceError(
                 f"Remote server returned empty content for {parameterized_uri}"
             )
 
         # Process all items in the result list, not just the first one
         contents: list[ResourceContent] = []
-        for item in result:
+        for item in result.contents:
             if isinstance(item, TextResourceContents):
                 contents.append(
                     ResourceContent(
@@ -695,7 +691,9 @@ class ProxyTemplate(ResourceTemplate):
             else:
                 raise ResourceError(f"Unsupported content type: {type(item)}")
 
-        cached_content = ResourceResult(contents=contents)
+        cached_content = ResourceResult(
+            contents=contents, meta=_forwardable_server_meta(result.meta) or None
+        )
 
         return ProxyResource(
             client_factory=self._client_factory,
@@ -703,7 +701,7 @@ class ProxyTemplate(ResourceTemplate):
             name=self.name,
             title=self.title,
             description=self.description,
-            mime_type=result[
+            mime_type=result.contents[
                 0
             ].mime_type,  # Use first item's mimeType for backward compatibility
             icons=self.icons,

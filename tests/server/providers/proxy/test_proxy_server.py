@@ -596,6 +596,16 @@ class TestResources:
         assert original_result[2].text == "# Markdown\nContent"
         assert original_result[2].mime_type == "text/markdown"
 
+    @pytest.mark.parametrize("mode", ["legacy", "auto"])
+    async def test_proxy_forwards_read_result_meta(self, fastmcp_server, mode):
+        """The `_meta` of the resources/read result, not just of each content item."""
+        proxy = create_proxy(fastmcp_server)
+        async with Client(proxy, mode=mode) as client:
+            result = await client.read_resource_mcp("data://multi")
+
+        assert result.meta is not None
+        assert result.meta["count"] == 3
+
     async def test_read_resource_returns_none_if_not_found(self, proxy_server):
         with pytest.raises(
             MCPError, match="Resource not found: 'resource://nonexistent'"
@@ -705,6 +715,16 @@ class TestResourceTemplates:
         assert original_result[0].mime_type == "text/plain"
         assert original_result[1].text == '{"id": "test123", "status": "active"}'
         assert original_result[1].mime_type == "application/json"
+
+    @pytest.mark.parametrize("mode", ["legacy", "auto"])
+    async def test_proxy_template_forwards_read_result_meta(self, fastmcp_server, mode):
+        """The `_meta` of the resources/read result, not just of each content item."""
+        proxy = create_proxy(fastmcp_server)
+        async with Client(proxy, mode=mode) as client:
+            result = await client.read_resource_mcp("data://multi/test123")
+
+        assert result.meta is not None
+        assert result.meta["id"] == "test123"
 
     async def test_proxy_can_overwrite_proxied_resource_template(self, proxy_server):
         """
