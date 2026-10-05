@@ -32,6 +32,31 @@ class UnderScopedAzureJWTVerifier(AzureJWTVerifier):
         return AccessToken(token=token, client_id="c", scopes=[])
 
 
+class OptionalScopeChallengeProxy(OAuthProxy):
+    """A proxy whose default challenge requests every supported scope."""
+
+    def get_challenge_scopes(
+        self, required_scopes: list[str] | None = None
+    ) -> list[str]:
+        if required_scopes is None:
+            return self.scopes_supported
+        return required_scopes
+
+
+def optional_scope_challenge_proxy() -> OptionalScopeChallengeProxy:
+    return OptionalScopeChallengeProxy(
+        upstream_authorization_endpoint="https://auth.example.com/authorize",
+        upstream_token_endpoint="https://auth.example.com/token",
+        upstream_client_id="client-id",
+        upstream_client_secret="client-secret",
+        token_verifier=StaticTokenVerifier(tokens={}, required_scopes=["openid"]),
+        base_url="https://api.example.com",
+        valid_scopes=["openid", "email", "calendar"],
+        jwt_signing_key="test-secret",
+        client_storage=MemoryStore(),
+    )
+
+
 class TestMultiAuthInit:
     """Test MultiAuth initialization and validation."""
 
@@ -200,27 +225,17 @@ class TestMultiAuthInit:
         assert auth.scopes_supported == ["api://client-id/read"]
         assert auth.challenge_scopes == ["admin"]
 
-    def test_challenge_scopes_include_oauth_proxy_valid_scopes(self):
-        proxy = OAuthProxy(
-            upstream_authorization_endpoint="https://auth.example.com/authorize",
-            upstream_token_endpoint="https://auth.example.com/token",
-            upstream_client_id="client-id",
-            upstream_client_secret="client-secret",
-            token_verifier=StaticTokenVerifier(tokens={}, required_scopes=["openid"]),
-            base_url="https://api.example.com",
-            valid_scopes=["openid", "email", "calendar"],
-            jwt_signing_key="test-secret",
-            client_storage=MemoryStore(),
+    def test_challenge_scopes_use_server_default_selection(self):
+        auth = MultiAuth(server=optional_scope_challenge_proxy())
+
+        assert auth.challenge_scopes == ["openid", "email", "calendar"]
+
+    def test_challenge_scopes_keep_override_matching_server_default(self):
+        auth = MultiAuth(
+            server=optional_scope_challenge_proxy(), required_scopes=["openid"]
         )
 
-        assert MultiAuth(server=proxy).challenge_scopes == [
-            "openid",
-            "email",
-            "calendar",
-        ]
-        assert MultiAuth(server=proxy, required_scopes=["admin"]).challenge_scopes == [
-            "admin"
-        ]
+        assert auth.challenge_scopes == ["openid"]
 
 
 class TestMultiAuthVerifyToken:

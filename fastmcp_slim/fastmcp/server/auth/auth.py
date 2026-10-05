@@ -368,10 +368,12 @@ class AuthProvider(TokenVerifierProtocol):
     def get_challenge_scopes(
         self, required_scopes: list[str] | None = None
     ) -> list[str]:
-        """Translate validation scopes into scopes clients should request.
+        """Select the scopes a `WWW-Authenticate` challenge asks clients to request.
 
-        Providers whose authorization server uses a different scope format can
-        override this method to translate any effective set of validation scopes.
+        Called without arguments for the server-wide challenge, which defaults to
+        `required_scopes`. Override this method to translate scopes for an
+        authorization server that uses a different format, or to request
+        optional scopes up front.
         """
         return self.required_scopes if required_scopes is None else required_scopes
 
@@ -731,6 +733,7 @@ class MultiAuth(AuthProvider):
             required_scopes=effective_scopes,
         )
         self.server = server
+        self._required_scopes_override = required_scopes
         self.verifiers = normalized_verifiers
 
         # If an explicit resource_base_url override was passed to MultiAuth,
@@ -821,12 +824,18 @@ class MultiAuth(AuthProvider):
     def get_challenge_scopes(
         self, required_scopes: list[str] | None = None
     ) -> list[str]:
-        """Translate effective scopes through an unambiguous auth source."""
+        """Select challenge scopes through an unambiguous auth source.
+
+        Without a `required_scopes` override, the server selects its own default
+        challenge, including any customization of this hook.
+        """
+        if required_scopes is None:
+            required_scopes = self._required_scopes_override
+        if self.server is not None:
+            return self.server.get_challenge_scopes(required_scopes)
         effective_scopes = (
             self.required_scopes if required_scopes is None else required_scopes
         )
-        if self.server is not None:
-            return self.server.get_challenge_scopes(effective_scopes)
         if len(self.verifiers) == 1:
             translator = getattr(self.verifiers[0], "get_challenge_scopes", None)
             if translator is not None:
@@ -997,23 +1006,6 @@ class OAuthProvider(
         ):
             return self.client_registration_options.valid_scopes
         return self.required_scopes
-
-    def get_challenge_scopes(
-        self, required_scopes: list[str] | None = None
-    ) -> list[str]:
-        """Challenge for the scopes this server grants clients by default.
-
-        Clients that omit `scope` are registered with every supported scope, so
-        the server-wide challenge asks for the same set. Otherwise a client that
-        follows the challenge would receive a narrower grant than one that
-        doesn't.
-        """
-        effective_scopes = (
-            self.required_scopes if required_scopes is None else required_scopes
-        )
-        if effective_scopes == self.required_scopes:
-            return self.scopes_supported
-        return effective_scopes
 
     def get_routes(
         self,

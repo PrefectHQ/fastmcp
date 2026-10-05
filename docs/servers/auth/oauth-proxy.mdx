@@ -405,6 +405,39 @@ JWTVerifier(..., required_scopes = ["read:user", "write:data"])
 
 Dynamic clients created by the proxy will automatically include these scopes in their authorization requests. See the [Token Verification](#token-verification) section below for detailed setup.
 
+`required_scopes` and `valid_scopes` play different roles. `required_scopes` is what every token must carry, and it is the set the `WWW-Authenticate` challenge tells clients to request. `valid_scopes` is the catalog of scopes clients may request, advertised as `scopes_supported` in protected resource metadata. MCP clients that follow the challenge request only the required scopes, so a scope that appears only in `valid_scopes` stays optional.
+
+When your tools depend on scopes that clients won't know to ask for, you have two options. Adding them to `required_scopes` makes them mandatory, so token validation rejects any token without them. Overriding `get_challenge_scopes` asks clients to request them up front while validation stays on the narrower set. FastMCP calls the method with no argument for the server-wide challenge:
+
+```python
+from fastmcp import FastMCP
+from fastmcp.server.auth.providers.google import GoogleProvider
+
+GMAIL_READONLY = "https://www.googleapis.com/auth/gmail.readonly"
+
+
+class GmailProvider(GoogleProvider):
+    def get_challenge_scopes(
+        self, required_scopes: list[str] | None = None
+    ) -> list[str]:
+        if required_scopes is None:
+            return self.scopes_supported
+        return required_scopes
+
+
+auth = GmailProvider(
+    client_id="123456789.apps.googleusercontent.com",
+    client_secret="GOCSPX-abc123...",
+    base_url="http://localhost:8000",
+    required_scopes=["openid"],
+    valid_scopes=["openid", GMAIL_READONLY],
+)
+
+mcp = FastMCP("Gmail Server", auth=auth)
+```
+
+The override also sets the default challenge when the provider is wrapped in `MultiAuth`. Passing `required_scopes` to `MultiAuth` replaces it with exactly the scopes you pass.
+
 ### Custom Parameters
 
 Some OAuth providers require additional parameters beyond the standard OAuth2 flow. Use `extra_authorize_params` and `extra_token_params` to pass provider-specific requirements. For example, Auth0 requires an `audience` parameter to issue JWT tokens instead of opaque tokens:
