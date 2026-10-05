@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from anyio import create_task_group
@@ -128,6 +128,17 @@ def fastmcp_server():
         message: str, level: LoggingLevel, logger: str, context: Context
     ) -> None:
         await context.log(message=message, level=level, logger_name=logger)
+
+    @mcp.tool
+    async def log_raw(data: Any, context: Context) -> None:
+        # Unlike `context.log`, this sends the payload as-is, the way an MCP
+        # server that is not built on FastMCP would.
+        await context.session.send_log_message(  # ty: ignore[deprecated]
+            level="info",
+            data=data,
+            logger="raw",
+            related_request_id=context.origin_request_id,
+        )
 
     @mcp.tool
     async def report_progress(context: Context) -> int:
@@ -331,6 +342,35 @@ class TestProxyClient:
             )
 
         assert log_handler_called
+
+    @pytest.mark.parametrize(
+        ("data", "expected_msg"),
+        [
+            ("plain string log", "plain string log"),
+            ({"message": "no msg key", "n": 1}, '{"message": "no msg key", "n": 1}'),
+            (["a", 2], '["a", 2]'),
+            (42, "42"),
+        ],
+    )
+    async def test_log_request_with_non_fastmcp_payload(
+        self, proxy_server: FastMCP, data: Any, expected_msg: str
+    ):
+        """
+        Test that the proxy forwards log data that is not FastMCP's `msg`/`extra` dict.
+        """
+        received: list[LogMessage] = []
+
+        async def log_handler(message: LogMessage) -> None:
+            received.append(message)
+
+        async with Client(
+            proxy_server, mode="legacy", log_handler=log_handler
+        ) as client:
+            await client.call_tool("log_raw", {"data": data})
+
+        assert [(m.level, m.logger, m.data["msg"]) for m in received] == [
+            ("info", "raw", expected_msg)
+        ]
 
     async def test_report_progress_request(self, proxy_server: FastMCP):
         """

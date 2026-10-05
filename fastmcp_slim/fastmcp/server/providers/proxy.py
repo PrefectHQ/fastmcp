@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import inspect
+import json
 import time
 import warnings
 from collections.abc import Awaitable, Callable, Sequence
@@ -1589,8 +1590,13 @@ async def default_proxy_elicitation_handler(
 async def default_proxy_log_handler(message: LogMessage) -> None:
     """Forward log notification from remote server to proxy's connected clients."""
     ctx = get_context()
-    msg = message.data.get("msg")
-    extra = message.data.get("extra")
+    data = message.data
+    # FastMCP servers send {"msg": ..., "extra": ...}; any other MCP server may
+    # send any JSON value, which is forwarded as the message text.
+    if isinstance(data, dict) and isinstance(data.get("msg"), str):
+        msg, extra = data["msg"], data.get("extra")
+    else:
+        msg, extra = (data if isinstance(data, str) else json.dumps(data)), None
     await ctx.log(msg, level=message.level, logger_name=message.logger, extra=extra)
 
 
