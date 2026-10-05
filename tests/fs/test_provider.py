@@ -361,10 +361,10 @@ class TestFileSystemProviderReloadRace:
         finish_discovery = threading.Event()
         reload_exited = anyio.Event()
 
-        def slow_discovery(root: Path) -> DiscoveryResult:
+        def slow_discovery(root: Path, *, reload: bool = False) -> DiscoveryResult:
             discovery_started.set()
             assert finish_discovery.wait(timeout=2)
-            return discover_and_import(root)
+            return discover_and_import(root, reload=reload)
 
         async def reload(
             *, task_status: TaskStatus[anyio.CancelScope] = anyio.TASK_STATUS_IGNORED
