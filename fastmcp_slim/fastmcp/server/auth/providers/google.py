@@ -34,6 +34,7 @@ from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.utilities.auth import parse_scopes
 from fastmcp.utilities.logging import get_logger
+from fastmcp.utilities.token_cache import TokenCache
 
 logger = get_logger(__name__)
 
@@ -62,6 +63,10 @@ class GoogleTokenVerifier(TokenVerifier):
     This returns the OAuth app ID (``aud``), granted scopes, and expiry time.
     User profile data (name, picture, etc.) is fetched separately from the
     v2 userinfo endpoint when the token is valid.
+
+    Caching is disabled by default.  Set ``cache_ttl_seconds`` to a positive
+    integer to cache successful verification results and avoid repeated
+    Google API calls for the same token.
     """
 
     def __init__(
@@ -69,6 +74,8 @@ class GoogleTokenVerifier(TokenVerifier):
         *,
         required_scopes: list[str] | None = None,
         timeout_seconds: int = 10,
+        cache_ttl_seconds: int | None = None,
+        max_cache_size: int | None = None,
         http_client: httpx2.AsyncClient | None = None,
         audience: str | list[str] | None = None,
     ):
@@ -77,6 +84,10 @@ class GoogleTokenVerifier(TokenVerifier):
         Args:
             required_scopes: Required OAuth scopes (e.g., ['openid', 'https://www.googleapis.com/auth/userinfo.email'])
             timeout_seconds: HTTP request timeout
+            cache_ttl_seconds: How long to cache verification results in seconds.
+                Caching is disabled by default (None).  Set to a positive integer
+                to enable (e.g., 300 for 5 minutes).
+            max_cache_size: Maximum number of tokens to cache.  Default: 10 000.
             http_client: Optional httpx2.AsyncClient for connection pooling. When provided,
                 the client is reused across calls and the caller is responsible for its
                 lifecycle. When None (default), a fresh client is created per call.
@@ -96,6 +107,10 @@ class GoogleTokenVerifier(TokenVerifier):
         self.timeout_seconds = timeout_seconds
         self._http_client = http_client
         self.audience = audience
+        self._cache = TokenCache(
+            ttl_seconds=cache_ttl_seconds,
+            max_size=max_cache_size,
+        )
 
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify a Google OAuth token using the tokeninfo endpoint.
@@ -105,6 +120,10 @@ class GoogleTokenVerifier(TokenVerifier):
         scopes, and expiry time.  On success, fetches user profile data from
         the v2 userinfo endpoint to populate name, picture, and locale claims.
         """
+        is_cached, cached_result = self._cache.get(token)
+        if is_cached:
+            logger.debug("Google token cache hit")
+            return cached_result
         try:
             async with (
                 contextlib.nullcontext(self._http_client)
@@ -213,6 +232,7 @@ class GoogleTokenVerifier(TokenVerifier):
                         "google_user_data": user_data or None,
                     },
                 )
+                self._cache.set(token, access_token)
                 logger.debug("Google token verified successfully")
                 return access_token
 
@@ -264,6 +284,8 @@ class GoogleProvider(OAuthProxy):
         required_scopes: list[str] | None = None,
         valid_scopes: list[str] | None = None,
         timeout_seconds: int = 10,
+        cache_ttl_seconds: int | None = None,
+        max_cache_size: int | None = None,
         allowed_client_redirect_uris: list[str] | None = None,
         client_storage: AsyncKeyValue | None = None,
         jwt_signing_key: str | bytes | None = None,
@@ -301,6 +323,10 @@ class GoogleProvider(OAuthProxy):
                 when you want clients to be able to request additional scopes beyond the
                 required minimum. Shorthands are normalized to full URI forms.
             timeout_seconds: HTTP request timeout for Google API calls (defaults to 10)
+            cache_ttl_seconds: How long to cache token verification results in seconds.
+                Caching is disabled by default (None). Set to a positive integer
+                to enable (e.g., 300 for 5 minutes).
+            max_cache_size: Maximum number of tokens to cache. Default: 10 000.
             allowed_client_redirect_uris: List of allowed redirect URI patterns for MCP clients.
                 If None (default), all URIs are allowed. If empty list, no URIs are allowed.
             client_storage: Storage backend for OAuth state (client registrations, encrypted tokens).
@@ -359,6 +385,8 @@ class GoogleProvider(OAuthProxy):
         token_verifier = GoogleTokenVerifier(
             required_scopes=required_scopes_final,
             timeout_seconds=timeout_seconds,
+            cache_ttl_seconds=cache_ttl_seconds,
+            max_cache_size=max_cache_size,
             http_client=http_client,
             audience=client_id,
         )

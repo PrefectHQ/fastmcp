@@ -359,10 +359,13 @@ class TransformedTool(Tool):
 
         token = _current_tool.set(self)
         try:
-            if is_coroutine_function(self.fn):
-                result = await self.fn(**arguments)
+            from fastmcp.server.dependencies import without_injected_parameters
+
+            fn = without_injected_parameters(self.fn)
+            if is_coroutine_function(fn):
+                result = await fn(**arguments)
             else:
-                result = await call_sync_fn_in_threadpool(self.fn, **arguments)
+                result = await call_sync_fn_in_threadpool(fn, **arguments)
                 if inspect.isawaitable(result):
                     result = await result
 

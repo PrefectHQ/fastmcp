@@ -72,6 +72,7 @@ These control how the server listens when running with an HTTP transport.
 |---|---|---|---|
 | `FASTMCP_SHOW_SERVER_BANNER` | `bool` | `true` | Show the server banner on startup. Also controllable via `--no-banner` or `server.run(show_banner=False)`. |
 | `FASTMCP_CHECK_FOR_UPDATES` | `Literal["stable", "prerelease", "off"]` | `stable` | Update checking on CLI startup. `stable` checks stable releases only, `prerelease` includes pre-releases, `off` disables checking. |
+| `FASTMCP_OAUTH_ENCRYPTION_KEY` | `str \| None` | None | Fernet key for [encrypted CLI OAuth storage](/cli/overview#mcp-server-authentication). An unset or empty value uses memory only. |
 
 ## Telemetry
 

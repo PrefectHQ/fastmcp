@@ -227,43 +227,99 @@ def _make_optional_parameter_nullable(schema: dict[str, Any]) -> dict[str, Any]:
     return schema
 
 
+_MAX_COMPOSITION_MEMBERS = 100_000
+
+
 def _allof_members(
     schema: dict[str, Any],
     schema_defs: dict[str, Any],
     resolving: set[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Expand local schema references while collecting ``allOf`` members."""
-    resolving = resolving or set()
+    """Collect local composition members, reusing shared definition results."""
+    cached: dict[int, tuple[dict[str, Any], list[dict[str, Any]], frozenset[str]]] = {}
+    active: set[tuple[int, frozenset[str]]] = set()
+    retained = 0
+    visits = 0
+    merged = 0
 
-    ref = schema.get("$ref")
-    if isinstance(ref, str):
-        for prefix in ("#/$defs/", "#/components/schemas/"):
-            if ref.startswith(prefix):
-                name = ref.removeprefix(prefix)
-                referenced_schema = schema_defs.get(name)
-                if isinstance(referenced_schema, dict) and name not in resolving:
-                    siblings = {
-                        key: value for key, value in schema.items() if key != "$ref"
-                    }
-                    members = _allof_members(
-                        referenced_schema, schema_defs, resolving | {name}
-                    )
-                    if siblings:
-                        members.extend(_allof_members(siblings, schema_defs, resolving))
-                    return members
-                break
+    def collect(
+        node: dict[str, Any], refs: set[str]
+    ) -> tuple[list[dict[str, Any]], frozenset[str], bool]:
+        nonlocal retained, visits, merged
+        visits += 1
+        if visits > _MAX_COMPOSITION_MEMBERS:
+            raise ValueError("Schema composition has too many visited members")
+        identity = id(node)
+        context = (identity, frozenset(refs))
+        if context in active:
+            return [node], frozenset(), True
+        cached_entry = cached.get(identity)
+        if cached_entry is not None and not refs.intersection(cached_entry[2]):
+            return cached_entry[1], cached_entry[2], False
+        active.add(context)
+        members: dict[int, dict[str, Any]] = {}
+        dependencies: set[str] = set()
+        contextual = False
 
-    all_of = schema.get("allOf")
-    if isinstance(all_of, list):
-        members = []
-        for member in all_of:
-            if isinstance(member, dict):
-                members.extend(_allof_members(member, schema_defs, resolving))
+        def append(items: list[dict[str, Any]]) -> None:
+            nonlocal merged
+            merged += len(items)
+            if merged > _MAX_COMPOSITION_MEMBERS:
+                raise ValueError("Schema composition has too many merged members")
+            # Preserve the last occurrence's position, which determines the
+            # existing property merge order when definitions share a field.
+            for item in items:
+                key = id(item)
+                members.pop(key, None)
+                members[key] = item
 
-        siblings = {key: value for key, value in schema.items() if key != "allOf"}
-        return members + ([siblings] if siblings else [])
+        ref = node.get("$ref")
+        referenced = None
+        name = ""
+        if isinstance(ref, str):
+            for prefix in ("#/$defs/", "#/components/schemas/"):
+                if ref.startswith(prefix):
+                    name = ref.removeprefix(prefix)
+                    dependencies.add(name)
+                    referenced = schema_defs.get(name) if name not in refs else None
+                    contextual |= name in refs
+                    break
+        children: list[tuple[dict[str, Any], set[str]]] = []
+        trailing: list[dict[str, Any]] = []
+        if isinstance(referenced, dict):
+            children.append((referenced, refs | {name}))
+            siblings = {key: value for key, value in node.items() if key != "$ref"}
+            if siblings:
+                children.append((siblings, refs))
+        elif isinstance(node.get("allOf"), list):
+            children.extend(
+                (member, refs) for member in node["allOf"] if isinstance(member, dict)
+            )
+            siblings = {key: value for key, value in node.items() if key != "allOf"}
+            if siblings:
+                trailing.append(siblings)
+        else:
+            trailing.append(node)
+        for child, child_refs in children:
+            items, child_dependencies, child_contextual = collect(child, child_refs)
+            merged += len(child_dependencies)
+            append(items)
+            dependencies.update(child_dependencies)
+            contextual |= child_contextual
+        append(trailing)
+        active.remove(context)
+        result = list(members.values())
+        dependency_names = frozenset(dependencies)
+        retained += len(result) + len(dependency_names)
+        if retained > _MAX_COMPOSITION_MEMBERS:
+            raise ValueError("Schema composition has too many collected members")
+        # A cycle cut depends on this traversal's ancestors. Only reuse complete
+        # results, and only when none of their references is currently active.
+        if not contextual:
+            cached[identity] = (node, result, dependency_names)
+        return result, dependency_names, contextual
 
-    return [schema]
+    return collect(schema, resolving or set())[0]
 
 
 # Keywords the properties/required merge represents, or that only annotate.

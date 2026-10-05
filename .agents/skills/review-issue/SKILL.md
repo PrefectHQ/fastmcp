@@ -39,7 +39,7 @@ Assignment commits us to reviewing the PR, not to merging it. A gate closure is 
 
 3. **Check the category against [the contribution policy](../../../docs/development/contributing.mdx#choose-a-contribution).** Simple bug fixes, docs, and auth providers are assignable. Enhancements need a maintainer-approved design in the issue first; approve the approach, then assign. Third-party integrations and sweeping changes without discussion are declined.
 
-4. **Investigate the PR in context.** Read the full diff, then open each touched file. Trace the values and functions it changes to where they are produced and consumed. From the MRE, state in one line what was broken, where, and whether this change fixes it there. Compare with how adjacent code handles the same case, and check that the tests fail without the fix. Treat style issues as review comments; a wrong layer, a broken adjacent path, or an unfixed MRE changes the verdict.
+4. **Investigate the PR in context.** Read the full diff, then open each touched file. Trace the values and functions it changes to where they are produced and consumed. From the MRE, state in one line what was broken, where, and whether this change fixes it there. Compare with how adjacent code handles the same case, and check that the tests fail without the fix. Treat style issues as review comments; a wrong layer, a broken adjacent path, or an unfixed MRE changes the verdict. Apply [review-pr](../review-pr/SKILL.md)'s behavior classification, protocol check, and competing-proposal comparison before recommending a proposal. Keep scope and design acceptance separate from implementation quality and pending validation.
 
 5. **Check the contributor.** For an unfamiliar account, look at its public history:
 
