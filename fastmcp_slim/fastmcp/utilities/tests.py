@@ -151,6 +151,31 @@ def run_server_in_process(
             raise RuntimeError("Server process failed to terminate even after kill")
 
 
+async def _wait_for_server_started(
+    server: FastMCP, server_task: asyncio.Task[None]
+) -> None:
+    """Wait for startup or surface lifespan / transport failures immediately."""
+    started_wait = asyncio.create_task(server._started.wait())
+    try:
+        done, _ = await asyncio.wait(
+            {started_wait, server_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if server_task in done:
+            started_wait.cancel()
+            with suppress(asyncio.CancelledError):
+                await started_wait
+            exc = server_task.exception()
+            if exc is not None:
+                raise exc
+            raise RuntimeError("Server exited before signalling startup completion")
+    finally:
+        if not started_wait.done():
+            started_wait.cancel()
+            with suppress(asyncio.CancelledError):
+                await started_wait
+
+
 async def _wait_for_port(host: str, port: int, timeout: float = 5.0) -> None:
     """Poll until a TCP connection to `host:port` is accepted, or raise on timeout."""
     deadline = time.monotonic() + timeout
@@ -225,7 +250,6 @@ async def run_server_async(
     if port is None:
         port = find_available_port()
 
-    # Start server as a background task
     server_task = asyncio.create_task(
         server.run_http_async(
             host=host,
@@ -236,17 +260,15 @@ async def run_server_async(
         )
     )
 
-    # Wait for server lifespan to be ready
-    await server._started.wait()
-
-    # The lifespan completing does not guarantee uvicorn has bound the port yet, so
-    # poll until the socket accepts a connection rather than guessing at a sleep.
-    await _wait_for_port(host, port)
-
     try:
+        await _wait_for_server_started(server, server_task)
+
+        # The lifespan completing does not guarantee uvicorn has bound the port yet, so
+        # poll until the socket accepts a connection rather than guessing at a sleep.
+        await _wait_for_port(host, port)
+
         yield f"http://{host}:{port}{path}"
     finally:
-        # Cleanup: cancel the task with timeout to avoid hanging on Windows
         server_task.cancel()
         with suppress(asyncio.CancelledError, asyncio.TimeoutError):
             await asyncio.wait_for(server_task, timeout=2.0)
