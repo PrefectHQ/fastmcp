@@ -596,14 +596,14 @@ class TestGenerateCliCommand:
         output = tmp_path / "cli.py"
         await generate_cli_command("test-server", str(output))
         assert output.exists()
-        content = output.read_text()
+        content = output.read_text(encoding="utf-8")
         compile(content, str(output), "exec")
 
     @pytest.mark.usefixtures("_patch_client")
     async def test_contains_tools(self, tmp_path: Path):
         output = tmp_path / "cli.py"
         await generate_cli_command("test-server", str(output))
-        content = output.read_text()
+        content = output.read_text(encoding="utf-8")
         assert "async def greet(" in content
         assert "async def add(" in content
 
@@ -627,7 +627,7 @@ class TestGenerateCliCommand:
         output = tmp_path / "cli.py"
         output.write_text("existing")
         await generate_cli_command("test-server", str(output), force=True)
-        content = output.read_text()
+        content = output.read_text(encoding="utf-8")
         assert content != "existing"
         assert "async def greet(" in content
 
@@ -687,7 +687,7 @@ class TestGenerateCliCommand:
         await generate_cli_command("test-server", str(output))
         skill_path = tmp_path / "SKILL.md"
         assert skill_path.exists()
-        content = skill_path.read_text()
+        content = skill_path.read_text(encoding="utf-8")
         assert "---" in content
         assert "name:" in content
 
@@ -695,7 +695,7 @@ class TestGenerateCliCommand:
     async def test_skill_contains_tools(self, tmp_path: Path):
         output = tmp_path / "cli.py"
         await generate_cli_command("test-server", str(output))
-        content = (tmp_path / "SKILL.md").read_text()
+        content = (tmp_path / "SKILL.md").read_text(encoding="utf-8")
         assert "### greet" in content
         assert "### add" in content
         assert "--name" in content
@@ -719,7 +719,7 @@ class TestGenerateCliCommand:
         output = tmp_path / "cli.py"
         (tmp_path / "SKILL.md").write_text("existing")
         await generate_cli_command("test-server", str(output), force=True)
-        content = (tmp_path / "SKILL.md").read_text()
+        content = (tmp_path / "SKILL.md").read_text(encoding="utf-8")
         assert content != "existing"
         assert "### greet" in content
 
@@ -727,7 +727,7 @@ class TestGenerateCliCommand:
     async def test_skill_references_cli_filename(self, tmp_path: Path):
         output = tmp_path / "my_weather.py"
         await generate_cli_command("test-server", str(output))
-        content = (tmp_path / "SKILL.md").read_text()
+        content = (tmp_path / "SKILL.md").read_text(encoding="utf-8")
         assert "uv run --with fastmcp python my_weather.py" in content
 
 
