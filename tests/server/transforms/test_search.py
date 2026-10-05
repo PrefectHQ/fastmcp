@@ -369,6 +369,22 @@ class TestBM25Search:
         assert results == [updated]
         assert transform._index is index
 
+    async def test_search_rebuilds_when_description_contains_catalog_delimiter(
+        self,
+    ) -> None:
+        def action() -> str:
+            return "ok"
+
+        first = Tool.from_function(action, name="get", description="user data")
+        second = Tool.from_function(action, name="list", description="orders")
+        replacement = Tool.from_function(
+            action, name="get", description="user data|list orders"
+        )
+        transform = BM25SearchTransform()
+        assert await transform._search([first, second], "orders") == [second]
+
+        assert await transform._search([replacement], "orders") == [replacement]
+
     async def test_search_relevance(self):
         mcp = _make_server_with_tools()
         mcp.add_transform(BM25SearchTransform())

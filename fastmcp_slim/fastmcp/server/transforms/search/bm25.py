@@ -1,6 +1,7 @@
 """BM25-based search transform."""
 
 import hashlib
+import json
 import math
 import re
 import unicodedata
@@ -81,7 +82,7 @@ class _BM25Index:
 
 def _catalog_hash(tools: Sequence[Tool]) -> str:
     """SHA256 hash of sorted tool searchable text for staleness detection."""
-    key = "|".join(sorted(_extract_searchable_text(t) for t in tools))
+    key = json.dumps(sorted(_extract_searchable_text(t) for t in tools))
     return hashlib.sha256(key.encode()).hexdigest()
 
 
