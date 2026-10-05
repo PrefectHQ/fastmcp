@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import anyio
 import uvicorn
-from mcp.server.lowlevel.server import NotificationOptions
 from mcp.server.stdio import stdio_server
 from mcp.server.streamable_http import EventStore
 from starlette.middleware import Middleware as ASGIMiddleware
@@ -246,11 +245,7 @@ class TransportMixin:
                         await self._mcp_server.run(
                             read_stream,
                             write_stream,
-                            self._mcp_server.create_initialization_options(
-                                notification_options=NotificationOptions(
-                                    tools_changed=True
-                                ),
-                            ),
+                            self._mcp_server.create_initialization_options(),
                         )
         finally:
             reset_transport(token)

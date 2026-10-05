@@ -301,9 +301,9 @@ class ASGIServer:
     ) -> httpx2.AsyncClient:
         """An `httpx2.AsyncClient` bound to the in-process app, for raw HTTP assertions.
 
-        Relative URLs resolve against the server's base URL, and absolute URLs on the
-        same origin work too, so `client.get(f"{server.url}/health")` reads the same as
-        it would against a real server.
+        Relative URLs resolve against the server's origin, so `client.get("/health")`
+        reaches a custom route just as it would against a real server, and absolute
+        URLs on the same origin, such as `server.url`, work too.
 
         The signature matches `McpHttpClientFactory`, so this method can also be handed
         to anything that takes an `httpx_client_factory`.
@@ -314,7 +314,7 @@ class ASGIServer:
         cancel_on_close = self.transport_type != "sse"
         return httpx2.AsyncClient(
             transport=StreamingASGITransport(self.app, cancel_on_close=cancel_on_close),
-            base_url=self.url,
+            base_url=httpx2.URL(self.url).copy_with(path="/"),
             headers=headers,
             timeout=timeout,
             auth=auth,

@@ -327,13 +327,15 @@ class OpenAPIResource(Resource):
             _raise_for_status(response)
 
             content_type = response.headers.get("content-type", "").lower()
+            media_type = content_type.split(";")[0].strip()
 
-            if "application/json" in content_type:
+            # RFC 6839: a "+json" suffix marks a JSON media type
+            if media_type == "application/json" or media_type.endswith("+json"):
                 result = response.json()
                 return ResourceResult(
                     contents=[
                         ResourceContent(
-                            content=json.dumps(result), mime_type="application/json"
+                            content=json.dumps(result), mime_type=media_type
                         )
                     ]
                 )

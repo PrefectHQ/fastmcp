@@ -236,11 +236,18 @@ class OpenAPIProvider(Provider):
         component_type: Literal["tool", "resource", "resource_template", "prompt"],
     ) -> str:
         """Ensure the name is unique by appending numbers if needed."""
-        self._used_names[component_type][name] += 1
-        if self._used_names[component_type][name] == 1:
+        used_names = self._used_names[component_type]
+        used_names[name] += 1
+        if used_names[name] == 1:
             return name
 
-        new_name = f"{name}_{self._used_names[component_type][name]}"
+        # Skip suffixed names that are already taken, such as an operation
+        # whose own name is `name_2`, and reserve the one we hand out.
+        new_name = f"{name}_{used_names[name]}"
+        while new_name in used_names:
+            used_names[name] += 1
+            new_name = f"{name}_{used_names[name]}"
+        used_names[new_name] += 1
         logger.debug(
             f"Name collision: '{name}' exists as {component_type}. Using '{new_name}'."
         )

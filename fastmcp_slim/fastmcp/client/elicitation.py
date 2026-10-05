@@ -62,8 +62,9 @@ def create_elicitation_callback(
                 params,
                 context,  # ty: ignore[invalid-argument-type]
             )
-            # if the user returns data, we assume they've accepted the elicitation
-            if not isinstance(result, ElicitResult):
+            # if the user returns data, we assume they've accepted the elicitation.
+            # An ElicitResult, including the SDK's own, carries an explicit action.
+            if not isinstance(result, MCPElicitResult):
                 result = ElicitResult(action="accept", content=result)
             content = to_jsonable_python(result.content)
             if not isinstance(content, dict | None):

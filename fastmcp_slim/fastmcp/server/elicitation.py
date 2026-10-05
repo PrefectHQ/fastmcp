@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Generic, Literal, cast, get_origin
+from typing import Any, Generic, Literal, get_origin
 
 from mcp.server.elicitation import (
     CancelledElicitation,
@@ -40,6 +41,29 @@ class ElicitationJsonSchema(GenerateJsonSchema):
     This generator ensures enums are always generated inline for compatibility.
     Optionally adds enumNames for better UI display when available.
     """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        # Enum definitions shared by several fields, keyed by their core ref
+        self._enum_definitions: dict[str, core_schema.EnumSchema] = {}
+
+    def definitions_schema(
+        self, schema: core_schema.DefinitionsSchema
+    ) -> JsonSchemaValue:
+        """Record shared enum definitions so references to them can be inlined."""
+        for definition in schema["definitions"]:
+            if definition["type"] == "enum":
+                self._enum_definitions[definition["ref"]] = definition
+        return super().definitions_schema(schema)
+
+    def definition_ref_schema(
+        self, schema: core_schema.DefinitionReferenceSchema
+    ) -> JsonSchemaValue:
+        """Inline references to shared enums; enum definitions are never emitted."""
+        enum_definition = self._enum_definitions.get(schema["schema_ref"])
+        if enum_definition is not None:
+            return self.enum_schema(enum_definition)
+        return super().definition_ref_schema(schema)
 
     def generate_inner(self, schema: core_schema.CoreSchema) -> JsonSchemaValue:  # type: ignore[override]  # ty:ignore[invalid-method-override]
         """Override to prevent ref generation for enums and handle list schemas."""
@@ -120,7 +144,8 @@ class ElicitConfig:
 
     Attributes:
         schema: The JSON schema to send to the client
-        response_type: The type to validate responses with (None for raw schemas)
+        response_type: The type to validate responses with. For raw schemas,
+            it validates the extracted "value".
         is_raw: True if schema was built directly (extract "value" from response)
     """
 
@@ -235,9 +260,14 @@ def _parse_dict_syntax(d: dict[str, Any]) -> ElicitConfig:
             "properties": {"value": enum_schema},
             "required": ["value"],
         },
-        response_type=None,
+        response_type=_choice_literal(d),
         is_raw=True,
     )
+
+
+def _choice_literal(choices: Iterable[str]) -> Any:
+    """Build a Literal type that accepts exactly the given choices."""
+    return Literal[tuple(choices)]  # type: ignore[valid-type]  # ty:ignore[invalid-type-form]
 
 
 def _parse_list_syntax(lst: list[Any]) -> ElicitConfig:
@@ -255,7 +285,7 @@ def _parse_list_syntax(lst: list[Any]) -> ElicitConfig:
                 "properties": {"value": {"type": "array", "items": {"enum": lst[0]}}},
                 "required": ["value"],
             },
-            response_type=None,
+            response_type=list[_choice_literal(lst[0])],  # ty:ignore[invalid-type-form]
             is_raw=True,
         )
 
@@ -268,16 +298,13 @@ def _parse_list_syntax(lst: list[Any]) -> ElicitConfig:
                 "properties": {"value": {"type": "array", "items": enum_schema}},
                 "required": ["value"],
             },
-            response_type=None,
+            response_type=list[_choice_literal(lst[0])],  # ty:ignore[invalid-type-form]
             is_raw=True,
         )
 
     # ["a", "b", "c"] -> single-select untitled
     if lst and all(isinstance(item, str) for item in lst):
-        # Construct Literal type from tuple - use cast since we can't construct Literal dynamically
-        # but we know the values are all strings
-        choice_literal: type[Any] = cast(type[Any], Literal[tuple(lst)])  # type: ignore[valid-type]  # ty:ignore[invalid-type-form]
-        wrapped = ScalarElicitationType[choice_literal]  # type: ignore[valid-type]  # ty:ignore[invalid-type-form]
+        wrapped = ScalarElicitationType[_choice_literal(lst)]  # ty:ignore[invalid-type-form]
         return ElicitConfig(
             schema=get_elicitation_schema(wrapped),
             response_type=wrapped,
@@ -319,11 +346,15 @@ def handle_elicit_accept(
     Returns:
         AcceptedElicitation with the extracted/validated data
     """
-    # For raw schemas (dict/nested-list syntax), extract value directly
+    # For raw schemas (dict/nested-list syntax), extract and validate the value
     if config.is_raw:
         if not isinstance(content, dict) or "value" not in content:
             raise ValueError("Elicitation response missing required 'value' field.")
-        return AcceptedElicitation[Any](data=content["value"])
+        value = content["value"]
+        if config.response_type is not None:
+            type_adapter = get_cached_typeadapter(config.response_type)
+            value = type_adapter.validate_python(value)
+        return AcceptedElicitation[Any](data=value)
 
     # For typed schemas, validate with Pydantic
     if config.response_type is not None:
