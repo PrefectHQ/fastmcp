@@ -10,7 +10,7 @@ import pytest
 from anyio import create_task_group
 from dirty_equals import Contains
 from mcp import MCPError
-from mcp_types import Icon, TextContent, TextResourceContents
+from mcp_types import Annotations, Icon, TextContent, TextResourceContents
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 from pydantic import AnyUrl
 
@@ -80,6 +80,7 @@ def fastmcp_server():
         tags={"wave"},
         title="Wave",
         icons=[Icon(src="https://example.com/wave-icon.png")],
+        annotations=Annotations(audience=["user"], priority=0.5),
     )
     def wave() -> str:
         return "👋"
@@ -95,6 +96,7 @@ def fastmcp_server():
         tags={"users"},
         title="User Template",
         icons=[Icon(src="https://example.com/user-icon.png")],
+        annotations=Annotations(audience=["assistant"], priority=0.8),
     )
     async def get_user(user_id: str) -> str:
         import json
@@ -532,6 +534,7 @@ class TestResources:
         assert wave_resource.title == "Wave"
         assert wave_resource.meta == {"fastmcp": {"tags": ["wave"]}}
         assert wave_resource.icons == [Icon(src="https://example.com/wave-icon.png")]
+        assert wave_resource.annotations == Annotations(audience=["user"], priority=0.5)
 
     async def test_list_resources_same_as_original(self, fastmcp_server, proxy_server):
         async with Client(fastmcp_server) as original_client:
@@ -649,6 +652,9 @@ class TestResourceTemplates:
         assert get_user_template.icons == [
             Icon(src="https://example.com/user-icon.png")
         ]
+        assert get_user_template.annotations == Annotations(
+            audience=["assistant"], priority=0.8
+        )
 
     async def test_list_resource_templates_same_as_original(
         self, fastmcp_server, proxy_server

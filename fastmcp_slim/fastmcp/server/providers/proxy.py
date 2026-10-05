@@ -526,6 +526,7 @@ class ProxyResource(Resource):
             description=mcp_resource.description,
             mime_type=mcp_resource.mime_type or "text/plain",
             icons=mcp_resource.icons,
+            annotations=mcp_resource.annotations,
             meta=mcp_resource.meta,
             tags=get_fastmcp_metadata(mcp_resource.meta).get("tags", []),
             task_config=TaskConfig(mode="forbidden"),
@@ -627,6 +628,7 @@ class ProxyTemplate(ResourceTemplate):
             description=mcp_template.description,
             mime_type=mcp_template.mime_type or "text/plain",
             icons=mcp_template.icons,
+            annotations=mcp_template.annotations,
             parameters={},  # Remote templates don't have local parameters
             meta=mcp_template.meta,
             tags=get_fastmcp_metadata(mcp_template.meta).get("tags", []),
