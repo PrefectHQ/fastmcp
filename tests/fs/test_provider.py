@@ -512,6 +512,31 @@ def get_profile(user_id: str) -> str:
             result = await client.read_resource("users://123/profile")
             assert "123" in str(result)
 
+    async def test_resource_template_security_via_provider(self, tmp_path: Path):
+        """FileSystemProvider should honor the security policy of @resource templates."""
+        (tmp_path / "secure_templates.py").write_text(
+            """\
+from fastmcp.resources import ResourceSecurity, resource
+
+@resource("git://diff/{ref}", security=ResourceSecurity(exempt_params={"ref"}))
+def exempt(ref: str) -> str:
+    return f"exempt:{ref}"
+
+@resource("git://log/{ref}")
+def screened(ref: str) -> str:
+    return f"screened:{ref}"
+"""
+        )
+
+        mcp = FastMCP("TestServer", providers=[FileSystemProvider(tmp_path)])
+
+        async with Client(mcp) as client:
+            result = await client.read_resource("git://diff/..%2Fx")
+            assert result[0].text == "exempt:../x"
+
+            with pytest.raises(Exception, match="Resource not found"):
+                await client.read_resource("git://log/..%2Fx")
+
     async def test_provider_with_prompts(self, tmp_path: Path):
         """FileSystemProvider should work with prompts."""
         (tmp_path / "analyze.py").write_text(
