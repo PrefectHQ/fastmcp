@@ -659,10 +659,17 @@ class FunctionResourceTemplate(ResourceTemplate):
         if func_name == "<lambda>":
             raise ValueError("You must provide a name for lambda functions")
 
-        # Reject functions with *args
+        # Reject functions with positional-only parameters or *args
         # (**kwargs is allowed because the URI will define the parameter names)
         sig = inspect.signature(fn)
         for param in sig.parameters.values():
+            if param.kind == inspect.Parameter.POSITIONAL_ONLY:
+                raise ValueError(
+                    "Functions with positional-only parameters are not "
+                    "supported as resource templates because URI template "
+                    "parameters are passed by name. Replace them with standard "
+                    "parameters that can be passed as keywords."
+                )
             if param.kind == inspect.Parameter.VAR_POSITIONAL:
                 raise ValueError(
                     "Functions with *args are not supported as resource templates"
