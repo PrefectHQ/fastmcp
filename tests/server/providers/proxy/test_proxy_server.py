@@ -1059,19 +1059,51 @@ class TestProxyProviderCache:
         await provider._get_tool("greet")
         assert provider._tools_cache.timestamp > original_ts
 
-    async def test_list_tools_refreshes_cache(self, fastmcp_server):
-        """Explicit list_tools always refreshes the cache timestamp."""
+    async def test_list_tools_uses_cache_within_ttl(self, fastmcp_server):
+        """Repeated _list_tools within the TTL is served from the cache."""
         provider = ProxyProvider(
             lambda: ProxyClient(FastMCPTransport(fastmcp_server)),
+            cache_ttl=300,
         )
-        await provider._list_tools()
+        tools = await provider._list_tools()
+        assert any(t.name == "greet" for t in tools)
         first_ts = provider._tools_cache.timestamp  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
 
-        # Tiny sleep so monotonic clock advances
+        # Tiny sleep so a refetch would advance the monotonic clock
         time.sleep(0.05)
 
-        await provider._list_tools()
-        assert provider._tools_cache.timestamp > first_ts  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        with patch.object(
+            provider, "_get_client", new_callable=AsyncMock
+        ) as mock_client:
+            tools = await provider._list_tools()
+            mock_client.assert_not_called()
+        assert provider._tools_cache.timestamp == first_ts  # type: ignore[union-attr]  # ty:ignore[unresolved-attribute]
+        assert any(t.name == "greet" for t in tools)
+
+    async def test_repeated_client_list_tools_hits_backend_once(self):
+        """Second list_tools() within cache_ttl must not re-list the backend."""
+        counts = {"list": 0}
+
+        class CountingMiddleware(Middleware):
+            async def on_list_tools(self, context, call_next):
+                counts["list"] += 1
+                return await call_next(context)
+
+        backend = FastMCP("Backend")
+        backend.add_middleware(CountingMiddleware())
+
+        @backend.tool
+        def echo(text: str) -> str:
+            return text
+
+        proxy = FastMCP("Proxy")
+        proxy.add_provider(ProxyProvider(lambda: Client(backend), cache_ttl=300))
+
+        async with Client(proxy) as client:
+            await client.list_tools()
+            await client.list_tools()
+
+        assert counts["list"] == 1
 
     async def test_cache_ttl_zero_disables_caching(self, fastmcp_server):
         """With cache_ttl=0, every _get_tool call should re-fetch."""

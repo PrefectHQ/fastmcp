@@ -858,14 +858,16 @@ class ProxyProvider(Provider):
     because tasks cannot be executed through a proxy.
 
     Component lists (tools, resources, templates, prompts) are cached so that
-    individual lookups (e.g. during ``call_tool``) can resolve from the cache
-    instead of opening a new backend connection.  The cache stores the
-    backend's raw component metadata and is shared across all sessions;
-    per-session visibility and auth filtering are applied after cache lookup
-    by the server layer.  The cache is refreshed whenever a ``list_*`` call
-    is made, and entries expire after ``cache_ttl`` seconds (default 300).
-    Set ``cache_ttl=0`` to disable caching.  Disabling is recommended for
-    backends whose component lists change dynamically.
+    repeated listings and individual lookups (e.g. during ``call_tool``)
+    resolve from the cache instead of opening a new backend connection.
+    The cache stores the backend's raw component metadata and is shared
+    across all sessions; per-session visibility and auth filtering are
+    applied after cache lookup by the server layer.  Entries expire after
+    ``cache_ttl`` seconds (default 300).  Set ``cache_ttl=0`` to disable
+    caching.  Disabling is recommended for backends whose component lists
+    change dynamically.  Calls whose headers would be forwarded upstream
+    (e.g. per-caller authorization) bypass the shared cache because the
+    backend's listing can differ per caller.
 
     Example:
         ```python
@@ -894,9 +896,8 @@ class ProxyProvider(Provider):
             client_factory: A callable that returns a Client instance when called.
                            This gives you full control over session creation and reuse.
                            Can be either a synchronous or asynchronous function.
-            cache_ttl: How long (in seconds) to cache component lists for
-                      individual lookups.  Defaults to 300.  Set to 0 to
-                      disable caching.
+            cache_ttl: How long (in seconds) to cache component lists.
+                       Defaults to 300.  Set to 0 to disable caching.
         """
         super().__init__()
         self.client_factory = client_factory
@@ -913,12 +914,39 @@ class ProxyProvider(Provider):
             client = cast(Client, await client)
         return client
 
+    async def _shared_cache_usable(self) -> bool:
+        """Whether the shared listing cache may serve this caller.
+
+        When the backend connection would carry this caller's HTTP headers
+        (e.g. authorization), its listing can differ per caller, so the
+        shared cache must neither be read nor populated for that call.
+        """
+        try:
+            from fastmcp.client.dependencies import _get_forwardable_http_headers
+        except ImportError:
+            return True
+        try:
+            if not _get_forwardable_http_headers():
+                return True
+        except Exception:
+            return True
+        try:
+            client = await self._get_client()
+        except Exception:
+            return True
+        options = getattr(client, "_transport_options", None)
+        return not bool(getattr(options, "forward_incoming_headers", True))
+
     # -------------------------------------------------------------------------
     # Tool methods
     # -------------------------------------------------------------------------
 
     async def _list_tools(self) -> Sequence[Tool]:
         """List all tools from the remote server."""
+        cache = self._tools_cache
+        shared = await self._shared_cache_usable()
+        if shared and cache is not None and cache.is_fresh(self._cache_ttl):
+            return cache.items
         try:
             client = await self._get_client()
             async with client:
@@ -933,18 +961,23 @@ class ProxyProvider(Provider):
                 raise
         except _PROXY_TRANSPORT_ERRORS as error:
             raise _proxy_upstream_error(error) from error
-        self._tools_cache = _CacheEntry(tools, time.monotonic())
+        if shared:
+            self._tools_cache = _CacheEntry(tools, time.monotonic())
         return tools
 
     async def _get_tool(
         self, name: str, version: VersionSpec | None = None
     ) -> Tool | None:
         cache = self._tools_cache
-        if cache is None or not cache.is_fresh(self._cache_ttl):
-            await self._list_tools()
-            cache = self._tools_cache
-        assert cache is not None
-        matching = [t for t in cache.items if t.name == name]
+        if (
+            cache is not None
+            and cache.is_fresh(self._cache_ttl)
+            and await self._shared_cache_usable()
+        ):
+            items = cache.items
+        else:
+            items = await self._list_tools()
+        matching = [t for t in items if t.name == name]
         if version:
             matching = [t for t in matching if version.matches(t.version)]
         if not matching:
@@ -966,13 +999,17 @@ class ProxyProvider(Provider):
         app is caught wherever it is composed rather than only nearby.
         """
         cache = self._tools_cache
-        if cache is None or not cache.is_fresh(self._cache_ttl):
-            await self._list_tools()
-            cache = self._tools_cache
-        assert cache is not None
+        if (
+            cache is not None
+            and cache.is_fresh(self._cache_ttl)
+            and await self._shared_cache_usable()
+        ):
+            items = cache.items
+        else:
+            items = await self._list_tools()
 
         matches = [
-            tool for tool in cache.items if is_app_tool_with_identity(tool, tool_hash)
+            tool for tool in items if is_app_tool_with_identity(tool, tool_hash)
         ]
 
         if not matches:
@@ -992,6 +1029,10 @@ class ProxyProvider(Provider):
 
     async def _list_resources(self) -> Sequence[Resource]:
         """List all resources from the remote server."""
+        cache = self._resources_cache
+        shared = await self._shared_cache_usable()
+        if shared and cache is not None and cache.is_fresh(self._cache_ttl):
+            return cache.items
         try:
             client = await self._get_client()
             async with client:
@@ -1007,18 +1048,23 @@ class ProxyProvider(Provider):
                 raise
         except _PROXY_TRANSPORT_ERRORS as error:
             raise _proxy_upstream_error(error) from error
-        self._resources_cache = _CacheEntry(resources, time.monotonic())
+        if shared:
+            self._resources_cache = _CacheEntry(resources, time.monotonic())
         return resources
 
     async def _get_resource(
         self, uri: str, version: VersionSpec | None = None
     ) -> Resource | None:
         cache = self._resources_cache
-        if cache is None or not cache.is_fresh(self._cache_ttl):
-            await self._list_resources()
-            cache = self._resources_cache
-        assert cache is not None
-        matching = [r for r in cache.items if str(r.uri) == uri]
+        if (
+            cache is not None
+            and cache.is_fresh(self._cache_ttl)
+            and await self._shared_cache_usable()
+        ):
+            items = cache.items
+        else:
+            items = await self._list_resources()
+        matching = [r for r in items if str(r.uri) == uri]
         if version:
             matching = [r for r in matching if version.matches(r.version)]
         if not matching:
@@ -1031,6 +1077,10 @@ class ProxyProvider(Provider):
 
     async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """List all resource templates from the remote server."""
+        cache = self._templates_cache
+        shared = await self._shared_cache_usable()
+        if shared and cache is not None and cache.is_fresh(self._cache_ttl):
+            return cache.items
         try:
             client = await self._get_client()
             async with client:
@@ -1046,18 +1096,23 @@ class ProxyProvider(Provider):
                 raise
         except _PROXY_TRANSPORT_ERRORS as error:
             raise _proxy_upstream_error(error) from error
-        self._templates_cache = _CacheEntry(templates, time.monotonic())
+        if shared:
+            self._templates_cache = _CacheEntry(templates, time.monotonic())
         return templates
 
     async def _get_resource_template(
         self, uri: str, version: VersionSpec | None = None
     ) -> ResourceTemplate | None:
         cache = self._templates_cache
-        if cache is None or not cache.is_fresh(self._cache_ttl):
-            await self._list_resource_templates()
-            cache = self._templates_cache
-        assert cache is not None
-        matching = [t for t in cache.items if t.matches(uri) is not None]
+        if (
+            cache is not None
+            and cache.is_fresh(self._cache_ttl)
+            and await self._shared_cache_usable()
+        ):
+            items = cache.items
+        else:
+            items = await self._list_resource_templates()
+        matching = [t for t in items if t.matches(uri) is not None]
         if version:
             matching = [t for t in matching if version.matches(t.version)]
         if not matching:
@@ -1070,6 +1125,10 @@ class ProxyProvider(Provider):
 
     async def _list_prompts(self) -> Sequence[Prompt]:
         """List all prompts from the remote server."""
+        cache = self._prompts_cache
+        shared = await self._shared_cache_usable()
+        if shared and cache is not None and cache.is_fresh(self._cache_ttl):
+            return cache.items
         try:
             client = await self._get_client()
             async with client:
@@ -1085,18 +1144,23 @@ class ProxyProvider(Provider):
                 raise
         except _PROXY_TRANSPORT_ERRORS as error:
             raise _proxy_upstream_error(error) from error
-        self._prompts_cache = _CacheEntry(prompts, time.monotonic())
+        if shared:
+            self._prompts_cache = _CacheEntry(prompts, time.monotonic())
         return prompts
 
     async def _get_prompt(
         self, name: str, version: VersionSpec | None = None
     ) -> Prompt | None:
         cache = self._prompts_cache
-        if cache is None or not cache.is_fresh(self._cache_ttl):
-            await self._list_prompts()
-            cache = self._prompts_cache
-        assert cache is not None
-        matching = [p for p in cache.items if p.name == name]
+        if (
+            cache is not None
+            and cache.is_fresh(self._cache_ttl)
+            and await self._shared_cache_usable()
+        ):
+            items = cache.items
+        else:
+            items = await self._list_prompts()
+        matching = [p for p in items if p.name == name]
         if version:
             matching = [p for p in matching if version.matches(p.version)]
         if not matching:
