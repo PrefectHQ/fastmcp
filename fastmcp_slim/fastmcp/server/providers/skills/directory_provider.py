@@ -120,7 +120,13 @@ class SkillsDirectoryProvider(AggregateProvider):
                     )
                     self.providers.append(provider)
                     seen_skill_names.add(skill_name)
-                except (FileNotFoundError, PermissionError, OSError, PathEscapeError):
+                except (
+                    FileNotFoundError,
+                    PermissionError,
+                    OSError,
+                    PathEscapeError,
+                    UnicodeDecodeError,
+                ):
                     logger.exception(f"Failed to load skill: {skill_dir.name}")
 
         self._discovered = True

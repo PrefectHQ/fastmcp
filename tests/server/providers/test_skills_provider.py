@@ -678,6 +678,24 @@ Additional documentation.
         resources = await provider.list_resources()
         assert resources == []
 
+    @pytest.mark.parametrize("reload", [False, True])
+    async def test_undecodable_skill_is_skipped(self, tmp_path: Path, reload: bool):
+        skills_dir = tmp_path / "skills"
+        good = skills_dir / "good"
+        good.mkdir(parents=True)
+        (good / "SKILL.md").write_text(
+            "---\ndescription: Works\n---\n# Good", encoding="utf-8"
+        )
+        # Notepad's "Unicode" encoding writes UTF-16, which is not valid UTF-8
+        bad = skills_dir / "bad"
+        bad.mkdir()
+        (bad / "SKILL.md").write_text("# Bad", encoding="utf-16")
+
+        provider = SkillsDirectoryProvider(roots=skills_dir, reload=reload)
+
+        resources = await provider.list_resources()
+        assert {r.name for r in resources} == {"good/SKILL.md", "good/_manifest"}
+
     async def test_reload_mode(self, skills_dir: Path):
         provider = SkillsDirectoryProvider(roots=skills_dir, reload=True)
 
