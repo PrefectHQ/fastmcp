@@ -376,7 +376,8 @@ class AzureProvider(OAuthProxy):
         # B2C user flows reject prompt=select_account (login is the only value they
         # support), so opt out of the account-picker default the standard constructor
         # applies. Callers can still pass extra_authorize_params to set their own.
-        kwargs.setdefault("extra_authorize_params", {})
+        if kwargs.get("extra_authorize_params") is None:
+            kwargs["extra_authorize_params"] = {}
 
         provider = cls(
             client_id=client_id,

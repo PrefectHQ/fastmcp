@@ -1,7 +1,7 @@
 """Tests for Azure (Microsoft Entra) OAuth provider."""
 
 import time
-from typing import Literal
+from typing import Any, Literal
 from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs, urlparse
 
@@ -963,11 +963,15 @@ class TestAzureProviderPrompt:
         assert "domain_hint=contoso.com" in url
         assert "select_account" not in url
 
+    @pytest.mark.parametrize(
+        "extra_authorize_params", [{}, {"extra_authorize_params": None}]
+    )
     async def test_b2c_does_not_send_select_account(
         self,
         memory_storage: MemoryStore,
         client: OAuthClientInformationFull,
         params: AuthorizationParams,
+        extra_authorize_params: dict[str, Any],
     ):
         """B2C user flows only support prompt=login, so send no prompt by default."""
         provider = AzureProvider.from_b2c(
@@ -980,6 +984,7 @@ class TestAzureProviderPrompt:
             jwt_signing_key="test-secret",
             client_storage=memory_storage,
             require_authorization_consent=False,
+            **extra_authorize_params,
         )
         await provider.register_client(client)
 
