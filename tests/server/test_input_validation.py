@@ -6,7 +6,11 @@ strict_input_validation=True) and Pydantic-based coercion (when
 strict_input_validation=False, the default).
 """
 
+import datetime
+import enum
 import json
+import uuid
+from dataclasses import dataclass
 from typing import Annotated, Any
 
 import httpx2
@@ -226,6 +230,81 @@ class TestPydanticModelArguments:
                         }
                     },
                 )
+
+
+class Color(enum.Enum):
+    RED = "red"
+
+
+@dataclass
+class Point:
+    x: int
+
+
+class TestStrictModeAcceptsJsonValues:
+    """Strict mode rejects lax coercion, not the JSON form of a declared type."""
+
+    @pytest.mark.parametrize(
+        ("annotation", "value", "expected"),
+        [
+            (Color, "red", Color.RED),
+            (datetime.datetime, "2026-01-01T00:00:00", datetime.datetime(2026, 1, 1)),
+            (datetime.date, "2026-01-01", datetime.date(2026, 1, 1)),
+            (
+                uuid.UUID,
+                "12345678-1234-5678-1234-567812345678",
+                uuid.UUID("12345678-1234-5678-1234-567812345678"),
+            ),
+            (Point, {"x": 1}, Point(x=1)),
+            (tuple[int, int], [1, 2], (1, 2)),
+            (set[int], [1], {1}),
+            (float, 1, 1.0),
+        ],
+    )
+    async def test_json_value_is_accepted(self, annotation, value, expected):
+        mcp = FastMCP("TestServer", strict_input_validation=True)
+        received = []
+
+        async def tool_fn(arg):
+            received.append(arg)
+            return "ok"
+
+        tool_fn.__annotations__["arg"] = annotation
+        mcp.tool(tool_fn, name="check")
+
+        async with Client(mcp) as client:
+            await client.call_tool("check", {"arg": value})
+
+        assert received == [expected]
+
+    async def test_lax_coercion_is_still_rejected(self):
+        mcp = FastMCP("TestServer", strict_input_validation=True)
+
+        @mcp.tool
+        def check(when: datetime.datetime, count: int) -> str:
+            return "ok"
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool(
+                    "check", {"when": "2026-01-01T00:00:00", "count": "1"}
+                )
+            with pytest.raises(ToolError):
+                await client.call_tool("check", {"when": 1, "count": 1})
+
+    async def test_python_objects_are_accepted_when_called_directly(self):
+        mcp = FastMCP("TestServer", strict_input_validation=True)
+
+        @mcp.tool
+        def check(color: Color, when: datetime.datetime) -> str:
+            return f"{color.value} {when.year}"
+
+        result = await mcp.call_tool(
+            "check", {"color": Color.RED, "when": datetime.datetime(2026, 1, 1)}
+        )
+
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "red 2026"
 
 
 class TestFieldLevelStrictness:
