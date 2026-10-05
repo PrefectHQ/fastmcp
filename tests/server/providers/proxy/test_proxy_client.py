@@ -81,6 +81,7 @@ async def _backend_sample(context: Context) -> str:
         system_prompt="You love FastMCP",
         temperature=0.5,
         max_tokens=100,
+        stop_sequences=["STOP"],
         model_preferences=ModelPreferences(hints=[ModelHint(name="gpt-4o")]),
         related_request_id=context.origin_request_id,
     )
@@ -225,6 +226,7 @@ class TestProxyClient:
             assert params.system_prompt == "You love FastMCP"
             assert params.temperature == 0.5
             assert params.max_tokens == 100
+            assert params.stop_sequences == ["STOP"]
             assert params.model_preferences == ModelPreferences(
                 hints=[ModelHint(name="gpt-4o")]
             )

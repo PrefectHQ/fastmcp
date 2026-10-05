@@ -1549,6 +1549,7 @@ async def default_proxy_sampling_handler(
         system_prompt=params.system_prompt,
         temperature=params.temperature,
         max_tokens=params.max_tokens,
+        stop_sequences=params.stop_sequences,
         model_preferences=params.model_preferences,
         related_request_id=ctx.origin_request_id,
     )
