@@ -104,7 +104,7 @@ from fastmcp.server.transforms import (
 from fastmcp.server.transforms.visibility import apply_session_transforms, is_enabled
 from fastmcp.settings import DuplicateBehavior as DuplicateBehaviorSetting
 from fastmcp.tools.base import Tool, ToolResult
-from fastmcp.tools.function_tool import FunctionTool
+from fastmcp.tools.function_tool import FunctionTool, _is_tool_body_error
 from fastmcp.tools.tool_transform import ToolTransformConfig
 from fastmcp.utilities.components import FastMCPComponent, _coerce_version
 from fastmcp.utilities.exceptions import get_http_status_code, is_timeout_error
@@ -1482,14 +1482,19 @@ class FastMCP(
                     )
                     raise
                 except PydanticValidationError as e:
-                    # A pydantic error that is NOT an argument-validation failure
-                    # (e.g. raised by a non-FunctionTool's own validation). Kept
-                    # for backward compatibility.
-                    logger.warning(
-                        "Invalid arguments for tool %r: %s",
-                        name,
-                        _validation_error_summary(e),
-                    )
+                    if not _is_tool_body_error(e):
+                        # Custom Tool implementations historically use a bare
+                        # pydantic error to report invalid arguments.
+                        logger.warning(
+                            "Invalid arguments for tool %r: %s",
+                            name,
+                            _validation_error_summary(e),
+                        )
+                        raise
+                    # The MCP handler turns marked body errors into error
+                    # results. Preserve them here so direct Python calls keep
+                    # receiving the original pydantic exception, including
+                    # through transforms and mounted servers.
                     raise
                 except Exception as e:
                     # Most MCPErrors raised under a tool describe how the call

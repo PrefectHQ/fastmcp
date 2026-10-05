@@ -65,6 +65,14 @@ class _ToolBodyError(Exception):
     """
 
 
+_TOOL_BODY_ERROR_MARKER = "_fastmcp_tool_body_error"
+
+
+def _is_tool_body_error(error: PydanticValidationError) -> bool:
+    """Return whether a pydantic error originated in a FunctionTool body."""
+    return getattr(error, _TOOL_BODY_ERROR_MARKER, False) is True
+
+
 @lru_cache(maxsize=5000)
 def _wrap_body_errors(
     fn: Callable[..., Any], *, materialize_generators: bool = False
@@ -459,6 +467,7 @@ class FunctionTool(Tool):
             # internal sentinel while preserving the error's own chained cause.
             original = e.__cause__
             assert original is not None
+            setattr(original, _TOOL_BODY_ERROR_MARKER, True)
             raise original from original.__cause__
 
         return result
