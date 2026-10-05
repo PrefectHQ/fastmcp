@@ -260,7 +260,12 @@ def test_windows_acl_replaces_the_existing_access_list(
     ]
     assert state_paths == [str(path)]
     assert "$path = $env:FASTMCP_STATE_PATH" in calls[0][5]
-    assert "Get-Acl -LiteralPath $path" in calls[0][5]
+    # `Set-Acl` needs SeSecurityPrivilege once the access list is protected,
+    # so a non-elevated user could not re-apply it; only the access list is
+    # read and written back.
+    assert '$item.GetAccessControl("Access")' in calls[0][5]
+    assert "$item.SetAccessControl($acl)" in calls[0][5]
+    assert "Set-Acl" not in calls[0][5]
     assert "SetAccessRuleProtection($true, $false)" in calls[0][5]
     assert "RemoveAccessRuleSpecific($existingRule)" in calls[0][5]
 

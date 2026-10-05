@@ -10,7 +10,7 @@ FastMCP - A more ergonomic interface for MCP servers.
 
 ## Functions
 
-### `default_lifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L263" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `default_lifespan` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L271" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 default_lifespan(server: FastMCP[LifespanResultT]) -> AsyncIterator[Any]
@@ -26,7 +26,7 @@ Default lifespan context manager that does nothing.
 - An empty dictionary as the lifespan result.
 
 
-### `create_proxy` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2511" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `create_proxy` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2473" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_proxy(target: Client[ClientTransportT] | ClientTransport | FastMCP[Any] | SDKServer | AnyUrl | Path | MCPConfig | dict[str, Any] | str, **settings: Any) -> FastMCPProxy
@@ -65,53 +65,53 @@ appropriate when the backend only speaks one era. Ignored when
 
 ## Classes
 
-### `StateValue` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L298" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `StateValue` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L306" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Wrapper for stored context state values.
 
 
-### `FastMCP` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L304" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `FastMCP` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L312" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 **Methods:**
 
-#### `name` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L533" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `name` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L546" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 name(self) -> str
 ```
 
-#### `instructions` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L537" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `instructions` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L550" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 instructions(self) -> str | None
 ```
 
-#### `instructions` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L541" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `instructions` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L554" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 instructions(self, value: str | None) -> None
 ```
 
-#### `version` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L545" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `version` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L558" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 version(self) -> str | None
 ```
 
-#### `website_url` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L549" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `website_url` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L562" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 website_url(self) -> str | None
 ```
 
-#### `icons` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L553" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `icons` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L566" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 icons(self) -> list[mcp_types.Icon]
 ```
 
-#### `local_provider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L560" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `local_provider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L573" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 local_provider(self) -> LocalProvider
@@ -126,42 +126,22 @@ Use this to remove components:
     mcp.local_provider.remove_prompt("my_prompt")
 
 
-#### `add_middleware` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L624" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_middleware` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L637" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_middleware(self, middleware: Middleware) -> None
 ```
 
-#### `add_extension` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L627" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `required_extensions` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L662" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-add_extension(self, extension: ServerExtension) -> None
+required_extensions(self) -> Sequence[ServerExtension]
 ```
 
-Register a server extension (SEP-2133).
-
-An extension contributes a negotiated capability, additive request
-methods, a `tools/call` interceptor, and an optional lifespan — each
-with access to FastMCP-level constructs (the component registry,
-`Context`, auth scope). Its capability is advertised only while it is
-registered.
-
-The extension is bound to this server (so its handlers and interceptor
-can reach it), its method bindings are wired onto the low-level server,
-and it is recorded for capability advertisement, interception, and
-lifespan entry. Registering two extensions with the same identifier is
-an error, as is registering after the server's lifespan has started —
-the extension's lifespan could no longer run, leaving it silently
-half-active.
-
-Extensions are served by the server they are registered on. A mounted
-child's extensions do not propagate to the root: the root serves the
-wire, so only root-registered extensions advertise capabilities and
-answer methods (matching the lifespan, which also defers to the root).
-Register extensions on the server you run.
+Bundled extensions and auto-registerable registrations for composition.
 
 
-#### `add_provider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L699" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_provider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L666" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_provider(self, provider: Provider) -> None
@@ -181,7 +161,7 @@ always take precedence over providers.
 - Prompts become "namespace_promptname"
 
 
-#### `get_tasks` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L811" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tasks` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L780" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_tasks(self) -> Sequence[FastMCPComponent]
@@ -193,7 +173,7 @@ Overrides AggregateProvider.get_tasks() to apply server-level transforms
 after aggregation. AggregateProvider handles provider-level namespacing.
 
 
-#### `add_transform` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L826" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_transform` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L805" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_transform(self, transform: Transform) -> None
@@ -208,7 +188,7 @@ They transform tools, resources, and prompts from ALL providers.
 - `transform`: The transform to add.
 
 
-#### `list_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L846" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_tools` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L825" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_tools(self) -> Sequence[Tool]
@@ -221,7 +201,7 @@ and middleware execution. Returns all versions (no deduplication).
 Protocol handlers deduplicate for MCP wire format.
 
 
-#### `get_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L929" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L900" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_tool(self, name: str, version: VersionSpec | None = None) -> Tool | None
@@ -236,15 +216,20 @@ session transforms can override provider-level disables.
 When the highest version is disabled and no explicit version was
 requested, falls back to the next-highest enabled version.
 
+A tool from `ToolInjectionMiddleware` takes precedence over a provider
+tool with the same name. It is matched by name alone, so a requested
+version is ignored, and it is subject to its own `auth` check but not
+to transforms or visibility.
+
 **Args:**
 - `name`: The tool name.
 - `version`: Version filter (None returns highest version).
 
 **Returns:**
-- The tool if found and enabled, None otherwise.
+- The tool if found, enabled, and authorized, None otherwise.
 
 
-#### `list_resources` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L983" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resources` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L964" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resources(self) -> Sequence[Resource]
@@ -257,7 +242,7 @@ and middleware execution. Returns all versions (no deduplication).
 Protocol handlers deduplicate for MCP wire format.
 
 
-#### `get_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1068" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1049" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_resource(self, uri: str, version: VersionSpec | None = None) -> Resource | None
@@ -279,7 +264,7 @@ requested, falls back to the next-highest enabled version.
 - The resource if found and enabled, None otherwise.
 
 
-#### `list_resource_templates` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1118" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_resource_templates` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1099" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_resource_templates(self) -> Sequence[ResourceTemplate]
@@ -292,7 +277,7 @@ auth filtering, and middleware execution. Returns all versions (no deduplication
 Protocol handlers deduplicate for MCP wire format.
 
 
-#### `get_resource_template` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1200" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_resource_template` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1181" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_resource_template(self, uri: str, version: VersionSpec | None = None) -> ResourceTemplate | None
@@ -314,7 +299,7 @@ requested, falls back to the next-highest enabled version.
 - The template if found and enabled, None otherwise.
 
 
-#### `list_prompts` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1254" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `list_prompts` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1235" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 list_prompts(self) -> Sequence[Prompt]
@@ -327,7 +312,7 @@ and middleware execution. Returns all versions (no deduplication).
 Protocol handlers deduplicate for MCP wire format.
 
 
-#### `get_prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1326" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1307" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_prompt(self, name: str, version: VersionSpec | None = None) -> Prompt | None
@@ -349,7 +334,7 @@ requested, falls back to the next-highest enabled version.
 - The prompt if found and enabled, None otherwise.
 
 
-#### `call_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1376" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `call_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1357" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> ToolResult
@@ -380,7 +365,7 @@ wire handler unwraps it into an ``InputRequiredResult`` on the response.
 - `ValidationError`: If arguments fail validation
 
 
-#### `read_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1567" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1529" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read_resource(self, uri: str) -> ResourceResult
@@ -405,7 +390,7 @@ Set to False when called from middleware to avoid re-applying.
 - `ResourceError`: If resource read fails
 
 
-#### `render_prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1725" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `render_prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1687" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 render_prompt(self, name: str, arguments: dict[str, Any] | None = None) -> PromptResult
@@ -431,7 +416,7 @@ Set to False when called from middleware to avoid re-applying.
 - `PromptError`: If prompt rendering fails
 
 
-#### `add_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1805" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1767" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_tool(self, tool: Tool | Callable[..., Any]) -> Tool
@@ -449,19 +434,19 @@ with the Context type annotation. See the @tool decorator for examples.
 - The tool instance that was added to the server.
 
 
-#### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1820" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1782" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tool(self, name_or_fn: F) -> F
 ```
 
-#### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1841" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1803" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tool(self, name_or_fn: str | None = None) -> Callable[[F], F]
 ```
 
-#### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1861" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `tool` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1823" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 tool(self, name_or_fn: str | AnyFunction | None = None) -> Callable[[AnyFunction], FunctionTool] | FunctionTool | partial[Callable[[AnyFunction], FunctionTool] | FunctionTool]
@@ -515,7 +500,7 @@ server.tool(my_function, name="custom_name")
 ```
 
 
-#### `add_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1958" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1920" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_resource(self, resource: Resource | Callable[..., Any]) -> Resource | ResourceTemplate
@@ -530,7 +515,7 @@ Add a resource to the server.
 - The resource instance that was added to the server.
 
 
-#### `add_template` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1971" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_template` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1933" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_template(self, template: ResourceTemplate) -> ResourceTemplate
@@ -545,7 +530,7 @@ Add a resource template to the server.
 - The template instance that was added to the server.
 
 
-#### `resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1982" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L1944" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 resource(self, uri: str) -> Callable[[F], F]
@@ -604,7 +589,7 @@ async def get_weather(city: str) -> str:
 ```
 
 
-#### `add_prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2101" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2063" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_prompt(self, prompt: Prompt | Callable[..., Any]) -> Prompt
@@ -619,19 +604,19 @@ Add a prompt to the server.
 - The prompt instance that was added to the server.
 
 
-#### `prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2113" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2075" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 prompt(self, name_or_fn: F) -> F
 ```
 
-#### `prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2128" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2090" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 prompt(self, name_or_fn: str | None = None) -> Callable[[F], F]
 ```
 
-#### `prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2142" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `prompt` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2104" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 prompt(self, name_or_fn: str | AnyFunction | None = None) -> Callable[[AnyFunction], FunctionPrompt] | FunctionPrompt | partial[Callable[[AnyFunction], FunctionPrompt] | FunctionPrompt]
@@ -708,7 +693,7 @@ Decorator to register a prompt.
             ```
 
 
-#### `add_completion_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2240" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `add_completion_handler` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2202" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 add_completion_handler(self, handler: CompletionHandler) -> None
@@ -731,19 +716,19 @@ returning candidate values (a `Completion`, a list of strings,
 or None). May be sync or async.
 
 
-#### `completion` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2261" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `completion` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2223" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 completion(self, handler: CompletionHandler) -> CompletionHandler
 ```
 
-#### `completion` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2264" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `completion` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2226" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 completion(self) -> Callable[[CompletionHandler], CompletionHandler]
 ```
 
-#### `completion` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2268" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `completion` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2230" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 completion(self, handler: CompletionHandler | None = None) -> CompletionHandler | Callable[[CompletionHandler], CompletionHandler]
@@ -787,7 +772,7 @@ Example:
     ```
 
 
-#### `mount` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2318" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `mount` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2280" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 mount(self, server: FastMCP[LifespanResultT], namespace: str | None = None, tool_names: dict[str, str] | None = None) -> None
@@ -829,7 +814,7 @@ to override namespaced names. Keys are the original tool names from the
 mounted server.
 
 
-#### `from_openapi` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2389" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_openapi` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2351" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_openapi(cls, openapi_spec: dict[str, Any], client: httpx2.AsyncClient | None = None, name: str = 'OpenAPI Server', route_maps: list[RouteMap] | None = None, route_map_fn: OpenAPIRouteMapFn | None = None, mcp_component_fn: OpenAPIComponentFn | None = None, mcp_names: dict[str, str] | None = None, tags: set[str] | None = None, validate_output: bool = True, **settings: Any) -> Self
@@ -860,7 +845,7 @@ response structure while still returning structured JSON.
 - A FastMCP server with an OpenAPIProvider attached.
 
 
-#### `from_fastapi` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2442" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_fastapi` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2404" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_fastapi(cls, app: Any, name: str | None = None, route_maps: list[RouteMap] | None = None, route_map_fn: OpenAPIRouteMapFn | None = None, mcp_component_fn: OpenAPIComponentFn | None = None, mcp_names: dict[str, str] | None = None, httpx_client_kwargs: dict[str, Any] | None = None, tags: set[str] | None = None, **settings: Any) -> Self
@@ -884,7 +869,7 @@ Use this to configure timeout and other client settings.
 - A FastMCP server with an OpenAPIProvider attached.
 
 
-#### `generate_name` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2497" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `generate_name` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/server.py#L2459" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 generate_name(cls, name: str | None = None) -> str

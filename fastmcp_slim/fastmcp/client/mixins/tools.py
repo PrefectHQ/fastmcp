@@ -16,10 +16,9 @@ from fastmcp.client.progress import ProgressHandler
 from fastmcp.client.telemetry import client_span
 from fastmcp.exceptions import ToolError
 from fastmcp.telemetry import inject_trace_context
-from fastmcp.utilities.json_schema_type import json_schema_to_type
+from fastmcp.utilities.json_schema_type import json_schema_to_type_adapter
 from fastmcp.utilities.logging import get_logger
 from fastmcp.utilities.timeout import normalize_timeout_to_seconds
-from fastmcp.utilities.types import get_cached_typeadapter
 
 logger = get_logger(__name__)
 
@@ -273,7 +272,9 @@ class ClientToolsMixin:
             name=name,
             result=result,
             tool_output_schemas=self.session._tool_output_schemas,
-            list_tools_fn=self.session.list_tools,
+            # Fetch every page: a tool beyond the first page is otherwise never
+            # found, and its result is left unhydrated.
+            list_tools_fn=self.list_tools,
             client_name=self.name,
             raise_on_error=raise_on_error,
         )
@@ -405,8 +406,7 @@ async def _parse_call_tool_result(
                     output_schema = output_schema.get("properties", {}).get(
                         "result", output_schema
                     )
-                output_type = json_schema_to_type(output_schema)
-                type_adapter = get_cached_typeadapter(output_type)
+                type_adapter = json_schema_to_type_adapter(output_schema)
                 data = type_adapter.validate_python(structured_content)
             else:
                 data = structured_content

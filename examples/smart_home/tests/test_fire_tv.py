@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from smart_home.fire_tv import client as fire_tv_client
 from smart_home.fire_tv.server import fire_tv_mcp
@@ -128,6 +130,63 @@ async def test_status_and_commands_share_one_connection(configured_fire_tv):
             "com.amazon.firetv.youtube",
         ),
     ]
+    assert device.closed is True
+
+
+async def test_concurrent_first_calls_share_one_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    devices: list[FakeFireTV] = []
+
+    async def setup(**kwargs: object) -> FakeFireTV:
+        device = FakeFireTV()
+        devices.append(device)
+        await asyncio.sleep(0)
+        return device
+
+    monkeypatch.setattr(fire_tv_client, "setup_android_tv", setup)
+    connection = fire_tv_client.FireTVConnection(
+        fire_tv_client.FireTVSettings(fire_tv_host="192.0.2.10")
+    )
+
+    try:
+        first, second = await asyncio.gather(connection.get(), connection.get())
+    finally:
+        await connection.close()
+
+    assert len(devices) == 1
+    assert first is second is devices[0]
+    assert devices[0].closed is True
+
+
+async def test_concurrent_calls_reconnect_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    device = FakeFireTV()
+    connects: list[bool] = []
+
+    async def setup(**kwargs: object) -> FakeFireTV:
+        return device
+
+    async def adb_connect(log_errors: bool = True) -> bool:
+        connects.append(log_errors)
+        await asyncio.sleep(0)
+        device.available = True
+        return True
+
+    device.adb_connect = adb_connect  # type: ignore[attr-defined]
+    monkeypatch.setattr(fire_tv_client, "setup_android_tv", setup)
+    connection = fire_tv_client.FireTVConnection(
+        fire_tv_client.FireTVSettings(fire_tv_host="192.0.2.10")
+    )
+    await connection.get()
+    device.available = False
+
+    try:
+        first, second = await asyncio.gather(connection.get(), connection.get())
+    finally:
+        await connection.close()
+
+    assert first is second is device
+    assert connects == [False]
     assert device.closed is True
 
 

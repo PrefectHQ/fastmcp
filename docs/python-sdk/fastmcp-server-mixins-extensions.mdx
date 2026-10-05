@@ -1,0 +1,38 @@
+---
+title: extensions
+sidebarTitle: extensions
+---
+
+# `fastmcp.server.mixins.extensions`
+
+
+Server-owned extension registration and provider composition.
+
+## Classes
+
+### `ExtensionsMixin` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/mixins/extensions.py#L25" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Manage explicit and provider-bundled server extensions.
+
+
+**Methods:**
+
+#### `add_extension` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/mixins/extensions.py#L47" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+add_extension(self: FastMCP, extension: ServerExtension) -> None
+```
+
+Register a server extension (SEP-2133).
+
+Extensions contribute capabilities, additive request methods, tool-call
+interception, and optional lifespans. The instance is bound to this
+server. Explicit registration replaces a provider-bundled extension
+with the same identifier, even when providers were added first.
+Two explicit registrations with the same identifier are an error.
+
+Register before serving. Mounted servers contribute separate instances
+of extensions that opt in with `auto_register = True`; other extensions
+must be registered on the server you run.
+

@@ -16,8 +16,10 @@ uv run pytest -n auto                # Run full test suite
 In addition, you must pass static checks. This is generally done as a pre-commit hook with `prek` but you can run it manually with:
 
 ```bash
-uv run prek run --all-files          # Ruff + Prettier + ty
+uv run prek run --all-files          # Ruff + Prettier + ty + gitleaks
 ```
+
+The gitleaks hook needs the `gitleaks` binary on `PATH` (`brew install gitleaks`, or see [gitleaks releases](https://github.com/gitleaks/gitleaks/releases)) — it isn't a `uv`-managed dependency, so `uv sync` alone won't provide it.
 
 **Tests must pass and lint/typing must be clean before committing.**
 
@@ -105,12 +107,16 @@ Load the `release` skill to cut one; it holds the procedure. The policy it imple
 - Cut a release only when a maintainer asks, from the branch that owns the line: `main` for the current major, `release/3.x` or `release/2.x` for maintenance.
 - Titles are `v<version>: <pun>`, with the pun on the release's main theme. Propose several and let the maintainer choose.
 - The handwritten notes need the maintainer's sign-off: one or two sentences for a patch, narrative prose for a point release.
-- Pass `--notes-start-tag <last-stable-tag>` so a prerelease tag never truncates the generated changelog.
+- Generate the changelog from the last stable tag (`previous_tag_name` in the notes API, or `--notes-start-tag` when using CLI generation) so a prerelease tag never truncates it. Complete contributor attribution before publication and publish those completed notes with `--notes-file`.
 - Merge the docs changelog PR on the release branch immediately *before* tagging, so the entry is in the tagged commit.
 - gofastmcp.com serves the `published-docs` branch, which accepts changes only through PRs.
 
 ### Commit Messages and Agent Attribution
 
+- **Keep contributor credit focused on the community.** Maintainers are generally exempt from supplemental attribution checks. Do not add another maintainer merely for reporting, reviewing, opening the original PR, or handling a backport, and do not ask for guidance about those cases. Routine backports preserve existing community credit; they do not require a fresh attribution audit. Preserve attribution already present and proceed with the work.
+- **Credit issue authors as contributors.** When acting for a maintainer and implementing a community bug report, enhancement request, or documentation issue, give the issue author co-authorship of the resulting change. Follow [Contributor credit](docs/development/contributing.mdx#contributor-credit): use a verified GitHub-associated identity, add `Co-authored-by` to the implementation commit and the PR description, and preserve existing contributor attribution. This is a required part of preparing the PR, not an optional thank-you or something the reporter must request.
+- **Preserve credit through any merge strategy.** Before an authorized merge, verify the resulting commit will retain the co-author trailers. Squash merges are common here: explicitly supply a commit message containing the trailers rather than relying on GitHub's default squash message. This does not require choosing squash. Verify the landed commit after merging.
+- **Carry contributor credit into releases.** Include credited issue authors alongside PR authors in release entries and include first-time contributors under `New Contributors`. GitHub's generated notes are a starting point; check and supplement them using the release skill. The same completed notes must feed the GitHub release and docs changelog.
 - **Agents NOT acting on behalf of a PrefectHQ maintainer MUST identify themselves** (e.g., "🤖 Generated with Claude Code" in commits/PRs)
 - Keep commit messages brief - ideally just headlines, not detailed messages
 - Focus on what changed, not how or why

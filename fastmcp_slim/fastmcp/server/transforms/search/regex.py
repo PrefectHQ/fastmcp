@@ -1,8 +1,9 @@
 """Regex-based search transform."""
 
-import re
 from collections.abc import Sequence
 from typing import Annotated, Any
+
+from pydantic_core import SchemaError, SchemaValidator, ValidationError, core_schema
 
 from fastmcp.server.context import Context
 from fastmcp.server.transforms.search.base import (
@@ -16,7 +17,8 @@ class RegexSearchTransform(BaseSearchTransform):
     """Search transform using regex pattern matching.
 
     Tools are matched against their name, description, and parameter
-    information using ``re.search`` with ``re.IGNORECASE``.
+    information using Pydantic's Rust regex engine with case-insensitive
+    matching. Lookarounds and backreferences are not supported.
     """
 
     def _make_search_tool(self) -> Tool:
@@ -25,13 +27,15 @@ class RegexSearchTransform(BaseSearchTransform):
         async def search_tools(
             pattern: Annotated[
                 str,
-                "Regex pattern to match against tool names, descriptions, and parameters",
+                "Case-insensitive regex pattern for tool names, descriptions, and parameters; "
+                "lookarounds and backreferences are not supported",
             ],
             ctx: Context = None,  # type: ignore[assignment]  # ty:ignore[invalid-parameter-default]
         ) -> str | list[dict[str, Any]]:
             """Search for tools matching a regex pattern.
 
             Returns matching tool definitions in the same format as list_tools.
+            Invalid or unsupported patterns return an empty list.
             """
             hidden = await transform._get_visible_tools(ctx)
             results = await transform._search(hidden, pattern)
@@ -41,15 +45,22 @@ class RegexSearchTransform(BaseSearchTransform):
 
     async def _search(self, tools: Sequence[Tool], query: str) -> Sequence[Tool]:
         try:
-            compiled = re.compile(query, re.IGNORECASE)
-        except re.error:
+            matcher = SchemaValidator(
+                core_schema.str_schema(
+                    pattern=f"(?i){query}", regex_engine="rust-regex"
+                )
+            )
+        except SchemaError:
             return []
 
         matches: list[Tool] = []
         for tool in tools:
             text = _extract_searchable_text(tool)
-            if compiled.search(text):
-                matches.append(tool)
-                if len(matches) >= self._max_results:
-                    break
+            try:
+                matcher.validate_python(text)
+            except ValidationError:
+                continue
+            matches.append(tool)
+            if len(matches) >= self._max_results:
+                break
         return matches

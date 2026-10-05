@@ -206,7 +206,7 @@ Inline sync calls have no cancellation checkpoints, so `timeout` cannot interrup
 By default, FastMCP converts Python functions into MCP tools by inspecting the function's signature and type annotations. This allows you to use standard Python type annotations for your tools. In general, the framework strives to "just work": idiomatic Python behaviors like parameter defaults and type annotations are automatically translated into MCP schemas. However, there are a number of ways to customize the behavior of your tools.
 
 <Note>
-FastMCP automatically dereferences `$ref` entries in tool schemas to ensure compatibility with MCP clients that don't fully support JSON Schema references (e.g., VS Code Copilot, Claude Desktop). This means complex Pydantic models with shared types are inlined in the schema rather than using `$defs` references.
+FastMCP automatically dereferences `$ref` entries in tool schemas to ensure compatibility with MCP clients that don't fully support JSON Schema references (e.g., VS Code Copilot, Claude Desktop). This means complex Pydantic models with shared types are inlined in the schema rather than using `$defs` references. Schemas whose inlined form would be very large keep their `$defs`, with only a root-level `$ref` resolved, as recursive schemas already do.
 
 Dereferencing happens at serve-time via middleware, so your schemas are stored with `$ref` intact and only inlined when sent to clients. If you know your clients handle `$ref` correctly and prefer smaller schemas, you can opt out:
 
@@ -405,6 +405,7 @@ def search_database(
 
 Field provides several validation and documentation features:
 - `description`: Human-readable explanation of the parameter (shown to LLMs)
+- `title`: Short display label for the parameter, for clients that build forms from the schema. FastMCP omits the titles Pydantic derives from parameter names, so a title appears only when it differs from that derived label (`Field(title="Account")` on `account` adds nothing and is omitted).
 - `ge`/`gt`/`le`/`lt`: Greater/less than (or equal) constraints
 - `min_length`/`max_length`: String or collection length constraints
 - `pattern`: Regex pattern for string validation
@@ -848,7 +849,7 @@ When `mask_error_details=True`, only error messages from `ToolError` will includ
 
 <VersionBadge version="3.0.0" />
 
-Tools can specify a `timeout` parameter to limit how long execution can take. When the timeout is exceeded, the client receives an MCP error and the tool stops processing. This protects your server from unexpectedly slow operations that could block resources or leave clients waiting indefinitely.
+Tools can specify a `timeout` parameter to reject operations that take too long. When the timeout is exceeded, the client receives an MCP error instead of the tool's result.
 
 ```python
 from fastmcp import FastMCP
@@ -864,6 +865,10 @@ async def fetch_data(url: str) -> dict:
 ```
 
 Timeouts are specified in seconds as a float. When a tool exceeds its timeout, FastMCP returns an MCP error with code `-32000` and a message indicating which tool timed out and how long it ran. Both sync and async tools support timeouts—sync functions run in thread pools, so the timeout applies to the entire operation regardless of execution model.
+
+<Note>
+Async tools are cancelled at their next cancellation checkpoint. Synchronous worker threads cannot be interrupted: FastMCP waits for the worker to finish before returning the timeout error, keeping its dependencies available until then. A timeout does not undo side effects or stop a synchronous tool that never returns.
+</Note>
 
 <Note>
 Tools must explicitly opt-in to timeouts. There is no server-level default timeout setting.

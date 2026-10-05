@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
@@ -26,6 +28,7 @@ from mcp.server.auth.provider import (
     OAuthAuthorizationServerProvider,
     RefreshToken,
     TokenError,
+    principal_components,
 )
 from mcp.server.auth.provider import (
     TokenVerifier as TokenVerifierProtocol,
@@ -59,6 +62,8 @@ class AccessToken(_SDKAccessToken):
     """AccessToken that includes all JWT claims."""
 
     claims: dict[str, Any] = Field(default_factory=dict)
+    original_client_id: str | None = None
+    """Client ID before MultiAuth qualified it with its configured source."""
 
 
 class TokenHandler(_SDKTokenHandler):
@@ -363,10 +368,12 @@ class AuthProvider(TokenVerifierProtocol):
     def get_challenge_scopes(
         self, required_scopes: list[str] | None = None
     ) -> list[str]:
-        """Translate validation scopes into scopes clients should request.
+        """Select the scopes a `WWW-Authenticate` challenge asks clients to request.
 
-        Providers whose authorization server uses a different scope format can
-        override this method to translate any effective set of validation scopes.
+        Called without arguments for the server-wide challenge, which defaults to
+        `required_scopes`. Override this method to translate scopes for an
+        authorization server that uses a different format, or to request
+        optional scopes up front.
         """
         return self.required_scopes if required_scopes is None else required_scopes
 
@@ -681,7 +688,11 @@ class MultiAuth(AuthProvider):
         self,
         *,
         server: AuthProvider | None = None,
-        verifiers: list[TokenVerifier] | TokenVerifier | None = None,
+        verifiers: Mapping[str, TokenVerifier]
+        | Sequence[TokenVerifier]
+        | TokenVerifier
+        | None = None,
+        server_source_id: str | None = None,
         base_url: AnyHttpUrl | str | None = None,
         resource_base_url: AnyHttpUrl | str | None = None,
         required_scopes: list[str] | None = None,
@@ -692,18 +703,27 @@ class MultiAuth(AuthProvider):
             server: Optional auth provider (e.g., OAuthProxy) that owns routes
                 and OAuth metadata. Also participates in token verification as
                 the first verifier tried.
-            verifiers: One or more token verifiers to try after the server.
+            verifiers: Named token verifiers, or configured verifiers with distinct
+                issuer or endpoint identities, tried after the server.
+            server_source_id: Stable name for the server trust source. Defaults
+                to its configured issuer, endpoint, or provider type identity.
             base_url: Override the base URL. Defaults to the server's base_url.
             resource_base_url: Override the protected resource base URL. Defaults
                 to the server's resource_base_url when available.
             required_scopes: Override required scopes. Defaults to the server's.
         """
-        if verifiers is None:
-            verifiers = []
+        explicit_ids: dict[str, TokenVerifier] | None = None
+        if isinstance(verifiers, Mapping):
+            explicit_ids = dict(verifiers)
+            normalized_verifiers = list(explicit_ids.values())
         elif isinstance(verifiers, TokenVerifier):
-            verifiers = [verifiers]
+            normalized_verifiers = [verifiers]
+        else:
+            normalized_verifiers = list(verifiers or [])
 
-        if server is None and not verifiers:
+        if server_source_id is not None and server is None:
+            raise ValueError("server_source_id requires a server")
+        if server is None and not normalized_verifiers:
             raise ValueError("MultiAuth requires at least a server or one verifier")
 
         effective_base_url = base_url or (server.base_url if server else None)
@@ -722,7 +742,8 @@ class MultiAuth(AuthProvider):
             required_scopes=effective_scopes,
         )
         self.server = server
-        self.verifiers = list(verifiers)
+        self._required_scopes_override = required_scopes
+        self.verifiers = normalized_verifiers
 
         # If an explicit resource_base_url override was passed to MultiAuth,
         # propagate it to the wrapped server so its routes advertise metadata
@@ -734,6 +755,73 @@ class MultiAuth(AuthProvider):
         if self.server is not None:
             self._sources.append(self.server)
         self._sources.extend(self.verifiers)
+        self._source_ids = []
+        if self.server is not None:
+            self._source_ids.append(
+                server_source_id
+                if server_source_id is not None
+                else self._configured_source_id(self.server)
+            )
+        if explicit_ids is not None:
+            self._source_ids.extend(explicit_ids)
+        else:
+            self._source_ids.extend(
+                self._configured_source_id(v) for v in self.verifiers
+            )
+        if any(
+            not isinstance(value, str) or not value.strip() or value != value.strip()
+            for value in self._source_ids
+        ):
+            raise ValueError(
+                "MultiAuth source IDs must be nonempty strings without outer whitespace"
+            )
+        if len(set(self._source_ids)) != len(self._source_ids):
+            raise ValueError(
+                "MultiAuth source IDs must be unique; name each distinct source explicitly"
+            )
+
+    @staticmethod
+    def _configured_source_id(source: AuthProvider) -> str:
+        """Identify a configured trust source independently of its credentials."""
+        from fastmcp.server.auth.oauth_proxy import OAuthProxy
+        from fastmcp.server.auth.providers.introspection import (
+            IntrospectionTokenVerifier,
+        )
+        from fastmcp.server.auth.providers.jwt import JWTVerifier
+
+        descriptor: dict[str, Any] = {}
+        if isinstance(source, JWTVerifier):
+            if source.issuer:
+                descriptor["issuer"] = (
+                    sorted(source.issuer)
+                    if isinstance(source.issuer, list)
+                    else source.issuer
+                )
+            if source.jwks_uri:
+                descriptor["jwks_uri"] = str(source.jwks_uri)
+        elif isinstance(source, IntrospectionTokenVerifier):
+            descriptor["introspection_url"] = source.introspection_url
+        elif isinstance(source, RemoteAuthProvider):
+            descriptor["token_verifier"] = MultiAuth._configured_source_id(
+                source.token_verifier
+            )
+        elif isinstance(source, OAuthProxy):
+            descriptor["issuer_url"] = str(source.issuer_url)
+            descriptor["upstream_authorization_endpoint"] = (
+                source._upstream_authorization_endpoint
+            )
+            descriptor["upstream_token_endpoint"] = source._upstream_token_endpoint
+            descriptor["token_verifier"] = MultiAuth._configured_source_id(
+                source._token_validator
+            )
+        elif isinstance(source, OAuthProvider):
+            descriptor["issuer_url"] = str(source.issuer_url)
+        if not descriptor:
+            descriptor["provider"] = (
+                f"{type(source).__module__}.{type(source).__qualname__}"
+            )
+        raw = json.dumps(descriptor, sort_keys=True, separators=(",", ":"))
+        return "configured:" + hashlib.sha256(raw.encode()).hexdigest()
 
     @property
     def scopes_supported(self) -> list[str]:
@@ -745,12 +833,18 @@ class MultiAuth(AuthProvider):
     def get_challenge_scopes(
         self, required_scopes: list[str] | None = None
     ) -> list[str]:
-        """Translate effective scopes through an unambiguous auth source."""
+        """Select challenge scopes through an unambiguous auth source.
+
+        Without a `required_scopes` override, the server selects its own default
+        challenge, including any customization of this hook.
+        """
+        if required_scopes is None:
+            required_scopes = self._required_scopes_override
+        if self.server is not None:
+            return self.server.get_challenge_scopes(required_scopes)
         effective_scopes = (
             self.required_scopes if required_scopes is None else required_scopes
         )
-        if self.server is not None:
-            return self.server.get_challenge_scopes(effective_scopes)
         if len(self.verifiers) == 1:
             translator = getattr(self.verifiers[0], "get_challenge_scopes", None)
             if translator is not None:
@@ -765,15 +859,36 @@ class MultiAuth(AuthProvider):
         re-raised if no source ultimately succeeds.
         """
         verification_error: TokenVerificationError | None = None
-
-        for source in self._sources:
+        for source_id, source in zip(self._source_ids, self._sources, strict=True):
             try:
                 result = await source.verify_token(token)
                 if result is not None:
-                    return result
-            except TokenVerificationError as e:
+                    # Normalize SDK-only tokens to the FastMCP model so the
+                    # original identifier survives task-context serialization.
+                    if not isinstance(result, AccessToken):
+                        result = AccessToken(
+                            **result.model_dump(exclude={"claims"}),
+                            claims=result.claims or {},
+                        )
+                    original_client_id = (
+                        result.original_client_id
+                        if isinstance(source, MultiAuth)
+                        and result.original_client_id is not None
+                        else result.client_id
+                    )
+                    qualified_client_id = json.dumps(
+                        [source_id, *principal_components(result)],
+                        separators=(",", ":"),
+                    )
+                    return result.model_copy(
+                        update={
+                            "client_id": qualified_client_id,
+                            "original_client_id": original_client_id,
+                        }
+                    )
+            except TokenVerificationError as error:
                 if verification_error is None:
-                    verification_error = e
+                    verification_error = error
                 logger.debug(
                     "Token verification unavailable for %s, trying next source",
                     type(source).__name__,

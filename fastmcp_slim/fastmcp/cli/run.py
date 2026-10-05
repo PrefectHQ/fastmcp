@@ -114,7 +114,7 @@ def create_client_server(url: str) -> Any:
 
 def create_mcp_config_server(mcp_config_path: Path) -> FastMCP[None]:
     """Create a FastMCP server from a MCPConfig."""
-    with mcp_config_path.open() as src:
+    with mcp_config_path.open(encoding="utf-8") as src:
         mcp_config = json.load(src)
 
     server = create_proxy(mcp_config)
@@ -175,7 +175,7 @@ async def run_command(
     elif server_spec.endswith(".json"):
         # Load JSON and check which type of config it is
         config_path = Path(server_spec)
-        with open(config_path) as f:
+        with open(config_path, encoding="utf-8") as f:
             data = json.load(f)
 
         # Check if it's an MCPConfig first (has canonical mcpServers key)

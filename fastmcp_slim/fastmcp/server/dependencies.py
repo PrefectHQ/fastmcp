@@ -46,7 +46,11 @@ from fastmcp.utilities.async_utils import (
     is_coroutine_function,
 )
 from fastmcp.utilities.logging import get_logger
-from fastmcp.utilities.types import find_kwarg_by_type, is_class_member_of_type
+from fastmcp.utilities.types import (
+    find_kwarg_by_type,
+    get_function_type_hints,
+    is_class_member_of_type,
+)
 
 if TYPE_CHECKING:
     from fastmcp.server.context import Context
@@ -769,27 +773,32 @@ def without_injected_parameters(
     async def wrapper(**user_kwargs: Any) -> Any:
         async with resolve_dependencies(fn, user_kwargs) as resolved_kwargs:
             if fn_is_async:
-                return await fn(**resolved_kwargs)
+                result = await fn(**resolved_kwargs)
             elif run_in_thread:
                 # Run sync functions in threadpool to avoid blocking the event loop
                 result = await call_sync_fn_in_threadpool(fn, **resolved_kwargs)
                 # Handle sync wrappers that return awaitables (e.g., partial(async_fn))
                 if inspect.isawaitable(result):
                     result = await result
-                return result
             else:
                 # Call inline on the event loop thread (thread affinity opt-in).
                 result = fn(**resolved_kwargs)
                 if inspect.isawaitable(result):
                     result = await result
-                return result
+            # Consume generators before dependencies are torn down so
+            # generator bodies still see open context-manager dependencies.
+            if inspect.isasyncgen(result):
+                return [item async for item in result]
+            if inspect.isgenerator(result):
+                return list(result)
+            return result
 
     # Resolve string annotations (from `from __future__ import annotations`) using
     # the original function's module context. The wrapper's __globals__ points to
     # this module (dependencies.py) and is read-only, so some Pydantic versions
     # can't resolve names like Annotated or Literal from string annotations.
     try:
-        resolved_hints = get_type_hints(fn, include_extras=True)
+        resolved_hints = get_function_type_hints(fn)
     except Exception:
         resolved_hints = getattr(fn, "__annotations__", {})
 

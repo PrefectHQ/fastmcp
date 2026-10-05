@@ -399,6 +399,10 @@ mcp = FastMCP.from_openapi(
 
 ## Request Parameter Handling
 
+Tool arguments map to the parameters and request body that the operation declares. FastMCP ignores any other arguments.
+
+A header parameter that the operation declares takes the value the tool call supplies. Otherwise, headers you configure on the HTTP client are sent with each request, except `Host`, which FastMCP takes from the request URL. When the MCP server runs over HTTP, FastMCP also forwards headers from the incoming MCP request, except credential and connection headers such as `Authorization`, `Cookie`, and `Host`. Forwarded headers only fill in headers that the outgoing request does not already set. This applies to tools, resources, and resource templates.
+
 FastMCP intelligently handles different types of parameters in OpenAPI requests:
 
 ### Query Parameters
@@ -423,6 +427,8 @@ Path parameters are typically required by REST APIs. FastMCP:
 - Filters out `None` values
 - Validates that all required path parameters are provided
 - Raises clear errors for missing required parameters
+
+Path values must not contain `.` or `..` segments, including percent-encoded forms. Ordinary dotted names such as `report.json` are accepted.
 
 ```python
 # ✅ This works

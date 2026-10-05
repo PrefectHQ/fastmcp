@@ -596,14 +596,14 @@ class TestGenerateCliCommand:
         output = tmp_path / "cli.py"
         await generate_cli_command("test-server", str(output))
         assert output.exists()
-        content = output.read_text()
+        content = output.read_text(encoding="utf-8")
         compile(content, str(output), "exec")
 
     @pytest.mark.usefixtures("_patch_client")
     async def test_contains_tools(self, tmp_path: Path):
         output = tmp_path / "cli.py"
         await generate_cli_command("test-server", str(output))
-        content = output.read_text()
+        content = output.read_text(encoding="utf-8")
         assert "async def greet(" in content
         assert "async def add(" in content
 
@@ -627,7 +627,7 @@ class TestGenerateCliCommand:
         output = tmp_path / "cli.py"
         output.write_text("existing")
         await generate_cli_command("test-server", str(output), force=True)
-        content = output.read_text()
+        content = output.read_text(encoding="utf-8")
         assert content != "existing"
         assert "async def greet(" in content
 
@@ -640,13 +640,54 @@ class TestGenerateCliCommand:
         await generate_cli_command("test-server", str(output))
         assert output.stat().st_mode & 0o111
 
+    async def test_writes_utf8_regardless_of_locale(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Output is UTF-8 even where the default text encoding is not (Windows)."""
+        server = FastMCP("weather")
+
+        @server.tool
+        def forecast(city: str) -> str:
+            """Forecast for a city — temperature in °C → rounded."""
+            return city
+
+        original_write_text = Path.write_text
+
+        def write_text_cp1252_default(
+            self: Path,
+            data: str,
+            encoding: str | None = None,
+            *args: Any,
+            **kwargs: Any,
+        ) -> int:
+            return original_write_text(
+                self, data, encoding or "cp1252", *args, **kwargs
+            )
+
+        monkeypatch.setattr(Path, "write_text", write_text_cp1252_default)
+
+        output = tmp_path / "cli.py"
+        with (
+            patch.object(
+                generate_module, "resolve_server_spec", return_value="fake://server"
+            ),
+            patch.object(generate_module, "_build_client", return_value=Client(server)),
+        ):
+            await generate_cli_command("weather", str(output))
+
+        script = output.read_bytes().decode("utf-8")
+        compile(script, str(output), "exec")
+        assert "temperature in °C → rounded" in script
+        skill = (tmp_path / "SKILL.md").read_bytes().decode("utf-8")
+        assert "temperature in °C → rounded" in skill
+
     @pytest.mark.usefixtures("_patch_client")
     async def test_writes_skill_file(self, tmp_path: Path):
         output = tmp_path / "cli.py"
         await generate_cli_command("test-server", str(output))
         skill_path = tmp_path / "SKILL.md"
         assert skill_path.exists()
-        content = skill_path.read_text()
+        content = skill_path.read_text(encoding="utf-8")
         assert "---" in content
         assert "name:" in content
 
@@ -654,7 +695,7 @@ class TestGenerateCliCommand:
     async def test_skill_contains_tools(self, tmp_path: Path):
         output = tmp_path / "cli.py"
         await generate_cli_command("test-server", str(output))
-        content = (tmp_path / "SKILL.md").read_text()
+        content = (tmp_path / "SKILL.md").read_text(encoding="utf-8")
         assert "### greet" in content
         assert "### add" in content
         assert "--name" in content
@@ -678,7 +719,7 @@ class TestGenerateCliCommand:
         output = tmp_path / "cli.py"
         (tmp_path / "SKILL.md").write_text("existing")
         await generate_cli_command("test-server", str(output), force=True)
-        content = (tmp_path / "SKILL.md").read_text()
+        content = (tmp_path / "SKILL.md").read_text(encoding="utf-8")
         assert content != "existing"
         assert "### greet" in content
 
@@ -686,7 +727,7 @@ class TestGenerateCliCommand:
     async def test_skill_references_cli_filename(self, tmp_path: Path):
         output = tmp_path / "my_weather.py"
         await generate_cli_command("test-server", str(output))
-        content = (tmp_path / "SKILL.md").read_text()
+        content = (tmp_path / "SKILL.md").read_text(encoding="utf-8")
         assert "uv run --with fastmcp python my_weather.py" in content
 
 

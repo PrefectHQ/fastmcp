@@ -57,6 +57,7 @@ from fastmcp.resources.template import forward_uri
 from fastmcp.server.context import Context
 from fastmcp.server.dependencies import fastmcp_request_ctx, get_context
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
+from fastmcp.server.providers.addressing import is_app_tool_with_identity
 from fastmcp.server.providers.aggregate import ProviderErrorStrategy
 from fastmcp.server.providers.base import Provider
 from fastmcp.server.server import FastMCP
@@ -95,7 +96,7 @@ class _ForwardingClientSession(ClientSession):
         return None
 
 
-# Settings every proxy-backend connection uses: relay results without policing
+# Default proxy-backend connection settings: relay results without policing
 # the backend's output schema, and forward eligible caller headers upstream
 # without inheriting frontend-owned MCP transport state.
 PROXY_TRANSPORT_OPTIONS = TransportOptions(
@@ -109,9 +110,8 @@ def _with_proxy_transport_options(
 ) -> TransportOptions:
     """Layer proxy-owned settings onto options supplied by another client layer."""
     return replace(
-        options or TransportOptions(),
+        options or PROXY_TRANSPORT_OPTIONS,
         session_class=PROXY_TRANSPORT_OPTIONS.session_class,
-        forward_incoming_headers=PROXY_TRANSPORT_OPTIONS.forward_incoming_headers,
     )
 
 
@@ -951,7 +951,7 @@ class ProxyProvider(Provider):
             return None
         return max(matching, key=version_sort_key)
 
-    async def get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
+    async def _get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
         """Resolve an identity against the remote listing.
 
         The base implementation looks the tool up by its registered name,
@@ -965,28 +965,15 @@ class ProxyProvider(Provider):
         on the same terms ``AggregateProvider`` refuses it, so a duplicated
         app is caught wherever it is composed rather than only nearby.
         """
-        from fastmcp.server.providers.addressing import TOOL_HASH_META_KEY
-
         cache = self._tools_cache
         if cache is None or not cache.is_fresh(self._cache_ttl):
             await self._list_tools()
             cache = self._tools_cache
         assert cache is not None
 
-        matches: list[Tool] = []
-        for tool in cache.items:
-            meta = tool.meta or {}
-            fastmcp_meta = meta.get("fastmcp")
-            ui_meta = meta.get("ui")
-            visibility = (
-                ui_meta.get("visibility", []) if isinstance(ui_meta, dict) else []
-            )
-            if (
-                isinstance(fastmcp_meta, dict)
-                and fastmcp_meta.get(TOOL_HASH_META_KEY) == tool_hash
-                and "app" in visibility
-            ):
-                matches.append(tool)
+        matches = [
+            tool for tool in cache.items if is_app_tool_with_identity(tool, tool_hash)
+        ]
 
         if not matches:
             return None
@@ -1682,6 +1669,10 @@ class ProxyClient(Client[ClientTransportT]):
     """A proxy client that forwards advanced interactions between a remote MCP server and the proxy's connected clients.
 
     Supports forwarding roots, sampling, elicitation, logging, and progress.
+    Eligible inbound HTTP headers are forwarded by default; set
+    `forward_incoming_headers=False` to use only the backend transport's
+    configured headers and authentication. Applies to HTTP and SSE backends,
+    including backends in an MCP configuration.
 
     The default forwarding handlers must resolve the *proxy's* request context so
     they relay server-initiated requests (roots/sampling/elicitation) back to the
@@ -1719,6 +1710,8 @@ class ProxyClient(Client[ClientTransportT]):
         | MCPConfig
         | dict[str, Any]
         | str,
+        *,
+        forward_incoming_headers: bool = True,
         **kwargs,
     ):
         if "name" not in kwargs:
@@ -1756,7 +1749,10 @@ class ProxyClient(Client[ClientTransportT]):
                 self._proxy_restoring_handler_keys.add(key)
         super().__init__(transport=transport, **kwargs)  # ty: ignore[no-matching-overload]
 
-        self._transport_options = _with_proxy_transport_options(self._transport_options)
+        self._transport_options = replace(
+            _with_proxy_transport_options(self._transport_options),
+            forward_incoming_headers=forward_incoming_headers,
+        )
 
     def _bind_restoring_handlers(self) -> None:
         if "roots" in self._proxy_restoring_handler_keys:

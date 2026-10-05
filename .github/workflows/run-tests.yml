@@ -76,7 +76,13 @@ jobs:
         python-version: ["3.10"]
         include:
           - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: ubuntu-latest
             python-version: "3.13"
+          - os: ubuntu-latest
+            python-version: "3.14"
       fail-fast: false
     timeout-minutes: 10
 
@@ -106,20 +112,30 @@ jobs:
         run: uv run pytest tests/docs -n 0
 
   run_windows_tests:
-    if: github.event_name != 'pull_request'
-    name: "Tests: Python 3.10 on windows-latest"
+    needs: changes
+    # Run Windows tests for code changes, preserving required check names
+    # when editorial-only PRs skip the expensive steps.
+    if: ${{ !cancelled() }}
+    name: "Tests: Python ${{ matrix.python-version }} on windows-latest"
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.14"]
+      fail-fast: false
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - name: Setup uv
+        if: needs.changes.outputs.run-tests != 'false'
         uses: ./.github/actions/setup-uv
         with:
-          python-version: "3.10"
+          python-version: ${{ matrix.python-version }}
           resolution: locked
       - name: Run unit tests
+        if: needs.changes.outputs.run-tests != 'false'
         uses: ./.github/actions/run-pytest
       - name: Run serial subprocess tests
+        if: needs.changes.outputs.run-tests != 'false'
         uses: ./.github/actions/run-pytest
         with:
           test-type: client_process
