@@ -865,12 +865,23 @@ def extract_output_schema_from_responses(
                 # Replace $ref with the actual schema definition
                 output_schema = _replace_ref_with_defs(schema_definitions[schema_name])
 
+    # Unconverted definitions, so $ref targets still carry their access annotations
+    definitions = {
+        name: _replace_ref_with_defs(def_schema)
+        if isinstance(def_schema, dict)
+        else def_schema
+        for name, def_schema in (schema_definitions or {}).items()
+    }
+
     if openapi_version and openapi_version.startswith("3"):
         # Convert OpenAPI 3.x schema to JSON Schema format for proper handling
         # of constructs like oneOf, anyOf, and nullable fields. writeOnly
         # properties belong to requests only, so responses never contain them.
         output_schema = convert_openapi_schema_to_json_schema(
-            output_schema, openapi_version, remove_write_only=True
+            output_schema,
+            openapi_version,
+            remove_write_only=True,
+            definitions=definitions,
         )
 
     # MCP requires output schemas to be objects. If this schema is not an object,
@@ -887,18 +898,16 @@ def extract_output_schema_from_responses(
 
     # Add schema definitions if available
     if schema_definitions:
-        # Convert refs if needed
-        processed_defs = schema_definitions.copy()
-        # Convert each schema definition recursively
-        for name, schema in processed_defs.items():
-            if isinstance(schema, dict):
-                processed_defs[name] = _replace_ref_with_defs(schema)
+        processed_defs = definitions.copy()
 
         # Convert OpenAPI schema definitions to JSON Schema format if needed
         if openapi_version and openapi_version.startswith("3"):
             for def_name in list(processed_defs.keys()):
                 processed_defs[def_name] = convert_openapi_schema_to_json_schema(
-                    processed_defs[def_name], openapi_version, remove_write_only=True
+                    processed_defs[def_name],
+                    openapi_version,
+                    remove_write_only=True,
+                    definitions=definitions,
                 )
 
         output_schema["$defs"] = processed_defs
