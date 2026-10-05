@@ -1,3 +1,4 @@
+from functools import partial
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -517,6 +518,37 @@ class TestPromptArgumentDescriptions:
             'Provide a value matching the following JSON schema: {"type":"integer"}. '
             "Encode non-string values as JSON."
         )
+
+    def test_callable_postponed_string_parameters_no_enhancement(self):
+        class Greeter:
+            def __call__(self, name: "str", count: "int") -> str:
+                return name * count
+
+        prompt = Prompt.from_function(Greeter())
+
+        assert prompt.arguments is not None
+        arguments = {arg.name: arg for arg in prompt.arguments}
+        assert arguments["name"].description is None
+        assert arguments["count"].description == (
+            'Provide a value matching the following JSON schema: {"type":"integer"}. '
+            "Encode non-string values as JSON."
+        )
+
+    def test_partial_postponed_string_parameters_no_enhancement(self):
+        def greet(name: "str", count: "int") -> str:
+            return name * count
+
+        prompt = Prompt.from_function(partial(greet, count=2))
+
+        assert prompt.arguments is not None
+        arguments = {arg.name: arg for arg in prompt.arguments}
+        assert arguments["name"].description is None
+        assert arguments["count"].description == (
+            'Provide a value matching the following JSON schema: {"type":"integer"}. '
+            "Encode non-string values as JSON."
+        )
+        assert arguments["name"].required is True
+        assert arguments["count"].required is False
 
     def test_docstring_populates_argument_descriptions(self):
         """Google-style docstrings should populate PromptArgument descriptions."""

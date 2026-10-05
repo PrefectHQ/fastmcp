@@ -140,13 +140,6 @@ class FunctionPrompt(Prompt):
             if param.kind == inspect.Parameter.VAR_KEYWORD:
                 raise ValueError("Functions with **kwargs are not supported as prompts")
 
-        # Resolve string annotations (`from __future__ import annotations`) so
-        # the argument types below are compared as types, not strings.
-        try:
-            param_hints = get_type_hints(fn, include_extras=True)
-        except Exception:
-            param_hints = {}
-
         # Parse the outer docstring (before unwrapping) to preserve the class
         # docstring as the prompt description for callable class instances.
         outer_docstring = parse_docstring(fn)
@@ -157,6 +150,14 @@ class FunctionPrompt(Prompt):
         # if the fn is a staticmethod, we need to work with the underlying function
         if isinstance(fn, staticmethod):
             fn = fn.__func__
+
+        # Resolve annotations on the normalized callable. A partial keeps its
+        # exposed signature above, but its annotations live on the wrapped fn.
+        hint_source = fn.func if isinstance(fn, functools.partial) else fn
+        try:
+            param_hints = get_type_hints(hint_source, include_extras=True)
+        except Exception:
+            param_hints = {}
 
         # For callable classes, argument descriptions must come from
         # __call__'s docstring — where the exposed parameters are actually
