@@ -905,6 +905,12 @@ class ProxyProvider(Provider):
         self._resources_cache: _CacheEntry[Resource] | None = None
         self._templates_cache: _CacheEntry[ResourceTemplate] | None = None
         self._prompts_cache: _CacheEntry[Prompt] | None = None
+        # Generations advance before I/O so older completions cannot roll back
+        # a newer refresh attempt.
+        self._tools_generation = 0
+        self._resources_generation = 0
+        self._templates_generation = 0
+        self._prompts_generation = 0
 
     async def _get_client(self) -> Client:
         """Gets a client instance by calling the sync or async factory."""
@@ -919,6 +925,8 @@ class ProxyProvider(Provider):
 
     async def _list_tools(self) -> Sequence[Tool]:
         """List all tools from the remote server."""
+        self._tools_generation += 1
+        generation = self._tools_generation
         try:
             client = await self._get_client()
             async with client:
@@ -933,7 +941,8 @@ class ProxyProvider(Provider):
                 raise
         except _PROXY_TRANSPORT_ERRORS as error:
             raise _proxy_upstream_error(error) from error
-        self._tools_cache = _CacheEntry(tools, time.monotonic())
+        if generation == self._tools_generation:
+            self._tools_cache = _CacheEntry(tools, time.monotonic())
         return tools
 
     async def _get_tool(
@@ -992,6 +1001,8 @@ class ProxyProvider(Provider):
 
     async def _list_resources(self) -> Sequence[Resource]:
         """List all resources from the remote server."""
+        self._resources_generation += 1
+        generation = self._resources_generation
         try:
             client = await self._get_client()
             async with client:
@@ -1007,7 +1018,8 @@ class ProxyProvider(Provider):
                 raise
         except _PROXY_TRANSPORT_ERRORS as error:
             raise _proxy_upstream_error(error) from error
-        self._resources_cache = _CacheEntry(resources, time.monotonic())
+        if generation == self._resources_generation:
+            self._resources_cache = _CacheEntry(resources, time.monotonic())
         return resources
 
     async def _get_resource(
@@ -1031,6 +1043,8 @@ class ProxyProvider(Provider):
 
     async def _list_resource_templates(self) -> Sequence[ResourceTemplate]:
         """List all resource templates from the remote server."""
+        self._templates_generation += 1
+        generation = self._templates_generation
         try:
             client = await self._get_client()
             async with client:
@@ -1046,7 +1060,8 @@ class ProxyProvider(Provider):
                 raise
         except _PROXY_TRANSPORT_ERRORS as error:
             raise _proxy_upstream_error(error) from error
-        self._templates_cache = _CacheEntry(templates, time.monotonic())
+        if generation == self._templates_generation:
+            self._templates_cache = _CacheEntry(templates, time.monotonic())
         return templates
 
     async def _get_resource_template(
@@ -1070,6 +1085,8 @@ class ProxyProvider(Provider):
 
     async def _list_prompts(self) -> Sequence[Prompt]:
         """List all prompts from the remote server."""
+        self._prompts_generation += 1
+        generation = self._prompts_generation
         try:
             client = await self._get_client()
             async with client:
@@ -1085,7 +1102,8 @@ class ProxyProvider(Provider):
                 raise
         except _PROXY_TRANSPORT_ERRORS as error:
             raise _proxy_upstream_error(error) from error
-        self._prompts_cache = _CacheEntry(prompts, time.monotonic())
+        if generation == self._prompts_generation:
+            self._prompts_cache = _CacheEntry(prompts, time.monotonic())
         return prompts
 
     async def _get_prompt(
