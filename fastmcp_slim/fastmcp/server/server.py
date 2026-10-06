@@ -12,7 +12,6 @@ from collections.abc import (
 )
 from contextlib import (
     AbstractAsyncContextManager,
-    AsyncExitStack,
     asynccontextmanager,
 )
 from functools import partial
@@ -438,7 +437,10 @@ class FastMCP(
             self._lifespan = cast(LifespanCallable[LifespanResultT], default_lifespan)
         self._lifespan_result: LifespanResultT | None = None
         self._lifespan_result_set: bool = False
-        self._lifespan_stack: AsyncExitStack | None = None
+        self._lifespan_task: asyncio.Task[None] | None = None
+        self._lifespan_entrants: dict[asyncio.Task[Any], int] = {}
+        self._lifespan_stop: asyncio.Event | None = None
+        self._lifespan_context_snapshot: dict[Any, Any] | None = None
         # Snapshot of SharedContext ContextVar values captured during the
         # lifespan, re-applied per request by FastMCPServerMiddleware because
         # the SDK v2 dispatcher runs handlers in the sender's context.
