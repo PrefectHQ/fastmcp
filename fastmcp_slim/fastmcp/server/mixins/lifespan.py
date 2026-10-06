@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import weakref
 from collections.abc import AsyncIterator
-from contextlib import AsyncExitStack, asynccontextmanager, nullcontext
+from contextlib import AsyncExitStack, asynccontextmanager, nullcontext, suppress
 from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
@@ -184,10 +184,18 @@ class LifespanMixin:
                 should_enter_lifespan = False
             else:
                 self._lifespan_ref_count = 1
+                try:
+                    await self._start_lifespan()
+                except BaseException:
+                    self._lifespan_ref_count = 0
+                    self._lifespan_result = None
+                    self._lifespan_result_set = False
+                    self._lifespan_stack = None
+                    raise
                 should_enter_lifespan = True
 
-        if not should_enter_lifespan:
-            try:
+        try:
+            if not should_enter_lifespan:
                 # A server can also start standalone after a mounted entry
                 # owns its resource lifespan. Track that independent runtime
                 # even though its setup is reused.
@@ -198,26 +206,32 @@ class LifespanMixin:
                 )
                 with runtime:
                     yield
-            finally:
+            else:
+                yield
+        finally:
+            # Release the reference and, for the final entrant, close the
+            # shared stack as one cancellation-safe operation.
+            with anyio.CancelScope(shield=True):
                 async with self._lifespan_lock:
                     self._lifespan_ref_count -= 1
                     if self._lifespan_ref_count == 0:
+                        stack = self._lifespan_stack
+                        self._lifespan_stack = None
                         self._lifespan_result_set = False
                         self._lifespan_result = None
-            return
+                        self._shared_context_snapshot = None
+                        self._started.clear()
+                        if stack is not None:
+                            await stack.aclose()
 
-        # Use an explicit AsyncExitStack so we can shield teardown from
-        # cancellation. Without this, Ctrl-C causes CancelledError to
-        # propagate into lifespan finally blocks, preventing any async
-        # cleanup (e.g. closing DB connections, flushing buffers).
+    async def _start_lifespan(self: FastMCP) -> None:
+        """Enter one complete lifespan generation while the manager lock is held."""
         stack = AsyncExitStack()
+        await stack.__aenter__()
         try:
             user_lifespan_result = await stack.enter_async_context(self._lifespan(self))
             await stack.enter_async_context(self._shared_context_lifespan())
             await stack.enter_async_context(self._extensions_lifespan())
-
-            self._lifespan_result = user_lifespan_result
-            self._lifespan_result_set = True
 
             # Start lifespans for all providers. An earlier provider's lifespan
             # can add bundled providers to a later one, so reconcile against
@@ -228,18 +242,14 @@ class LifespanMixin:
 
             await self._validate_task_extension_registered()
 
+            self._lifespan_result = user_lifespan_result
+            self._lifespan_stack = stack
+            self._lifespan_result_set = True
             self._started.set()
-            try:
-                yield
-            finally:
-                self._started.clear()
-        finally:
-            try:
-                with anyio.CancelScope(shield=True):
+        except BaseException:
+            self._started.clear()
+            self._shared_context_snapshot = None
+            with anyio.CancelScope(shield=True):
+                with suppress(BaseException):
                     await stack.aclose()
-            finally:
-                async with self._lifespan_lock:
-                    self._lifespan_ref_count -= 1
-                    if self._lifespan_ref_count == 0:
-                        self._lifespan_result_set = False
-                        self._lifespan_result = None
+            raise
