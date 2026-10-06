@@ -286,6 +286,19 @@ class TestErrorHandlingMiddleware:
         assert stats["ValueError:test_method"] == 2
         assert stats["RuntimeError:test_method"] == 1
 
+    def test_get_error_stats_bounds_distinct_methods(self, mock_context):
+        """Distinct request methods beyond the stats limit share one bucket."""
+        middleware = ErrorHandlingMiddleware(logger=MagicMock())
+
+        for index in range(1005):
+            mock_context.method = f"unsupported/{index}"
+            middleware._log_error(ValueError("failure"), mock_context)
+
+        stats = middleware.get_error_stats()
+        assert len(stats) == 1000
+        assert stats["ValueError:unsupported/0"] == 1
+        assert stats["<other>"] == 6
+
 
 class TestRetryMiddleware:
     """Test retry middleware functionality."""
