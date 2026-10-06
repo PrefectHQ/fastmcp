@@ -108,24 +108,33 @@ class ClientGroup:
         await stack.__aenter__()
 
         # Connect concurrently: entry latency stays one handshake deep instead
-        # of growing linearly with the number of servers. With
-        # return_exceptions=True every connection attempt runs to completion,
-        # so on partial failure the successes are known and can be unwound.
+        # of growing linearly with the number of servers. Register each exit as
+        # soon as its entry succeeds so cancellation can unwind partial success.
         clients = list(self._clients.values())
-        results = await gather(
-            (client.__aenter__() for client in clients), return_exceptions=True
-        )
+
+        async def enter_and_register(client: Client[Any]) -> None:
+            await client.__aenter__()
+            stack.push_async_exit(client)
+
+        tasks = [asyncio.create_task(enter_and_register(client)) for client in clients]
+        try:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+        except BaseException:
+            for task in tasks:
+                task.cancel()
+            with anyio.CancelScope(shield=True):
+                await asyncio.gather(*tasks, return_exceptions=True)
+                with contextlib.suppress(BaseException):
+                    await stack.aclose()
+            raise
+
         errors = [result for result in results if isinstance(result, BaseException)]
         if errors:
-            for client, result in zip(clients, results, strict=True):
-                if not isinstance(result, BaseException):
-                    with contextlib.suppress(Exception):
-                        await client.__aexit__(None, None, None)
-            await stack.aclose()
+            with anyio.CancelScope(shield=True):
+                with contextlib.suppress(BaseException):
+                    await stack.aclose()
             raise errors[0]
 
-        for client in clients:
-            stack.push_async_exit(client)
         return stack
 
     async def __aexit__(
