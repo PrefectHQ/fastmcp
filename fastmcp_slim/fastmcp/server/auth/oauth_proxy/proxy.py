@@ -2881,7 +2881,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             logger.debug(f"Forwarding to client callback for transaction {txn_id}")
 
             response = RedirectResponse(url=client_callback_url, status_code=302)
-            self._clear_consent_binding_cookie(request, response, txn_id)
+            self._clear_consent_binding_cookie(response, txn_id)
             return response
 
         except Exception as e:
