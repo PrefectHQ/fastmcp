@@ -16,6 +16,7 @@ from fastmcp.server.middleware.rate_limiting import (
     SlidingWindowRateLimiter,
     SlidingWindowRateLimitingMiddleware,
     TokenBucketRateLimiter,
+    _PerClientLimiterCache,
 )
 
 
@@ -327,6 +328,67 @@ class TestRateLimitingMiddleware:
             RateLimitError, match="Rate limit exceeded for client: async_client"
         ):
             await middleware.on_request(mock_context, mock_call_next)
+
+    @pytest.mark.parametrize("use_sliding_window", [False, True])
+    async def test_per_client_limiter_state_expires_after_idle_horizon(
+        self, mock_call_next, monkeypatch, use_sliding_window
+    ):
+        current_time = 0.0
+        monkeypatch.setattr(
+            "fastmcp.server.middleware.rate_limiting.time.time",
+            lambda: current_time,
+        )
+
+        def get_client_id(context):
+            return context.client_id
+
+        if use_sliding_window:
+            middleware = SlidingWindowRateLimitingMiddleware(
+                max_requests=1, window_minutes=1, get_client_id=get_client_id
+            )
+        else:
+            middleware = RateLimitingMiddleware(
+                max_requests_per_second=1,
+                burst_capacity=1,
+                get_client_id=get_client_id,
+            )
+
+        for index in range(2000):
+            context = MagicMock()
+            context.client_id = f"client-{index}"
+            await middleware.on_request(context, mock_call_next)
+
+        assert len(middleware.limiters) == 2000
+
+        # A single pass is bounded; subsequent requests continue pruning old
+        # identities without scanning the full map on every request.
+        current_time += 61
+        for index in range(32):
+            context = MagicMock()
+            context.client_id = f"sweep-{index}"
+            await middleware.on_request(context, mock_call_next)
+
+        assert set(middleware.limiters) == {f"sweep-{index}" for index in range(32)}
+
+    async def test_active_limiter_is_not_pruned_during_an_inflight_request(
+        self, monkeypatch
+    ):
+        current_time = 0.0
+        monkeypatch.setattr(
+            "fastmcp.server.middleware.rate_limiting.time.time",
+            lambda: current_time,
+        )
+        cache = _PerClientLimiterCache(object, idle_timeout=1)
+        limiter = await cache.acquire("active")
+        current_time += 2
+        await cache.acquire("other")
+        assert cache.limiters["active"] is limiter
+
+        await cache.release("other")
+        await cache.release("active")
+        current_time += 1.1
+        await cache.acquire("next")
+        assert "active" not in cache.limiters
 
 
 class TestSlidingWindowRateLimitingMiddleware:
