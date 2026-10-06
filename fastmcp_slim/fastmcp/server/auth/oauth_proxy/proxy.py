@@ -31,7 +31,6 @@ from urllib.parse import urlencode
 
 import anyio
 import httpx2
-from authlib.common.security import generate_token
 from cryptography.fernet import Fernet
 from joserfc.errors import JoseError
 from key_value.aio.adapters.pydantic import PydanticAdapter
@@ -876,7 +875,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             Tuple of (code_verifier, code_challenge) using S256 method
         """
         # Generate code verifier: 43-128 characters from unreserved set
-        code_verifier = generate_token(48)
+        code_verifier = secrets.token_urlsafe(36)
 
         # Generate code challenge using S256 (SHA256 + base64url)
         challenge_bytes = hashlib.sha256(code_verifier.encode()).digest()
