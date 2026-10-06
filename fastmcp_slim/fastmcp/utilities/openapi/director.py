@@ -114,7 +114,14 @@ class RequestDirector:
         query_params = self._serialize_query_params(route, query_params)
 
         # Step 3: Build base URL with path parameters
-        url = self._build_url(route.path, path_params, base_url)
+        path_parameters = {
+            parameter.name: parameter
+            for parameter in route.parameters
+            if parameter.location == "path"
+        }
+        url = self._build_url(
+            route.path, path_params, base_url, path_parameters=path_parameters
+        )
 
         # Step 4: Prepare request data
         method: str = route.method.upper()
@@ -388,8 +395,34 @@ class RequestDirector:
             serialized[key] = value
         return serialized
 
+    @staticmethod
+    def _encode_path_segment(param_name: str, value: Any) -> str:
+        """Validate and encode one path segment without allowing traversal."""
+        decoded = str(value)
+        for _ in range(_MAX_PATH_DECODINGS):
+            if any(
+                part in {".", ".."} for part in decoded.replace("\\", "/").split("/")
+            ):
+                raise ValueError(
+                    f"Path parameter '{param_name}' cannot contain dot segments"
+                )
+            expanded = unquote(decoded)
+            if expanded == decoded:
+                break
+            decoded = expanded
+        else:
+            raise ValueError(
+                f"Path parameter '{param_name}' has too many encoding layers"
+            )
+        return quote(str(value), safe="").replace(".", "%2E")
+
     def _build_url(
-        self, path_template: str, path_params: dict[str, Any], base_url: str
+        self,
+        path_template: str,
+        path_params: dict[str, Any],
+        base_url: str,
+        *,
+        path_parameters: dict[str, Any] | None = None,
     ) -> str:
         """
         Build URL by substituting path parameters in the template.
@@ -398,6 +431,7 @@ class RequestDirector:
             path_template: OpenAPI path template (e.g., "/users/{id}")
             path_params: Path parameter values
             base_url: Base URL to prepend
+            path_parameters: Path parameter schemas, when available
 
         Returns:
             Complete URL with path parameters substituted
@@ -405,27 +439,25 @@ class RequestDirector:
         # Substitute path parameters with URL-encoding to prevent
         # path traversal and SSRF via crafted parameter values
         url_path = path_template
+        path_parameters = path_parameters or {}
         for param_name, param_value in path_params.items():
             placeholder = f"{{{param_name}}}"
             if placeholder in url_path:
-                decoded = str(param_value)
-                for _ in range(_MAX_PATH_DECODINGS):
-                    if any(
-                        part in {".", ".."}
-                        for part in decoded.replace("\\", "/").split("/")
-                    ):
-                        raise ValueError(
-                            f"Path parameter '{param_name}' cannot contain dot segments"
-                        )
-                    expanded = unquote(decoded)
-                    if expanded == decoded:
-                        break
-                    decoded = expanded
-                else:
-                    raise ValueError(
-                        f"Path parameter '{param_name}' has too many encoding layers"
+                parameter = path_parameters.get(param_name)
+                schema = parameter.schema_ if parameter is not None else None
+                if (
+                    parameter is not None
+                    and isinstance(param_value, list)
+                    and isinstance(schema, dict)
+                    and schema.get("type") == "array"
+                    and (parameter.style or "simple") == "simple"
+                ):
+                    safe_value = ",".join(
+                        self._encode_path_segment(param_name, item)
+                        for item in param_value
                     )
-                safe_value = quote(str(param_value), safe="").replace(".", "%2E")
+                else:
+                    safe_value = self._encode_path_segment(param_name, param_value)
                 url_path = url_path.replace(placeholder, safe_value)
 
         # Combine with base URL
