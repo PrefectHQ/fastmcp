@@ -506,14 +506,8 @@ def _format_call_result_text(result: CallToolResult) -> None:
 
 
 def _content_block_to_dict(block: mcp_types.ContentBlock) -> dict[str, Any]:
-    """Serialize a single content block to a JSON-safe dict."""
-    if isinstance(block, mcp_types.TextContent):
-        return {"type": "text", "text": block.text}
-    if isinstance(block, mcp_types.ImageContent):
-        return {"type": "image", "mimeType": block.mime_type, "data": block.data}
-    if isinstance(block, mcp_types.AudioContent):
-        return {"type": "audio", "mimeType": block.mime_type, "data": block.data}
-    return {"type": "unknown", "value": str(block)}
+    """Serialize a content block while preserving its MCP JSON fields."""
+    return block.model_dump(mode="json", by_alias=True, exclude_none=True)
 
 
 def _call_result_to_dict(result: CallToolResult) -> dict[str, Any]:
