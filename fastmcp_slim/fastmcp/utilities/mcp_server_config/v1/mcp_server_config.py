@@ -298,7 +298,7 @@ class MCPServerConfig(BaseModel):
 
         # Build deployment config if any deployment args provided
         deployment = None
-        if any([transport, host, port, path, log_level, env, cwd, args]):
+        if any([transport, host, path, log_level, env, cwd, args]) or port is not None:
             # Convert streamable-http to http for backward compatibility
             if transport == "streamable-http":
                 transport = "http"
@@ -399,7 +399,7 @@ class MCPServerConfig(BaseModel):
                 run_args["transport"] = self.deployment.transport
             if self.deployment.host:
                 run_args["host"] = self.deployment.host
-            if self.deployment.port:
+            if self.deployment.port is not None:
                 run_args["port"] = self.deployment.port
             if self.deployment.path:
                 run_args["path"] = self.deployment.path

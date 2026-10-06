@@ -124,7 +124,7 @@ def load_and_merge_config(
         config_dict["deployment"]["transport"] = transport_override
     if host_override := cli_overrides.get("host"):
         config_dict["deployment"]["host"] = host_override
-    if port_override := cli_overrides.get("port"):
+    if (port_override := cli_overrides.get("port")) is not None:
         config_dict["deployment"]["port"] = port_override
     if path_override := cli_overrides.get("path"):
         config_dict["deployment"]["path"] = path_override
