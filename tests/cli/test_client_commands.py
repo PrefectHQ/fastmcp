@@ -29,6 +29,7 @@ from fastmcp.cli.client import (
 )
 from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.client import CallToolResult
+from fastmcp.client.transports.http import StreamableHttpTransport
 from fastmcp.client.transports.sse import SSETransport
 from fastmcp.client.transports.stdio import StdioTransport
 from fastmcp.mcp_config import RemoteMCPServer
@@ -306,19 +307,45 @@ class TestResolveServerSpec:
 
     def test_transport_sse_rewrites_url(self):
         result = resolve_server_spec("http://localhost:8000/mcp", transport="sse")
-        assert result == "http://localhost:8000/mcp/sse"
+        assert isinstance(result, SSETransport)
+        assert result.url == "http://localhost:8000/mcp/sse"
 
     def test_transport_sse_no_duplicate_suffix(self):
         result = resolve_server_spec("http://localhost:8000/sse", transport="sse")
-        assert result == "http://localhost:8000/sse"
+        assert isinstance(result, SSETransport)
+        assert result.url == "http://localhost:8000/sse"
 
     def test_transport_sse_trailing_slash(self):
         result = resolve_server_spec("http://localhost:8000/mcp/", transport="sse")
-        assert result == "http://localhost:8000/mcp/sse"
+        assert isinstance(result, SSETransport)
+        assert result.url == "http://localhost:8000/mcp/sse"
 
     def test_transport_http_leaves_url_unchanged(self):
         result = resolve_server_spec("http://localhost:8000/mcp", transport="http")
-        assert result == "http://localhost:8000/mcp"
+        assert isinstance(result, StreamableHttpTransport)
+        assert result.url == "http://localhost:8000/mcp"
+
+    @pytest.mark.parametrize("transport", ["http", "sse"])
+    def test_explicit_transport_preserves_query_and_fragment(self, transport):
+        result = resolve_server_spec(
+            "https://example.test/mcp?token=abc#section", transport=transport
+        )
+        if transport == "sse":
+            assert isinstance(result, SSETransport)
+            assert result.url == "https://example.test/mcp/sse?token=abc#section"
+        else:
+            assert isinstance(result, StreamableHttpTransport)
+            assert result.url == "https://example.test/mcp?token=abc#section"
+
+    def test_explicit_http_overrides_sse_path(self):
+        result = resolve_server_spec("https://example.test/sse", transport="http")
+        assert isinstance(result, StreamableHttpTransport)
+        assert result.url == "https://example.test/sse"
+
+    def test_no_explicit_transport_preserves_inference(self):
+        assert resolve_server_spec("https://example.test/sse?token=abc") == (
+            "https://example.test/sse?token=abc"
+        )
 
 
 # ---------------------------------------------------------------------------
