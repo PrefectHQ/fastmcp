@@ -950,10 +950,10 @@ class ProxyProvider(Provider):
     ) -> Tool | None:
         cache = self._tools_cache
         if cache is None or not cache.is_fresh(self._cache_ttl):
-            await self._list_tools()
-            cache = self._tools_cache
-        assert cache is not None
-        matching = [t for t in cache.items if t.name == name]
+            tools = await self._list_tools()
+        else:
+            tools = cache.items
+        matching = [t for t in tools if t.name == name]
         if version:
             matching = [t for t in matching if version.matches(t.version)]
         if not matching:
@@ -976,13 +976,11 @@ class ProxyProvider(Provider):
         """
         cache = self._tools_cache
         if cache is None or not cache.is_fresh(self._cache_ttl):
-            await self._list_tools()
-            cache = self._tools_cache
-        assert cache is not None
+            tools = await self._list_tools()
+        else:
+            tools = cache.items
 
-        matches = [
-            tool for tool in cache.items if is_app_tool_with_identity(tool, tool_hash)
-        ]
+        matches = [tool for tool in tools if is_app_tool_with_identity(tool, tool_hash)]
 
         if not matches:
             return None
@@ -1027,10 +1025,10 @@ class ProxyProvider(Provider):
     ) -> Resource | None:
         cache = self._resources_cache
         if cache is None or not cache.is_fresh(self._cache_ttl):
-            await self._list_resources()
-            cache = self._resources_cache
-        assert cache is not None
-        matching = [r for r in cache.items if str(r.uri) == uri]
+            resources = await self._list_resources()
+        else:
+            resources = cache.items
+        matching = [r for r in resources if str(r.uri) == uri]
         if version:
             matching = [r for r in matching if version.matches(r.version)]
         if not matching:
@@ -1069,10 +1067,10 @@ class ProxyProvider(Provider):
     ) -> ResourceTemplate | None:
         cache = self._templates_cache
         if cache is None or not cache.is_fresh(self._cache_ttl):
-            await self._list_resource_templates()
-            cache = self._templates_cache
-        assert cache is not None
-        matching = [t for t in cache.items if t.matches(uri) is not None]
+            templates = await self._list_resource_templates()
+        else:
+            templates = cache.items
+        matching = [t for t in templates if t.matches(uri) is not None]
         if version:
             matching = [t for t in matching if version.matches(t.version)]
         if not matching:
@@ -1111,10 +1109,10 @@ class ProxyProvider(Provider):
     ) -> Prompt | None:
         cache = self._prompts_cache
         if cache is None or not cache.is_fresh(self._cache_ttl):
-            await self._list_prompts()
-            cache = self._prompts_cache
-        assert cache is not None
-        matching = [p for p in cache.items if p.name == name]
+            prompts = await self._list_prompts()
+        else:
+            prompts = cache.items
+        matching = [p for p in prompts if p.name == name]
         if version:
             matching = [p for p in matching if version.matches(p.version)]
         if not matching:
