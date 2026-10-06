@@ -9,6 +9,7 @@ try:
         Candidate,
         FunctionCall,
         FunctionCallingConfigMode,
+        FunctionResponse,
         GenerateContentResponse,
         ModelContent,
         Part,
@@ -27,6 +28,7 @@ try:
         ToolUseContent,
     )
 
+    from fastmcp.client.sampling.handlers import google_genai as handler_module
     from fastmcp.client.sampling.handlers.google_genai import (
         GoogleGenaiSamplingHandler,
         _convert_messages_to_google_genai_content,
@@ -349,27 +351,36 @@ def test_convert_messages_preserves_images_in_gemini_3_tool_results(
             mime_type="image/jpeg" if with_text else "image/png",
         ),
     ]
+    messages = [
+        SamplingMessage(
+            role="assistant",
+            content=ToolUseContent(
+                type="tool_use",
+                id="read_image_12345678",
+                name="read_image",
+                input={},
+            ),
+        ),
+        SamplingMessage(
+            role="user",
+            content=ToolResultContent(
+                type="tool_result",
+                tool_use_id="read_image_12345678",
+                content=result_content,
+            ),
+        ),
+    ]
+    if "parts" not in FunctionResponse.model_fields:
+        with pytest.raises(
+            ValueError, match="SDK does not support image function responses"
+        ):
+            _convert_messages_to_google_genai_content(
+                messages, model="gemini-3-flash-preview"
+            )
+        return
+
     msgs = _convert_messages_to_google_genai_content(
-        messages=[
-            SamplingMessage(
-                role="assistant",
-                content=ToolUseContent(
-                    type="tool_use",
-                    id="read_image_12345678",
-                    name="read_image",
-                    input={},
-                ),
-            ),
-            SamplingMessage(
-                role="user",
-                content=ToolResultContent(
-                    type="tool_result",
-                    tool_use_id="read_image_12345678",
-                    content=result_content,
-                ),
-            ),
-        ],
-        model="gemini-3-flash-preview",
+        messages, model="gemini-3-flash-preview"
     )
 
     user_parts = msgs[1].parts
@@ -413,6 +424,27 @@ def test_convert_messages_rejects_images_for_non_gemini_3_tool_results(
 
     with pytest.raises(ValueError, match="requires a Gemini 3 model"):
         _convert_messages_to_google_genai_content(messages, model=model)
+
+
+@pytest.mark.parametrize(
+    "missing", ["parts", "FunctionResponseBlob", "FunctionResponsePart"]
+)
+def test_tool_result_images_reject_unsupported_sdk(monkeypatch, missing):
+    if missing == "parts":
+        monkeypatch.setattr(FunctionResponse, "model_fields", {})
+    else:
+        monkeypatch.delattr(handler_module.google_genai_types, missing, raising=False)
+    content = ToolResultContent(
+        type="tool_result",
+        tool_use_id="read_image_12345678",
+        content=[ImageContent(type="image", data="YWJj", mime_type="image/png")],
+    )
+    with pytest.raises(
+        ValueError, match="SDK does not support image function responses"
+    ):
+        _sampling_content_to_google_genai_part(
+            content, allow_multimodal_tool_results=True
+        )
 
 
 def test_convert_messages_rejects_unsupported_gemini_tool_result_image_mime_type():

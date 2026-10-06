@@ -308,13 +308,13 @@ def _sampling_content_to_google_genai_part(
             # Fallback: use the full ID as the name
             function_name = tool_use_id
 
-        return Part(
-            function_response=FunctionResponse(
-                name=function_name,
-                response={"result": result_text},
-                parts=image_parts or None,
-            )
-        )
+        response_kwargs: dict[str, Any] = {
+            "name": function_name,
+            "response": {"result": result_text},
+        }
+        if image_parts:
+            response_kwargs["parts"] = image_parts
+        return Part(function_response=FunctionResponse(**response_kwargs))
 
     msg = f"Unsupported content type: {type(content)}"
     raise ValueError(msg)
