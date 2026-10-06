@@ -298,7 +298,7 @@ class TestMCPServerConfig:
 
         # When loaded from JSON with entrypoint format, it becomes EntrypointConfig
         assert isinstance(config.source, FileSystemSource)
-        assert config.source.path == "src/server.py"
+        assert config.source.path == str((tmp_path / "src/server.py").resolve())
         assert config.source.entrypoint == "app"
         assert config.environment.python == "3.12"
         assert config.environment.dependencies == ["requests"]
@@ -318,7 +318,7 @@ class TestMCPServerConfig:
         config = MCPServerConfig.from_file(config_file)
         # String entrypoint with : should be converted to EntrypointConfig
         assert isinstance(config.source, FileSystemSource)
-        assert config.source.path == "server.py"
+        assert config.source.path == str((tmp_path / "server.py").resolve())
         assert config.source.entrypoint == "mcp"
 
     def test_string_entrypoint_with_entrypoint_and_environment(self, tmp_path):
@@ -336,7 +336,7 @@ class TestMCPServerConfig:
 
         # Should be parsed into EntrypointConfig
         assert isinstance(config.source, FileSystemSource)
-        assert config.source.path == "src/server.py"
+        assert config.source.path == str((tmp_path / "src/server.py").resolve())
         assert config.source.entrypoint == "app"
 
         # Environment config should still work
@@ -346,6 +346,62 @@ class TestMCPServerConfig:
         # Deployment config should still work
         assert config.deployment.transport == "http"
         assert config.deployment.port == 8000
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            {"path": "../src/server.py", "entrypoint": "mcp"},
+            {"type": "filesystem", "path": "../src/server.py", "entrypoint": "mcp"},
+        ],
+    )
+    def test_from_file_resolves_paths_from_config_directory(
+        self, tmp_path, monkeypatch, source
+    ):
+        config_dir = tmp_path / "project" / "config"
+        config_dir.mkdir(parents=True)
+        caller_dir = tmp_path / "caller"
+        caller_dir.mkdir()
+        config_file = config_dir / "fastmcp.json"
+        config_file.write_text(
+            json.dumps(
+                {
+                    "source": source,
+                    "environment": {"requirements": "requirements.txt"},
+                    "deployment": {"cwd": "runtime"},
+                }
+            )
+        )
+        monkeypatch.chdir(caller_dir)
+
+        config = MCPServerConfig.from_file(config_file)
+
+        assert config.source.path == str(
+            (config_dir.parent / "src/server.py").resolve()
+        )
+        assert config.source.entrypoint == "mcp"
+        assert (
+            config.environment.requirements
+            == (config_dir / "requirements.txt").resolve()
+        )
+        assert config.deployment.cwd == "runtime"
+
+    def test_from_file_preserves_absolute_paths(self, tmp_path):
+        source_path = (tmp_path / "server.py").resolve()
+        requirements = (tmp_path / "requirements.txt").resolve()
+        config_file = tmp_path / "fastmcp.json"
+        config_file.write_text(
+            json.dumps(
+                {
+                    "source": {"path": str(source_path)},
+                    "environment": {"requirements": str(requirements)},
+                }
+            )
+        )
+
+        config = MCPServerConfig.from_file(config_file)
+
+        assert config.source.path == str(source_path)
+        assert config.environment.requirements == requirements
 
     def test_find_config_in_current_dir(self, tmp_path):
         """Test finding config in current directory."""
