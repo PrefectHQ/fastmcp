@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import socket
 from collections.abc import Awaitable, Callable
 from functools import partial
@@ -359,10 +360,23 @@ class TransportMixin:
                     f"Starting MCP server {self.name!r} with transport {transport!r}{mode} on http://{display_host}:{port}/{path}"
                 )
 
-                if sockets is not None:
-                    await server.serve(sockets=sockets)
-                else:
-                    await server.serve()
+                try:
+                    if sockets is not None:
+                        await server.serve(sockets=sockets)
+                    else:
+                        await server.serve()
+                except asyncio.CancelledError:
+                    # Cancelling serve() skips Uvicorn's normal shutdown path.
+                    # Close its ASGI lifespan before releasing our outer entry.
+                    if hasattr(server, "lifespan"):
+                        with anyio.CancelScope(shield=True):
+                            shutdown = asyncio.create_task(
+                                server.shutdown(sockets=sockets)
+                                if hasattr(server, "servers")
+                                else server.lifespan.shutdown()
+                            )
+                            await self._await_lifespan_task(shutdown)
+                    raise
 
     def http_app(
         self: FastMCP,
