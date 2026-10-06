@@ -265,10 +265,9 @@ async def inspector(
             sys.exit(1)
         assert config is not None  # For type checker
 
-        # Skip server-object validation in module mode — the module
-        # manages its own startup and may not expose an importable server.
-        if not module:
-            await config.source.load_server()
+        # Let the child server load the source. Importing it here would happen
+        # outside the configured uv environment and would invoke factories a
+        # second time when `fastmcp run` starts.
 
         env_vars = {}
         if ui_port:
