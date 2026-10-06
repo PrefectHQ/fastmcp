@@ -22,9 +22,13 @@ because core still declares them.
 
 from __future__ import annotations
 
+import functools
+import inspect
 import logging
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
+import mcp_types
 from pydantic import ValidationError as PydanticValidationError
 
 from fastmcp.exceptions import ValidationError
@@ -33,7 +37,7 @@ from fastmcp.prompts.function_prompt import FunctionPrompt
 from fastmcp.resources.base import Resource
 from fastmcp.resources.function_resource import FunctionResource
 from fastmcp.resources.template import FunctionResourceTemplate, ResourceTemplate
-from fastmcp.tools.base import Tool
+from fastmcp.tools.base import InputRequiredToolResult, Tool
 from fastmcp.tools.function_tool import FunctionTool, _resolve_param_hints
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.types import get_cached_typeadapter
@@ -42,6 +46,43 @@ from fastmcp_tasks.input_loop import reentrant_task_fn
 if TYPE_CHECKING:
     from docket import Docket
     from docket.execution import Execution
+
+
+TASK_RESULT_ENVELOPE_KEY = "__fastmcp_task_result__"
+
+
+def _task_result_to_wire(tool: Tool, raw_value: Any) -> dict[str, Any]:
+    """Convert a task's return value while its originating Tool is available."""
+    tool_result = tool.convert_result(raw_value)
+    mcp_result = tool_result.to_mcp_result()
+    if isinstance(mcp_result, mcp_types.CallToolResult):
+        call_result = mcp_result
+    elif isinstance(mcp_result, tuple):
+        content, structured_content = mcp_result
+        call_result = mcp_types.CallToolResult(
+            content=content, structured_content=structured_content
+        )
+    else:
+        call_result = mcp_types.CallToolResult(content=mcp_result)
+    return call_result.model_dump(by_alias=True, mode="json", exclude_none=True)
+
+
+def _store_task_result_with_component(
+    tool: Tool, fn: Callable[..., Awaitable[Any]]
+) -> Callable[..., Awaitable[Any]]:
+    """Persist the protocol result so later polling does not need the live Tool."""
+
+    @functools.wraps(fn)
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        result = await fn(*args, **kwargs)
+        if isinstance(result, mcp_types.InputRequiredResult | InputRequiredToolResult):
+            # Preserve the existing defensive failure in tasks_get for a guard
+            # result that escaped the end-and-reenter loop.
+            return result
+        return {TASK_RESULT_ENVELOPE_KEY: _task_result_to_wire(tool, result)}
+
+    wrapper.__signature__ = inspect.signature(fn)  # ty: ignore[unresolved-attribute]
+    return wrapper
 
 
 def register_component_with_docket(component: FastMCPComponent, docket: Docket) -> None:
@@ -59,16 +100,20 @@ def register_component_with_docket(component: FastMCPComponent, docket: Docket) 
         # InputRequiredResult drives the reentrant in-task input cycle. The
         # wrapper is signature-preserving, so Docket's dependency injection is
         # unchanged for a body that never asks for input.
+        task_fn = reentrant_task_fn(component.fn, component.name)
         docket.register(
-            reentrant_task_fn(component.fn, component.name), names=[component.key]
+            _store_task_result_with_component(component, task_fn),
+            names=[component.key],
         )
     elif isinstance(component, Tool):
         # Custom Tool subclasses route through the same wrapper so a raised
         # error becomes a masked, completed `is_error` result — matching the
         # synchronous `tools/call` path — rather than a Docket `FAILED` task
         # that leaks the raw exception text past the server's masking policy.
+        task_fn = reentrant_task_fn(component.run, component.name)
         docket.register(
-            reentrant_task_fn(component.run, component.name), names=[component.key]
+            _store_task_result_with_component(component, task_fn),
+            names=[component.key],
         )
     elif isinstance(component, FunctionResource):
         docket.register(component.fn, names=[component.key])

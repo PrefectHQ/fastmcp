@@ -32,6 +32,7 @@ from fastmcp.exceptions import NotFoundError
 from fastmcp.tools.base import InputRequiredToolResult, Tool, ToolResult
 from fastmcp.utilities.tasks import DEFAULT_POLL_INTERVAL_MS
 from fastmcp.utilities.versions import VersionSpec
+from fastmcp_tasks.components import TASK_RESULT_ENVELOPE_KEY
 from fastmcp_tasks.context import get_task_scope, refresh_snapshot_ttl
 from fastmcp_tasks.creation import (
     TASK_MAPPING_TTL_BUFFER_SECONDS,
@@ -295,8 +296,17 @@ async def tasks_get(server: FastMCP, task_id: str) -> GetTaskResult:
         if outstanding:
             return build("input_required", input_requests=outstanding)
         raw_value = await execution.get_result(timeout=timedelta(seconds=0))
-        tool = await _resolve_tool(server, base_task_key)
-        return build("completed", result=_inline_result(tool, raw_value))
+        if isinstance(raw_value, dict) and TASK_RESULT_ENVELOPE_KEY in raw_value:
+            # New executions persist the converted protocol result alongside
+            # the Docket result. Polling therefore remains possible after a
+            # dynamic provider removes the Tool that produced it.
+            result = raw_value[TASK_RESULT_ENVELOPE_KEY]
+        else:
+            # Retain compatibility with tasks created before this envelope was
+            # introduced; their Docket result still needs the live Tool schema.
+            tool = await _resolve_tool(server, base_task_key)
+            result = _inline_result(tool, raw_value)
+        return build("completed", result=result)
 
     if execution.state == ExecutionState.FAILED:
         message = "Task failed"
