@@ -72,7 +72,6 @@ apps = ["prefab-ui>=0.18.0"]
 azure = ["azure-identity>=1.16.0", "PyJWT>=2.12.0"]
 client = [
     "fastmcp-slim[mcp]=={{ version }}",
-    "authlib>=1.6.11",
     "py-key-value-aio[filetree,keyring,memory]>=0.4.4,<0.5.0",
 ]
 code-mode = ["pydantic-monty==0.0.21"]
@@ -93,7 +92,6 @@ mcp = [
 openai = ["openai>=1.102.0"]
 server = [
     "fastmcp-slim[mcp]=={{ version }}",
-    "authlib>=1.6.11",
     "cyclopts>=4.0.0",
     "griffelib>=2.0.0",
     "jsonref>=1.1.0",

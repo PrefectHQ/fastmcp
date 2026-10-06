@@ -12,9 +12,8 @@ from urllib.parse import parse_qs
 
 import httpx2
 import pytest
-from authlib.integrations.base_client import OAuthError
 
-from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client
+from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client, OAuthError
 from tests.utilities.httpx2_mock import HTTPXMock
 
 TOKEN_URL = "https://idp.example.com/token"
@@ -22,6 +21,25 @@ TOKEN_URL = "https://idp.example.com/token"
 
 def _form(request: httpx2.Request) -> dict[str, list[str]]:
     return parse_qs(request.content.decode("utf-8"))
+
+
+class TestOAuthError:
+    def test_defaults(self):
+        error = OAuthError()
+        assert error.error == "oauth_error"
+        assert error.description == ""
+        assert error.uri is None
+        assert str(error) == "oauth_error: "
+
+    def test_explicit_fields(self):
+        error = OAuthError(
+            "invalid_grant", "bad code", "https://idp.example.com/errors"
+        )
+        assert error.error == "invalid_grant"
+        assert error.description == "bad code"
+        assert error.uri == "https://idp.example.com/errors"
+        assert str(error) == "invalid_grant: bad code"
+        assert repr(error) == '<OAuthError "invalid_grant">'
 
 
 class TestClientAuthMethods:
@@ -126,16 +144,24 @@ class TestFetchToken:
 
         assert before + 3600 <= token["expires_at"] <= int(time.time()) + 3600
 
-    async def test_oauth_error_response_raises(self, httpx_mock: HTTPXMock):
+    @pytest.mark.parametrize("description", [None, "", "bad code"])
+    async def test_oauth_error_response_raises(
+        self, httpx_mock: HTTPXMock, description: str | None
+    ):
+        response = {"error": "invalid_grant"}
+        if description is not None:
+            response["error_description"] = description
         httpx_mock.add_response(
             url=TOKEN_URL,
             status_code=400,
-            json={"error": "invalid_grant", "error_description": "bad code"},
+            json=response,
         )
         client = AsyncOAuth2Client(client_id="cid", client_secret="sec")
-        with pytest.raises(OAuthError, match="invalid_grant"):
+        with pytest.raises(OAuthError, match="invalid_grant") as exc_info:
             await client.fetch_token(TOKEN_URL, code="abc")
         await client.aclose()
+        assert exc_info.value.error == "invalid_grant"
+        assert exc_info.value.description == (description or "")
 
     async def test_server_error_raises_http_status_error(self, httpx_mock: HTTPXMock):
         httpx_mock.add_response(url=TOKEN_URL, status_code=503, text="down")
