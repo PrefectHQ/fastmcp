@@ -58,8 +58,8 @@ def test_load_mcp_server_config(sample_config, monkeypatch):
         assert isinstance(config.deployment, Deployment)
         assert isinstance(config.environment, UVEnvironment)
 
-        # Check source - path is not resolved yet, only during load_server
-        assert config.source.path == "server.py"
+        # Source paths are anchored when the configuration is loaded.
+        assert config.source.path == str((sample_config.parent / "server.py").resolve())
         assert config.source.entrypoint is None
 
         # Check environment config
@@ -97,8 +97,8 @@ def test_load_config_with_entrypoint_source(tmp_path):
 
     config = load_mcp_server_config(config_file)
 
-    # Check source - path is not resolved yet, only during load_server
-    assert config.source.path == "src/server.py"
+    # Source paths are anchored when the configuration is loaded.
+    assert config.source.path == str((tmp_path / "src/server.py").resolve())
     assert config.source.entrypoint == "app"
 
     # Check deployment
@@ -182,9 +182,9 @@ def test_load_minimal_config(tmp_path):
 
     config = load_mcp_server_config(config_file)
 
-    # Check we got source - path is not resolved yet, only during load_server
+    # Source paths are anchored when the configuration is loaded.
     assert isinstance(config.source, FileSystemSource)
-    assert config.source.path == "server.py"
+    assert config.source.path == str((tmp_path / "server.py").resolve())
 
 
 def test_load_config_with_server_args(tmp_path):
@@ -265,8 +265,8 @@ def test_config_subset_independence(tmp_path):
     config = load_mcp_server_config(config_file)
 
     # Each subset should be independently usable
-    # Path is not resolved yet, only during load_server
-    assert config.source.path == "server.py"
+    # The source is usable independently of the caller working directory.
+    assert config.source.path == str((tmp_path / "server.py").resolve())
     assert config.source.entrypoint is None
 
     assert config.environment.python == "3.12"
