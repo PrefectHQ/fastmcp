@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Awaitable, Callable
 from typing import Any, Generic, TypeAlias
 
@@ -12,7 +13,10 @@ from pydantic_core import to_jsonable_python
 from typing_extensions import TypeVar
 
 from fastmcp.client._sdk_context_shim import LifespanContextT, RequestContext
-from fastmcp.utilities.json_schema_type import json_schema_to_type
+from fastmcp.utilities.json_schema_type import (
+    json_schema_to_type,
+    json_schema_to_type_adapter,
+)
 
 __all__ = ["ElicitRequestParams", "ElicitResult", "ElicitationHandler"]
 
@@ -80,6 +84,14 @@ def create_elicitation_callback(
                         "Elicitation responses must be serializable as a JSON object (dict). Received: "
                         f"{result.content!r}"
                     )
+            if result.action == "accept" and isinstance(
+                params, ElicitRequestFormParams
+            ):
+                # Validate the JSON wire value without coercing strings to
+                # numbers (or other Python-only input) before accepting it.
+                json_schema_to_type_adapter(params.requested_schema).validate_json(
+                    json.dumps(content), strict=True
+                )
             return MCPElicitResult(
                 _meta=result.meta,  # type: ignore[call-arg]  # _meta is Pydantic alias for meta field
                 action=result.action,
