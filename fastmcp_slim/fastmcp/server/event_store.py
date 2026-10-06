@@ -75,7 +75,8 @@ class EventStore(SDKEventStore):
 
     Args:
         storage: AsyncKeyValue backend. Defaults to MemoryStore.
-        max_events_per_stream: Maximum events to retain per stream. Default 100.
+        max_events_per_stream: Maximum events to retain per stream. Must be at
+            least 1. Default 100.
         ttl: Event TTL in seconds. Default 3600 (1 hour). Set to None for no expiration.
     """
 
@@ -85,6 +86,9 @@ class EventStore(SDKEventStore):
         max_events_per_stream: int = 100,
         ttl: int | None = 3600,
     ):
+        if max_events_per_stream < 1:
+            raise ValueError("max_events_per_stream must be at least 1")
+
         self._storage: AsyncKeyValue = storage or MemoryStore()
         self._max_events_per_stream = max_events_per_stream
         self._ttl = ttl
