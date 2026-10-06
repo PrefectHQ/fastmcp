@@ -333,6 +333,112 @@ def test_convert_messages_with_tool_result():
     assert msgs[0].parts[0].function_response.name == "get_weather"
 
 
+@pytest.mark.parametrize(
+    ("with_text", "expected_text"),
+    [(False, ""), (True, "caption")],
+    ids=["image-only", "text-and-image"],
+)
+def test_convert_messages_preserves_images_in_gemini_3_tool_results(
+    with_text: bool, expected_text: str
+):
+    result_content = [
+        *([TextContent(type="text", text="caption")] if with_text else []),
+        ImageContent(
+            type="image",
+            data="YWJj",
+            mime_type="image/jpeg" if with_text else "image/png",
+        ),
+    ]
+    msgs = _convert_messages_to_google_genai_content(
+        messages=[
+            SamplingMessage(
+                role="assistant",
+                content=ToolUseContent(
+                    type="tool_use",
+                    id="read_image_12345678",
+                    name="read_image",
+                    input={},
+                ),
+            ),
+            SamplingMessage(
+                role="user",
+                content=ToolResultContent(
+                    type="tool_result",
+                    tool_use_id="read_image_12345678",
+                    content=result_content,
+                ),
+            ),
+        ],
+        model="gemini-3-flash-preview",
+    )
+
+    user_parts = msgs[1].parts
+    assert user_parts is not None
+    function_response = user_parts[0].function_response
+    assert function_response is not None
+    assert function_response.name == "read_image"
+    assert function_response.response == {"result": expected_text}
+    assert function_response.parts is not None
+    assert len(function_response.parts) == 1
+    response_parts = function_response.parts
+    assert response_parts is not None
+    image_data = response_parts[0].inline_data
+    assert image_data is not None
+    assert image_data.data == b"abc"
+    assert image_data.mime_type in {"image/png", "image/jpeg"}
+
+
+@pytest.mark.parametrize("model", [None, "gemini-2.5-flash"])
+def test_convert_messages_rejects_images_for_non_gemini_3_tool_results(
+    model: str | None,
+):
+    messages = [
+        SamplingMessage(
+            role="assistant",
+            content=ToolUseContent(
+                type="tool_use", id="read_image_12345678", name="read_image", input={}
+            ),
+        ),
+        SamplingMessage(
+            role="user",
+            content=ToolResultContent(
+                type="tool_result",
+                tool_use_id="read_image_12345678",
+                content=[
+                    ImageContent(type="image", data="YWJj", mime_type="image/png")
+                ],
+            ),
+        ),
+    ]
+
+    with pytest.raises(ValueError, match="requires a Gemini 3 model"):
+        _convert_messages_to_google_genai_content(messages, model=model)
+
+
+def test_convert_messages_rejects_unsupported_gemini_tool_result_image_mime_type():
+    messages = [
+        SamplingMessage(
+            role="assistant",
+            content=ToolUseContent(
+                type="tool_use", id="read_image_12345678", name="read_image", input={}
+            ),
+        ),
+        SamplingMessage(
+            role="user",
+            content=ToolResultContent(
+                type="tool_result",
+                tool_use_id="read_image_12345678",
+                content=[
+                    ImageContent(type="image", data="YWJj", mime_type="image/gif")
+                ],
+            ),
+        ),
+    ]
+
+    with pytest.raises(ValueError, match="Unsupported image MIME type"):
+        _convert_messages_to_google_genai_content(messages, model="gemini-3-flash")
+
+
 def test_convert_messages_with_multiple_content_blocks():
     """Test converting messages with multiple content blocks (list content)."""
     msgs = _convert_messages_to_google_genai_content(
