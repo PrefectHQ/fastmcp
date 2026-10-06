@@ -3,9 +3,9 @@
 import inspect
 import time
 import warnings
-from collections import defaultdict, deque
+from collections import OrderedDict, defaultdict, deque
 from collections.abc import Awaitable, Callable
-from typing import Any, cast
+from typing import Any, Generic, TypeVar, cast
 
 import anyio
 from mcp import MCPError
@@ -13,6 +13,74 @@ from mcp import MCPError
 from fastmcp._warnings import FastMCPDeprecationWarning
 
 from .middleware import CallNext, Middleware, MiddlewareContext
+
+LimiterT = TypeVar("LimiterT")
+
+
+class _PerClientLimiterCache(Generic[LimiterT]):
+    """Lazily retain per-client limiters and discard semantically idle entries."""
+
+    _MAX_PRUNED_PER_REQUEST = 64
+
+    def __init__(
+        self, factory: Callable[[], LimiterT], *, idle_timeout: float | None
+    ) -> None:
+        self._factory = factory
+        self._idle_timeout = idle_timeout
+        self.limiters: defaultdict[str, LimiterT] = defaultdict(factory)
+        self._last_used: OrderedDict[str, float] = OrderedDict()
+        self._active_requests: dict[str, int] = {}
+        self._lock = anyio.Lock()
+
+    def _prune_idle(self, now: float) -> None:
+        if self._idle_timeout is None:
+            return
+
+        cutoff = now - self._idle_timeout
+        for _ in range(self._MAX_PRUNED_PER_REQUEST):
+            if not self._last_used:
+                break
+
+            client_id, last_used = next(iter(self._last_used.items()))
+            if self._active_requests.get(client_id, 0):
+                self._last_used[client_id] = now
+                self._last_used.move_to_end(client_id)
+                continue
+            if last_used >= cutoff:
+                break
+
+            self._last_used.popitem(last=False)
+            self.limiters.pop(client_id, None)
+
+    async def acquire(self, client_id: str) -> LimiterT:
+        async with self._lock:
+            now = time.time()
+            self._prune_idle(now)
+
+            limiter = self.limiters.get(client_id)
+            if limiter is None:
+                limiter = self._factory()
+                self.limiters[client_id] = limiter
+
+            self._last_used[client_id] = now
+            self._last_used.move_to_end(client_id)
+            self._active_requests[client_id] = (
+                self._active_requests.get(client_id, 0) + 1
+            )
+            return limiter
+
+    async def release(self, client_id: str) -> None:
+        # A cancelled request must not leave a permanent active reference that
+        # prevents the corresponding limiter from being reclaimed.
+        with anyio.CancelScope(shield=True):
+            async with self._lock:
+                self._last_used[client_id] = time.time()
+                self._last_used.move_to_end(client_id)
+                active = self._active_requests.get(client_id, 0)
+                if active <= 1:
+                    self._active_requests.pop(client_id, None)
+                else:
+                    self._active_requests[client_id] = active - 1
 
 
 class RateLimitError(MCPError):
@@ -161,12 +229,23 @@ class RateLimitingMiddleware(Middleware):
         self.get_client_id = get_client_id
         self.global_limit = global_limit
 
-        # Storage for rate limiters per client
-        self.limiters: dict[str, TokenBucketRateLimiter] = defaultdict(
+        # Once idle for long enough, a token bucket is full again. Preserve
+        # buckets with a positive capacity and no refill rate because they can
+        # remain depleted indefinitely.
+        if self.burst_capacity <= 0:
+            idle_timeout: float | None = 0
+        elif self.max_requests_per_second > 0:
+            idle_timeout = self.burst_capacity / self.max_requests_per_second
+        else:
+            idle_timeout = None
+
+        self._client_limiters = _PerClientLimiterCache(
             lambda: TokenBucketRateLimiter(
                 self.burst_capacity, self.max_requests_per_second
-            )
+            ),
+            idle_timeout=idle_timeout,
         )
+        self.limiters = self._client_limiters.limiters
 
         # Global rate limiter
         if self.global_limit:
@@ -193,8 +272,11 @@ class RateLimitingMiddleware(Middleware):
         else:
             # Per-client rate limiting
             client_id = await self._get_client_identifier(context)
-            limiter = self.limiters[client_id]
-            allowed = await limiter.consume()
+            limiter = await self._client_limiters.acquire(client_id)
+            try:
+                allowed = await limiter.consume()
+            finally:
+                await self._client_limiters.release(client_id)
             if not allowed:
                 raise RateLimitError(f"Rate limit exceeded for client: {client_id}")
 
@@ -242,10 +324,13 @@ class SlidingWindowRateLimitingMiddleware(Middleware):
         self.window_seconds = window_minutes * 60
         self.get_client_id = get_client_id
 
-        # Storage for rate limiters per client
-        self.limiters: dict[str, SlidingWindowRateLimiter] = defaultdict(
-            lambda: SlidingWindowRateLimiter(self.max_requests, self.window_seconds)
+        # Once no request has used a sliding window for its full duration, all
+        # timestamps it could contain have expired and its state is empty.
+        self._client_limiters = _PerClientLimiterCache(
+            lambda: SlidingWindowRateLimiter(self.max_requests, self.window_seconds),
+            idle_timeout=max(0, self.window_seconds),
         )
+        self.limiters = self._client_limiters.limiters
 
     async def _get_client_identifier(self, context: MiddlewareContext) -> str:
         """Get client identifier for rate limiting."""
@@ -259,9 +344,11 @@ class SlidingWindowRateLimitingMiddleware(Middleware):
     async def on_request(self, context: MiddlewareContext, call_next: CallNext) -> Any:
         """Apply sliding window rate limiting to requests."""
         client_id = await self._get_client_identifier(context)
-        limiter = self.limiters[client_id]
-
-        allowed = await limiter.is_allowed()
+        limiter = await self._client_limiters.acquire(client_id)
+        try:
+            allowed = await limiter.is_allowed()
+        finally:
+            await self._client_limiters.release(client_id)
         if not allowed:
             raise RateLimitError(
                 f"Rate limit exceeded: {self.max_requests} requests per "
