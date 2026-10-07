@@ -655,3 +655,104 @@ class TestSpawnedServer:
 
         env = spawn.call_args.kwargs["env"]
         assert env["FASTMCP_HTTP_HOST_ORIGIN_PROTECTION"] == "true"
+
+
+class TestUiToolDetection:
+    @pytest.mark.parametrize(
+        "tool",
+        [
+            {"name": "a", "_meta": {"ui": {"resourceUri": "ui://x/view.html"}}},
+            {"name": "a", "meta": {"ui": {"resourceUri": "ui://x/view.html"}}},
+            {"name": "a", "_meta": {"ui": {"resource_uri": "ui://x/view.html"}}},
+        ],
+    )
+    def test_ui_tools_are_recognized(self, tool: dict):
+        assert apps_dev._has_ui_resource(tool) is True
+
+    @pytest.mark.parametrize(
+        "tool",
+        [
+            {"name": "a"},
+            {"name": "a", "_meta": {}},
+            {"name": "a", "_meta": {"ui": {"visibility": ["app"]}}},
+            {"name": "a", "_meta": {"ui": True}},
+        ],
+    )
+    def test_non_ui_tools_are_rejected(self, tool: dict):
+        assert apps_dev._has_ui_resource(tool) is False
+
+    async def test_fastmcp_app_ui_tool_is_recognized(self):
+        from fastmcp import FastMCP, FastMCPApp
+
+        app = FastMCPApp("PickerProbe")
+
+        @app.ui()
+        def entry_point() -> str:
+            return "hi"
+
+        @app.tool()
+        def backend_tool(value: str) -> str:
+            return value
+
+        server = FastMCP("Probe", providers=[app])
+        tools = server._rewrite_prefab_uris(list(await server._list_tools()))
+        wire = [
+            t.to_mcp_tool().model_dump(by_alias=True)
+            for t in tools
+            if t.name == "entry_point"
+        ]
+
+        assert len(wire) == 1
+        assert apps_dev._has_ui_resource(wire[0]) is True
+        assert "No UI tools found" not in apps_dev._build_picker_html(wire)
+
+
+class TestListToolsSdkTolerance:
+    async def test_list_tools_accepts_extra_stream_items(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        import contextlib
+
+        import mcp.client.streamable_http as streamable_http_module
+        import mcp as mcp_module
+
+        @contextlib.asynccontextmanager
+        async def fake_streams(url: str):
+            # Newer SDKs may yield extra items (e.g. get_session_id).
+            yield ("read", "write", lambda: "session-id")
+
+        class FakeTool:
+            def model_dump(self, *, by_alias: bool = False) -> dict:
+                return {
+                    "_meta": {"ui": {"resourceUri": "ui://probe/view.html"}},
+                    "name": "probe",
+                }
+
+        class FakeResult:
+            tools = [FakeTool()]
+
+        class FakeSession:
+            def __init__(self, read: object, write: object) -> None:
+                assert (read, write) == ("read", "write")
+
+            async def __aenter__(self) -> "FakeSession":
+                return self
+
+            async def __aexit__(self, *args: object) -> None:
+                return None
+
+            async def initialize(self) -> None:
+                return None
+
+            async def list_tools(self) -> FakeResult:
+                return FakeResult()
+
+        monkeypatch.setattr(
+            streamable_http_module, "streamable_http_client", fake_streams
+        )
+        monkeypatch.setattr(mcp_module, "ClientSession", FakeSession)
+
+        tools = await apps_dev._list_tools("http://127.0.0.1:1/mcp")
+
+        assert [t["name"] for t in tools] == ["probe"]
+        assert apps_dev._has_ui_resource(tools[0]) is True

@@ -939,7 +939,9 @@ def _has_ui_resource(tool: dict[str, Any]) -> bool:
         m = tool.get(key)
         if isinstance(m, dict):
             ui = m.get("ui")
-            if isinstance(ui, dict) and ui.get("resourceUri"):
+            if isinstance(ui, dict) and (
+                ui.get("resourceUri") or ui.get("resource_uri")
+            ):
                 return True
     return False
 
@@ -1222,7 +1224,13 @@ async def _list_tools(mcp_url: str) -> list[dict[str, Any]]:
         return []
 
     try:
-        async with streamable_http_client(mcp_url) as (read, write):  # noqa: SIM117
+        # streamable_http_client yields (read, write) on MCP SDK v2, but
+        # other SDK versions append extra items (e.g. get_session_id).
+        # Unpack by position so the dev server works across SDK versions;
+        # a strict 2-tuple unpack would raise here and the picker would
+        # silently report "No UI tools found".
+        async with streamable_http_client(mcp_url) as streams:  # noqa: SIM117
+            read, write = streams[0], streams[1]
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.list_tools()
@@ -1241,7 +1249,9 @@ async def _read_mcp_resource(mcp_url: str, uri: str) -> str | None:
         return None
 
     try:
-        async with streamable_http_client(mcp_url) as (read, write):  # noqa: SIM117
+        # See _list_tools: unpack by position for SDK-version tolerance.
+        async with streamable_http_client(mcp_url) as streams:  # noqa: SIM117
+            read, write = streams[0], streams[1]
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.read_resource(uri)
