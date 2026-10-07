@@ -280,8 +280,8 @@ class TestGitHubTokenVerifierCaching:
             assert result2 is not None
             assert result2.claims["login"] == "testuser"
 
-    async def test_scope_failure_raises_and_skips_cache(self):
-        """Operational scope failures should propagate and must not be cached."""
+    async def test_scope_failure_uses_verified_user_fallback_and_cache(self):
+        """A scope-endpoint outage preserves verified identity and fills the cache."""
         verifier = GitHubTokenVerifier(cache_ttl_seconds=300)
 
         mock_client = AsyncMock()
@@ -307,9 +307,16 @@ class TestGitHubTokenVerifierCaching:
             mock_cls.return_value.__aenter__.return_value = mock_client
 
             mock_client.get.side_effect = [user_response, scopes_response]
-            with pytest.raises(TokenVerificationError, match="500"):
-                await verifier.verify_token("tok-1")
-            assert not verifier._cache.enabled or len(verifier._cache._entries) == 0
+            first = await verifier.verify_token("tok-1")
+            second = await verifier.verify_token("tok-1")
+
+            assert first is not None
+            assert first.scopes == ["user"]
+            assert second is not None
+            assert second.scopes == ["user"]
+            assert second.client_id == first.client_id
+            assert second is not first
+            assert mock_client.get.call_count == 2
 
     def test_provider_passes_cache_params(self, memory_storage: MemoryStore):
         provider = GitHubProvider(

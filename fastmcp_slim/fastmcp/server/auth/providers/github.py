@@ -145,6 +145,7 @@ class GitHubTokenVerifier(TokenVerifier):
                 # allow it to populate the cache. Stronger scopes are never
                 # invented from an outage.
                 scope_discovery_unavailable = False
+                scope_discovery_error: str | None = None
                 try:
                     scopes_response = await client.get(
                         "https://api.github.com/user/repos",
@@ -157,6 +158,7 @@ class GitHubTokenVerifier(TokenVerifier):
                 except httpx2.RequestError as e:
                     logger.warning("GitHub scope verification unavailable: %s", e)
                     scope_discovery_unavailable = True
+                    scope_discovery_error = "transport error"
                     oauth_scopes_header = ""
                 else:
                     if scopes_response.status_code == 401:
@@ -174,6 +176,7 @@ class GitHubTokenVerifier(TokenVerifier):
                             scopes_response.text[:200],
                         )
                         scope_discovery_unavailable = True
+                        scope_discovery_error = f"HTTP {scopes_response.status_code}"
                         oauth_scopes_header = ""
                     elif scopes_response.status_code != 200:
                         logger.warning(
@@ -205,9 +208,14 @@ class GitHubTokenVerifier(TokenVerifier):
                     required_scopes_set = set(self.required_scopes)
                     if not required_scopes_set.issubset(token_scopes_set):
                         if scope_discovery_unavailable:
+                            detail = (
+                                f" ({scope_discovery_error})"
+                                if scope_discovery_error is not None
+                                else ""
+                            )
                             raise TokenVerificationError(
-                                "GitHub scope verification unavailable; "
-                                "required scopes could not be verified"
+                                "GitHub scope verification unavailable"
+                                f"{detail}; required scopes could not be verified"
                             )
                         logger.debug(
                             "GitHub token missing required scopes. Has %d, needs %d",
