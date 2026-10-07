@@ -252,11 +252,16 @@ class AuthorizationHandler(SDKAuthorizationHandler):
             if request.method == "GET":
                 client_id = request.query_params.get("client_id")
             else:
-                form = await request.form()
-                client_id_value = form.get("client_id")
-                # Ensure client_id is a string, not UploadFile
-                if isinstance(client_id_value, str):
-                    client_id = client_id_value
+                # The SDK handler has already parsed POST form data. Re-reading
+                # it here can raise "Stream consumed" when parsing failed and
+                # the request body cannot be replayed. Only enhance errors when
+                # the SDK left a successfully parsed form cached on the request.
+                form = getattr(request, "_form", None)
+                if form is not None:
+                    client_id_value = form.get("client_id")
+                    # Ensure client_id is a string, not UploadFile
+                    if isinstance(client_id_value, str):
+                        client_id = client_id_value
 
             # If we have a client_id and the error is about it not being found,
             # enhance the response
