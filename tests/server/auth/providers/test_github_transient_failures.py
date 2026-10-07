@@ -133,8 +133,8 @@ async def test_github_missing_user_id_raises_typed_error():
         await verifier.verify_token("still-valid-token")
 
 
-@pytest.mark.parametrize("status_code", [403, 429, 500, 503])
-async def test_scope_operational_http_failure_raises_typed_error(status_code):
+@pytest.mark.parametrize("status_code", [403, 429])
+async def test_scope_non_degradable_http_failure_raises_typed_error(status_code):
     client = AsyncMock()
     client.get.side_effect = [_github_user_response(), _response(status_code)]
     verifier = GitHubTokenVerifier(required_scopes=["user"], http_client=client)
@@ -143,7 +143,29 @@ async def test_scope_operational_http_failure_raises_typed_error(status_code):
         await verifier.verify_token("still-valid-token")
 
 
-async def test_scope_transport_failure_raises_typed_error():
+@pytest.mark.parametrize("status_code", [500, 503])
+async def test_scope_server_failure_uses_verified_user_fallback_and_cache(status_code):
+    client = AsyncMock()
+    client.get.side_effect = [_github_user_response(), _response(status_code)]
+    verifier = GitHubTokenVerifier(
+        required_scopes=["user"],
+        cache_ttl_seconds=300,
+        http_client=client,
+    )
+
+    first = await verifier.verify_token("still-valid-token")
+    second = await verifier.verify_token("still-valid-token")
+
+    assert first is not None
+    assert first.scopes == ["user"]
+    assert second is not None
+    assert second.scopes == ["user"]
+    assert second.client_id == first.client_id
+    assert second is not first
+    assert client.get.call_count == 2
+
+
+async def test_scope_transport_failure_uses_verified_user_fallback_and_cache():
     client = AsyncMock()
     client.get.side_effect = [
         _github_user_response(),
@@ -152,10 +174,22 @@ async def test_scope_transport_failure_raises_typed_error():
             request=httpx2.Request("GET", "https://api.github.com/user/repos"),
         ),
     ]
-    verifier = GitHubTokenVerifier(required_scopes=["user"], http_client=client)
+    verifier = GitHubTokenVerifier(
+        required_scopes=["user"],
+        cache_ttl_seconds=300,
+        http_client=client,
+    )
 
-    with pytest.raises(TokenVerificationError, match="transport"):
-        await verifier.verify_token("still-valid-token")
+    first = await verifier.verify_token("still-valid-token")
+    second = await verifier.verify_token("still-valid-token")
+
+    assert first is not None
+    assert first.scopes == ["user"]
+    assert second is not None
+    assert second.scopes == ["user"]
+    assert second.client_id == first.client_id
+    assert second is not first
+    assert client.get.call_count == 2
 
 
 async def test_scope_401_is_still_an_invalid_token():

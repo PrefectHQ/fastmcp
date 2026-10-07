@@ -139,10 +139,12 @@ class GitHubTokenVerifier(TokenVerifier):
                         "GitHub token verification returned an invalid user response"
                     ) from e
 
-                # Scope discovery is part of verification. A definitive 401 means
-                # the credential is invalid; transient HTTP/transport failures are
-                # operational failures and must propagate through OAuthProxy rather
-                # than being collapsed into invalid_token.
+                # Identity is already verified by /user. Scope discovery is
+                # supplementary: if GitHub's scope endpoint is temporarily
+                # unavailable, preserve the verified basic user capability and
+                # allow it to populate the cache. Stronger scopes are never
+                # invented from an outage.
+                scope_discovery_unavailable = False
                 try:
                     scopes_response = await client.get(
                         "https://api.github.com/user/repos",
@@ -154,43 +156,59 @@ class GitHubTokenVerifier(TokenVerifier):
                     )
                 except httpx2.RequestError as e:
                     logger.warning("GitHub scope verification unavailable: %s", e)
-                    raise TokenVerificationError(
-                        "GitHub scope verification unavailable due to a transport error"
-                    ) from e
+                    scope_discovery_unavailable = True
+                    oauth_scopes_header = ""
+                else:
+                    if scopes_response.status_code == 401:
+                        logger.debug(
+                            "GitHub scope verification rejected credentials: %d - %s",
+                            scopes_response.status_code,
+                            scopes_response.text[:200],
+                        )
+                        return None
 
-                if scopes_response.status_code == 401:
-                    logger.debug(
-                        "GitHub scope verification rejected credentials: %d - %s",
-                        scopes_response.status_code,
-                        scopes_response.text[:200],
-                    )
-                    return None
+                    if 500 <= scopes_response.status_code < 600:
+                        logger.warning(
+                            "GitHub scope verification unavailable: %d - %s",
+                            scopes_response.status_code,
+                            scopes_response.text[:200],
+                        )
+                        scope_discovery_unavailable = True
+                        oauth_scopes_header = ""
+                    elif scopes_response.status_code != 200:
+                        logger.warning(
+                            "GitHub scope verification unavailable: %d - %s",
+                            scopes_response.status_code,
+                            scopes_response.text[:200],
+                        )
+                        raise TokenVerificationError(
+                            "GitHub scope verification unavailable: "
+                            f"HTTP {scopes_response.status_code}"
+                        )
+                    else:
+                        oauth_scopes_header = scopes_response.headers.get(
+                            "x-oauth-scopes", ""
+                        )
 
-                if scopes_response.status_code != 200:
-                    logger.warning(
-                        "GitHub scope verification unavailable: %d - %s",
-                        scopes_response.status_code,
-                        scopes_response.text[:200],
-                    )
-                    raise TokenVerificationError(
-                        "GitHub scope verification unavailable: "
-                        f"HTTP {scopes_response.status_code}"
-                    )
-
-                oauth_scopes_header = scopes_response.headers.get("x-oauth-scopes", "")
                 token_scopes = [
                     scope.strip()
                     for scope in oauth_scopes_header.split(",")
                     if scope.strip()
                 ]
+                if scope_discovery_unavailable:
+                    token_scopes = ["user"]
 
-                # Never synthesize a scope that GitHub did not report. A successful
-                # identity lookup proves the credential identifies a user, not that
-                # a particular OAuth grant (such as `user`) was issued.
+                # A successful 200 response without X-OAuth-Scopes still proves no
+                # grant beyond what GitHub reported; do not synthesize scopes there.
                 if self.required_scopes:
                     token_scopes_set = set(token_scopes)
                     required_scopes_set = set(self.required_scopes)
                     if not required_scopes_set.issubset(token_scopes_set):
+                        if scope_discovery_unavailable:
+                            raise TokenVerificationError(
+                                "GitHub scope verification unavailable; "
+                                "required scopes could not be verified"
+                            )
                         logger.debug(
                             "GitHub token missing required scopes. Has %d, needs %d",
                             len(token_scopes_set),
