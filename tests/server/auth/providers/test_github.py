@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from key_value.aio.stores.memory import MemoryStore
 
-from fastmcp.server.auth import TokenVerificationError
 from fastmcp.server.auth.providers.github import (
     GitHubProvider,
     GitHubTokenVerifier,
