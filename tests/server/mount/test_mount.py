@@ -244,7 +244,7 @@ class TestMultipleServerMount:
     @pytest.mark.skipif(
         sys.platform == "win32", reason="Windows asyncio networking timeouts."
     )
-    async def test_mount_with_unreachable_proxy_servers(self, caplog):
+    async def test_mount_with_unreachable_proxy_servers(self, caplog, unused_tcp_port):
         """Test graceful handling when multiple mounted servers fail to connect."""
         caplog.set_level(logging.DEBUG, logger="fastmcp")
 
@@ -268,7 +268,7 @@ class TestMultipleServerMount:
 
         # Use an unreachable port
         unreachable_client = Client(
-            transport=SSETransport("http://127.0.0.1:9999/sse/"),
+            transport=SSETransport(f"http://127.0.0.1:{unused_tcp_port}/sse/"),
             name="unreachable_client",
         )
 
