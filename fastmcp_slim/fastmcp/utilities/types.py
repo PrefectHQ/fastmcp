@@ -463,15 +463,20 @@ class File:
                 uri_str = self.path.resolve().as_uri()
         elif self.data is not None:
             raw_data = self.data
+            # The URI extension follows the requested format, not the MIME
+            # subtype (format="txt" is text/plain but should stay .txt).
+            extension = (
+                f".{self._format.lower()}"
+                if self._format
+                else f".{self._mime_type.split('/')[1]}"
+            )
             if self._name:
-                extension = (
-                    ""
-                    if Path(self._name).suffix
-                    else f".{self._mime_type.split('/')[1]}"
-                )
-                uri_str = f"file:///{quote(self._name + extension)}"
+                if Path(self._name).suffix:
+                    uri_str = f"file:///{quote(self._name)}"
+                else:
+                    uri_str = f"file:///{quote(self._name + extension)}"
             else:
-                uri_str = f"file:///resource.{self._mime_type.split('/')[1]}"
+                uri_str = f"file:///resource{extension}"
         else:
             raise ValueError("No resource data available")
 

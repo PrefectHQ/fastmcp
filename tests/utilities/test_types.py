@@ -535,6 +535,22 @@ class TestFile:
         assert str(resource.resource.uri) == "file:///report.pdf"
 
     @pytest.mark.parametrize(
+        ("kwargs", "expected_uri"),
+        [
+            (dict(format="txt"), "file:///resource.txt"),
+            (dict(format="md"), "file:///resource.md"),
+            (dict(format="md", name="README"), "file:///README.md"),
+            (dict(format="TXT"), "file:///resource.txt"),
+        ],
+    )
+    def test_to_resource_content_extension_follows_format(self, kwargs, expected_uri):
+        """The URI extension comes from `format`, not the MIME subtype."""
+        file = File(data=b"hello", **kwargs)
+        resource = file.to_resource_content()
+
+        assert str(resource.resource.uri) == expected_uri
+
+    @pytest.mark.parametrize(
         ("name", "expected_uri"),
         [
             ("report#draft.pdf", "file:///report%23draft.pdf"),
