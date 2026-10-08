@@ -34,7 +34,11 @@ from fastmcp.resources.base import Resource
 from fastmcp.resources.function_resource import FunctionResource
 from fastmcp.resources.template import FunctionResourceTemplate, ResourceTemplate
 from fastmcp.tools.base import Tool
-from fastmcp.tools.function_tool import FunctionTool, _resolve_param_hints
+from fastmcp.tools.function_tool import (
+    FunctionTool,
+    _resolve_param_hints,
+    _validate_input,
+)
 from fastmcp.utilities.components import FastMCPComponent
 from fastmcp.utilities.types import get_cached_typeadapter
 from fastmcp_tasks.input_loop import reentrant_task_fn
@@ -144,7 +148,7 @@ def coerce_task_arguments(
     component: FastMCPComponent,
     arguments: dict[str, Any],
     *,
-    strict: bool = False,
+    strict: bool | None = None,
 ) -> dict[str, Any]:
     """Validate and coerce task arguments before any task state is created.
 
@@ -176,7 +180,7 @@ def coerce_task_arguments(
             continue
         adapter = get_cached_typeadapter(annotation)
         try:
-            coerced[name] = adapter.validate_python(value, strict=strict)
+            coerced[name] = _validate_input(adapter, value, strict=strict)
         except PydanticValidationError as e:
             raise ValidationError(str(e), log_level=logging.WARNING) from e
     return coerced

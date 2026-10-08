@@ -27,6 +27,7 @@ Example::
     mcp.add_transform(RegexSearchTransform())
 """
 
+import json
 from abc import abstractmethod
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Annotated, Any
@@ -113,6 +114,80 @@ def _schema_type(schema: Any) -> str:
     return "object" if "properties" in schema else "any"
 
 
+_NESTED_FIELD_LIMIT = 16
+
+
+def _resolve_ref(schema: Any, defs: dict[str, Any]) -> Any:
+    """Follow one local `$ref` (`#/$defs/Name`) into `defs`; otherwise return as-is."""
+    if isinstance(schema, dict) and isinstance(schema.get("$ref"), str):
+        ref = schema["$ref"]
+        prefix = "#/$defs/"
+        if ref.startswith(prefix):
+            return defs.get(ref[len(prefix) :], schema)
+    return schema
+
+
+def _object_fields(schema: Any, defs: dict[str, Any]) -> list[str] | None:
+    """Field names of the object a schema describes, one level deep, or None.
+
+    Looks through a local `$ref`, an array's `items`, every object branch
+    of an `anyOf`/`oneOf` union, and every part of an `allOf`
+    composition, so `list[Model]`, `Model | None`, `A | B` and an
+    OpenAPI `allOf: [{$ref}, {properties}]` all yield the fields a caller
+    may see. Pydantic emits every model as a `$ref` into `$defs`, so
+    without this step a typed return renders as `object[]` and the caller
+    has to fetch once just to learn the field names.
+    """
+    # Visit each resolved node once across the whole walk, so shared union
+    # branches and recursive aliases cannot repeatedly expand the same graph.
+    seen: set[int] = set()
+    fields: dict[str, None] = {}
+    pending: list[tuple[Any, bool]] = [(schema, False)]
+    while pending:
+        node, expanded = pending.pop()
+        if expanded:
+            props = node.get("properties")
+            if isinstance(props, dict):
+                fields.update(dict.fromkeys(props))
+            continue
+
+        node = _resolve_ref(node, defs)
+        if not isinstance(node, dict) or id(node) in seen:
+            continue
+        seen.add(id(node))
+        if node.get("type") == "array":
+            pending.append((node.get("items"), False))
+            continue
+
+        # Properties follow union branches, preserving the existing field order.
+        pending.append((node, True))
+        for key in ("allOf", "oneOf", "anyOf"):
+            branches = node.get(key)
+            if isinstance(branches, list):
+                pending.extend((branch, False) for branch in reversed(branches))
+
+    return list(fields) or None
+
+
+def _nested_fields(field: Any, defs: dict[str, Any]) -> str:
+    """Suffix listing an object-valued field's own field names, or empty.
+
+    Names only: the level below is what turns `items (object[])` into
+    something a caller can index, and names cost a fraction of what types or
+    descriptions would. On a 51-tool SDK catalog where 44 tools return typed
+    pages, this adds ~35% to a detailed render of the whole catalog; a typical
+    `get_schema` call covers two or three tools. Long objects are truncated
+    with a count.
+    """
+    fields = _object_fields(field, defs)
+    if not fields:
+        return ""
+    shown = fields[:_NESTED_FIELD_LIMIT]
+    rest = len(fields) - len(shown)
+    tail = f", +{rest} more" if rest > 0 else ""
+    return ": " + ", ".join(f"`{name}`" for name in shown) + tail
+
+
 def _schema_section(schema: dict[str, Any] | None, title: str) -> list[str]:
     lines = [f"**{title}**"]
     if not isinstance(schema, dict):
@@ -131,10 +206,70 @@ def _schema_section(schema: dict[str, Any] | None, title: str) -> list[str]:
         lines.append("*(no parameters)*")
         return lines
 
+    raw_defs = schema.get("$defs")
+    defs = raw_defs if isinstance(raw_defs, dict) else {}
     for name, field in props.items():
-        required = ", required" if name in req else ""
-        lines.append(f"- `{name}` ({_schema_type(field)}{required})")
+        rendered = _render_param(name, field, required=name in req)
+        lines.append(f"- {rendered}{_nested_fields(field, defs)}")
     return lines
+
+
+def _enum_values(schema: Any) -> list[Any] | None:
+    if not isinstance(schema, dict):
+        return None
+    if "const" in schema:
+        return [schema["const"]]
+    enum = schema.get("enum")
+    return enum if isinstance(enum, list) else None
+
+
+def _union_enum_values(variants: Any) -> list[Any] | None:
+    """Enum values of a union, only when every non-null branch is enumerated.
+
+    A union such as `Literal["a"] | int` has no closed set of valid values, so
+    listing "a" alone would contradict the rendered type.
+    """
+    if not isinstance(variants, list):
+        return None
+    values: list[Any] = []
+    for variant in variants:
+        if isinstance(variant, dict) and variant.get("type") == "null":
+            continue
+        branch = _enum_values(variant)
+        if branch is None:
+            return None
+        values.extend(v for v in branch if v not in values)
+    return values or None
+
+
+def _dump(value: Any) -> str:
+    """JSON for a schema value, which may hold non-JSON objects such as the
+    `datetime.date` that YAML produces for an unquoted `2024-01-01`."""
+    return json.dumps(value, default=str)
+
+
+def _render_param(name: str, field: Any, *, required: bool) -> str:
+    """One compact line per parameter: type, enum values, default.
+
+    Enums and defaults are what let a caller construct a valid value without a
+    round of guess-and-check, and they are cheap — on real catalogs they cost
+    ~40% more than bare types, where also inlining each parameter's description
+    costs ~300%. Descriptions stay in the `full` detail level, which emits the
+    raw JSON schema that already carries them.
+    """
+    qualifiers = [_schema_type(field)]
+    if isinstance(field, dict):
+        enum = _enum_values(field)
+        if enum is None and "anyOf" in field:
+            enum = _union_enum_values(field["anyOf"])
+        if isinstance(enum, list) and 0 < len(enum) <= 8:
+            qualifiers.append("one of " + "/".join(_dump(v) for v in enum))
+        if field.get("default") is not None:
+            qualifiers.append(f"default {_dump(field['default'])}")
+    if required:
+        qualifiers.append("required")
+
+    return f"`{name}` ({', '.join(qualifiers)})"
 
 
 def serialize_tools_for_output_markdown(tools: Sequence[Tool]) -> str:

@@ -108,7 +108,7 @@ def _replace_ref_with_defs(
                     f"FastMCP only supports local schema references starting with '#/'. "
                     f"Please include all schema definitions within the OpenAPI document."
                 )
-    elif properties := schema.get("properties"):
+    if properties := schema.get("properties"):
         if "$ref" in properties:
             schema["properties"] = _replace_ref_with_defs(properties)
         else:
@@ -116,8 +116,13 @@ def _replace_ref_with_defs(
                 prop_name: _replace_ref_with_defs(prop_schema)
                 for prop_name, prop_schema in properties.items()
             }
-    elif item_schema := schema.get("items"):
+    if item_schema := schema.get("items"):
         schema["items"] = _replace_ref_with_defs(item_schema)
+    if "prefixItems" in schema:
+        schema["prefixItems"] = [
+            _replace_ref_with_defs(item) if isinstance(item, dict) else item
+            for item in schema["prefixItems"]
+        ]
     for section in ["anyOf", "allOf", "oneOf"]:
         if section in schema:
             schema[section] = [_replace_ref_with_defs(item) for item in schema[section]]
@@ -222,41 +227,153 @@ def _make_optional_parameter_nullable(schema: dict[str, Any]) -> dict[str, Any]:
     return schema
 
 
+_MAX_COMPOSITION_MEMBERS = 100_000
+
+
 def _allof_members(
     schema: dict[str, Any],
     schema_defs: dict[str, Any],
     resolving: set[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Expand local schema references while collecting ``allOf`` members."""
-    resolving = resolving or set()
+    """Collect local composition members, reusing shared definition results."""
+    cached: dict[int, tuple[dict[str, Any], list[dict[str, Any]], frozenset[str]]] = {}
+    active: set[tuple[int, frozenset[str]]] = set()
+    retained = 0
+    visits = 0
+    merged = 0
 
-    ref = schema.get("$ref")
-    if isinstance(ref, str):
-        for prefix in ("#/$defs/", "#/components/schemas/"):
-            if ref.startswith(prefix):
-                name = ref.removeprefix(prefix)
-                referenced_schema = schema_defs.get(name)
-                if isinstance(referenced_schema, dict) and name not in resolving:
-                    siblings = {
-                        key: value for key, value in schema.items() if key != "$ref"
-                    }
-                    members = _allof_members(
-                        referenced_schema, schema_defs, resolving | {name}
-                    )
-                    return members + ([siblings] if siblings else [])
-                break
+    def collect(
+        node: dict[str, Any], refs: set[str]
+    ) -> tuple[list[dict[str, Any]], frozenset[str], bool]:
+        nonlocal retained, visits, merged
+        visits += 1
+        if visits > _MAX_COMPOSITION_MEMBERS:
+            raise ValueError("Schema composition has too many visited members")
+        identity = id(node)
+        context = (identity, frozenset(refs))
+        if context in active:
+            return [node], frozenset(), True
+        cached_entry = cached.get(identity)
+        if cached_entry is not None and not refs.intersection(cached_entry[2]):
+            return cached_entry[1], cached_entry[2], False
+        active.add(context)
+        members: dict[int, dict[str, Any]] = {}
+        dependencies: set[str] = set()
+        contextual = False
 
-    all_of = schema.get("allOf")
-    if isinstance(all_of, list):
-        members = []
-        for member in all_of:
-            if isinstance(member, dict):
-                members.extend(_allof_members(member, schema_defs, resolving))
+        def append(items: list[dict[str, Any]]) -> None:
+            nonlocal merged
+            merged += len(items)
+            if merged > _MAX_COMPOSITION_MEMBERS:
+                raise ValueError("Schema composition has too many merged members")
+            # Preserve the last occurrence's position, which determines the
+            # existing property merge order when definitions share a field.
+            for item in items:
+                key = id(item)
+                members.pop(key, None)
+                members[key] = item
 
-        siblings = {key: value for key, value in schema.items() if key != "allOf"}
-        return members + ([siblings] if siblings else [])
+        ref = node.get("$ref")
+        referenced = None
+        name = ""
+        if isinstance(ref, str):
+            for prefix in ("#/$defs/", "#/components/schemas/"):
+                if ref.startswith(prefix):
+                    name = ref.removeprefix(prefix)
+                    dependencies.add(name)
+                    referenced = schema_defs.get(name) if name not in refs else None
+                    contextual |= name in refs
+                    break
+        children: list[tuple[dict[str, Any], set[str]]] = []
+        trailing: list[dict[str, Any]] = []
+        if isinstance(referenced, dict):
+            children.append((referenced, refs | {name}))
+            siblings = {key: value for key, value in node.items() if key != "$ref"}
+            if siblings:
+                children.append((siblings, refs))
+        elif isinstance(node.get("allOf"), list):
+            children.extend(
+                (member, refs) for member in node["allOf"] if isinstance(member, dict)
+            )
+            siblings = {key: value for key, value in node.items() if key != "allOf"}
+            if siblings:
+                trailing.append(siblings)
+        else:
+            trailing.append(node)
+        for child, child_refs in children:
+            items, child_dependencies, child_contextual = collect(child, child_refs)
+            merged += len(child_dependencies)
+            append(items)
+            dependencies.update(child_dependencies)
+            contextual |= child_contextual
+        append(trailing)
+        active.remove(context)
+        result = list(members.values())
+        dependency_names = frozenset(dependencies)
+        retained += len(result) + len(dependency_names)
+        if retained > _MAX_COMPOSITION_MEMBERS:
+            raise ValueError("Schema composition has too many collected members")
+        # A cycle cut depends on this traversal's ancestors. Only reuse complete
+        # results, and only when none of their references is currently active.
+        if not contextual:
+            cached[identity] = (node, result, dependency_names)
+        return result, dependency_names, contextual
 
-    return [schema]
+    return collect(schema, resolving or set())[0]
+
+
+# Keywords the properties/required merge represents, or that only annotate.
+# A discriminator is carried through and expanded by
+# _flatten_discriminator_subtypes, which also accounts for its oneOf.
+_MERGEABLE_OBJECT_KEYWORDS = frozenset(
+    {
+        "type",
+        "properties",
+        "required",
+        "title",
+        "description",
+        "example",
+        "examples",
+        "deprecated",
+        "discriminator",
+        "oneOf",
+    }
+)
+
+
+def _is_mergeable_object(schema: dict[str, Any]) -> bool:
+    """Whether flattening *schema* into ``properties``/``required`` loses nothing.
+
+    Only keywords the merge fully represents are allowed; any other constraint
+    (``anyOf``, ``not``, ``patternProperties``, ``additionalProperties``, ...)
+    would vanish from the merged schema, so the ``$ref`` is kept instead. A
+    ``oneOf`` is representable only beside a discriminator mapping, whose
+    subtype fields are flattened in afterwards.
+    """
+    if schema.get("type", "object") != "object":
+        return False
+    if not set(schema) <= _MERGEABLE_OBJECT_KEYWORDS:
+        return False
+    if "oneOf" in schema:
+        discriminator = schema.get("discriminator")
+        return (
+            isinstance(discriminator, dict)
+            and isinstance(discriminator.get("propertyName"), str)
+            and isinstance(discriminator.get("mapping"), dict)
+        )
+    return True
+
+
+def _ref_is_mergeable_object(
+    schema: dict[str, Any], schema_defs: dict[str, Any]
+) -> bool:
+    """Whether *schema*'s ``$ref`` (if any) can be dropped by a property merge."""
+    if "$ref" not in schema:
+        return True
+    return all(
+        _is_mergeable_object(member)
+        for member in _allof_members({"$ref": schema["$ref"]}, schema_defs)
+    )
 
 
 def _discriminator_target_name(target: str) -> str | None:
@@ -418,25 +535,59 @@ def _combine_schemas_and_map_params(
         if route.request_body.description and not body_schema.get("description"):
             body_schema["description"] = route.request_body.description
 
-        # Handle allOf at the top level by merging all schemas
-        if "allOf" in body_schema and isinstance(body_schema["allOf"], list):
+        # Handle allOf at the top level by merging all schemas. A $ref that
+        # sits beside its own properties is merged the same way; there, a
+        # property defined by both sides must satisfy both definitions.
+        has_all_of = isinstance(body_schema.get("allOf"), list)
+        ref_is_object = _ref_is_mergeable_object(body_schema, route.request_schemas)
+        has_ref_with_properties = (
+            "$ref" in body_schema
+            and isinstance(body_schema.get("properties"), dict)
+            and ref_is_object
+        )
+        if has_all_of or has_ref_with_properties:
             merged_props = {}
             merged_required = []
 
             for sub_schema in _allof_members(body_schema, route.request_schemas):
                 # Merge properties
-                if "properties" in sub_schema:
-                    merged_props.update(sub_schema["properties"])
+                for prop_name, prop_schema in sub_schema.get("properties", {}).items():
+                    if (
+                        not has_all_of
+                        and prop_name in merged_props
+                        and merged_props[prop_name] != prop_schema
+                    ):
+                        prop_schema = {"allOf": [merged_props[prop_name], prop_schema]}
+                    merged_props[prop_name] = prop_schema
                 # Merge required fields
                 if "required" in sub_schema:
                     merged_required.extend(sub_schema["required"])
+                # The referenced schema's discriminator is kept so its subtypes
+                # are flattened below; the sibling schema comes last and wins.
+                if not has_all_of and isinstance(sub_schema.get("discriminator"), dict):
+                    body_schema["discriminator"] = sub_schema["discriminator"]
 
             # Update body_schema with merged properties
             body_schema["properties"] = merged_props
             if merged_required:
                 body_schema["required"] = list(dict.fromkeys(merged_required))
-            # Remove the allOf since we've merged it
+            # The $ref is dropped only when the merge represents the whole
+            # referenced schema; otherwise it keeps carrying the target's type.
             body_schema.pop("allOf", None)
+            if ref_is_object:
+                body_schema.pop("$ref", None)
+
+        # A kept $ref is paired with its siblings through allOf: resolving a
+        # $ref that has siblings lets the siblings overwrite the target's keywords.
+        if not ref_is_object:
+            ref = body_schema.pop("$ref")
+            if not body_schema.get("properties"):
+                body_schema.pop("properties", None)
+            body_schema = (
+                {"allOf": [{"$ref": ref}, body_schema]}
+                if body_schema
+                else {"$ref": ref}
+            )
 
         # Merge discriminated subtype fields in as optional. The discriminator
         # itself is dropped: its mapping points at definitions that are pruned
@@ -449,7 +600,9 @@ def _combine_schemas_and_map_params(
             body_schema["properties"] = flattened_props
             body_schema.pop("discriminator", None)
 
-        body_props = body_schema.get("properties", {})
+        # A kept $ref still carries constraints the properties cannot express,
+        # so the whole schema is exposed as one argument.
+        body_props = {} if not ref_is_object else body_schema.get("properties", {})
 
     # Detect collisions: parameters that exist in multiple non-body locations
     # or between body and path/query/header/cookie.
@@ -712,11 +865,23 @@ def extract_output_schema_from_responses(
                 # Replace $ref with the actual schema definition
                 output_schema = _replace_ref_with_defs(schema_definitions[schema_name])
 
+    # Unconverted definitions, so $ref targets still carry their access annotations
+    definitions = {
+        name: _replace_ref_with_defs(def_schema)
+        if isinstance(def_schema, dict)
+        else def_schema
+        for name, def_schema in (schema_definitions or {}).items()
+    }
+
     if openapi_version and openapi_version.startswith("3"):
         # Convert OpenAPI 3.x schema to JSON Schema format for proper handling
-        # of constructs like oneOf, anyOf, and nullable fields
+        # of constructs like oneOf, anyOf, and nullable fields. writeOnly
+        # properties belong to requests only, so responses never contain them.
         output_schema = convert_openapi_schema_to_json_schema(
-            output_schema, openapi_version
+            output_schema,
+            openapi_version,
+            remove_write_only=True,
+            definitions=definitions,
         )
 
     # MCP requires output schemas to be objects. If this schema is not an object,
@@ -733,18 +898,16 @@ def extract_output_schema_from_responses(
 
     # Add schema definitions if available
     if schema_definitions:
-        # Convert refs if needed
-        processed_defs = schema_definitions.copy()
-        # Convert each schema definition recursively
-        for name, schema in processed_defs.items():
-            if isinstance(schema, dict):
-                processed_defs[name] = _replace_ref_with_defs(schema)
+        processed_defs = definitions.copy()
 
         # Convert OpenAPI schema definitions to JSON Schema format if needed
         if openapi_version and openapi_version.startswith("3"):
             for def_name in list(processed_defs.keys()):
                 processed_defs[def_name] = convert_openapi_schema_to_json_schema(
-                    processed_defs[def_name], openapi_version
+                    processed_defs[def_name],
+                    openapi_version,
+                    remove_write_only=True,
+                    definitions=definitions,
                 )
 
         output_schema["$defs"] = processed_defs

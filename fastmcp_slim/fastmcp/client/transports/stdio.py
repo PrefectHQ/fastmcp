@@ -220,8 +220,13 @@ class StdioTransport(ClientTransport):
 
     def __del__(self):
         """Ensure that we send a disconnection signal to the transport task if we are being garbage collected."""
-        if not self._stop_event.is_set():
-            self._stop_event.set()
+        # Subclasses validate the command before calling super().__init__, so an
+        # object whose construction raised has no `_stop_event`. Guard instead of
+        # letting the interpreter print "Exception ignored in: __del__" over the
+        # error the caller is actually meant to see.
+        stop_event = getattr(self, "_stop_event", None)
+        if stop_event is not None and not stop_event.is_set():
+            stop_event.set()
 
     def __repr__(self) -> str:
         return (

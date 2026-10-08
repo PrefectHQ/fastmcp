@@ -11,10 +11,14 @@ from __future__ import annotations
 
 import pytest
 
-from fastmcp import FastMCP, FastMCPApp
+from fastmcp import Client, FastMCP, FastMCPApp
 
 prefab_ui = pytest.importorskip("prefab_ui")
-from fastmcp.apps.config import PrefabAppConfig, ResourceCSP  # noqa: E402
+from fastmcp.apps.config import (  # noqa: E402
+    PrefabAppConfig,
+    ResourceCSP,
+    ResourcePermissions,
+)
 
 
 class TestUserCSPReachesResource:
@@ -92,6 +96,85 @@ class TestCSPStrippedFromToolMeta:
         assert "permissions" not in ui
 
 
+class TestDisplayMetaReachesResource:
+    """``domain`` and ``prefers_border`` are resource-level fields in the MCP
+    Apps spec, so like CSP and permissions they move from the tool to the
+    renderer resource."""
+
+    async def test_domain_and_prefers_border_reach_resource(self):
+        mcp = FastMCP("test")
+
+        @mcp.tool(
+            app=PrefabAppConfig(
+                domain="https://widget.example.com",
+                prefers_border=True,
+                permissions=ResourcePermissions(camera={}),
+            )
+        )
+        def show_widget() -> str:
+            return "widget"
+
+        resources = list(await mcp.list_resources())
+        renderer = next(r for r in resources if "prefab/tool" in str(r.uri))
+        assert renderer.meta is not None
+        ui = renderer.meta["ui"]
+        assert ui["domain"] == "https://widget.example.com"
+        assert ui["prefersBorder"] is True
+        assert ui["permissions"] == {"camera": {}}
+
+        tool = next(t for t in await mcp.list_tools() if t.name == "show_widget")
+        assert tool.meta is not None
+        assert set(tool.meta["ui"]) == {"resourceUri"}
+
+    async def test_prefers_border_false_is_preserved(self):
+        mcp = FastMCP("test")
+
+        @mcp.tool(app=PrefabAppConfig(prefers_border=False))
+        def show_widget() -> str:
+            return "widget"
+
+        renderer = next(
+            r for r in await mcp.list_resources() if "prefab/tool" in str(r.uri)
+        )
+        assert renderer.meta is not None
+        assert renderer.meta["ui"]["prefersBorder"] is False
+
+    async def test_unset_fields_stay_off_resource(self):
+        mcp = FastMCP("test")
+
+        @mcp.tool(app=True)
+        def show_widget() -> str:
+            return "widget"
+
+        renderer = next(
+            r for r in await mcp.list_resources() if "prefab/tool" in str(r.uri)
+        )
+        assert renderer.meta is not None
+        assert "domain" not in renderer.meta["ui"]
+        assert "prefersBorder" not in renderer.meta["ui"]
+
+    async def test_read_resource_carries_domain_and_prefers_border(self):
+        mcp = FastMCP("test")
+
+        @mcp.tool(
+            app=PrefabAppConfig(domain="https://w.example.com", prefers_border=True)
+        )
+        def show_widget() -> str:
+            return "widget"
+
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            uri = next(t for t in tools if t.name == "show_widget").meta["ui"][
+                "resourceUri"
+            ]
+            contents = await client.read_resource(uri)
+
+        meta = contents[0].meta
+        assert meta is not None
+        assert meta["ui"]["domain"] == "https://w.example.com"
+        assert meta["ui"]["prefersBorder"] is True
+
+
 class TestPerToolURIs:
     """Each prefab tool gets its own URI — distinct CSP per tool becomes
     possible because no two tools share a renderer resource."""
@@ -155,8 +238,6 @@ class TestReadResource:
     """The synthesized resources are actually fetchable via read_resource."""
 
     async def test_read_resource_returns_renderer_html(self):
-        from fastmcp import Client
-
         mcp = FastMCP("test")
 
         @mcp.tool(app=True)

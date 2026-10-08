@@ -73,7 +73,7 @@ def load_and_merge_config(
         config_path = Path(resolved_spec)
         if config_path.exists():
             try:
-                with open(config_path) as f:
+                with open(config_path, encoding="utf-8") as f:
                     data = json.load(f)
 
                 # Check if it's an MCPConfig first (has canonical mcpServers key)

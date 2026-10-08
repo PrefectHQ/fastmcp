@@ -6,8 +6,8 @@ with an additional transform. Created by `Provider.wrap_transform()`.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Iterator, Sequence
+from contextlib import asynccontextmanager, contextmanager
 from typing import TYPE_CHECKING
 
 from fastmcp.server.providers.base import Provider
@@ -17,6 +17,8 @@ if TYPE_CHECKING:
     from fastmcp.prompts.base import Prompt
     from fastmcp.resources.base import Resource
     from fastmcp.resources.template import ResourceTemplate
+    from fastmcp.server.extensions import ServerExtension
+    from fastmcp.server.server import FastMCP
     from fastmcp.server.transforms import Transform
     from fastmcp.tools.base import Tool
     from fastmcp.utilities.components import FastMCPComponent
@@ -46,6 +48,17 @@ class _WrappedProvider(Provider):
         # It will be applied via the normal transform chain
         self._transforms.append(transform)
 
+    def required_extensions(self) -> Sequence[ServerExtension]:
+        """Preserve bundled extensions through transforms and namespaces."""
+        return self._inner.required_extensions()
+
+    @contextmanager
+    def _extension_runtime(
+        self, available: frozenset[str], *, root: FastMCP | None
+    ) -> Iterator[None]:
+        with self._inner._extension_runtime(available, root=root):
+            yield
+
     def __repr__(self) -> str:
         return f"_WrappedProvider({self._inner!r}, transforms={self._transforms!r})"
 
@@ -67,8 +80,8 @@ class _WrappedProvider(Provider):
         """Delegate to inner, bypassing this wrapper's transforms."""
         return await self._inner.get_app_tool(app_name, tool_name)
 
-    async def get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
-        """Delegate to inner, bypassing this wrapper's transforms."""
+    async def _get_tool_by_hash(self, tool_hash: str, tool_name: str) -> Tool | None:
+        """Delegate to inner's get_tool_by_hash (includes inner's transforms)."""
         return await self._inner.get_tool_by_hash(tool_hash, tool_name)
 
     async def _list_resources(self) -> Sequence[Resource]:
@@ -103,37 +116,12 @@ class _WrappedProvider(Provider):
 
     async def get_tasks(self) -> Sequence[FastMCPComponent]:
         """Delegate to inner's get_tasks and apply wrapper's transforms."""
-        # Import here to avoid circular imports
-        from fastmcp.prompts.base import Prompt
-        from fastmcp.resources.base import Resource
-        from fastmcp.resources.template import ResourceTemplate
-        from fastmcp.tools.base import Tool
-
         # Get tasks from inner (already has inner's transforms)
         components = list(await self._inner.get_tasks())
 
-        # Apply this wrapper's transforms to the components
-        # We need to apply transforms per component type
-        tools = [c for c in components if isinstance(c, Tool)]
-        resources = [c for c in components if isinstance(c, Resource)]
-        templates = [c for c in components if isinstance(c, ResourceTemplate)]
-        prompts = [c for c in components if isinstance(c, Prompt)]
-
-        # Apply this wrapper's transforms sequentially
-        for transform in self.transforms:
-            tools = await transform.list_tools(tools)
-            resources = await transform.list_resources(resources)
-            templates = await transform.list_resource_templates(templates)
-            prompts = await transform.list_prompts(prompts)
-
         return [
             c
-            for c in [
-                *tools,
-                *resources,
-                *templates,
-                *prompts,
-            ]
+            for c in await self._apply_task_transforms(components)
             if c.task_config.supports_tasks()
         ]
 

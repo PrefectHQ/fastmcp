@@ -6,13 +6,25 @@ strict_input_validation=True) and Pydantic-based coercion (when
 strict_input_validation=False, the default).
 """
 
+import datetime
+import enum
 import json
-from typing import Any
+import uuid
+from dataclasses import dataclass
+from typing import Annotated, Any
 
+import httpx2
 import pytest
 from mcp.shared.exceptions import MCPError
 from mcp_types import TextContent
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    StrictInt,
+    field_validator,
+)
 from pydantic_core import PydanticCustomError
 
 from fastmcp import Client, FastMCP
@@ -225,6 +237,149 @@ class TestPydanticModelArguments:
                         }
                     },
                 )
+
+
+class Color(enum.Enum):
+    RED = "red"
+
+
+@dataclass
+class Point:
+    x: int
+
+
+class TestStrictModeAcceptsJsonValues:
+    """Strict mode rejects lax coercion, not the JSON form of a declared type."""
+
+    @pytest.mark.parametrize(
+        ("annotation", "value", "expected"),
+        [
+            (Color, "red", Color.RED),
+            (datetime.datetime, "2026-01-01T00:00:00", datetime.datetime(2026, 1, 1)),
+            (datetime.date, "2026-01-01", datetime.date(2026, 1, 1)),
+            (
+                uuid.UUID,
+                "12345678-1234-5678-1234-567812345678",
+                uuid.UUID("12345678-1234-5678-1234-567812345678"),
+            ),
+            (Point, {"x": 1}, Point(x=1)),
+            (tuple[int, int], [1, 2], (1, 2)),
+            (set[int], [1], {1}),
+            (float, 1, 1.0),
+        ],
+    )
+    async def test_json_value_is_accepted(self, annotation, value, expected):
+        mcp = FastMCP("TestServer", strict_input_validation=True)
+        received = []
+
+        async def tool_fn(arg):
+            received.append(arg)
+            return "ok"
+
+        tool_fn.__annotations__["arg"] = annotation
+        mcp.tool(tool_fn, name="check")
+
+        async with Client(mcp) as client:
+            await client.call_tool("check", {"arg": value})
+
+        assert received == [expected]
+
+    async def test_lax_coercion_is_still_rejected(self):
+        mcp = FastMCP("TestServer", strict_input_validation=True)
+
+        @mcp.tool
+        def check(when: datetime.datetime, count: int) -> str:
+            return "ok"
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool(
+                    "check", {"when": "2026-01-01T00:00:00", "count": "1"}
+                )
+            with pytest.raises(ToolError):
+                await client.call_tool("check", {"when": 1, "count": 1})
+
+    async def test_python_objects_are_accepted_when_called_directly(self):
+        mcp = FastMCP("TestServer", strict_input_validation=True)
+
+        @mcp.tool
+        def check(color: Color, when: datetime.datetime) -> str:
+            return f"{color.value} {when.year}"
+
+        result = await mcp.call_tool(
+            "check", {"color": Color.RED, "when": datetime.datetime(2026, 1, 1)}
+        )
+
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "red 2026"
+
+    async def test_python_objects_are_not_round_tripped_through_json(self):
+        mcp = FastMCP("TestServer", strict_input_validation=True)
+
+        @mcp.tool
+        def reveal(secret: SecretStr) -> str:
+            return secret.get_secret_value()
+
+        result = await mcp.call_tool("reveal", {"secret": SecretStr("s3cret")})
+
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "s3cret"
+
+
+class TestFieldLevelStrictness:
+    """Strictness declared on the parameter itself must survive lax server mode."""
+
+    async def test_strict_field_rejects_coercion(self):
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def echo(value: Annotated[int, Field(strict=True)]) -> int:
+            return value
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool("echo", {"value": "5"})
+            result = await client.call_tool("echo", {"value": 5})
+            assert isinstance(result.content[0], TextContent)
+            assert result.content[0].text == "5"
+
+    async def test_strict_type_rejects_coercion(self):
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def echo(value: StrictInt) -> int:
+            return value
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool("echo", {"value": 5.0})
+
+    async def test_strict_model_config_rejects_coercion(self):
+        class Payload(BaseModel):
+            model_config = ConfigDict(strict=True)
+            count: int
+
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def echo(payload: Payload) -> int:
+            return payload.count
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool("echo", {"payload": {"count": "5"}})
+
+    async def test_lax_fields_still_coerce(self):
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def echo(value: int) -> int:
+            return value
+
+        async with Client(mcp) as client:
+            result = await client.call_tool("echo", {"value": "5"})
+            assert isinstance(result.content[0], TextContent)
+            assert result.content[0].text == "5"
 
 
 class TestValidationErrorMessages:
@@ -537,6 +692,31 @@ class TestExpectedToolFailureLogging:
         with caplog.at_level("DEBUG", logger="fastmcp.server.server"):
             async with Client(mcp) as client:
                 with pytest.raises(ToolError):
+                    await client.call_tool("do_thing", {})
+
+        records = [
+            r
+            for r in caplog.records
+            if r.getMessage() == "Error calling tool 'do_thing'"
+        ]
+        assert records, "expected an 'Error calling tool' log without traceback"
+        assert records[0].levelname == "ERROR"
+        assert not records[0].exc_info
+
+    async def test_upstream_http_status_error_logs_without_traceback(self, caplog):
+        mcp = FastMCP("TestServer")
+
+        @mcp.tool
+        def do_thing() -> str:
+            request = httpx2.Request("GET", "https://api.example.test/items")
+            response = httpx2.Response(404, request=request)
+            raise httpx2.HTTPStatusError(
+                "not found", request=request, response=response
+            )
+
+        with caplog.at_level("DEBUG", logger="fastmcp.server.server"):
+            async with Client(mcp) as client:
+                with pytest.raises(ToolError, match="not found"):
                     await client.call_tool("do_thing", {})
 
         records = [

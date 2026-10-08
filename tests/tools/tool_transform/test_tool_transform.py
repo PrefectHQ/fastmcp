@@ -11,6 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, with_config
 
 from fastmcp import FastMCP
 from fastmcp.client.client import Client
+from fastmcp.dependencies import CurrentContext, Depends
+from fastmcp.server.context import Context
 from fastmcp.tools import Tool, forward, forward_raw, tool
 from fastmcp.tools.base import ToolResult
 from fastmcp.tools.function_tool import FunctionTool
@@ -820,3 +822,76 @@ async def test_transform_args_do_not_mutate_parent_schema():
 
     parent_props_after = parent.parameters["properties"]
     assert parent_props_after == parent_props_before
+
+
+async def test_transform_fn_injected_context_is_resolved():
+    """A transform_fn's `ctx: Context` is injected at call time (#5368)."""
+    mcp = FastMCP()
+
+    @mcp.tool
+    def base(x: int) -> int:
+        return x
+
+    async def custom(x: int, ctx: Context) -> int:
+        assert isinstance(ctx, Context)
+        return x * 2
+
+    parent = await mcp.get_tool("base")
+    assert parent is not None
+    mcp.add_tool(Tool.from_tool(parent, name="transformed", transform_fn=custom))
+
+    transformed = await mcp.get_tool("transformed")
+    assert transformed is not None
+    assert "ctx" not in transformed.parameters["properties"]
+
+    async with Client(mcp) as client:
+        result = await client.call_tool("transformed", {"x": 3})
+    assert result.data == 6
+
+
+async def test_transform_fn_current_context_default_is_resolved():
+    """`ctx: Context = CurrentContext()` resolves to a Context, not the marker (#5368)."""
+    mcp = FastMCP()
+
+    @mcp.tool
+    def base(x: int) -> int:
+        return x
+
+    async def custom(x: int, ctx: Context = CurrentContext()) -> int:
+        assert isinstance(ctx, Context)
+        return x + 1
+
+    parent = await mcp.get_tool("base")
+    assert parent is not None
+    mcp.add_tool(Tool.from_tool(parent, name="transformed", transform_fn=custom))
+
+    async with Client(mcp) as client:
+        result = await client.call_tool("transformed", {"x": 3})
+    assert result.data == 4
+
+
+async def test_transform_fn_depends_is_resolved():
+    """A transform_fn's `Depends()` parameter is resolved at call time (#5368)."""
+    mcp = FastMCP()
+
+    @mcp.tool
+    def base(x: int) -> int:
+        return x
+
+    async def multiplier() -> int:
+        return 21
+
+    async def custom(x: int, k: int = Depends(multiplier)) -> int:
+        return x * k
+
+    parent = await mcp.get_tool("base")
+    assert parent is not None
+    mcp.add_tool(Tool.from_tool(parent, name="transformed", transform_fn=custom))
+
+    transformed = await mcp.get_tool("transformed")
+    assert transformed is not None
+    assert "k" not in transformed.parameters["properties"]
+
+    async with Client(mcp) as client:
+        result = await client.call_tool("transformed", {"x": 3})
+    assert result.data == 63

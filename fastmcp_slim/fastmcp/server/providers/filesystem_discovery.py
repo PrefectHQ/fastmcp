@@ -133,7 +133,9 @@ def _package_path_matches(module: ModuleType, package_root: Path) -> bool:
 
 def _private_package_prefix(directory: Path) -> str:
     """Compute a collision-safe synthetic package name anchored at a directory."""
-    digest = hashlib.sha1(str(directory.resolve()).encode()).hexdigest()[:12]
+    digest = hashlib.sha1(
+        str(directory.resolve()).encode(), usedforsecurity=False
+    ).hexdigest()[:12]
     return f"_fastmcp_pkg_{digest}"
 
 
@@ -233,7 +235,10 @@ def import_module_from_file(
         if existing is not None and getattr(existing, "__file__", None) != str(
             file_path
         ):
-            module_name = f"_fastmcp_{stem}_{hashlib.sha1(str(file_path).encode()).hexdigest()[:12]}"
+            digest = hashlib.sha1(
+                str(file_path).encode(), usedforsecurity=False
+            ).hexdigest()[:12]
+            module_name = f"_fastmcp_{stem}_{digest}"
         else:
             module_name = stem
 
@@ -367,6 +372,7 @@ def extract_components(module: ModuleType) -> list[FastMCPComponent]:
                         annotations=meta.annotations,
                         meta=meta.meta,
                         auth=meta.auth,
+                        security=meta.security,
                     )
                 else:
                     resource = Resource.from_function(

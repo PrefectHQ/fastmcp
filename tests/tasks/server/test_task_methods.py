@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from docket.execution import Execution
 from fastmcp_tasks.models import UpdateTaskResult
 from mcp.shared.exceptions import MCPError
 
@@ -110,6 +111,79 @@ async def test_tasks_cancel_transitions_to_cancelled():
             target_states=frozenset({"cancelled", "completed"}),
         )
         assert final.status in {"cancelled", "completed"}
+
+
+async def test_tasks_cancel_leaves_completed_task_completed():
+    """Cancelling a finished task keeps its `completed` status and result."""
+    mcp = _methods_server()
+    async with running_task_server(mcp):
+        finished = await run_task(mcp, "quick_tool", {"value": 21})
+        assert finished.status == "completed"
+
+        await cancel_task(mcp, finished.task_id)
+
+        after = await get_task(mcp, finished.task_id)
+        assert after.status == "completed"
+        assert after.result == finished.result
+
+
+async def test_tasks_cancel_leaves_failed_task_failed():
+    """Cancelling a task that already failed keeps its `failed` status and error."""
+    mcp = FastMCP("cancel-failed-test")
+    mcp.add_extension(TasksExtension())
+
+    @mcp.tool(task=True)
+    async def protocol_error_tool() -> str:
+        raise MCPError(code=-32000, message="backend unavailable")
+
+    async with running_task_server(mcp):
+        failed = await run_task(mcp, "protocol_error_tool", {})
+        assert failed.status == "failed"
+
+        await cancel_task(mcp, failed.task_id)
+
+        after = await get_task(mcp, failed.task_id)
+        assert after.status == "failed"
+        assert after.error == failed.error
+
+
+async def test_worker_keeps_running_after_cancel_before_task_starts(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A cancel that lands before the worker starts a task must not stop the worker."""
+    mcp = FastMCP("cancel-early-test")
+    mcp.add_extension(TasksExtension())
+
+    @mcp.tool(task=True)
+    async def slow_tool() -> str:
+        await asyncio.sleep(60)
+        return "done"
+
+    @mcp.tool(task=True)
+    async def quick_tool(value: int) -> int:
+        return value * 2
+
+    claim = Execution.claim
+    claiming = asyncio.Event()
+
+    async def slow_claim(self: Execution, worker: str) -> bool:
+        claiming.set()
+        await asyncio.sleep(0.3)
+        return await claim(self, worker)
+
+    monkeypatch.setattr(Execution, "claim", slow_claim)
+
+    async with running_task_server(mcp):
+        created = await submit_task(mcp, "slow_tool", {})
+        await claiming.wait()
+        await cancel_task(mcp, created.task_id)
+        await wait_for_task(
+            mcp, created.task_id, target_states=frozenset({"cancelled"})
+        )
+        await asyncio.sleep(0.5)
+
+        final = await run_task(mcp, "quick_tool", {"value": 21})
+        assert final.status == "completed"
 
 
 async def test_tasks_update_acks_empty():

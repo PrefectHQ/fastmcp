@@ -2,6 +2,7 @@ from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Any, Literal, cast
 
+import mcp_types
 import pytest
 from pydantic import BaseModel
 from typing_extensions import TypedDict
@@ -80,6 +81,32 @@ async def test_elicitation_decline(fastmcp_server):
     ) as client:
         result = await client.call_tool("ask_for_name")
         assert result.data == "No name provided."
+
+
+@pytest.mark.parametrize(
+    "response, expected",
+    [
+        (mcp_types.ElicitResult(action="decline"), "No name provided."),
+        (mcp_types.ElicitResult(action="cancel"), "No name provided."),
+        (
+            mcp_types.ElicitResult(action="accept", content={"name": "Alice"}),
+            "Hello, Alice!",
+        ),
+    ],
+)
+async def test_elicitation_handler_returns_sdk_elicit_result(
+    fastmcp_server, response: mcp_types.ElicitResult, expected: str
+):
+    """The SDK's ElicitResult keeps its action instead of becoming accepted content."""
+
+    async def elicitation_handler(message, response_type, params, ctx):
+        return response
+
+    async with Client(
+        fastmcp_server, mode="legacy", elicitation_handler=elicitation_handler
+    ) as client:
+        result = await client.call_tool("ask_for_name")
+        assert result.data == expected
 
 
 async def test_elicitation_handler_parameters():

@@ -1,18 +1,29 @@
 """Client-side CLI commands for querying and invoking MCP servers."""
 
 import difflib
+import hashlib
 import json
 import shlex
 import sys
+import warnings
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import cyclopts
 import mcp_types
+from cryptography.fernet import Fernet
+from key_value.aio.stores.filetree import (
+    FileTreeStore,
+    FileTreeV1CollectionSanitizationStrategy,
+    FileTreeV1KeySanitizationStrategy,
+)
+from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from rich.console import Console
 from rich.markup import escape as escape_rich_markup
 
+from fastmcp import settings
 from fastmcp.cli.discovery import DiscoveredServer, discover_servers, resolve_name
+from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.client import CallToolResult, Client
 from fastmcp.client.elicitation import ElicitResult
 from fastmcp.client.transports.base import ClientTransport
@@ -23,6 +34,8 @@ from fastmcp.utilities.logging import get_logger
 
 logger = get_logger("cli.client")
 console = Console()
+
+_MEMORY_TOKEN_WARNING = r"Using in-memory token storage\b"
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +119,14 @@ def resolve_server_spec(
 
     # 3. Name-based resolution (bare name or source:name)
     try:
-        return resolve_name(spec)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=_MEMORY_TOKEN_WARNING,
+                category=UserWarning,
+                module=r"fastmcp\.client\.",
+            )
+            return resolve_name(spec)
     except ValueError as exc:
         console.print(f"[bold red]Error:[/bold red] {exc}")
         sys.exit(1)
@@ -137,7 +157,7 @@ def _resolve_json_spec(path: Path) -> str | dict[str, Any]:
         sys.exit(1)
 
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         console.print(f"[bold red]Error:[/bold red] Invalid JSON in {path}: {exc}")
         sys.exit(1)
@@ -240,7 +260,7 @@ def _build_client(
     means "explicitly disabled".
     """
     if auth == "none":
-        effective_auth: str | None = None
+        effective_auth: str | OAuth | None = None
     elif auth is not None:
         effective_auth = auth
     elif _is_http_target(resolved):
@@ -248,12 +268,48 @@ def _build_client(
     else:
         effective_auth = None
 
-    return Client(
-        resolved,
-        timeout=timeout,
-        auth=effective_auth,
-        elicitation_handler=_terminal_elicitation_handler,
-    )
+    if effective_auth == "oauth" and _is_http_target(resolved):
+        token_storage = None
+        encryption_key = settings.oauth_encryption_key
+        if encryption_key and encryption_key.get_secret_value():
+            key = encryption_key.get_secret_value().encode()
+            try:
+                fernet = Fernet(key)
+            except ValueError:
+                raise ValueError(
+                    "FASTMCP_OAUTH_ENCRYPTION_KEY must be a valid Fernet key."
+                ) from None
+            key_fingerprint = hashlib.sha256(key).hexdigest()[:12]
+            storage_dir = settings.home / "cli-oauth" / key_fingerprint
+            storage_dir.mkdir(parents=True, exist_ok=True)
+            token_storage = FernetEncryptionWrapper(
+                key_value=FileTreeStore(
+                    data_directory=storage_dir,
+                    key_sanitization_strategy=FileTreeV1KeySanitizationStrategy(
+                        storage_dir
+                    ),
+                    collection_sanitization_strategy=FileTreeV1CollectionSanitizationStrategy(
+                        storage_dir
+                    ),
+                ),
+                fernet=fernet,
+                raise_on_decryption_error=False,
+            )
+        effective_auth = OAuth(token_storage=token_storage)
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=_MEMORY_TOKEN_WARNING,
+            category=UserWarning,
+            module=r"fastmcp\.client\.",
+        )
+        return Client(
+            resolved,
+            timeout=timeout,
+            auth=effective_auth,
+            elicitation_handler=_terminal_elicitation_handler,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -261,10 +317,27 @@ def _build_client(
 # ---------------------------------------------------------------------------
 
 
+def _unwrap_nullable(schema: dict[str, Any]) -> dict[str, Any]:
+    """Reduce an optional schema (``X | None``) to the schema for ``X``."""
+
+    if "anyOf" in schema:
+        non_null = [s for s in schema["anyOf"] if s.get("type") != "null"]
+        if len(non_null) == 1:
+            return non_null[0]
+
+    schema_type = schema.get("type")
+    if isinstance(schema_type, list):
+        non_null_types = [t for t in schema_type if t != "null"]
+        if len(non_null_types) == 1:
+            return {**schema, "type": non_null_types[0]}
+
+    return schema
+
+
 def coerce_value(raw: str, schema: dict[str, Any]) -> Any:
     """Coerce a string CLI value according to a JSON-Schema type hint."""
 
-    schema_type = schema.get("type", "string")
+    schema_type = _unwrap_nullable(schema).get("type", "string")
 
     if schema_type == "integer":
         try:
@@ -703,9 +776,8 @@ async def list_command(
     """
 
     resolved = resolve_server_spec(server_spec, command=command, transport=transport)
-    client = _build_client(resolved, timeout=timeout, auth=auth)
-
     try:
+        client = _build_client(resolved, timeout=timeout, auth=auth)
         async with client:
             tools = await client.list_tools()
 
@@ -876,9 +948,8 @@ async def call_command(
         sys.exit(1)
 
     resolved = resolve_server_spec(server_spec, command=command, transport=transport)
-    client = _build_client(resolved, timeout=timeout, auth=auth)
-
     try:
+        client = _build_client(resolved, timeout=timeout, auth=auth)
         async with client:
             if prompt:
                 await _handle_prompt(client, target, arguments, input_json, json_output)

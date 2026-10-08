@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Sequence
+from contextlib import suppress
 from typing import Any
+from urllib.parse import unquote
 
 
 def replace_refs(*args: Any, **kwargs: Any) -> Any:
@@ -45,51 +48,145 @@ def _copy_schema(schema: dict[str, Any]) -> dict[str, Any]:
     return root
 
 
-def _defs_have_cycles(defs: dict[str, Any]) -> bool:
-    """Check whether any definitions in ``$defs`` form a reference cycle.
+# Inlining a `$ref` copies its target, so an acyclic reference graph can expand
+# to many times its own size. `dereference_refs` only inlines when the result
+# stays within these limits; larger graphs keep their references.
+_MAX_INLINED_NODES = 100_000
+_MAX_INLINED_DEPTH = 128
+_MAX_INLINED_TEXT = 5_000_000
+_MAX_ROOT_REF_HOPS = 32
 
-    A cycle means a definition directly or transitively references itself
-    (e.g. Node → children → Node, or A → B → A).  ``jsonref.replace_refs``
-    silently produces Python-level object cycles for these, which Pydantic's
-    serializer rejects.
+
+class _CannotInline(Exception):
+    """A schema's local references can't be inlined within the limits."""
+
+
+def _resolve_local_ref(
+    schema: dict[str, Any], ref: str, _hops: list[int] | None = None
+) -> Any:
+    """Resolve a local `$ref` (`#...`) by walking its JSON pointer through *schema*.
+
+    This uses the same pointer syntax as `jsonref` but doesn't normalize the
+    reference as a URL, so it can pick a different target than `jsonref` for
+    unusual pointers. `dereference_refs` therefore measures the result
+    `jsonref` actually built as well.
+
+    Like `jsonref`, a pointer that reaches a node that is itself a local
+    `$ref` continues through that reference's target, so
+    `#/$defs/Alias/properties/x` resolves when `Alias` refers to another
+    definition. The number of such references followed during one lookup is
+    limited, which also stops reference cycles. The root itself is never
+    followed, so a root-level `$ref` doesn't redirect its own pointers.
     """
-    if not defs:
+    hops = _hops if _hops is not None else [0]
+    fragment = ref[1:]
+    parts = unquote(fragment.lstrip("/")).split("/") if fragment else []
+    node: Any = schema
+    for part in parts:
+        while node is not schema and isinstance(node, dict) and "$ref" in node:
+            inner = node["$ref"]
+            if not isinstance(inner, str) or not inner.startswith("#"):
+                break
+            hops[0] += 1
+            if hops[0] > _MAX_ROOT_REF_HOPS:
+                raise _CannotInline(f"Too many references in pointer: {ref}")
+            node = _resolve_local_ref(schema, inner, hops)
+        key: str | int = part.replace("~1", "/").replace("~0", "~")
+        if isinstance(node, Sequence):
+            with suppress(ValueError):
+                key = int(key)
+        try:
+            node = node[key]
+        except (LookupError, TypeError) as e:
+            raise _CannotInline(f"Unresolvable reference: {ref}") from e
+    return node
+
+
+def _within_inline_limits(root: dict[str, Any], *, follow_refs: bool) -> bool:
+    """Check the node count and depth of *root* once fully expanded.
+
+    Containers that appear in several places are measured once and the result
+    reused, so the walk is linear in the number of distinct containers.
+    Reaching a container again while it is still being measured means there
+    is a cycle, which can't be expanded.
+
+    With *follow_refs*, each local `$ref` also counts the target found by
+    `_resolve_local_ref`, which measures what inlining *root* would produce
+    without building it. The measurement covers the whole schema, including
+    unused `$defs` entries and keywords next to `$ref`, because
+    `dereference_refs` processes both. Without *follow_refs*, `$ref` values
+    are plain data, which measures a structure that is already inlined.
+    """
+    # (nodes, height) of each measured container, by id.
+    sizes: dict[int, tuple[int, int]] = {}
+    in_progress: set[int] = set()
+
+    def measure(node: dict[str, Any] | list[Any], depth: int) -> tuple[int, int]:
+        if depth > _MAX_INLINED_DEPTH:
+            raise _CannotInline("Inlined schema is too deep")
+        identity = id(node)
+        if identity in sizes:
+            nodes, height = sizes[identity]
+        elif identity in in_progress:
+            raise _CannotInline("References form a cycle")
+        else:
+            in_progress.add(identity)
+            children = list(node.values()) if isinstance(node, dict) else node
+            if follow_refs and isinstance(node, dict):
+                ref = node.get("$ref")
+                if isinstance(ref, str) and ref.startswith("#"):
+                    children = [*children, _resolve_local_ref(root, ref)]
+            nodes, height = 1, 0
+            for child in children:
+                if isinstance(child, dict | list):
+                    child_nodes, child_height = measure(child, depth + 1)
+                    nodes += child_nodes
+                    height = max(height, child_height + 1)
+                else:
+                    nodes += 1
+                if nodes > _MAX_INLINED_NODES:
+                    raise _CannotInline("Inlined schema is too large")
+            in_progress.remove(identity)
+            sizes[identity] = nodes, height
+        if depth + height > _MAX_INLINED_DEPTH:
+            raise _CannotInline("Inlined schema is too deep")
+        return nodes, height
+
+    try:
+        measure(root, 0)
+    except (_CannotInline, RecursionError):
         return False
+    return True
 
-    # Build adjacency: def_name -> set of def_names it references.
-    edges: dict[str, set[str]] = defaultdict(set)
 
-    def _collect_refs(obj: Any, source: str) -> None:
-        if isinstance(obj, dict):
-            ref = obj.get("$ref")
-            if isinstance(ref, str) and ref.startswith("#/$defs/"):
-                edges[source].add(ref.split("/")[-1])
-            for v in obj.values():
-                _collect_refs(v, source)
-        elif isinstance(obj, list):
-            for item in obj:
-                _collect_refs(item, source)
+def _text_within_limit(schema: dict[str, Any]) -> bool:
+    """Check the total length of every key and scalar value in *schema*.
 
-    for name, definition in defs.items():
-        _collect_refs(definition, name)
-
-    # DFS cycle detection.
-    UNVISITED, IN_STACK, DONE = 0, 1, 2
-    state: dict[str, int] = defaultdict(int)
-
-    def _has_cycle(node: str) -> bool:
-        state[node] = IN_STACK
-        for neighbor in edges.get(node, ()):
-            if neighbor not in defs:
-                continue
-            if state[neighbor] == IN_STACK:
-                return True
-            if state[neighbor] == UNVISITED and _has_cycle(neighbor):
-                return True
-        state[node] = DONE
-        return False
-
-    return any(state[name] == UNVISITED and _has_cycle(name) for name in defs)
+    Inlining shares scalar objects rather than copying them, so a repeated
+    long string or large number costs little to build but still adds to the
+    serialized size. Numbers count at least their decimal digits and sign.
+    """
+    total = 0
+    stack: list[Any] = [schema]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            total += sum(len(key) for key in node if isinstance(key, str))
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+        elif isinstance(node, str):
+            total += len(node)
+        elif isinstance(node, bool) or node is None:
+            total += 5
+        elif isinstance(node, int):
+            # A bound on the decimal digits that avoids converting huge ints.
+            total += node.bit_length() // 3 + 2
+        elif isinstance(node, float):
+            total += len(repr(node))
+        if total > _MAX_INLINED_TEXT:
+            return False
+    return True
 
 
 def _strip_remote_refs(obj: Any) -> Any:
@@ -131,11 +228,17 @@ def _strip_discriminator(obj: Any) -> Any:
             obj = require_discriminator_property(obj)
         # Keys that hold instance data, not sub-schemas — don't recurse.
         _DATA_KEYS = {"default", "const", "examples", "enum"}
-        return {
-            k: (v if k in _DATA_KEYS else _strip_discriminator(v))
-            for k, v in obj.items()
-            if not (k == "discriminator" and skip)
-        }
+        result: dict[str, Any] = {}
+        for k, v in obj.items():
+            if k == "discriminator" and skip:
+                continue
+            if k in _SUBSCHEMA_MAP_KEYS and isinstance(v, dict):
+                # The keys here are user property/definition names, so one
+                # named like a keyword above still holds a sub-schema.
+                result[k] = {name: _strip_discriminator(sub) for name, sub in v.items()}
+            else:
+                result[k] = v if k in _DATA_KEYS else _strip_discriminator(v)
+        return result
     if isinstance(obj, list):
         return [_strip_discriminator(item) for item in obj]
     return obj
@@ -192,9 +295,9 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
     This is necessary because some MCP clients (e.g., VS Code Copilot) don't
     properly handle $ref in tool input schemas.
 
-    For self-referencing/circular schemas where full dereferencing is not possible,
-    this function falls back to resolving only the root-level $ref while preserving
-    $defs for nested references.
+    For circular schemas, and for schemas whose inlined form would be very large
+    or deeply nested, this function falls back to resolving only the root-level
+    $ref while preserving $defs for nested references.
 
     Only local ``$ref`` values (those starting with ``#``) are resolved.
     Remote URIs (``http://``, ``file://``, etc.) are stripped before
@@ -219,11 +322,11 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
     # Strip any remote $ref values before processing to prevent SSRF / LFI.
     schema = _strip_remote_refs(schema)
 
-    # Circular $defs can't be fully inlined — jsonref.replace_refs produces
-    # Python dicts with object-identity cycles that Pydantic's model_dump
-    # rejects with "Circular reference detected (id repeated)".
-    # Detect cycles up front and fall back to root-only resolution.
-    if _defs_have_cycles(schema.get("$defs", {})):
+    # Check before inlining anything. Circular references can't be inlined:
+    # jsonref.replace_refs produces Python dicts with object-identity cycles
+    # that Pydantic's model_dump rejects. Acyclic graphs can still expand far
+    # beyond their own size, so oversized results are refused as well.
+    if not _within_inline_limits(schema, follow_refs=True):
         return resolve_root_ref(schema)
 
     # Most schema operations do not dereference. Keep jsonref (and its requests
@@ -238,8 +341,7 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
 
         # Merge sibling keywords that were lost during dereferencing
         # Pydantic puts description, default, examples as siblings to $ref
-        defs = schema.get("$defs", {})
-        merged = _merge_ref_siblings(schema, dereferenced, defs)
+        merged = _merge_ref_siblings(schema, dereferenced, schema)
         # Type assertion: top-level schema is always a dict
         assert isinstance(merged, dict)
         dereferenced = merged
@@ -248,6 +350,12 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
         if "$defs" in dereferenced:
             dereferenced = {k: v for k, v in dereferenced.items() if k != "$defs"}
 
+        # jsonref can resolve some pointers to different targets than the
+        # check above, so measure what it built (shared containers, not yet
+        # copied) before the discriminator pass copies the whole tree.
+        if not _within_inline_limits(dereferenced, follow_refs=False):
+            return resolve_root_ref(schema)
+
         # Strip `discriminator` keys — they contain `mapping` values that
         # point at `#/$defs/...` entries we just removed.  `discriminator`
         # is an OpenAPI extension; after inlining, the `anyOf` variants
@@ -255,9 +363,11 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
         # mapping redundant.
         dereferenced = _strip_discriminator(dereferenced)
 
+        if not _text_within_limit(dereferenced):
+            return resolve_root_ref(schema)
         return dereferenced
 
-    except (JsonRefError, RecursionError):
+    except (JsonRefError, RecursionError, _CannotInline):
         # Self-referencing/circular schemas can't be fully dereferenced.
         # RecursionError covers circular $ref using JSON Pointer paths
         # (e.g. "#/properties/nodes/items") that bypass $defs-based cycle
@@ -269,7 +379,7 @@ def dereference_refs(schema: dict[str, Any]) -> dict[str, Any]:
 def _merge_ref_siblings(
     original: Any,
     dereferenced: Any,
-    defs: dict[str, Any],
+    schema: dict[str, Any],
     visited: set[str] | None = None,
 ) -> Any:
     """Merge sibling keywords from original $ref nodes into dereferenced schema.
@@ -281,8 +391,8 @@ def _merge_ref_siblings(
     Args:
         original: The original schema with $ref and potential siblings
         dereferenced: The schema after jsonref processing
-        defs: The $defs from the original schema, for looking up referenced definitions
-        visited: Set of definition names already being processed (prevents cycles)
+        schema: The original root schema, for looking up referenced definitions
+        visited: Set of references already being processed (prevents cycles)
 
     Returns:
         The dereferenced schema with sibling keywords restored
@@ -296,15 +406,19 @@ def _merge_ref_siblings(
             ref = original["$ref"]
             siblings = {k: v for k, v in original.items() if k not in ("$ref", "$defs")}
 
-            # Look up the referenced definition to process its nested siblings
-            if isinstance(ref, str) and ref.startswith("#/$defs/"):
-                def_name = ref.split("/")[-1]
-                # Prevent infinite recursion on circular references
-                if def_name in defs and def_name not in visited:
-                    # Recursively process the definition's content for nested siblings
-                    dereferenced = _merge_ref_siblings(
-                        defs[def_name], dereferenced, defs, visited | {def_name}
-                    )
+            # Process the definition jsonref inlined here for its nested siblings.
+            # Prevent infinite recursion on circular references.
+            if (
+                isinstance(ref, str)
+                and ref.startswith("#/$defs/")
+                and ref not in visited
+            ):
+                dereferenced = _merge_ref_siblings(
+                    _resolve_local_ref(schema, ref),
+                    dereferenced,
+                    schema,
+                    visited | {ref},
+                )
 
             if siblings:
                 # Merge local siblings, which take precedence
@@ -317,7 +431,7 @@ def _merge_ref_siblings(
         result = {}
         for key, value in dereferenced.items():
             if key in original:
-                result[key] = _merge_ref_siblings(original[key], value, defs, visited)
+                result[key] = _merge_ref_siblings(original[key], value, schema, visited)
             else:
                 result[key] = value
         return result
@@ -326,7 +440,7 @@ def _merge_ref_siblings(
         # Process list items in parallel
         min_len = min(len(original), len(dereferenced))
         return [
-            _merge_ref_siblings(o, d, defs, visited)
+            _merge_ref_siblings(o, d, schema, visited)
             for o, d in zip(original[:min_len], dereferenced[:min_len], strict=False)
         ] + dereferenced[min_len:]
 
@@ -356,33 +470,50 @@ def resolve_root_ref(schema: dict[str, Any]) -> dict[str, Any]:
         >>> resolved = resolve_root_ref(schema)
         >>> # Result: {"type": "object", "properties": {...}, "$defs": {...}}
     """
-    # Only resolve if we have $ref at root level with $defs but no explicit type
-    if "$ref" in schema and "$defs" in schema and "type" not in schema:
-        ref = schema["$ref"]
-        # Only handle local $defs references
-        if isinstance(ref, str) and ref.startswith("#/$defs/"):
-            def_name = ref.split("/")[-1]
-            defs = schema["$defs"]
-            if def_name in defs:
-                # Create a new schema by copying the referenced definition
-                resolved = dict(defs[def_name])
+    # Only resolve a local $ref at the root when there is no explicit type.
+    # The pointer is walked the same way `dereference_refs` measures it, so
+    # every supported form (`#/$defs/Name`, `#/definitions/Name`, escaped or
+    # percent-encoded segments) resolves to the same target. A definition
+    # that is itself only a `$ref` is an alias, so the chain is followed
+    # until a definition with its own content (or a type) is reached.
+    ref = schema.get("$ref")
+    if "type" in schema or not isinstance(ref, str) or not ref.startswith("#"):
+        return schema
 
-                # Preserve root-level sibling metadata from the original schema.
-                # Pydantic may put user-facing fields such as title, description,
-                # default, or examples next to the root $ref. Those fields still
-                # describe the root schema even when we can only resolve that
-                # root reference for circular schemas.
-                resolved.update(
-                    {
-                        key: value
-                        for key, value in schema.items()
-                        if key not in {"$ref", "$defs"}
-                    }
-                )
+    # Preserve root-level sibling metadata from the original schema.
+    # Pydantic may put user-facing fields such as title, description,
+    # default, or examples next to the root $ref. Those fields still
+    # describe the root schema even when we can only resolve that
+    # root reference for circular schemas. Siblings include `$defs` (or
+    # `definitions`), which stay for nested references. Keywords on each
+    # alias are kept too, with the outer schema taking precedence.
+    resolved = {key: value for key, value in schema.items() if key != "$ref"}
+    visited: set[str] = set()
+    for _ in range(_MAX_ROOT_REF_HOPS):
+        if ref in visited:
+            return schema
+        visited.add(ref)
+        try:
+            target = _resolve_local_ref(schema, ref)
+        except _CannotInline:
+            return schema
+        if not isinstance(target, dict) or target is schema:
+            return schema
 
-                # Preserve $defs for nested references (other fields may still use them)
-                resolved["$defs"] = defs
-                return resolved
+        next_ref = target.get("$ref")
+        is_alias = (
+            "type" not in target
+            and isinstance(next_ref, str)
+            and next_ref.startswith("#")
+        )
+        if is_alias:
+            kept = {key: value for key, value in target.items() if key != "$ref"}
+        else:
+            kept = target
+        resolved = {**kept, **resolved}
+        if not is_alias:
+            return resolved
+        ref = next_ref
     return schema
 
 

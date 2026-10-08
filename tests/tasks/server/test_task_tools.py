@@ -11,12 +11,14 @@ no client task-submission API until Phase 4.
 from __future__ import annotations
 
 import asyncio
+import datetime
+import enum
 import functools
-from typing import Any
+from typing import Annotated, Any
 
 import pytest
 from fastmcp_tasks.models import CreateTaskResult
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import fastmcp.tools.function_tool as function_tool
 from fastmcp import FastMCP
@@ -33,6 +35,10 @@ from tests.tasks.task_helpers import (
     submit_task,
     wait_for_task,
 )
+
+
+class _Color(enum.Enum):
+    RED = "red"
 
 
 class _Item(BaseModel):
@@ -143,6 +149,42 @@ async def test_valid_argument_submits_under_strict_validation():
     assert final.status == "completed"
     assert final.result is not None
     assert final.result["structuredContent"] == {"result": 16}
+
+
+async def test_task_submission_accepts_json_values_under_strict_validation():
+    """Strict validation accepts the JSON form of an enum or datetime on the task path."""
+    mcp = FastMCP("strict-task-json-server", strict_input_validation=True)
+    mcp.add_extension(TasksExtension())
+
+    @mcp.tool(task=True)
+    async def describe(color: _Color, when: datetime.datetime) -> str:
+        return f"{color.value} {when.year}"
+
+    async with running_task_server(mcp):
+        final = await run_task(
+            mcp, "describe", {"color": "red", "when": "2026-01-01T00:00:00"}
+        )
+    assert final.status == "completed"
+    assert final.result is not None
+    assert final.result["structuredContent"] == {"result": "red 2026"}
+
+
+async def test_task_submission_honors_field_level_strictness():
+    """A lax server still rejects coercion the parameter itself declared strict."""
+    mcp = FastMCP("field-strict-task-server")
+    mcp.add_extension(TasksExtension())
+
+    @mcp.tool(task=True)
+    async def square(n: Annotated[int, Field(strict=True)]) -> int:
+        return n * n
+
+    async with running_task_server(mcp):
+        with pytest.raises(ValidationError):
+            await submit_task(mcp, "square", {"n": "1"})
+        final = await run_task(mcp, "square", {"n": 3})
+    assert final.status == "completed"
+    assert final.result is not None
+    assert final.result["structuredContent"] == {"result": 9}
 
 
 def test_resolve_param_hints_handles_partials(monkeypatch: pytest.MonkeyPatch):

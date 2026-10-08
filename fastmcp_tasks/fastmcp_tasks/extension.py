@@ -36,8 +36,12 @@ from mcp.shared.inbound import MCP_NAME_HEADER, decode_header_value
 from mcp_types.jsonrpc import HEADER_MISMATCH
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
-from fastmcp.exceptions import NotFoundError
-from fastmcp.server.dependencies import extract_version_spec, get_http_request
+from fastmcp.exceptions import NotFoundError, ToolError
+from fastmcp.server.dependencies import (
+    _is_client_tool_call,
+    extract_version_spec,
+    get_http_request,
+)
 from fastmcp.server.extensions import (
     MethodBinding,
     ServerExtension,
@@ -223,6 +227,11 @@ class TasksExtension(ServerExtension):
         opt in), ``optional`` tasks only when the client opted in, ``forbidden``
         never tasks. A non-task call passes straight through to the tool body.
         """
+        # The client's opt-in covers the tool it named. A tool that middleware,
+        # a tool body (a search proxy, CodeMode's execute), a resource, or a
+        # prompt calls in turn runs in the foreground and returns inline.
+        from_client = _is_client_tool_call()
+
         # Resolve the same version core would dispatch: a versioned tools/call
         # carries its VersionSpec in the request _meta, so omitting it here would
         # task the highest version even when the client targeted an older one
@@ -251,6 +260,14 @@ class TasksExtension(ServerExtension):
             and context.client_extension_settings(TASKS_EXTENSION_ID) is not None
         )
         mode = tool.task_config.mode
+
+        if not from_client:
+            if mode == "required":
+                raise ToolError(
+                    f"Tool {tool.name!r} only runs as a background task, which "
+                    "the client has to request by calling it directly."
+                )
+            return await call_next()
 
         if mode == "required":
             if not opted_in:

@@ -56,7 +56,7 @@ Interactive MCP clients authenticate through the OAuth proxy as usual. Backend s
 `MultiAuth` checks sources in a deterministic order:
 
 1. **Server** (if provided) — the full auth provider's `verify_token` runs first
-2. **Verifiers** — each `TokenVerifier` is tried in list order
+2. **Verifiers** — each `TokenVerifier` is tried in mapping or list order
 
 The first source that returns a valid `AccessToken` wins. If every source returns `None`, the request receives a 401 response.
 
@@ -91,6 +91,25 @@ mcp = FastMCP("Multi-Issuer Server", auth=auth)
 
 Without a server, no OAuth routes or metadata are served. This is appropriate for internal systems where clients already know how to obtain tokens.
 
+## Source Names
+
+Each source has a stable identity for sessions, background tasks, and continued requests. Use an ordered mapping to give verifiers explicit names; pass `server_source_id` to name the delegated auth server. These names follow the source across restarts and changes to verification order. MultiAuth qualifies the returned token's `client_id` with this source identity and the verified issuer and subject, when present. Its `original_client_id` field contains the identifier returned by the verifier; bearer token bytes, claims, subject, and scopes stay the same.
+
+```python
+from fastmcp.server.auth import MultiAuth
+from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
+
+company = StaticTokenVerifier(tokens={"company-token": {"client_id": "service", "scopes": []}})
+partner = StaticTokenVerifier(tokens={"partner-token": {"client_id": "service", "scopes": []}})
+auth = MultiAuth(verifiers={"company": company, "partner": partner})
+```
+
+List and single-verifier forms remain available when their derived source identities are distinct. JWT verifiers derive identities from configured issuers and JWKS URLs; introspection verifiers use their endpoint, remote providers use their wrapped verifier, OAuth proxies use their configured issuer, upstream endpoints, and verifier, other OAuth servers use their configured issuer, and other providers use their Python type. Explicit names are recommended when configuration or provider types may change.
+
+<Note>
+This changes `get_access_token().client_id` and ownership for existing `MultiAuth` sessions, tasks, and continued requests. Update authorization checks that compare the verifier's original client ID to read `get_access_token().original_client_id` instead. Recreate sessions and resubmit tasks after upgrading. Configurations with duplicate derived identities now need explicit names, including multiple static verifiers or custom verifiers of the same type. Changing a source name starts a new ownership scope.
+</Note>
+
 ## API Reference
 
 ### MultiAuth
@@ -98,6 +117,7 @@ Without a server, no OAuth routes or metadata are served. This is appropriate fo
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `server` | `AuthProvider \| None` | Optional auth provider that owns routes and OAuth metadata. Also tried first for token verification. |
-| `verifiers` | `list[TokenVerifier] \| TokenVerifier` | One or more token verifiers tried after the server. |
+| `verifiers` | `Mapping[str, TokenVerifier] \| list[TokenVerifier] \| TokenVerifier` | Named or distinctly configured token verifiers tried after the server. |
+| `server_source_id` | `str \| None` | Stable name for the delegated server source. Defaults to its derived identity. |
 | `base_url` | `str \| None` | Override the base URL. Defaults to the server's `base_url`. |
 | `required_scopes` | `list[str] \| None` | Override required scopes. Defaults to the server's scopes. |
