@@ -515,6 +515,55 @@ _GOOSE_CONFIG = {
 
 
 class TestScanGoose:
+    @pytest.mark.parametrize("platform", ["linux", "win32"])
+    @pytest.mark.parametrize("headers", [None, {"X-Tenant": "test-only"}])
+    def test_finds_streamable_http_extensions(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        platform: str,
+        headers: dict[str, str] | None,
+    ):
+        monkeypatch.setattr("fastmcp.cli.discovery.Path.home", lambda: tmp_path)
+        monkeypatch.setattr("fastmcp.cli.discovery.sys.platform", platform)
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+        config_dir = (
+            tmp_path / "Block" / "goose" / "config"
+            if platform == "win32"
+            else tmp_path / "goose"
+        )
+        extension: dict[str, Any] = {
+            "enabled": True,
+            "type": "streamable_http",
+            "uri": "https://example.com/mcp",
+        }
+        if headers is not None:
+            extension["headers"] = headers
+        config_path = config_dir / "config.yaml"
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text(
+            yaml.dump(
+                {
+                    "extensions": {
+                        "remote": extension,
+                        "disabled": {**extension, "enabled": False},
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        servers = _scan_goose()
+        assert len(servers) == 1
+        assert servers[0].qualified_name == "goose:remote"
+        assert servers[0].config_path == config_path
+        assert isinstance(servers[0].config, RemoteMCPServer)
+        assert servers[0].config.url == extension["uri"]
+        assert servers[0].config.transport == "http"
+        assert servers[0].config.headers == (headers or {})
+        assert isinstance(servers[0].config.to_transport(), StreamableHttpTransport)
+
     def test_finds_stdio_extensions(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):

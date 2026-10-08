@@ -261,7 +261,7 @@ def _scan_goose() -> list[DiscoveredServer]:
     """Scan Goose config for MCP server extensions.
 
     Goose uses YAML (``~/.config/goose/config.yaml``) with a different
-    schema — MCP servers are defined as ``extensions`` with ``type: stdio``.
+    schema — MCP servers are defined as ``extensions`` with a transport type.
     """
     if sys.platform == "win32":
         config_dir = Path(
@@ -311,6 +311,12 @@ def _scan_goose() -> list[DiscoveredServer]:
             }
         elif ext_type == "sse" and "uri" in ext:
             servers[name] = {"url": ext["uri"], "transport": "sse"}
+        elif ext_type == "streamable_http" and "uri" in ext:
+            servers[name] = {
+                "url": ext["uri"],
+                "transport": "http",
+                "headers": ext.get("headers", {}),
+            }
 
     return _parse_mcp_servers(servers, source="goose", config_path=path)
 
