@@ -2,6 +2,7 @@
 
 import io
 import json as _json
+import re
 from email.message import Message
 from typing import Any, ClassVar
 from urllib.parse import quote, unquote, urljoin
@@ -17,6 +18,7 @@ from .schemas import _combine_schemas_and_map_params, _ref_is_mergeable_object
 logger = get_logger(__name__)
 
 _MAX_PATH_DECODINGS = 32
+_PATH_TEMPLATE_PARAM = re.compile(r"\{([^{}]+)\}")
 
 
 def _query_scalar_to_str(value: Any) -> str:
@@ -401,7 +403,19 @@ class RequestDirector:
 
         Returns:
             Complete URL with path parameters substituted
+
+        Raises:
+            ValueError: If the template has a parameter with no value
         """
+        missing = [
+            name
+            for name in dict.fromkeys(_PATH_TEMPLATE_PARAM.findall(path_template))
+            if name not in path_params
+        ]
+        if missing:
+            names = ", ".join(repr(name) for name in missing)
+            raise ValueError(f"Missing required path parameters: {{{names}}}")
+
         # Substitute path parameters with URL-encoding to prevent
         # path traversal and SSRF via crafted parameter values
         url_path = path_template
