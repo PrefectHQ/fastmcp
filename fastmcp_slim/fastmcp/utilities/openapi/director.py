@@ -4,7 +4,7 @@ import io
 import json as _json
 from email.message import Message
 from typing import Any, ClassVar
-from urllib.parse import quote, unquote, urljoin
+from urllib.parse import quote, unquote
 
 import httpx2
 from jsonschema_path import SchemaPath
@@ -428,8 +428,9 @@ class RequestDirector:
                 safe_value = quote(str(param_value), safe="").replace(".", "%2E")
                 url_path = url_path.replace(placeholder, safe_value)
 
-        # Combine with base URL
-        return urljoin(base_url.rstrip("/") + "/", url_path.lstrip("/"))
+        # Combine with base URL. Plain concatenation: urljoin would read a
+        # leading "name:" segment (e.g. "/job-1:cancel") as a URL scheme.
+        return f"{base_url.rstrip('/')}/{url_path.lstrip('/')}"
 
 
 # Export public symbols
