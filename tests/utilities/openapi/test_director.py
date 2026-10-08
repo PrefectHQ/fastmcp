@@ -1,7 +1,6 @@
 """Unit tests for RequestDirector."""
 
 import json
-from urllib.parse import unquote
 
 import pytest
 from jsonschema_path import SchemaPath
@@ -361,6 +360,38 @@ class TestRequestDirector:
 
         assert request.method == "POST"
         # For non-JSON content, httpx uses 'content' parameter which becomes bytes
+        assert request.content == expected
+        assert request.headers["content-type"] == media_type
+
+    @pytest.mark.parametrize(
+        ("schema_type", "media_type", "body", "expected"),
+        [
+            ("integer", "text/plain", 42, b"42"),
+            ("number", "text/plain", 1.5, b"1.5"),
+            ("boolean", "text/plain", True, b"true"),
+            ("boolean", "text/plain", False, b"false"),
+            ("integer", "text/plain; charset=utf-8", 7, b"7"),
+        ],
+    )
+    def test_body_construction_scalar_raw_body(
+        self, director, schema_type, media_type, body, expected
+    ):
+        """A numeric or boolean body for a non-JSON media type is sent as text."""
+        route = HTTPRoute(
+            path="/value",
+            method="POST",
+            operation_id="set_value",
+            request_body=RequestBodyInfo(
+                required=True,
+                content_schema={media_type: {"type": schema_type}},
+            ),
+            parameter_map={
+                "content": {"location": "body", "openapi_name": "content"},
+            },
+        )
+
+        request = director.build(route, {"content": body}, "https://api.example.com")
+
         assert request.content == expected
         assert request.headers["content-type"] == media_type
 
@@ -1154,14 +1185,8 @@ class TestPathTraversalPrevention:
         ],
     )
     def test_path_traversal_encoded(self, director, path_route, malicious_id: str):
-        request = director.build(
-            path_route, {"id": malicious_id}, "https://api.example.com"
-        )
-        url = str(request.url)
-        assert "/admin" not in url
-        assert "/secret" not in url
-        assert "/etc/passwd" not in url
-        assert url.startswith("https://api.example.com/api/v1/users/")
+        with pytest.raises(ValueError, match="dot segments"):
+            director.build(path_route, {"id": malicious_id}, "https://api.example.com")
 
     def test_slash_in_param_is_encoded(self, director, path_route):
         request = director.build(path_route, {"id": "a/b"}, "https://api.example.com")
@@ -1170,12 +1195,8 @@ class TestPathTraversalPrevention:
         assert "a%2Fb" in url
 
     def test_dot_dot_slash_is_encoded(self, director, path_route):
-        request = director.build(
-            path_route, {"id": "../admin"}, "https://api.example.com"
-        )
-        url = str(request.url)
-        assert "%2E%2E%2Fadmin" in url or "%2e%2e%2fadmin" in url
-        assert url.startswith("https://api.example.com/api/v1/users/")
+        with pytest.raises(ValueError, match="dot segments"):
+            director.build(path_route, {"id": "../admin"}, "https://api.example.com")
 
     def test_question_mark_encoded(self, director, path_route):
         request = director.build(
@@ -1213,30 +1234,18 @@ class TestPathTraversalPrevention:
         assert str(request.url) == "https://api.example.com/api/v1/users/42/profile"
 
     def test_bare_single_dot_encoded(self, director, path_route):
-        """Bare '.' must be encoded so urljoin doesn't normalize it away."""
-        request = director.build(path_route, {"id": "."}, "https://api.example.com")
-        url = str(request.url)
-        assert "%2E" in url
-        assert url.startswith("https://api.example.com/api/v1/users/")
+        with pytest.raises(ValueError, match="dot segments"):
+            director.build(path_route, {"id": "."}, "https://api.example.com")
 
     def test_bare_dotdot_encoded(self, director, path_route):
-        """Bare '..' must be encoded so urljoin doesn't resolve it as traversal."""
-        request = director.build(path_route, {"id": ".."}, "https://api.example.com")
-        url = str(request.url)
-        assert "%2E%2E" in url or "%2e%2e" in url
-        assert url.startswith("https://api.example.com/api/v1/users/")
+        with pytest.raises(ValueError, match="dot segments"):
+            director.build(path_route, {"id": ".."}, "https://api.example.com")
 
     def test_double_encoded_traversal(self, director, path_route):
-        request = director.build(
-            path_route,
-            {"id": "..%2F..%2Fadmin"},
-            "https://api.example.com",
-        )
-        url = str(request.url)
-        decoded = unquote(unquote(url))
-        # Verify traversal didn't escape the users/ prefix
-        assert decoded.startswith("https://api.example.com/api/v1/users/")
-        assert url.startswith("https://api.example.com/api/v1/users/")
+        with pytest.raises(ValueError, match="dot segments"):
+            director.build(
+                path_route, {"id": "..%2F..%2Fadmin"}, "https://api.example.com"
+            )
 
 
 class TestContentTypeDispatch:

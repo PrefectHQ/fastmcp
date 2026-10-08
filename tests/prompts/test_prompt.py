@@ -5,6 +5,7 @@ import pytest
 from mcp_types import EmbeddedResource, TextResourceContents
 from pydantic import Field
 
+from fastmcp import Client, FastMCP
 from fastmcp.prompts.base import (
     Message,
     Prompt,
@@ -62,6 +63,27 @@ class TestRenderPrompt:
         prompt = Prompt.from_function(fn)
         with pytest.raises(ValueError):
             await prompt.render(arguments=dict(age=40))
+
+    async def test_fn_with_positional_only_parameters_not_allowed(self):
+        def fn(name: str, /, age: int = 30) -> str:
+            return f"Hello, {name}! You're {age} years old."
+
+        with pytest.raises(
+            ValueError,
+            match=(
+                "Functions with positional-only parameters are not supported as "
+                "prompts.*standard parameters"
+            ),
+        ):
+            Prompt.from_function(fn)
+
+    async def test_fn_with_keyword_only_parameters(self):
+        def fn(name: str, *, age: int = 30) -> str:
+            return f"Hello, {name}! You're {age} years old."
+
+        prompt = Prompt.from_function(fn)
+        result = await prompt.render(arguments=dict(name="World", age=40))
+        assert result.messages == [Message("Hello, World! You're 40 years old.")]
 
     async def test_fn_returns_message_list(self):
         async def fn() -> list[Message]:
@@ -781,6 +803,27 @@ class TestPromptResult:
         assert len(mcp_result.messages) == 2
         assert mcp_result.description == "Test"
         assert mcp_result.meta == {"key": "value"}
+
+
+class TestInternalMetaNotLeaked:
+    """FastMCP's private visibility marker must never reach the wire."""
+
+    async def test_visibility_marker_stripped_from_result_meta(self):
+        mcp = FastMCP()
+
+        @mcp.prompt(meta={"team": "infra", "fastmcp": {"owner": "docs"}})
+        def greet(name: str) -> str:
+            return f"Hello {name}"
+
+        # Applying any visibility rule stamps the internal marker on meta
+        mcp.enable(names={"greet"})
+
+        async with Client(mcp) as client:
+            result = await client.get_prompt("greet", {"name": "Ada"})
+
+        assert result.meta is not None
+        assert result.meta["team"] == "infra"
+        assert result.meta["fastmcp"] == {"owner": "docs"}
 
 
 class TestPromptFieldDefaults:

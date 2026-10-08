@@ -1510,10 +1510,15 @@ class FastMCP(
                             name,
                         )
                         raise
-                    logger.exception(f"Error calling tool {name!r}")
+                    # An upstream HTTP error response is an answer from the
+                    # upstream API, not a crash in the tool: skip the traceback.
+                    status_code = get_http_status_code(e)
+                    logger.error(
+                        f"Error calling tool {name!r}", exc_info=status_code is None
+                    )
                     # Handle actionable errors that should reach the LLM
                     # even when masking is enabled
-                    if get_http_status_code(e) == 429:
+                    if status_code == 429:
                         raise ToolError(
                             "Rate limited by upstream API, please retry later"
                         ) from e

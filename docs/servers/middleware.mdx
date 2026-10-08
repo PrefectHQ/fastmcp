@@ -746,6 +746,46 @@ class ResponseEnricher(Middleware):
 
 For more complex tool transformations, consider [Transforms](/servers/transforms/transforms) instead.
 
+### Inspecting Tool Text Results
+
+Use `on_call_tool` to check text returned by a tool after it runs. This example accepts an asynchronous checker that raises when a text block should be rejected. Check only `TextContent` blocks and return the original result when every check succeeds:
+
+```python
+from collections.abc import Awaitable, Callable
+
+from fastmcp.exceptions import ToolError
+from fastmcp.server.middleware import Middleware, MiddlewareContext
+from fastmcp.tools import ToolResult
+from mcp.types import TextContent
+
+
+class TextInspectionMiddleware(Middleware):
+    def __init__(self, inspect_text: Callable[[str], Awaitable[None]]) -> None:
+        self.inspect_text = inspect_text
+
+    async def on_call_tool(self, context: MiddlewareContext, call_next):
+        result = await call_next(context)
+        if not isinstance(result, ToolResult):
+            return result
+
+        for block in result.content:
+            if not isinstance(block, TextContent):
+                continue
+
+            try:
+                await self.inspect_text(block.text)
+            except Exception as exc:
+                raise ToolError("Tool text inspection failed") from exc
+
+        return result
+```
+
+The checker does not rewrite or redact the result. A rejected text block or a checker failure stops the tool call; successful checks preserve the original result, including structured content and metadata.
+
+This checks text blocks only. It does not inspect `structured_content`, image content, or other non-text blocks. If your policy applies to the entire result, validate those fields separately. For advisory checks, catch failures deliberately, report them through logging or response metadata, and return the original result.
+
+Server middleware sees only tool calls and results handled by this server. It cannot inspect or control the client's model, the model's conversation, or tools that run on the client.
+
 ### Filtering Lists
 
 List operations return FastMCP objects that you can filter before they reach the client. When filtering list results, also block execution in the corresponding operation hook to maintain consistency:

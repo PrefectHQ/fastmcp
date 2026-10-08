@@ -109,7 +109,7 @@ from fastmcp.server.auth.oauth_proxy.models import (
     _hash_token,
 )
 from fastmcp.server.auth.oauth_proxy.ui import create_error_html
-from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client
+from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client, OAuthError
 from fastmcp.server.auth.redirect_validation import (
     build_client_redirect,
     is_redirect_uri_allowed_for_application_type,
@@ -1653,8 +1653,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
     def _prepare_scopes_for_token_exchange(self, scopes: list[str]) -> list[str]:
         """Prepare scopes for initial token exchange (auth code -> tokens).
 
-        Override this method to provide scopes during the authorization
-        code exchange. Some providers (like Azure) require scopes to be sent.
+        The default omits the `scope` parameter from the upstream code
+        exchange, because the scopes were already negotiated at the
+        authorization endpoint and some OIDC providers reject them on the
+        token request. Override this method to send scopes during the
+        exchange; providers that require them (like Azure) do so.
 
         Args:
             scopes: Scopes from the authorization request
@@ -1662,7 +1665,7 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         Returns:
             List of scopes to send, or empty list to omit scope parameter
         """
-        return scopes
+        return []
 
     def _translate_scopes_from_idp(self, scopes: list[str]) -> list[str]:
         """Translate IdP-returned scopes into the client-facing form.
@@ -1834,9 +1837,13 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     **self._extra_token_params,
                 )
             logger.debug("Successfully refreshed upstream token")
-        except Exception as e:
-            logger.error("Upstream token refresh failed: %s", e)
-            raise TokenError("invalid_grant", f"Upstream refresh failed: {e}") from e
+        except OAuthError as e:
+            logger.warning("Upstream OAuth token refresh failed: %s", e.error)
+            if e.error == "invalid_grant":
+                raise TokenError(
+                    "invalid_grant", "Upstream refresh token was rejected"
+                ) from e
+            raise
 
         # A refresh response with a non-positive lifetime is equally unusable.
         # Reject it before mutating stored upstream state or rotating JTI mappings.

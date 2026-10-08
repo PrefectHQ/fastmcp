@@ -46,8 +46,13 @@ These control how the server listens when running with an HTTP transport.
 | `FASTMCP_HTTP_HOST_ORIGIN_PROTECTION` | `bool \| "auto"` | `false` | Validate `Host` and browser `Origin` headers for Streamable HTTP and SSE requests. `auto` protects localhost-bound servers and explicit host/origin allowlists. `false` disables this guard and FastMCP's DNS-rebinding protection for the endpoint. |
 | `FASTMCP_HTTP_ALLOWED_HOSTS` | `list[str] \| null` | `null` | Additional trusted hostnames when Host and Origin protection is enabled. Use a JSON array, such as `["mcp.example.com"]`. |
 | `FASTMCP_HTTP_ALLOWED_ORIGINS` | `list[str] \| null` | `null` | Browser origins trusted when Host and Origin protection is enabled. Configure CORS separately for cross-origin browser reads. Use a JSON array, such as `["https://app.example.com"]`. |
-| `FASTMCP_HTTP_SESSION_IDLE_TIMEOUT` | `float \| null` | `null` | Seconds a Streamable HTTP session may remain idle before it is terminated. The deadline resets on every request. When `null`, sessions never expire from inactivity. Not supported in stateless mode. |
+| `FASTMCP_HTTP_SESSION_IDLE_TIMEOUT` | `float \| "auto" \| "none"` | `"auto"` | Seconds a stateful Streamable HTTP session may remain idle before it is terminated. `"auto"` uses the MCP SDK's default: 1800 seconds (30 minutes) in SDK 2.2, no timeout in earlier versions. Set a positive number to override it, or `none` to disable it. |
 | `FASTMCP_DEBUG` | `bool` | `false` | Enable debug mode. |
+
+MCP SDK 2.2 also limits concurrent stateful HTTP sessions to 10,000. Keeping
+the default idle timeout lets abandoned sessions expire and frees capacity for
+new connections. Disabling it means clients must explicitly close their sessions
+to release that capacity. Stateless HTTP does not use the session pool.
 
 ## Error Handling
 
@@ -72,6 +77,7 @@ These control how the server listens when running with an HTTP transport.
 |---|---|---|---|
 | `FASTMCP_SHOW_SERVER_BANNER` | `bool` | `true` | Show the server banner on startup. Also controllable via `--no-banner` or `server.run(show_banner=False)`. |
 | `FASTMCP_CHECK_FOR_UPDATES` | `Literal["stable", "prerelease", "off"]` | `stable` | Update checking on CLI startup. `stable` checks stable releases only, `prerelease` includes pre-releases, `off` disables checking. |
+| `FASTMCP_OAUTH_ENCRYPTION_KEY` | `str \| None` | None | Fernet key for [encrypted CLI OAuth storage](/cli/overview#mcp-server-authentication). An unset or empty value uses memory only. |
 
 ## Telemetry
 
@@ -111,5 +117,4 @@ FastMCP reads the proxy URL from the environment and passes it to the HTTP clien
 |---|---|---|---|
 | `FASTMCP_HOME` | `Path` | Platform default | Data directory for FastMCP. Defaults to the platform-specific user data directory. |
 | `FASTMCP_ENV_FILE` | `str` | `.env` | Path to the `.env` file to load settings from. Must be set as an environment variable (see above). |
-| `FASTMCP_SERVER_DEPENDENCIES` | `list[str]` | `[]` | Additional dependencies to install in the server environment. |
 | `FASTMCP_TEST_MODE` | `bool` | `false` | Enable test mode. |

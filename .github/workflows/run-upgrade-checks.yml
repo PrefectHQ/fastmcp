@@ -28,6 +28,9 @@ jobs:
         with:
           resolution: upgrade
 
+      - name: Setup gitleaks
+        uses: ./.github/actions/setup-gitleaks
+
       - name: Run prek
         uses: j178/prek-action@v3.0.0
         env:
@@ -49,6 +52,8 @@ jobs:
             python-version: "3.13"
           - os: ubuntu-latest
             python-version: "3.14"
+          - os: ubuntu-latest
+            python-version: "3.15"
           - os: windows-latest
             python-version: "3.14"
       fail-fast: false

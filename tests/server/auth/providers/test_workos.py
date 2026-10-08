@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 import pytest
 from key_value.aio.stores.memory import MemoryStore
 from mcp import MCPError
+from starlette.testclient import TestClient
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
@@ -337,6 +338,26 @@ class TestAuthKitAudienceBinding:
         verifier = auth.token_verifier
         assert isinstance(verifier, JWTVerifier)
         assert verifier.audience == "http://127.0.0.1:8000/mcp"
+
+    @pytest.mark.parametrize(
+        "authkit_domain",
+        ["https://test.authkit.app", "https://test.authkit.app/"],
+    )
+    def test_protected_resource_metadata_preserves_authkit_issuer(
+        self, authkit_domain: str
+    ):
+        issuer = "https://test.authkit.app"
+        auth = AuthKitProvider(
+            authkit_domain=authkit_domain,
+            base_url="http://127.0.0.1:8000",
+        )
+        app = FastMCP("test", auth=auth).http_app(path="/mcp")
+
+        with TestClient(app) as client:
+            response = client.get("/.well-known/oauth-protected-resource/mcp")
+
+        assert response.status_code == 200
+        assert response.json()["authorization_servers"] == [issuer]
 
 
 class TestWorkOSTokenVerifierScopes:

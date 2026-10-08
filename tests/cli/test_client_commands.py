@@ -1,12 +1,15 @@
 """Tests for fastmcp list and fastmcp call CLI commands."""
 
 import json
+import warnings
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
 import mcp_types
 import pytest
+from cryptography.fernet import Fernet
+from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
 from fastmcp import FastMCP
 from fastmcp.cli import client as client_module
@@ -24,8 +27,13 @@ from fastmcp.cli.client import (
     parse_tool_arguments,
     resolve_server_spec,
 )
+from fastmcp.client.auth.oauth import OAuth
 from fastmcp.client.client import CallToolResult
+from fastmcp.client.transports.sse import SSETransport
 from fastmcp.client.transports.stdio import StdioTransport
+from fastmcp.mcp_config import RemoteMCPServer
+from fastmcp.settings import Settings
+from fastmcp.utilities.tests import temporary_settings
 
 # ---------------------------------------------------------------------------
 # coerce_value
@@ -85,6 +93,38 @@ class TestCoerceValue:
     def test_string_preserves_numeric_looking_values(self):
         assert coerce_value("42", {"type": "string"}) == "42"
 
+    @pytest.mark.parametrize(
+        ("raw", "schema", "expected"),
+        [
+            ("[1, 2]", {"anyOf": [{"type": "array"}, {"type": "null"}]}, [1, 2]),
+            ('{"a": 1}', {"anyOf": [{"type": "null"}, {"type": "object"}]}, {"a": 1}),
+            ("42", {"anyOf": [{"type": "integer"}, {"type": "null"}]}, 42),
+            ("true", {"anyOf": [{"type": "boolean"}, {"type": "null"}]}, True),
+            ("[1, 2]", {"type": ["array", "null"]}, [1, 2]),
+            ("42", {"anyOf": [{"type": "string"}, {"type": "null"}]}, "42"),
+        ],
+    )
+    def test_optional_uses_non_null_type(self, raw, schema, expected):
+        """``X | None`` is coerced like ``X``."""
+        result = coerce_value(raw, schema)
+        assert result == expected
+        assert type(result) is type(expected)
+
+    def test_optional_invalid_value(self):
+        with pytest.raises(ValueError, match="Expected JSON array"):
+            coerce_value("not-json", {"anyOf": [{"type": "array"}, {"type": "null"}]})
+
+    @pytest.mark.parametrize(
+        "schema",
+        [
+            {"anyOf": [{"type": "integer"}, {"type": "string"}]},
+            {"anyOf": [{"type": "integer"}, {"type": "string"}, {"type": "null"}]},
+            {"type": ["integer", "string"]},
+        ],
+    )
+    def test_ambiguous_union_stays_string(self, schema):
+        assert coerce_value("42", schema) == "42"
+
 
 # ---------------------------------------------------------------------------
 # parse_tool_arguments
@@ -119,6 +159,22 @@ class TestParseToolArguments:
     def test_value_containing_equals(self):
         result = parse_tool_arguments(("query=a=b=c",), None, self.SCHEMA)
         assert result == {"query": "a=b=c"}
+
+    def test_optional_array_parsed_as_json(self):
+        schema: dict[str, Any] = {
+            "type": "object",
+            "properties": {
+                "tags": {
+                    "anyOf": [
+                        {"type": "array", "items": {"type": "string"}},
+                        {"type": "null"},
+                    ],
+                    "default": None,
+                },
+            },
+        }
+        result = parse_tool_arguments(('tags=["a", "b"]',), None, schema)
+        assert result == {"tags": ["a", "b"]}
 
     def test_invalid_arg_format_exits(self):
         with pytest.raises(SystemExit):
@@ -367,6 +423,138 @@ class TestIsHttpTarget:
 
 
 class TestBuildClient:
+    @pytest.mark.parametrize("transport,auth", [("http", None), ("sse", "oauth")])
+    async def test_encrypted_oauth_reused_by_fresh_client(
+        self,
+        transport: str,
+        auth: str | None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        monkeypatch.setenv(
+            "FASTMCP_OAUTH_ENCRYPTION_KEY", Fernet.generate_key().decode()
+        )
+        url = (
+            "https://example.com/mcp"
+            if transport == "http"
+            else "https://example.com/sse"
+        )
+        resolved = url if transport == "http" else SSETransport(url)
+        tokens = OAuthToken(
+            access_token="synthetic-access-token",
+            refresh_token="synthetic-refresh-token",
+            token_type="Bearer",
+            expires_in=300,
+        )
+        registration = OAuthClientInformationFull(
+            client_id="test-client",
+            client_secret="synthetic-registration-secret",
+            redirect_uris=["http://localhost/callback"],
+        )
+
+        with temporary_settings(**Settings(home=tmp_path, _env_file=None).model_dump()):
+            with warnings.catch_warnings(record=True) as emitted:
+                warnings.simplefilter("always")
+                # py-key-value-aio checks a non-runtime-checkable protocol on Python 3.15.
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"<class 'key_value\.aio\.protocols\.key_value\.AsyncKeyValue'> isn't explicitly decorated",
+                    category=DeprecationWarning,
+                )
+                first = _build_client(resolved, auth=auth).transport.auth
+                assert isinstance(first, OAuth)
+                await first.token_storage_adapter.set_tokens(tokens)
+                await first.token_storage_adapter.set_client_info(registration)
+                second = _build_client(resolved, auth=auth).transport.auth
+                assert isinstance(second, OAuth)
+
+            assert await second.token_storage_adapter.get_tokens() == tokens
+            assert await second.token_storage_adapter.get_client_info() == registration
+            assert await second.token_storage_adapter.get_token_expiry() == (
+                await first.token_storage_adapter.get_token_expiry()
+            )
+            other = _build_client("https://example.com/other").transport.auth
+            assert isinstance(other, OAuth)
+            assert await other.token_storage_adapter.get_tokens() is None
+
+        assert not emitted
+        files = [path for path in tmp_path.rglob("*") if path.is_file()]
+        assert files
+        for path in files:
+            contents = path.read_bytes()
+            for secret in (
+                tokens.access_token,
+                tokens.refresh_token,
+                registration.client_secret,
+            ):
+                assert secret is not None
+                assert secret.encode() not in contents
+
+    @pytest.mark.parametrize("key", [None, ""])
+    async def test_unconfigured_oauth_is_quiet_and_ephemeral(
+        self,
+        key: str | None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        if key is None:
+            monkeypatch.delenv("FASTMCP_OAUTH_ENCRYPTION_KEY", raising=False)
+        else:
+            monkeypatch.setenv("FASTMCP_OAUTH_ENCRYPTION_KEY", key)
+
+        with temporary_settings(**Settings(home=tmp_path, _env_file=None).model_dump()):
+            with warnings.catch_warnings(record=True) as emitted:
+                warnings.simplefilter("always")
+                first = _build_client("https://example.com/mcp").transport.auth
+                second = _build_client("https://example.com/mcp").transport.auth
+            assert not emitted
+            assert isinstance(first, OAuth) and isinstance(second, OAuth)
+            await first.token_storage_adapter.set_tokens(
+                OAuthToken(access_token="ephemeral-token", token_type="Bearer")
+            )
+            assert await second.token_storage_adapter.get_tokens() is None
+            assert not list(tmp_path.iterdir())
+            with pytest.warns(UserWarning, match="Using in-memory token storage"):
+                OAuth("https://example.com/mcp")
+
+    async def test_changed_key_does_not_reuse_encrypted_tokens(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        original_key = Fernet.generate_key().decode()
+        monkeypatch.setenv("FASTMCP_OAUTH_ENCRYPTION_KEY", original_key)
+        with temporary_settings(**Settings(home=tmp_path, _env_file=None).model_dump()):
+            first = _build_client("https://example.com/mcp").transport.auth
+            assert isinstance(first, OAuth)
+            await first.token_storage_adapter.set_tokens(
+                OAuthToken(access_token="original-key-token", token_type="Bearer")
+            )
+
+        monkeypatch.setenv(
+            "FASTMCP_OAUTH_ENCRYPTION_KEY", Fernet.generate_key().decode()
+        )
+        with temporary_settings(**Settings(home=tmp_path, _env_file=None).model_dump()):
+            changed = _build_client("https://example.com/mcp").transport.auth
+            assert isinstance(changed, OAuth)
+            assert await changed.token_storage_adapter.get_tokens() is None
+            await changed.token_storage_adapter.set_tokens(
+                OAuthToken(access_token="changed-key-token", token_type="Bearer")
+            )
+
+        monkeypatch.setenv("FASTMCP_OAUTH_ENCRYPTION_KEY", original_key)
+        with temporary_settings(**Settings(home=tmp_path, _env_file=None).model_dump()):
+            restored = _build_client("https://example.com/mcp").transport.auth
+            assert isinstance(restored, OAuth)
+            tokens = await restored.token_storage_adapter.get_tokens()
+            assert tokens is not None and tokens.access_token == "original-key-token"
+
+    @pytest.mark.parametrize("auth", ["none", "synthetic-bearer-token"])
+    def test_unused_invalid_key_does_not_break_explicit_auth(
+        self, auth: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setenv("FASTMCP_OAUTH_ENCRYPTION_KEY", "invalid-key")
+        with temporary_settings(**Settings(home=tmp_path, _env_file=None).model_dump()):
+            _build_client("https://example.com/mcp", auth=auth)
+
     def test_http_target_gets_oauth_by_default(self):
         client = _build_client("http://localhost:8000/mcp")
         # OAuth is applied during Client init via _set_auth
@@ -390,6 +578,48 @@ class TestBuildClient:
         assert client.transport is not None
 
 
+@pytest.mark.parametrize("command", ["list", "call"])
+async def test_invalid_oauth_key_is_a_cli_error(
+    command: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("FASTMCP_OAUTH_ENCRYPTION_KEY", "invalid-key")
+    with temporary_settings(**Settings(home=tmp_path, _env_file=None).model_dump()):
+        with pytest.raises(SystemExit) as exc_info:
+            if command == "list":
+                await list_command("https://example.com/mcp")
+            else:
+                await call_command("https://example.com/mcp", "greet")
+    assert exc_info.value.code == 1
+    output = capsys.readouterr()
+    assert "FASTMCP_OAUTH_ENCRYPTION_KEY" in output.out
+    assert "Fernet" in output.out
+    assert "invalid-key" not in output.out + output.err
+    assert "Traceback" not in output.out + output.err
+
+
+def test_named_oauth_server_is_quiet(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    server = client_module.DiscoveredServer(
+        name="weather",
+        source="project",
+        config=RemoteMCPServer(url="https://example.com/mcp", auth="oauth"),
+        config_path=tmp_path / "mcp.json",
+    )
+    monkeypatch.setattr(
+        "fastmcp.cli.discovery.discover_servers", lambda start_dir: [server]
+    )
+    monkeypatch.delenv("FASTMCP_OAUTH_ENCRYPTION_KEY", raising=False)
+    with temporary_settings(**Settings(home=tmp_path, _env_file=None).model_dump()):
+        with warnings.catch_warnings(record=True) as emitted:
+            warnings.simplefilter("always")
+            _build_client(resolve_server_spec("weather"))
+    assert not emitted
+
+
 # ---------------------------------------------------------------------------
 # Integration tests — invoke actual CLI commands via monkeypatched _build_client
 # ---------------------------------------------------------------------------
@@ -408,6 +638,11 @@ def _build_test_server() -> FastMCP:
     def add(a: int, b: int) -> int:
         """Add two numbers."""
         return a + b
+
+    @server.tool
+    def total(values: list[int] | None = None) -> int:
+        """Sum an optional list of numbers."""
+        return sum(values or [])
 
     @server.resource("test://greeting")
     def greeting_resource() -> str:
@@ -484,6 +719,15 @@ class TestCallCommandCLI:
         captured = capsys.readouterr()
         data = json.loads(captured.out)
         assert data["is_error"] is False
+
+    @pytest.mark.usefixtures("_patch_client")
+    async def test_call_tool_optional_array(self, capsys: pytest.CaptureFixture[str]):
+        await call_command(
+            "fake://server", "total", "values=[1, 2, 3]", json_output=True
+        )
+        data = json.loads(capsys.readouterr().out)
+        assert data["is_error"] is False
+        assert data["structured_content"] == {"result": 6}
 
     @pytest.mark.usefixtures("_patch_client")
     async def test_call_tool_not_found(self):

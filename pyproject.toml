@@ -24,6 +24,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Typing :: Typed",
 ]
 
@@ -78,8 +79,8 @@ exclude-newer = "1 week"
 # first-party packages, whose fresh releases we install deliberately, the
 # MCP SDK, where a new major is the only version satisfying our floor and so
 # has nothing older to fall back to, and uncalled-for, the DI engine whose
-# releases we adopt deliberately.
-exclude-newer-package = { fastmcp = false, fastmcp-slim = false, fastmcp-remote = false, prefab-ui = false, mcp = false, mcp-types = false, uncalled-for = false, pydocket = false }
+# releases we adopt deliberately. Monty 1.1.0 supplies Python 3.15 wheels.
+exclude-newer-package = { fastmcp = false, fastmcp-slim = false, fastmcp-remote = false, prefab-ui = false, mcp = false, mcp-types = false, uncalled-for = false, pydocket = false, pydantic-monty = false, pydantic-monty-client = false, pydantic-monty-runtime = false }
 
 [dependency-groups]
 dev = [
@@ -169,6 +170,11 @@ exclude = [
 
 [tool.ty.environment]
 python-version = "3.10"
+# Pin the platform ty checks against to the one CI uses. Without it ty uses the
+# host platform, and on Windows typeshed's fcntl has no flock/LOCK_EX/LOCK_UN,
+# so tests/utilities/json_schema_type/test_real_world_schemas.py fails the ty
+# hook for Windows contributors while ubuntu-latest stays green.
+python-platform = "linux"
 
 [tool.ty.analysis]
 # prefab_ui is the apps SDK and is not installed here.

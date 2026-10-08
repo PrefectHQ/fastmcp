@@ -14,7 +14,7 @@ using the OAuth Proxy pattern for non-DCR OAuth flows.
 
 ## Functions
 
-### `EntraOBOToken` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/azure.py#L871" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `EntraOBOToken` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/azure.py#L893" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 EntraOBOToken(scopes: list[str]) -> str
@@ -78,7 +78,7 @@ Setup:
 
 **Methods:**
 
-#### `from_b2c` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/azure.py#L297" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_b2c` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/azure.py#L312" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_b2c(cls, **kwargs: Any) -> AzureProvider
@@ -113,10 +113,12 @@ Azure AD B2C does **not** support OBO.
 `https\://{tenant_name}.onmicrosoft.com/{client_id}`.
 - `token_issuer`: Expected `iss` claim. `None` (default) disables
 issuer validation.
-- `**kwargs`: Forwarded to `AzureProvider.__init__`.
+- `**kwargs`: Forwarded to `AzureProvider.__init__`. `extra_authorize_params`
+defaults to `{}` here rather than to the account-picker prompt, because
+B2C user flows only support `prompt=login`.
 
 
-#### `authorize` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/azure.py#L375" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `authorize` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/azure.py#L398" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str
@@ -133,10 +135,11 @@ scopes to determine the resource/audience instead of a separate parameter.
 - `params`: Authorization parameters from the client
 
 **Returns:**
-- Authorization URL to redirect the user to Azure AD
+- URL to redirect the user to: the local consent screen when consent is
+- enabled, otherwise the Azure AD authorization URL.
 
 
-#### `get_obo_credential` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/azure.py#L629" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_obo_credential` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/azure.py#L651" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_obo_credential(self, user_assertion: str) -> OnBehalfOfCredential
@@ -159,7 +162,7 @@ calls multiple tools with the same scopes.
 - `ImportError`: If azure-identity is not installed (requires fastmcp[azure]).
 
 
-#### `close_obo_credentials` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/azure.py#L686" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `close_obo_credentials` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/azure.py#L708" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 close_obo_credentials(self) -> None
@@ -168,7 +171,7 @@ close_obo_credentials(self) -> None
 Close all cached OBO credentials.
 
 
-### `AzureJWTVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/azure.py#L697" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AzureJWTVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/azure.py#L719" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 JWT verifier pre-configured for Azure AD / Microsoft Entra ID.
@@ -205,7 +208,7 @@ Example::
 
 **Methods:**
 
-#### `scopes_supported` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/azure.py#L777" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `scopes_supported` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/azure.py#L799" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 scopes_supported(self) -> list[str]
@@ -220,7 +223,7 @@ property returns the full-URI form for OAuth metadata while
 ``required_scopes`` retains the short form for token validation.
 
 
-#### `get_challenge_scopes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/azure.py#L788" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_challenge_scopes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/azure.py#L810" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_challenge_scopes(self, required_scopes: list[str] | None = None) -> list[str]

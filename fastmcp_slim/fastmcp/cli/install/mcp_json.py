@@ -1,5 +1,6 @@
 """MCP configuration JSON generation for FastMCP install using Cyclopts."""
 
+import builtins
 import json
 import sys
 from pathlib import Path
@@ -85,8 +86,9 @@ def install_mcp_json(
             pyperclip.copy(json_output)
             print(f"[green]MCP configuration for '{name}' copied to clipboard[/green]")
         else:
-            # Print to stdout (for piping)
-            print(json_output)
+            # Print to stdout (for piping). Rich's print would wrap long lines
+            # and interpret [markup], corrupting the JSON.
+            builtins.print(json_output)
 
         return True
 

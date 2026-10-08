@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import inspect
+import json
 import time
 import warnings
 from collections.abc import Awaitable, Callable, Sequence
@@ -96,7 +97,7 @@ class _ForwardingClientSession(ClientSession):
         return None
 
 
-# Settings every proxy-backend connection uses: relay results without policing
+# Default proxy-backend connection settings: relay results without policing
 # the backend's output schema, and forward eligible caller headers upstream
 # without inheriting frontend-owned MCP transport state.
 PROXY_TRANSPORT_OPTIONS = TransportOptions(
@@ -110,9 +111,8 @@ def _with_proxy_transport_options(
 ) -> TransportOptions:
     """Layer proxy-owned settings onto options supplied by another client layer."""
     return replace(
-        options or TransportOptions(),
+        options or PROXY_TRANSPORT_OPTIONS,
         session_class=PROXY_TRANSPORT_OPTIONS.session_class,
-        forward_incoming_headers=PROXY_TRANSPORT_OPTIONS.forward_incoming_headers,
     )
 
 
@@ -214,10 +214,7 @@ def _session_request_meta(
 
 async def _relay_read_resource(
     client: Client, uri: str, ctx: Context | None
-) -> (
-    list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents]
-    | mcp_types.InputRequiredResult
-):
+) -> mcp_types.ReadResourceResult | mcp_types.InputRequiredResult:
     """Read a backend resource, surfacing a guard ask rather than driving it.
 
     Mirrors `ProxyTool.run`: on a modern backend the low-level session is used
@@ -229,8 +226,8 @@ async def _relay_read_resource(
     """
     meta = _forwardable_request_meta(ctx)
     if client.protocol_version not in MODERN_PROTOCOL_VERSIONS:
-        return await client.read_resource(uri, meta=meta)
-    result = await client._await_with_session_monitoring(
+        return await client.read_resource_mcp(uri, meta=meta)
+    return await client._await_with_session_monitoring(
         client.session.read_resource(
             uri,
             meta=_session_request_meta(meta),
@@ -239,9 +236,6 @@ async def _relay_read_resource(
             allow_input_required=True,
         )
     )
-    if isinstance(result, mcp_types.InputRequiredResult):
-        return result
-    return list(result.contents)
 
 
 def _stash_proxy_request_context(client: Client, ctx: Context) -> None:
@@ -527,6 +521,7 @@ class ProxyResource(Resource):
             description=mcp_resource.description,
             mime_type=mcp_resource.mime_type or "text/plain",
             icons=mcp_resource.icons,
+            annotations=mcp_resource.annotations,
             meta=mcp_resource.meta,
             tags=get_fastmcp_metadata(mcp_resource.meta).get("tags", []),
             task_config=TaskConfig(mode="forbidden"),
@@ -552,14 +547,14 @@ class ProxyResource(Resource):
                 result = await _relay_read_resource(client, backend_uri, ctx)
             if isinstance(result, mcp_types.InputRequiredResult):
                 return InputRequiredResourceResult(result)
-            if not result:
+            if not result.contents:
                 raise ResourceError(
                     f"Remote server returned empty content for {backend_uri}"
                 )
 
             # Process all items in the result list, not just the first one
             contents: list[ResourceContent] = []
-            for item in result:
+            for item in result.contents:
                 if isinstance(item, TextResourceContents):
                     contents.append(
                         ResourceContent(
@@ -579,7 +574,9 @@ class ProxyResource(Resource):
                 else:
                     raise ResourceError(f"Unsupported content type: {type(item)}")
 
-            return ResourceResult(contents=contents)
+            return ResourceResult(
+                contents=contents, meta=_forwardable_server_meta(result.meta) or None
+            )
 
     def get_span_attributes(self) -> dict[str, Any]:
         return super().get_span_attributes() | {
@@ -628,6 +625,7 @@ class ProxyTemplate(ResourceTemplate):
             description=mcp_template.description,
             mime_type=mcp_template.mime_type or "text/plain",
             icons=mcp_template.icons,
+            annotations=mcp_template.annotations,
             parameters={},  # Remote templates don't have local parameters
             meta=mcp_template.meta,
             tags=get_fastmcp_metadata(mcp_template.meta).get("tags", []),
@@ -669,14 +667,14 @@ class ProxyTemplate(ResourceTemplate):
                 _cached_content=InputRequiredResourceResult(result),
             )
 
-        if not result:
+        if not result.contents:
             raise ResourceError(
                 f"Remote server returned empty content for {parameterized_uri}"
             )
 
         # Process all items in the result list, not just the first one
         contents: list[ResourceContent] = []
-        for item in result:
+        for item in result.contents:
             if isinstance(item, TextResourceContents):
                 contents.append(
                     ResourceContent(
@@ -696,7 +694,9 @@ class ProxyTemplate(ResourceTemplate):
             else:
                 raise ResourceError(f"Unsupported content type: {type(item)}")
 
-        cached_content = ResourceResult(contents=contents)
+        cached_content = ResourceResult(
+            contents=contents, meta=_forwardable_server_meta(result.meta) or None
+        )
 
         return ProxyResource(
             client_factory=self._client_factory,
@@ -704,7 +704,7 @@ class ProxyTemplate(ResourceTemplate):
             name=self.name,
             title=self.title,
             description=self.description,
-            mime_type=result[
+            mime_type=result.contents[
                 0
             ].mime_type,  # Use first item's mimeType for backward compatibility
             icons=self.icons,
@@ -1550,6 +1550,7 @@ async def default_proxy_sampling_handler(
         system_prompt=params.system_prompt,
         temperature=params.temperature,
         max_tokens=params.max_tokens,
+        stop_sequences=params.stop_sequences,
         model_preferences=params.model_preferences,
         related_request_id=ctx.origin_request_id,
     )
@@ -1590,8 +1591,13 @@ async def default_proxy_elicitation_handler(
 async def default_proxy_log_handler(message: LogMessage) -> None:
     """Forward log notification from remote server to proxy's connected clients."""
     ctx = get_context()
-    msg = message.data.get("msg")
-    extra = message.data.get("extra")
+    data = message.data
+    # FastMCP servers send {"msg": ..., "extra": ...}; any other MCP server may
+    # send any JSON value, which is forwarded as the message text.
+    if isinstance(data, dict) and isinstance(data.get("msg"), str):
+        msg, extra = data["msg"], data.get("extra")
+    else:
+        msg, extra = (data if isinstance(data, str) else json.dumps(data)), None
     await ctx.log(msg, level=message.level, logger_name=message.logger, extra=extra)
 
 
@@ -1670,6 +1676,10 @@ class ProxyClient(Client[ClientTransportT]):
     """A proxy client that forwards advanced interactions between a remote MCP server and the proxy's connected clients.
 
     Supports forwarding roots, sampling, elicitation, logging, and progress.
+    Eligible inbound HTTP headers are forwarded by default; set
+    `forward_incoming_headers=False` to use only the backend transport's
+    configured headers and authentication. Applies to HTTP and SSE backends,
+    including backends in an MCP configuration.
 
     The default forwarding handlers must resolve the *proxy's* request context so
     they relay server-initiated requests (roots/sampling/elicitation) back to the
@@ -1707,6 +1717,8 @@ class ProxyClient(Client[ClientTransportT]):
         | MCPConfig
         | dict[str, Any]
         | str,
+        *,
+        forward_incoming_headers: bool = True,
         **kwargs,
     ):
         if "name" not in kwargs:
@@ -1744,7 +1756,10 @@ class ProxyClient(Client[ClientTransportT]):
                 self._proxy_restoring_handler_keys.add(key)
         super().__init__(transport=transport, **kwargs)  # ty: ignore[no-matching-overload]
 
-        self._transport_options = _with_proxy_transport_options(self._transport_options)
+        self._transport_options = replace(
+            _with_proxy_transport_options(self._transport_options),
+            forward_incoming_headers=forward_incoming_headers,
+        )
 
     def _bind_restoring_handlers(self) -> None:
         if "roots" in self._proxy_restoring_handler_keys:

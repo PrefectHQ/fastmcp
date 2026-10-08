@@ -319,7 +319,7 @@ You can provide additional metadata about parameters in several ways:
 
 <VersionBadge version="3.2.4" />
 
-FastMCP parses your function's docstring to extract both the tool description and per-parameter descriptions. Google, NumPy, and Sphinx docstring styles are all supported — the parser tries each and uses whichever finds parameter descriptions:
+FastMCP parses your function's docstring to extract both the tool description and per-parameter descriptions. Google, NumPy, and Sphinx docstring styles are all supported — the parser tries each and uses the first one that recognizes a structured section such as `Args`, `Returns`, or `Raises`:
 
 ```python
 @mcp.tool
@@ -338,7 +338,7 @@ def process_image(
     # Implementation...
 ```
 
-The free-form text above the `Args` section — whether a single line or multiple paragraphs — becomes the tool description, and each parameter's docstring entry becomes the description for that parameter in the generated schema. Sections like `Returns`, `Raises`, and `Example` are excluded from the description but otherwise ignored.
+The free-form text above the `Args` section — whether a single line or multiple paragraphs — becomes the tool description, and each parameter's docstring entry becomes the description for that parameter in the generated schema. Sections like `Returns`, `Raises`, and `Example` are excluded from the description but otherwise ignored. This applies to functions without parameters as well: a docstring with only a `Returns` section yields just the free-form text above it.
 
 If a parameter already has an explicit description — via `Annotated[x, "..."]` or `Field(description=...)` — that description takes precedence over the docstring. This makes it safe to adopt docstring-based descriptions incrementally: existing annotations keep working, and docstrings fill in the gaps.
 
@@ -849,7 +849,7 @@ When `mask_error_details=True`, only error messages from `ToolError` will includ
 
 <VersionBadge version="3.0.0" />
 
-Tools can specify a `timeout` parameter to limit how long execution can take. When the timeout is exceeded, the client receives an MCP error and the tool stops processing. This protects your server from unexpectedly slow operations that could block resources or leave clients waiting indefinitely.
+Tools can specify a `timeout` parameter to reject operations that take too long. When the timeout is exceeded, the client receives an MCP error instead of the tool's result.
 
 ```python
 from fastmcp import FastMCP
@@ -865,6 +865,10 @@ async def fetch_data(url: str) -> dict:
 ```
 
 Timeouts are specified in seconds as a float. When a tool exceeds its timeout, FastMCP returns an MCP error with code `-32000` and a message indicating which tool timed out and how long it ran. Both sync and async tools support timeouts—sync functions run in thread pools, so the timeout applies to the entire operation regardless of execution model.
+
+<Note>
+Async tools are cancelled at their next cancellation checkpoint. Synchronous worker threads cannot be interrupted: FastMCP waits for the worker to finish before returning the timeout error, keeping its dependencies available until then. A timeout does not undo side effects or stop a synchronous tool that never returns.
+</Note>
 
 <Note>
 Tools must explicitly opt-in to timeouts. There is no server-level default timeout setting.

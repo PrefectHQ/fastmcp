@@ -178,15 +178,18 @@ class MCPMixin:
 
     def _get_methods_to_register(self, registration_type: str):
         """Retrieves all methods marked for a specific registration type."""
-        return [
-            (
-                getattr(self, method_name),
-                getattr(getattr(self, method_name), registration_type).copy(),
-            )
-            for method_name in dir(self)
-            if callable(getattr(self, method_name))
-            and hasattr(getattr(self, method_name), registration_type)
-        ]
+        methods = []
+        for method_name in dir(self):
+            # Look for the marker without reading the attribute, so properties
+            # and other descriptors on the instance are never evaluated.
+            static_attr = inspect.getattr_static(self, method_name, None)
+            func = getattr(static_attr, "__func__", static_attr)
+            if not hasattr(func, registration_type):
+                continue
+            method = getattr(self, method_name)
+            if callable(method):
+                methods.append((method, getattr(method, registration_type).copy()))
+        return methods
 
     def register_tools(
         self,

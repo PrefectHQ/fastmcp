@@ -57,8 +57,12 @@ class RequireAuthMiddleware(SDKRequireAuthMiddleware):
         """Process ASGI scope, distinguishing missing vs invalid auth.
 
         Per RFC 6750 §3.1:
-        - Missing auth (no Authorization header) → 401 without error attribute
-        - Invalid auth (Authorization header present) → 401 with error attribute
+        - Missing auth (no Bearer credentials) → 401 without error attribute
+        - Invalid auth (Bearer credentials present) → 401 with error attribute
+
+        An Authorization header using another scheme (e.g. Basic) is an
+        unsupported authentication method, which §3.1 treats like missing
+        authentication.
 
         This ensures OAuth flow initialization works correctly in MCP clients
         during initial discovery phase.
@@ -72,18 +76,20 @@ class RequireAuthMiddleware(SDKRequireAuthMiddleware):
             await self.app(scope, receive, send)
             return
 
-        # Check if Authorization header is present
+        # Check if Bearer credentials are present. This mirrors the SDK's
+        # BearerAuthBackend, which ignores any other Authorization scheme.
         headers = scope.get("headers", [])
-        has_auth_header = any(
-            header[0].lower() == b"authorization" for header in headers
+        has_bearer_credentials = any(
+            name.lower() == b"authorization" and value[:7].lower() == b"bearer "
+            for name, value in headers
         )
 
-        if not has_auth_header:
+        if not has_bearer_credentials:
             # Per RFC 6750 §3.1: missing auth should not include error attribute
             await self._send_missing_auth(send)
             return
 
-        # Authorization header is present - use parent's validation logic
+        # Bearer credentials are present - use parent's validation logic
         # This will check token validity and call _send_auth_error if invalid
         await super().__call__(scope, receive, send)
 
