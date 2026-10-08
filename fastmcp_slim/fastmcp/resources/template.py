@@ -214,7 +214,11 @@ def match_uri_template(
     `regex` is the template's compiled path pattern when the caller already
     holds it; otherwise it is built from `uri_template` through a bounded cache.
     """
-    # Split URI into path and query parts
+    # A fragment is not part of the resource identity, so drop it before
+    # splitting off the query. A template that spells out a literal `#` is
+    # matched against the full URI.
+    if "#" not in uri_template:
+        uri = uri.partition("#")[0]
     uri_path, _, query_string = uri.partition("?")
 
     # Match path parameters
