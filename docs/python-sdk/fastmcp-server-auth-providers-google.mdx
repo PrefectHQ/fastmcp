@@ -29,7 +29,7 @@ Example:
 
 ## Classes
 
-### `GoogleTokenVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/google.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `GoogleTokenVerifier` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/google.py#L58" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Token verifier for Google OAuth tokens.
@@ -40,10 +40,14 @@ This returns the OAuth app ID (``aud``), granted scopes, and expiry time.
 User profile data (name, picture, etc.) is fetched separately from the
 v2 userinfo endpoint when the token is valid.
 
+Caching is disabled by default.  Set ``cache_ttl_seconds`` to a positive
+integer to cache successful verification results and avoid repeated
+Google API calls for the same token.
+
 
 **Methods:**
 
-#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/google.py#L100" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `verify_token` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/google.py#L115" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_token(self, token: str) -> AccessToken | None
@@ -57,7 +61,7 @@ scopes, and expiry time.  On success, fetches user profile data from
 the v2 userinfo endpoint to populate name, picture, and locale claims.
 
 
-### `GoogleProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/google.py#L227" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `GoogleProvider` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/server/auth/providers/google.py#L247" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Complete Google OAuth provider for FastMCP.

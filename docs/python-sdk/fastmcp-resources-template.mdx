@@ -98,7 +98,7 @@ items and `%2C` inside an item, so they are split before decoding.
 holds it; otherwise it is built from `uri_template` through a bounded cache.
 
 
-### `expand_uri_template` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L268" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `expand_uri_template` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L272" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 expand_uri_template(uri_template: str, params: dict[str, Any]) -> str
@@ -112,7 +112,7 @@ Supports the same RFC 6570 subset:
 - Query params: `{?var1,var2}`
 
 
-### `forward_uri` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L340" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `forward_uri` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L344" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 forward_uri(uri_template: str, params: dict[str, Any], uri: str) -> str
@@ -130,7 +130,7 @@ one item instead of two.
 
 ## Classes
 
-### `ResourceTemplate` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L355" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ResourceTemplate` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L359" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A template for dynamically creating resources.
@@ -138,7 +138,7 @@ A template for dynamically creating resources.
 
 **Methods:**
 
-#### `resolve_security` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L392" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `resolve_security` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L396" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 resolve_security(self, server_default: ResourceSecurity | None) -> ResourceSecurity | None
@@ -151,13 +151,13 @@ A per-component ``security`` overrides the server default.
 an explicit ``None`` disables screening for this template.
 
 
-#### `from_function` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L409" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_function` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L413" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_function(fn: Callable[..., Any], uri_template: str, name: str | None = None, version: str | int | None = None, title: str | None = None, description: str | None = None, icons: list[Icon] | None = None, mime_type: str | None = None, tags: set[str] | None = None, annotations: Annotations | None = None, meta: dict[str, Any] | None = None, auth: AuthCheck | list[AuthCheck] | None = None, security: ResourceSecurity | None | InheritSecurity = INHERIT_SECURITY) -> FunctionResourceTemplate
 ```
 
-#### `set_default_mime_type` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L442" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_default_mime_type` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L446" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 set_default_mime_type(cls, mime_type: str | None) -> str
@@ -166,7 +166,7 @@ set_default_mime_type(cls, mime_type: str | None) -> str
 Set default MIME type if not provided.
 
 
-#### `matches` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L448" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `matches` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L452" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 matches(self, uri: str) -> dict[str, Any] | None
@@ -175,7 +175,7 @@ matches(self, uri: str) -> dict[str, Any] | None
 Check if URI matches template and extract parameters.
 
 
-#### `read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L474" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L478" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult
@@ -184,7 +184,7 @@ read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult
 Read the resource content.
 
 
-#### `convert_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L480" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `convert_result` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L484" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 convert_result(self, raw_value: Any) -> ResourceResult
@@ -202,7 +202,7 @@ forwarded so that reads match the MIME type the template advertises
 in ``resources/templates/list``.
 
 
-#### `create_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L507" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `create_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L511" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_resource(self, uri: str, params: dict[str, Any]) -> Resource
@@ -214,7 +214,7 @@ The base implementation does not support background tasks.
 Use FunctionResourceTemplate for task support.
 
 
-#### `to_mcp_template` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L518" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `to_mcp_template` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L522" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 to_mcp_template(self, **overrides: Any) -> SDKResourceTemplate
@@ -223,7 +223,7 @@ to_mcp_template(self, **overrides: Any) -> SDKResourceTemplate
 Convert the resource template to an SDKResourceTemplate.
 
 
-#### `from_mcp_template` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L538" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_mcp_template` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L542" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_mcp_template(cls, mcp_template: SDKResourceTemplate) -> ResourceTemplate
@@ -232,7 +232,7 @@ from_mcp_template(cls, mcp_template: SDKResourceTemplate) -> ResourceTemplate
 Creates a FastMCP ResourceTemplate from a raw MCP ResourceTemplate object.
 
 
-#### `key` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L551" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `key` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L555" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 key(self) -> str
@@ -241,13 +241,13 @@ key(self) -> str
 The globally unique lookup key for this template.
 
 
-#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L556" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_span_attributes` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L560" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_span_attributes(self) -> dict[str, Any]
 ```
 
-### `FunctionResourceTemplate` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L563" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `FunctionResourceTemplate` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L567" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 A template for dynamically creating resources.
@@ -255,7 +255,7 @@ A template for dynamically creating resources.
 
 **Methods:**
 
-#### `create_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L578" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `create_resource` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L582" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_resource(self, uri: str, params: dict[str, Any]) -> Resource
@@ -264,7 +264,7 @@ create_resource(self, uri: str, params: dict[str, Any]) -> Resource
 Create a resource from the template with the given parameters.
 
 
-#### `read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L600" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `read` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L604" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult
@@ -273,7 +273,7 @@ read(self, arguments: dict[str, Any]) -> str | bytes | ResourceResult
 Read the resource content.
 
 
-#### `from_function` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L640" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `from_function` <sup><a href="https://github.com/PrefectHQ/fastmcp/blob/main/fastmcp_slim/fastmcp/resources/template.py#L644" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 from_function(cls, fn: Callable[..., Any], uri_template: str, name: str | None = None, version: str | int | None = None, title: str | None = None, description: str | None = None, icons: list[Icon] | None = None, mime_type: str | None = None, tags: set[str] | None = None, annotations: Annotations | None = None, meta: dict[str, Any] | None = None, auth: AuthCheck | list[AuthCheck] | None = None, security: ResourceSecurity | None | InheritSecurity = INHERIT_SECURITY) -> FunctionResourceTemplate
