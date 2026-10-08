@@ -17,7 +17,14 @@ import httpx2
 import pytest
 from mcp.shared.exceptions import MCPError
 from mcp_types import TextContent
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    StrictInt,
+    field_validator,
+)
 from pydantic_core import PydanticCustomError
 
 from fastmcp import Client, FastMCP
@@ -305,6 +312,18 @@ class TestStrictModeAcceptsJsonValues:
 
         assert isinstance(result.content[0], TextContent)
         assert result.content[0].text == "red 2026"
+
+    async def test_python_objects_are_not_round_tripped_through_json(self):
+        mcp = FastMCP("TestServer", strict_input_validation=True)
+
+        @mcp.tool
+        def reveal(secret: SecretStr) -> str:
+            return secret.get_secret_value()
+
+        result = await mcp.call_tool("reveal", {"secret": SecretStr("s3cret")})
+
+        assert isinstance(result.content[0], TextContent)
+        assert result.content[0].text == "s3cret"
 
 
 class TestFieldLevelStrictness:
