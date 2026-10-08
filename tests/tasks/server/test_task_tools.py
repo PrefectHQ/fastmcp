@@ -161,6 +161,38 @@ async def test_task_submission_rejects_missing_and_unexpected_arguments():
     assert final.result["structuredContent"] == {"result": 2}
 
 
+async def test_task_submission_uses_the_pydantic_definition_of_required():
+    """Submission agrees with the synchronous path on what is required.
+
+    ``Field(default=...)`` inside ``Annotated`` makes a parameter optional even
+    though the Python signature has no default, and ``x: str = Field(...)`` makes
+    a parameter required even though the Python signature does have one.
+    """
+    mcp = FastMCP("pydantic-required-task-server")
+    mcp.add_extension(TasksExtension())
+
+    @mcp.tool(task=True)
+    async def annotated_default(x: Annotated[int, Field(default=5)]) -> int:
+        return x
+
+    @mcp.tool(task=True)
+    async def described_query(query: str = Field(description="the query")) -> str:
+        return query
+
+    async with running_task_server(mcp):
+        sync_result = await call_tool_without_optin(mcp, "annotated_default", {})
+        final = await run_task(mcp, "annotated_default", {})
+        assert final.status == "completed"
+        assert final.result is not None
+        assert final.result["structuredContent"] == sync_result.structured_content
+        assert final.result["structuredContent"] == {"result": 5}
+
+        with pytest.raises(ValidationError):
+            await call_tool_without_optin(mcp, "described_query", {})
+        with pytest.raises(ValidationError):
+            await submit_task(mcp, "described_query", {})
+
+
 async def test_valid_argument_submits_under_strict_validation():
     """A well-typed argument still submits fine when strict validation is on."""
     mcp = FastMCP("strict-task-valid-server", strict_input_validation=True)

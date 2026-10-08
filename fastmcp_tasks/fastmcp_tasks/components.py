@@ -45,6 +45,8 @@ from fastmcp.utilities.types import get_cached_typeadapter
 from fastmcp_tasks.input_loop import reentrant_task_fn
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from docket import Docket
     from docket.execution import Execution
 
@@ -172,28 +174,43 @@ def coerce_task_arguments(
     wrapper_fn = without_injected_parameters(
         component.fn, run_in_thread=component.run_in_thread
     )
-    hints = _resolve_param_hints(wrapper_fn)
 
-    # The per-argument pass below only sees the names the client sent, so check
-    # the call shape (missing required, unexpected names) up front too. Left
-    # unchecked, the call is only rejected inside the worker, as a task that
-    # completes with an opaque error instead of a validation failure.
+    # Validate the whole call through the same Pydantic call schema the
+    # synchronous path builds, so "required", "unknown" and "default" mean the
+    # same thing on both paths. Left unchecked, a bad call is only rejected
+    # inside the worker, as a task that completes with an opaque error instead
+    # of a validation failure.
+    adapter = get_cached_typeadapter(_call_shape_probe(wrapper_fn))
     try:
-        inspect.signature(wrapper_fn).bind(**arguments)
-    except TypeError as e:
-        raise ValidationError(
-            f"Invalid arguments for tool {component.name!r}: {e}",
-            log_level=logging.WARNING,
-        ) from e
+        validated: dict[str, Any] = _validate_input(adapter, arguments, strict=strict)
+    except PydanticValidationError as e:
+        raise ValidationError(str(e), log_level=logging.WARNING) from e
 
-    coerced = dict(arguments)
-    for name, value in arguments.items():
-        annotation = hints.get(name)
-        if annotation is None:
-            continue
-        adapter = get_cached_typeadapter(annotation)
-        try:
-            coerced[name] = _validate_input(adapter, value, strict=strict)
-        except PydanticValidationError as e:
-            raise ValidationError(str(e), log_level=logging.WARNING) from e
-    return coerced
+    # Return the validated call, defaults included: the worker invokes the tool
+    # function directly, so a parameter whose default only Pydantic knows about
+    # (``Annotated[int, Field(default=5)]``) must arrive with its value filled in.
+    return validated
+
+
+def _call_shape_probe(fn: Callable[..., Any]) -> Callable[..., dict[str, Any]]:
+    """Mirror ``fn``'s signature on a function that only returns its keyword arguments.
+
+    ``TypeAdapter`` validates a callable's arguments by calling it, so validating
+    a task submission against ``fn`` itself would run the tool. The probe has the
+    identical parameters, defaults and resolved annotations, so Pydantic builds
+    the identical call schema, and calling it returns what was validated.
+    """
+
+    def probe(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        return inspect.signature(probe).bind(*args, **kwargs).arguments
+
+    hints = _resolve_param_hints(fn)
+    sig = inspect.signature(fn)
+    annotations = {
+        name: hints.get(name, param.annotation)
+        for name, param in sig.parameters.items()
+        if name in hints or param.annotation is not inspect.Parameter.empty
+    }
+    probe.__signature__ = sig  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    probe.__annotations__ = annotations
+    return probe
