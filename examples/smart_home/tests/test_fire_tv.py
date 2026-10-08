@@ -1,0 +1,260 @@
+import asyncio
+
+import pytest
+from smart_home.fire_tv import client as fire_tv_client
+from smart_home.fire_tv.server import fire_tv_mcp
+
+from fastmcp import Client
+from fastmcp.exceptions import ToolError
+
+
+class FakeFireTV:
+    def __init__(self, *, available: bool = True) -> None:
+        self.available = available
+        self.device_properties = {"manufacturer": "Amazon", "model": "AFTTIFF43"}
+        self.installed_apps = [
+            "com.amazon.firetv.youtube",
+            "com.amazon.tv.launcher",
+        ]
+        self.commands: list[tuple[str, str | None]] = []
+        self.closed = False
+
+    async def update(
+        self, get_running_apps: bool = True, lazy: bool = True
+    ) -> tuple[str, str, list[str], None]:
+        assert get_running_apps is False
+        assert lazy is True
+        return "idle", "com.amazon.tv.launcher", ["com.amazon.tv.launcher"], None
+
+    async def home(self) -> None:
+        self.commands.append(("home", None))
+
+    async def launch_app(self, app: str) -> None:
+        self.commands.append(("launch_app", app))
+
+    async def adb_shell(self, command: str) -> str | None:
+        self.commands.append(("adb_shell", command))
+        return None
+
+    async def adb_close(self) -> None:
+        self.closed = True
+
+
+@pytest.fixture
+def configured_fire_tv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[FakeFireTV, list[dict[str, object]]]:
+    device = FakeFireTV()
+    setup_calls: list[dict[str, object]] = []
+
+    async def setup(**kwargs: object) -> FakeFireTV:
+        setup_calls.append(kwargs)
+        return device
+
+    monkeypatch.setenv("FIRE_TV_HOST", "192.0.2.10")
+    monkeypatch.setenv("FIRE_TV_ADB_SERVER_IP", "127.0.0.1")
+    monkeypatch.setattr(fire_tv_client, "setup_android_tv", setup)
+    return device, setup_calls
+
+
+async def test_status_and_commands_share_one_connection(configured_fire_tv):
+    device, setup_calls = configured_fire_tv
+    async with Client(fire_tv_mcp) as client:
+        tools = {tool.name: tool for tool in await client.list_tools()}
+        assert set(tools) == {
+            "read_status",
+            "press_home",
+            "launch_app",
+            "play_media",
+            "play_youtube_video",
+        }
+        assert tools["read_status"].annotations.read_only_hint is True
+        assert tools["press_home"].annotations.read_only_hint is False
+
+        status = (await client.call_tool("read_status")).data
+        assert status.model == "AFTTIFF43"
+        assert status.current_app == "com.amazon.tv.launcher"
+
+        receipt = (await client.call_tool("press_home")).data
+        assert receipt.accepted is True
+        assert receipt.state_verified is False
+
+        launch = (
+            await client.call_tool(
+                "launch_app", {"package_id": "com.amazon.firetv.youtube"}
+            )
+        ).data
+        assert launch.command == "launch_app:com.amazon.firetv.youtube"
+
+        video = (
+            await client.call_tool("play_youtube_video", {"video_id": "D1VM6V6wmU0"})
+        ).data
+        assert video.command == "play_youtube_video:D1VM6V6wmU0"
+
+        media = (
+            await client.call_tool(
+                "play_media",
+                {
+                    "source": "youtube",
+                    "source_id": "jkAw87ZIwQA",
+                    "url": "https://www.youtube.com/watch?v=jkAw87ZIwQA",
+                    "title": "Cold Fusion",
+                },
+            )
+        ).data
+        assert media.command == "play_media:youtube:jkAw87ZIwQA"
+
+    assert setup_calls == [
+        {
+            "host": "192.0.2.10",
+            "port": 5555,
+            "adbkey": "",
+            "adb_server_ip": "127.0.0.1",
+            "adb_server_port": 5037,
+            "device_class": "firetv",
+        }
+    ]
+    assert device.commands == [
+        ("home", None),
+        ("launch_app", "com.amazon.firetv.youtube"),
+        (
+            "adb_shell",
+            "am start -a android.intent.action.VIEW "
+            "-d https://www.youtube.com/watch?v=D1VM6V6wmU0 "
+            "com.amazon.firetv.youtube",
+        ),
+        (
+            "adb_shell",
+            "am start -a android.intent.action.VIEW "
+            "-d https://www.youtube.com/watch?v=jkAw87ZIwQA "
+            "com.amazon.firetv.youtube",
+        ),
+    ]
+    assert device.closed is True
+
+
+async def test_concurrent_first_calls_share_one_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    devices: list[FakeFireTV] = []
+
+    async def setup(**kwargs: object) -> FakeFireTV:
+        device = FakeFireTV()
+        devices.append(device)
+        await asyncio.sleep(0)
+        return device
+
+    monkeypatch.setattr(fire_tv_client, "setup_android_tv", setup)
+    connection = fire_tv_client.FireTVConnection(
+        fire_tv_client.FireTVSettings(fire_tv_host="192.0.2.10")
+    )
+
+    try:
+        first, second = await asyncio.gather(connection.get(), connection.get())
+    finally:
+        await connection.close()
+
+    assert len(devices) == 1
+    assert first is second is devices[0]
+    assert devices[0].closed is True
+
+
+async def test_concurrent_calls_reconnect_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    device = FakeFireTV()
+    connects: list[bool] = []
+
+    async def setup(**kwargs: object) -> FakeFireTV:
+        return device
+
+    async def adb_connect(log_errors: bool = True) -> bool:
+        connects.append(log_errors)
+        await asyncio.sleep(0)
+        device.available = True
+        return True
+
+    device.adb_connect = adb_connect  # type: ignore[attr-defined]
+    monkeypatch.setattr(fire_tv_client, "setup_android_tv", setup)
+    connection = fire_tv_client.FireTVConnection(
+        fire_tv_client.FireTVSettings(fire_tv_host="192.0.2.10")
+    )
+    await connection.get()
+    device.available = False
+
+    try:
+        first, second = await asyncio.gather(connection.get(), connection.get())
+    finally:
+        await connection.close()
+
+    assert first is second is device
+    assert connects == [False]
+    assert device.closed is True
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments", "message"),
+    [
+        ("launch_app", {"package_id": "not.installed"}, "not installed"),
+        (
+            "play_youtube_video",
+            {"video_id": "invalid; reboot"},
+            "11 URL-safe characters",
+        ),
+        (
+            "play_media",
+            {
+                "source": "youtube",
+                "source_id": "invalid; reboot",
+                "url": "https://www.youtube.com/",
+                "title": "Bad",
+            },
+            "11 URL-safe characters",
+        ),
+    ],
+)
+async def test_invalid_targets_are_rejected_without_device_commands(
+    configured_fire_tv,
+    tool: str,
+    arguments: dict[str, str],
+    message: str,
+):
+    device, _ = configured_fire_tv
+    async with Client(fire_tv_mcp) as client:
+        result = await client.call_tool(tool, arguments, raise_on_error=False)
+        assert result.is_error
+        assert message in str(result.content)
+
+    assert device.commands == []
+
+
+async def test_unconfigured_server_exposes_tools_but_refuses_calls(monkeypatch):
+    monkeypatch.delenv("FIRE_TV_HOST", raising=False)
+    async with Client(fire_tv_mcp) as client:
+        result = await client.call_tool("read_status", raise_on_error=False)
+        assert result.is_error
+        assert "FIRE_TV_HOST" in str(result.content)
+
+
+async def test_sleeping_tv_does_not_block_startup_and_reconnects(monkeypatch):
+    device = FakeFireTV(available=False)
+    connects: list[bool] = []
+
+    async def setup(**kwargs: object) -> FakeFireTV:
+        return device
+
+    async def adb_connect(log_errors: bool = True) -> bool:
+        connects.append(log_errors)
+        return device.available
+
+    device.adb_connect = adb_connect  # type: ignore[attr-defined]
+    monkeypatch.setenv("FIRE_TV_HOST", "192.0.2.10")
+    monkeypatch.setattr(fire_tv_client, "setup_android_tv", setup)
+
+    async with Client(fire_tv_mcp) as client:
+        with pytest.raises(ToolError, match="not reachable"):
+            await client.call_tool("press_home")
+        device.available = True
+        receipt = (await client.call_tool("press_home")).data
+        assert receipt.accepted is True
+
+    assert connects == [False]
+    assert device.closed is True

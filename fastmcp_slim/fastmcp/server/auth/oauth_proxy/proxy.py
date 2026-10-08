@@ -109,7 +109,7 @@ from fastmcp.server.auth.oauth_proxy.models import (
     _hash_token,
 )
 from fastmcp.server.auth.oauth_proxy.ui import create_error_html
-from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client
+from fastmcp.server.auth.oauth_proxy.upstream import AsyncOAuth2Client, OAuthError
 from fastmcp.server.auth.redirect_validation import (
     build_client_redirect,
     is_redirect_uri_allowed_for_application_type,
@@ -373,6 +373,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             valid_scopes: List of all the possible valid scopes for a client.
                 These are advertised to clients through the `/.well-known` endpoints. Defaults to `required_scopes` if not provided.
             forward_pkce: Whether to forward PKCE to upstream server (default True).
+                False removes protection against authorization-code interception
+                on the upstream exchange; client-to-proxy PKCE still applies.
                 Enable for providers that support/require PKCE (Google, Azure, AWS, etc.).
                 Disable only if upstream provider doesn't support PKCE.
             token_endpoint_auth_method: Token endpoint authentication method for upstream server.
@@ -402,12 +404,17 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                   suppress the warning as an operator acknowledgment that equivalent
                   consent and transaction-binding protections are enforced externally.
                   FastMCP does not provide or verify those external protections.
+                  Both False and "external" remove FastMCP's consent and browser
+                  binding checks, reducing security unless equivalent checks exist
+                  elsewhere; ordinary upstream consent is not equivalent.
                 - False: skip consent entirely. SECURITY WARNING: only set to
                   False for local development or testing environments.
             consent_csp_policy: Content Security Policy for the consent page.
                 If None (default), uses the built-in CSP policy with appropriate directives.
                 If empty string "", disables CSP entirely (no meta tag is rendered).
                 If a non-empty string, uses that as the CSP policy value.
+                Disabling or weakening CSP reduces browser content-injection
+                protections unless the deployment supplies an equivalent CSP header.
                 This allows organizations with their own CSP policies to override or disable
                 the built-in CSP directives.
             fallback_access_token_expiry_seconds: Expiry time to use when upstream provider
@@ -1207,7 +1214,9 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             ttl=15 * 60,  # Auto-expire after 15 minutes
         )
 
-        # If consent is disabled or handled externally, skip consent screen.
+        # False and "external" both remove FastMCP's consent and browser-binding
+        # protections against confused deputy attacks. "external" only suppresses
+        # the warning; FastMCP does not provide or verify external enforcement.
         # "remember" mode still routes through /consent so cookie lookup and
         # Sec-Fetch-Site gating can run.
         if self._require_authorization_consent in (False, "external"):
@@ -1825,9 +1834,13 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                     **self._extra_token_params,
                 )
             logger.debug("Successfully refreshed upstream token")
-        except Exception as e:
-            logger.error("Upstream token refresh failed: %s", e)
-            raise TokenError("invalid_grant", f"Upstream refresh failed: {e}") from e
+        except OAuthError as e:
+            logger.warning("Upstream OAuth token refresh failed: %s", e.error)
+            if e.error == "invalid_grant":
+                raise TokenError(
+                    "invalid_grant", "Upstream refresh token was rejected"
+                ) from e
+            raise
 
         # A refresh response with a non-positive lifetime is equally unusable.
         # Reject it before mutating stored upstream state or rotating JTI mappings.
@@ -2289,8 +2302,11 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
                                 )
                                 if validated:
                                     upstream_token_set = reloaded
-                    except Exception:
-                        pass
+                    except Exception as reload_error:
+                        logger.debug(
+                            "Re-read of upstream token after refresh failure also failed: %s",
+                            reload_error,
+                        )
 
             if not validated:
                 logger.debug("Upstream token validation failed")
@@ -2374,10 +2390,39 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
         # Attempt upstream revocation if endpoint is configured
         if self._upstream_revocation_endpoint:
             try:
+                # For refresh tokens, resolve the upstream refresh token via
+                # JTI mapping so we revoke the token the authorization server
+                # actually issued, not the FastMCP-issued JWT wrapper.
+                if isinstance(token, RefreshToken):
+                    refresh_payload = self.jwt_issuer.verify_token(
+                        token.token, expected_token_use="refresh"
+                    )
+                    refresh_jti = refresh_payload["jti"]
+                    jti_mapping = await self._jti_mapping_store.get(key=refresh_jti)
+                    if jti_mapping is None:
+                        logger.warning("No JTI mapping found for refresh token")
+                        return
+
+                    upstream_token_set = await self._upstream_token_store.get(
+                        key=jti_mapping.upstream_token_id
+                    )
+                    if (
+                        upstream_token_set is None
+                        or not upstream_token_set.refresh_token
+                    ):
+                        logger.warning("No upstream refresh token found")
+                        return
+
+                    upstream_token_to_revoke = upstream_token_set.refresh_token
+                else:
+                    upstream_token_to_revoke = token.token
+
                 async with httpx2.AsyncClient(
                     timeout=HTTP_TIMEOUT_SECONDS
                 ) as http_client:
-                    revocation_data: dict[str, str] = {"token": token.token}
+                    revocation_data: dict[str, str] = {
+                        "token": upstream_token_to_revoke
+                    }
                     request_kwargs: dict[str, Any] = {"data": revocation_data}
 
                     # Use the factory method when available (supports alternative auth like
@@ -2698,6 +2743,8 @@ class OAuthProxy(OAuthProvider, ConsentMixin):
             # IdP URL) won't have this cookie and will be rejected. "remember"
             # mode still issues consent tokens (on silent approval or HTML
             # approval), so both code paths need binding verification.
+            # False and "external" intentionally skip this security check, so
+            # those modes require equivalent protection outside FastMCP.
             if self._require_authorization_consent in (True, "remember"):
                 consent_token = transaction_model.consent_token
                 if not consent_token:

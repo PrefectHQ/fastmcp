@@ -80,6 +80,8 @@ After installation, restart Claude Desktop completely. You should see a hammer i
 
 FastMCP provides several ways to manage your server's dependencies when installing in Claude Desktop:
 
+If your server declares its dependencies in `pyproject.toml`, use the [`--project` option](#python-version-and-project-directory) to select that Python project.
+
 **Individual packages**: Use the `--with` flag to specify packages your server needs. You can use this flag multiple times:
 
 ```bash
@@ -124,13 +126,13 @@ FastMCP allows you to control the Python environment for your server:
 fastmcp install claude-desktop server.py --python 3.11
 ```
 
-**Project directory**: Use `--project` to run your server within a specific project directory. This ensures that `uv` will discover all `pyproject.toml`, `uv.toml`, and `.python-version` files from that project:
+**Project directory**: Use `--project` to select the directory containing your MCP server's `pyproject.toml`. FastMCP passes this to `uv run --project`, which discovers the project's configuration and installs its dependencies into the project environment:
 
 ```bash
-fastmcp install claude-desktop server.py --project /path/to/my-project
+fastmcp install claude-desktop /path/to/mcp-server/server.py --project /path/to/mcp-server
 ```
 
-When you specify a project directory, all relative paths in your server will be resolved from that directory, and the project's virtual environment will be used.
+`--project` selects the Python environment without changing the server's working directory. If your server reads local files, use absolute paths or resolve them relative to the server file.
 
 #### Environment Variables
 
@@ -296,4 +298,3 @@ proxy = create_proxy(client, name="Authenticated Proxy")
 if __name__ == "__main__":
     proxy.run()
 ```
-

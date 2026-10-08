@@ -1,0 +1,46 @@
+title = "fastmcp gitleaks config"
+
+[extend]
+# Keep every built-in detection rule; this file only adds an allowlist on top.
+useDefault = true
+
+[allowlist]
+description = "Non-source directories and known placeholder/example values"
+
+# Regexes, not exact paths: gitleaks doesn't read .gitignore for `detect
+# --no-git`, so build artifacts (e.g. __pycache__ from a local test run) can
+# otherwise surface as new findings unrelated to any real change.
+paths = [
+  '''(^|/)\.venv/''',
+  '''(^|/)__pycache__/''',
+  '''(^|/)node_modules/''',
+  '''(^|/)\.git/''',
+  '''(^|/)dist/''',
+  '''(^|/)build/''',
+  '''(^|/)\.pytest_cache/''',
+  # Local env files are gitignored and routinely hold real credentials for
+  # whatever provider a developer is testing against - never git-controlled,
+  # so there's nothing here for the scan to protect against committing.
+  '''(^|/)\.env($|\.)''',
+  '''(^|/)\.direnv/''',
+]
+
+# Matched against the detected secret text itself, not file:line - stable
+# across edits elsewhere in the file, unlike a fingerprint allowlist keyed on
+# line number. Each entry below is a placeholder/example value, not a real
+# credential; see the PR that added this file for the per-entry review.
+regexes = [
+  '''YOUR_API_KEY''',
+  '''YOUR_TOKEN_HERE''',
+  '''GOCSPX-abc123\.\.\.''',
+  '''GOCSPX-test123''',
+  '''Ov23liAbcDefGhiJkLmN''',
+  '''tv2ObNgaZAWWhhycr7Bz1LU2mxlnsmsB''', # Auth0 example CLIENT_ID (not a secret) in docs
+  '''835f09b6-0f0f-40cc-85cb-f32c5829a149''',
+  '''08541b6e-646d-43de-a0eb-834e6713d6d5''',
+  '''c361ed56e7bdc1a48a38773c40120b39''', # public Amplitude browser key, docs/fastmcp-analytics.js
+  '''f7207cf0a5c56081d275ebae4cf615249323385d''', # pinned git commit hash used as a test fixture id
+  '''s3kr1t-material''',
+  '''Ed25519PrivateKey''', # a type name, not a key
+  '''-----BEGIN PRIVATE KEY-----" in private_pem''', # test asserts a string literal, not an embedded key
+]

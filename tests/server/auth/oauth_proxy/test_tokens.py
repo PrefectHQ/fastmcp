@@ -9,7 +9,7 @@ import pytest
 from key_value.aio.stores.memory import MemoryStore
 from mcp.server.auth.handlers.token import TokenErrorResponse
 from mcp.server.auth.handlers.token import TokenHandler as SDKTokenHandler
-from mcp.server.auth.provider import AuthorizationCode
+from mcp.server.auth.provider import AuthorizationCode, TokenError
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 
@@ -31,6 +31,7 @@ from fastmcp.server.auth.oauth_proxy.models import (
     UpstreamTokenSet,
     _hash_token,
 )
+from fastmcp.server.auth.oauth_proxy.upstream import OAuthError
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 
 
@@ -352,6 +353,123 @@ class TestOAuthProxyTokenEndpointAuth:
         assert "Invalid redirect URI" in bytes(response.body).decode()
         create_upstream_oauth_client.assert_not_called()
         mock_client.fetch_token.assert_not_called()
+
+
+class TestOAuthProxyRefreshErrors:
+    async def _make_refresh_context(self, jwt_verifier):
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://idp.example.com/authorize",
+            upstream_token_endpoint="https://idp.example.com/token",
+            upstream_client_id="upstream-client",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+        )
+        proxy.set_mcp_path("/mcp")
+
+        client = OAuthClientInformationFull(
+            client_id="test-client",
+            redirect_uris=[AnyUrl("http://localhost:12345/callback")],
+        )
+        refresh_jti = "refresh-jti"
+        upstream_token_id = "upstream-token-id"
+        refresh_value = proxy.jwt_issuer.issue_refresh_token(
+            client_id=client.client_id,
+            scopes=["read"],
+            jti=refresh_jti,
+            expires_in=3600,
+        )
+        now = time.time()
+
+        await proxy._jti_mapping_store.put(
+            key=refresh_jti,
+            value=JTIMapping(
+                jti=refresh_jti,
+                upstream_token_id=upstream_token_id,
+                created_at=now,
+            ),
+            ttl=3600,
+        )
+        await proxy._upstream_token_store.put(
+            key=upstream_token_id,
+            value=UpstreamTokenSet(
+                upstream_token_id=upstream_token_id,
+                access_token="old-access-token",
+                refresh_token="old-refresh-token",
+                refresh_token_expires_at=now + 3600,
+                expires_at=now - 1,
+                token_type="Bearer",
+                scope="read",
+                client_id=client.client_id,
+                created_at=now,
+            ),
+            ttl=3600,
+        )
+
+        return (
+            proxy,
+            client,
+            RefreshToken(
+                token=refresh_value,
+                client_id=client.client_id,
+                scopes=["read"],
+                expires_at=int(now) + 3600,
+            ),
+        )
+
+    async def test_invalid_grant_is_sanitized(self, jwt_verifier):
+        proxy, client, refresh_token = await self._make_refresh_context(jwt_verifier)
+        upstream_error = OAuthError(
+            error="invalid_grant", description="private-upstream-detail"
+        )
+        oauth_client = AsyncMock()
+        oauth_client.refresh_token = AsyncMock(side_effect=upstream_error)
+
+        with (
+            patch.object(
+                proxy, "_create_upstream_oauth_client", return_value=oauth_client
+            ),
+            pytest.raises(TokenError) as exc_info,
+        ):
+            await proxy.exchange_refresh_token(client, refresh_token, ["read"])
+
+        assert exc_info.value.error == "invalid_grant"
+        assert exc_info.value.error_description == "Upstream refresh token was rejected"
+
+    async def test_temporary_upstream_error_is_preserved(self, jwt_verifier):
+        proxy, client, refresh_token = await self._make_refresh_context(jwt_verifier)
+        upstream_error = OAuthError(
+            error="temporarily_unavailable", description="private-upstream-detail"
+        )
+        oauth_client = AsyncMock()
+        oauth_client.refresh_token = AsyncMock(side_effect=upstream_error)
+
+        with (
+            patch.object(
+                proxy, "_create_upstream_oauth_client", return_value=oauth_client
+            ),
+            pytest.raises(OAuthError) as exc_info,
+        ):
+            await proxy.exchange_refresh_token(client, refresh_token, ["read"])
+
+        assert exc_info.value is upstream_error
+
+    async def test_unexpected_refresh_error_is_preserved(self, jwt_verifier):
+        proxy, client, refresh_token = await self._make_refresh_context(jwt_verifier)
+        upstream_error = RuntimeError("private-internal-detail")
+        oauth_client = AsyncMock()
+        oauth_client.refresh_token = AsyncMock(side_effect=upstream_error)
+
+        with (
+            patch.object(
+                proxy, "_create_upstream_oauth_client", return_value=oauth_client
+            ),
+            pytest.raises(RuntimeError) as exc_info,
+        ):
+            await proxy.exchange_refresh_token(client, refresh_token, ["read"])
+
+        assert exc_info.value is upstream_error
 
 
 class TestTokenHandlerErrorTransformation:
@@ -2014,4 +2132,314 @@ class TestRefreshTokenMissLogging:
             and "Refresh token not found" in record.getMessage()
             and "test-client" in record.getMessage()
             for record in caplog.records
+        )
+
+
+class TestTokenRevocation:
+    @pytest.fixture
+    def oauth_proxy(self, jwt_verifier):
+        proxy = OAuthProxy(
+            upstream_authorization_endpoint="https://idp.example.com/authorize",
+            upstream_token_endpoint="https://idp.example.com/token",
+            upstream_client_id="test-client",
+            upstream_client_secret="test-secret",
+            token_verifier=jwt_verifier,
+            base_url="https://proxy.example.com",
+            jwt_signing_key="test-secret-key",
+            client_storage=MemoryStore(),
+            upstream_revocation_endpoint="https://idp.example.com/revoke",
+        )
+        proxy.set_mcp_path("/mcp")
+        return proxy
+
+    async def test_revoke_refresh_token_posts_upstream_token(
+        self, oauth_proxy, httpx_mock
+    ):
+        """The upstream POST contains the provider's refresh token, not the FastMCP JWT."""
+        now = time.time()
+        refresh_jti = "test-refresh-jti"
+        fastmcp_jwt = oauth_proxy.jwt_issuer.issue_refresh_token(
+            client_id="test-client",
+            scopes=["read"],
+            jti=refresh_jti,
+            expires_in=3600,
+        )
+        refresh_token = RefreshToken(
+            token=fastmcp_jwt,
+            client_id="test-client",
+            scopes=["read"],
+            expires_at=int(now + 3600),
+        )
+
+        upstream_token_id = "upstream-token-id"
+        await oauth_proxy._jti_mapping_store.put(
+            key=refresh_jti,
+            value=JTIMapping(
+                jti=refresh_jti,
+                upstream_token_id=upstream_token_id,
+                created_at=now,
+            ),
+            ttl=3600,
+        )
+
+        await oauth_proxy._upstream_token_store.put(
+            key=upstream_token_id,
+            value=UpstreamTokenSet(
+                upstream_token_id=upstream_token_id,
+                access_token="upstream-access-token",
+                refresh_token="upstream-refresh-token",
+                refresh_token_expires_at=now + 86400,
+                expires_at=now + 3600,
+                token_type="Bearer",
+                scope="read",
+                client_id="test-client",
+                created_at=now,
+            ),
+            ttl=86400,
+        )
+
+        await oauth_proxy._refresh_token_store.put(
+            key=_hash_token(fastmcp_jwt),
+            value=RefreshTokenMetadata(
+                client_id="test-client",
+                scopes=["read"],
+                expires_at=refresh_token.expires_at,
+                created_at=now,
+            ),
+            ttl=3600,
+        )
+
+        httpx_mock.add_response(
+            url="https://idp.example.com/revoke",
+            method="POST",
+            json={},
+        )
+
+        await oauth_proxy.revoke_token(refresh_token)
+
+        request = httpx_mock.get_request(
+            url="https://idp.example.com/revoke", method="POST"
+        )
+        assert request is not None
+        assert len(httpx_mock.get_requests()) == 1
+        assert parse_qs(request.content.decode()) == {
+            "token": ["upstream-refresh-token"],
+        }
+        assert (
+            await oauth_proxy._refresh_token_store.get(key=_hash_token(fastmcp_jwt))
+            is None
+        )
+
+    async def test_revoke_refresh_token_without_mapping_skips_upstream(
+        self, oauth_proxy, httpx_mock, caplog
+    ):
+        """A missing JTI mapping warns and never sends the FastMCP JWT upstream."""
+        now = time.time()
+        refresh_jti = "test-refresh-jti"
+        fastmcp_jwt = oauth_proxy.jwt_issuer.issue_refresh_token(
+            client_id="test-client",
+            scopes=["read"],
+            jti=refresh_jti,
+            expires_in=3600,
+        )
+        refresh_token = RefreshToken(
+            token=fastmcp_jwt,
+            client_id="test-client",
+            scopes=["read"],
+            expires_at=int(now + 3600),
+        )
+
+        await oauth_proxy._refresh_token_store.put(
+            key=_hash_token(fastmcp_jwt),
+            value=RefreshTokenMetadata(
+                client_id="test-client",
+                scopes=["read"],
+                expires_at=refresh_token.expires_at,
+                created_at=now,
+            ),
+            ttl=3600,
+        )
+        # Deliberately do not store a JTI mapping.
+
+        await oauth_proxy.revoke_token(refresh_token)
+
+        assert httpx_mock.get_requests() == []
+        assert any(
+            record.levelno == logging.WARNING
+            and "No JTI mapping found for refresh token" in record.getMessage()
+            for record in caplog.records
+        )
+        assert (
+            await oauth_proxy._refresh_token_store.get(key=_hash_token(fastmcp_jwt))
+            is None
+        )
+
+    async def test_revoke_refresh_token_without_upstream_record_skips_upstream(
+        self, oauth_proxy, httpx_mock, caplog
+    ):
+        """A mapping to an absent upstream record warns and skips the POST."""
+
+        now = time.time()
+        refresh_jti = "test-refresh-jti"
+        fastmcp_jwt = oauth_proxy.jwt_issuer.issue_refresh_token(
+            client_id="test-client",
+            scopes=["read"],
+            jti=refresh_jti,
+            expires_in=3600,
+        )
+        refresh_token = RefreshToken(
+            token=fastmcp_jwt,
+            client_id="test-client",
+            scopes=["read"],
+            expires_at=int(now + 3600),
+        )
+
+        upstream_token_id = "upstream-token-id"
+        await oauth_proxy._jti_mapping_store.put(
+            key=refresh_jti,
+            value=JTIMapping(
+                jti=refresh_jti,
+                upstream_token_id=upstream_token_id,
+                created_at=now,
+            ),
+            ttl=3600,
+        )
+
+        await oauth_proxy._refresh_token_store.put(
+            key=_hash_token(fastmcp_jwt),
+            value=RefreshTokenMetadata(
+                client_id="test-client",
+                scopes=["read"],
+                expires_at=refresh_token.expires_at,
+                created_at=now,
+            ),
+            ttl=3600,
+        )
+        # The mapping exists, but its upstream token record does not.
+
+        await oauth_proxy.revoke_token(refresh_token)
+
+        assert httpx_mock.get_requests() == []
+        assert any(
+            record.levelno == logging.WARNING
+            and "No upstream refresh token found" in record.getMessage()
+            for record in caplog.records
+        )
+        assert (
+            await oauth_proxy._refresh_token_store.get(key=_hash_token(fastmcp_jwt))
+            is None
+        )
+
+    async def test_revoke_expired_refresh_token_warns_and_skips_upstream(
+        self, oauth_proxy, httpx_mock, caplog
+    ):
+        """Refresh JWT verification failure is warned about after local deletion."""
+        now = time.time()
+        refresh_jti = "test-refresh-jti"
+        fastmcp_jwt = oauth_proxy.jwt_issuer.issue_refresh_token(
+            client_id="test-client",
+            scopes=["read"],
+            jti=refresh_jti,
+            expires_in=-60,
+        )
+        refresh_token = RefreshToken(
+            token=fastmcp_jwt,
+            client_id="test-client",
+            scopes=["read"],
+            expires_at=int(now - 60),
+        )
+
+        await oauth_proxy._refresh_token_store.put(
+            key=_hash_token(fastmcp_jwt),
+            value=RefreshTokenMetadata(
+                client_id="test-client",
+                scopes=["read"],
+                expires_at=refresh_token.expires_at,
+                created_at=now,
+            ),
+            ttl=3600,
+        )
+
+        await oauth_proxy.revoke_token(refresh_token)
+
+        assert httpx_mock.get_requests() == []
+        assert any(
+            record.levelno == logging.WARNING
+            and "Failed to revoke token with upstream server" in record.getMessage()
+            for record in caplog.records
+        )
+        assert (
+            await oauth_proxy._refresh_token_store.get(key=_hash_token(fastmcp_jwt))
+            is None
+        )
+
+    @pytest.mark.parametrize("upstream_refresh", [None, ""])
+    async def test_revoke_refresh_token_without_upstream_refresh_skips_upstream(
+        self, oauth_proxy, httpx_mock, caplog, upstream_refresh
+    ):
+        """A missing or empty upstream refresh token never falls back to the JWT."""
+        now = time.time()
+        refresh_jti = "test-refresh-jti"
+        fastmcp_jwt = oauth_proxy.jwt_issuer.issue_refresh_token(
+            client_id="test-client",
+            scopes=["read"],
+            jti=refresh_jti,
+            expires_in=3600,
+        )
+        refresh_token = RefreshToken(
+            token=fastmcp_jwt,
+            client_id="test-client",
+            scopes=["read"],
+            expires_at=int(now + 3600),
+        )
+
+        upstream_token_id = "upstream-token-id"
+        await oauth_proxy._jti_mapping_store.put(
+            key=refresh_jti,
+            value=JTIMapping(
+                jti=refresh_jti,
+                upstream_token_id=upstream_token_id,
+                created_at=now,
+            ),
+            ttl=3600,
+        )
+
+        await oauth_proxy._upstream_token_store.put(
+            key=upstream_token_id,
+            value=UpstreamTokenSet(
+                upstream_token_id=upstream_token_id,
+                access_token="upstream-access-token",
+                refresh_token=upstream_refresh,
+                refresh_token_expires_at=now + 86400,
+                expires_at=now + 3600,
+                token_type="Bearer",
+                scope="read",
+                client_id="test-client",
+                created_at=now,
+            ),
+            ttl=86400,
+        )
+
+        await oauth_proxy._refresh_token_store.put(
+            key=_hash_token(fastmcp_jwt),
+            value=RefreshTokenMetadata(
+                client_id="test-client",
+                scopes=["read"],
+                expires_at=refresh_token.expires_at,
+                created_at=now,
+            ),
+            ttl=3600,
+        )
+
+        await oauth_proxy.revoke_token(refresh_token)
+
+        assert httpx_mock.get_requests() == []
+        assert any(
+            record.levelno == logging.WARNING
+            and "No upstream refresh token found" in record.getMessage()
+            for record in caplog.records
+        )
+        assert (
+            await oauth_proxy._refresh_token_store.get(key=_hash_token(fastmcp_jwt))
+            is None
         )

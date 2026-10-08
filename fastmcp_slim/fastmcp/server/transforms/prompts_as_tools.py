@@ -29,7 +29,7 @@ from mcp_types import TextContent
 from fastmcp.server.dependencies import get_context
 from fastmcp.server.transforms import GetToolNext, Transform
 from fastmcp.tools.base import Tool
-from fastmcp.utilities.versions import VersionSpec
+from fastmcp.utilities.versions import VersionSpec, dedupe_with_versions
 
 if TYPE_CHECKING:
     from fastmcp.server.providers.base import Provider
@@ -100,7 +100,9 @@ class PromptsAsTools(Transform):
             and optional arguments.
             """
             ctx = get_context()
-            prompts = await ctx.fastmcp.list_prompts()
+            prompts = dedupe_with_versions(
+                await ctx.fastmcp.list_prompts(), lambda p: p.name
+            )
 
             result: list[dict[str, Any]] = []
             for p in prompts:

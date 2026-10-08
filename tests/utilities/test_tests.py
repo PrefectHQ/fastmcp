@@ -1,10 +1,16 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 import fastmcp
-from fastmcp import FastMCP
-from fastmcp.utilities.tests import HeadlessOAuth, temporary_settings
+from fastmcp import Client, FastMCP
+from fastmcp.utilities.tests import (
+    HeadlessOAuth,
+    run_server_async,
+    temporary_settings,
+)
 
 
 class TestTemporarySettings:
@@ -41,6 +47,27 @@ class TestTransportSetting:
             ) as mock_stdio:
                 await mcp.run_async(transport="stdio")
                 mock_stdio.assert_called_once()
+
+
+class TestRunServerAsync:
+    async def test_yields_url_of_running_server(self):
+        mcp = FastMCP("test")
+
+        async with run_server_async(mcp) as url:
+            async with Client(url) as client:
+                assert await client.list_tools() == []
+
+    async def test_startup_failure_raises(self):
+        @asynccontextmanager
+        async def failing_lifespan(server: FastMCP) -> AsyncIterator[None]:
+            raise RuntimeError("database unavailable")
+            yield
+
+        mcp = FastMCP("test", lifespan=failing_lifespan)
+
+        with pytest.raises(RuntimeError, match="database unavailable"):
+            async with run_server_async(mcp):
+                pass
 
 
 class TestHeadlessOAuthCallbackHandler:

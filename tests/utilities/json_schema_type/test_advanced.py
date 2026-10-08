@@ -1,7 +1,7 @@
 """Advanced JSON schema type conversion features."""
 
 from dataclasses import Field
-from typing import Union
+from typing import Any, Union
 
 import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
@@ -79,6 +79,25 @@ class TestDefaultValues:
         result = validator.validate_python({"user": {"name": "test"}})
         assert result.user.name == "test"
         assert result.user.settings.theme == "system"
+
+
+@pytest.mark.parametrize(
+    "definition, token",
+    [("plain", "plain"), ("a/b", "a~1b"), ("a~b", "a~0b"), ("a~1b", "a~01b")],
+)
+def test_escaped_reference_tokens(definition: str, token: str):
+    schema = {
+        "type": "object",
+        "properties": {"value": {"$ref": f"#/$defs/{token}"}},
+        "required": ["value"],
+        "$defs": {definition: {"type": "integer", "minimum": 1}},
+    }
+    adapter: TypeAdapter[Any] = TypeAdapter(json_schema_to_type(schema))
+    value = adapter.validate_python({"value": "7"}).value
+    assert value == 7
+    assert isinstance(value, int)
+    with pytest.raises(ValidationError):
+        adapter.validate_python({"value": 0})
 
 
 class TestCircularReferences:
